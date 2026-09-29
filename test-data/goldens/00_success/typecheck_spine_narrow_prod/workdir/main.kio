@@ -1,0 +1,31 @@
+module main;
+
+import elab/spine_elaborators(narrow_prod);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// Trailing slot drop. Source `[A, B]`, target `[A]` — the `B` slot
+// projects away. Target multiset `{A}` ⊆ source `{A, B}`.
+fn drop_trailing(p: A & B) -> A { narrow_prod!(p) }
+
+// Middle slot drop. Source `[A, B, C]`, target `[A, C]` — the
+// middle `B` projects away; `A` and `C` keep their source-order
+// positions. Target `{A, C}` ⊆ source `{A, B, C}`.
+fn drop_middle(p: A & B & C) -> A & C { narrow_prod!(p) }
+
+// Duplicate-factor narrow. Source `[A, B, A]` has two `A` slots;
+// target `[A]` keeps the leftmost. R-Project-Prod with source-order
+// pinning picks the kth source `A` for the kth target `A`.
+fn drop_duplicate(p: A & B & A) -> A { narrow_prod!(p) }
+
+// R-Identity-Prod-elim — the special case of dropping a `()` slot.
+// Source `[A, ()]`, target `[A]` — the `()` factor drops via the
+// same R-Project-Prod chain.
+fn drop_unit(p: A & .) -> A { narrow_prod!(p) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(p: A & B) -> A { p.>narrow_prod! }

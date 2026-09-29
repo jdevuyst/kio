@@ -1,0 +1,55 @@
+module api;
+
+host type Box[T];
+
+pub labels Pair = { left: ., right: . };
+
+pub labels Choice = { first: . } | { second: . };
+
+pub type Poly_id = [A] A -> A;
+
+pub newtype Wrapped_poly_id : [A] A -> A {
+  pub constructor mk_wrapped_poly_id;
+  pub projector un_wrapped_poly_id
+  }
+
+newtype F[A] : A { constructor mk_f; projector un_f }
+
+host fn pair_seed() -> Box(Pair);
+
+host fn choice_seed() -> Box(Choice);
+
+host fn tie[*F][T](plain: T, wrapped: F(T)) -> F(T);
+
+host fn generic_product[A][T](value: A & T) -> A & T;
+
+host fn direct_product[A][B][C](value: A & B & C) -> A & B & C;
+
+host fn generic_sum[A][T](value: A | T) -> A | T;
+
+host fn direct_sum[A][B][C](value: A | B | C) -> A | B | C;
+
+host fn rank_product(value: ([A] A -> A) & .) -> ([A] A -> A) & .;
+
+host fn rank_sum(value: ([A] A -> A) | .) -> ([A] A -> A) | .;
+
+host fn alias_rank_product(value: Poly_id & ([A] A -> A)) -> Poly_id & ([A] A -> A);
+
+host fn alias_rank_sum(value: Poly_id | ([A] A -> A)) -> Poly_id | ([A] A -> A);
+
+host fn newtype_rank_product(value: Wrapped_poly_id & ([A] A -> A)) -> & Wrapped_poly_id
+& ([A] A -> A);
+
+host fn newtype_rank_sum(value: Wrapped_poly_id | ([A] A -> A)) -> Wrapped_poly_id | ([A] A -> A);
+
+host fn scoped_application[*F][A][B](value: F(A & B)) -> F(A & B);
+
+host fn staged_host[A](_left: A) -> [B][C] (B & C) -> C;
+
+fn staged_module[A](_left: A)[B][C](_middle: B, right: C) -> C { right }
+
+pub fn run_staged_calls() -> . { let _ = staged_module((), (), ()); staged_host((), ((), ())) }
+
+pub fn keep_pair(value: Pair) -> Box(Pair) { tie(value, pair_seed()) }
+
+pub fn keep_choice(value: Choice) -> Box(Choice) { tie(value, choice_seed()) }

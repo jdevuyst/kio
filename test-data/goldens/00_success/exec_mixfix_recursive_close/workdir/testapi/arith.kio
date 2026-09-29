@@ -1,0 +1,9 @@
+module testapi/arith;
+
+import testapi as host;
+
+host fn add_i32(left: host.I32, right: host.I32) -> host.I32;
+
+host fn sub_i32(left: host.I32, right: host.I32) -> host.I32;
+
+host fn mul_i32(left: host.I32, right: host.I32) -> host.I32;

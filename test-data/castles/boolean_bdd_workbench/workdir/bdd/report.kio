@@ -1,0 +1,129 @@
+module bdd/report;
+
+import bdd/apply as engine;
+import bdd/compile as compiler;
+import bdd/expression as expr;
+import bdd/logic as logic;
+import bdd/query as query;
+import bdd/store as table;
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import list/list as walk;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn bit(b: Bool) -> String {
+  if! b {
+    "1"
+  } else {
+    "0"
+  }
+}
+
+// Assignment order is binary xyz: x changes every four rows, z every row.
+pub fn assignment(row: I32, variable: I32) -> Bool {
+  if! arith.eq_i32(variable, 0) {
+    arith.leq_i32(4, row)
+  } else if! arith.eq_i32(variable, 1) {
+    logic.or(logic.and(arith.leq_i32(2, row), arith.lt_i32(row, 4)), arith.leq_i32(6, row))
+  } else {
+    logic.or(
+      , logic.or(arith.eq_i32(row, 1), arith.eq_i32(row, 3))
+      , logic.or(arith.eq_i32(row, 5), arith.eq_i32(row, 7))
+      )
+  }
+}
+
+rec(loop) fn truth_rows(
+  , store: table.Store
+  , root: table.Node_id
+  , expected: (I32 -> Bool) -> Bool
+  , row: I32
+  , bits: String
+  , models: I32
+  , agree: Bool
+  ) -> String & I32 & Bool {
+  if! arith.eq_i32(row, 8) {
+    (bits, models, agree)
+  } else {
+    let values = .(variable: I32) { assignment(row, variable) };
+    let actual = query.evaluate(store, root, values);
+    let reference = expected(values);
+    rec truth_rows(
+      , store
+      , root
+      , expected
+      , arith.add_i32(row, 1)
+      , text.string_concat(bits, bit(actual))
+      , arith.add_i32(
+          , models
+          , if! actual {
+              1
+            } else {
+              0
+            }
+          )
+      , logic.and(agree, logic.same(actual, reference))
+      )
+  }
+}
+
+fn witness(store: table.Store, root: table.Node_id, expected: (I32 -> Bool) -> Bool) ->
+  String & Bool
+   {
+  match! query.satisfying_assignment(store, root) {
+    .(values: query.Assignment) {
+      let lookup = .(variable: I32) { query.assigned(values, variable) };
+      let bits =
+        text.string_concat(bit(lookup(0)), text.string_concat(bit(lookup(1)), bit(lookup(2))));
+      (bits, logic.and(query.evaluate(store, root, lookup), expected(lookup)))
+    };
+    .() { ("none", table.same_id(root, table.false_id())) }
+  }
+}
+
+pub fn diagram(
+  , name: String
+  , store: table.Store
+  , root: table.Node_id
+  , expected: (I32 -> Bool) -> Bool
+  ) -> . {
+  let .(bits: String, models: I32, agree: Bool) = truth_rows(store, root, expected, 0, "", 0, .t);
+  let .(sample: String, valid: Bool) = witness(store, root, expected);
+  io.print(name);
+  io.print(text.string_concat(": truth=", bits));
+  io.print(text.string_concat(" models=", fmt.int_to_string(models)));
+  io.print(text.string_concat(" nodes=", fmt.int_to_string(query.node_count(store, root))));
+  io.print(text.string_concat(" witness=", sample));
+  io.print(text.string_concat(" checked=", fmt.bool_to_string(logic.and(agree, valid))));
+  io.print("\n")
+}
+
+pub fn formulas(fixtures: lists.List(String & expr.Expression)) -> engine.Manager {
+  walk.foldl(
+    , .(manager: engine.Manager, name: String, expression: expr.Expression) {
+        let .(next: engine.Manager, root: table.Node_id) = compiler.compile(manager, expression);
+        diagram(
+          , name
+          , next.?{engine.store}
+          , root
+          , .(values: I32 -> Bool) { expr.evaluate(expression, values) }
+          );
+        next
+      }
+    , engine.empty()
+    , fixtures
+    )
+}
+
+pub fn fact(name: String, value: Bool) -> . {
+  io.print(text.string_concat(
+    , name
+    , text.string_concat("=", text.string_concat(fmt.bool_to_string(value), "\n"))
+    ))
+}

@@ -1,0 +1,24 @@
+module host/m;
+
+import host(A);
+
+// Type application / Λ-reduction (specs/formal/equiv.md section 1:
+// type parameters are erased). Kio' has no anonymous type-level
+// abstraction, so a polymorphic `fn`'s type binder carries no runtime
+// value: applying it drops the type-arg and β-reduces the value layer
+// through, exactly as if the type layer never existed.
+fn poly_id[T](v: T) -> T { v }
+
+// A `fn` with ONLY type parameters becomes a zero-arity closure;
+// applying it to a type-arg forces the body.
+fn type_only[T]() -> . { () }
+
+equiv type_app_is_value_id[T](v: T) {
+  poly_id(T, v);
+  v
+}
+
+equiv type_only_fn_reduces() {
+  type_only(A, ());
+  ()
+}

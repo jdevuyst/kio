@@ -1,0 +1,37 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+
+// User-defined `<-` operator. `a <- b` calls `arrow`, which
+// returns its second argument (a poor-man's "discard the
+// left"). The operator binding is fully admissible — `<-` is a
+// regular op-token sequence; the do-block's bind statement form
+// `let x <- e;` uses the `let` keyword to disambiguate
+// structurally.
+fn arrow[A][B](x: A, y: B) -> B { y }
+
+op _ <- _ { impl arrow }
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Inside a do-block the `let x <- e;` form parses as a bind
+// statement. A bare `a <- b` expression — without the `let`
+// lead — parses as a user-op expression call to `arrow`. Both
+// coexist freely.
+fn run() -> Box(String) {
+  do! box_bind {
+    let s <- box_pure("left" <- "arrow-op final inside do\n");
+    box_pure(s)
+  }
+}
+
+// Outside any do-block, `<-` is purely the user-defined operator.
+fn outside_do() -> String { "left" <- "arrow-op outside do\n" }
+
+pub fn main() -> . { print(outside_do()); print(Box.un_box(run())) }

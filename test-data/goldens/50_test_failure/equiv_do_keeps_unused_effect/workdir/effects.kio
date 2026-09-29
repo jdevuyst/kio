@@ -1,0 +1,5 @@
+module effects;
+
+host type String role(str);
+
+host fn print(s: String) -> .;

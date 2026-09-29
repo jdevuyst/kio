@@ -1,0 +1,30 @@
+module main;
+
+// Polymorphic identity, declared as a top-level fn.
+fn id[X](a: X) -> X { a }
+
+// `[U] U -> U` is a rank-2 type expression: a forall in a
+// function parameter type. `higher` takes a polymorphic identity
+// and an ignored unit, instantiates the parameter at `.`.
+fn higher(f: [U] U -> U, x: .) -> . { f(., x) }
+
+// Pass an inline polymorphic lambda expression — its value is checked
+// against the expected forall, with the binder names alpha-renamed.
+fn caller_fn() -> . { higher(.[V](y) { y }, ()) }
+
+// Pass `id` itself by inlining its instantiation — the result of
+// `id([C] C -> C, .[B](z) { z })` has type `forall C. C -> C`,
+// applicable as an ordinary value.
+fn caller_via_id() -> . { let id2 = id([C] C -> C, .[B](z) { z }); id2(., ()) }
+
+// Multiple binders in one type: `forall A B. (A & B) -> A`. The
+// polymorphic-value form goes via an inline `fn`, since let-bound
+// names don't generalize per `language.md` § Annotations at bindings.
+fn first[A][B](x: A, y: B) -> A { x }
+
+fn first_via_fn(g: [A][B] (A & B) -> A) -> . { g(., ., (), ()) }
+
+fn first_pair() -> . { first_via_fn(.[P][Q](x, y) { first(P, Q, x, y) }) }
+
+// Apply a polymorphic value (the `higher` parameter) inside a body.
+fn apply_poly(f: [T] T -> T) -> . { f(., ()) }

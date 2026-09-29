@@ -1,0 +1,5 @@
+module testapi/main;
+
+import route_ticket_pricer/report(print_report);
+
+pub fn main() -> . { print_report() }

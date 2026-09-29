@@ -1,0 +1,56 @@
+module fold/report;
+
+import fold/bases as bases;
+import fold/numbers as numbers;
+import fold/reconstruct as reconstruct;
+import fold/solver as solver;
+import fold/validate as validate;
+import fold/validate({brackets}, {legal}, {noncrossing}, {score_matches}, {symmetric});
+import testapi(Array, Bool, I32, String);
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn report_audit(audit: validate.Audit) -> . {
+  io.print(" legal=");
+  io.print(fmt.bool_to_string(audit.?{legal}));
+  io.print(" symmetric=");
+  io.print(fmt.bool_to_string(audit.?{symmetric}));
+  io.print(" noncrossing=");
+  io.print(fmt.bool_to_string(audit.?{noncrossing}));
+  io.print(" brackets=");
+  io.print(fmt.bool_to_string(audit.?{brackets}));
+  io.print(" score=");
+  io.print(fmt.bool_to_string(audit.?{score_matches}));
+  io.print("\n")
+}
+
+pub fn run(name: String, sequence: Array(String), min_loop: I32, expected_score: I32) -> . {
+  let program = solver.solve(sequence, min_loop);
+  let partners = reconstruct.partners(program);
+  let score = solver.optimum(program);
+  io.print(name);
+  io.print(" sequence=");
+  io.print(bases.join(sequence));
+  io.print(" min-loop=");
+  io.print(fmt.int_to_string(min_loop));
+  io.print("\n  fold=");
+  io.print(reconstruct.dot_bracket(partners));
+  io.print(" pairs=");
+  io.print(fmt.int_to_string(score));
+  io.print(" optimum=");
+  io.print(fmt.bool_to_string(numbers.equal(score, expected_score)));
+  report_audit(validate.audit(sequence, partners, min_loop, score))
+}
+
+pub fn inspect(
+  , name: String
+  , sequence: Array(String)
+  , partners: Array(I32)
+  , min_loop: I32
+  , claimed_score: I32
+  ) -> . {
+  io.print("audit ");
+  io.print(name);
+  report_audit(validate.audit(sequence, partners, min_loop, claimed_score))
+}

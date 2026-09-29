@@ -1,0 +1,5 @@
+module testapi/two;
+
+import testapi(String);
+
+pub labels { a: String };

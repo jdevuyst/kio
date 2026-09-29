@@ -1,0 +1,28 @@
+module interpreter/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import testapi(Bool, String);
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub type Tokens = lists.List(String);
+
+rec(loop) fn collect(reversed: Tokens) -> Tokens | String {
+  match! io.read_ascii_line() {
+    .(line: String) {
+      if! text.string_eq(line, "end") {
+        traversal.reverse(reversed).>widen_sum!(Tokens | String)
+      } else {
+        rec collect(lists.cons(line, reversed))
+      }
+    };
+    .() { "input ended before end marker".>widen_sum!(Tokens | String) }
+  }
+}
+
+pub fn read_tokens() -> Tokens | String { collect(lists.nil()) }

@@ -1,0 +1,20 @@
+module testapi/main;
+
+import elab/control(if);
+import elaborators(specialize_callback);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+rec(loop) fn repeat(remaining: I32) -> String {
+  specialize_callback!(.[A][B](_value: A & B) -> String {
+    if! leq_i32(remaining, 0) {
+      "polymorphic recursive candidate\n"
+    } else {
+      rec repeat(sub_i32(remaining, 1))
+    }
+  })
+}
+
+pub fn main() -> . { print(repeat(2)) }

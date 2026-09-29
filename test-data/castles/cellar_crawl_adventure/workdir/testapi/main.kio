@@ -1,0 +1,12 @@
+/// cellar_crawl_adventure — a small text adventure in a wine cellar.
+///
+/// Seven rooms wired into a directed graph whose edges are gated by what the
+/// player is carrying: one trapdoor and one vault door open only to the brass
+/// key, and one room is unlit and turns away anyone without the lantern. The
+/// player drives it from stdin with a seven-verb command language, and the
+/// program prints the whole transcript itself — the runner echoes nothing.
+module testapi/main;
+
+import cellar/session(run);
+
+pub fn main() -> . { run() }

@@ -1,0 +1,37 @@
+module trti/main;
+
+// Coverage for return-type-driven type-argument inference on
+// intrinsic calls — the typer path where a `Forall` binder appears
+// only (or also) in the return type and gets pinned from the
+// surrounding expected return type. Every cell is a tiny fixture
+// fn whose body is a single intrinsic call with the type-args
+// elided. `IS_KIO_PRIME` is a syntax-only assertion that the file is
+// Kio'-grammatical. Direct Prime semantic execution is skipped because
+// these natural surface calls rely on universal-argument inference; the
+// regular Full check and Full-to-Kio'-to-Prime round-trip remain covered.
+// Surface-form elided-target inference is exercised
+// broadly across the rest of the corpus; this golden's niche is
+// the intrinsic-direct path.
+import __intrinsics__;
+
+import trti(String);
+
+// Canonical case from language.md `:52` — `__absurd__` has
+// `[A]` only in the return type. The body sits in a checked
+// position with expected return `.`, so the typer pins
+// `A = .` from the return-type unification and the type-arg
+// can be dropped entirely.
+fn coerce(x: !) -> . { __absurd__(x) }
+
+// `__left__ : [A][B](x: A) -> (A | B)` — `[B]` appears
+// only in the return type. With both type-args elided, value-arg
+// unification solves `A = ()` and the expected return type
+// `(. | String)` solves `B = String`.
+fn mk_left_str(x: .) -> . | String { __left__(x) }
+
+// Same algorithmic path as `mk_left_str` but with the binders'
+// concrete types swapped (value-arg solves `[A] = String`, return
+// type solves `[B] = ()`). Hedges against type-specific quirks
+// in unification — same inference rule fires regardless of which
+// concrete types each binder pins to.
+fn mk_left_mixed(x: String) -> String | . { __left__(x) }

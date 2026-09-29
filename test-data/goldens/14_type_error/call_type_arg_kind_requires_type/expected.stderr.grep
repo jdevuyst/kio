@@ -1,0 +1,1 @@
+type argument `Box` has kind `\*→\*`, but type parameter `A` requires kind `\*`

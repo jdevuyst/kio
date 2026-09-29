@@ -1,0 +1,9 @@
+module guest;
+
+import hostapi(I32, add_i32);
+
+pub fn let(x: I32) -> I32 { add_i32(x, 1) }
+
+pub fn do(x: I32) -> I32 { add_i32(x, x) }
+
+pub fn drive(x: I32) -> I32 { let incremented = let(x); do(incremented) }

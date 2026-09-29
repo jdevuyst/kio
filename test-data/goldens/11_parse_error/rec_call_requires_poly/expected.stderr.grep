@@ -1,0 +1,2 @@
+recursive call to `count` changes type parameters
+rec\(poly\)

@@ -1,0 +1,22 @@
+module store;
+
+pub labels { seed[A]: A };
+
+pub rec labels Later[A] = { seed[A]: _, branch[A]: (Later(A) -> A) -> A };
+
+rec {
+  pub labels First[A] = { seed[A]: _, left[A]: (Second(A) -> A) -> A };
+  pub labels Second[A] = { seed[A]: _, right[A]: (First(A) -> A) -> A }
+}
+
+pub fn later_seed[A](row: Later(A)) -> A { row.?{seed} }
+
+pub fn later_branch[A](row: Later(A), next: Later(A) -> A) -> A { row.?{branch}(next) }
+
+pub fn first_seed[A](row: First(A)) -> A { row.?{seed} }
+
+pub fn first_left[A](row: First(A), next: Second(A) -> A) -> A { row.?{left}(next) }
+
+pub fn second_seed[A](row: Second(A)) -> A { row.?{seed} }
+
+pub fn second_right[A](row: Second(A), next: First(A) -> A) -> A { row.?{right}(next) }

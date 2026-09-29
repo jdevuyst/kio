@@ -1,0 +1,18 @@
+module testapi/main;
+
+import geo/area(Boxed, box, unbox);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through a depth-2 path-dependency closure. The
+// consumer depends on `geo` (its `geo.dep.kio`), which is itself a
+// consumer of `units` (its own committed `units.dep.kio` closure). The
+// `Boxed` newtype and its `box` / `unbox` come from `geo/area`, but
+// `Boxed` is defined over `Scaled` and `box` / `unbox` delegate to
+// `scale` / `unscale` — all from `units/scalar`, the leaf dependency two
+// edges away. Materialization re-roots the whole committed tree under
+// the consumer (`geo/area`, `geo/units/scalar`), so a value flowing
+// through `box` then `unbox` rides the transitive surface end to end.
+pub fn greeting() -> String { unbox(box("transitive dependency works\n"(String))) }
+
+pub fn main() -> . { print(greeting()) }

@@ -1,0 +1,5 @@
+module helper;
+
+// `secret` is intentionally not `pub` — it should not be importable
+// from another module in the same package.
+fn secret() -> . { () }

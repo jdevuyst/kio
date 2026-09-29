@@ -1,0 +1,93 @@
+datalog fixpoint engine
+
+== extensional database (EDB) ==
+link(alder, birch, 4).
+link(alder, cedar, 7).
+link(birch, dover, 3).
+link(cedar, dover, 2).
+link(dover, elm, 5).
+link(elm, fen, 6).
+station(alder, north).
+station(birch, north).
+station(cedar, mid).
+station(dover, mid).
+station(elm, south).
+station(fen, south).
+hub(alder).
+hub(dover).
+depot(cedar).
+depot(fen).
+facts: 16
+
+== rules (IDB) ==
+reach(X, Y) :- link(X, Y, C).
+reach(X, Z) :- link(X, Y, C), reach(Y, Z).
+oddhop(X, Y) :- link(X, Y, C).
+oddhop(X, Z) :- link(X, Y, C), evenhop(Y, Z).
+evenhop(X, Z) :- link(X, Y, C), oddhop(Y, Z).
+samezone(X, Y) :- station(X, Z), station(Y, Z).
+hubserved(Y) :- hub(X), reach(X, Y).
+depotzone(Y) :- depot(X), samezone(X, Y).
+rules: 8
+
+== semi-naive fixpoint ==
+  round  derivations  new facts
+      1           24         24
+      2           17         15
+      3           10          8
+      4            5          2
+      5            1          0
+rounds: 5
+derivations: 57
+facts: 65
+
+== naive fixpoint ==
+  round  derivations  new facts
+      1           24         24
+      2           41         15
+      3           51          8
+      4           56          2
+      5           57          0
+rounds: 5
+derivations: 229
+facts: 65
+
+== agreement ==
+semi-naive derivations: 57
+naive derivations: 229
+derivations saved: 172
+semi-naive facts: 65
+naive facts: 65
+same fixpoint: true
+
+== derived facts by predicate ==
+reach: 14
+oddhop: 9
+evenhop: 5
+samezone: 12
+hubserved: 5
+depotzone: 4
+derived total: 49
+
+== queries ==
+?- reach(alder, Y).
+  Y = birch
+  Y = cedar
+  Y = dover
+  Y = elm
+  Y = fen
+  answers: 5
+?- link(X, dover, C).
+  X = birch, C = 3
+  X = cedar, C = 2
+  answers: 2
+?- evenhop(X, fen).
+  X = dover
+  X = alder
+  answers: 2
+?- depotzone(Y).
+  Y = cedar
+  Y = dover
+  Y = elm
+  Y = fen
+  answers: 4

@@ -1,0 +1,26 @@
+module main;
+
+import elab/control(if);
+
+fn pick(b: .) -> . {
+  if! .t {
+    ()
+  } else if! .t {
+    ()
+  } else {
+    b
+  }
+}
+module main;
+
+import elab/control(if);
+
+fn pick(b: .) -> . {
+  if! .t {
+    ()
+  } else if! .t {
+    ()
+  } else {
+    b
+  }
+}

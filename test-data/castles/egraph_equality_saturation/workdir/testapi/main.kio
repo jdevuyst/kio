@@ -1,0 +1,108 @@
+module testapi/main;
+
+import egraph/graph as graph;
+import egraph/numbers as n;
+import egraph/report as report;
+import egraph/rewrite as rewrite;
+import testapi(Bool, I32, String);
+import testapi/io as io;
+
+fn congruence() -> . {
+  io.print("congruence\n");
+  let g = graph.create();
+  let x = graph.variable_node(g, 0);
+  let y = graph.variable_node(g, 1);
+  let zero = graph.constant_node(g, 0);
+  let padded = graph.add(g, x, zero);
+  let short = graph.add(g, x, y);
+  let long = graph.add(g, padded, y);
+  report.original(g, long);
+  io.print("  parents-equal-before=");
+  report.boolean(graph.same_class(g, short, long));
+  io.print("\n");
+  rewrite.rewrite_round(g);
+  io.print("  after-rewrite child-equal=");
+  report.boolean(graph.same_class(g, x, padded));
+  io.print(" parents-equal=");
+  report.boolean(graph.same_class(g, short, long));
+  io.print("\n");
+  let merges = graph.rebuild(g);
+  io.print("  rebuild-merges=");
+  report.number(merges);
+  io.print(" parents-equal=");
+  report.boolean(graph.same_class(g, short, long));
+  io.print("\n");
+  report.status(rewrite.saturate(g, 8));
+  report.result(g, long)
+}
+
+fn factoring() -> . {
+  io.print("factoring\n");
+  let g = graph.create();
+  let x = graph.variable_node(g, 0);
+  let two = graph.constant_node(g, 2);
+  let three = graph.constant_node(g, 3);
+  let first = graph.multiply(g, x, two);
+  let second = graph.multiply(g, x, three);
+  let root = graph.add(g, first, second);
+  report.original(g, root);
+  report.status(rewrite.saturate(g, 1));
+  report.result(g, root);
+  report.status(rewrite.saturate(g, 8));
+  report.result(g, root);
+  let before = graph.revision(g);
+  let checked = rewrite.saturate(g, 8);
+  io.print("  fixed-point-recheck=");
+  report.outcome(checked);
+  io.print(" unchanged=");
+  report.boolean(n.equal(before, graph.revision(g)));
+  io.print("\n")
+}
+
+fn identities() -> . {
+  io.print("identities\n");
+  let g = graph.create();
+  let x = graph.variable_node(g, 0);
+  let y = graph.variable_node(g, 1);
+  let one = graph.constant_node(g, 1);
+  let zero = graph.constant_node(g, 0);
+  let first = graph.multiply(g, x, one);
+  let second = graph.multiply(g, y, zero);
+  let root = graph.add(g, first, second);
+  report.original(g, root);
+  report.status(rewrite.saturate(g, 8));
+  report.result(g, root)
+}
+
+fn constant_arithmetic() -> . {
+  io.print("constant arithmetic\n");
+  let g = graph.create();
+  let two = graph.constant_node(g, 2);
+  let three = graph.constant_node(g, 3);
+  let sum = graph.add(g, two, three);
+  let four = graph.constant_node(g, 4);
+  let root = graph.multiply(g, sum, four);
+  report.original(g, root);
+  report.status(rewrite.saturate(g, 8));
+  report.result(g, root)
+}
+
+fn already_saturated() -> . {
+  io.print("already saturated\n");
+  let g = graph.create();
+  let x = graph.variable_node(g, 0);
+  let y = graph.variable_node(g, 1);
+  let root = graph.add(g, x, y);
+  report.original(g, root);
+  report.status(rewrite.saturate(g, 8));
+  report.result(g, root)
+}
+
+pub fn main() -> . {
+  io.print("E-graph equality saturation\n");
+  congruence();
+  factoring();
+  identities();
+  constant_arithmetic();
+  already_saturated()
+}

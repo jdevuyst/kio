@@ -1,0 +1,14 @@
+module packet_frame_decoder/text;
+
+import testapi(String);
+import testapi/text as text;
+
+pub fn cat(a: String, b: String) -> String { text.string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(a, cat(b, cat(c, d))) }
+
+pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  cat(a, cat(b, cat(c, cat(d, e))))
+}

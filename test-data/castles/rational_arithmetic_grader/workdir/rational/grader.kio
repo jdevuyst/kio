@@ -1,0 +1,162 @@
+/// Verdicts, the exercise roster, and the marking rubric.
+module rational/grader;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import rational/core as core;
+import rational/core(Division_by_zero, Eval, Fraction, Rational);
+import rational/expr(Expr);
+import rational/render as render;
+import rational/text as text;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+
+/// `Exact` and `Equivalent` are both accepted answers; they differ only in
+/// whether the student carried out the final reduction. `Undefined` belongs to
+/// the *question*, not to the student — it is the verdict when the exercise
+/// itself has no answer to give.
+pub labels { exact: . };
+
+pub labels { equivalent: . };
+
+pub labels { wrong: . };
+
+pub labels { undefined: . };
+
+pub type Verdict = Exact | Equivalent | Wrong | Undefined;
+
+/// One marked answer. The note is where an accepted-but-unreduced submission
+/// gets told, in so many words, that it was accepted.
+pub labels Report = { outcome: Verdict, note: String };
+
+pub labels Exercise = { question: Expr, submitted: Fraction };
+
+/// The exercise set as an ordinary cons list. The knot is tied at the newtype
+/// because an anonymous sum cannot mention itself.
+pub rec newtype Roster : . | (Exercise & Roster) { constructor of_body; pub projector body }
+
+pub labels Tally = {
+  , exact_count: I32
+  , equivalent_count: I32
+  , wrong_count: I32
+  , undefined_count: I32
+  };
+
+pub fn exercise(question: Expr, submitted: Fraction) -> Exercise { {question, submitted} }
+
+pub fn no_exercises() -> Roster { Roster.of_body(widen_sum!((), . | (Exercise & Roster))) }
+
+pub fn with_exercise(head: Exercise, rest: Roster) -> Roster {
+  Roster.of_body(widen_sum!((head, rest), . | (Exercise & Roster)))
+}
+
+fn exact_mark(note: String) -> Report { {outcome = widen_sum!({exact=}, Verdict), note} }
+
+fn equivalent_mark(note: String) -> Report { {outcome = widen_sum!({equivalent=}, Verdict), note} }
+
+fn wrong_mark(note: String) -> Report { {outcome = widen_sum!({wrong=}, Verdict), note} }
+
+fn undefined_mark(note: String) -> Report { {outcome = widen_sum!({undefined=}, Verdict), note} }
+
+/// Which way the student missed. Nothing else needs an ordering on rationals,
+/// but a grader that can only say "no" is less use than one that can say "high".
+fn direction(student: Rational, correct: Rational) -> String {
+  if! core.less(student, correct) {
+    "below the correct value"
+  } else {
+    "above the correct value"
+  }
+}
+
+/// Mark a submission against the value the question actually has.
+fn judge(correct: Rational, submitted: Fraction) -> Report {
+  match! core.reduce(submitted) {
+    (
+      , .(student: Rational) {
+          if! core.equal(student, correct) {
+            if! core.is_canonical(submitted, student) {
+              exact_mark("in lowest terms")
+            } else {
+              equivalent_mark(text.cat4(
+                , "accepted, "
+                , render.fraction(submitted)
+                , " reduces to "
+                , render.rational(student)
+                ))
+            }
+          } else {
+            wrong_mark(direction(student, correct))
+          }
+        }
+      , .(_fault: Division_by_zero) {
+          wrong_mark("not a number, the submitted denominator is zero")
+        }
+      )
+  }
+}
+
+/// A question that cannot be evaluated is undefined whatever the student wrote:
+/// there is no value to have got right.
+pub fn assess(correct: Eval, submitted: Fraction) -> Report {
+  match! correct {
+    (
+      , .(number: Rational) { judge(number, submitted) }
+      , .(_fault: Division_by_zero) {
+          undefined_mark("the question divides by zero, so it has no answer")
+        }
+      )
+  }
+}
+
+pub fn verdict_text(outcome: Verdict) -> String {
+  match! outcome {
+    (
+      , .(_v: Exact) { "exact" }
+      , .(_v: Equivalent) { "equivalent" }
+      , .(_v: Wrong) { "wrong" }
+      , .(_v: Undefined) { "undefined" }
+      )
+  }
+}
+
+pub fn no_marks() -> Tally {
+  {exact_count = 0, equivalent_count = 0, wrong_count = 0, undefined_count = 0}
+}
+
+fn bump_exact(marks: Tally) -> Tally { marks.!{exact_count = arith.add(marks.?{exact_count}, 1)} }
+
+fn bump_equivalent(marks: Tally) -> Tally {
+  marks.!{equivalent_count = arith.add(marks.?{equivalent_count}, 1)}
+}
+
+fn bump_wrong(marks: Tally) -> Tally { marks.!{wrong_count = arith.add(marks.?{wrong_count}, 1)} }
+
+fn bump_undefined(marks: Tally) -> Tally {
+  marks.!{undefined_count = arith.add(marks.?{undefined_count}, 1)}
+}
+
+pub fn record(marks: Tally, outcome: Verdict) -> Tally {
+  match! outcome {
+    (
+      , .(_v: Exact) { bump_exact(marks) }
+      , .(_v: Equivalent) { bump_equivalent(marks) }
+      , .(_v: Wrong) { bump_wrong(marks) }
+      , .(_v: Undefined) { bump_undefined(marks) }
+      )
+  }
+}
+
+/// The rubric: a fully reduced correct answer scores two points, an accepted
+/// but unreduced one scores one, a wrong one scores none. An exercise that is
+/// itself undefined leaves the denominator too — a broken question is not
+/// allowed to count against the class.
+pub fn earned(marks: Tally) -> I32 {
+  let .({exact_count, equivalent_count}) = marks;
+  arith.add(arith.mul(exact_count, 2), equivalent_count)
+}
+
+pub fn possible(marks: Tally) -> I32 {
+  let .({exact_count, equivalent_count, wrong_count}) = marks;
+  arith.mul(2, arith.add(exact_count, arith.add(equivalent_count, wrong_count)))
+}

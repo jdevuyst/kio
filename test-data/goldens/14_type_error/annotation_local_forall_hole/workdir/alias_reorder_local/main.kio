@@ -1,0 +1,7 @@
+module main;
+
+pub type Reorder[First][Second] = [Reorder_bound] Second -> Reorder_bound;
+
+host fn exact(_token: .) -> Reorder(., .);
+
+fn partial() -> . { let .(function: Reorder(., _)) = exact(()); () }

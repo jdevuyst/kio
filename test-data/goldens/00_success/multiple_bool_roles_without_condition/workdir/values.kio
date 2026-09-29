@@ -1,0 +1,9 @@
+module values;
+
+host type First role(bool);
+
+host type Second role(bool);
+
+fn first() -> First { .t(First) }
+
+fn second() -> Second { .f(Second) }

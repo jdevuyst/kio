@@ -1,0 +1,11 @@
+module main;
+
+fn wrap(a: .) -> . { a }
+
+fn nil() -> . { () }
+
+fn cons(h: ., _t: .) -> . { h }
+
+op [ _ ] { impl wrap; };
+
+varop [* *] { foldr cons nil; };

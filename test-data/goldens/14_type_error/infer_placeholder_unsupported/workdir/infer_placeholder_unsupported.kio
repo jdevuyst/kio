@@ -1,0 +1,3 @@
+module infer_placeholder_unsupported;
+
+fn id(x: _) -> _ { x }

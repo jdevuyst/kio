@@ -1,0 +1,8 @@
+module main;
+
+import left as l;
+import right as r;
+
+fn discard[A](value: A) -> . { () }
+
+pub fn main() -> . { discard(l.left_value()); discard(r.right_value()); () }

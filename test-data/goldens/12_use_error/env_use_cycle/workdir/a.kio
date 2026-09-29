@@ -1,0 +1,9 @@
+module a;
+
+import b(Pong);
+
+host type Str role(str);
+
+host fn ping(p0: Str) -> Pong;
+
+pub newtype Ping : Str { pub constructor mk_ping; pub projector un_ping }

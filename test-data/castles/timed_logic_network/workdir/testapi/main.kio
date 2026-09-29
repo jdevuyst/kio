@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/match(match);
+import list/list as traversal;
+import logic/input as input;
+import logic/model as model;
+import logic/report as report;
+import logic/simulate as simulate;
+import testapi(String);
+import testapi/io as io;
+import testapi/text as text;
+
+pub fn main() -> . {
+  match! input.read() {
+    .(parsed: input.Stimulus) {
+      let events = parsed.?{input.stimulus};
+      report.header(traversal.length(events));
+      report.summary(simulate.run(model.initial_state(events), model.circuit()))
+    };
+    .(error: input.Problem) {
+      io.print(text.string_concat("input error: ", text.string_concat(error.?{input.problem}, "\n")))
+    }
+  }
+}

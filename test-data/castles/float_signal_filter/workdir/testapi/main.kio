@@ -1,0 +1,49 @@
+module testapi/main;
+
+import float_signal_filter/calibration(calibrated_stream);
+import float_signal_filter/scoring(score_report);
+import float_signal_filter/sensors(raw_stream);
+import float_signal_filter/smoothing(smoothed_stream);
+import testapi(F64, String);
+import testapi/fmt(f64_to_string);
+import testapi/io(print);
+
+fn print_value(value: F64) -> . { print(f64_to_string(value)) }
+
+fn print_stream(label: String, stream: F64 & F64 & F64 & F64 & F64) -> . {
+  let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = stream;
+  print(label);
+  print_value(s0);
+  print(" ");
+  print_value(s1);
+  print(" ");
+  print_value(s2);
+  print(" ");
+  print_value(s3);
+  print(" ");
+  print_value(s4);
+  print("\n")
+}
+
+pub fn main() -> . {
+  let raw = raw_stream();
+  let calibrated = calibrated_stream(raw);
+  let smoothed = smoothed_stream(calibrated);
+  let .(level: F64, roughness: F64, trend: F64, score: F64) = score_report(calibrated, smoothed);
+  print("float_signal_filter\n");
+  print_stream("raw: ", raw);
+  print_stream("calibrated: ", calibrated);
+  print_stream("smoothed: ", smoothed);
+  print("level: ");
+  print_value(level);
+  print("\n");
+  print("roughness: ");
+  print_value(roughness);
+  print("\n");
+  print("trend: ");
+  print_value(trend);
+  print("\n");
+  print("score: ");
+  print_value(score);
+  print("\n")
+}

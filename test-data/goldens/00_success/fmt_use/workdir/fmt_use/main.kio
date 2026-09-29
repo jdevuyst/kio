@@ -1,0 +1,8 @@
+module fmt_use/main;
+
+import __intrinsics__;
+
+import a/b as q;
+import a/b(T);
+import fmt_use/main(main);
+import g_pkg(g);

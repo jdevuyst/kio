@@ -1,0 +1,12 @@
+river_bytecode_vm: v1
+script: wait goat back wolf goat cabbage back goat
+halt: success
+farmer: east
+wolf: east
+goat: east
+cabbage: east
+moves: 7 waits: 1
+alerts: 0 ticks: 16
+pc: 17
+checksum: 134837018
+invariants: safe=true done=true

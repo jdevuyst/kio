@@ -1,0 +1,5 @@
+module main;
+
+fn first() -> . { second() }
+
+fn second() -> . { () }

@@ -1,0 +1,9 @@
+module nested_alias_frontier;
+
+newtype Value : . { constructor make_value; projector un_value }
+
+type Alias = Value;
+
+fn pair[A](value: A) -> A & . { (value, ()) }
+
+fn nested_alias_is_transparent(value: Alias) -> Alias & . { pair(value) }

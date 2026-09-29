@@ -1,0 +1,20 @@
+module testapi/main;
+
+import calendar_blackout_planner/model as model;
+import calendar_blackout_planner/report as report;
+import calendar_blackout_planner/scoring as scoring;
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let alpha = model.alpha();
+  let beta = model.beta();
+  let gamma = model.gamma();
+  let winner = scoring.better(scoring.better(alpha, beta), gamma);
+  print("calendar blackout planner\n");
+  print(report.window_line(alpha));
+  print(report.window_line(beta));
+  print(report.window_line(gamma));
+  print(report.winner_line(winner));
+  print("summary release=2 frozen=1\n")
+}

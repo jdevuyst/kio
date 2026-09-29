@@ -1,0 +1,5 @@
+module lmf/main;
+
+labels { foo: ., bar: . };
+
+fn bad(x: Foo) -> . { x.?{bar} }

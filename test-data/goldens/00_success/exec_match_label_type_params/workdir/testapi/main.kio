@@ -1,0 +1,42 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `match!` clause type parameters bind from the scrutinee for
+// **label-generated** sums — the exact shape spec § Pattern matching
+// uses as its worked example: `.(v: Ok(A)) { … }` matches an
+// `Ok(_)` branch and binds `A` to the label payload type.
+//
+// Companion to `exec_match_type_params`, which uses a plain
+// parametric `newtype` (`Box[A]`); here the dispatch happens on
+// `labels`-derived types (`Ok[A]` / `Err[A]`), exercising the
+// same per-branch type-param binding through the label desugar.
+//
+// Each branch's body must produce a result type independent of the
+// clause type-param `A` (the dispatch happens per branch, but the
+// match has one result type — a free type-param there would be
+// ambiguous).
+// We satisfy that by routing every body through a polymorphic
+// helper `summarize` that always returns `String`.
+labels { ok[A]: A, err[A]: A };
+
+fn summarize[A](label: String, v: A) -> String { label }
+
+fn handle(r: Ok(I32) | Err(String)) -> String {
+  match! r {
+    (
+      , .[A](v: Ok(A)) { summarize("ok branch\n", Ok.get(A, v)) }
+      , .[A](e: Err(A)) { summarize("err branch\n", Err.get(A, e)) }
+      )
+  }
+}
+
+pub fn main() -> . {
+  let v_ok = {ok = 42};
+  let v_err = {err = "ignored"};
+  print(handle(widen_sum!(v_ok)));
+  print(handle(widen_sum!(v_err)))
+}

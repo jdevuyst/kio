@@ -1,0 +1,385 @@
+/// Default entry points using the exact standard `Host_adapter` inventory and `hostrec.kio`'s `testapi/*` capabilities.
+module defaults;
+
+import eval(prime_apply, prime_eval);
+import host_descriptor(Host_type, Host_types, Role);
+import host_descriptor(bool_role, f64_role, host_types_cons, host_types_nil, i32_role);
+import host_descriptor(mk_host_fn, mk_host_id, mk_role_host_type, str_role);
+import hostrec(make_lit_default, serve_default, test_bool_default);
+import loader(Contract, Diag, Host_adapter, Image, Loaded);
+import loader(Host_fn_binding, Host_fn_bindings);
+import loader(host_fn_bindings_cons, host_fn_bindings_nil);
+import loader(instantiate, instantiate_checked);
+import loader(mk_host_adapter, mk_host_fn_binding);
+import prime(Term, group_slots_cons, group_slots_nil);
+import result(Call_result, Eval_result);
+import testapi(I32, String);
+import value(Value);
+
+// `defaults.kio` — the convenience entry points that run the loader /
+// evaluator against the **standard host capabilities** (`hostrec.kio`'s
+// `serve_default` / `make_lit_default` / `test_bool_default`, over the
+// `testapi/*` vocabulary).
+//
+// A host (or test driver) that wants the standard vocabulary calls these
+// helpers instead of assembling it at each use. Evaluation passes the three
+// capability fns as ordinary function values. Instantiation additionally
+// supplies `default_host_adapter()`'s exact host-type and host-function
+// descriptors so the loader can validate the image before evaluation. A host
+// with its own vocabulary calls the `eval` entry points with its capabilities,
+// and the `loader` entry points with its exact `Host_adapter` plus those
+// capabilities.
+fn standard_host_type(local_name: String, role: Role) -> Host_type {
+  mk_role_host_type(mk_host_id("hostapi"(String), local_name), role)
+}
+
+fn standard_host_types() -> Host_types {
+  host_types_cons(
+    , standard_host_type("Bool"(String), bool_role())
+    , host_types_cons(
+        , standard_host_type("F64"(String), f64_role())
+        , host_types_cons(
+            , standard_host_type("I32"(String), i32_role())
+            , host_types_cons(standard_host_type("String"(String), str_role()), host_types_nil())
+            )
+        )
+    )
+}
+
+fn standard_host_fn(module_name: String, local_name: String, signature: String, slots: I32) -> Host_fn_binding {
+  mk_host_fn_binding(
+    , mk_host_fn(mk_host_id(module_name, local_name), signature)
+    , group_slots_cons(slots, group_slots_nil())
+    )
+}
+
+fn i32_binary_i32_signature() -> String {
+  "(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}"(String)
+}
+
+fn i32_binary_bool_signature() -> String {
+  "(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.Bool}"(String)
+}
+
+fn f64_binary_f64_signature() -> String {
+  "(h{hostapi.F64} & h{hostapi.F64}) -> h{hostapi.F64}"(String)
+}
+
+fn string_binary_bool_signature() -> String {
+  "(h{hostapi.String} & h{hostapi.String}) -> h{hostapi.Bool}"(String)
+}
+
+fn string_to_i32_signature() -> String { "(h{hostapi.String}) -> h{hostapi.I32}"(String) }
+
+fn i32_to_string_signature() -> String { "(h{hostapi.I32}) -> h{hostapi.String}"(String) }
+
+fn f64_to_string_signature() -> String { "(h{hostapi.F64}) -> h{hostapi.String}"(String) }
+
+fn bool_to_string_signature() -> String { "(h{hostapi.Bool}) -> h{hostapi.String}"(String) }
+
+fn string_binary_string_signature() -> String {
+  "(h{hostapi.String} & h{hostapi.String}) -> h{hostapi.String}"(String)
+}
+
+fn string_slice_signature() -> String {
+  "(h{hostapi.String} & (h{hostapi.I32} & h{hostapi.I32})) -> "
+  "h{hostapi.String}"(String)
+}
+
+fn string_i32_to_optional_i32_signature() -> String {
+  "(h{hostapi.String} & h{hostapi.I32}) -> (h{hostapi.I32} | .)"(String)
+}
+
+fn string_to_optional_i32_signature() -> String {
+  "(h{hostapi.String}) -> (h{hostapi.I32} | .)"(String)
+}
+
+fn read_ascii_line_signature() -> String { "() -> (h{hostapi.String} | .)"(String) }
+
+fn string_to_unit_signature() -> String { "(h{hostapi.String}) -> ."(String) }
+
+fn i32_to_unit_signature() -> String { "(h{hostapi.I32}) -> ."(String) }
+
+fn loop_signature() -> String { "[#0] [#1] ((#0 -> (#0 | #1)) & #0) -> #1"(String) }
+
+fn arithmetic_host_functions(module_name: String, tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , standard_host_fn(module_name, "add_i32"(String), i32_binary_i32_signature(), 2(I32))
+    , host_fn_bindings_cons(
+        , standard_host_fn(module_name, "sub_i32"(String), i32_binary_i32_signature(), 2(I32))
+        , host_fn_bindings_cons(
+            , standard_host_fn(module_name, "mul_i32"(String), i32_binary_i32_signature(), 2(I32))
+            , host_fn_bindings_cons(
+                , standard_host_fn(
+                    , module_name
+                    , "div_i32"(String)
+                    , i32_binary_i32_signature()
+                    , 2(I32)
+                    )
+                , host_fn_bindings_cons(
+                    , standard_host_fn(
+                        , module_name
+                        , "mod_i32"(String)
+                        , i32_binary_i32_signature()
+                        , 2(I32)
+                        )
+                    , host_fn_bindings_cons(
+                        , standard_host_fn(
+                            , module_name
+                            , "eq_i32"(String)
+                            , i32_binary_bool_signature()
+                            , 2(I32)
+                            )
+                        , host_fn_bindings_cons(
+                            , standard_host_fn(
+                                , module_name
+                                , "leq_i32"(String)
+                                , i32_binary_bool_signature()
+                                , 2(I32)
+                                )
+                            , host_fn_bindings_cons(
+                                , standard_host_fn(
+                                    , module_name
+                                    , "lt_i32"(String)
+                                    , i32_binary_bool_signature()
+                                    , 2(I32)
+                                    )
+                                , host_fn_bindings_cons(
+                                    , standard_host_fn(
+                                        , module_name
+                                        , "add_f64"(String)
+                                        , f64_binary_f64_signature()
+                                        , 2(I32)
+                                        )
+                                    , host_fn_bindings_cons(
+                                        , standard_host_fn(
+                                            , module_name
+                                            , "sub_f64"(String)
+                                            , f64_binary_f64_signature()
+                                            , 2(I32)
+                                            )
+                                        , host_fn_bindings_cons(
+                                            , standard_host_fn(
+                                                , module_name
+                                                , "mul_f64"(String)
+                                                , f64_binary_f64_signature()
+                                                , 2(I32)
+                                                )
+                                            , host_fn_bindings_cons(
+                                                , standard_host_fn(
+                                                    , module_name
+                                                    , "add"(String)
+                                                    , i32_binary_i32_signature()
+                                                    , 2(I32)
+                                                    )
+                                                , host_fn_bindings_cons(
+                                                    , standard_host_fn(
+                                                        , module_name
+                                                        , "sub"(String)
+                                                        , i32_binary_i32_signature()
+                                                        , 2(I32)
+                                                        )
+                                                    , host_fn_bindings_cons(
+                                                        , standard_host_fn(
+                                                            , module_name
+                                                            , "mul"(String)
+                                                            , i32_binary_i32_signature()
+                                                            , 2(I32)
+                                                            )
+                                                        , host_fn_bindings_cons(
+                                                            , standard_host_fn(
+                                                                , module_name
+                                                                , "div"(String)
+                                                                , i32_binary_i32_signature()
+                                                                , 2(I32)
+                                                                )
+                                                            , host_fn_bindings_cons(
+                                                                , standard_host_fn(
+                                                                    , module_name
+                                                                    , "mod"(String)
+                                                                    , i32_binary_i32_signature()
+                                                                    , 2(I32)
+                                                                    )
+                                                                , tail
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn text_host_functions(module_name: String, tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , standard_host_fn(
+        , module_name
+        , "string_concat"(String)
+        , string_binary_string_signature()
+        , 2(I32)
+        )
+    , host_fn_bindings_cons(
+        , standard_host_fn(module_name, "string_eq"(String), string_binary_bool_signature(), 2(I32))
+        , host_fn_bindings_cons(
+            , standard_host_fn(module_name, "string_len"(String), string_to_i32_signature(), 1(I32))
+            , host_fn_bindings_cons(
+                , standard_host_fn(
+                    , module_name
+                    , "string_slice"(String)
+                    , string_slice_signature()
+                    , 3(I32)
+                    )
+                , host_fn_bindings_cons(
+                    , standard_host_fn(
+                        , module_name
+                        , "string_code_at"(String)
+                        , string_i32_to_optional_i32_signature()
+                        , 2(I32)
+                        )
+                    , tail
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn format_host_functions(module_name: String, tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , standard_host_fn(module_name, "int_to_string"(String), i32_to_string_signature(), 1(I32))
+    , host_fn_bindings_cons(
+        , standard_host_fn(module_name, "i32_to_string"(String), i32_to_string_signature(), 1(I32))
+        , host_fn_bindings_cons(
+            , standard_host_fn(
+                , module_name
+                , "f64_to_string"(String)
+                , f64_to_string_signature()
+                , 1(I32)
+                )
+            , host_fn_bindings_cons(
+                , standard_host_fn(
+                    , module_name
+                    , "string_to_int"(String)
+                    , string_to_optional_i32_signature()
+                    , 1(I32)
+                    )
+                , host_fn_bindings_cons(
+                    , standard_host_fn(
+                        , module_name
+                        , "bool_to_string"(String)
+                        , bool_to_string_signature()
+                        , 1(I32)
+                        )
+                    , host_fn_bindings_cons(
+                        , standard_host_fn(
+                            , module_name
+                            , "print_i32"(String)
+                            , i32_to_unit_signature()
+                            , 1(I32)
+                            )
+                        , tail
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn io_host_functions(module_name: String, tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , standard_host_fn(module_name, "print"(String), string_to_unit_signature(), 1(I32))
+    , host_fn_bindings_cons(
+        , standard_host_fn(
+            , module_name
+            , "read_ascii_line"(String)
+            , read_ascii_line_signature()
+            , 0(I32)
+            )
+        , tail
+        )
+    )
+}
+
+fn iter_host_functions(module_name: String, tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , standard_host_fn(module_name, "loop"(String), loop_signature(), 2(I32))
+    , tail
+    )
+}
+
+fn guest_family_host_functions() -> Host_fn_bindings {
+  arithmetic_host_functions(
+    , "hostapi/arith"(String)
+    , text_host_functions(
+        , "hostapi/text"(String)
+        , format_host_functions(
+            , "hostapi/fmt"(String)
+            , io_host_functions(
+                , "hostapi/io"(String)
+                , iter_host_functions("hostapi/iter"(String), host_fn_bindings_nil())
+                )
+            )
+        )
+    )
+}
+
+fn standard_host_functions() -> Host_fn_bindings {
+  arithmetic_host_functions(
+    , "hostapi"(String)
+    , text_host_functions(
+        , "hostapi"(String)
+        , format_host_functions(
+            , "hostapi"(String)
+            , io_host_functions(
+                , "hostapi"(String)
+                , iter_host_functions("hostapi"(String), guest_family_host_functions())
+                )
+            )
+        )
+    )
+}
+
+/// The exact standard runtime adapter inventory used by the convenience
+/// instantiation entry points.
+pub fn default_host_adapter() -> Host_adapter {
+  mk_host_adapter(standard_host_types(), standard_host_functions())
+}
+
+/// Evaluates a closed Kio' term against the standard host capabilities.
+pub fn eval_default(t: Term) -> Eval_result {
+  prime_eval(serve_default, make_lit_default, test_bool_default, t)
+}
+
+/// Applies an evaluated closure value to an argument against the standard host capabilities.
+pub fn apply_default(fn_val: Value, arg: Value) -> Eval_result {
+  prime_apply(serve_default, make_lit_default, test_bool_default, fn_val, arg)
+}
+
+/// Instantiates a loaded image against the standard host capabilities:
+/// the packed surface, or the diagnostic naming the top-level binding
+/// whose evaluation got stuck.
+pub fn instantiate_default(im: Image) -> Loaded | Diag {
+  instantiate(default_host_adapter(), serve_default, make_lit_default, test_bool_default, im)
+}
+
+/// Contract-matches, then instantiates against the standard host capabilities.
+pub fn instantiate_checked_default(im: Image, c: Contract) -> Loaded | Diag {
+  instantiate_checked(
+    , default_host_adapter()
+    , serve_default
+    , make_lit_default
+    , test_bool_default
+    , im
+    , c
+    )
+}

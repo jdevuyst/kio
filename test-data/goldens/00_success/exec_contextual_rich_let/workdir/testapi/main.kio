@@ -1,0 +1,63 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io as io;
+import testapi/text as text;
+
+labels { left: String, right: String };
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+newtype Pack <U> : (U -> String) & U { constructor pack; projector unpack }
+
+fn pure[A](value: A) -> Box(A) { Box.box(value) }
+
+fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+
+fn ordinary() -> String {
+  let _ = "discard";
+  let .(typed: String) = "typed:";
+  let .(whole: (first: String, second: String)) = ("a", "b");
+  let .(again, last) = whole;
+  text.string_concat(
+    , typed
+    , text.string_concat(first, text.string_concat(second, text.string_concat(again, last)))
+    )
+}
+
+fn rows() -> String {
+  let .({left as payload, right}) = {left = "row", right = "!"};
+  text.string_concat(payload, right)
+}
+
+fn existential() -> String {
+  let .(<Hidden> payload) = Pack.unpack(Pack.pack(.(value: String) { value }, "packed"));
+  let .(show, value) = payload;
+  show(value)
+}
+
+fn monadic() -> String {
+  let result =
+    do! bind {
+      let .(prefix: String) <- pure("do");
+      let .(whole: (middle: String, suffix: String)) = ("=", "bind");
+      let .(again, last) <- pure(whole);
+      pure(text.string_concat(
+        , prefix
+        , text.string_concat(middle, text.string_concat(suffix, text.string_concat(again, last)))
+        ))
+    };
+  Box.unbox(result)
+}
+
+pub fn main() -> . {
+  io.print(ordinary());
+  io.print("\n");
+  io.print(rows());
+  io.print("\n");
+  io.print(existential());
+  io.print("\n");
+  io.print(monadic());
+  io.print("\n")
+}

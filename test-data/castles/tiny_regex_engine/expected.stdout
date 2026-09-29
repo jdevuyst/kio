@@ -1,0 +1,10 @@
+tiny regex engine
+pattern cat / concatenate -> match 3..6 literal cat len=11 first=99
+pattern c.t / cot -> match 0..3 wildcard byte=111 len=3
+pattern c.t / cut -> match 0..3 wildcard byte=117 len=3
+pattern colou?r / color -> match 0..5 optional u skipped len=5
+pattern colou?r / colour -> match 0..6 optional u consumed len=6
+pattern ^hi / ship -> miss anchor failed byte0=115 prefix=sh
+pattern gr(a|e)y / grey -> match 0..4 alternation=e byte2=101
+summary matched=6 missed=1
+byte-probe=true

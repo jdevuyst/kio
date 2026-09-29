@@ -1,0 +1,26 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(narrow_sum, widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+// Construct a triple-arm sum to exercise `narrow_sum!`. The two
+// `String` arms hold distinct messages so we can verify which arm
+// the source value came from after the collapse.
+fn left(s: String) -> String | String | I32 { widen_sum!(s) }
+
+// `narrow_sum!` collapses the two same-typed `String` arms of the
+// source sum down to one `String` arm — the codiagonal. The `I32`
+// arm passes through. Target multiset `{String, I32}` is a
+// sub-multiset of source's `{String, String, I32}`.
+fn collapse(s: String | String | I32) -> String | I32 { narrow_sum!(s) }
+
+pub fn main() -> . {
+  let r = collapse(left("narrow_sum collapsed\n"));
+  let out =
+    match! r {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(out)
+}

@@ -1,0 +1,14 @@
+module main;
+
+import elab/algebraic_elaborators(ease);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn foo(x: A) -> A { x }
+
+// `ease!`'s explicit target is a polymorphic function type
+// (`[A]`-binder). The walk's structural pre-condition rejects
+// `Type::Forall` on either source or target — coercing under a
+// binder needs instantiation machinery the elaborator doesn't have,
+// and the wrapper would itself have to be polymorphic. Exit 15.
+pub fn use_it() -> . { let _wrapped = ease!(foo, [A] A -> A); () }

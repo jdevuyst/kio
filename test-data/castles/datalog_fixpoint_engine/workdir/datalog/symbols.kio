@@ -1,0 +1,133 @@
+/// The symbol table: every predicate, constant, and variable is an I32
+/// code. The host surface this package declares has no string equality,
+/// so a code is what the engine compares and a name is only what it
+/// prints.
+module datalog/symbols;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+
+pub literal p_link = 1;
+
+pub literal p_station = 2;
+
+pub literal p_hub = 3;
+
+pub literal p_depot = 4;
+
+pub literal p_reach = 5;
+
+pub literal p_oddhop = 6;
+
+pub literal p_evenhop = 7;
+
+pub literal p_samezone = 8;
+
+pub literal p_hubserved = 9;
+
+pub literal p_depotzone = 10;
+
+pub fn pred_name(code: I32) -> String {
+  if! eq_i32(code, p_link) {
+    "link"
+  } else if! eq_i32(code, p_station) {
+    "station"
+  } else if! eq_i32(code, p_hub) {
+    "hub"
+  } else if! eq_i32(code, p_depot) {
+    "depot"
+  } else if! eq_i32(code, p_reach) {
+    "reach"
+  } else if! eq_i32(code, p_oddhop) {
+    "oddhop"
+  } else if! eq_i32(code, p_evenhop) {
+    "evenhop"
+  } else if! eq_i32(code, p_samezone) {
+    "samezone"
+  } else if! eq_i32(code, p_hubserved) {
+    "hubserved"
+  } else if! eq_i32(code, p_depotzone) {
+    "depotzone"
+  } else {
+    "?pred"
+  }
+}
+
+pub literal c_alder = 1;
+
+pub literal c_birch = 2;
+
+pub literal c_cedar = 3;
+
+pub literal c_dover = 4;
+
+pub literal c_elm = 5;
+
+pub literal c_fen = 6;
+
+pub literal c_north = 7;
+
+pub literal c_mid = 8;
+
+pub literal c_south = 9;
+
+literal cost_base = 10;
+
+/// Datalog has no arithmetic, so the `4` in `link(alder, birch, 4)` is a
+/// constant symbol like `alder`, not a number the engine can add. Costs
+/// get their own code band so a cost can never collide with a station or
+/// a zone, and the band is offset by the cost itself so the printed name
+/// reads back as the cost.
+pub fn c_cost(cost: I32) -> I32 { add_i32(cost_base, cost) }
+
+pub fn const_name(code: I32) -> String {
+  if! eq_i32(code, c_alder) {
+    "alder"
+  } else if! eq_i32(code, c_birch) {
+    "birch"
+  } else if! eq_i32(code, c_cedar) {
+    "cedar"
+  } else if! eq_i32(code, c_dover) {
+    "dover"
+  } else if! eq_i32(code, c_elm) {
+    "elm"
+  } else if! eq_i32(code, c_fen) {
+    "fen"
+  } else if! eq_i32(code, c_north) {
+    "north"
+  } else if! eq_i32(code, c_mid) {
+    "mid"
+  } else if! eq_i32(code, c_south) {
+    "south"
+  } else if! leq_i32(cost_base, code) {
+    int_to_string(sub_i32(code, cost_base))
+  } else {
+    "?const"
+  }
+}
+
+/// A variable is scoped to the clause that writes it, which is why a
+/// substitution is threaded per derivation and never shared between two.
+pub literal v_x = 1;
+
+pub literal v_y = 2;
+
+pub literal v_z = 3;
+
+pub literal v_c = 4;
+
+pub fn var_name(code: I32) -> String {
+  if! eq_i32(code, v_x) {
+    "X"
+  } else if! eq_i32(code, v_y) {
+    "Y"
+  } else if! eq_i32(code, v_z) {
+    "Z"
+  } else if! eq_i32(code, v_c) {
+    "C"
+  } else {
+    "?var"
+  }
+}

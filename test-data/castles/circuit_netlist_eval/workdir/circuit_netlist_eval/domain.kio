@@ -1,0 +1,23 @@
+module circuit_netlist_eval/domain;
+
+import testapi(Bool, I32);
+
+pub labels State = {
+  , stage: I32
+  , pin_a: Bool
+  , pin_b: Bool
+  , pin_c: Bool
+  , enable: Bool
+  , gate_ab_and: Bool
+  , gate_bc_or: Bool
+  , gate_enable_a: Bool
+  , gate_xor: Bool
+  , gate_mask: Bool
+  , fanout_probe: Bool
+  , probe_carry: Bool
+  , probe_alarm: Bool
+  , checksum: I32
+  , fanout_ok: Bool
+  , truth_ok: Bool
+  , warning_count: I32
+  };

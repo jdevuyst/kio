@@ -1,0 +1,18 @@
+package user_elaborator_structural_recur_indirect_equal_fuel;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  elab
+}

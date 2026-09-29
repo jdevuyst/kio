@@ -1,0 +1,5 @@
+module use_label_requires_braces/main;
+
+import use_label_requires_braces/labels(item);
+
+pub fn main() -> . { () }

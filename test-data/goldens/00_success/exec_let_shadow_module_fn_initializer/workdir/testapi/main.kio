@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn value() -> I32 { 7 }
+
+pub fn main() -> . {
+  let value = value();
+  print("shadowed initializer value=");
+  print(int_to_string(value));
+  print("\n")
+}

@@ -1,0 +1,97 @@
+module regex/matcher;
+
+import elab/control(if);
+import regex/bytes(byte_is, byte_text_at, has_byte_at);
+import regex/format(join3, join4);
+import regex/result(Verdict, fail, hit);
+import testapi(Bool, I32, String);
+import testapi/fmt(i32_to_string);
+import testapi/text(string_eq, string_len, string_slice);
+
+fn len_text(text: String) -> String { i32_to_string(string_len(text)) }
+
+fn len_is(text: String, expected: String) -> Bool { string_eq(len_text(text), expected) }
+
+fn byte0_text(text: String) -> String { byte_text_at(text, 0) }
+
+fn prefix2(text: String) -> String { string_slice(text, 0, 2) }
+
+fn literal_cat_miss(candidate: String) -> String {
+  join4("literal cat missing window=", string_slice(candidate, 3, 6), " len=", len_text(candidate))
+}
+
+pub fn literal_cat(candidate: String) -> Verdict {
+  if! string_eq(string_slice(candidate, 3, 6), "cat") {
+    hit(join4("3..6 literal cat len=", len_text(candidate), " first=", byte_text_at(candidate, 0)))
+  } else {
+    fail(literal_cat_miss(candidate))
+  }
+}
+
+pub fn c_dot_t(candidate: String) -> Verdict {
+  if! len_is(candidate, "3") {
+    if! string_eq(string_slice(candidate, 0, 1), "c") {
+      if! string_eq(string_slice(candidate, 2, 3), "t") {
+        if! has_byte_at(candidate, 1) {
+          hit(join4("0..3 wildcard byte=", byte_text_at(candidate, 1), " len=", len_text(candidate)))
+        } else {
+          fail("wildcard reached EOF")
+        }
+      } else {
+        fail(join3("suffix was ", string_slice(candidate, 2, 3), " not t"))
+      }
+    } else {
+      fail(join3("prefix was ", string_slice(candidate, 0, 1), " not c"))
+    }
+  } else {
+    fail(join3("expected len=3 got ", len_text(candidate), ""))
+  }
+}
+
+pub fn colour_optional(candidate: String) -> Verdict {
+  if! string_eq(candidate, "color") {
+    hit(join3("0..5 optional u skipped len=", len_text(candidate), ""))
+  } else if! string_eq(candidate, "colour") {
+    hit(join3("0..6 optional u consumed len=", len_text(candidate), ""))
+  } else {
+    fail(join3("expected color or colour len=", len_text(candidate), ""))
+  }
+}
+
+fn anchor_miss(candidate: String) -> String {
+  join4("anchor failed byte0=", byte0_text(candidate), " prefix=", prefix2(candidate))
+}
+
+pub fn anchored_hi(candidate: String) -> Verdict {
+  if! string_eq(string_slice(candidate, 0, 2), "hi") {
+    hit(join3("0..2 anchored len=", len_text(candidate), ""))
+  } else {
+    fail(anchor_miss(candidate))
+  }
+}
+
+fn gray_variant(candidate: String) -> String { string_slice(candidate, 2, 3) }
+
+pub fn gray_alternation(candidate: String) -> Verdict {
+  if! len_is(candidate, "4") {
+    if! string_eq(string_slice(candidate, 0, 2), "gr") {
+      if! string_eq(string_slice(candidate, 3, 4), "y") {
+        if! string_eq(gray_variant(candidate), "a") {
+          hit(join3("0..4 alternation=a byte2=", byte_text_at(candidate, 2), ""))
+        } else if! string_eq(gray_variant(candidate), "e") {
+          hit(join3("0..4 alternation=e byte2=", byte_text_at(candidate, 2), ""))
+        } else {
+          fail(join3("middle was ", gray_variant(candidate), " not a/e"))
+        }
+      } else {
+        fail(join3("suffix was ", string_slice(candidate, 3, 4), " not y"))
+      }
+    } else {
+      fail(join3("prefix was ", string_slice(candidate, 0, 2), " not gr"))
+    }
+  } else {
+    fail(join3("expected len=4 got ", len_text(candidate), ""))
+  }
+}
+
+pub fn byte_probe_passed() -> Bool { byte_is("grey", 2, "101") }

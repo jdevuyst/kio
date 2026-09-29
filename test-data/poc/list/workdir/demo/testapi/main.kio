@@ -1,0 +1,122 @@
+module testapi/main;
+
+import library/core(List, head, nil, singleton, tail);
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/list(
+  , append
+  , at
+  , drop
+  , elem
+  , filter
+  , find
+  , foldl
+  , foldr
+  , index_of
+  , iterate
+  , last
+  , length
+  , map
+  , null
+  , op _ ++ _
+  , op _ +: __
+  , op _ <| __ |>
+  , op _ |> _
+  , replicate
+  , reverse
+  , take
+  , to_string
+  , varop [* *]
+  );
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+}
+
+fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present(value) }, .(_empty: .) { default })
+  }
+}
+
+fn show_result[A](label: String, result: A | ., render: A -> String) -> . {
+  show(
+    , label
+    , fold_result(
+        , "none"
+        , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
+        , result
+        )
+    )
+}
+
+fn show_result_i32(label: String, result: I32 | .) -> . {
+  show_result(label, result, int_to_string)
+}
+
+fn render_sum(value: I32 | .) -> String {
+  match! value {
+    (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
+  }
+}
+
+fn show_list_i32(label: String, xs: List(I32)) -> . { show(label, to_string(int_to_string, xs)) }
+
+fn inc(n: I32) -> I32 { add_i32(n, 1) }
+
+fn dbl(n: I32) -> I32 { mul_i32(n, 2) }
+
+fn demo() -> List(I32) { [* 1, 2, 3, 4, 5 *] }
+
+pub fn main() -> . {
+  let xs = demo();
+  show_list_i32("[1,2,3,4,5]", xs);
+  show_list_i32("0 +: xs", 0 +: xs);
+  show("length(xs)", int_to_string(length(xs)));
+  show("null(xs)", bool_to_string(null(xs)));
+  show("null(nil)", bool_to_string(null(nil(I32, ()))));
+  show_result_i32("head(xs)", head(xs));
+  show_list_i32("tail(xs)", tail(xs));
+  show_result_i32("last(xs)", last(xs));
+  show_list_i32("reverse(xs)", reverse(xs));
+  show_list_i32("replicate(3, 7)", replicate(3, 7));
+  show_list_i32("iterate(4, *2, 1)", iterate(4, dbl, 1));
+  show_list_i32("map(inc, xs)", map(inc, xs));
+  show_list_i32("xs |> dbl", xs |> dbl);
+  show_list_i32("filter(<=3, xs)", filter(.(n: I32) -> Bool { leq_i32(n, 3) }, xs));
+  show_list_i32("append([1,2], [3,4])", append([* 1, 2 *], [* 3, 4 *]));
+  let more = [* 6, 7 *];
+  show_list_i32("xs ++ [6,7]", xs ++ more);
+  show("foldl(+, 0, xs)", int_to_string(foldl(add_i32, 0, xs)));
+  show("foldr(-, 0, xs)", int_to_string(foldr(sub_i32, 0, xs)));
+  show_list_i32("take(2, xs)", take(2, xs));
+  show_list_i32("drop(2, xs)", drop(2, xs));
+  show("elem(3, xs)", bool_to_string(elem(eq_i32, 3, xs)));
+  show("elem(9, xs)", bool_to_string(elem(eq_i32, 9, xs)));
+  show_result_i32("find(>3, xs)", find(.(n: I32) -> Bool { lt_i32(3, n) }, xs));
+  show_result_i32("xs[2]", xs <| 2 |>);
+  show_result_i32("xs[9]", xs <| 9 |>);
+  show(
+    , "index_of(4, xs)"
+    , fold_result("none", .(j: I32) -> String { int_to_string(j) }, index_of(eq_i32, 4, xs))
+    );
+  let unit_list = singleton(());
+  let render_unit = .(_unit: .) -> String { "unit" };
+  show_result("head(unit)", head(unit_list), render_unit);
+  show_result("head(empty Unit)", head(nil(., ())), render_unit);
+  show_result("at(unit, 0)", at(0, unit_list), render_unit);
+  show_result("at(unit, 1)", at(1, unit_list), render_unit);
+  let nested_number = singleton(widen_sum!(7, I32 | .));
+  let nested_unit = singleton(widen_sum!((), I32 | .));
+  show_result("last(nested number)", last(nested_number), render_sum);
+  show_result("last(nested unit)", last(nested_unit), render_sum);
+  show_result("last(empty nested)", last(nil(I32 | ., ())), render_sum);
+  show_result("find(nested unit)", find(.(_value: I32 | .) -> Bool { .t }, nested_unit), render_sum);
+  show_result("find(no Unit match)", find(.(_unit: .) -> Bool { .f }, unit_list), render_unit);
+  show_result_i32("index_of(9, xs)", index_of(eq_i32, 9, xs))
+}

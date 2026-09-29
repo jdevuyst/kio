@@ -1,0 +1,15 @@
+module elaborators;
+
+import __comptime__;
+import helper_a(retain_a);
+import helper_b(retain_b);
+
+pure fn identity_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  retain_b(ct, retain_a(ct, value))
+}
+
+pub elab identity_a : [Source] Source -> Source { impl identity_impl }
+
+pub elab identity_b : [Source] Source -> Source { impl identity_impl }
+
+pub elab identity_c : [Source] Source -> Source { impl identity_impl }

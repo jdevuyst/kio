@@ -1,0 +1,25 @@
+module operator_type_syntax/main;
+
+import operator_type_syntax(String);
+
+fn id[A](x: A) -> A { x }
+
+fn keep_first(a: String, _b: String) -> String { a }
+
+op _ & _ { impl keep_first; };
+
+fn prefix_identity(x: String) -> String { x }
+
+op ! _ { impl prefix_identity; };
+
+fn type_only[A]() -> . { () }
+
+fn product_call_arg(p: String & String) -> String & String { id(String & String, p) }
+
+fn paren_product_call_arg(p: String & String) -> String & String { id(String & String, p) }
+
+fn bottom_call_arg() -> . { type_only(!, ()) }
+
+fn prefix_bang_call_arg(value: String) -> String { id(String, ! value) }
+
+fn amp_value_arg(left: String, right: String) -> String { id(String, left & right) }

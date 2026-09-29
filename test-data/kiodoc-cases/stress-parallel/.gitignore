@@ -1,0 +1,7 @@
+# The generated 200-snippet corpus is not checked in — regenerate
+# it locally with `python3 gen.py`. The README in this directory
+# explains the wall-clock sanity check this fixture supports.
+# `gen.py` writes both the markdown tree and a `pkg.pkg.kio`,
+# so the directory becomes a docs-only package; neither is committed.
+/input/
+/pkg.pkg.kio

@@ -1,0 +1,46 @@
+/// First-fit line breaking — the algorithm the optimum is measured against.
+///
+/// Take words while they fit; when the next one does not, break before it. It
+/// never looks past the word in front of it, and that is exactly why it can be
+/// beaten: the line it fills tightly today is the line that strands the next
+/// one tomorrow.
+module justify/greedy;
+
+import elab/control(if);
+import elab/match(match);
+import justify/list as list;
+import justify/list(List);
+import justify/word(Word, Words, word_width);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/iter(loop);
+
+rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_breaks: List(I32)) -> List(I32) {
+  match! rest.>List.unpack {
+    (
+      , .(w: Word, tail: Words) {
+          let widened = add_i32(add_i32(used, 1), word_width(w));
+          if! leq_i32(widened, column) {
+            rec fit_onto(column, tail, add_i32(cursor, 1), widened, rev_breaks)
+          } else {
+            rec fit_onto(
+              , column
+              , tail
+              , add_i32(cursor, 1)
+              , word_width(w)
+              , list.cons(cursor, rev_breaks)
+              )
+          }
+        }
+      , .(_empty: .) { list.reverse(list.cons(cursor, rev_breaks)) }
+      )
+  }
+}
+
+/// The break points greedy chooses, in increasing order: `0`, then every index
+/// that starts a fresh line, then the word count. Adjacent pairs are the lines.
+/// An empty line starts one gap in debt, so the first word it takes pays for a
+/// gap that is not there — the same accounting `span_used` uses.
+pub fn greedy_breaks(xs: Words, column: I32) -> List(I32) {
+  fit_onto(column, xs, 0, -1, list.one(0))
+}

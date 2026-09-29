@@ -1,0 +1,65 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool);
+import testapi/io as io;
+import testapi/iter(loop);
+
+fn invoke(predicate: . -> Bool) -> Bool { predicate() }
+
+fn query(predicate: (Bool & Bool) -> Bool, left: Bool, right: Bool) -> Bool {
+  predicate(left, right)
+}
+
+fn evaluate(factory: . -> Bool -> Bool, value: Bool) -> Bool { factory()(value) }
+
+rec(loop) fn prefix(go: Bool) -> Bool {
+  if! invoke(.() { io.print("predicate\n"); go }) {
+    rec prefix(.f)
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn receiver(go: Bool) -> Bool {
+  if!(.() -> _ { io.print("predicate\n"); go }.>invoke) {
+    rec receiver(.f)
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn typed(go: Bool) -> Bool {
+  if! query(.(left: Bool, right: Bool) -> Bool { io.print("predicate\n"); left }, go, .t) {
+    rec typed(.f)
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn contextual(go: Bool) -> Bool {
+  if! evaluate(.() { .(value) { io.print("predicate\n"); value } }, go) {
+    rec contextual(.f)
+  } else {
+    .t
+  }
+}
+
+fn report(value: Bool) -> . {
+  if! value {
+    io.print("true\n")
+  } else {
+    io.print("false\n")
+  }
+}
+
+pub fn main() -> . {
+  io.print("prefix\n");
+  report(prefix(.t));
+  io.print("receiver\n");
+  report(receiver(.t));
+  io.print("typed\n");
+  report(typed(.t));
+  io.print("contextual\n");
+  report(contextual(.t))
+}

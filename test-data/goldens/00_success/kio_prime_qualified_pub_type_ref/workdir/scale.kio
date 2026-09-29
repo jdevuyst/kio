@@ -1,0 +1,7 @@
+module scale;
+
+import testapi(I32);
+
+pub type Kelvin = I32;
+
+pub fn freezing() -> Kelvin { 273(I32) }

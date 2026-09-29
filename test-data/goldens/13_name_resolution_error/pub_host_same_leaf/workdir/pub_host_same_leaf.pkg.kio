@@ -1,0 +1,17 @@
+package pub_host_same_leaf;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main
+}

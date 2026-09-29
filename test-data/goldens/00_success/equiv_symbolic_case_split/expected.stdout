@@ -1,0 +1,7 @@
+  pass equiv `reinject_is_id` in host/m
+  pass equiv `swap_swap_is_id` in host/m
+  pass equiv `source_swap_swap_is_id` in host/m
+  pass equiv `case_payload_names_are_alpha` in host/m
+  pass equiv `case_closures_capture_alpha_payload` in host/m
+
+result: 5/5 equiv blocks passed

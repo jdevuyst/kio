@@ -1,0 +1,5 @@
+module main;
+
+host fn polymorphic(_token: .) -> [Poly] Poly -> Poly;
+
+fn partial() -> . { let .(whole: (function: [As_bound] _)) = polymorphic(()); () }

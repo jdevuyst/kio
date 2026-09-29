@@ -1,0 +1,11 @@
+module widget/store;
+
+import __intrinsics__;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type Even = _rehost_gdgphcgfcphdhegphcgf.Even;
+
+pub type Odd = _rehost_gdgphcgfcphdhegphcgf.Odd;
+
+pub fn make_even() -> Even { Even.mk_even(__left__(., Odd, ())) }

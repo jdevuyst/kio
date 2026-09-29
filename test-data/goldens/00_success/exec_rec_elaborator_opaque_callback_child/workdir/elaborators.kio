@@ -1,0 +1,47 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi(Bool);
+
+pure fn choose_callbacks_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , condition: __Checked_term__
+  , required: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let unit_type = __reflect_type__(ct, .);
+  let zero = __type_arity_zero__(ct);
+  let one = __type_arity_succ__(ct, zero);
+  let callback_type = __type_arrow__(ct, unit_type, zero, unit_type);
+  let consumer_type = __type_arrow__(ct, callback_type, one, unit_type);
+  let fallback =
+    __term_fn__(
+      , ct
+      , callback_type
+      , .(_unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }
+      );
+  let consumer =
+    __term_fn__(
+      , ct
+      , consumer_type
+      , .(callback: __Checked_term__) -> __Checked_term__ {
+          __term_call__(ct, callback_type, callback, __term_unit__(ct))
+        }
+      );
+  let callbacks = __intrinsic_pair__(ct, required, fallback);
+  let selected =
+    __intrinsic_snd__(ct, __type_product__(ct, callback_type, callback_type), callbacks);
+  let result =
+    __intrinsic_if_then_else__(
+      , ct
+      , unit_type
+      , condition
+      , .() -> __Checked_term__ { __term_call__(ct, callback_type, required, __term_unit__(ct)) }
+      , .() -> __Checked_term__ { __term_call__(ct, consumer_type, consumer, selected) }
+      );
+  (result, fills)
+}
+
+pub elab choose_callbacks : Bool -> (. -> .) -> . { impl(fills) choose_callbacks_impl }

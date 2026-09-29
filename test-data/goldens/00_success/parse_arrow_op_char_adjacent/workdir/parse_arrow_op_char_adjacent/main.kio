@@ -1,0 +1,24 @@
+module parse_arrow_op_char_adjacent/main;
+
+import parse_arrow_op_char_adjacent(A);
+
+// Function-arrow `->` fuses with an adjacent op-char into one
+// greedy `SymbolRun`. The parser's `expect_fn_arrow` peels `->`
+// off the leading bytes via `split_current_sym(2)` at the
+// function-arrow recognition sites; the residual flows on as
+// the next token.
+
+// `->!` — function from `()` to bottom. Fused run is `SymbolRun("->!")`;
+// the peel leaves `!` as the residual, read as the TypeAtom for
+// bottom.
+type Diverge = . -> !;
+
+// `->&` — fused run is `SymbolRun("->&")`. After peeling `->`,
+// the leading `&` opens a paren-internal product chain: the
+// residual `&` joins the `(A & A)` shape's first atom run.
+type Fn_to_amp = . -> A & A;
+
+// `->|` — symmetric to `->&` with a sum chain.
+type Fn_to_pipe = . -> A | A;
+
+pub fn main() -> . { () }

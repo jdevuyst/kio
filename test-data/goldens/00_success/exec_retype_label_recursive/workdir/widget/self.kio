@@ -1,0 +1,11 @@
+module widget/self;
+
+import core/self as _rehost_gdgphcgfcphdgfgmgg;
+
+pub type Link[A] = _rehost_gdgphcgfcphdgfgmgg.Link(A);
+
+pub type Chain[A] = Link(A);
+
+pub type {link} = {_rehost_gdgphcgfcphdgfgmgg.link};
+
+pub fn read_chain[A](value: Chain(A), next: Chain(A) -> A) -> A { value.?{link}(next) }

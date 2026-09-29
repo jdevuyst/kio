@@ -1,0 +1,26 @@
+Suffix automaton index
+branching [0 1 1 0 1 0 2]
+  states=10 clones=2 independent clone rows=2
+  distinct substrings=22 longest repeated length=2
+  direct scan: intervals=28 count mismatches=0 distinct=22 repeated=2
+  query [0 1 1 0 1 0 2] index=1 scan=1
+  query [1] index=3 scan=3
+  query [1 0] index=2 scan=2
+  query [0 1 0] index=1 scan=1
+  query [0 0] index=0 scan=0
+  query [3] index=0 scan=0
+  query [] index=8 scan=8
+overlapping [0 0 0 0]
+  states=5 clones=0 independent clone rows=0
+  distinct substrings=4 longest repeated length=3
+  direct scan: intervals=10 count mismatches=0 distinct=4 repeated=3
+  query [0 0] index=3 scan=3
+  query [0 0 0] index=2 scan=2
+  query [0 0 0 0 0] index=0 scan=0
+  query [] index=5 scan=5
+empty []
+  states=1 clones=0 independent clone rows=0
+  distinct substrings=0 longest repeated length=0
+  direct scan: intervals=0 count mismatches=0 distinct=0 repeated=0
+  query [0] index=0 scan=0
+  query [] index=1 scan=1

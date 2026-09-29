@@ -1,0 +1,13 @@
+package rich_typed_host;
+
+build {
+  cache ();
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  api
+}

@@ -1,0 +1,7 @@
+module same_leaf_newtypes/left;
+
+import same_leaf_newtypes(I32);
+
+pub newtype Box : I32 { pub constructor mk_box; pub projector un_box }
+
+pub fn make_left() -> Box { Box.mk_box(1(I32)) }

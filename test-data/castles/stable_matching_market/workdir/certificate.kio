@@ -1,0 +1,115 @@
+module certificate;
+
+import elab/control(if);
+import market as market;
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+// Certificates scan the original ordered lists, independently of the
+// proposal engine's inverse rank table and rejection history.
+rec(loop) fn rank_from(row: Array(I32), partner: I32, position: I32) -> I32 {
+  if! market.less(position, array.array_len(row)) {
+    if! market.equal(array.array_get(row, position), partner) {
+      position
+    } else {
+      rec rank_from(row, partner, arith.add_i32(position, 1))
+    }
+  } else {
+    position
+  }
+}
+
+fn rank(preferences: market.Preferences, person: I32, partner: I32) -> I32 {
+  rank_from(array.array_get(preferences, person), partner, 0)
+}
+
+rec(loop) fn valid_from(partner: Array(I32), holder: Array(I32), person: I32) -> Bool {
+  if! market.less(person, array.array_len(partner)) {
+    let recipient = array.array_get(partner, person);
+    if! market.less(recipient, 0) {
+      .f
+    } else if! market.less(recipient, array.array_len(holder)) {
+      if! market.equal(array.array_get(holder, recipient), person) {
+        rec valid_from(partner, holder, arith.add_i32(person, 1))
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+pub fn valid(partner: Array(I32), holder: Array(I32)) -> Bool {
+  if! market.equal(array.array_len(partner), array.array_len(holder)) {
+    valid_from(partner, holder, 0)
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn count_pairs(
+  , left: market.Preferences
+  , right: market.Preferences
+  , partner: Array(I32)
+  , holder: Array(I32)
+  , person: I32
+  , recipient: I32
+  , count: I32
+  ) -> I32 {
+  if! market.less(person, array.array_len(left)) {
+    if! market.less(recipient, array.array_len(right)) {
+      let prefers = market.less(
+        , rank(left, person, recipient)
+        , rank(left, person, array.array_get(partner, person))
+        );
+      let blocks = if! prefers {
+        market.less(
+          , rank(right, recipient, person)
+          , rank(right, recipient, array.array_get(holder, recipient))
+          )
+      } else {
+        .f
+      };
+      let count = if! blocks {
+        arith.add_i32(count, 1)
+      } else {
+        count
+      };
+      rec count_pairs(left, right, partner, holder, person, arith.add_i32(recipient, 1), count)
+    } else {
+      rec count_pairs(left, right, partner, holder, arith.add_i32(person, 1), 0, count)
+    }
+  } else {
+    count
+  }
+}
+
+pub fn blocking_pairs(
+  , left: market.Preferences
+  , right: market.Preferences
+  , partner: Array(I32)
+  , holder: Array(I32)
+  ) -> I32 { count_pairs(left, right, partner, holder, 0, 0, 0) }
+
+rec(loop) fn total_from(
+  , preferences: market.Preferences
+  , partners: Array(I32)
+  , person: I32
+  , total: I32
+  ) -> I32 {
+  if! market.less(person, array.array_len(preferences)) {
+    let total = arith.add_i32(total, rank(preferences, person, array.array_get(partners, person)));
+    rec total_from(preferences, partners, arith.add_i32(person, 1), total)
+  } else {
+    total
+  }
+}
+
+pub fn rank_total(preferences: market.Preferences, partners: Array(I32)) -> I32 {
+  total_from(preferences, partners, 0, 0)
+}

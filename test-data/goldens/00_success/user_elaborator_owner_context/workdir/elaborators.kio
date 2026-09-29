@@ -1,0 +1,12 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import elaborator_owner_b(choose);
+
+pure fn branch(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: __Type__) -> __Checked_term__ {
+  __elab_error__(ct, "caller helper was used")
+}
+
+pub elab imported_owner : [Source] Source -> [Target] Target { impl choose }

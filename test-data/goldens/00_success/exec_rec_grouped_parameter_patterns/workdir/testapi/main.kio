@@ -1,0 +1,33 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith as arithmetic;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+rec(loop) fn accumulate(state: (I32 & I32) & I32 & I32, offset: I32) -> I32 {
+  match! state {
+    .((count: I32, total: I32), (step: I32, bias: I32)) {
+      io.print(fmt.int_to_string(count));
+      io.print(" ");
+      if! arithmetic.leq_i32(count, 0) {
+        arithmetic.add_i32(arithmetic.add_i32(total, bias), offset)
+      } else {
+        rec accumulate(
+          , ((arithmetic.sub_i32(count, 1), arithmetic.add_i32(total, step)), (step, bias))
+          , offset
+          )
+      }
+    }
+  }
+}
+
+pub fn main() -> . {
+  io.print(fmt.int_to_string(accumulate(((3, 1), (2, 10)), 100)));
+  io.print("\n");
+  io.print(fmt.int_to_string(accumulate(((0, 1), (2, 10)), 100)));
+  io.print("\n")
+}

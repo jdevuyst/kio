@@ -1,0 +1,5 @@
+module testapi/main;
+
+import lib/show(show);
+
+pub fn main() -> . { show() }

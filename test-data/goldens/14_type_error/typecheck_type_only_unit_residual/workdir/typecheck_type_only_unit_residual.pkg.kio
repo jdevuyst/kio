@@ -1,0 +1,17 @@
+package typecheck_type_only_unit_residual;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main
+}

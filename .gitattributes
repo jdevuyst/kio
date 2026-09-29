@@ -1,0 +1,2 @@
+* text=auto eol=lf
+test-data/goldens/00_success/exec_dyn_load_string_escapes/expected.stdout -text

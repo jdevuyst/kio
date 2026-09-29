@@ -1,0 +1,9 @@
+module testapi;
+
+host type I128 role(i128);
+
+host type U128 role(u128);
+
+host type F32 role(f32);
+
+host type F64 role(f64);

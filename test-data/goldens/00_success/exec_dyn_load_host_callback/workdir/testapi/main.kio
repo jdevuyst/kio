@@ -1,0 +1,192 @@
+/// This case's loading host: advertise a callback in the adapter, implement
+/// it through the separate `call` capability, and pass it into higher-order
+/// exports.
+module testapi/main;
+
+import defaults(default_host_adapter);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn);
+import host_descriptor(host_fn_eq, mk_host_fn, mk_host_id);
+import hostrec(make_lit_default, serve_default, test_bool_default);
+import imageio(read_image_stdin);
+import loader(Diag, Host_adapter, Image, Loaded, Lr_diag, Lr_image, Surface);
+import loader(diag_message, {apply}, {hostfn_in}, {i32_in}, {i32_out}, {lookup}, {pair_in});
+import loader(host_adapter_functions, host_adapter_types);
+import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
+import loader(instantiate, un_load_outcome);
+import loader/scan(load_package);
+import prime(group_slots_cons, group_slots_nil);
+import result(Call_result, call_done, call_stuck);
+import testapi(Bool, I32, Scalar, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/scalar(scalar_as_i32, scalar_of_i32);
+import testapi/text(string_concat);
+import value(Side, Value, value_to_scalar, vhost);
+
+// The host's own callback: double an i32 guest value, or report the shape
+// it wanted.
+fn host_double(dom: Value) -> Call_result {
+  match! value_to_scalar(dom) {
+    (
+      , .(s: Scalar) {
+          match! scalar_as_i32(s) {
+            (
+              , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
+              , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
+              )
+          }
+        }
+      , .(_no: .) { call_stuck("host_double expected a scalar"(String)) }
+      )
+  }
+}
+
+fn callback_descriptor(local_name: String) -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/main"(String), local_name)
+    , "(h{hostapi.I32}) -> h{hostapi.I32}"(String)
+    )
+}
+
+fn adapter_with_callbacks() -> Host_adapter {
+  let standard = default_host_adapter();
+  mk_host_adapter(
+    , host_adapter_types(standard)
+    , host_fn_bindings_cons(
+        , mk_host_fn_binding(callback_descriptor("bad_groups"(String)), group_slots_nil())
+        , host_fn_bindings_cons(
+            , mk_host_fn_binding(
+                , callback_descriptor("host_double"(String))
+                , group_slots_cons(1(I32), group_slots_nil())
+                )
+            , host_adapter_functions(standard)
+            )
+        )
+    )
+}
+
+// The `call` capability: the standard vocabulary plus this host's callback.
+fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
+  match! call {
+    .(descriptor: Host_fn, dom: Value) {
+      if! host_fn_eq(descriptor, callback_descriptor("host_double"(String))) {
+        host_double(dom)
+      } else {
+        serve_default(descriptor, dom)
+      }
+    }
+  }
+}
+
+// Call a higher-order export with a host capability handle as its first
+// component and an i32 as its second, rendering the i32 result or the
+// diagnostic.
+fn call_hof[P](surf: Surface(P), name: String, cap: Host_fn, x: I32) -> String {
+  match! surf.?{hostfn_in}(cap) {
+    (
+      , .(cb: P) {
+          match! surf.?{lookup}(name) {
+            (
+              , .(f: P) {
+                  match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
+                    (
+                      , .(r: P) {
+                          match! surf.?{i32_out}(r) {
+                            (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+fn line(label: String, body: String) -> String {
+  string_concat(label, string_concat(body, "\n"(String)))
+}
+
+fn report[P](surf: Surface(P)) -> String {
+  string_concat(
+    , line(
+        , "apply_cb(host_double, 21) = "(String)
+        , call_hof(surf, "apply_cb"(String), callback_descriptor("host_double"(String)), 21(I32))
+        )
+    , string_concat(
+        , line(
+            , "twice(host_double, 5) = "(String)
+            , call_hof(surf, "twice"(String), callback_descriptor("host_double"(String)), 5(I32))
+            )
+        , string_concat(
+            , line(
+                , "apply_cb(missing_cap, 1) = "(String)
+                , call_hof(
+                    , surf
+                    , "apply_cb"(String)
+                    , callback_descriptor("missing_cap"(String))
+                    , 1(I32)
+                    )
+                )
+            , line(
+                , "apply_cb(bad_groups, 1) = "(String)
+                , call_hof(
+                    , surf
+                    , "apply_cb"(String)
+                    , callback_descriptor("bad_groups"(String))
+                    , 1(I32)
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
+
+/// Loads the piped-in image, instantiates it with the callback-advertising
+/// adapter and matching `call` capability, and drives the higher-order
+/// exports; a load or instantiation failure prints the diagnostic instead.
+pub fn main() -> . {
+  match! un_load_outcome(load_package(read_image_stdin())) {
+    (
+      , .(im0: Lr_image) {
+          match! un_inst(instantiate(
+            , adapter_with_callbacks()
+            , serve_with_callbacks
+            , make_lit_default
+            , test_bool_default
+            , Lr_image.get(im0)
+            )) {
+            (
+              , .(handle: Loaded) {
+                  Loaded.get(handle)(.[P](surf: Surface(P)) { print(report(surf)) })
+                }
+              , .(d: Diag) {
+                  print(string_concat(
+                    , "instantiate failed: "(String)
+                    , string_concat(diag_message(d), "\n"(String))
+                    ))
+                }
+              )
+          }
+        }
+      , .(d: Lr_diag) {
+          print(string_concat(
+            , "load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+            ))
+        }
+      )
+  }
+}

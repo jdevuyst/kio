@@ -1,0 +1,3 @@
+module main;
+
+labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list(A) };

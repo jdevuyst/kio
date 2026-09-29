@@ -1,0 +1,26 @@
+module testapi/main;
+
+import elab/spine_elaborators(fit, one_prod, widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// Build the inner sum `(I32 | I32)` — both arms typed the same.
+fn build_inner(n: I32) -> I32 | I32 { widen_sum!(n) }
+
+// `fit!` recurses into product slots. Source `(String & (I32 | I32))`
+// has a sum-typed slot 1; target `(String & I32)` has an atomic slot
+// 1. fit!'s per-slot recursion fires a sum-collapse on slot 1 (the
+// uniform-arms case `one_sum!` covers), leaving slot 0 untouched.
+// No single axis-specific can reach this: the top-level shapes are
+// both 2-slot products with the same factor count, so no top-level
+// narrow / widen fires, but the inner shapes differ.
+fn project(p: String & (I32 | I32)) -> String & I32 { fit!(p) }
+
+pub fn main() -> . {
+  let r = project(("fit inner-sum: inside ", build_inner(42)));
+  let s = one_prod!(r, String);
+  let n = one_prod!(r, I32);
+  print(string_concat(s, string_concat(int_to_string(n), "\n")))
+}

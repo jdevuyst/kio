@@ -1,0 +1,15 @@
+package go_item_name_collisions;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  a;
+  a/b;
+  a_
+}

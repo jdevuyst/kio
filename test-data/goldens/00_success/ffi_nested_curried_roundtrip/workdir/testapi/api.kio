@@ -1,0 +1,9 @@
+module testapi/api;
+
+import testapi(String);
+
+host fn round_host(f: String -> String -> String) -> String -> String -> String;
+
+pub fn via_host(f: String -> String -> String) -> String -> String -> String { round_host(f) }
+
+pub fn round_export(f: String -> String -> String) -> String -> String -> String { f }

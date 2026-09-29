@@ -1,0 +1,23 @@
+signature app v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Array[A];
+        host type Legacy[A][B];
+        host type Scalar;
+        host type Transformer[A][B];
+        pub fn unit() -> .
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      api.Legacy
+    }
+  }
+}

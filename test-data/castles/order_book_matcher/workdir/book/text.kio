@@ -1,0 +1,31 @@
+/// Transcript strings. The host env supplies one binary
+/// `string_concat`, so the fixed-arity joins live here instead of
+/// nesting concat calls at every report site.
+module book/text;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/text(string_concat);
+
+pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(cat2(a, b), cat2(c, d)) }
+
+pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  cat2(cat4(a, b, c, d), e)
+}
+
+pub fn cat6(a: String, b: String, c: String, d: String, e: String, f: String) -> String {
+  cat2(cat4(a, b, c, d), cat2(e, f))
+}
+
+pub fn cat7(a: String, b: String, c: String, d: String, e: String, f: String, g: String) -> String {
+  cat2(cat6(a, b, c, d, e, f), g)
+}
+
+pub fn int_text(n: I32) -> String { int_to_string(n) }
+
+/// What an empty side of the book prints where a price would go.
+pub fn missing() -> String { "--" }

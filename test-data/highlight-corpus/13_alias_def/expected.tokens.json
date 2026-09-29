@@ -1,0 +1,22 @@
+[
+  {"start": 0, "end": 6, "kind": "keyword.declaration"},
+  {"start": 7, "end": 8, "kind": "entity.name.module"},
+  {"start": 8, "end": 9, "kind": "punctuation.separator"},
+  {"start": 11, "end": 14, "kind": "keyword.declaration"},
+  {"start": 15, "end": 19, "kind": "keyword.declaration"},
+  {"start": 20, "end": 23, "kind": "entity.name.type"},
+  {"start": 23, "end": 24, "kind": "punctuation.bracket"},
+  {"start": 24, "end": 25, "kind": "variable.parameter"},
+  {"start": 25, "end": 26, "kind": "punctuation.bracket"},
+  {"start": 27, "end": 28, "kind": "operator.builtin"},
+  {"start": 29, "end": 30, "kind": "entity.name.type"},
+  {"start": 31, "end": 32, "kind": "operator.builtin"},
+  {"start": 33, "end": 34, "kind": "entity.name.type"},
+  {"start": 34, "end": 35, "kind": "punctuation.separator"},
+  {"start": 37, "end": 40, "kind": "keyword.declaration"},
+  {"start": 41, "end": 48, "kind": "keyword.declaration"},
+  {"start": 49, "end": 51, "kind": "identifier"},
+  {"start": 52, "end": 53, "kind": "operator.builtin"},
+  {"start": 54, "end": 58, "kind": "literal.number"},
+  {"start": 58, "end": 59, "kind": "punctuation.separator"}
+]

@@ -1,0 +1,23 @@
+module forwarding;
+import origin as provider;
+
+labels { original: . };
+type {local} = {original};
+type {type} = {original};
+type {next} = {type};
+pub type {renamed} = {provider.original};
+pub(forwarding) type {scoped} = {provider.original};
+
+/// A documented forwarding declaration.
+type {
+  /// Interior trivia is not declaration documentation.
+  documented
+} = {
+  provider.
+  // Keep the target leaf separate from its prefix.
+  original
+};
+
+fn type() -> . { () }
+fn local() -> . { () }
+type Ordinary = .;

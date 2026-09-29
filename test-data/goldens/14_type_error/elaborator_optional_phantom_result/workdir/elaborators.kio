@@ -1,0 +1,11 @@
+module elaborators;
+
+import __comptime__;
+
+type Optional_type = __Type__ | .;
+
+pure fn infer_result_impl(ct: __Comptime__, _phantom: Optional_type, _result: Optional_type) -> __Checked_term__ {
+  __elab_error__(ct, "phantom elaborator executed")
+}
+
+pub elab infer_result : [Phantom][Result] . -> Result { impl infer_result_impl }

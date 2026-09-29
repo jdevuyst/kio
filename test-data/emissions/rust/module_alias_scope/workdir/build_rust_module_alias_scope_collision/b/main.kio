@@ -1,0 +1,9 @@
+module build_rust_module_alias_scope_collision/b/main;
+
+import __intrinsics__;
+
+pub type State = . & .;
+
+pub fn make() -> State { __pair__(., ., (), ()) }
+
+pub fn consume(state: State) -> . { __fst__(., ., state) }

@@ -1,0 +1,5 @@
+dependency sinklib;
+
+source {
+  path "../library/sinklib/sinklib.pkg.kio"
+}

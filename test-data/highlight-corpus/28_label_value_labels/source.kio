@@ -1,0 +1,12 @@
+module m;
+
+labels { red: ., blue: ., tone: String };
+
+fn pick() -> Red { {red=} }
+
+fn row(r: Red & Blue & Tone) -> String {
+  let .({tone as payload, red}) = r;
+  let updated = r.!{blue=};
+  let _ = updated.?{red};
+  payload
+}

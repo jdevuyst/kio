@@ -1,0 +1,3 @@
+  pass equiv `identity_alias_preserves_iota` in main
+
+result: 1/1 equiv blocks passed

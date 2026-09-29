@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A concrete arity-1 newtype to brand against. The payload is
+// exactly `a`, so the carrier coincides with the wrap shape —
+// the canonical (zero-cost) brand class.
+pub newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
+
+// `Wrap.mk_wrap` lifts a value of type `a` into the branded
+// position `Wrap(a)`; `Wrap.un_wrap` peels it back. Their
+// composition is the identity on `a` — for a canonical brand the
+// crossing is a runtime no-op at every target.
+fn roundtrip[A](x: A) -> A { Wrap.un_wrap(A, Wrap.mk_wrap(A, x)) }
+
+pub fn main() -> . { print(roundtrip("brand round-trip ok\n"(String))) }

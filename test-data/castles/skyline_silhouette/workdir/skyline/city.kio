@@ -1,0 +1,70 @@
+/// The city block: a list of rectangles, each one a building.
+///
+/// A building spans the half-open interval `[left, right)` and rises to
+/// `height`. Half-open is the whole reason the degenerate cases below are
+/// expressible: a building that ends at 7 occupies no ground at 7, so another
+/// building may begin exactly there without the two overlapping.
+///
+/// The seven buildings are chosen so that a naive sweep gets at least one of
+/// them wrong:
+///
+/// - `kiosk` sits entirely inside `spire`'s span and is shorter than it, so it
+///   must contribute nothing at all to the silhouette;
+/// - `porch` begins exactly where `annex` ends and is exactly as tall, so the
+///   shared edge must not make the skyline dip and bounce back;
+/// - `depot` and `vault` overlap at the same height, so the active heights must
+///   be a multiset — when `depot` ends, `vault`'s 7 has to survive;
+/// - nothing at all stands between x=9 and x=12, so the silhouette must return
+///   to ground level across the gap.
+module skyline/city;
+
+import elab/match(match);
+import skyline/list as lst;
+import skyline/logic as logic;
+import testapi(I32, String);
+import testapi/iter(loop);
+
+pub labels Building = { name: String, left: I32, right: I32, height: I32 };
+
+pub fn building(name: String, left: I32, right: I32, height: I32) -> Building {
+  {name, left, right, height}
+}
+
+pub fn name_of(b: Building) -> String { b.?{name} }
+
+pub fn left_of(b: Building) -> I32 { b.?{left} }
+
+pub fn right_of(b: Building) -> I32 { b.?{right} }
+
+pub fn height_of(b: Building) -> I32 { b.?{height} }
+
+/// The skyline the whole program is about. Built back to front and reversed so
+/// the source reads in the same order the report prints.
+pub fn buildings() -> lst.List(Building) {
+  let none = lst.nil(Building, ());
+  let with_spire = lst.cons(building("spire", 1, 5, 11), none);
+  let with_annex = lst.cons(building("annex", 2, 7, 6), with_spire);
+  let with_kiosk = lst.cons(building("kiosk", 3, 4, 4), with_annex);
+  let with_porch = lst.cons(building("porch", 7, 9, 6), with_kiosk);
+  let with_depot = lst.cons(building("depot", 12, 17, 7), with_porch);
+  let with_vault = lst.cons(building("vault", 14, 19, 7), with_depot);
+  let with_tower = lst.cons(building("tower", 15, 16, 12), with_vault);
+  lst.reverse(with_tower)
+}
+
+rec(loop) {
+  /// The rightmost edge standing anywhere in the city. The raster needs one
+  /// unit column per interval `[c, c + 1)` below it, so this is also the
+  /// column count.
+  pub fn max_right(bs: lst.List(Building)) -> I32 { rec widest(bs, 0) };
+  fn widest(bs: lst.List(Building), best: I32) -> I32 {
+    match! bs.>lst.List.un_list {
+      (
+        , .(b: Building, rest: lst.List(Building)) {
+            rec widest(rest, logic.max(best, right_of(b)))
+          }
+        , .(_empty: .) { best }
+        )
+    }
+  }
+}

@@ -1,0 +1,22 @@
+module testapi/main;
+
+import alphabet(Card);
+import message as msg;
+import render as card;
+
+pub fn main() -> . {
+  let spelled = msg.spelled();
+  let .(c1: Card, c2: Card, c3: Card, c4: Card, c5: Card, c6: Card, c7: Card, c8: Card, c9: Card) =
+    spelled;
+  card.header();
+  card.row(c1);
+  card.row(c2);
+  card.row(c3);
+  card.row(c4);
+  card.row(c5);
+  card.row(c6);
+  card.row(c7);
+  card.row(c8);
+  card.row(c9);
+  card.footer(spelled, msg.facts(spelled))
+}

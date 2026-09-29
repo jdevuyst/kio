@@ -1,0 +1,94 @@
+module minesweeper_frontier/model;
+
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+
+pub fn width() -> I32 { 6 }
+
+pub fn height() -> I32 { 5 }
+
+pub fn cell_count() -> I32 { 30 }
+
+pub fn last_index() -> I32 { 29 }
+
+pub fn mine_total() -> I32 { 6 }
+
+pub fn revealed_total() -> I32 { 8 }
+
+pub fn eq_i32(a: I32, b: I32) -> Bool {
+  if! arith.leq_i32(a, b) {
+    arith.leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+pub fn bool_to_i32(value: Bool) -> I32 {
+  if! value {
+    1
+  } else {
+    0
+  }
+}
+
+pub fn less_than(a: I32, b: I32) -> Bool { arith.leq_i32(arith.add_i32(a, 1), b) }
+
+pub fn in_bounds(row: I32, col: I32) -> Bool {
+  if! arith.leq_i32(0, row) {
+    if! arith.leq_i32(0, col) {
+      if! less_than(row, height()) {
+        less_than(col, width())
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+pub fn cell_index(row: I32, col: I32) -> I32 { arith.add_i32(arith.mul_i32(row, width()), col) }
+
+pub fn build_mines() -> Array(Bool) {
+  let mines = array.array_make_filled(cell_count(), .f);
+  array.array_set(mines, 1, .t);
+  array.array_set(mines, 5, .t);
+  array.array_set(mines, 11, .t);
+  array.array_set(mines, 17, .t);
+  array.array_set(mines, 19, .t);
+  array.array_set(mines, 26, .t);
+  mines
+}
+
+pub fn build_revealed() -> Array(Bool) {
+  let revealed = array.array_make_filled(cell_count(), .f);
+  array.array_set(revealed, 0, .t);
+  array.array_set(revealed, 6, .t);
+  array.array_set(revealed, 7, .t);
+  array.array_set(revealed, 12, .t);
+  array.array_set(revealed, 13, .t);
+  array.array_set(revealed, 18, .t);
+  array.array_set(revealed, 24, .t);
+  array.array_set(revealed, 25, .t);
+  revealed
+}
+
+pub fn mine_at(mines: Array(Bool), row: I32, col: I32) -> Bool {
+  if! in_bounds(row, col) {
+    array.array_get(mines, cell_index(row, col))
+  } else {
+    .f
+  }
+}
+
+pub fn revealed_at(revealed: Array(Bool), row: I32, col: I32) -> Bool {
+  if! in_bounds(row, col) {
+    array.array_get(revealed, cell_index(row, col))
+  } else {
+    .f
+  }
+}

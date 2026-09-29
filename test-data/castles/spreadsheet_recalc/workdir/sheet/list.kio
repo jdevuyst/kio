@@ -1,0 +1,68 @@
+/// The cons list every sequence in the engine is built from: cell
+/// addresses, precedent sets, the ready queue, the topological order, the
+/// dirty set, the edit script. This host tier offers no array type, so the
+/// list is the only sequence there is.
+module sheet/list;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
+
+pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, rest: List(A)) -> List(A) {
+  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+}
+
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+
+pub fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.unpack {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+/// `reverse` and `append` are both this one accumulator loop.
+pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
+
+rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
+  match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
+
+rec(loop) fn filter_onto[A](xs: List(A), keep: A -> Bool, acc: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (
+      , .(head: A, rest: List(A)) {
+          if! keep(head) {
+            rec filter_onto(rest, keep, cons(head, acc))
+          } else {
+            rec filter_onto(rest, keep, acc)
+          }
+        }
+      , .(_empty: .) { reverse(acc) }
+      )
+  }
+}
+
+/// Keep the elements satisfying `keep`, in their original order. Cutting a
+/// global order (all addresses, the topological order) down to a subset (the
+/// dirty cells) without disturbing it is what makes the recompute order
+/// topological for free.
+pub fn filter[A](xs: List(A), keep: A -> Bool) -> List(A) { filter_onto(xs, keep, nil(A, ())) }

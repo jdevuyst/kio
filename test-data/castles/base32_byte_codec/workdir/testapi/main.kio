@@ -1,0 +1,24 @@
+/// base32_byte_codec — a base32 encoder and companion decoder built out of
+/// nothing but integer arithmetic.
+///
+/// Five in-source payloads are encoded to RFC 4648 base32 and decoded
+/// straight back, covering every encoder-produced padding width, and the
+/// recovered bytes are checked against the ones we started with. Two more
+/// fixtures arrive as transmissions without their original payloads: one
+/// decodes successfully, while the other contains a glyph outside the
+/// alphabet and is refused at that position.
+///
+/// `main` prints one block per packet and a closing tally.
+module testapi/main;
+
+import base32/packets as packets;
+import base32/report as report;
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn banner() -> String {
+  string_concat("base32 byte codec\n", "alphabet: A-Z 2-7, pad =, quantum 8 glyphs\n\n")
+}
+
+pub fn main() -> . { print(banner()); print(report.render(packets.fixtures())) }

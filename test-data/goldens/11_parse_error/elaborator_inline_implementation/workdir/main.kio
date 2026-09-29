@@ -1,0 +1,7 @@
+module main;
+
+import __comptime__;
+
+elab demo : . -> . { impl .(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }; };
+
+fn keep() -> . { () }

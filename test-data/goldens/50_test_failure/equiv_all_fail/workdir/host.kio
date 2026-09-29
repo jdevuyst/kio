@@ -1,0 +1,5 @@
+module host;
+
+host fn x() -> .;
+
+host fn y() -> .;

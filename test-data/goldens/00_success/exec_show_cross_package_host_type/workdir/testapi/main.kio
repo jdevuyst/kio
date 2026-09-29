@@ -1,0 +1,15 @@
+module testapi/main;
+
+import elab/show(show);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn string_to_string(value: String) -> String { value }
+
+// `show!` over a value of the consumer's `testapi.String`. An unrelated
+// module also declares `String`, so reflection must collect a converter only
+// for the consumer's exact host identity.
+fn render() -> String { show!("show host: ok"(String))(string_concat, string_to_string) }
+
+pub fn main() -> . { print(string_concat(render(), "\n"(String))) }

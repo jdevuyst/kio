@@ -1,0 +1,41 @@
+/// The two aggregates every node carries over its range: the sum and the
+/// minimum. Keeping them in one value is what makes the lazy machinery small.
+///
+/// `combine` is the pull-up a parent does from its children and `neutral` its
+/// identity, but `shift` is the whole reason a range-add may stop early: a
+/// pending "add `x` to every cell" over `len` cells moves the sum by `len * x`
+/// and the minimum by `x`, and *that is computable from the aggregate alone*.
+/// No leaf has to be touched.
+module seg/agg;
+
+import seg/num(int_min);
+import testapi(I32);
+import testapi/arith(add_i32, mul_i32);
+
+/// Larger than any range sum this package can reach, so it survives every
+/// `int_min` as the identity for the minimum.
+literal unreachable_high = 1000000;
+
+pub labels Agg = { sum: I32, min: I32 };
+
+pub fn agg(total: I32, low: I32) -> Agg { {sum = total, min = low} }
+
+pub fn agg_sum(a: Agg) -> I32 { a.?{sum} }
+
+pub fn agg_min(a: Agg) -> I32 { a.?{min} }
+
+/// One cell's aggregate: it is its own sum and its own minimum.
+pub fn leaf_agg(value: I32) -> Agg { agg(value, value) }
+
+/// The identity of `combine` -- what a node outside the queried range
+/// contributes.
+pub fn neutral() -> Agg { agg(0, unreachable_high) }
+
+pub fn combine(left: Agg, right: Agg) -> Agg {
+  agg(add_i32(agg_sum(left), agg_sum(right)), int_min(agg_min(left), agg_min(right)))
+}
+
+/// Fold a pending "add `x` to each of `len` cells" into an aggregate.
+pub fn shift(a: Agg, len: I32, x: I32) -> Agg {
+  agg(add_i32(agg_sum(a), mul_i32(len, x)), add_i32(agg_min(a), x))
+}

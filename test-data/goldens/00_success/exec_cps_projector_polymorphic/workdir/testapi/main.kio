@@ -1,0 +1,29 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// Polymorphic CPS-projector apply: a newtype whose header declares
+// both a universal `a` and an existential `u`. The projector
+// `Boxed.un_boxed` takes an explicit type-arg for `a`; the existential
+// `u` is sealed at the projector's continuation boundary.
+//
+// `extract` consumes a `Boxed(t)` (binding `t` in its own header)
+// and applies the CPS projector with `t` as the inner type-arg. The
+// fold to `LowCpsProjectorApply` carries `[T]` on the variant's
+// `type_args`, so the Rust backend's continuation-closure annotation
+// names `t` (not the newtype's declaration-level `a`). Without the
+// type-arg propagation, the rendered closure would reference `a`
+// outside its declaration scope and fail to compile.
+labels { boxed[A] <U> : A & U };
+
+fn box_value[A](v: A) -> Boxed(A) { Boxed.mk((v, v)) }
+
+fn extract_via_cps[T](b: Boxed(T)) -> T { Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) }) }
+
+pub fn main() -> . {
+  let b = box_value("cps-projector-polymorphic-ok\n");
+  print(extract_via_cps(b))
+}

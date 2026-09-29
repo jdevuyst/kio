@@ -1,0 +1,7 @@
+module api;
+
+host type Value;
+
+pub fn first(value: Value & Value) -> Value & Value { value }
+
+pub fn second(value: Value & Value) -> Value & Value { value }

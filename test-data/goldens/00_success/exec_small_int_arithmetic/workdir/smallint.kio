@@ -1,0 +1,21 @@
+module smallint;
+
+host type String role(str);
+
+host type I8 role(i8);
+
+host type U16 role(u16);
+
+host fn print(p0: String) -> .;
+
+host fn i8_to_string(p0: I8) -> String;
+
+host fn u16_to_string(p0: U16) -> String;
+
+host fn add_i8(p0: I8, p1: I8) -> I8;
+
+host fn mul_i8(p0: I8, p1: I8) -> I8;
+
+host fn add_u16(p0: U16, p1: U16) -> U16;
+
+host fn sub_u16(p0: U16, p1: U16) -> U16;

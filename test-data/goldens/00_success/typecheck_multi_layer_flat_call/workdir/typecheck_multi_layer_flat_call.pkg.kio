@@ -1,0 +1,17 @@
+package typecheck_multi_layer_flat_call;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main
+}

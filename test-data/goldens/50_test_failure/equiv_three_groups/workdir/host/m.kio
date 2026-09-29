@@ -1,0 +1,9 @@
+module host/m;
+
+import host(a, b, c);
+
+equiv three_groups() {
+  a();
+  b();
+  c()
+}

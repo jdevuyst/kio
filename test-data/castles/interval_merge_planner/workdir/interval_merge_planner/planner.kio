@@ -1,0 +1,222 @@
+module interval_merge_planner/planner;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+labels Window = { window_name: String, start_minute: I32, end_minute: I32 };
+
+labels Plan = {
+  , current_start: I32
+  , current_end: I32
+  , current_windows: I32
+  , closed_segments: I32
+  , covered_minutes: I32
+  , idle_gap_count: I32
+  , idle_minutes: I32
+  , merged_edges: I32
+  , touching_edges: I32
+  , conflict_count: I32
+  , conflict_minutes: I32
+  };
+
+fn window(name: String, start: I32, end: I32) -> Window {
+  {window_name = name, start_minute = start, end_minute = end}
+}
+
+fn backup_db() -> Window { window("backup-db", 30, 100) }
+
+fn search_reindex() -> Window { window("search-reindex", 100, 145) }
+
+fn payroll_export() -> Window { window("payroll-export", 130, 180) }
+
+fn api_deploy() -> Window { window("api-deploy", 240, 290) }
+
+fn metrics_cleanup() -> Window { window("metrics-cleanup", 285, 315) }
+
+fn audit_sync() -> Window { window("audit-sync", 360, 395) }
+
+fn duration(start: I32, end: I32) -> I32 { arith.sub_i32(end, start) }
+
+fn max_i32(left: I32, right: I32) -> I32 {
+  if! arith.lt_i32(left, right) {
+    right
+  } else {
+    left
+  }
+}
+
+fn add_if(flag: Bool, base: I32, amount: I32) -> I32 {
+  if! flag {
+    arith.add_i32(base, amount)
+  } else {
+    base
+  }
+}
+
+fn overlap_minutes(active_end: I32, next_start: I32) -> I32 {
+  if! arith.lt_i32(next_start, active_end) {
+    arith.sub_i32(active_end, next_start)
+  } else {
+    0
+  }
+}
+
+fn initial_plan(first: Window) -> Plan {
+  {
+    , current_start = first.?{start_minute}
+    , current_end = first.?{end_minute}
+    , current_windows = 1
+    , closed_segments = 0
+    , covered_minutes = 0
+    , idle_gap_count = 0
+    , idle_minutes = 0
+    , merged_edges = 0
+    , touching_edges = 0
+    , conflict_count = 0
+    , conflict_minutes = 0
+    }
+}
+
+fn merge_plan(plan: Plan, next: Window) -> Plan {
+  let next_start = next.?{start_minute};
+  let next_end = next.?{end_minute};
+  let overlap = overlap_minutes(plan.?{current_end}, next_start);
+  let has_conflict = arith.lt_i32(next_start, plan.?{current_end});
+  let has_touch = arith.eq_i32(next_start, plan.?{current_end});
+  {
+    , current_start = plan.?{current_start}
+    , current_end = max_i32(plan.?{current_end}, next_end)
+    , current_windows = arith.add_i32(plan.?{current_windows}, 1)
+    , closed_segments = plan.?{closed_segments}
+    , covered_minutes = plan.?{covered_minutes}
+    , idle_gap_count = plan.?{idle_gap_count}
+    , idle_minutes = plan.?{idle_minutes}
+    , merged_edges = arith.add_i32(plan.?{merged_edges}, 1)
+    , touching_edges = add_if(has_touch, plan.?{touching_edges}, 1)
+    , conflict_count = add_if(has_conflict, plan.?{conflict_count}, 1)
+    , conflict_minutes = arith.add_i32(plan.?{conflict_minutes}, overlap)
+    }
+}
+
+fn close_and_start(plan: Plan, next: Window) -> Plan {
+  let closed_duration = duration(plan.?{current_start}, plan.?{current_end});
+  let gap = arith.sub_i32(next.?{start_minute}, plan.?{current_end});
+  {
+    , current_start = next.?{start_minute}
+    , current_end = next.?{end_minute}
+    , current_windows = 1
+    , closed_segments = arith.add_i32(plan.?{closed_segments}, 1)
+    , covered_minutes = arith.add_i32(plan.?{covered_minutes}, closed_duration)
+    , idle_gap_count = arith.add_i32(plan.?{idle_gap_count}, 1)
+    , idle_minutes = arith.add_i32(plan.?{idle_minutes}, gap)
+    , merged_edges = plan.?{merged_edges}
+    , touching_edges = plan.?{touching_edges}
+    , conflict_count = plan.?{conflict_count}
+    , conflict_minutes = plan.?{conflict_minutes}
+    }
+}
+
+fn consume(plan: Plan, next: Window) -> Plan {
+  if! arith.leq_i32(next.?{start_minute}, plan.?{current_end}) {
+    merge_plan(plan, next)
+  } else {
+    close_and_start(plan, next)
+  }
+}
+
+fn final_segments(plan: Plan) -> I32 { arith.add_i32(plan.?{closed_segments}, 1) }
+
+fn final_covered_minutes(plan: Plan) -> I32 {
+  arith.add_i32(plan.?{covered_minutes}, duration(plan.?{current_start}, plan.?{current_end}))
+}
+
+fn cat2(left: String, right: String) -> String { text.string_concat(left, right) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(cat2(a, b), c) }
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  cat2(cat2(cat2(cat2(a, b), c), d), e)
+}
+
+fn show_i32(value: I32) -> String { fmt.int_to_string(value) }
+
+fn show_bool(value: Bool) -> String { fmt.bool_to_string(value) }
+
+fn line(label: String, value: I32) -> . { io.print(cat3(label, show_i32(value), "\n")) }
+
+fn print_window(window_value: Window) -> . {
+  io.print(cat5("- ", window_value.?{window_name}, " ", show_i32(window_value.?{start_minute}), "-"));
+  io.print(cat3(show_i32(window_value.?{end_minute}), "", "\n"))
+}
+
+fn print_segment(number: I32, plan: Plan) -> . {
+  io.print(cat3("- segment ", show_i32(number), " "));
+  io.print(cat3(show_i32(plan.?{current_start}), "-", show_i32(plan.?{current_end})));
+  io.print(cat3(" duration ", show_i32(duration(plan.?{current_start}, plan.?{current_end})), " "));
+  io.print(cat3("windows ", show_i32(plan.?{current_windows}), "\n"))
+}
+
+fn print_gap(number: I32, left: Plan, right: Plan) -> . {
+  let gap_start = left.?{current_end};
+  let gap_end = right.?{current_start};
+  io.print(cat3("- gap ", show_i32(number), " "));
+  io.print(cat3(show_i32(gap_start), "-", show_i32(gap_end)));
+  io.print(cat3(" duration ", show_i32(duration(gap_start, gap_end)), "\n"))
+}
+
+fn print_conflict(name: String, minutes: I32) -> . {
+  io.print(cat3("- ", name, " overlaps active segment by "));
+  io.print(cat3(show_i32(minutes), " minutes", "\n"))
+}
+
+pub fn run() -> . {
+  let w1 = backup_db();
+  let w2 = search_reindex();
+  let w3 = payroll_export();
+  let w4 = api_deploy();
+  let w5 = metrics_cleanup();
+  let w6 = audit_sync();
+  let p1 = initial_plan(w1);
+  let p2 = consume(p1, w2);
+  let p3 = consume(p2, w3);
+  let p4 = consume(p3, w4);
+  let p5 = consume(p4, w5);
+  let p6 = consume(p5, w6);
+  io.print("Interval merge planner\n");
+  io.print("Fixture windows: 6\n\n");
+  io.print("Raw windows\n");
+  print_window(w1);
+  print_window(w2);
+  print_window(w3);
+  print_window(w4);
+  print_window(w5);
+  print_window(w6);
+  io.print("\nMerged windows\n");
+  print_segment(1, p3);
+  print_segment(2, p5);
+  print_segment(3, p6);
+  io.print("\nIdle gaps\n");
+  print_gap(1, p3, p5);
+  print_gap(2, p5, p6);
+  io.print("\nConflicts\n");
+  print_conflict("payroll-export", overlap_minutes(p2.?{current_end}, w3.?{start_minute}));
+  print_conflict("metrics-cleanup", overlap_minutes(p4.?{current_end}, w5.?{start_minute}));
+  io.print("\nSummary\n");
+  line("covered_minutes=", final_covered_minutes(p6));
+  line("idle_gap_count=", p6.?{idle_gap_count});
+  line("idle_minutes=", p6.?{idle_minutes});
+  line("merged_segments=", final_segments(p6));
+  line("merged_edges=", p6.?{merged_edges});
+  line("touching_edges=", p6.?{touching_edges});
+  io.print(cat3(
+    , "touch_backup_to_search="
+    , show_bool(arith.eq_i32(w1.?{end_minute}, w2.?{start_minute}))
+    , "\n"
+    ));
+  line("conflicts=", p6.?{conflict_count});
+  line("conflict_minutes=", p6.?{conflict_minutes})
+}

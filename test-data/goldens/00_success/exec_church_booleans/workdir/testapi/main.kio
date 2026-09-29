@@ -1,0 +1,35 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// Church-encoded booleans on `Boolc = forall A. (A & A) -> A`. `t`
+// and `f` are the two polymorphic projections; `if_c` is their
+// elimination form. `and_c` / `or_c` / `not_c` build the boolean
+// algebra by re-applying `p` and `q` at type `Boolc` itself. Pure
+// System F: no host loop, no newtype, no `match!`, no `if`/`else` —
+// the booleans *are* the conditional. Reification to `String` goes
+// through `if_c` instantiated at `String`.
+type Boolc = [A] (A & A) -> A;
+
+fn t() -> Boolc { .[A](x, _y) { x } }
+
+fn f() -> Boolc { .[A](_x, y) { y } }
+
+fn if_c[A](b: Boolc, x: A, y: A) -> A { b(A, x, y) }
+
+fn and_c(p: Boolc, q: Boolc) -> Boolc { .[A](x, y) { p(A, q(A, x, y), y) } }
+
+fn or_c(p: Boolc, q: Boolc) -> Boolc { .[A](x, y) { p(A, x, q(A, x, y)) } }
+
+fn not_c(p: Boolc) -> Boolc { .[A](x, y) { p(A, y, x) } }
+
+fn to_str(b: Boolc) -> String { if_c(String, b, "yes"(String), "no"(String)) }
+
+pub fn main() -> . {
+  print(string_concat(to_str(and_c(t(), t())), "\n"(String)));
+  print(string_concat(to_str(and_c(t(), f())), "\n"(String)));
+  print(string_concat(to_str(or_c(f(), t())), "\n"(String)));
+  print(string_concat(to_str(not_c(f())), "\n"(String)))
+}

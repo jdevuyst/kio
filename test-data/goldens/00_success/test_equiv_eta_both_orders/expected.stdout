@@ -1,0 +1,6 @@
+  pass equiv `fn_lambda_then_bare` in host/m
+  pass equiv `fn_bare_then_lambda` in host/m
+  pass equiv `host_lambda_then_bare` in host/m
+  pass equiv `host_bare_then_lambda` in host/m
+
+result: 4/4 equiv blocks passed

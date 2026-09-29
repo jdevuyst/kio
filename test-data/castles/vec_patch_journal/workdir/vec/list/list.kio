@@ -1,0 +1,438 @@
+/// Ready-to-use linked-list library with host-backed spine walks, partial accessors, operators, and list literals.
+module vec/list/list;
+
+import vec/list/core(
+  , List
+  , append_step
+  , cons
+  , head
+  , length_step
+  , map_step
+  , nil
+  , reverse_step
+  , singleton
+  , tail
+  , uncons
+  );
+import vec/list/elab/control(if);
+import vec/list/elab/match(match);
+import vec/list/elab/spine_elaborators(widen_sum);
+
+host type Bool role(bool);
+
+host type I32 role(i32);
+
+host type String role(str);
+
+host fn add_i32(p0: I32, p1: I32) -> I32;
+
+host fn eq_i32(p0: I32, p1: I32) -> Bool;
+
+host fn lt_i32(p0: I32, p1: I32) -> Bool;
+
+host fn sub_i32(p0: I32, p1: I32) -> I32;
+
+host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
+
+host fn string_concat(p0: String, p1: String) -> String;
+
+fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present(value) }, .(_empty: .) { default })
+  }
+}
+
+// =====================================================================
+// The host loop-driven spine-walk
+// =====================================================================
+//
+// Kio' forbids self-recursive `fn`s, so spine iteration is driven by the
+// host `loop` rather than direct recursion. `fold_list` is that shared
+// walk; every loop-driven op below routes through it.
+fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
+  loop(
+    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+        match! state {
+          .(carry: Acc, rest: List(A)) {
+            match! uncons(rest) {
+              (
+                , .(pair: A & List(A)) {
+                    match! pair {
+                      .(head: A, tl: List(A)) {
+                        widen_sum!((step(carry, head), tl), (Acc & List(A)) | Acc)
+                      }
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+                )
+            }
+          }
+        }
+      }
+    , (seed, xs)
+    )
+}
+
+// =====================================================================
+// Shape: length / null / reverse
+// =====================================================================
+/// Counts the elements in a list.
+pub fn length[A](xs: List(A)) -> I32 {
+  fold_list(
+    , xs
+    , 0
+    , .(carry: I32, x: A) -> I32 { length_step(carry, .(n: I32) -> I32 { add_i32(n, 1) }, x) }
+    )
+}
+
+/// Reports whether the list is empty.
+pub fn null[A](xs: List(A)) -> Bool {
+  match! uncons(xs) {
+    (.(_pair: A & List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+/// Reverses a list with one host loop.
+pub fn reverse[A](xs: List(A)) -> List(A) {
+  fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) })
+}
+
+/// Returns the final element, or `()` for an empty list.
+pub fn last[A](xs: List(A)) -> A | . { head(reverse(xs)) }
+
+// =====================================================================
+// Folds
+// =====================================================================
+/// Strict left fold over a list.
+pub fn foldl[A][Acc](f: (Acc & A) -> Acc, seed: Acc, xs: List(A)) -> Acc { fold_list(xs, seed, f) }
+
+/// Right fold implemented by reversing once and then folding left.
+pub fn foldr[A][Acc](f: (A & Acc) -> Acc, seed: Acc, xs: List(A)) -> Acc {
+  fold_list(reverse(xs), seed, .(carry: Acc, x: A) -> Acc { f(x, carry) })
+}
+
+// =====================================================================
+// Construction: replicate / iterate / from helpers
+// =====================================================================
+/// Builds a list containing `n` copies of `x`.
+pub fn replicate[A](n: I32, x: A) -> List(A) {
+  loop(
+    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+        match! state {
+          .(k: I32, acc: List(A)) {
+            if! lt_i32(0, k) {
+              widen_sum!((sub_i32(k, 1), cons(x, acc)), (I32 & List(A)) | List(A))
+            } else {
+              widen_sum!(acc, (I32 & List(A)) | List(A))
+            }
+          }
+        }
+      }
+    , (n, nil(A, ()))
+    )
+}
+
+// Bounded: Kio' is strongly normalizing, so an unbounded `iterate` /
+// `repeat` / `cycle` is not expressible.
+/// Builds a bounded iteration sequence of length `n`.
+pub fn iterate[A](n: I32, f: A -> A, seed: A) -> List(A) {
+  let built =
+    loop(
+      , .(state: I32 & A & List(A)) -> (I32 & A & List(A)) | List(A) {
+          match! state {
+            .(k: I32, cur_acc: A & List(A)) {
+              match! cur_acc {
+                .(cur: A, acc: List(A)) {
+                  if! lt_i32(0, k) {
+                    widen_sum!(
+                      , (sub_i32(k, 1), (f(cur), cons(cur, acc)))
+                      , (I32 & A & List(A)) | List(A)
+                      )
+                  } else {
+                    widen_sum!(acc, (I32 & A & List(A)) | List(A))
+                  }
+                }
+              }
+            }
+          }
+        }
+      , (n, (seed, nil(A, ())))
+      );
+  reverse(built)
+}
+
+// =====================================================================
+// Transformations: map / filter / append / concat
+// =====================================================================
+/// Maps a function over the list while preserving element order.
+pub fn map[A][B](f: A -> B, xs: List(A)) -> List(B) {
+  reverse(fold_list(xs, nil(B, ()), .(carry: List(B), x: A) -> List(B) { map_step(carry, f, x) }))
+}
+
+/// Keeps elements accepted by `keep`.
+pub fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
+  reverse(fold_list(
+    , xs
+    , nil(A, ())
+    , .(carry: List(A), x: A) -> List(A) {
+        if! keep(x) {
+          cons(x, carry)
+        } else {
+          carry
+        }
+      }
+    ))
+}
+
+/// Appends two lists, sharing the right-hand tail.
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
+  let rev_xs =
+    fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) });
+  fold_list(rev_xs, ys, .(carry: List(A), x: A) -> List(A) { append_step(carry, x) })
+}
+
+// =====================================================================
+// Filtering by position: take / drop / split_at
+// =====================================================================
+fn take_advance[A](k: I32, acc: List(A), rest: List(A)) -> ((I32 & List(A)) & List(A)) | List(A) {
+  match! uncons(rest) {
+    (
+      , .(pair: A & List(A)) {
+          match! pair {
+            .(h: A, tl: List(A)) {
+              widen_sum!(((sub_i32(k, 1), cons(h, acc)), tl), ((I32 & List(A)) & List(A)) | List(A))
+            }
+          }
+        }
+      , .(_empty: .) { widen_sum!(acc, ((I32 & List(A)) & List(A)) | List(A)) }
+      )
+  }
+}
+
+/// Returns the prefix of length `n`, or the full list when shorter.
+pub fn take[A](n: I32, xs: List(A)) -> List(A) {
+  let built =
+    loop(
+      , .(state: (I32 & List(A)) & List(A)) -> ((I32 & List(A)) & List(A)) | List(A) {
+          match! state {
+            .(cnt_acc: I32 & List(A), rest: List(A)) {
+              match! cnt_acc {
+                .(k: I32, acc: List(A)) {
+                  if! lt_i32(0, k) {
+                    take_advance(k, acc, rest)
+                  } else {
+                    widen_sum!(acc, ((I32 & List(A)) & List(A)) | List(A))
+                  }
+                }
+              }
+            }
+          }
+        }
+      , ((n, nil(A, ())), xs)
+      );
+  reverse(built)
+}
+
+fn drop_advance[A](k: I32, rest: List(A)) -> (I32 & List(A)) | List(A) {
+  match! uncons(rest) {
+    (
+      , .(pair: A & List(A)) {
+          match! pair {
+            .(_h: A, tl: List(A)) { widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A)) }
+          }
+        }
+      , .(_empty: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+      )
+  }
+}
+
+/// Drops the first `n` elements and returns the surviving tail.
+pub fn drop[A](n: I32, xs: List(A)) -> List(A) {
+  loop(
+    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+        match! state {
+          .(k: I32, rest: List(A)) {
+            if! lt_i32(0, k) {
+              drop_advance(k, rest)
+            } else {
+              widen_sum!(rest, (I32 & List(A)) | List(A))
+            }
+          }
+        }
+      }
+    , (n, xs)
+    )
+}
+
+// =====================================================================
+// Searching: elem / find / at / index_of
+// =====================================================================
+/// Reports whether `target` appears under the caller's equality predicate.
+pub fn elem[A](eq: (A & A) -> Bool, target: A, xs: List(A)) -> Bool {
+  fold_list(
+    , xs
+    , .f
+    , .(found: Bool, x: A) -> Bool {
+        if! found {
+          .t
+        } else {
+          eq(target, x)
+        }
+      }
+    )
+}
+
+/// Returns the first element accepted by `pred`, or `()`.
+pub fn find[A](pred: A -> Bool, xs: List(A)) -> A | . {
+  fold_list(
+    , xs
+    , widen_sum!((), A | .)
+    , .(found: A | ., x: A) -> A | . {
+        fold_result(
+          , if! pred(x) {
+              widen_sum!(x, A | .)
+            } else {
+              widen_sum!((), A | .)
+            }
+          , .(y: A) -> A | . { widen_sum!(y, A | .) }
+          , found
+          )
+      }
+    )
+}
+
+/// Returns the element at zero-based index `i`, or `()`.
+pub fn at[A](i: I32, xs: List(A)) -> A | . {
+  let final =
+    fold_list(
+      , xs
+      , (0, widen_sum!((), A | .))
+      , .(index_result: I32 & (A | .), x: A) -> I32 & (A | .) {
+          match! index_result {
+            .(j: I32, result: A | .) {
+              if! eq_i32(i, j) {
+                (add_i32(j, 1), widen_sum!(x, A | .))
+              } else {
+                (add_i32(j, 1), result)
+              }
+            }
+          }
+        }
+      );
+  match! final {
+    .(_j: I32, result: A | .) { result }
+  }
+}
+
+/// Returns the first index whose element equals `target`, or `()`.
+pub fn index_of[A](eq: (A & A) -> Bool, target: A, xs: List(A)) -> I32 | . {
+  let final =
+    fold_list(
+      , xs
+      , (0, widen_sum!((), I32 | .))
+      , .(index_result: I32 & (I32 | .), x: A) -> I32 & (I32 | .) {
+          match! index_result {
+            .(j: I32, result: I32 | .) {
+              fold_result(
+                , if! eq(target, x) {
+                    (add_i32(j, 1), widen_sum!(j, I32 | .))
+                  } else {
+                    (add_i32(j, 1), widen_sum!((), I32 | .))
+                  }
+                , .(found: I32) -> I32 & (I32 | .) { (add_i32(j, 1), widen_sum!(found, I32 | .)) }
+                , result
+                )
+            }
+          }
+        }
+      );
+  match! final {
+    .(_j: I32, result: I32 | .) { result }
+  }
+}
+
+// =====================================================================
+// Rendering
+// =====================================================================
+/// Renders the list as `[x, y, z]` using the supplied element renderer.
+pub fn to_string[A](show: A -> String, xs: List(A)) -> String {
+  let cc = string_concat;
+  let final =
+    fold_list(
+      , xs
+      , (.f, "")
+      , .(carry: Bool & String, x: A) -> Bool & String {
+          match! carry {
+            .(seen: Bool, body: String) {
+              if! seen {
+                (.t, cc(body, cc(", ", show(x))))
+              } else {
+                (.t, show(x))
+              }
+            }
+          }
+        }
+      );
+  let body =
+    match! final {
+      .(_seen: Bool, body: String) { body }
+    };
+  string_concat("[", string_concat(body, "]"))
+}
+
+// =====================================================================
+// Operator DSL
+// =====================================================================
+/// Returns an empty list.
+pub fn empty[A]() -> List(A) { nil(A, ()) }
+
+/// Prepends an element to a list.
+pub fn prepend[A](head: A, tail: List(A)) -> List(A) { cons(head, tail) }
+
+/// Indexes into a list in receiver-first order.
+pub fn index[A](xs: List(A), i: I32) -> A | . { at(A, i, xs) }
+
+/// Maps over a list in receiver-first order.
+pub fn map_with[A][B](xs: List(A), f: A -> B) -> List(B) { map(A, B, f, xs) }
+
+/// Prepends an element to a list.
+pub op _ +: __ { impl prepend }
+
+/// Appends two lists.
+pub op _ ++ _ { impl append }
+
+/// Indexes into a list, returning an optional element.
+pub op _ <| __ |> { impl index }
+
+/// Maps over a list.
+pub op _ |> _ { impl map_with }
+
+/// Builds lists with bracket syntax.
+pub varop [* *] { foldr prepend empty }
+
+// =====================================================================
+// equiv-law battery
+// =====================================================================
+//
+// `kio test` discharges each block by partial-evaluating both arms to a
+// residual normal form. Iteration here is driven by the **host `loop`**,
+// which the partial evaluator treats as an opaque atom (a fn does
+// not unfold at `equiv` time) — so every law that walks the spine via a
+// loop-driven op (`map` / `reverse` / `length` / `append` / `take` /
+// `drop` / `foldl` / `foldr` / `at`) leaves a residual `loop(…)` on at
+// least one side and cannot discharge, even on a concrete small spine.
+// This is intrinsic to host-driven iteration (the same reason the
+// `option`-library's `loop`-driven collection helpers carry no `equiv`
+// laws), not a gap in these definitions: `main` is where the loop-driven
+// API is exercised end-to-end against `expected.stdout`. The **pure,
+// pure algebra** — the O(1) constructors / destructor / accessors —
+// is fully `equiv`-checkable, and those laws live in
+// `core.kio` where they discharge cleanly. The one law
+// that fits here is the O(1) `head . singleton` round-trip, which
+// touches no loop.
+equiv head_singleton[T](x: T) {
+  head(singleton(x));
+  widen_sum!(x, T | .)
+}
+
+// =====================================================================

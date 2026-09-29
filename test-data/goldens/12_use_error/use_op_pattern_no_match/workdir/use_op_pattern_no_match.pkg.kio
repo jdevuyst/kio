@@ -1,0 +1,18 @@
+package use_op_pattern_no_match;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  use_op_pattern_no_match;
+  use_op_pattern_no_match/**
+}

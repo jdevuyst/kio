@@ -1,0 +1,100 @@
+module bdd/apply;
+
+import bdd/logic as logic;
+import bdd/store as table;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(reorder_prod);
+import list/core as lists;
+import list/list as walk;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+pub type Cached = logic.Operation & table.Node_id & table.Node_id & table.Node_id;
+
+pub labels Manager = { store: table.Store, cache: lists.List(Cached), hits: I32 };
+
+pub fn empty() -> Manager { {store = table.empty(), cache = lists.nil(), hits = 0} }
+
+fn remember(
+  , m: Manager
+  , op: logic.Operation
+  , a: table.Node_id
+  , b: table.Node_id
+  , answer: table.Node_id
+  ) -> Manager & table.Node_id {
+  (m.!{cache = lists.cons((op, a, b, answer), m.?{cache})}.>reorder_prod!(Manager), answer)
+}
+
+pub fn intern(m: Manager, level: I32, low: table.Node_id, high: table.Node_id) ->
+  Manager & table.Node_id
+   {
+  let .(store: table.Store, id: table.Node_id) = table.intern(m.?{store}, level, low, high);
+  (m.!{store}, id)
+}
+
+pub rec(loop) fn apply(m: Manager, op: logic.Operation, left: table.Node_id, right: table.Node_id) ->
+  Manager & table.Node_id
+   {
+  // All three supported operations commute, so one cache key covers both orders.
+  let ordered = arith.leq_i32(left.>table.Node_id.to_int, right.>table.Node_id.to_int);
+  let a =
+    if! ordered {
+      left
+    } else {
+      right
+    };
+  let b =
+    if! ordered {
+      right
+    } else {
+      left
+    };
+  match! walk.find(
+    , .(
+        , saved_op: logic.Operation
+        , saved_a: table.Node_id
+        , saved_b: table.Node_id
+        , _answer: table.Node_id
+        ) {
+        logic.and(
+          , logic.same_op(op, saved_op)
+          , logic.and(table.same_id(a, saved_a), table.same_id(b, saved_b))
+          )
+      }
+    , m.?{cache}
+    ) {
+    .(_op: logic.Operation, _a: table.Node_id, _b: table.Node_id, answer: table.Node_id) {
+      (m.!{hits = arith.add_i32(m.?{hits}, 1)}.>reorder_prod!(Manager), answer)
+    };
+    .() {
+      if! logic.and(table.terminal(a), table.terminal(b)) {
+        remember(m, op, a, b, table.from_bool(logic.operate(op, table.truth(a), table.truth(b))))
+      } else {
+        let store = m.?{store};
+        let level_a = table.top(store, a);
+        let level_b = table.top(store, b);
+        let level = if! arith.lt_i32(level_a, level_b) {
+          level_a
+        } else {
+          level_b
+        };
+        let .(after_low: Manager, low: table.Node_id) = rec(cont) apply(
+          , m
+          , op
+          , table.branch(store, a, level, .f)
+          , table.branch(store, b, level, .f)
+          );
+        let .(after_high: Manager, high: table.Node_id) = rec(cont) apply(
+          , after_low
+          , op
+          , table.branch(store, a, level, .t)
+          , table.branch(store, b, level, .t)
+          );
+        let .(after_node: Manager, answer: table.Node_id) = intern(after_high, level, low, high);
+        remember(after_node, op, a, b, answer)
+      }
+    }
+  }
+}

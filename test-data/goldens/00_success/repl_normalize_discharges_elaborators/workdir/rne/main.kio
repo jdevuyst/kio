@@ -1,0 +1,25 @@
+module rne/main;
+
+import elab/lookup as lookup;
+import elab/lookup(Lookup_bool, contains);
+import elab/testapi(I32);
+import elab/type_of(rep_unit);
+import rne/closure(marker_fn);
+import rne/other(rep_of_unit);
+
+fn pair_has_i32() -> Lookup_bool { contains!((1, ()), I32) }
+
+equiv pair_has_i32_matches_true() {
+  pair_has_i32();
+  lookup.true()
+}
+
+equiv reordered_pair_has_i32_matches_true() {
+  contains!(((), 1), I32);
+  lookup.true()
+}
+
+equiv reflected_unit_matches_constructor() {
+  rep_of_unit();
+  rep_unit()
+}

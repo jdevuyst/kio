@@ -1,0 +1,7 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/syntax(Message, op + _, varop [* *], word, {message});
+
+pub fn main() -> . { print(+ word); print([* word *]); print({message = word}.?{message}) }

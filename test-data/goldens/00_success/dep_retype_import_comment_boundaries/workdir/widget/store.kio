@@ -1,0 +1,10 @@
+module widget/store;
+
+import core/a as _rehost_gdgphcgfcpgb;
+import core/b as _rehost_gdgphcgfcpgc;
+
+pub type A = _rehost_gdgphcgfcpgb.A;
+
+pub type B = _rehost_gdgphcgfcpgc.B;
+
+pub type C = .;

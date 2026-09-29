@@ -1,0 +1,45 @@
+module flow/math;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as a;
+
+pub fn equal(x: I32, y: I32) -> Bool {
+  if! a.leq_i32(x, y) {
+    a.leq_i32(y, x)
+  } else {
+    .f
+  }
+}
+
+pub fn less(x: I32, y: I32) -> Bool {
+  if! a.leq_i32(y, x) {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn both(x: Bool, y: Bool) -> Bool {
+  if! x {
+    y
+  } else {
+    .f
+  }
+}
+
+pub fn invert(x: Bool) -> Bool {
+  if! x {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn minimum(x: I32, y: I32) -> I32 {
+  if! a.leq_i32(x, y) {
+    x
+  } else {
+    y
+  }
+}

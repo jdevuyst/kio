@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(fit);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// UFCS form `value.>fit!` — the target type comes from `coerce`'s
+// return annotation, so no trailing type-arg is needed. fit! drops
+// the I32 slot (narrow_prod!) and widens the resulting String into
+// the target sum (widen_sum!).
+fn coerce(p: String & I32) -> String | I32 { p.>fit! }
+
+pub fn main() -> . {
+  let widened = coerce(("fit via UFCS\n", 0));
+  let out =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print(out)
+}

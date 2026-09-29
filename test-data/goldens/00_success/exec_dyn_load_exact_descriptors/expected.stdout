@@ -1,0 +1,67 @@
+duplicate module identity: dyn_load_prime: malformed image — duplicate module `same` at line 2, column 1
+duplicate host declaration identity: dyn_load_prime: malformed image — duplicate host declaration `Value` in one module at line 3, column 1
+malformed host type binder: dyn_load_prime: malformed host type `same.Box`: unterminated type-parameter list
+later local host type in literal: dyn_load_prime: malformed image — module `later_literal`, fn `literal`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling at line 3, column 33
+later local host type in host function signature: dyn_load_prime: malformed host function `later_host_signature.consume`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling
+alias reaching later local host type: dyn_load_prime: malformed host function `later_alias.consume`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling
+earlier local host function: accepted
+later local host function: dyn_load_prime: malformed image — module `later_function`, fn `call`: unbound name `ping` at line 2, column 22
+missing host return arrow: dyn_load_prime: malformed host function `malformed.missing`: expected `->` and a return type after the final value group
+unterminated declaration type binders: dyn_load_prime: malformed image — unterminated type-binder group at line 2, column 14
+unterminated lambda type binders: dyn_load_prime: malformed image — module `bad`, fn `broken`: unterminated type-binder group in a lambda at line 2, column 25
+lambda without value parameter group: dyn_load_prime: malformed image — module `bad`, fn `broken`: expected `(` opening a lambda's parameter list at line 2, column 29
+bare transparent alias: dyn_load_prime: malformed host function `alias_bare.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 0 were supplied
+local undersaturated transparent alias: dyn_load_prime: malformed host function `alias_partial.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied
+selective undersaturated transparent alias: dyn_load_prime: malformed host function `selective_consumer.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied
+qualified undersaturated transparent alias: dyn_load_prime: malformed host function `qualified_consumer.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied
+saturated transparent alias: accepted
+partially applied newtype: accepted
+opaque nominal with private payload: accepted
+opaque self-shadowing nominal header: accepted
+construct-only self-shadowing nominal header: accepted
+inspect-only self-shadowing nominal header: accepted
+public-member self-shadowing nominal header: accepted
+ambient-decoy self-shadowing nominal header: accepted
+malformed opaque nominal header: dyn_load_prime: public nominal type `guest.Box`: expected `,` or `]` after a type parameter
+private nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
+scoped nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
+unbridged nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches unbridged nominal type `hidden.Hidden`
+private nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches non-public nominal type `guest.Hidden`
+scoped nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches non-public nominal type `guest.Hidden`
+unbridged nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches unbridged nominal type `hidden.Hidden`
+host group shapes: two / two / two / three / zero
+host type lookup (missing): missing
+host type lookup (single): found
+host type lookup (identical duplicate): found
+host type lookup (conflicting role): conflict
+host type lookup (reordered kinds): conflict
+host function lookup (missing): missing
+host function lookup (single): found
+host function lookup (identical duplicate): found
+host function lookup (conflicting signature): conflict
+host function identities: distinct
+host type contract identities: distinct
+canonical export identities: equal / distinct / members distinct / nominals exact / default unit
+canonical contract: accepted
+canonical wrong identity: rejected
+literal host type identities: distinct
+same-leaf literal representations: i32 / string
+curried host groups: flattened
+preflight missing: dyn_load_prime: host adapter is missing required host type `host/a.Value`
+preflight missing function: dyn_load_prime: host adapter is missing required host function `host/b.unused`
+preflight mismatch: dyn_load_prime: host adapter descriptor mismatch for required host type `host/a.Value`
+preflight conflict: dyn_load_prime: host adapter has conflicting host type descriptors for `host/a.Value`
+preflight function mismatch: dyn_load_prime: host adapter descriptor mismatch for required host function `host/a.ping`
+preflight function conflict: dyn_load_prime: host adapter has conflicting host function descriptors for `host/a.ping`
+preflight group mismatch: dyn_load_prime: host adapter group-shape mismatch for required host function `host/a.ping`
+preflight invalid groups: dyn_load_prime: host adapter has invalid group shape for `host/a.ping`
+preflight surplus: accepted
+same-leaf callback results: 41 / bee
+source-derived staged callbacks: 18 / 18
+surface polymorphic callback: 7
+hostfn polymorphic result: accepted
+hostfn function result: accepted
+hostfn repeated binders: 29
+hostfn empty binders: dyn_load_prime: host adapter has invalid group shape for `testapi/main.empty_binders`
+canonicalized nominal body: 23
+owned descriptor identity: role-neutral / roleless-neutral

@@ -1,0 +1,3 @@
+module app/value;
+
+pub fn item() -> . { () }

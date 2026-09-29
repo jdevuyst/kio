@@ -1,0 +1,3 @@
+module _foo_bar;
+
+pub fn value() -> . { () }

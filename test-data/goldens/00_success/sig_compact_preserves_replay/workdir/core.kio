@@ -1,0 +1,5 @@
+module core;
+
+host type Raw role(i32);
+
+pub newtype Id : Raw { pub constructor mk_id; pub projector un_id }

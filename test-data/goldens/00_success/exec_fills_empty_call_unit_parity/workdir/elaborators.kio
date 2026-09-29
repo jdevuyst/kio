@@ -1,0 +1,13 @@
+module elaborators;
+
+import __comptime__;
+
+pub newtype Box[A] : . { constructor box; projector unbox }
+
+pub pure fn boxed[A]() -> Box(A) { Box.box(A, ()) }
+
+pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, target: __Type__, _value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) }
+
+pub elab fill : [A] Box(A) -> A { impl(fills) fill_impl }

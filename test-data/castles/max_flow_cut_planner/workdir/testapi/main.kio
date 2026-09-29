@@ -1,0 +1,14 @@
+module testapi/main;
+
+import flow/fixtures as fixtures;
+import flow/report as report;
+
+pub fn main() -> . {
+  let rerouting = fixtures.cancellation();
+  let solved = report.run(rerouting);
+  report.cancellation_witness(rerouting, solved);
+  report.reject_damaged_witnesses(rerouting, solved);
+  let parallel = report.run(fixtures.parallel());
+  let disconnected = report.run(fixtures.disconnected());
+  ()
+}

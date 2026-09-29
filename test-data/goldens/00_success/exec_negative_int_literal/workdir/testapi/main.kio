@@ -1,0 +1,38 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(sub_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+// Bind subtraction to an infix operator so the `1-2` and `a-1`
+// subtraction shapes the lexer carve-out tests against actually
+// have a parse meaning. The `op _ - _` binding is the standard
+// arithmetic shape (see `exec_operators_arithmetic_logic`).
+op _ - _ { impl sub_i32 }
+
+// Identity function on I32. Lets the test reach the
+// "negative literal as call argument" shape (`f(-40)`) without
+// needing a non-trivial body that would dilute the test's focus.
+fn id_i32(x: I32) -> I32 { x }
+
+fn print_i32(n: I32) -> . { print(i32_to_string(n)); print("\n") }
+
+pub fn main() -> . {
+  // Shape 1: negative literal on the RHS of `let`, at an
+  // expression-starting position (after `=`).
+  let a = -40;
+  print_i32(a);
+  // Shape 2: negative literal as a call argument, after `(`. The
+  // lexer's carve-out fires because `(` does not end an
+  // expression; the `-40` is one IntLit token.
+  print_i32(id_i32(-40));
+  // Shape 3: binary subtraction with two integer literals. After
+  // the `1` IntLit (which ends an expression), the `-` is binary
+  // subtraction regardless of adjacency.
+  print_i32(1 - 2);
+  // Shape 4: binary subtraction with an identifier on the left.
+  // After the `a` Ident (which ends an expression), the `-` is
+  // binary subtraction. The expected value is `-40 - 1 = -41`.
+  print_i32(a - 1)
+}

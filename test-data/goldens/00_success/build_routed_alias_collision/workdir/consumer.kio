@@ -1,0 +1,6 @@
+module consumer;
+
+import a(Shared, keep);
+import decoy as a;
+
+pub fn round_trip(value: Shared) -> Shared { keep(value) }

@@ -1,0 +1,47 @@
+module packet_frame_decoder/frame;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+pub fn length_text(frame: String) -> String { fmt.i32_to_string(text.string_len(frame)) }
+
+fn probe_code_at(frame: String, index: I32) -> . {
+  let _code = text.string_code_at(frame, index);
+  ()
+}
+
+pub fn magic(frame: String) -> String { text.string_slice(frame, 0, 2) }
+
+pub fn first_marker(frame: String) -> String {
+  probe_code_at(frame, 0);
+  text.string_slice(frame, 0, 1)
+}
+
+pub fn ident(frame: String) -> String { text.string_slice(frame, 3, 5) }
+
+pub fn kind(frame: String) -> String { text.string_slice(frame, 6, 7) }
+
+pub fn kind_marker(frame: String) -> String {
+  probe_code_at(frame, 6);
+  text.string_slice(frame, 6, 7)
+}
+
+pub fn sequence(frame: String) -> String { text.string_slice(frame, 8, 10) }
+
+pub fn payload(frame: String) -> String { text.string_slice(frame, 11, 15) }
+
+pub fn checksum(frame: String) -> String { text.string_slice(frame, 16, 19) }
+
+pub fn kind_name(frame: String) -> String {
+  if! text.string_eq(kind(frame), "D") {
+    "DATA"
+  } else if! text.string_eq(kind(frame), "A") {
+    "ACK"
+  } else if! text.string_eq(kind(frame), "H") {
+    "HEARTBEAT"
+  } else {
+    "UNKNOWN"
+  }
+}

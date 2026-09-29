@@ -1,0 +1,14 @@
+module testapi/main;
+
+import elab/control(scope);
+import testapi/io as io;
+
+fn accept(callback: [A] A -> .) -> . { callback(()) }
+
+pub fn main() -> . {
+  accept(.[A](_value: A) {
+    scope! {
+      io.print("scope\n")
+    }
+  })
+}

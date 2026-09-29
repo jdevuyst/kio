@@ -1,0 +1,5 @@
+module store;
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub fn wrap[A](x: A) -> Box(A) { Box.mk_box(A, x) }

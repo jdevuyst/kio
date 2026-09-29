@@ -1,0 +1,34 @@
+module inventory_cycle_counter/audit;
+
+import elab/control(if);
+import inventory_cycle_counter/model(Bin, {expected}, {observed});
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+
+pub fn delta(bin: Bin) -> I32 { arith.sub_i32(bin.?{observed}, bin.?{expected}) }
+
+pub fn abs_delta(bin: Bin) -> I32 {
+  let d = delta(bin);
+  if! arith.lt_i32(d, 0) {
+    arith.sub_i32(0, d)
+  } else {
+    d
+  }
+}
+
+pub fn status(bin: Bin) -> String {
+  if! arith.eq_i32(bin.?{observed}, bin.?{expected}) {
+    "ok"
+  } else if! arith.lt_i32(bin.?{observed}, bin.?{expected}) {
+    "missing"
+  } else {
+    "overage"
+  }
+}
+
+pub fn discrepancy(a: Bin, b: Bin, c: Bin, d: Bin) -> I32 {
+  arith.add_i32(
+    , arith.add_i32(abs_delta(a), abs_delta(b))
+    , arith.add_i32(abs_delta(c), abs_delta(d))
+    )
+}

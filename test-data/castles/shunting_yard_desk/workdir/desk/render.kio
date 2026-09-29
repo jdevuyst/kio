@@ -1,0 +1,42 @@
+/// Turning the calculator's values back into the transcript's text.
+module desk/render;
+
+import desk/list(List, map);
+import desk/outcome(Failure, fault_of, kind_name, pos_of);
+import desk/step(Step, step_text);
+import desk/token(Placed, placed_text);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+/// Every element after the first arrives with a leading space, so the walk
+/// starts from the head rather than from a sentinel empty accumulator — the
+/// separator never has to be trimmed back off.
+rec(loop) fn join_onto(parts: List(String), acc: String) -> String {
+  match! parts.>List.un_list {
+    (
+      , .(head: String, rest: List(String)) { rec join_onto(rest, cat(acc, cat(" ", head))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn join(parts: List(String)) -> String {
+  match! parts.>List.un_list {
+    (.(head: String, rest: List(String)) { join_onto(rest, head) }, .(_empty: .) { "" })
+  }
+}
+
+pub fn show_infix(toks: List(Placed)) -> String { join(map(toks, placed_text)) }
+
+pub fn show_rpn(steps: List(Step)) -> String { join(map(steps, step_text)) }
+
+pub fn show_fault(f: Failure) -> String {
+  cat(kind_name(fault_of(f)), cat(" at token ", int_to_string(pos_of(f))))
+}
+
+pub fn show_int(n: I32) -> String { int_to_string(n) }

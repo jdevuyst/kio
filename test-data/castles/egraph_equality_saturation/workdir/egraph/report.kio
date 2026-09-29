@@ -1,0 +1,93 @@
+module egraph/report;
+
+import egraph/extract as extract;
+import egraph/graph as graph;
+import egraph/numbers as n;
+import egraph/rewrite as rewrite;
+import elab/control(if);
+import elab/match(match);
+import testapi(Array, Bool, I32);
+import testapi/array as arr;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+pub fn number(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+pub fn boolean(value: Bool) -> . { io.print(fmt.bool_to_string(value)) }
+
+pub fn outcome(value: rewrite.Outcome) -> . {
+  match! value {
+    .(done: rewrite.Saturated) { io.print("saturated rounds="); number(done.?{rewrite.saturated}) };
+    .(limited: rewrite.Exhausted) {
+      io.print("exhausted rounds=");
+      number(limited.?{rewrite.exhausted})
+    }
+  }
+}
+
+pub fn status(value: rewrite.Outcome) -> . { io.print("  status="); outcome(value); io.print("\n") }
+
+pub fn original(g: graph.Graph, root: I32) -> . {
+  let selection = extract.select(g);
+  io.print("  original=");
+  io.print(extract.render(g, selection, root));
+  io.print(" cost=");
+  number(extract.cost(g, selection, root));
+  io.print("\n")
+}
+
+rec(loop) fn values(
+  , g: graph.Graph
+  , selection: extract.Selection
+  , root: I32
+  , samples: Array(I32 & I32)
+  , i: I32
+  , agrees: Bool
+  ) -> Bool {
+  if! n.equal(i, arr.array_len(samples)) {
+    agrees
+  } else {
+    let .(x, y) = arr.array_get(samples, i);
+    let actual = extract.evaluate(g, selection, root, x, y);
+    let expected = extract.source_value(g, root, x, y);
+    if! n.equal(i, 0) {
+      ()
+    } else {
+      io.print(",")
+    };
+    number(actual);
+    rec values(
+      , g
+      , selection
+      , root
+      , samples
+      , n.increment(i)
+      , n.both(agrees, n.equal(actual, expected))
+      )
+  }
+}
+
+pub fn result(g: graph.Graph, root: I32) -> . {
+  let selection = extract.select(g);
+  io.print("  extracted=");
+  io.print(extract.render(g, selection, root));
+  io.print(" cost=");
+  number(extract.cost(g, selection, root));
+  io.print(" alternatives=");
+  number(graph.member_count(g, root));
+  io.print(" nodes=");
+  number(graph.size(g));
+  io.print(" classes=");
+  number(graph.class_count(g));
+  io.print("\n");
+  let .(samples: Array(I32 & I32)) = arr.array_make_empty();
+  arr.array_push(samples, (-2, 5));
+  arr.array_push(samples, (0, 1));
+  arr.array_push(samples, (3, -1));
+  io.print("  values=");
+  let agrees = values(g, selection, root, samples, 0, .t);
+  io.print(" source-agrees=");
+  boolean(agrees);
+  io.print("\n")
+}

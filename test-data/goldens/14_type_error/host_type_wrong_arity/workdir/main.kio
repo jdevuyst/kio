@@ -1,0 +1,7 @@
+module main;
+
+host type Scalar;
+
+host type Box[T];
+
+fn invalid(value: Box(Scalar, Scalar)) -> . { () }

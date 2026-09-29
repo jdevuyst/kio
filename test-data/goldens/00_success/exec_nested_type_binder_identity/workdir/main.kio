@@ -1,0 +1,10 @@
+module main;
+
+fn identity[A](value: A) -> A { value }
+
+fn shadow[A](value: A) -> A {
+  let inner = .[A](other: A) -> A { identity(A, other) };
+  inner(A, value)
+}
+
+pub fn main() -> . { shadow(., ()) }

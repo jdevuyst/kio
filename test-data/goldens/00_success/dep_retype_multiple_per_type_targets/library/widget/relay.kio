@@ -1,0 +1,9 @@
+module relay;
+
+import store(A, B, C);
+
+pub fn make_a() -> A { A.mk_a(()) }
+
+pub fn make_b() -> B { B.mk_b(()) }
+
+pub fn make_c() -> C { C.mk_c(()) }

@@ -1,0 +1,20 @@
+module m;
+
+type Alias[A] = A;
+type _Alias[_A] = _A;
+
+newtype Box[A] : A {
+  constructor mk_box;
+  projector un_box;
+};
+
+newtype _Box[_A] : _A {
+  constructor mk_marked;
+  projector un_marked;
+};
+
+fn ordinary[A](value: A) -> A { Box.un_box(A, Box.mk_box(A, value)) }
+
+fn _marked[_A](_value: _A) -> _A {
+  _Box.un_marked(_A, _Box.mk_marked(_A, _value))
+}

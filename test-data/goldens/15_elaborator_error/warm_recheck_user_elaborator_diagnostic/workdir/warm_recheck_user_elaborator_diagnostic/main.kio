@@ -1,0 +1,6 @@
+module warm_recheck_user_elaborator_diagnostic/main;
+
+import elaborators(id_user);
+import warm_recheck_user_elaborator_diagnostic(String);
+
+fn unresolved(s: String) -> String { let selected = id_user!(s, _); selected }

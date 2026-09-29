@@ -1,0 +1,2 @@
+newtype `Hidden` must be at least as visible as constructor `Value.mk`
+give newtype `Hidden` visibility equal to or wider than constructor `Value.mk`

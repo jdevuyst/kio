@@ -1,0 +1,20 @@
+module testapi/main;
+
+import greet(hello);
+import nums(bump, scale, start, value);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A guest whose `main` (in this entry module) calls `pub fn`s declared in
+// two other modules — `nums` (a newtype counter) and `greet` (a string
+// helper). Loading the whole-package image requires cross-module name
+// resolution: dyn_load_prime's package loader topo-sorts the modules and resolves
+// each bare cross-module name through the importing module's own imports.
+// Running `main` through the interpreter therefore agrees with
+// compile-and-run only when the cross-module references resolve correctly.
+pub fn main() -> . {
+  let c = scale(bump(bump(bump(start()))), 10);
+  print(string_concat(hello("kio"), string_concat(" count=", int_to_string(value(c)))))
+}

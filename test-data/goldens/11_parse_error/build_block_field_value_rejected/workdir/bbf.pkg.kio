@@ -1,0 +1,11 @@
+package bbf;
+
+build {
+  target js {
+    out = "out/js/";
+  }
+}
+
+bridge {
+  main;
+}

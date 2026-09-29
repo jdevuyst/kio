@@ -1,0 +1,5 @@
+module a_;
+
+host fn c() -> .;
+
+pub fn call() -> . { c() }

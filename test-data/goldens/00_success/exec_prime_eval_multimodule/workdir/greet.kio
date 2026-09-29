@@ -1,0 +1,7 @@
+/// A second library module: a string helper.
+module greet;
+
+import testapi(String);
+import testapi/text(string_concat);
+
+pub fn hello(name: String) -> String { string_concat("hello, ", string_concat(name, "!")) }

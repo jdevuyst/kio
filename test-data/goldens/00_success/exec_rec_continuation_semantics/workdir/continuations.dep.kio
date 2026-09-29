@@ -1,0 +1,13 @@
+dependency continuations;
+
+source {
+  path "../../exec_rec_continuation_resume/workdir/exec_rec_continuation_resume.pkg.kio"
+}
+
+rehost continuations/elab/testapi to elab/testapi;
+rehost continuations/testapi to testapi;
+rehost continuations/testapi/arith to testapi/arith;
+rehost continuations/testapi/fmt to testapi/fmt;
+rehost continuations/testapi/io to testapi/io;
+rehost continuations/testapi/iter to testapi/iter;
+rehost continuations/testapi/text to testapi/text;

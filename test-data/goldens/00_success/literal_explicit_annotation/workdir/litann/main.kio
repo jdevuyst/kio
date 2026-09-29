@@ -1,0 +1,15 @@
+module litann/main;
+
+import litann(Bool, F64, I32, Str);
+
+fn s() -> Str { "hi"(Str) }
+
+fn b() -> Bool { .t(Bool) }
+
+fn i() -> I32 { 42(I32) }
+
+fn f() -> F64 { 3.14(F64) }
+
+// An integer literal admits a float-shaped role too: `7` carries no
+// decimal point, but `(F64)` is still a valid tier-1 annotation.
+fn int_as_float() -> F64 { 7(F64) }

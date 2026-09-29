@@ -1,0 +1,8 @@
+module pkg;
+
+fn identity(x: .) -> . { x }
+
+/// ```kio {@}
+/// identity(identity)
+/// ```
+pub newtype Wrapped : . { constructor make; projector read; };

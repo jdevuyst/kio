@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(F64, String);
+import testapi/arith(add_f64, mul_f64, sub_f64);
+import testapi/fmt(f64_to_string);
+import testapi/io(print);
+
+// A guest that computes with `F64` — a host scalar `dyn_load_prime`'s interpreter
+// never used to be able to carry. Floats are outside the closed i32 / string
+// / bool scalar set the old value model fixed; now a `V_host` carries an
+// **opaque** host scalar the host constructs and operates on, so a float
+// rides through the interpreter exactly like any other host value. Running
+// `main` through dyn_load_prime's interpreter resolves `add_f64` / `f64_to_string`
+// through the supplied host record and constructs each `F64` literal through
+// the host's scalar capability, so the dyn-load-prime differential agrees with
+// compile-and-run byte for byte.
+fn line(label: String, x: F64) -> . { print(label); print(f64_to_string(x)); print("\n") }
+
+pub fn main() -> . {
+  line("literal = ", 562.406);
+  line("add = ", add_f64(1.5, 2.25));
+  line("sub = ", sub_f64(10.5, 0.25));
+  line("mul = ", mul_f64(1.5, 2.0));
+  line("nested = ", add_f64(mul_f64(2.5, 4.0), sub_f64(0.5, 0.25)))
+}

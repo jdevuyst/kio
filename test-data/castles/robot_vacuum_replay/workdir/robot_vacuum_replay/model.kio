@@ -1,0 +1,167 @@
+module robot_vacuum_replay/model;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, lt_i32, sub_i32);
+
+pub labels Direction = { north: . } | { east: . } | { south: . } | { west: . };
+
+pub labels Run_mode = { docked: . } | { idle: . } | { cleaning: . } | { paused: . };
+
+pub labels Vacuum = {
+  , x: I32
+  , y: I32
+  , facing: Direction
+  , mode: Run_mode
+  , dirt: I32
+  , battery: I32
+  , commands: I32
+  , faults: I32
+  };
+
+pub fn north_direction() -> Direction { {north=}.>widen_sum!(Direction) }
+
+pub fn east_direction() -> Direction { {east=}.>widen_sum!(Direction) }
+
+pub fn south_direction() -> Direction { {south=}.>widen_sum!(Direction) }
+
+pub fn west_direction() -> Direction { {west=}.>widen_sum!(Direction) }
+
+pub fn docked_mode() -> Run_mode { {docked=}.>widen_sum!(Run_mode) }
+
+pub fn idle_mode() -> Run_mode { {idle=}.>widen_sum!(Run_mode) }
+
+pub fn cleaning_mode() -> Run_mode { {cleaning=}.>widen_sum!(Run_mode) }
+
+pub fn paused_mode() -> Run_mode { {paused=}.>widen_sum!(Run_mode) }
+
+pub fn initial_vacuum() -> Vacuum {
+  {
+    , x = 0
+    , y = 0
+    , facing = north_direction()
+    , mode = docked_mode()
+    , dirt = 0
+    , battery = 10
+    , commands = 0
+    , faults = 0
+    }
+}
+
+fn tick(s: Vacuum) -> Vacuum { s.!{commands = add_i32(s.?{commands}, 1)} }
+
+fn mark_fault(s: Vacuum) -> Vacuum { s.!{faults = add_i32(s.?{faults}, 1)} }
+
+fn burn(s: Vacuum) -> Vacuum { s.!{battery = sub_i32(s.?{battery}, 1)} }
+
+fn burn_cleaning_pass(s: Vacuum) -> Vacuum { s.!{battery = sub_i32(s.?{battery}, 2)} }
+
+fn turn_left_from(d: Direction) -> Direction {
+  match! d {
+    (
+      , .(_n: North) { west_direction() }
+      , .(_w: West) { south_direction() }
+      , .(_s: South) { east_direction() }
+      , .(_e: East) { north_direction() }
+      )
+  }
+}
+
+fn turn_right_from(d: Direction) -> Direction {
+  match! d {
+    (
+      , .(_n: North) { east_direction() }
+      , .(_e: East) { south_direction() }
+      , .(_s: South) { west_direction() }
+      , .(_w: West) { north_direction() }
+      )
+  }
+}
+
+fn move_north(s: Vacuum) -> Vacuum { s.!{y = add_i32(s.?{y}, 1), dirt = add_i32(s.?{dirt}, 1)} }
+
+fn move_east(s: Vacuum) -> Vacuum { s.!{x = add_i32(s.?{x}, 1), dirt = add_i32(s.?{dirt}, 1)} }
+
+fn move_south(s: Vacuum) -> Vacuum { s.!{y = sub_i32(s.?{y}, 1), dirt = add_i32(s.?{dirt}, 1)} }
+
+fn move_west(s: Vacuum) -> Vacuum { s.!{x = sub_i32(s.?{x}, 1), dirt = add_i32(s.?{dirt}, 1)} }
+
+fn move_forward(s: Vacuum) -> Vacuum {
+  let facing = s.?{facing};
+  match! facing {
+    (
+      , .(_n: North) { move_north(s) }
+      , .(_e: East) { move_east(s) }
+      , .(_s: South) { move_south(s) }
+      , .(_w: West) { move_west(s) }
+      )
+  }
+}
+
+fn faulted_command(s: Vacuum) -> Vacuum { mark_fault(tick(s)) }
+
+pub fn apply_start(s: Vacuum) -> Vacuum { let next = burn(tick(s)); next.!{mode = cleaning_mode()} }
+
+pub fn apply_pause(s: Vacuum) -> Vacuum { let next = tick(s); next.!{mode = paused_mode()} }
+
+pub fn apply_left(s: Vacuum) -> Vacuum {
+  let next = burn(tick(s));
+  next.!{facing = turn_left_from(s.?{facing})}
+}
+
+pub fn apply_right(s: Vacuum) -> Vacuum {
+  let next = burn(tick(s));
+  next.!{facing = turn_right_from(s.?{facing})}
+}
+
+pub fn apply_step(s: Vacuum) -> Vacuum {
+  let mode = s.?{mode};
+  match! mode {
+    (
+      , .(_cleaning: Cleaning) { burn(tick(move_forward(s))) }
+      , .(_docked: Docked) { faulted_command(s) }
+      , .(_idle: Idle) { faulted_command(s) }
+      , .(_paused: Paused) { faulted_command(s) }
+      )
+  }
+}
+
+fn clean_if_needed(s: Vacuum) -> Vacuum {
+  if! lt_i32(0, s.?{dirt}) {
+    s.!{dirt = sub_i32(s.?{dirt}, 1)}
+  } else {
+    s
+  }
+}
+
+pub fn apply_clean(s: Vacuum) -> Vacuum {
+  let mode = s.?{mode};
+  match! mode {
+    (
+      , .(_cleaning: Cleaning) { clean_if_needed(burn_cleaning_pass(tick(s))) }
+      , .(_docked: Docked) { faulted_command(s) }
+      , .(_idle: Idle) { faulted_command(s) }
+      , .(_paused: Paused) { faulted_command(s) }
+      )
+  }
+}
+
+pub fn apply_dock(s: Vacuum) -> Vacuum {
+  let next = tick(s);
+  next.!{
+    , x = 0
+    , y = 0
+    , facing = north_direction()
+    , mode = docked_mode()
+    , battery = add_i32(next.?{battery}, 5)
+    }
+}
+
+pub fn apply_charge(s: Vacuum, amount: I32) -> Vacuum {
+  let next = tick(s);
+  next.!{battery = add_i32(next.?{battery}, amount)}
+}
+
+pub fn apply_unknown(s: Vacuum) -> Vacuum { faulted_command(s) }

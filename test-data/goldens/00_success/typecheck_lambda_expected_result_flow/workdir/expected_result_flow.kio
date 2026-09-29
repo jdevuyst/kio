@@ -1,0 +1,13 @@
+module expected_result_flow;
+
+newtype Tag[E] : . { constructor mk; projector un }
+
+type Out = . & Tag(.);
+
+fn make[T][E](value: T) -> T & Tag(E) { (value, Tag.mk(E, ())) }
+
+fn apply[A][B](f: A -> B, value: A) -> B { f(value) }
+
+fn elided() -> Out { apply(.(value: .) { make(value) }, ()) }
+
+fn placeholders() -> Out { apply(_, _, .(value: .) { make(_, _, value) }, ()) }

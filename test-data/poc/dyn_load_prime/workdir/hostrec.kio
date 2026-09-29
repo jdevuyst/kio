@@ -1,0 +1,877 @@
+/// The standard host capabilities `dyn_load_prime` builds over its own `testapi/*` host fns: op dispatch (`serve_default`), literal construction (`make_lit_default`), and the conditional decision (`test_bool_default`).
+module hostrec;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn, Host_id, Host_type);
+import host_descriptor(host_fn_eq, host_fn_id, host_id_eq, host_id_render, mk_host_fn, mk_host_id);
+import host_descriptor(host_type_id);
+import marshal(loop_op);
+import result(Call_result, call_done, call_stuck);
+import testapi(Bool, F64, I32, Scalar, String);
+import testapi/arith(add, div, mod, mul, sub);
+import testapi/arith(add_f64, mul_f64, sub_f64);
+import testapi/arith(add_i32, div_i32, eq_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, f64_to_string, int_to_string, print_i32, string_to_int);
+import testapi/io(print, read_ascii_line);
+import testapi/scalar(make_scalar, scalar_as_bool, scalar_as_f64, scalar_as_i32, scalar_as_str);
+import testapi/scalar(scalar_is_true, scalar_of_bool, scalar_of_f64, scalar_of_i32, scalar_of_str);
+import testapi/text(string_code_at, string_concat, string_eq, string_len, string_slice);
+import value(Env, Side, V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value, Value_shape);
+import value(s_left, s_right, vleft, vright, vsum);
+import value(un_value, value_to_scalar, vhost, vunit);
+
+// `hostrec.kio` — the standard host capabilities for the dyn-load-prime differential.
+//
+// A host supplies its capabilities as `V_hostfn` values the loader seeds
+// into the guest's environment; when a guest applies one and it fires, the
+// evaluator (`eval.kio`) hands the threaded `call` capability the host fn's
+// exact descriptor plus the call's one product-domain value — it hardcodes no
+// host vocabulary. This module implements the **standard** host's three
+// runtime capabilities:
+//
+//   - `serve_default` — `call`: dispatch the qualified identity over the host fns
+//     `dyn_load_prime` itself declares (`testapi/*`).
+//   - `make_lit_default` — `make_lit`: turn literal text + an exact host-type descriptor
+//     into a `V_host` via the host's `make_scalar`.
+//   - `test_bool_default` — `test_bool`: receive the condition's exact
+//     `Host_type` and opaque `Scalar`; the standard host's single scalar
+//     representation already carries Boolean truth, so ignore the descriptor
+//     and use `scalar_is_true` to select a `Side`.
+//
+// `defaults.kio` wraps these as the inline function types the evaluator /
+// loader take and threads them (e.g. `instantiate_default`). So the host
+// supplies a guest's capabilities by linking `dyn_load_prime` and threading these;
+// a host wanting a different vocabulary builds and threads different ones —
+// the evaluator is unchanged either way.
+//
+// **Opaque scalars cross host-side.** A guest's host scalars ride `V_host` as
+// an opaque `Scalar` the host owns; the interpreter never reads them. So the
+// **marshalling lives here**, host-side: an applier projects a typed host
+// value out of an operand's opaque scalar (`value_i32` / `value_str` over
+// `value_to_scalar` + `testapi/scalar.kio`'s `scalar_as_*`), applies the host
+// op, and lifts the typed result back into an opaque scalar (`vi32` / `vstr`
+// / `vbool` over `scalar_of_*`). The evaluator does none of this — it only
+// threads the opaque `V_host`.
+//
+// **`dispatch` routes the exact descriptor to a per-shape applier.** Kio''s functions
+// are unary over one domain type (`specs/prime.md` § Type system), so a host
+// fn's arguments arrive as the **one product-domain `Value`** the evaluator
+// folds across every value group (`eval.kio` § `vals_to_domain`): `()` for no arguments,
+// the argument itself for one, a right-nested product for two or more. A
+// binary applier destructures the `vproduct(a, b)` domain; a unary applier
+// takes the argument value directly. Each applier returns a `Call_result`
+// (never a function), keeping the module first-order. An argument of the
+// wrong shape (a host fn applied to a non-scalar, or with the wrong arity),
+// and an unknown identity, yield `Ev_stuck` — exactly as the evaluator's
+// structural eliminators do — and a well-typed guest never triggers the
+// wrong-shape path.
+//
+// Dispatch keys on the module-qualified host identity. Instantiated surfaces
+// preflight the exact signature and application-group shape; low-level evaluator
+// callers remain responsible for supplying a coherent descriptor. Local names
+// may repeat across modules without changing which implementation is selected.
+// Adding a capability is adding an arm here (and the host backing its body),
+// with no evaluator change — a loaded program can call any host fn its host
+// provides.
+
+// =====================================================================
+// Domain destructuring — recover a host fn's arguments from the product
+// =====================================================================
+
+// Recover the two components of a binary host fn's product domain, or `()`
+// when the domain is not a product (a wrong-arity / wrong-shape call).
+fn prod2(dom: Value) -> . | (Value & Value) {
+  match! un_value(dom) {
+    (
+      , .(p: V_product) {
+          match! V_product.get(p) {
+            .(a: Value, b: Value) { widen_sum!((a, b), . | (Value & Value)) }
+          }
+        }
+      , .(_c: V_closure) { widen_sum!((), . | (Value & Value)) }
+      , .(_s: V_sum) { widen_sum!((), . | (Value & Value)) }
+      , .(_u: V_unit) { widen_sum!((), . | (Value & Value)) }
+      , .(_h: V_host) { widen_sum!((), . | (Value & Value)) }
+      , .(_f: V_hostfn) { widen_sum!((), . | (Value & Value)) }
+      )
+  }
+}
+
+// =====================================================================
+// Operand projection — a `V_host` operand → a typed host value, host-side
+// =====================================================================
+//
+// An operand arrives as a `V_host` carrying an opaque `Scalar`. Projecting
+// the typed host value is two host-side steps: `value_to_scalar` unwraps the
+// opaque scalar from the value shape (a structural value-model projection, not
+// a scalar inspection), then `testapi/scalar.kio`'s `scalar_as_*` asks the
+// host for the typed value. `()` when the value is not a `V_host` or the
+// scalar is the wrong shape (a well-typed guest never triggers either).
+fn value_i32(v: Value) -> . | I32 {
+  match! value_to_scalar(v) {
+    (.(s: Scalar) { scalar_as_i32(s) }, .(_e: .) { widen_sum!((), . | I32) })
+  }
+}
+
+fn value_str(v: Value) -> . | String {
+  match! value_to_scalar(v) {
+    (.(s: Scalar) { scalar_as_str(s) }, .(_e: .) { widen_sum!((), . | String) })
+  }
+}
+
+fn value_f64(v: Value) -> . | F64 {
+  match! value_to_scalar(v) {
+    (.(s: Scalar) { scalar_as_f64(s) }, .(_e: .) { widen_sum!((), . | F64) })
+  }
+}
+
+// Lift a host i32 / string / bool / f64 result into a `V_host` carrying an
+// opaque scalar (`testapi/scalar.kio`'s `scalar_of_*`).
+fn vi32(n: I32) -> Value { vhost(scalar_of_i32(n)) }
+
+fn vstr(s: String) -> Value { vhost(scalar_of_str(s)) }
+
+fn vbool(b: Bool) -> Value { vhost(scalar_of_bool(b)) }
+
+fn vf64(n: F64) -> Value { vhost(scalar_of_f64(n)) }
+
+// A wrong-shape host call's stuck reason, naming the op and what it expected.
+fn shape_stuck(identity: String, wanted: String) -> Call_result {
+  call_stuck(string_concat(
+    , "host fn `"(String)
+    , string_concat(identity, string_concat("` expected "(String), wanted))
+    ))
+}
+
+// Recover the three components of a ternary host fn's right-nested
+// product domain, or `()` on a wrong shape.
+fn prod3(dom: Value) -> . | (Value & Value & Value) {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, rest: Value) {
+              match! prod2(rest) {
+                (
+                  , .(inner: Value & Value) {
+                      match! inner {
+                        .(b: Value, c: Value) {
+                          widen_sum!((a, (b, c)), . | (Value & Value & Value))
+                        }
+                      }
+                    }
+                  , .(_n: .) { widen_sum!((), . | (Value & Value & Value)) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { widen_sum!((), . | (Value & Value & Value)) }
+      )
+  }
+}
+
+// Lift an optional host i32 (`I32 | .`) into the guest's sum value —
+// the left arm carries the i32, the right arm the unit.
+fn v_opt_i32(r: I32 | .) -> Value {
+  match! r {
+    (.(n: I32) { vleft(vi32(n)) }, .(_none: .) { vright(vunit()) })
+  }
+}
+
+// Lift an optional host string (`String | .`) the same way.
+fn v_opt_str(r: String | .) -> Value {
+  match! r {
+    (.(t: String) { vleft(vstr(t)) }, .(_none: .) { vright(vunit()) })
+  }
+}
+
+// =====================================================================
+// Per-shape appliers — apply one host-fn shape to its argument value
+// =====================================================================
+//
+// Each applier takes the call's product-domain value (and, for the
+// op-parameterized binary shapes, the host op) and returns the result
+// directly. They return `Call_result`, never a function — a first-order
+// codomain that the module's `match!` elaboration handles. `dispatch`
+// routes each key to its applier. The two i32-binary shapes are
+// op-parameterized (the host op is a function argument); the four fixed
+// shapes name their host op directly.
+
+// A binary i32 → i32 host op (add / sub / mul / div / mod): destructure
+// the product, recover both i32 operands, apply, and wrap the result.
+fn bin_i32(identity: String, op: (I32 & I32) -> I32, dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, b: Value) {
+              match! value_i32(a) {
+                (
+                  , .(x: I32) {
+                      match! value_i32(b) {
+                        (
+                          , .(y: I32) { call_done(vi32(op(x, y))) }
+                          , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                          )
+                      }
+                    }
+                  , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+      )
+  }
+}
+
+// A binary f64 → f64 host op (add / sub / mul): destructure the product,
+// recover both float operands from their opaque scalars, apply, and wrap the
+// result. The marshalling is host-side, exactly as the i32 shape — the
+// interpreter only threaded the opaque `V_host` floats.
+fn bin_f64(identity: String, op: (F64 & F64) -> F64, dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, b: Value) {
+              match! value_f64(a) {
+                (
+                  , .(x: F64) {
+                      match! value_f64(b) {
+                        (
+                          , .(y: F64) { call_done(vf64(op(x, y))) }
+                          , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+                          )
+                      }
+                    }
+                  , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+      )
+  }
+}
+
+// A binary i32 → bool host op (eq / leq / lt): the same product
+// destructuring, yielding a host bool.
+fn cmp_i32(identity: String, op: (I32 & I32) -> Bool, dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, b: Value) {
+              match! value_i32(a) {
+                (
+                  , .(x: I32) {
+                      match! value_i32(b) {
+                        (
+                          , .(y: I32) { call_done(vbool(op(x, y))) }
+                          , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                          )
+                      }
+                    }
+                  , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+      )
+  }
+}
+
+// The binary `string_concat` host op: destructure the product, recover both
+// strings, concatenate.
+fn concat_op(dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, b: Value) {
+              match! value_str(a) {
+                (
+                  , .(s0: String) {
+                      match! value_str(b) {
+                        (
+                          , .(s1: String) { call_done(vstr(string_concat(s0, s1))) }
+                          , .(_n: .) {
+                              shape_stuck("string_concat"(String), "two string arguments"(String))
+                            }
+                          )
+                      }
+                    }
+                  , .(_n: .) {
+                      shape_stuck("string_concat"(String), "two string arguments"(String))
+                    }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck("string_concat"(String), "two string arguments"(String)) }
+      )
+  }
+}
+
+// The binary `string_eq` host op: destructure the product, recover both
+// strings, compare.
+fn str_eq_op(dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(a: Value, b: Value) {
+              match! value_str(a) {
+                (
+                  , .(s0: String) {
+                      match! value_str(b) {
+                        (
+                          , .(s1: String) { call_done(vbool(string_eq(s0, s1))) }
+                          , .(_n: .) {
+                              shape_stuck("string_eq"(String), "two string arguments"(String))
+                            }
+                          )
+                      }
+                    }
+                  , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
+      )
+  }
+}
+
+// The unary `int_to_string` host op: the argument arrives directly (no
+// product wrapper for one argument); recover the i32 and stringify.
+fn to_string_op(dom: Value) -> Call_result {
+  match! value_i32(dom) {
+    (
+      , .(n: I32) { call_done(vstr(int_to_string(n))) }
+      , .(_x: .) { shape_stuck("int_to_string"(String), "one i32 argument"(String)) }
+      )
+  }
+}
+
+// Float scalars stay opaque in `Value`; the host capability recovers and
+// stringifies them only at this boundary.
+fn f64_to_string_op(dom: Value) -> Call_result {
+  match! value_f64(dom) {
+    (
+      , .(n: F64) { call_done(vstr(f64_to_string(n))) }
+      , .(_x: .) { shape_stuck("f64_to_string"(String), "one f64 argument"(String)) }
+      )
+  }
+}
+
+// `serve_default` supplies this capability without the evaluator naming it.
+fn string_len_op(dom: Value) -> Call_result {
+  match! value_str(dom) {
+    (
+      , .(s: String) { call_done(vi32(string_len(s))) }
+      , .(_x: .) { shape_stuck("string_len"(String), "one string argument"(String)) }
+      )
+  }
+}
+
+// The unary `print` host op: recover the string argument, print it, and
+// yield the unit value (`print` returns `()`).
+fn print_op(dom: Value) -> Call_result {
+  match! value_str(dom) {
+    (
+      , .(s: String) { print(s); call_done(vunit()) }
+      , .(_x: .) { shape_stuck("print"(String), "one string argument"(String)) }
+      )
+  }
+}
+
+// The ternary `string_slice` host op: recover the string and both index
+// arguments, slice.
+fn string_slice_op(dom: Value) -> Call_result {
+  match! prod3(dom) {
+    (
+      , .(parts: Value & Value & Value) {
+          match! parts {
+            .(sv: Value, av: Value, bv: Value) {
+              match! value_str(sv) {
+                (
+                  , .(s0: String) {
+                      match! value_i32(av) {
+                        (
+                          , .(a0: I32) {
+                              match! value_i32(bv) {
+                                (
+                                  , .(b0: I32) { call_done(vstr(string_slice(s0, a0, b0))) }
+                                  , .(_n: .) {
+                                      shape_stuck(
+                                        , "string_slice"(String)
+                                        , "a string and two i32 arguments"(String)
+                                        )
+                                    }
+                                  )
+                              }
+                            }
+                          , .(_n: .) {
+                              shape_stuck(
+                                , "string_slice"(String)
+                                , "a string and two i32 arguments"(String)
+                                )
+                            }
+                          )
+                      }
+                    }
+                  , .(_n: .) {
+                      shape_stuck("string_slice"(String), "a string and two i32 arguments"(String))
+                    }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck("string_slice"(String), "a string and two i32 arguments"(String)) }
+      )
+  }
+}
+
+// The binary `string_code_at` host op: an optional-i32 result crosses to
+// the guest as its `I32 | .` sum.
+fn string_code_at_op(dom: Value) -> Call_result {
+  match! prod2(dom) {
+    (
+      , .(pair: Value & Value) {
+          match! pair {
+            .(sv: Value, iv: Value) {
+              match! value_str(sv) {
+                (
+                  , .(s0: String) {
+                      match! value_i32(iv) {
+                        (
+                          , .(i0: I32) { call_done(v_opt_i32(string_code_at(s0, i0))) }
+                          , .(_n: .) {
+                              shape_stuck("string_code_at"(String), "a string and an i32"(String))
+                            }
+                          )
+                      }
+                    }
+                  , .(_n: .) {
+                      shape_stuck("string_code_at"(String), "a string and an i32"(String))
+                    }
+                  )
+              }
+            }
+          }
+        }
+      , .(_n: .) { shape_stuck("string_code_at"(String), "a string and an i32"(String)) }
+      )
+  }
+}
+
+// The unary `string_to_int` host op: an optional-i32 result.
+fn string_to_int_op(dom: Value) -> Call_result {
+  match! value_str(dom) {
+    (
+      , .(s0: String) { call_done(v_opt_i32(string_to_int(s0))) }
+      , .(_x: .) { shape_stuck("string_to_int"(String), "one string argument"(String)) }
+      )
+  }
+}
+
+// The zero-argument `read_ascii_line` host op: an optional-string result.
+fn read_ascii_line_op() -> Call_result { call_done(v_opt_str(read_ascii_line())) }
+
+// The unary `bool_to_string` host op.
+fn bool_to_string_op(dom: Value) -> Call_result {
+  match! value_to_scalar(dom) {
+    (
+      , .(sc: Scalar) {
+          match! scalar_as_bool(sc) {
+            (
+              , .(b: Bool) { call_done(vstr(bool_to_string(b))) }
+              , .(_n: .) { shape_stuck("bool_to_string"(String), "one bool argument"(String)) }
+              )
+          }
+        }
+      , .(_n: .) { shape_stuck("bool_to_string"(String), "one bool argument"(String)) }
+      )
+  }
+}
+
+// The unary `print_i32` host op.
+fn print_i32_op(dom: Value) -> Call_result {
+  match! value_i32(dom) {
+    (
+      , .(n: I32) { print_i32(n); call_done(vunit()) }
+      , .(_x: .) { shape_stuck("print_i32"(String), "one i32 argument"(String)) }
+      )
+  }
+}
+
+// =====================================================================
+// serve_default — the standard exact-descriptor → result dispatch
+// =====================================================================
+//
+// The `call` capability the loader threads for the dyn-load-prime differential:
+// a flat dispatch over the host capabilities `dyn_load_prime` declares. It
+// takes the `(descriptor, value)` pair the evaluator hands it; `dispatch`
+// matches the exact declaration identity to its applier and applies it to the
+// argument value, and an unknown identity goes stuck. The vocabulary is open
+// by construction — a new capability is a new arm here plus the host backing
+// its body, with no evaluator change.
+//
+// `i32_to_string` aliases `int_to_string` (both stringify an i32). `string_len`
+// demonstrates that dispatch is open: the evaluator never names it, and a
+// guest resolves it through `serve_default` alone. The float family
+// (`add_f64` / `sub_f64` / `mul_f64` / `f64_to_string`) keeps its `V_host`
+// scalars opaque and marshals them only in these host-side arms. `loop` is the
+// **higher-order** member: its domain carries the guest's interpreted `step`
+// closure, which `marshal.kio`'s `loop_op` turns into an `Ev_fold` request for
+// the evaluator's continuation machine. The evaluator still never names
+// `"loop"`; it only handles the structural fold outcome.
+
+// Match one linked standard module to the exact corresponding module in a
+// dynamically loaded guest. These are explicit namespace bindings in the
+// standard `call` capability; an unrelated module with the same leaf is never
+// admitted.
+fn descriptor_is_guest_module(id: Host_id, standard_module: String, local_name: String) -> Bool {
+  if! string_eq(standard_module, "testapi/arith"(String)) {
+    host_id_eq(id, mk_host_id("hostapi/arith"(String), local_name))
+  } else if! string_eq(standard_module, "testapi/text"(String)) {
+    host_id_eq(id, mk_host_id("hostapi/text"(String), local_name))
+  } else if! string_eq(standard_module, "testapi/fmt"(String)) {
+    host_id_eq(id, mk_host_id("hostapi/fmt"(String), local_name))
+  } else if! string_eq(standard_module, "testapi/io"(String)) {
+    host_id_eq(id, mk_host_id("hostapi/io"(String), local_name))
+  } else if! string_eq(standard_module, "testapi/iter"(String)) {
+    host_id_eq(id, mk_host_id("hostapi/iter"(String), local_name))
+  } else {
+    .f(Bool)
+  }
+}
+
+// Match an exact host-fn declaration identity to its applier.
+fn descriptor_is(descriptor: Host_fn, module_name: String, local_name: String) -> Bool {
+  let id = host_fn_id(descriptor);
+  if! host_id_eq(id, mk_host_id(module_name, local_name)) {
+    .t(Bool)
+  } else if! host_id_eq(id, mk_host_id("hostapi"(String), local_name)) {
+    .t(Bool)
+  } else {
+    descriptor_is_guest_module(id, module_name, local_name)
+  }
+}
+
+fn alpha_print_descriptor() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/alpha"(String), "print"(String))
+    , "(h{testapi.String}) -> ."(String)
+    )
+}
+
+fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
+  let identity = host_id_render(host_fn_id(descriptor));
+  if! descriptor_is(descriptor, "testapi/arith"(String), "add_i32"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { add_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub_i32"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { sub_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul_i32"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { mul_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "div_i32"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { div_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mod_i32"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { mod_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "eq_i32"(String)) {
+    cmp_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { eq_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "leq_i32"(String)) {
+    cmp_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { leq_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "lt_i32"(String)) {
+    cmp_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { lt_i32(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_concat"(String)) {
+    concat_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_eq"(String)) {
+    str_eq_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_len"(String)) {
+    string_len_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "int_to_string"(String)) {
+    to_string_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "i32_to_string"(String)) {
+    to_string_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "add_f64"(String)) {
+    bin_f64(
+      , identity
+      , .(p: F64 & F64) {
+          match! p {
+            .(x: F64, y: F64) { add_f64(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub_f64"(String)) {
+    bin_f64(
+      , identity
+      , .(p: F64 & F64) {
+          match! p {
+            .(x: F64, y: F64) { sub_f64(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul_f64"(String)) {
+    bin_f64(
+      , identity
+      , .(p: F64 & F64) {
+          match! p {
+            .(x: F64, y: F64) { mul_f64(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "f64_to_string"(String)) {
+    f64_to_string_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/io"(String), "print"(String)) {
+    print_op(dom)
+  } else if! host_fn_eq(descriptor, alpha_print_descriptor()) {
+    print_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "print_i32"(String)) {
+    print_i32_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "bool_to_string"(String)) {
+    bool_to_string_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_slice"(String)) {
+    string_slice_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_code_at"(String)) {
+    string_code_at_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "string_to_int"(String)) {
+    string_to_int_op(dom)
+  } else if! descriptor_is(descriptor, "testapi/io"(String), "read_ascii_line"(String)) {
+    read_ascii_line_op()
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "add"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { add(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { sub(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { mul(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "div"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { div(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mod"(String)) {
+    bin_i32(
+      , identity
+      , .(p: I32 & I32) {
+          match! p {
+            .(x: I32, y: I32) { mod(x, y) }
+          }
+        }
+      , dom
+      )
+  } else if! descriptor_is(descriptor, "testapi/iter"(String), "loop"(String)) {
+    loop_op(dom)
+  } else {
+    call_stuck(string_concat(
+      , "no host implementation for `"(String)
+      , string_concat(identity, "`"(String))
+      ))
+  }
+}
+
+/// The standard `call` capability: dispatch the exact host fn descriptor the
+/// evaluator hands it (with the call's one product-domain value) to its
+/// applier, or `Ev_stuck` when the identity is unknown.
+pub fn serve_default(descriptor: Host_fn, dom: Value) -> Call_result { dispatch(descriptor, dom) }
+
+// =====================================================================
+// make_lit_default — the standard literal-construction capability
+// =====================================================================
+//
+// A `T_lit` node carries a literal's raw text + exact host-type descriptor; the
+// evaluator hands them to `make_lit`, which must produce a `V_host`. The
+// host parses the scalar from the text + exact descriptor (`testapi/scalar.kio`'s
+// `make_scalar`); this wraps the resulting opaque scalar as a `V_host`. So
+// the interpreter knows no scalar type — the host owns the text-to-value
+// parse, and any host scalar a host supports (i32 / string / bool / float /
+// wider numerics) is constructed here without an evaluator change.
+fn id_is(id: Host_id, module_name: String, local_name: String) -> Bool {
+  host_id_eq(id, mk_host_id(module_name, local_name))
+}
+
+fn literal_representation(host_type: Host_type) -> String {
+  let id = host_type_id(host_type);
+  if! id_is(id, "testapi"(String), "I32"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "testapi"(String), "Int"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "hostapi"(String), "I32"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "textapi"(String), "I32"(String)) {
+    // This host deliberately represents textapi.I32 as text. The shared i32
+    // role admits its literal syntax; it does not select representation.
+    "String"(String)
+  } else if! id_is(id, "left"(String), "Shared"(String)) {
+    "String"(String)
+  } else if! id_is(id, "right"(String), "Shared"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "testapi"(String), "String"(String)) {
+    "String"(String)
+  } else if! id_is(id, "testapi"(String), "Str"(String)) {
+    "String"(String)
+  } else if! id_is(id, "hostapi"(String), "String"(String)) {
+    "String"(String)
+  } else if! id_is(id, "elab/testapi"(String), "String"(String)) {
+    "String"(String)
+  } else if! id_is(id, "elab/testapi"(String), "I32"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "elab/testapi"(String), "Int"(String)) {
+    "I32"(String)
+  } else if! id_is(id, "elab/testapi"(String), "Bool"(String)) {
+    "Bool"(String)
+  } else if! id_is(id, "testapi"(String), "Bool"(String)) {
+    "Bool"(String)
+  } else if! id_is(id, "hostapi"(String), "Bool"(String)) {
+    "Bool"(String)
+  } else if! id_is(id, "testapi"(String), "F64"(String)) {
+    "F64"(String)
+  } else if! id_is(id, "hostapi"(String), "F64"(String)) {
+    "F64"(String)
+  } else {
+    // Preflight keeps unsupported descriptors from reaching the callback. A
+    // direct low-level misuse still fails by passing the exact rendered ID to
+    // the host constructor, never by retrying a leaf or consulting a role.
+    host_id_render(id)
+  }
+}
+
+/// The standard `make_lit` capability: build a `V_host` from a literal's raw
+/// text and exact host-type descriptor, via the host's `make_scalar`.
+pub fn make_lit_default(text: String, host_type: Host_type) -> Value {
+  vhost(make_scalar(text, literal_representation(host_type)))
+}
+
+// =====================================================================
+// test_bool_default — the standard conditional-decision capability
+// =====================================================================
+//
+// `__if_then_else__` reaches the evaluator with the condition's exact
+// `Host_type` and opaque bool `Scalar`; the evaluator hands both to `test_bool`
+// and branches on the structural `Side` it returns. The standard host's one
+// opaque `Scalar` representation already carries Boolean truth, so this
+// callback ignores the descriptor and tests the scalar via
+// `testapi/scalar.kio`'s `scalar_is_true`. Another host capability may use the
+// exact descriptor to distinguish representations. `scalar_is_true`
+// maps the host `Bool` to `s_right` for true (the then-branch) or `s_left` for
+// false (the else-branch), matching the evaluator's rule that left selects
+// else and right selects then. The evaluator reads no scalar.
+/// The standard `test_bool` capability: receive the condition's exact
+/// `Host_type` and opaque `Scalar`; because the standard host uses one scalar
+/// representation, ignore the descriptor and return `s_right` (then) for true
+/// or `s_left` (else) for false via the host's `scalar_is_true`.
+pub fn test_bool_default(_host_type: Host_type, s: Scalar) -> Side {
+  if! scalar_is_true(s) {
+    s_right()
+  } else {
+    s_left()
+  }
+}

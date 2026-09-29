@@ -1,0 +1,12 @@
+signature greetlib v(1);
+
+v(1) {
+  nonbreaking {
+    add {
+      module greet {
+        pub fn first[A](x: A, _y: A) -> A;
+        pub fn second[A](_x: A, y: A) -> A
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+import testapi/ledger as ledger;
+import testapi/report as report;
+
+pub fn main() -> . {
+  io.print("vote ledger rollup\n");
+  report.row("north", ledger.north_row());
+  report.row("south", ledger.south_row());
+  report.row("west", ledger.west_row());
+  report.row("total", ledger.total_row())
+}

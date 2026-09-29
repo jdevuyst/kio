@@ -1,0 +1,19 @@
+module api/main;
+
+import api(I32);
+import api(String);
+import api(print);
+import api/labels(Choice);
+import api/labels(Pair);
+import api/labels({count});
+import api/labels({name});
+
+pub fn make(n: String, c: I32) -> Pair { {name = n, count = c} }
+
+pub fn echo_pair(p: Pair) -> Pair { p }
+
+pub fn echo_choice(choice: Choice) -> Choice { choice }
+
+pub fn greet(msg: String) -> . { print(msg) }
+
+pub fn return() -> . { () }

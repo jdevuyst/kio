@@ -1,0 +1,9 @@
+lock lib;
+
+resolved {
+  git "https://example.com/lib.git";
+  ref "main";
+  path "packages/lib/lib.pkg.kio";
+  commit "abc123";
+  sig "digest";
+}

@@ -1,0 +1,16 @@
+elaborators: ok
+match right: ok
+match infer left: ok
+match right: ok
+match polymorphic: ok
+contains elaborator: ok
+tuple elaborators: ok
+row elaborators: ok
+derive explicit: ok
+derive expected: ok
+derive polymorphic: ok
+derive recursive: ok
+derive polymorphic recursive: ok
+derive functor: ok
+type reflection: ok
+(show, 42, true)

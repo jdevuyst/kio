@@ -1,0 +1,9 @@
+module unresolved_outer_shadowing;
+
+host type I32 role(i32);
+
+fn build[P][Q](p: P, q: Q) -> P & Q { (p, q) }
+
+fn take[A][B](_b: B, _pair: B & A) -> . { () }
+
+fn separates_scopes[A](x: A) -> . { take(x, build(x, 1)) }

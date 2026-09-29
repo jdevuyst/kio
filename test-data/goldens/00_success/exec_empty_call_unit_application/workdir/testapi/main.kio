@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn identity[A](value: A) -> A { value }
+
+fn accept_unit(_value: .) -> String { "unit application: ok\n" }
+
+fn apply_unit(function: . -> .) -> . { function(()) }
+
+pub fn main() -> . {
+  let message = accept_unit(identity());
+  apply_unit(identity(_));
+  print(message)
+}

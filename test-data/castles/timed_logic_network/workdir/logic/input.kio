@@ -1,0 +1,76 @@
+module logic/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import logic/model as model;
+import logic/queue as queue;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+labels Line = { edge: model.Event } | { end: . } | { invalid: String };
+
+pub labels Parsed = { stimulus: lists.List(model.Event) } | { problem: String };
+
+fn parse_bit(at: I32, serial: I32, line: String) -> Line {
+  if! text.string_eq(line, "0") {
+    {edge = {model.at, model.serial, model.target = 0, model.value = .f, model.source = .t}}
+      .>widen_sum!
+  } else if! text.string_eq(line, "1") {
+    {edge = {model.at, model.serial, model.target = 0, model.value = .t, model.source = .t}}
+      .>widen_sum!
+  } else {
+    {invalid = "source value must be 0 or 1"}.>widen_sum!
+  }
+}
+
+fn read_edge(previous: I32, serial: I32) -> Line {
+  match! io.read_ascii_line() {
+    .(line: String) {
+      if! arith.leq_i32(16, serial) {
+        {invalid = "at most 16 source transitions"}.>widen_sum!
+      } else match! fmt.string_to_int(line) {
+        .(at: I32) {
+          let valid =
+            if! arith.leq_i32(1, at) {
+              if! arith.leq_i32(at, 30) {
+                arith.leq_i32(previous, at)
+              } else {
+                .f
+              }
+            } else {
+              .f
+            };
+          if! valid {
+            match! io.read_ascii_line() {
+              .(bit: String) { parse_bit(at, serial, bit) };
+              .() { {invalid = "missing source value"}.>widen_sum! }
+            }
+          } else {
+            {invalid = "times must be nondecreasing integers from 1 through 30"}.>widen_sum!
+          }
+        };
+        .() { {invalid = "time must be an integer"}.>widen_sum! }
+      }
+    };
+    .() { {end=}.>widen_sum! }
+  }
+}
+
+rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List(model.Event)) -> Parsed {
+  match! read_edge(previous, serial) {
+    .(next: Edge) {
+      let event = next.?{edge};
+      rec read_all(event.?{model.at}, arith.add_i32(serial, 1), queue.insert(event, events))
+    };
+    .(_end: End) { {stimulus = events}.>widen_sum! };
+    .(error: Invalid) { {problem = error.?{invalid}}.>widen_sum! }
+  }
+}
+
+pub fn read() -> Parsed { read_all(0, 0, lists.nil()) }

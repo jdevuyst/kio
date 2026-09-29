@@ -1,0 +1,7 @@
+module main;
+
+fn higher(f: [U] U -> U, x: .) -> . { f(., x) }
+
+// Pass a *non-polymorphic* `fn` where a polymorphic one is required.
+// The fn declares 0 type binders; the expected type quantifies 1.
+fn try_pass_mono() -> . { higher(.(y) { y }, ()) }

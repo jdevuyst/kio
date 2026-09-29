@@ -1,0 +1,5 @@
+module main;
+
+fn consume_unit(value: .) -> . { () }
+
+fn invalid[A](value: A) -> . { consume_unit(.[A](inner) { inner }(., value)) }

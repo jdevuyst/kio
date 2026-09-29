@@ -1,0 +1,5 @@
+  fail equiv `partial_and_flat_application_distinct` in equiv_application_skeleton_distinct: arms split into 2 normal-form groups
+    group A (arms 1): observe(__param_f__(__param_left__))
+    group B (arms 2): observe(__param_f__(__param_left__)(__param_right__))
+
+result: 1/1 equiv block failed

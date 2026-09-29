@@ -1,0 +1,26 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+import testapi/io as io;
+
+fn choose(condition: Bool, value: String | .) -> String {
+  match! value {
+    .(line: String) {
+      if! condition {
+        line
+      } else {
+        "else\n"
+      }
+    };
+    .(_empty: .) -> String { "empty\n" }
+  }
+}
+
+pub fn main() -> . {
+  io.print(choose(.t, widen_sum!("then\n", String | .)));
+  io.print(choose(.f, widen_sum!("unused\n", String | .)));
+  io.print(choose(.t, widen_sum!((), String | .)))
+}

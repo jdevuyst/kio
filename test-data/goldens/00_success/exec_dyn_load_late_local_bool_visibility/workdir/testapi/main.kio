@@ -1,0 +1,7 @@
+module testapi/main;
+
+import logic(pick);
+import testapi(Bool, String);
+import testapi/io(print);
+
+pub fn main() -> . { print(pick(.t, "yes\n", "no\n")); print(pick(.f, "yes\n", "no\n")) }

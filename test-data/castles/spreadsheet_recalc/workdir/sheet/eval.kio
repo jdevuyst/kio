@@ -1,0 +1,158 @@
+/// Evaluating one cell against the values already computed for the cells it
+/// reads. The evaluator never recurses into another cell — a reference
+/// reads the value store — which is what the topological order buys: one
+/// pass per cell. Every combinator hands the cycle error on, so a cell
+/// downstream of a cycle gets `#CYCLE` by ordinary evaluation.
+module sheet/eval;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import sheet/addr(Addr);
+import sheet/cells(Sheet, Value, Values, content_at, cycle_value, fold_content);
+import sheet/cells(fold_value, num_value, value_at, void_value);
+import sheet/formula(Add_l, Add_r, Expr, If_c, If_e, If_t, Lit, Max_hi, Max_lo);
+import sheet/formula(Mul_l, Mul_r, Ref_at, Sub_l, Sub_r, Sum_hi, Sum_lo, range_cells);
+import sheet/formula({add_l}, {add_r}, {if_c}, {if_e}, {if_t}, {lit}, {max_hi}, {max_lo});
+import sheet/formula({mul_l}, {mul_r}, {ref_at}, {sub_l}, {sub_r}, {sum_hi}, {sum_lo});
+import sheet/list(List);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+/// What an expression is worth: a number, or the cycle error.
+labels Ev = { ok: I32 } | { bad: . };
+
+/// What one cell contributes to an aggregate.
+labels Slot = { got: I32 } | { none: . } | { err: . };
+
+fn ok(n: I32) -> Ev { {ok = n}.>widen_sum!(Ev) }
+
+fn bad() -> Ev { {bad=}.>widen_sum!(Ev) }
+
+fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
+  match! e {
+    (.(n: Ok) { on_ok(n.?{ok}) }, .(_b: Bad) { on_bad })
+  }
+}
+
+fn slot_at(vals: Values, a: Addr) -> Slot {
+  fold_value(
+    , value_at(vals, a)
+    , .(n: I32) { {got = n}.>widen_sum!(Slot) }
+    , {none=}.>widen_sum!(Slot)
+    , {err=}.>widen_sum!(Slot)
+    )
+}
+
+/// An empty cell counts as zero, the way a spreadsheet reads a blank
+/// operand.
+fn ev_at(vals: Values, a: Addr) -> Ev {
+  fold_value(value_at(vals, a), .(n: I32) { ok(n) }, ok(0), bad())
+}
+
+fn bin(left: Ev, right: Ev, op: (I32 & I32) -> I32) -> Ev {
+  fold_ev(left, .(a: I32) { fold_ev(right, .(b: I32) { ok(op(a, b)) }, bad()) }, bad())
+}
+
+/// `SUM`: blanks contribute nothing, one error poisons the total.
+rec(loop) fn sum_onto(vals: Values, cells: List(Addr), acc: I32) -> Ev {
+  match! cells.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          match! slot_at(vals, a) {
+            (
+              , .(g: Got) { rec sum_onto(vals, rest, add_i32(acc, g.?{got})) }
+              , .(_n: None) { rec sum_onto(vals, rest, acc) }
+              , .(_e: Err) { bad() }
+              )
+          }
+        }
+      , .(_empty: .) { ok(acc) }
+      )
+  }
+}
+
+/// `MAX`: blanks are not candidates, and a range with no number is zero.
+rec(loop) fn max_onto(vals: Values, cells: List(Addr), best: I32, seen: Bool) -> Ev {
+  match! cells.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          match! slot_at(vals, a) {
+            (
+              , .(g: Got) {
+                  if! seen {
+                    if! lt_i32(best, g.?{got}) {
+                      rec max_onto(vals, rest, g.?{got}, .t)
+                    } else {
+                      rec max_onto(vals, rest, best, .t)
+                    }
+                  } else {
+                    rec max_onto(vals, rest, g.?{got}, .t)
+                  }
+                }
+              , .(_n: None) { rec max_onto(vals, rest, best, seen) }
+              , .(_e: Err) { bad() }
+              )
+          }
+        }
+      , .(_empty: .) {
+          if! seen {
+            ok(best)
+          } else {
+            ok(0)
+          }
+        }
+      )
+  }
+}
+
+rec(loop) fn eval_expr(vals: Values, e: Expr) -> Ev {
+  match! e.>Expr.un_expr {
+    (
+      , .(r: Ref_at) { ev_at(vals, r.?{ref_at}) }
+      , .(n: Lit) { ok(n.?{lit}) }
+      , .(left: Add_l, right: Add_r) {
+          let a = rec(cont) eval_expr(vals, left.?{add_l});
+          let b = rec(cont) eval_expr(vals, right.?{add_r});
+          bin(a, b, add_i32)
+        }
+      , .(left: Sub_l, right: Sub_r) {
+          let a = rec(cont) eval_expr(vals, left.?{sub_l});
+          let b = rec(cont) eval_expr(vals, right.?{sub_r});
+          bin(a, b, sub_i32)
+        }
+      , .(left: Mul_l, right: Mul_r) {
+          let a = rec(cont) eval_expr(vals, left.?{mul_l});
+          let b = rec(cont) eval_expr(vals, right.?{mul_r});
+          bin(a, b, mul_i32)
+        }
+      , .(lo: Sum_lo, hi: Sum_hi) { sum_onto(vals, range_cells(lo.?{sum_lo}, hi.?{sum_hi}), 0) }
+      , .(lo: Max_lo, hi: Max_hi) { max_onto(vals, range_cells(lo.?{max_lo}, hi.?{max_hi}), 0, .f) }
+      , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
+          let test = rec(cont) eval_expr(vals, cond.?{if_c});
+          match! test {
+            (
+              , .(n: Ok) {
+                  if! eq_i32(n.?{ok}, 0) {
+                    rec eval_expr(vals, else_arm.?{if_e})
+                  } else {
+                    rec eval_expr(vals, then_arm.?{if_t})
+                  }
+                }
+              , .(_b: Bad) { bad() }
+              )
+          }
+        }
+      )
+  }
+}
+
+pub fn eval_cell(s: Sheet, vals: Values, a: Addr) -> Value {
+  fold_content(
+    , content_at(s, a)
+    , void_value()
+    , .(n: I32) { num_value(n) }
+    , .(e: Expr) { fold_ev(eval_expr(vals, e), .(n: I32) { num_value(n) }, cycle_value()) }
+    )
+}

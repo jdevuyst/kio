@@ -1,0 +1,3 @@
+module bare_chain_mixing/main;
+
+type T = A & B | C;

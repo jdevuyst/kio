@@ -1,0 +1,86 @@
+module render;
+
+import alphabet(Card);
+import alphabet({crossed}, {glyph}, {high}, {left}, {mnemonic}, {right});
+import elab/control(if);
+import message(Facts, Message);
+import message({crossings_even}, {has_vowel}, {shapes_distinct});
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn word(flag: Bool) -> String {
+  if! flag {
+    "yes"
+  } else {
+    "no"
+  }
+}
+
+fn mark(flag: Bool) -> String {
+  if! flag {
+    "[X]"
+  } else {
+    "[ ]"
+  }
+}
+
+fn shape_code(card: Card) -> String {
+  if! card.?{crossed} {
+    if! card.?{high} {
+      "XH"
+    } else {
+      "X-"
+    }
+  } else if! card.?{high} {
+    "-H"
+  } else {
+    "--"
+  }
+}
+
+fn rule() -> . { print("----------------------------------------------\n") }
+
+// print adds no newline, so every row is a run of calls ending in one "\n".
+fn shape_gap(card: Card) -> . { print(" "); print(shape_code(card)) }
+
+fn fact(label: String, flag: Bool) -> . { print(label); print(word(flag)); print("\n") }
+
+pub fn header() -> . {
+  print("SEMAPHORE SIGNAL CARD\n");
+  print("message: SEMAPHORE\n");
+  print("row: letter | left / right | crossed | mnemonic\n");
+  rule()
+}
+
+pub fn row(card: Card) -> . {
+  print(card.?{glyph});
+  print(" | ");
+  print(card.?{left});
+  print(" / ");
+  print(card.?{right});
+  print(" | ");
+  print(mark(card.?{crossed}));
+  print(" | ");
+  print(card.?{mnemonic});
+  print("\n")
+}
+
+pub fn footer(msg: Message, facts: Facts) -> . {
+  let .(c1: Card, c2: Card, c3: Card, c4: Card, c5: Card, c6: Card, c7: Card, c8: Card, c9: Card) =
+    msg;
+  rule();
+  print("shape classes        ");
+  print(shape_code(c1));
+  shape_gap(c2);
+  shape_gap(c3);
+  shape_gap(c4);
+  shape_gap(c5);
+  shape_gap(c6);
+  shape_gap(c7);
+  shape_gap(c8);
+  shape_gap(c9);
+  print("\n");
+  fact("contains a vowel     ", facts.?{has_vowel});
+  fact("even arm crossings   ", facts.?{crossings_even});
+  fact("neighbours distinct  ", facts.?{shapes_distinct})
+}

@@ -1,0 +1,3 @@
+module tumta;
+
+host type String role(str);

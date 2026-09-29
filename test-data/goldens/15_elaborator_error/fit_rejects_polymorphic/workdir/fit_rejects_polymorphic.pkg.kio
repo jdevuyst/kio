@@ -1,0 +1,19 @@
+package fit_rejects_polymorphic;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  elab/testapi
+}

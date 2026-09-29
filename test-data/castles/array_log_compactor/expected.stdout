@@ -1,0 +1,12 @@
+array_log_compactor
+original records: 11
+kept live records: 4
+removed records: 7
+removed superseded records: 5
+removed tombstones: 2
+checksum: 175
+compacted live records:
+slot 0: gamma=6 seq 7
+slot 1: alpha=9 seq 8
+slot 2: delta=5 seq 10
+slot 3: zeta=1 seq 11

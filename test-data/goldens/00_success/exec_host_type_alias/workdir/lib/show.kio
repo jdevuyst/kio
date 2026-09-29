@@ -1,0 +1,8 @@
+module lib/show;
+
+import lib/types(I32);
+import testapi/fmt as testapi_fmt;
+
+pub fn print_i32(p0: I32) -> . { testapi_fmt.print_i32(p0) }
+
+pub fn show() -> . { print_i32(42(I32)) }

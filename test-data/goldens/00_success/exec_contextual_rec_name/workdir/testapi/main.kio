@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi as host;
+import testapi/io as io;
+
+fn forward(rec: host.String) -> host.String { rec }
+
+fn rec(value: host.String) -> host.String { value }
+
+pub fn main() -> . {
+  let cont = "called rec\n"(host.String);
+  io.print(forward("bare rec\n"(host.String)));
+  io.print(rec(cont))
+}

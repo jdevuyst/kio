@@ -1,0 +1,10 @@
+/// A function with a doc-comment using {@NAME} inside ///.
+///
+/// {@NAME} is not supported inside /// doc-comments; use {@} instead.
+///
+/// ```kio {@main}
+/// ()
+/// ```
+module doctest/named;
+
+pub fn greet() -> . { () }

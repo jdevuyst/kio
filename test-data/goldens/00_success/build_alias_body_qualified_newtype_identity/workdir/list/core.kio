@@ -1,0 +1,5 @@
+module list/core;
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }

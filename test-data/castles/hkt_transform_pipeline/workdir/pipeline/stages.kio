@@ -1,0 +1,162 @@
+module pipeline/stages;
+
+import elab/control(if);
+import elab/sequence(do);
+import hkt/testapi/main(Box, Extract, Functor, Identity, Monad, Pure);
+import pipeline/domain(
+  , Form_event
+  , Pipeline_summary
+  , Telemetry_sample
+  , {approvals}
+  , {approved}
+  , {delta}
+  , {field_name}
+  , {first_sample}
+  , {form_name}
+  , {report_name}
+  , {route}
+  , {sample_name}
+  , {score_total}
+  , {second_sample}
+  , {stage_score}
+  , {third_sample}
+  , {urgent}
+  );
+import pipeline/hkt_instances(
+  , box_extract
+  , box_functor
+  , box_monad
+  , box_pure
+  , identity_extract
+  , identity_functor
+  , identity_monad
+  , identity_pure
+  );
+import testapi(Bool, I32, String);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat, string_eq);
+
+fn join3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
+
+fn render_sample(sample: Telemetry_sample) -> String {
+  join3(
+    , sample.?{sample_name}
+    , "="
+    , join3(
+        , int_to_string(sample.?{stage_score})
+        , ":"
+        , join3(bool_to_string(sample.?{approved}), ":", sample.?{route})
+        )
+    )
+}
+
+fn normalized_name(event: Form_event) -> String {
+  join3(event.?{form_name}, "/", string_concat("form.", event.?{field_name}))
+}
+
+fn score_and_adjust(event: Form_event) -> Telemetry_sample {
+  let name = normalized_name(event);
+  if! string_eq(event.?{form_name}, "login") {
+    {sample_name = name, stage_score = 11, route = "accept", approved = .t}
+  } else if! string_eq(event.?{form_name}, "profile") {
+    {sample_name = name, stage_score = 38, route = "review+manual", approved = .f}
+  } else {
+    {sample_name = name, stage_score = 23, route = "review+manual", approved = .f}
+  }
+}
+
+fn run_pipeline[*F](monad: Monad(F), functor: Functor(F), pur: Pure(F), seed: F(Form_event)) -> F(Telemetry_sample) {
+  do! Monad.bind(monad) {
+    let normalized <- Functor.fmap(functor)(Form_event, Form_event, .(event) { event }, seed);
+    Functor.fmap(functor)(
+      , Form_event
+      , Telemetry_sample
+      , .(event) { score_and_adjust(event) }
+      , Pure.lift(pur)(normalized)
+      )
+  }
+}
+
+fn extract_pipeline[*F](
+  , monad: Monad(F)
+  , functor: Functor(F)
+  , pur: Pure(F)
+  , ext: Extract(F)
+  , event: Form_event
+  ) -> Telemetry_sample {
+  Extract.peel(ext)(run_pipeline(monad, functor, pur, Pure.lift(pur)(event)))
+}
+
+fn login_event() -> Form_event {
+  {form_name = "login", field_name = "email", delta = 2, urgent = .f}
+}
+
+fn profile_event() -> Form_event {
+  {form_name = "profile", field_name = "display", delta = 10, urgent = .t}
+}
+
+fn checkout_event() -> Form_event {
+  {form_name = "checkout", field_name = "coupon", delta = 5, urgent = .t}
+}
+
+fn approved_value(sample: Telemetry_sample) -> I32 {
+  if! sample.?{approved} {
+    1
+  } else {
+    0
+  }
+}
+
+fn summarize(
+  , name: String
+  , first: Telemetry_sample
+  , second: Telemetry_sample
+  , third: Telemetry_sample
+  ) -> Pipeline_summary {
+  {
+    , report_name = name
+    , first_sample = render_sample(first)
+    , second_sample = render_sample(second)
+    , third_sample = render_sample(third)
+    , score_total = 72
+    , approvals = 1
+    }
+}
+
+pub fn box_summary() -> Pipeline_summary {
+  let first =
+    extract_pipeline(box_monad(), box_functor(), box_pure(), box_extract(), login_event());
+  let second =
+    extract_pipeline(box_monad(), box_functor(), box_pure(), box_extract(), profile_event());
+  let third =
+    extract_pipeline(box_monad(), box_functor(), box_pure(), box_extract(), checkout_event());
+  summarize("box/audit", first, second, third)
+}
+
+pub fn identity_summary() -> Pipeline_summary {
+  let first =
+    extract_pipeline(
+      , identity_monad()
+      , identity_functor()
+      , identity_pure()
+      , identity_extract()
+      , login_event()
+      );
+  let second =
+    extract_pipeline(
+      , identity_monad()
+      , identity_functor()
+      , identity_pure()
+      , identity_extract()
+      , profile_event()
+      );
+  let third =
+    extract_pipeline(
+      , identity_monad()
+      , identity_functor()
+      , identity_pure()
+      , identity_extract()
+      , checkout_event()
+      );
+  summarize("identity/baseline", first, second, third)
+}

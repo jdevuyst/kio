@@ -1,0 +1,1153 @@
+/// `prime_eval`: a tree-walking evaluator over the erased Kio' term AST, producing a universal value.
+module eval;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn, Host_type);
+import prime(
+  , T_absurd
+  , T_app
+  , T_either
+  , T_fst
+  , T_hostfn
+  , T_ite
+  , T_lam
+  , T_left
+  , T_let
+  , T_lit
+  , T_pair
+  , T_right
+  , T_snd
+  , T_unit
+  , T_var
+  );
+import prime(Group_slots, Nat, Term, Term_node);
+import prime(lit_text, lit_type);
+import prime(un_group_slots, un_nat, un_term);
+import result(Call_result, Ev_apply, Ev_apply_then, Ev_done, Ev_fold, Ev_stuck);
+import result(Eval_result, ev_done, ev_stuck);
+import result(stuck_reason);
+import testapi(Bool, I32, Scalar, String);
+import testapi/arith(eq_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+import value(Env, Side, Vals, Value, Value_shape);
+import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit);
+import value(env_nil, env_push);
+import value(s_left, s_right, side_select);
+import value(un_env, un_value);
+import value(un_vals, vals_push);
+import value(vclosure, vhostfn, vhostfn_fresh, vleft, vproduct, vright, vunit);
+
+// `eval.kio` — `prime_eval`, the tree-walking evaluator over the erased
+// Kio' term AST (`prime.kio`), producing a universal value
+// (`value.kio`).
+//
+// **Why a stack machine, not recursive descent.** A tree-walker is
+// naturally recursive, but Kio' has no in-language recursion (it is
+// strongly normalizing; `specs/prime.md` § Recursive `newtype` bodies).
+// Iteration of unbounded depth comes from the host `loop`. So
+// `prime_eval` is a **CEK-style abstract machine**: an explicit control
+// + environment + continuation triple that the host `loop` drives one
+// transition at a time, exactly the shape the worklist goldens use to
+// walk an arbitrary-depth AST with `loop` alone.
+//
+// Each machine transition either evaluates one term node (decomposing it
+// into a value plus continuation frames) or returns a value to the
+// nearest frame. The continuation is an explicit stack of frames, one
+// per pending elimination / structural sub-evaluation; closures capture
+// the environment; sum scrutinees dispatch on their tag; the conditional
+// dispatches on a **structural** `Side` the host hands back from testing
+// the opaque bool (so the evaluator branches on a sum, never reads a host
+// bool itself).
+//
+// **Host fns are values.** A host supplies its capabilities as `V_hostfn`
+// values the loader seeds into the guest's environment; a guest applies one
+// like any function. So a host call is an **ordinary application**: the
+// evaluator never decomposes a special host-call node and names no host
+// operation. When an application's function value is a `V_hostfn`, the
+// incoming argument is the current private runtime stage's domain. A zero-slot
+// stage consumes Unit and represents either an erased `forall` or a declared
+// Unit value group; a positive stage flattens one declared non-Unit group. The
+// evaluator retains a staged `V_hostfn` while later stages remain. Only the
+// final stage fires the host's
+// `call` capability (an `(Host_fn & Value) -> Call_result`, threaded through
+// the run), passing the exact declaration descriptor plus the rebuilt
+// host-boundary domain and feeding back the result. *Which* op a descriptor
+// names is the host's concern alone — the evaluator carries no host vocabulary,
+// so a guest can call any host fn its host supplies. The `call` capability can
+// also return `Ev_fold(step, init)` to ask this machine to drive an interpreted
+// `loop` step on the same continuation stack.
+//
+// **The host boundary is three capabilities, all value-passing.** Besides
+// `call` (op dispatch), the evaluator threads two more host capabilities so
+// it never introspects an opaque scalar:
+//
+//   - `make_lit : (String & Host_type) -> Value` — turn a literal's raw text
+//     plus exact type descriptor (`do_eval`'s `T_lit` arm) into a `V_host`.
+//   - `test_bool : (Host_type & Scalar) -> Side` — decide a conditional from
+//     its exact type descriptor and opaque value. The callback returns a
+//     **structural** `Side` (left = else, right = then).
+//
+// The standard capabilities `dyn_load_prime` builds over its own `testapi/*` host
+// fns are `hostrec.kio`'s `serve_default` / `make_lit_default` /
+// `test_bool_default`; the loader threads them at `instantiate` (via
+// `defaults.kio`'s `instantiate_default`).
+//
+// A **step-count budget** (a host `I32`, decremented each transition)
+// bounds a run: a well-typed Kio' image terminates by strong
+// normalization, so the budget is a defense against ill-formed input,
+// not against well-typed images. `prime_eval` exhausting it yields the
+// `stuck` result rather than looping forever.
+
+// =====================================================================
+// Frame — one pending continuation step
+// =====================================================================
+//
+// When a node has sub-terms to evaluate, the machine pushes a frame
+// recording what to do once each sub-value is in hand. Each arm carries
+// exactly the data its resumption needs (a held value, or a still-unevaluated
+// term plus the environment to evaluate it in).
+//
+//   F_app1   Value              held function; incoming value is its argument
+//   F_app2   Value              held argument; incoming value is the function
+//   F_arg    Term & Env         fn done; evaluate this argument term, then apply
+//   F_let    Term & Env         rhs done; evaluate this body term in (rhs :: env)
+//   F_psnd   Term & Env         fst done; evaluate this second term, then pair
+//   F_pfst   Value              held first component; incoming value is the second
+//   F_fst    ()                 incoming value is a product; return its first
+//   F_snd    ()                 incoming value is a product; return its second
+//   F_left   ()                 incoming value; return it left-injected
+//   F_right  ()                 incoming value; return it right-injected
+//   F_eith_f Term & Term & Env  scrutinee done; eval the left handler value
+//   F_eith_g Value & Term & Env left handler done; eval the right handler value
+//   F_eith_apply Value & Value  right handler done; dispatch and apply the selected value
+//   F_ite_then Host_type & Term & Term & Env
+//                               condition done; eval the then-thunk value
+//   F_ite_else Host_type & Value & Term & Env
+//                               then thunk done; eval the else-thunk value
+//   F_ite_apply Host_type & Value & Value
+//                               else thunk done; select and apply one thunk to Unit
+//   F_absurd ()                 incoming value is bottom (unreachable); go stuck
+//   F_loop   Value              held interpreted loop step; incoming value is S | R
+//   F_hostcont Host_fn & Value  incoming value is a host-requested application's
+//                               result; re-dispatch `cont` with (result & state)
+/// Defines the held-function application frame.
+pub labels { f_app1: Value };
+
+/// Defines the held-argument application frame.
+pub labels { f_app2: Value };
+
+/// Defines the evaluate-argument-then-apply frame.
+pub labels { f_arg: Term & Env };
+
+/// Defines the let-body frame.
+pub labels { f_let: Term & Env };
+
+/// Defines the evaluate-second-then-pair frame.
+pub labels { f_psnd: Term & Env };
+
+/// Defines the held-first-component pairing frame.
+pub labels { f_pfst: Value };
+
+/// Defines the first-projection frame.
+pub labels { f_fst: . };
+
+/// Defines the second-projection frame.
+pub labels { f_snd: . };
+
+/// Defines the left-injection frame.
+pub labels { f_left: . };
+
+/// Defines the right-injection frame.
+pub labels { f_right: . };
+
+/// Defines the evaluate-left-handler frame.
+pub labels { f_eith_f: Term & Term & Env };
+
+/// Defines the evaluate-right-handler frame.
+pub labels { f_eith_g: Value & Term & Env };
+
+/// Defines the sum-dispatch-and-apply frame.
+pub labels { f_eith_apply: Value & Value };
+
+/// Defines the evaluate-then-thunk frame.
+pub labels { f_ite_then: Host_type & Term & Term & Env };
+
+/// Defines the evaluate-else-thunk frame.
+pub labels { f_ite_else: Host_type & Value & Term & Env };
+
+/// Defines the conditional-select-and-apply frame.
+pub labels { f_ite_apply: Host_type & Value & Value };
+
+/// Defines the bottom-elimination frame.
+pub labels { f_absurd: . };
+
+/// Defines the interpreted-loop frame.
+pub labels { f_loop: Value };
+
+/// Defines the host-continuation frame: after the requested application,
+/// re-dispatch the exact host descriptor with `(result & state)`.
+pub labels { f_hostcont: Host_fn & Value };
+
+/// One pending continuation step.
+pub labels { frame: | F_app1
+| F_app2
+| F_arg
+| F_let
+| F_psnd
+| F_pfst
+| F_fst
+| F_snd
+| F_left
+| F_right
+| F_eith_f
+| F_eith_g
+| F_eith_apply
+| F_ite_then
+| F_ite_else
+| F_ite_apply
+| F_absurd
+| F_loop
+| F_hostcont };
+
+/// The bare frame sum inside a `Frame` — the widen target for frame constructors.
+pub type Frame_shape =
+  | F_app1
+  | F_app2
+  | F_arg
+  | F_let
+  | F_psnd
+  | F_pfst
+  | F_fst
+  | F_snd
+  | F_left
+  | F_right
+  | F_eith_f
+  | F_eith_g
+  | F_eith_apply
+  | F_ite_then
+  | F_ite_else
+  | F_ite_apply
+  | F_absurd
+  | F_loop
+  | F_hostcont
+  ;
+
+/// One-step destructor on a `Frame`: projects out the frame sum for dispatch.
+pub fn un_frame(f: Frame) -> Frame_shape { Frame.get(f) }
+
+// --- frame smart constructors ---
+//
+// Each injects a frame payload into the right arm of the `Frame` sum.
+// Defined here, before the transition functions that push them, so
+// ordinary order-sensitive visibility is satisfied.
+fn mk_app1(v: Value) -> Frame { {frame = widen_sum!({f_app1 = v}, Frame_shape)} }
+
+fn mk_app2(v: Value) -> Frame { {frame = widen_sum!({f_app2 = v}, Frame_shape)} }
+
+fn mk_arg(t: Term, e: Env) -> Frame { {frame = widen_sum!({f_arg = (t, e)}, Frame_shape)} }
+
+fn mk_let(t: Term, e: Env) -> Frame { {frame = widen_sum!({f_let = (t, e)}, Frame_shape)} }
+
+fn mk_psnd(t: Term, e: Env) -> Frame { {frame = widen_sum!({f_psnd = (t, e)}, Frame_shape)} }
+
+fn mk_pfst(v: Value) -> Frame { {frame = widen_sum!({f_pfst = v}, Frame_shape)} }
+
+fn mk_fst() -> Frame { {frame = widen_sum!({f_fst=}, Frame_shape)} }
+
+fn mk_snd() -> Frame { {frame = widen_sum!({f_snd=}, Frame_shape)} }
+
+fn mk_left() -> Frame { {frame = widen_sum!({f_left=}, Frame_shape)} }
+
+fn mk_right() -> Frame { {frame = widen_sum!({f_right=}, Frame_shape)} }
+
+fn mk_eith_f(f: Term, g: Term, e: Env) -> Frame {
+  {frame = widen_sum!({f_eith_f = (f, g, e)}, Frame_shape)}
+}
+
+fn mk_eith_g(s: Value, g: Term, e: Env) -> Frame {
+  {frame = widen_sum!({f_eith_g = (s, (g, e))}, Frame_shape)}
+}
+
+fn mk_eith_apply(s: Value, f: Value) -> Frame {
+  {frame = widen_sum!({f_eith_apply = (s, f)}, Frame_shape)}
+}
+
+fn mk_ite_then(bool_type: Host_type, t: Term, el: Term, e: Env) -> Frame {
+  {frame = widen_sum!({f_ite_then = (bool_type, (t, (el, e)))}, Frame_shape)}
+}
+
+fn mk_ite_else(bool_type: Host_type, c: Value, el: Term, e: Env) -> Frame {
+  {frame = widen_sum!({f_ite_else = (bool_type, (c, (el, e)))}, Frame_shape)}
+}
+
+fn mk_ite_apply(bool_type: Host_type, c: Value, t: Value) -> Frame {
+  {frame = widen_sum!({f_ite_apply = (bool_type, (c, t))}, Frame_shape)}
+}
+
+fn mk_absurd() -> Frame { {frame = widen_sum!({f_absurd=}, Frame_shape)} }
+
+fn mk_loop(step: Value) -> Frame { {frame = widen_sum!({f_loop = step}, Frame_shape)} }
+
+fn mk_hostcont(cont: Host_fn, state: Value) -> Frame {
+  {frame = widen_sum!({f_hostcont = (cont, state)}, Frame_shape)}
+}
+
+// =====================================================================
+// Kont — the continuation, a stack of frames
+// =====================================================================
+/// The continuation stack, innermost frame first.
+pub rec labels { kont: . | (Frame & Kont) };
+
+/// The empty continuation.
+pub fn kont_nil() -> Kont { {kont = widen_sum!((), . | (Frame & Kont))} }
+
+/// Pushes one frame onto the continuation.
+pub fn kont_push(f: Frame, k: Kont) -> Kont { {kont = widen_sum!((f, k), . | (Frame & Kont))} }
+
+/// One-step destructor on the continuation.
+pub fn un_kont(k: Kont) -> . | (Frame & Kont) { Kont.get(k) }
+
+// =====================================================================
+// Ctrl — what the machine is doing this transition
+// =====================================================================
+//
+//   Cs_eval   Term & Env   evaluate this term in this environment
+//   Cs_ret    Value        return this value to the continuation
+/// Defines the evaluate-term control state.
+pub labels { cs_eval: Term & Env };
+
+/// Defines the return-value control state.
+pub labels { cs_ret: Value };
+
+/// The machine's current activity: evaluating a term, or returning a value.
+pub labels { ctrl: Cs_eval | Cs_ret };
+
+/// The bare control sum inside a `Ctrl` — the widen target for control constructors.
+pub type Ctrl_shape = Cs_eval | Cs_ret;
+
+/// Builds the evaluate-term control state.
+pub fn c_eval(t: Term, e: Env) -> Ctrl { {ctrl = widen_sum!({cs_eval = (t, e)}, Ctrl_shape)} }
+
+/// Builds the return-value control state.
+pub fn c_ret(v: Value) -> Ctrl { {ctrl = widen_sum!({cs_ret = v}, Ctrl_shape)} }
+
+/// One-step destructor on a `Ctrl`.
+pub fn un_ctrl(c: Ctrl) -> Ctrl_shape { Ctrl.get(c) }
+
+// =====================================================================
+// State — the full machine configuration plus the step budget
+// =====================================================================
+/// Defines the running machine configuration: control, continuation, and remaining step budget.
+pub labels { state: Ctrl & Kont & I32 };
+
+/// Builds a machine state.
+pub fn mk_state(c: Ctrl, k: Kont, fuel: I32) -> State { {state = (c, k, fuel)} }
+
+/// One-step destructor on a `State`.
+pub fn un_state(s: State) -> Ctrl & Kont & I32 { State.get(s) }
+
+// =====================================================================
+// Eval_result — the outcome of a run
+// =====================================================================
+//
+// The `Eval_result` outcome type (`Ev_done` / `Ev_stuck` with their
+// constructors) is defined in `result.kio` and imported above, so it can be
+// shared with `marshal.kio` (the host-boundary closure marshalling) without an
+// import cycle. A completed run yields `Done(value)`; a budget exhaustion or an
+// ill-formed configuration a well-typed image never reaches yields `Stuck`.
+
+// =====================================================================
+// The host capabilities
+// =====================================================================
+//
+// The evaluator threads three host capabilities, each a function value the
+// caller supplies, so the structural value core stays host-free and the host
+// owns the entire scalar vocabulary:
+//
+//   - `call : (Host_fn & Value) -> Call_result` — op dispatch. A `V_hostfn`
+//     carries an exact declaration descriptor but no implementation. Each
+//     application supplies one private runtime stage: a zero-slot Unit stage
+//     (an erased `forall` or declared Unit group) or a positive-slot declared
+//     non-Unit group. The evaluator stages
+//     host-value slots until the final application, then hands `call` the
+//     descriptor plus the single rebuilt host-boundary domain. The resulting
+//     `Call_result` is `Ev_done` with the host result, `Ev_stuck` when the
+//     descriptor is unknown or the argument is the wrong shape, or `Ev_fold`
+//     when the `call` capability asks this machine to drive an interpreted loop
+//     step. The host dispatches the exact descriptor to its applier
+//     (`hostrec.kio`'s `dispatch`).
+//   - `make_lit : (String & Host_type) -> Value` — literal construction. A
+//     `T_lit` node carries raw text plus its exact host-type descriptor.
+//   - `test_bool : (Host_type & Scalar) -> Side` — the conditional decision.
+//     `resume_ite` passes both exact descriptor and opaque value, then branches
+//     on the structural `Side` the host returns.
+//
+// So which host fns a guest may call — and how literals and bools are
+// realized — is a property of the supplied capabilities alone, not of the
+// evaluator. The standard ones `dyn_load_prime` builds over its own `testapi/*`
+// host fns are `hostrec.kio`'s `serve_default` / `make_lit_default` /
+// `test_bool_default`; `defaults.kio`'s entry points thread them.
+
+// `Step` is the per-transition outcome the host `loop` folds: either the
+// next `State`, or the final `Eval_result`.
+/// Builds the continue arm of a machine transition.
+fn go(s: State) -> State | Eval_result { widen_sum!(s, State | Eval_result) }
+
+/// Builds the halt arm of a machine transition (a final result).
+fn halt(r: Eval_result) -> State | Eval_result { widen_sum!(r, State | Eval_result) }
+
+// --- the stuck reasons the structural eliminators share ---
+
+// The one message every apply-a-non-function shape shares.
+fn apply_stuck() -> Eval_result { ev_stuck("applied a value that is not a function"(String)) }
+
+fn proj_stuck() -> Eval_result { ev_stuck("projected a value that is not a product"(String)) }
+
+fn either_stuck() -> Eval_result { ev_stuck("eliminated a value that is not a sum"(String)) }
+
+fn ite_stuck() -> Eval_result { ev_stuck("branched on a value that is not a host boolean"(String)) }
+
+fn loop_stuck() -> Eval_result {
+  ev_stuck("an interpreted `loop` step returned a value that is not a continue/exit "
+           "sum"(String))
+}
+
+fn host_group_stuck() -> Eval_result {
+  ev_stuck("a host function application's runtime-stage packet did not match its "
+           "expected arity"(String))
+}
+
+// =====================================================================
+// Environment lookup — walk `n` frames into the environment
+// =====================================================================
+//
+// A variable names its binder by a de Bruijn index `Nat`. Lookup is a
+// pure, total walk: at index zero, return the head binding (if any); at
+// a successor, drop one binding and recurse on the predecessor index.
+// An out-of-range index (a malformed term) yields the stuck `Ev_stuck`;
+// a well-typed term never indexes past its environment.
+
+// Lookup walks the environment spine, which a host `loop` drives. The
+// loop state is `(Env & Nat)`; each step either descends one binding or
+// finishes with the found value (or `()` when the index runs off the
+// end).
+/// Looks up de Bruijn index `i` in environment `e`, driven by the host `loop`.
+pub fn env_lookup(e: Env, i: Nat) -> . | Value {
+  loop(
+    , .(st: Env & Nat) {
+        match! st {
+          .(ce: Env, ci: Nat) {
+            match! un_env(ce) {
+              (
+                , .(head: Value, rest: Env) {
+                    match! un_nat(ci) {
+                      (
+                        , .(pred: Nat) { widen_sum!((rest, pred), (Env & Nat) | . | Value) }
+                        , .(_z: .) {
+                            widen_sum!(widen_sum!(head, . | Value), (Env & Nat) | . | Value)
+                          }
+                        )
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(widen_sum!((), . | Value), (Env & Nat) | . | Value) }
+                )
+            }
+          }
+        }
+      }
+    , (e, i)
+    )
+}
+
+// =====================================================================
+// The transition function
+// =====================================================================
+//
+// `transition` is one machine step. It dispatches on the control state:
+// an `eval` decomposes the current term node, an `ret` feeds the current
+// value to the top continuation frame. Budget is decremented by the
+// driver, not here.
+
+// --- host-fn firing ---
+//
+// A `V_hostfn` retains the slot count for each remaining private runtime stage.
+// Each Kio application contributes one stage domain: zero consumes Unit for an
+// erased `forall` or declared Unit group, while a positive count flattens one
+// declared non-Unit group and accumulates its slots. The evaluator invokes the separately
+// supplied `call` capability once after the final stage. This mirrors the host
+// boundary: erased type stages and intermediate closures stay internal while
+// the host sees one flattened value call.
+// The evaluator names no host operation: the exact descriptor carried by the
+// value selects the implementation in `call`, so the vocabulary is that
+// capability's, not the evaluator's. A **higher-order** host fn whose product
+// domain carries an interpreted `V_closure` (e.g. `loop`'s `step`) is still
+// recognized by the `call` capability's applier for that op, not here: the
+// applier knows its own
+// product-domain shape and can return a structural `Ev_fold(step, init)`.
+// The evaluator handles only that structural fold outcome.
+/// A runtime-stage domain flattening in progress: remaining value, slots, accumulator.
+labels { flat_group: Value & I32 & Vals };
+
+/// A successfully flattened group.
+labels { flat_ok: Vals };
+
+/// A group whose runtime value did not match its resolved FFI slot shape.
+labels { flat_bad: . };
+
+type Flat_result = Flat_ok | Flat_bad;
+
+fn flat_ok(values: Vals) -> Flat_result { widen_sum!({flat_ok = values}, Flat_result) }
+
+fn flat_bad() -> Flat_result { widen_sum!({flat_bad=}, Flat_result) }
+
+fn flat_finish(result: Flat_result) -> Flat_group | Flat_result {
+  widen_sum!(result, Flat_group | Flat_result)
+}
+
+fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
+  match! Flat_group.get(state) {
+    .(value: Value, slots: I32, acc: Vals) {
+      if! leq_i32(slots, 0(I32)) {
+        if! eq_i32(slots, 0(I32)) {
+          match! un_value(value) {
+            (
+              , .(_unit: V_unit) { flat_finish(flat_ok(acc)) }
+              , .(_closure: V_closure) { flat_finish(flat_bad()) }
+              , .(_product: V_product) { flat_finish(flat_bad()) }
+              , .(_sum: V_sum) { flat_finish(flat_bad()) }
+              , .(_host: V_host) { flat_finish(flat_bad()) }
+              , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
+              )
+          }
+        } else {
+          flat_finish(flat_bad())
+        }
+      } else if! eq_i32(slots, 1(I32)) {
+        flat_finish(flat_ok(vals_push(value, acc)))
+      } else match! un_value(value) {
+        (
+          , .(product: V_product) {
+              match! V_product.get(product) {
+                .(head: Value, tail: Value) {
+                  widen_sum!(
+                    , {flat_group = (tail, (sub_i32(slots, 1(I32)), vals_push(head, acc)))}
+                    , Flat_group | Flat_result
+                    )
+                }
+              }
+            }
+          , .(_closure: V_closure) { flat_finish(flat_bad()) }
+          , .(_sum: V_sum) { flat_finish(flat_bad()) }
+          , .(_unit: V_unit) { flat_finish(flat_bad()) }
+          , .(_host: V_host) { flat_finish(flat_bad()) }
+          , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
+          )
+      }
+    }
+  }
+}
+
+fn flatten_group(value: Value, slots: I32, acc: Vals) -> Flat_result {
+  loop(flatten_group_step, {flat_group = (value, (slots, acc))})
+}
+
+fn vals_to_domain(acc: Vals) -> Value {
+  match! un_vals(acc) {
+    (
+      , .(deepest: Value, rest0: Vals) {
+          loop(
+            , .(state: Value & Vals) {
+                match! state {
+                  .(built: Value, remaining: Vals) {
+                    match! un_vals(remaining) {
+                      (
+                        , .(value: Value, rest: Vals) {
+                            widen_sum!((vproduct(value, built), rest), (Value & Vals) | Value)
+                          }
+                        , .(_empty: .) { widen_sum!(built, (Value & Vals) | Value) }
+                        )
+                    }
+                  }
+                }
+              }
+            , (deepest, rest0)
+            )
+        }
+      , .(_empty: .) { vunit() }
+      )
+  }
+}
+
+fn apply_loop_step(step: Value, state: Value, k: Kont, fuel: I32) -> State | Eval_result {
+  go(mk_state(c_ret(state), kont_push(mk_app1(step), kont_push(mk_loop(step), k)), fuel))
+}
+
+fn finish_loop(payload: Value, k: Kont, fuel: I32) -> State | Eval_result {
+  go(mk_state(c_ret(payload), k, fuel))
+}
+
+// Feed a `Call_result` from a host callable back into the machine. Ordinary
+// done/stuck results behave like final `Eval_result`s at the call boundary.
+// `Ev_fold` is an interpreted `loop`: the machine applies the step to the
+// initial state with an `F_loop` frame waiting underneath.
+fn feed(r: Call_result, k: Kont, fuel: I32) -> State | Eval_result {
+  match! r {
+    (
+      , .(d: Ev_done) { go(mk_state(c_ret(Ev_done.get(d)), k, fuel)) }
+      , .(st: Ev_stuck) { halt(ev_stuck(stuck_reason(st))) }
+      , .(f: Ev_fold) {
+          match! Ev_fold.get(f) {
+            .(step: Value, init: Value) { apply_loop_step(step, init, k, fuel) }
+          }
+        }
+      , .(a: Ev_apply) {
+          match! Ev_apply.get(a) {
+            .(fv: Value, arg: Value) { go(mk_state(c_ret(arg), kont_push(mk_app1(fv), k), fuel)) }
+          }
+        }
+      , .(at: Ev_apply_then) {
+          match! Ev_apply_then.get(at) {
+            .(fv: Value, arg: Value, cont: Host_fn, state: Value) {
+              go(mk_state(
+                , c_ret(arg)
+                , kont_push(mk_app1(fv), kont_push(mk_hostcont(cont, state), k))
+                , fuel
+                ))
+            }
+          }
+        }
+      )
+  }
+}
+
+// Fire a host fn by handing its exact descriptor and flattened host-boundary
+// domain to the callback, then feed the callback's result back into the machine.
+fn fire_hostfn(
+  , call: (Host_fn & Value) -> Call_result
+  , descriptor: Host_fn
+  , dom: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result { feed(call((descriptor, dom)), k, fuel) }
+
+fn apply_host_group(
+  , call: (Host_fn & Value) -> Call_result
+  , descriptor: Host_fn
+  , groups: Group_slots
+  , acc: Vals
+  , arg: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result {
+  match! un_group_slots(groups) {
+    (
+      , .(slots: I32, rest: Group_slots) {
+          match! flatten_group(arg, slots, acc) {
+            (
+              , .(_bad: Flat_bad) { halt(host_group_stuck()) }
+              , .(ok: Flat_ok) {
+                  let accumulated = Flat_ok.get(ok);
+                  match! un_group_slots(rest) {
+                    (
+                      , .(_next_slots: I32, _later: Group_slots) {
+                          go(mk_state(c_ret(vhostfn(descriptor, rest, accumulated)), k, fuel))
+                        }
+                      , .(_done: .) {
+                          fire_hostfn(call, descriptor, vals_to_domain(accumulated), k, fuel)
+                        }
+                      )
+                  }
+                }
+              )
+          }
+        }
+      , .(_missing: .) { halt(host_group_stuck()) }
+      )
+  }
+}
+
+// --- returning a value to the top frame ---
+
+// Resume the held-function frame: the incoming value is the argument; the
+// held value is the function. A **closure** is applied by evaluating its body
+// in (arg :: captured-env). Applying a **host fn** consumes one private runtime
+// stage: it retains a staged `V_hostfn` while stages remain and sends the exact
+// descriptor plus the accumulated value domain to the host callback only after
+// the final stage. Applying any other value shape is ill-formed (a well-typed image
+// never does) and goes stuck.
+fn resume_app1(
+  , call: (Host_fn & Value) -> Call_result
+  , fn_val: Value
+  , arg: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result {
+  match! un_value(fn_val) {
+    (
+      , .(clo: V_closure) {
+          match! V_closure.get(clo) {
+            .(cenv: Env, body: Term) { go(mk_state(c_eval(body, env_push(arg, cenv)), k, fuel)) }
+          }
+        }
+      , .(hf: V_hostfn) {
+          match! V_hostfn.get(hf) {
+            .(descriptor: Host_fn, groups: Group_slots, acc: Vals) {
+              apply_host_group(call, descriptor, groups, acc, arg, k, fuel)
+            }
+          }
+        }
+      , .(_p: V_product) { halt(apply_stuck()) }
+      , .(_s: V_sum) { halt(apply_stuck()) }
+      , .(_u: V_unit) { halt(apply_stuck()) }
+      , .(_h: V_host) { halt(apply_stuck()) }
+      )
+  }
+}
+
+// Resume the held-argument frame: the incoming value is the function;
+// the held value is the argument. Same application, arguments swapped.
+fn resume_app2(
+  , call: (Host_fn & Value) -> Call_result
+  , arg: Value
+  , fn_val: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result { resume_app1(call, fn_val, arg, k, fuel) }
+
+// Resume a product-projection frame: the incoming value must be a
+// product; return the requested component.
+fn resume_proj(v: Value, want_first: Side, k: Kont, fuel: I32) -> State | Eval_result {
+  match! un_value(v) {
+    (
+      , .(prod: V_product) {
+          match! V_product.get(prod) {
+            .(a: Value, b: Value) { go(mk_state(c_ret(side_select(a, b, want_first)), k, fuel)) }
+          }
+        }
+      , .(_c: V_closure) { halt(proj_stuck()) }
+      , .(_s: V_sum) { halt(proj_stuck()) }
+      , .(_u: V_unit) { halt(proj_stuck()) }
+      , .(_h: V_host) { halt(proj_stuck()) }
+      , .(_f: V_hostfn) { halt(proj_stuck()) }
+      )
+  }
+}
+
+// After the scrutinee and both handler expressions have been evaluated
+// left-to-right, select one handler value and apply it to the sum payload.
+fn resume_either(v: Value, on_l: Value, on_r: Value, k: Kont, fuel: I32) -> State | Eval_result {
+  match! un_value(v) {
+    (
+      , .(sm: V_sum) {
+          match! V_sum.get(sm) {
+            .(sd: Side, payload: Value) {
+              let handler = side_select(on_l, on_r, sd);
+              go(mk_state(c_ret(payload), kont_push(mk_app1(handler), k), fuel))
+            }
+          }
+        }
+      , .(_c: V_closure) { halt(either_stuck()) }
+      , .(_p: V_product) { halt(either_stuck()) }
+      , .(_u: V_unit) { halt(either_stuck()) }
+      , .(_h: V_host) { halt(either_stuck()) }
+      , .(_f: V_hostfn) { halt(either_stuck()) }
+      )
+  }
+}
+
+// After the condition and both thunk expressions have been evaluated
+// left-to-right, inspect the opaque host bool, select one thunk value, and
+// apply it to Unit. The evaluator does **not** read the bool — it hands the
+// condition's exact `Host_type` descriptor and opaque `Scalar` to the host's
+// `test_bool` capability, then branches on the structural `Side` it returns
+// (left = else, right = then). Applying `test_bool` to a non-`V_host` value is
+// ill-formed (a well-typed image never does) and goes stuck.
+fn resume_ite(
+  , test_bool: (Host_type & Scalar) -> Side
+  , bool_type: Host_type
+  , v: Value
+  , then_v: Value
+  , else_v: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result {
+  match! un_value(v) {
+    (
+      , .(hv: V_host) {
+          let taken = side_select(else_v, then_v, test_bool((bool_type, V_host.get(hv))));
+          go(mk_state(c_ret(vunit()), kont_push(mk_app1(taken), k), fuel))
+        }
+      , .(_c: V_closure) { halt(ite_stuck()) }
+      , .(_p: V_product) { halt(ite_stuck()) }
+      , .(_s: V_sum) { halt(ite_stuck()) }
+      , .(_u: V_unit) { halt(ite_stuck()) }
+      , .(_f: V_hostfn) { halt(ite_stuck()) }
+      )
+  }
+}
+
+// Resume an interpreted-loop frame. The step result must be the guest's
+// ordinary `S | R` sum: left continues with the next state, right finishes with
+// the loop result. Any non-sum result is malformed for a well-typed step and
+// halts as stuck.
+fn resume_loop(step: Value, v: Value, k: Kont, fuel: I32) -> State | Eval_result {
+  match! un_value(v) {
+    (
+      , .(sm: V_sum) {
+          match! V_sum.get(sm) {
+            .(sd: Side, payload: Value) {
+              side_select(
+                , apply_loop_step(step, payload, k, fuel)
+                , finish_loop(payload, k, fuel)
+                , sd
+                )
+            }
+          }
+        }
+      , .(_c: V_closure) { halt(loop_stuck()) }
+      , .(_p: V_product) { halt(loop_stuck()) }
+      , .(_u: V_unit) { halt(loop_stuck()) }
+      , .(_h: V_host) { halt(loop_stuck()) }
+      , .(_f: V_hostfn) { halt(loop_stuck()) }
+      )
+  }
+}
+
+// --- the `ret` dispatch: feed a value to the top frame ---
+//
+// `do_ret_frame` decomposes the top frame; `do_ret` dispatches on whether
+// the continuation is empty (a final value) or has a top frame to resume.
+// Both carry the `call` capability (so an application that resolves to a host
+// fn — `F_app1` / `F_app2` — can fire through it) and `test_bool` (so a
+// final conditional frame can get its branch decision from the host).
+fn do_ret_frame(
+  , call: (Host_fn & Value) -> Call_result
+  , test_bool: (Host_type & Scalar) -> Side
+  , v: Value
+  , top: Frame
+  , rest: Kont
+  , fuel: I32
+  ) -> State | Eval_result {
+  match! un_frame(top) {
+    (
+      , .(fr: F_app1) { resume_app1(call, F_app1.get(fr), v, rest, fuel) }
+      , .(fr: F_app2) { resume_app2(call, F_app2.get(fr), v, rest, fuel) }
+      , .(fr: F_arg) {
+          match! F_arg.get(fr) {
+            .(arg_t: Term, e: Env) {
+              go(mk_state(c_eval(arg_t, e), kont_push(mk_app1(v), rest), fuel))
+            }
+          }
+        }
+      , .(fr: F_let) {
+          match! F_let.get(fr) {
+            .(body: Term, e: Env) { go(mk_state(c_eval(body, env_push(v, e)), rest, fuel)) }
+          }
+        }
+      , .(fr: F_psnd) {
+          match! F_psnd.get(fr) {
+            .(snd_t: Term, e: Env) {
+              go(mk_state(c_eval(snd_t, e), kont_push(mk_pfst(v), rest), fuel))
+            }
+          }
+        }
+      , .(fr: F_pfst) { go(mk_state(c_ret(vproduct(F_pfst.get(fr), v)), rest, fuel)) }
+      , .(_fr: F_fst) { resume_proj(v, s_left(), rest, fuel) }
+      , .(_fr: F_snd) { resume_proj(v, s_right(), rest, fuel) }
+      , .(_fr: F_left) { go(mk_state(c_ret(vleft(v)), rest, fuel)) }
+      , .(_fr: F_right) { go(mk_state(c_ret(vright(v)), rest, fuel)) }
+      , .(fr: F_eith_f) {
+          match! F_eith_f.get(fr) {
+            .(on_l: Term, on_r: Term, e: Env) {
+              go(mk_state(c_eval(on_l, e), kont_push(mk_eith_g(v, on_r, e), rest), fuel))
+            }
+          }
+        }
+      , .(fr: F_eith_g) {
+          match! F_eith_g.get(fr) {
+            .(scrutinee: Value, on_r: Term, e: Env) {
+              go(mk_state(c_eval(on_r, e), kont_push(mk_eith_apply(scrutinee, v), rest), fuel))
+            }
+          }
+        }
+      , .(fr: F_eith_apply) {
+          match! F_eith_apply.get(fr) {
+            .(scrutinee: Value, on_l: Value) { resume_either(scrutinee, on_l, v, rest, fuel) }
+          }
+        }
+      , .(fr: F_ite_then) {
+          match! F_ite_then.get(fr) {
+            .(bool_type: Host_type, then_t: Term, else_t: Term, e: Env) {
+              go(mk_state(
+                , c_eval(then_t, e)
+                , kont_push(mk_ite_else(bool_type, v, else_t, e), rest)
+                , fuel
+                ))
+            }
+          }
+        }
+      , .(fr: F_ite_else) {
+          match! F_ite_else.get(fr) {
+            .(bool_type: Host_type, condition: Value, else_t: Term, e: Env) {
+              go(mk_state(
+                , c_eval(else_t, e)
+                , kont_push(mk_ite_apply(bool_type, condition, v), rest)
+                , fuel
+                ))
+            }
+          }
+        }
+      , .(fr: F_ite_apply) {
+          match! F_ite_apply.get(fr) {
+            .(bool_type: Host_type, condition: Value, then_v: Value) {
+              resume_ite(test_bool, bool_type, condition, then_v, v, rest, fuel)
+            }
+          }
+        }
+      , .(_fr: F_absurd) { halt(ev_stuck("reached `__absurd__` — the impossible branch"(String))) }
+      , .(fr: F_loop) { resume_loop(F_loop.get(fr), v, rest, fuel) }
+      , .(fr: F_hostcont) {
+          match! F_hostcont.get(fr) {
+            .(cont: Host_fn, state: Value) { feed(call((cont, vproduct(v, state))), rest, fuel) }
+          }
+        }
+      )
+  }
+}
+
+// Feed the current value to the continuation: resume the top frame, or
+// finish with `Done` when the continuation is empty.
+fn do_ret(
+  , call: (Host_fn & Value) -> Call_result
+  , test_bool: (Host_type & Scalar) -> Side
+  , v: Value
+  , k: Kont
+  , fuel: I32
+  ) -> State | Eval_result {
+  match! un_kont(k) {
+    (
+      , .(top: Frame, rest: Kont) { do_ret_frame(call, test_bool, v, top, rest, fuel) }
+      , .(_empty: .) { halt(ev_done(v)) }
+      )
+  }
+}
+
+// --- the `eval` dispatch: decompose the current term node ---
+//
+// Only the `make_lit` capability is needed here: a `T_lit` node carries a
+// literal's raw text + exact host-type descriptor, which the host turns into a `V_host`.
+// Every other node only builds the next machine state. A `T_hostfn` node
+// produces a host-fn **value** (the loader seeds the env with these); the
+// `call` capability enters only when such a value is applied in `do_ret_frame`.
+fn do_eval(make_lit: (String & Host_type) -> Value, t: Term, e: Env, k: Kont, fuel: I32) ->
+  State | Eval_result
+   {
+  match! un_term(t) {
+    (
+      , .(nd: T_var) {
+          match! env_lookup(e, T_var.get(nd)) {
+            (
+              , .(v: Value) { go(mk_state(c_ret(v), k, fuel)) }
+              , .(_oob: .) {
+                  halt(ev_stuck("a variable reference escaped its environment (malformed image)"(String)))
+                }
+              )
+          }
+        }
+      , .(nd: T_lam) { go(mk_state(c_ret(vclosure(e, T_lam.get(nd))), k, fuel)) }
+      , .(nd: T_app) {
+          match! T_app.get(nd) {
+            .(f: Term, a: Term) { go(mk_state(c_eval(f, e), kont_push(mk_arg(a, e), k), fuel)) }
+          }
+        }
+      , .(nd: T_let) {
+          match! T_let.get(nd) {
+            .(rhs: Term, body: Term) {
+              go(mk_state(c_eval(rhs, e), kont_push(mk_let(body, e), k), fuel))
+            }
+          }
+        }
+      , .(nd: T_pair) {
+          match! T_pair.get(nd) {
+            .(a: Term, b: Term) { go(mk_state(c_eval(a, e), kont_push(mk_psnd(b, e), k), fuel)) }
+          }
+        }
+      , .(nd: T_fst) { go(mk_state(c_eval(T_fst.get(nd), e), kont_push(mk_fst(), k), fuel)) }
+      , .(nd: T_snd) { go(mk_state(c_eval(T_snd.get(nd), e), kont_push(mk_snd(), k), fuel)) }
+      , .(nd: T_left) { go(mk_state(c_eval(T_left.get(nd), e), kont_push(mk_left(), k), fuel)) }
+      , .(nd: T_right) { go(mk_state(c_eval(T_right.get(nd), e), kont_push(mk_right(), k), fuel)) }
+      , .(nd: T_either) {
+          match! T_either.get(nd) {
+            .(s: Term, f: Term, g: Term) {
+              go(mk_state(c_eval(s, e), kont_push(mk_eith_f(f, g, e), k), fuel))
+            }
+          }
+        }
+      , .(nd: T_ite) {
+          match! T_ite.get(nd) {
+            .(bool_type: Host_type, c: Term, th: Term, el: Term) {
+              go(mk_state(c_eval(c, e), kont_push(mk_ite_then(bool_type, th, el, e), k), fuel))
+            }
+          }
+        }
+      , .(nd: T_absurd) {
+          go(mk_state(c_eval(T_absurd.get(nd), e), kont_push(mk_absurd(), k), fuel))
+        }
+      , .(_nd: T_unit) { go(mk_state(c_ret(vunit()), k, fuel)) }
+      , .(nd: T_lit) {
+          let l = T_lit.get(nd);
+          go(mk_state(c_ret(make_lit((lit_text(l), lit_type(l)))), k, fuel))
+        }
+      , .(nd: T_hostfn) {
+          match! T_hostfn.get(nd) {
+            .(descriptor: Host_fn, groups: Group_slots) {
+              go(mk_state(c_ret(vhostfn_fresh(descriptor, groups)), k, fuel))
+            }
+          }
+        }
+      )
+  }
+}
+
+// =====================================================================
+// One machine transition — the host `loop` body
+// =====================================================================
+//
+// Decrement the budget; on exhaustion halt as stuck. Otherwise dispatch
+// on the control: an `eval` decomposes a term node (with `make_lit` for a
+// literal), a `ret` feeds the current value to the top continuation frame
+// (with `call` so a resolved application to a host fn can fire, and
+// `test_bool` so a conditional frame can get its branch decision).
+fn transition(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , s: State
+  ) -> State | Eval_result {
+  match! un_state(s) {
+    .(c: Ctrl, k: Kont, fuel: I32) {
+      if! leq_i32(fuel, 0) {
+        halt(ev_stuck("evaluation step budget exhausted"(String)))
+      } else {
+        let fuel1 = sub_i32(fuel, 1);
+        match! un_ctrl(c) {
+          (
+            , .(ev: Cs_eval) {
+                match! Cs_eval.get(ev) {
+                  .(t: Term, e: Env) { do_eval(make_lit, t, e, k, fuel1) }
+                }
+              }
+            , .(rt: Cs_ret) { do_ret(call, test_bool, Cs_ret.get(rt), k, fuel1) }
+            )
+        }
+      }
+    }
+  }
+}
+
+// =====================================================================
+// prime_eval — the entry point
+// =====================================================================
+//
+// Evaluate a closed Kio' term to a universal value under a step budget,
+// driving the CEK machine with the host `loop`. The initial configuration
+// evaluates the term in the empty environment with the empty continuation.
+// The three host capabilities — `call` (op dispatch), `make_lit` (literal
+// construction), `test_bool` (the conditional decision) — supply the guest's
+// host vocabulary; the loader threads them from `instantiate`. The standard
+// ones are `hostrec.kio`'s `serve_default` / `make_lit_default` /
+// `test_bool_default` (threaded via `defaults.kio`).
+/// The default step budget — generous enough for any image a test drives,
+/// while still bounding an ill-formed run. A well-typed Kio' image
+/// terminates by strong normalization well within it.
+pub fn default_fuel() -> I32 { 1000000(I32) }
+
+/// Evaluates a closed Kio' term to a universal value under an explicit
+/// step budget and host capabilities, driving the CEK machine with the host `loop`.
+pub fn prime_eval_fuel(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , t: Term
+  , fuel: I32
+  ) -> Eval_result {
+  loop(
+    , .(s: State) { transition(call, make_lit, test_bool, s) }
+    , mk_state(c_eval(t, env_nil()), kont_nil(), fuel)
+    )
+}
+
+/// Evaluates a Kio' term in a caller-supplied environment under an
+/// explicit step budget — the incremental form `instantiate` uses to bind
+/// each top-level value once.
+pub fn prime_eval_in_fuel(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , t: Term
+  , e: Env
+  , fuel: I32
+  ) -> Eval_result {
+  loop(
+    , .(s: State) { transition(call, make_lit, test_bool, s) }
+    , mk_state(c_eval(t, e), kont_nil(), fuel)
+    )
+}
+
+/// Evaluates a Kio' term in a caller-supplied environment under the default budget.
+pub fn prime_eval_in(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , t: Term
+  , e: Env
+  ) -> Eval_result { prime_eval_in_fuel(call, make_lit, test_bool, t, e, default_fuel()) }
+
+/// Evaluates a closed Kio' term under the default step budget against the host capabilities.
+pub fn prime_eval(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , t: Term
+  ) -> Eval_result { prime_eval_fuel(call, make_lit, test_bool, t, default_fuel()) }
+
+// =====================================================================
+// prime_apply — apply an already-evaluated closure value to an argument
+// =====================================================================
+//
+// The loader supplies a callable guest export as a `V_closure` — a bound
+// function value or a member value synthesized during lookup — then the host
+// calls it repeatedly with runtime `Value` arguments. `prime_apply` is that
+// call: it seeds the CEK machine to feed
+// `arg` to a held-function frame holding `fn_val`, which `resume_app1`
+// turns into closure application — extending the captured env with `arg`
+// and evaluating the body. A non-closure `fn_val` reaches the same
+// `Ev_stuck` path the in-machine application takes. The result is the
+// universal value the body produces; the host marshals it back through the
+// loader's opaque-scalar accessor. The three host capabilities service any
+// host call / literal / conditional the body makes, exactly as `prime_eval`.
+/// Applies an evaluated closure value to an argument value under an explicit budget and host capabilities.
+pub fn prime_apply_fuel(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , fn_val: Value
+  , arg: Value
+  , fuel: I32
+  ) -> Eval_result {
+  loop(
+    , .(s: State) { transition(call, make_lit, test_bool, s) }
+    , mk_state(c_ret(arg), kont_push(mk_app1(fn_val), kont_nil()), fuel)
+    )
+}
+
+/// Applies an evaluated closure value to an argument value under the default budget against the host capabilities.
+pub fn prime_apply(
+  , call: (Host_fn & Value) -> Call_result
+  , make_lit: (String & Host_type) -> Value
+  , test_bool: (Host_type & Scalar) -> Side
+  , fn_val: Value
+  , arg: Value
+  ) -> Eval_result { prime_apply_fuel(call, make_lit, test_bool, fn_val, arg, default_fuel()) }

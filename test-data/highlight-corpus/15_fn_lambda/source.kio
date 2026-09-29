@@ -1,0 +1,12 @@
+module m;
+
+fn apply(f: T, x: A) -> B { f(.(y: A) { y }, x) }
+fn compound_stem() -> . { .item_value. { item_value1 } }
+fn single_stem() -> . { .x. { x1 } }
+fn commented_stem() -> . { .x. // stem trivia
+  { x1 }
+}
+fn underscored_stem() -> . { ._x. { _x1 } }
+fn flush_comment_stem() -> . { .x.// flush stem comment
+  { x1 }
+}

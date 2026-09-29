@@ -1,0 +1,9 @@
+module testapi;
+
+host type I64 role(i64);
+
+host type U64 role(u64);
+
+host type I128 role(i128);
+
+host type String role(str);

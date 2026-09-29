@@ -1,0 +1,129 @@
+name: Stale Markdown Links
+
+on:
+  schedule:
+    # Weekly run, Monday 06:00 UTC, to catch external-URL rot.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write  # for broken-link issue synchronization
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lychee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run lychee
+        id: lychee
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411  # v2.8.0
+        with:
+          # Cover root README/CONTRIBUTING/ROADMAP/AGENTS, specs/, and docs/.
+          args: --no-progress --verbose './*.md' 'specs/**/*.md' 'docs/**/*.md'
+          # Never fail the workflow — this avoids stale external-link
+          # rot from showing up as a red CI status on the repo. Broken
+          # links surface in the run output, and the issue-sync step
+          # below keeps the triage alert current.
+          fail: false
+
+      # Keep one issue as the live alert: failing runs update or reopen
+      # it, and a later passing run closes it.
+      - name: Sync broken-links issue
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+          LYCHEE_REPORT: ./lychee/out.md
+        with:
+          script: |
+            const fs = require('node:fs');
+
+            const { owner, repo } = context.repo;
+            const title = 'Markdown link check found broken links';
+            const labels = ['link rot'];
+            const marker = '<!-- kio:markdown-link-check -->';
+            const runUrl =
+              `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const matches = (await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner,
+                repo,
+                state: 'all',
+                labels: labels.join(','),
+                sort: 'created',
+                direction: 'desc',
+                per_page: 100,
+              }
+            )).filter(issue => !issue.pull_request && issue.title === title);
+
+            const failed = process.env.LYCHEE_EXIT_CODE !== '0';
+            if (failed) {
+              const reportPath = process.env.LYCHEE_REPORT;
+              const report = fs.existsSync(reportPath)
+                ? fs.readFileSync(reportPath, 'utf8').trim()
+                : '_Lychee did not write a report; see the workflow run._';
+              const body =
+                `${marker}\n${report}\n\n---\nLatest failing run: ${runUrl}`;
+              const issue =
+                matches.find(candidate => candidate.state === 'open') ??
+                matches[0];
+
+              if (issue) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  title,
+                  body,
+                  labels,
+                  state: 'open',
+                });
+                core.info(`Updated issue #${issue.number}.`);
+                return;
+              }
+
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels,
+              });
+              core.info(`Created issue #${created.data.number}.`);
+              return;
+            }
+
+            const openIssues = matches.filter(issue => issue.state === 'open');
+            if (openIssues.length === 0) {
+              core.info('No open broken-links issue to close.');
+              return;
+            }
+
+            for (const issue of openIssues) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body:
+                  `The latest markdown link check passed, so this alert ` +
+                  `resolved itself.\n\nRun: ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`Closed issue #${issue.number}.`);
+            }

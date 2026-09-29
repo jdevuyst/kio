@@ -1,0 +1,3 @@
+module missing_module_semicolon/main
+
+fn main() -> . { () }

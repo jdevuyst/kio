@@ -1,0 +1,9 @@
+module main;
+
+import __comptime__;
+
+pure fn hidden_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub elab public_elab : [Source] Source -> Source { impl hidden_impl }

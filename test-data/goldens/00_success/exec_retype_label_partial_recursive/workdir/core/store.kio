@@ -1,0 +1,5 @@
+module core/store;
+
+pub rec labels { foo[A]: (Foo(A) -> A) -> A };
+
+pub fn read_foo[A](value: Foo(A), next: Foo(A) -> A) -> A { value.?{foo}(next) }

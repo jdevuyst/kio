@@ -1,0 +1,36 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+newtype Const[A] : I32 { constructor mk_const; projector un_const }
+
+fn generic_first(condition: Bool) -> I32 {
+  let selected =
+    if! condition {
+      print("if generic-first\n");
+      Const.mk_const(11)
+    } else {
+      print("if concrete-later\n");
+      Const.mk_const(I32, 12)
+    };
+  Const.un_const(selected)
+}
+
+fn concrete_first(condition: Bool) -> I32 {
+  let selected =
+    if! condition {
+      print("if concrete-first\n");
+      Const.mk_const(I32, 21)
+    } else {
+      print("if generic-later\n");
+      Const.mk_const(22)
+    };
+  Const.un_const(selected)
+}
+
+fn print_line(value: I32) -> . { print(int_to_string(value)); print("\n") }
+
+pub fn main() -> . { print_line(generic_first(.t)); print_line(concrete_first(.f)) }

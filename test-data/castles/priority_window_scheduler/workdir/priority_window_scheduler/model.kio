@@ -1,0 +1,11 @@
+module priority_window_scheduler/model;
+
+import testapi(I32, String);
+
+pub labels Window = { name: String, span: String, impact: I32, risk: I32, handoff: I32 };
+
+pub fn early() -> Window { {name = "early", span = "1-3", impact = 25, risk = 6, handoff = 2} }
+
+pub fn middle() -> Window { {name = "middle", span = "2-4", impact = 31, risk = 7, handoff = 2} }
+
+pub fn late() -> Window { {name = "late", span = "3-5", impact = 27, risk = 8, handoff = 4} }

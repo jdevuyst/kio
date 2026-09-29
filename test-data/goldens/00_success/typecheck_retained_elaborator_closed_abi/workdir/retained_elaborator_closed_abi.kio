@@ -1,0 +1,11 @@
+module retained_elaborator_closed_abi;
+
+import retained_elaborator_closed_abi/elaborators(infer);
+
+host type I32 role(i32);
+
+host type String role(str);
+
+fn consume[A][B](_function: (A & B) -> A & B, _left: A, _right: B) -> . { () }
+
+fn checked() -> . { consume(.(pair) { infer!(pair) }, 0, "closed") }

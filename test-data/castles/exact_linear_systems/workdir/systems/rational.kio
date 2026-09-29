@@ -1,0 +1,79 @@
+module systems/rational;
+
+import elab/control(if);
+import list_host as integers;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Rational = { numerator: I32, denominator: I32 };
+
+fn absolute(n: I32) -> I32 {
+  if! a.lt_i32(n, 0) {
+    a.sub_i32(0, n)
+  } else {
+    n
+  }
+}
+
+rec(loop) fn gcd(a0: I32, b: I32) -> I32 {
+  if! integers.eq_i32(b, 0) {
+    a0
+  } else {
+    rec gcd(b, a.mod_i32(a0, b))
+  }
+}
+
+fn normalized(n: I32, d: I32) -> Rational {
+  let divisor = gcd(absolute(n), d);
+  {numerator = a.div_i32(n, divisor), denominator = a.div_i32(d, divisor)}
+}
+
+pub fn make(n: I32, d: I32) -> Rational {
+  if! a.lt_i32(d, 0) {
+    normalized(a.sub_i32(0, n), a.sub_i32(0, d))
+  } else {
+    normalized(n, d)
+  }
+}
+
+pub fn integer(n: I32) -> Rational { make(n, 1) }
+
+pub fn zero() -> Rational { integer(0) }
+
+pub fn is_zero(q: Rational) -> Bool { integers.eq_i32(q.?{numerator}, 0) }
+
+pub fn negate(q: Rational) -> Rational { make(a.sub_i32(0, q.?{numerator}), q.?{denominator}) }
+
+pub fn add(x: Rational, y: Rational) -> Rational {
+  make(
+    , a.add_i32(
+        , a.mul_i32(x.?{numerator}, y.?{denominator})
+        , a.mul_i32(y.?{numerator}, x.?{denominator})
+        )
+    , a.mul_i32(x.?{denominator}, y.?{denominator})
+    )
+}
+
+pub fn subtract(x: Rational, y: Rational) -> Rational { add(x, negate(y)) }
+
+pub fn multiply(x: Rational, y: Rational) -> Rational {
+  make(a.mul_i32(x.?{numerator}, y.?{numerator}), a.mul_i32(x.?{denominator}, y.?{denominator}))
+}
+
+pub fn divide(x: Rational, y: Rational) -> Rational {
+  make(a.mul_i32(x.?{numerator}, y.?{denominator}), a.mul_i32(x.?{denominator}, y.?{numerator}))
+}
+
+pub fn show(q: Rational) -> String {
+  if! integers.eq_i32(q.?{denominator}, 1) {
+    fmt.int_to_string(q.?{numerator})
+  } else {
+    text.string_concat(
+      , fmt.int_to_string(q.?{numerator})
+      , text.string_concat("/", fmt.int_to_string(q.?{denominator}))
+      )
+  }
+}

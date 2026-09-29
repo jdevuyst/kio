@@ -1,0 +1,150 @@
+/// shunting_yard_desk — an integer desk calculator built on Dijkstra's
+/// shunting-yard algorithm.
+///
+/// The fixture is a stream of expressions written one pre-tokenized lexeme per
+/// line, with a blank line between them and EOF ending the stream. `desk/lex`
+/// classifies each lexeme as a token before `desk/yard` converts the token stream
+/// from infix to RPN and `desk/eval` executes it on a value stack. Nothing
+/// crashes: every way the pipeline can fail is a fault value carrying the token
+/// it failed at (`desk/outcome`), and this module dispatches success and failure
+/// through the same `match!`.
+///
+/// For each expression the transcript prints the tokens read back, the RPN
+/// queue when one was built, and the value or the fault. A closing summary
+/// counts the expressions by outcome.
+module testapi/main;
+
+import desk/eval(evaluate);
+import desk/lex(classify);
+import desk/list(List, cons, for_each, is_empty, len, nil, reverse);
+import desk/outcome(Answer, Failed, Fault_kind, Value, all_kinds, count_kind);
+import desk/outcome(fault_of, kind_name, {failed}, {value});
+import desk/render(cat, show_fault, show_infix, show_int, show_rpn);
+import desk/token(Placed, place);
+import desk/yard(Rpn, Rpn_failed, to_rpn, {rpn_failed}, {rpn});
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/io(print, read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// Expressions seen, expressions that produced a value, and the kind of every
+/// fault raised — the summary counts kinds off that log rather than carrying
+/// one counter per arm.
+labels Tally = { seen: I32, ok_count: I32, faults: List(Fault_kind) };
+
+fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil(Fault_kind, ())} }
+
+fn note_ok(t: Tally) -> Tally {
+  {seen = add_i32(t.?{seen}, 1), ok_count = add_i32(t.?{ok_count}, 1), faults = t.?{faults}}
+}
+
+fn note_fault(t: Tally, kind: Fault_kind) -> Tally {
+  {seen = add_i32(t.?{seen}, 1), ok_count = t.?{ok_count}, faults = cons(kind, t.?{faults})}
+}
+
+fn some_expr(toks: List(Placed)) -> List(Placed) | . { widen_sum!(toks, List(Placed) | .) }
+
+fn no_expr() -> List(Placed) | . { widen_sum!((), List(Placed) | .) }
+
+/// Read one expression's worth of tokens. A blank line ends the expression; a
+/// blank line before any token is just separator noise and is skipped, so an
+/// empty expression is never handed on. EOF ends the stream, but a pending
+/// expression at EOF is still an expression.
+rec(loop) fn gather(acc: List(Placed), n: I32) -> List(Placed) | . {
+  match! read_ascii_line() {
+    (
+      , .(line: String) {
+          if! string_eq(line, "") {
+            if! is_empty(acc) {
+              rec gather(acc, n)
+            } else {
+              some_expr(reverse(acc))
+            }
+          } else {
+            let spot = add_i32(n, 1);
+            rec gather(cons(place(classify(line), spot), acc), spot)
+          }
+        }
+      , .(_eof: .) {
+          if! is_empty(acc) {
+            no_expr()
+          } else {
+            some_expr(reverse(acc))
+          }
+        }
+      )
+  }
+}
+
+fn read_expr() -> List(Placed) | . { gather(nil(Placed, ()), 0) }
+
+fn say(text: String) -> . { print(cat(text, "\n")) }
+
+fn report_answer(a: Answer, t: Tally) -> Tally {
+  match! a {
+    (
+      , .(v: Value) { say(cat("  value: ", show_int(v.?{value}))); note_ok(t) }
+      , .(f: Failed) {
+          let failure = f.?{failed};
+          say(cat("  error: ", show_fault(failure)));
+          note_fault(t, fault_of(failure))
+        }
+      )
+  }
+}
+
+/// One expression, start to finish. The RPN line appears exactly when a queue
+/// was built: a parenthesis fault stops the conversion, and there is then no
+/// queue to echo.
+fn report_expr(index: I32, toks: List(Placed), t: Tally) -> Tally {
+  say(cat("expr ", cat(show_int(index), cat(": ", show_infix(toks)))));
+  match! to_rpn(toks) {
+    (
+      , .(q: Rpn) {
+          let queue = q.?{rpn};
+          say(cat("  rpn: ", show_rpn(queue)));
+          report_answer(evaluate(queue, len(toks)), t)
+        }
+      , .(f: Rpn_failed) {
+          let failure = f.?{rpn_failed};
+          say(cat("  error: ", show_fault(failure)));
+          note_fault(t, fault_of(failure))
+        }
+      )
+  }
+}
+
+rec(loop) fn drive(index: I32, t: Tally) -> Tally {
+  match! read_expr() {
+    (
+      , .(toks: List(Placed)) {
+          let next = report_expr(index, toks, t);
+          rec drive(add_i32(index, 1), next)
+        }
+      , .(_end: .) { t }
+      )
+  }
+}
+
+fn report_kind(log: List(Fault_kind), kind: Fault_kind) -> . {
+  say(cat("  ", cat(kind_name(kind), cat(": ", show_int(count_kind(log, kind))))))
+}
+
+fn summarize(t: Tally) -> . {
+  let seen = t.?{seen};
+  let ok = t.?{ok_count};
+  let log = t.?{faults};
+  let head = cat("summary: ", cat(show_int(seen), cat(" expressions, ", show_int(ok))));
+  say(cat(head, cat(" ok, ", cat(show_int(sub_i32(seen, ok)), " failed"))));
+  for_each(all_kinds(), .(kind: Fault_kind) { report_kind(log, kind) })
+}
+
+pub fn main() -> . {
+  say("shunting_yard_desk");
+  let totals = drive(1, start_tally());
+  summarize(totals)
+}

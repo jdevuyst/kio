@@ -1,0 +1,11 @@
+  fail equiv `nested_stuck_callee` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): __param_f__(__param_x__)(__param_x__)
+    group B (arms 2): __param_f__(__param_y__)(__param_x__)
+  fail equiv `newtype_payload` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): Box.mk_box(__param_x__)
+    group B (arms 2): Box.mk_box(__param_y__)
+  fail equiv `effect_inside_newtype` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): Box.mk_box(effect(__param_x__); __param_x__)
+    group B (arms 2): Box.mk_box(__param_x__)
+
+result: 3/3 equiv blocks failed

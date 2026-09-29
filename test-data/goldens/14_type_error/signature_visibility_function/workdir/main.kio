@@ -1,0 +1,5 @@
+module main;
+
+newtype Hidden : . { constructor mk; projector un }
+
+pub fn expose(value: Hidden & .) -> Hidden & . { value }

@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+
+// A concrete monad: `Box(A)` wraps a single value. `box_pure`
+// lifts a value into the monad; `box_bind` peels and re-wraps.
+// `box_bind`'s signature
+// `[A] [B] (Box(A) & (A -> Box(B))) -> Box(B)` is the canonical
+// bind shape the do-block looks for.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// The do-block elaborates to
+// `box_bind(box_pure("do basic ok\n"), .(a: String) { box_pure(a) })`.
+// The continuation's parameter type is filled in from the
+// receiver's bind shape.
+fn run() -> Box(String) {
+  do! box_bind {
+    let a <- box_pure("do basic ok\n");
+    box_pure(a)
+  }
+}
+
+pub fn main() -> . { print(Box.un_box(run())) }

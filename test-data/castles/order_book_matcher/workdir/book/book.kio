@@ -1,0 +1,218 @@
+/// The book: two queues of resting orders, the trade tape, and a ledger.
+///
+/// A host `Array(T)` is a handle, so every walk here mutates the book in
+/// place and the caller keeps its own reference. The array primitives for
+/// the queues, the tape, and the ledger stay in this module; the engine
+/// and the report speak only in queues, orders, and trades.
+///
+/// Removing an order shifts the queue behind it down one slot. Swapping
+/// the last order into the hole would be cheaper and would destroy the
+/// arrival order the queue exists to hold.
+module book/book;
+
+import book/num(int_eq, not);
+import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, remaining_of, side_of);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_pop_back
+  , array_push
+  , array_set
+  );
+import testapi/iter(loop);
+
+pub labels Book = { bids: Array(Order), asks: Array(Order), tape: Array(Trade), ledger: Array(I32) };
+
+/// Every quantity that enters or leaves the book lands in one of these
+/// cells. Nothing here is derived from the tape, which is what lets the
+/// final invariant check the tape against a total it did not produce.
+literal entered_cell = 0;
+
+literal cancelled_cell = 1;
+
+literal cancel_count_cell = 2;
+
+literal reduced_cell = 3;
+
+literal unfilled_cell = 4;
+
+literal next_id_cell = 5;
+
+literal ledger_size = 6;
+
+pub fn new_book() -> Book {
+  {
+    , bids = array_make_empty(Order, ())
+    , asks = array_make_empty(Order, ())
+    , tape = array_make_empty(Trade, ())
+    , ledger = array_make_filled(ledger_size, 0)
+    }
+}
+
+fn ledger_of(b: Book) -> Array(I32) { b.?{ledger} }
+
+fn tape_array(b: Book) -> Array(Trade) { b.?{tape} }
+
+fn cell(b: Book, index: I32) -> I32 { array_get(ledger_of(b), index) }
+
+fn bump(b: Book, index: I32, amount: I32) -> . {
+  array_set(ledger_of(b), index, add_i32(cell(b, index), amount))
+}
+
+pub fn bids_of(b: Book) -> Array(Order) { b.?{bids} }
+
+pub fn asks_of(b: Book) -> Array(Order) { b.?{asks} }
+
+/// The queue an order of this side rests on.
+pub fn own_queue(b: Book, side: Side) -> Array(Order) {
+  if! is_buy(side) {
+    bids_of(b)
+  } else {
+    asks_of(b)
+  }
+}
+
+/// The queue an order of this side crosses against.
+pub fn facing_queue(b: Book, side: Side) -> Array(Order) {
+  if! is_buy(side) {
+    asks_of(b)
+  } else {
+    bids_of(b)
+  }
+}
+
+pub fn depth(orders: Array(Order)) -> I32 { array_len(orders) }
+
+pub fn is_empty(orders: Array(Order)) -> Bool { leq_i32(array_len(orders), 0) }
+
+pub fn at(orders: Array(Order), index: I32) -> Order { array_get(orders, index) }
+
+pub fn set_at(orders: Array(Order), index: I32, o: Order) -> . { array_set(orders, index, o) }
+
+/// The best price on a queue, or nothing when the queue is empty. The
+/// front of the queue is the best order by construction.
+pub fn best_price(orders: Array(Order)) -> I32 | . {
+  if! is_empty(orders) {
+    widen_sum!((), I32 | .)
+  } else {
+    widen_sum!(price_of(at(orders, 0)), I32 | .)
+  }
+}
+
+rec(loop) fn shift_down(i: I32, orders: Array(Order)) -> . {
+  if! leq_i32(sub_i32(array_len(orders), 1), i) {
+    ()
+  } else {
+    array_set(orders, i, array_get(orders, add_i32(i, 1)));
+    rec shift_down(add_i32(i, 1), orders)
+  }
+}
+
+/// The queue is never empty where this is called, so the popped order is
+/// always there -- but the sum still has to be consumed, and consuming it
+/// is the whole of the proof.
+fn drop_back(orders: Array(Order)) -> . {
+  match! array_pop_back(orders) {
+    (.(_o: Order) { () }, .(_none: .) { () })
+  }
+}
+
+pub fn remove_at(orders: Array(Order), index: I32) -> . {
+  shift_down(index, orders);
+  drop_back(orders)
+}
+
+rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) -> I32 {
+  if! leq_i32(array_len(orders), i) {
+    i
+  } else if! ranks_ahead(side, price, price_of(array_get(orders, i))) {
+    i
+  } else {
+    rec rank_index(add_i32(i, 1), side, price, orders)
+  }
+}
+
+rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) -> . {
+  if! leq_i32(j, index) {
+    ()
+  } else {
+    array_set(orders, j, array_get(orders, sub_i32(j, 1)));
+    rec shift_up(sub_i32(j, 1), index, orders)
+  }
+}
+
+/// Insert at price-time priority: ahead of the first resting order this
+/// one beats on price, behind every order it ties with. The scan stops at
+/// the first order it beats, so a tie walks past -- which is the time half
+/// of the rule, and the only reason a queue position is worth anything.
+pub fn insert_ranked(orders: Array(Order), o: Order) -> . {
+  let index = rank_index(0, side_of(o), price_of(o), orders);
+  array_push(orders, o);
+  shift_up(sub_i32(array_len(orders), 1), index, orders);
+  array_set(orders, index, o)
+}
+
+fn not_found() -> I32 { -1 }
+
+pub fn is_found(index: I32) -> Bool { not(int_eq(index, not_found())) }
+
+rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
+  if! leq_i32(array_len(orders), i) {
+    not_found()
+  } else if! int_eq(id_of(array_get(orders, i)), id) {
+    i
+  } else {
+    rec scan_id(add_i32(i, 1), id, orders)
+  }
+}
+
+pub fn index_of_id(orders: Array(Order), id: I32) -> I32 { scan_id(0, id, orders) }
+
+rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
+  if! leq_i32(array_len(orders), i) {
+    total
+  } else {
+    rec sum_remaining(add_i32(i, 1), add_i32(total, remaining_of(array_get(orders, i))), orders)
+  }
+}
+
+/// The quantity still on offer on one queue.
+pub fn resting_qty(orders: Array(Order)) -> I32 { sum_remaining(0, 0, orders) }
+
+pub fn record_trade(b: Book, t: Trade) -> . { array_push(tape_array(b), t) }
+
+pub fn tape_len(b: Book) -> I32 { array_len(tape_array(b)) }
+
+pub fn trade_at(b: Book, index: I32) -> Trade { array_get(tape_array(b), index) }
+
+/// Order ids are handed out in arrival order, so an id also says how late
+/// the book first saw that order.
+pub fn take_id(b: Book) -> I32 { bump(b, next_id_cell, 1); cell(b, next_id_cell) }
+
+pub fn note_entered(b: Book, qty: I32) -> . { bump(b, entered_cell, qty) }
+
+pub fn note_cancelled(b: Book, qty: I32) -> . {
+  bump(b, cancelled_cell, qty);
+  bump(b, cancel_count_cell, 1)
+}
+
+pub fn note_reduced(b: Book, qty: I32) -> . { bump(b, reduced_cell, qty) }
+
+pub fn note_unfilled(b: Book, qty: I32) -> . { bump(b, unfilled_cell, qty) }
+
+pub fn entered_qty(b: Book) -> I32 { cell(b, entered_cell) }
+
+pub fn cancelled_qty(b: Book) -> I32 { cell(b, cancelled_cell) }
+
+pub fn cancel_count(b: Book) -> I32 { cell(b, cancel_count_cell) }
+
+pub fn reduced_qty(b: Book) -> I32 { cell(b, reduced_cell) }
+
+pub fn unfilled_qty(b: Book) -> I32 { cell(b, unfilled_cell) }

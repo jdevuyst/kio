@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+newtype Const[A] : I32 { constructor mk_const; projector un_const }
+
+pub fn main() -> . {
+  let value = Const.un_const(.() { Const.mk_const(I32, 11) }(()));
+  io.print(fmt.int_to_string(value));
+  io.print("\n")
+}

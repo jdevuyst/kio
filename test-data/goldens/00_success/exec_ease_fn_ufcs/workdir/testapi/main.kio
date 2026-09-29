@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+fn provider(x: A | B) -> . {
+  print(match! x {
+    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+  })
+}
+
+// Surrounding type pins the target; `f.>ease!` elides the target
+// slot just like other UFCS elaborator calls.
+fn use_narrow(f: A -> .) -> . { f(A.mk_a("elided target ok\n")) }
+
+pub fn main() -> . {
+  // Explicit-target UFCS: parens carry the target type, parallel
+  // to `r.>into!(T)`.
+  provider.>ease!(A -> .)(A.mk_a("explicit target ok\n"));
+  // Elided-target UFCS: drop the parens when the surrounding
+  // context pins the target.
+  use_narrow(provider.>ease!)
+}

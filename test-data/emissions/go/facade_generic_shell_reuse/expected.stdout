@@ -1,0 +1,12 @@
+alpha product i32/string: 7 seven
+alpha product bool/i64: true 9
+alpha sum i32/string: 11
+alpha sum bool/i64: 12
+alpha sum zero: 0
+beta sum i32/string: beta
+alpha product i32/string: 7 seven
+alpha product bool/i64: true 9
+alpha sum i32/string: 11
+alpha sum bool/i64: 12
+alpha sum zero: 0
+beta sum i32/string: beta

@@ -1,0 +1,163 @@
+module testapi/main;
+
+import library/core(Bool, Queue, bool_to, empty, is_empty, no, peek, singleton, well_formed, yes);
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/queue(
+  , concat
+  , dequeue
+  , enqueue
+  , from_list
+  , length
+  , map
+  , op _ ++ _
+  , op _ <<
+  , op _ >> _
+  , op _ ^?
+  , reverse
+  , to_list
+  );
+import list/core(List);
+import list/list as lists;
+import list/list(varop [* *]);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn show_queue(q: Queue(I32)) -> String {
+  let rendered =
+    lists.foldl(
+      , .(carry: Bool & String, x: I32) -> Bool & String {
+          match! carry {
+            .(first: Bool, text: String) {
+              let sep = bool_to("", ", ", first);
+              (no(), cat(text, cat(sep, int_to_string(x))))
+            }
+          }
+        }
+      , (yes(), "")
+      , to_list(q)
+      );
+  match! rendered {
+    .(_first: Bool, body: String) { cat("[", cat(body, "]")) }
+  }
+}
+
+fn show_result[A](result: A | ., render: A -> String) -> String {
+  fold_result("none", .(value: A) -> String { cat("some(", cat(render(value), ")")) }, result)
+}
+
+fn show_opt(m: I32 | .) -> String { show_result(m, int_to_string) }
+
+fn render_sum(value: I32 | .) -> String {
+  match! value {
+    (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
+  }
+}
+
+fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
+
+fn line(label: String, value: String) -> . { print(cat(label, cat(" = ", cat(value, "\n")))) }
+
+pub fn main() -> . {
+  let e = empty(I32, ());
+  let s = singleton(7);
+  let q3 = from_list([* 1, 2, 3 *]);
+  line("empty", show_queue(e));
+  line("singleton(7)", show_queue(s));
+  line("from_list([1, 2, 3])", show_queue(q3));
+  line("is_empty(empty)", show_bool(is_empty(e)));
+  line("is_empty(singleton)", show_bool(is_empty(s)));
+  line("length([1, 2, 3])", int_to_string(length(q3)));
+  line("peek([1, 2, 3])", show_opt(peek(q3)));
+  line("peek(empty)", show_opt(peek(e)));
+  let q4 = enqueue(4, q3);
+  line("enqueue(4, [1, 2, 3])", show_queue(q4));
+  line(
+    , "dequeue([1, 2, 3, 4]).head"
+    , show_opt(fold_result(
+        , absent()
+        , .(p: I32 & Queue(I32)) {
+            match! p {
+              .(h: I32, _r: Queue(I32)) { present(h) }
+            }
+          }
+        , dequeue(q4)
+        ))
+    );
+  line(
+    , "dequeue([1, 2, 3, 4]).rest"
+    , fold_result(
+        , "none"
+        , .(p: I32 & Queue(I32)) {
+            match! p {
+              .(_h: I32, r: Queue(I32)) { show_queue(r) }
+            }
+          }
+        , dequeue(q4)
+        )
+    );
+  line("map(+10, [1, 2, 3])", show_queue(map(.(n: I32) -> I32 { add_i32(n, 10) }, q3)));
+  line("reverse([1, 2, 3])", show_queue(reverse(q3)));
+  line("concat([1, 2, 3], [4, 5])", show_queue(concat(q3, from_list([* 4, 5 *]))));
+  line("well_formed([1, 2, 3])", show_bool(well_formed(q3)));
+  line("(singleton(7) >> 8) >> 9", show_queue((s >> 8) >> 9));
+  line("([1, 2, 3] >> 4) ^?", show_opt((q3 >> 4) ^?));
+  line(
+    , "([1, 2, 3] <<).head"
+    , show_opt(fold_result(
+        , absent()
+        , .(p: I32 & Queue(I32)) {
+            match! p {
+              .(h: I32, _r: Queue(I32)) { present(h) }
+            }
+          }
+        , q3 <<
+        ))
+    );
+  line("[1, 2, 3] ++ [4, 5]", show_queue(q3 ++ from_list([* 4, 5 *])));
+  let .(source_list: List(I32)) = [* 1, 2, 3 *];
+  let .(roundtrip: List(I32)) = to_list(from_list(source_list));
+  line("canonical list roundtrip", lists.to_string(int_to_string, roundtrip));
+  let .(no_items: List(I32)) = [* *];
+  line("canonical empty list length", int_to_string(length(from_list(no_items))));
+  let .(unit_queue: Queue(.)) = from_list([* () *]);
+  let .(no_units: Queue(.)) = empty();
+  line("peek(unit)", show_result(peek(unit_queue), .(_unit: .) { "unit" }));
+  line("peek(empty Unit)", show_result(peek(no_units), .(_unit: .) { "unit" }));
+  let show_unit_pair =
+    .(pair: . & Queue(.)) -> String {
+      let .(_unit: ., rest: Queue(.)) = pair;
+      cat("unit, remaining ", int_to_string(length(rest)))
+    };
+  line("dequeue(unit)", show_result(dequeue(unit_queue), show_unit_pair));
+  line("dequeue(empty Unit)", show_result(dequeue(no_units), show_unit_pair));
+  let .(sum_queue: Queue(I32 | .)) =
+    from_list([* widen_sum!(7, I32 | .), widen_sum!((), I32 | .) *]);
+  line("peek(nested number)", show_result(peek(sum_queue), render_sum));
+  let sum_tail =
+    fold_result(
+      , empty(I32 | ., ())
+      , .(pair: (I32 | .) & Queue(I32 | .)) {
+          let .(_value: I32 | ., rest: Queue(I32 | .)) = pair;
+          rest
+        }
+      , dequeue(sum_queue)
+      );
+  line("peek(nested Unit)", show_result(peek(sum_tail), render_sum));
+  line("peek(empty nested)", show_result(peek(empty(I32 | ., ())), render_sum))
+}

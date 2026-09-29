@@ -1,0 +1,5 @@
+module lit;
+
+host type U8 role(u8);
+
+host type U16 role(u16);

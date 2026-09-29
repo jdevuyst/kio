@@ -1,0 +1,19 @@
+package flatten_prod_rejects_right_shape;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  elab/testapi
+}

@@ -1,0 +1,18 @@
+kio repl — the module inspector
+loaded: demo/main
+type `:help` for commands, `:quit` to leave
+pure
+pure
+pure
+pure
+pure
+pure
+impure
+impure
+impure
+impure
+pure
+pure
+impure
+`Alias` is a type alias; `:pure` expects an executable value binding (fn or host fn)
+bye

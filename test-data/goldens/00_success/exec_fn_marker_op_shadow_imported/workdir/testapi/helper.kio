@@ -1,0 +1,14 @@
+module testapi/helper;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+
+pub fn combine(a: I32, b: I32) -> I32 { add_i32(a, b) }
+
+// An IMPORTED binary operator spelled `&`, exported from this
+// helper module and pulled into `main` via a `use _ & from …`
+// clause. The
+// parser's marker-vs-operator precedence is identical for imported
+// and module-local operators (same operator scope), so this case
+// mirrors `exec_fn_marker_op_shadow_binary` with an imported op.
+pub op _ & _ { impl combine }

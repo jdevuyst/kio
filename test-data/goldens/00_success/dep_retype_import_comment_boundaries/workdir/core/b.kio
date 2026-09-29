@@ -1,0 +1,3 @@
+module core/b;
+
+pub newtype B : . { constructor pack; projector unpack }

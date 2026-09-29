@@ -1,0 +1,138 @@
+module main;
+
+import elaborators(bang_identity, bang_unit);
+
+host type Token;
+
+type Unit_alias = .;
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+host fn host_identity[A](value: A) -> A;
+
+host fn host_nil[A]() -> A;
+
+fn identity[A](value: A) -> A { value }
+
+fn unit_nullary[A]() -> . { () }
+
+fn unit_parameter[A](value: .) -> . { value }
+
+fn staged[A]()(value: A) -> A { value }
+
+fn unit_product[A](value: A, tail: .) -> . { tail }
+
+fn two_units(left: ., _right: .) -> . { left }
+
+fn consume_token(_value: Token) -> . { () }
+
+fn consume_token_function(_function: Token -> Token) -> . { () }
+
+fn consume_unit_to_token_function(_function: . -> Token) -> . { () }
+
+fn consume_unit_function(_function: . -> .) -> . { () }
+
+fn consume_unit_alias_function(_function: Unit_alias -> Unit_alias) -> . { () }
+
+fn consume_unit_product_function(_function: (. & .) -> .) -> . { () }
+
+fn consume_staged_unit_function(_function: . -> . -> .) -> . { () }
+
+fn consume_box_constructor(_function: Token -> Box(Token)) -> . { () }
+
+fn consume_unit_box_constructor(_function: . -> Box(.)) -> . { () }
+
+fn exercise_poly_value(function: [A] A -> A) -> . {
+  consume_unit_function(function(.));
+  function(., ());
+  ().>function(.);
+  ().>>function(.);
+  function(.).<();
+  function(.).<<()
+}
+
+fn exercise_nil_value(function: [A] . -> A) -> . {
+  consume_unit_to_token_function(function(Token));
+  consume_token(host_nil(Token)());
+  consume_token(function(Token)());
+  consume_token(function(Token, ()));
+  consume_token(().>function(Token))
+}
+
+fn exercise_unit_value(function: [A] . -> .) -> . {
+  consume_unit_function(function(Token));
+  function(Token, ());
+  ().>function(Token)
+}
+
+pub fn check() -> . {
+  ().>identity;
+  ().>>identity;
+  identity.<();
+  identity.<<();
+  consume_unit_function(identity(.));
+  consume_unit_alias_function(identity(Unit_alias));
+  identity(., ());
+  ().>identity(.);
+  consume_unit_function(host_identity(.));
+  host_identity(., ());
+  ().>host_identity(.);
+  consume_unit_function(host_nil(.));
+  host_nil(., ());
+  ().>host_nil(.);
+  consume_unit_to_token_function(host_nil(Token));
+  consume_token(host_nil(Token, ()));
+  consume_token(().>host_nil(Token));
+  consume_unit_function(unit_nullary(.));
+  unit_nullary(., ());
+  ().>unit_nullary(.);
+  consume_unit_function(unit_parameter(.));
+  unit_parameter(., ());
+  ().>unit_parameter(.);
+  consume_unit_function(bang_identity!(.));
+  consume_unit_alias_function(bang_identity!(Unit_alias));
+  bang_identity!(., ());
+  ().>bang_identity!;
+  ().>>bang_identity!;
+  bang_identity!.<();
+  bang_identity!.<<();
+  ().>bang_identity!(.);
+  ().>>bang_identity!(.);
+  bang_identity!(.).<();
+  bang_identity!(.).<<();
+  ().>bang_identity!(Unit_alias);
+  consume_unit_function(bang_unit!(.));
+  bang_unit!(., ());
+  ().>bang_unit!(.);
+  consume_unit_function(bang_unit!(Token));
+  bang_unit!(Token, ());
+  ().>bang_unit!(Token);
+  exercise_poly_value(identity);
+  exercise_poly_value(host_identity);
+  exercise_nil_value(host_nil);
+  exercise_unit_value(unit_nullary);
+  exercise_unit_value(unit_parameter);
+  consume_token_function(identity(Token));
+  consume_token_function(host_identity(Token));
+  consume_token_function(bang_identity!(Token));
+  consume_unit_function(identity(_));
+  consume_unit_alias_function(identity(_));
+  consume_staged_unit_function(staged(.));
+  consume_unit_function(().>staged(.));
+  ().>staged(., ());
+  ().>>staged(., ());
+  staged(., ()).<();
+  staged(., ()).<<();
+  consume_unit_product_function(unit_product(.));
+  ().>two_units(());
+  ().>>two_units(());
+  two_units(()).<();
+  two_units(()).<<();
+  consume_box_constructor(Box.mk_box(Token));
+  consume_unit_box_constructor(Box.mk_box(.));
+  let boxed = Box.mk_box(., ());
+  boxed.>Box.un_box;
+  boxed.>>Box.un_box;
+  Box.un_box.<boxed;
+  Box.un_box.<<boxed
+}

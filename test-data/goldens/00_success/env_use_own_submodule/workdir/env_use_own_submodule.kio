@@ -1,0 +1,7 @@
+module env_use_own_submodule;
+
+import env_use_own_submodule/sub(Int, Wrap);
+
+host fn make(p0: Int) -> Wrap;
+
+host fn read(p0: Wrap) -> Int;

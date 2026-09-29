@@ -1,0 +1,7 @@
+module main;
+
+fn empty() -> . { () }
+
+fn append(_head: ., _tail: .) -> . { () }
+
+pure varop [* *] { foldr append empty; };

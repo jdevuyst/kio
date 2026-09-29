@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
+
+pub fn main() -> . {
+  // Both families use x, but the inner x1 receives 7 rather than 5.
+  // Capturing the outer slot there would produce 55 instead of 75.
+  let .(f: I32 -> I32) = .x. { add_i32(x1, apply(.x. { mul_i32(x1, 10) }, 7)) };
+  print(i32_to_string(apply(f, 5)))
+}

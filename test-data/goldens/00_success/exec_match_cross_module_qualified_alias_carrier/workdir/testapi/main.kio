@@ -1,0 +1,21 @@
+module testapi/main;
+
+import dep/core as dep;
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+fn select(value: . | dep.Box(String)) -> String {
+  let selected =
+    match! value {
+      (.(boxed: dep.Box(String)) { boxed }, .(_empty: .) { dep.make("fallback\n") })
+    };
+  dep.get(selected)
+}
+
+fn present() -> . | dep.Box(String) { widen_sum!(dep.make("present\n")) }
+
+fn empty() -> . | dep.Box(String) { widen_sum!(()) }
+
+pub fn main() -> . { print(select(present())); print(select(empty())) }

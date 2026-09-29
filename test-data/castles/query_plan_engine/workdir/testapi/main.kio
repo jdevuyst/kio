@@ -1,0 +1,176 @@
+/// query_plan_engine - a relational query planner and evaluator over a
+/// small harbor dataset.
+///
+/// Six query plans are built as relational-algebra trees, printed as
+/// indented plan trees, and then run bottom-up by the engine in
+/// `query/eval`: scans over the three fixture tables, nested-loop joins,
+/// predicate filters, projections, grouped sums and counts, an insertion
+/// sort, and a limit. Each query prints its plan, the relation it
+/// produced as a column table, the row count, and what the run cost in
+/// rows scanned and comparisons performed.
+module testapi/main;
+
+import query/eval as engine;
+import query/explain(explain);
+import query/list as list;
+import query/plan as plan;
+import query/render(render_relation);
+import query/row as rel;
+import query/schema as schema;
+import query/text as text;
+import testapi(I32, String);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+
+/// Ships whose hull is deep, worst first.
+fn deep_draft_ships() -> plan.Plan {
+  plan.project(
+    , list.of3(schema.ship_name(), schema.ship_flag(), schema.ship_draft())
+    , plan.order_by(
+        , schema.ship_draft()
+        , plan.desc()
+        , plan.filter(
+            , plan.cmp(schema.ship_draft(), plan.geq_op(), 90)
+            , plan.scan(schema.ships_table())
+            )
+        )
+    )
+}
+
+/// Where each ship is moored, shallowest berth first. The join carries a
+/// ship's berth id over to the berth that owns it.
+fn berth_assignments() -> plan.Plan {
+  plan.project(
+    , list.of5(
+        , schema.ship_name()
+        , schema.berth_zone()
+        , schema.ship_draft()
+        , schema.berth_id()
+        , schema.berth_depth()
+        )
+    , plan.order_by(
+        , schema.berth_depth()
+        , plan.asc()
+        , plan.join(
+            , plan.scan(schema.ships_table())
+            , plan.scan(schema.berths_table())
+            , schema.ship_berth()
+            , schema.berth_id()
+            )
+        )
+    )
+}
+
+/// Ships drawing more water than their berth has. The predicate compares
+/// two columns of the joined row rather than a column against a literal -
+/// the berth is shallower than the ship draws - so the alert falls out of
+/// the join itself.
+fn over_draft_alerts() -> plan.Plan {
+  plan.project(
+    , list.of4(schema.ship_name(), schema.berth_id(), schema.ship_draft(), schema.berth_depth())
+    , plan.filter(
+        , plan.cmp_cols(schema.berth_depth(), plan.lt_op(), schema.ship_draft())
+        , plan.join(
+            , plan.scan(schema.ships_table())
+            , plan.scan(schema.berths_table())
+            , schema.ship_berth()
+            , schema.berth_id()
+            )
+        )
+    )
+}
+
+/// Cargo tonnage by harbor zone, heaviest zone first. Three tables:
+/// manifests reach their ship, the ship reaches its berth, and the berth
+/// names the zone the tonnage is credited to.
+fn tonnage_by_zone() -> plan.Plan {
+  plan.order_by(
+    , schema.total()
+    , plan.desc()
+    , plan.group_sum(
+        , schema.berth_zone_id()
+        , schema.mf_tons()
+        , plan.join(
+            , plan.join(
+                , plan.scan(schema.manifests_table())
+                , plan.scan(schema.ships_table())
+                , schema.mf_ship()
+                , schema.ship_id()
+                )
+            , plan.scan(schema.berths_table())
+            , schema.ship_berth()
+            , schema.berth_id()
+            )
+        )
+    )
+}
+
+/// The three ships with the most manifests to their name.
+fn busiest_ships() -> plan.Plan {
+  plan.limit(
+    , 3
+    , plan.order_by(
+        , schema.count()
+        , plan.desc()
+        , plan.group_count(schema.mf_ship(), plan.scan(schema.manifests_table()))
+        )
+    )
+}
+
+/// The cargo the harbor master wants to see: the heavy lots and the
+/// trivial ones, which are the two that get mishandled, and nothing at all
+/// from ship 6.
+fn priority_cargo() -> plan.Plan {
+  plan.project(
+    , list.of3(schema.ship_name(), schema.mf_cargo(), schema.mf_tons())
+    , plan.order_by(
+        , schema.mf_tons()
+        , plan.desc()
+        , plan.filter(
+            , plan.all_of(
+                , plan.any_of(
+                    , plan.cmp(schema.mf_tons(), plan.gt_op(), 300)
+                    , plan.cmp(schema.mf_tons(), plan.leq_op(), 90)
+                    )
+                , plan.none_of(plan.cmp(schema.mf_ship(), plan.eq_op(), 6))
+                )
+            , plan.join(
+                , plan.scan(schema.manifests_table())
+                , plan.scan(schema.ships_table())
+                , schema.mf_ship()
+                , schema.ship_id()
+                )
+            )
+        )
+    )
+}
+
+fn run_query(tag: String, title: String, p: plan.Plan) -> . {
+  print("\n");
+  print(text.cat5("== ", tag, ": ", title, " ==\n"));
+  print("plan:\n");
+  explain(p);
+  print(text.cat3("  ordered: ", bool_to_string(plan.plan_ordered(p)), "\n"));
+  print("\n");
+  let .(out: rel.Relation, st: engine.Stats) = engine.eval(p, engine.stats_zero());
+  print("result:\n");
+  render_relation(out);
+  print(text.cat3("  rows: ", int_to_string(list.length(rel.rel_rows_of(out))), "\n"));
+  print(text.cat5(
+    , "  stats: scanned="
+    , int_to_string(engine.stats_scanned(st))
+    , " compares="
+    , int_to_string(engine.stats_compares(st))
+    , "\n"
+    ))
+}
+
+pub fn main() -> . {
+  print("harbor query plan engine\n");
+  run_query("Q1", "deep-draft ships", deep_draft_ships());
+  run_query("Q2", "berth assignments", berth_assignments());
+  run_query("Q3", "over-draft alerts", over_draft_alerts());
+  run_query("Q4", "cargo tonnage by zone", tonnage_by_zone());
+  run_query("Q5", "busiest ships", busiest_ships());
+  run_query("Q6", "priority cargo", priority_cargo())
+}

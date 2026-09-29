@@ -1,0 +1,5 @@
+dependency elab;
+
+source {
+  path "../../elab/workdir/elab.pkg.kio"
+}

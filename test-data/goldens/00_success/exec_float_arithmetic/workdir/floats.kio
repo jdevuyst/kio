@@ -1,0 +1,19 @@
+module floats;
+
+host type String role(str);
+
+host type F32 role(f32);
+
+host type F64 role(f64);
+
+host fn print(p0: String) -> .;
+
+host fn f32_to_string(p0: F32) -> String;
+
+host fn f64_to_string(p0: F64) -> String;
+
+host fn add_f32(p0: F32, p1: F32) -> F32;
+
+host fn add_f64(p0: F64, p1: F64) -> F64;
+
+host fn mul_f64(p0: F64, p1: F64) -> F64;

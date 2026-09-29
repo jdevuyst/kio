@@ -1,0 +1,16 @@
+module source;
+
+fn first() {
+    let .(<Hidden> (left: Hidden, right: Hidden)) = hidden;
+    (left, right)
+}
+
+fn nested() {
+    let .(<Hidden> ((left: Hidden, right), tail)) = hidden;
+    (left, right, tail)
+}
+
+fn later() {
+    let .(<Hidden> (left, right: Hidden)) = hidden;
+    (left, right)
+}

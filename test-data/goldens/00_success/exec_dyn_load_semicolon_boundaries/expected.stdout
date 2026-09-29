@@ -1,0 +1,25 @@
+canonical newtype: loaded
+newtype edge runs: loaded
+newtype reordered members: loaded
+newtype redundant suffix: loaded
+recursive singleton: loaded
+function redundant suffix: loaded
+recursive final alias: loaded
+recursive edge separators: loaded
+bridge leading separator: loaded
+bridge empty: loaded
+bridge peer separator: loaded
+bridge missing peer separator: rejected
+newtype missing peer separator: rejected
+newtype empty: rejected
+newtype duplicate member: rejected
+newtype repeated outer suffix: rejected
+function repeated outer suffix: rejected
+recursive missing peer separator: rejected
+recursive repeated peer separator: rejected
+recursive repeated leading separator: rejected
+recursive empty: rejected
+recursive singleton group: rejected
+bridge semicolon only: rejected
+bridge repeated leading separator: rejected
+outer alias requires terminator: rejected

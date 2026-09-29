@@ -1,0 +1,65 @@
+module testapi/main;
+
+import symbolic_units/algebra as algebra;
+import symbolic_units/model as model;
+import symbolic_units/model(Expr, Summary);
+import symbolic_units/render as render;
+import symbolic_units/text as text;
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn neg(value: I32) -> I32 { arith.sub_i32(0, value) }
+
+fn unit_m() -> Expr { model.unit_expr(model.unit_meter()) }
+
+fn unit_s() -> Expr { model.unit_expr(model.unit_second()) }
+
+fn unit_kg() -> Expr { model.unit_expr(model.unit_kilogram()) }
+
+fn gear_ratio() -> Expr {
+  model.product(
+    , model.product(model.power(unit_m(), 2), model.power(unit_s(), neg(1)))
+    , model.product(model.quotient(model.power(unit_s(), 3), unit_m()), model.power(unit_kg(), 2))
+    )
+}
+
+fn density_flux() -> Expr {
+  model.product(
+    , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
+    , model.quotient(unit_s(), model.power(unit_m(), 2))
+    )
+}
+
+fn cancel_all() -> Expr {
+  model.quotient(model.product(unit_m(), unit_s()), model.product(unit_s(), unit_m()))
+}
+
+fn inertial_step() -> Expr {
+  model.product(
+    , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
+    , unit_m()
+    )
+}
+
+fn print_summary(summary: Summary) -> . {
+  io.print(text.cat3("after: ", render.reduced(summary), "\n"));
+  io.print(text.cat3("score: ", render.score_text(algebra.score(summary)), "\n"));
+  io.print(text.cat3("balanced: ", fmt.bool_to_string(algebra.balanced(summary)), "\n\n"))
+}
+
+fn print_case(name: String, expr: Expr) -> . {
+  let summary = algebra.reduce(expr);
+  io.print(text.cat3("case ", name, "\n"));
+  io.print(text.cat3("before: ", render.source(expr), "\n"));
+  print_summary(summary)
+}
+
+pub fn main() -> . {
+  io.print("symbolic_units_reducer\n");
+  print_case("gear_ratio", gear_ratio());
+  print_case("density_flux", density_flux());
+  print_case("cancel_all", cancel_all());
+  print_case("inertial_step", inertial_step())
+}

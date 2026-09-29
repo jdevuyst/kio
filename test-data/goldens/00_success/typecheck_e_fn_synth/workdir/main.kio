@@ -1,0 +1,23 @@
+module main;
+
+// Monomorphic synthesis: no `[ᾱ]` binders, every value-param
+// annotated, return type concrete. E-FnSynth lifts the header
+// to `() → ()`.
+fn mono(x: .) -> . { x }
+
+// Polymorphic synthesis: one explicit `[T]` binder; the
+// synthesized scheme is `∀T. (T) → T`. The synthesized polytype
+// is precisely what the user wrote — E-FnSynth never generalizes
+// what isn't already in the source.
+fn id_synth[T](x: T) -> T { x }
+
+// Multi-binder synthesis: `∀A B. (A, B) → A`. Each value-param
+// carries a concrete annotation; the rule fires uniformly across
+// the binder run.
+fn first_synth[A][B](x: A, _y: B) -> A { x }
+
+// Return-slot defaulting: a top-level `fn`'s `-> R` may be elided
+// and defaults to `()`. E-FnSynth admits this even though every
+// value-param is still annotated. Discriminating shape: only the
+// return slot is filled, not any value-param slot.
+fn ret_elided(x: .) { x }

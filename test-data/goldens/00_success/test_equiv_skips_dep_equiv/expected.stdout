@@ -1,0 +1,7 @@
+  pass equiv `app_unit_law` in main
+
+result: 1/1 equiv block passed
+  pass equiv `lib_unit_law` in libdep/lib
+  pass equiv `app_unit_law` in main
+
+result: 2/2 equiv blocks passed

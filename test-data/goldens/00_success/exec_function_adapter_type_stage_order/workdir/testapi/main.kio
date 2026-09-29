@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn delay[X](value: X)[A] -> X { print("delay\n"); value }
+
+fn run(delayed: [A][B] (B & B) -> B) -> . {
+  print("before type application\n");
+  let after_a = delayed(.);
+  print("after type application\n");
+  let choose = after_a(String);
+  print("after source type application\n");
+  print(choose(("chosen\n", "ignored\n")))
+}
+
+pub fn main() -> . {
+  let staged =
+    .(_seed: .)[B] { print("source type stage\n"); .(left: B, _right: B) -> B { left } }(());
+  let source = delay(staged);
+  run(source)
+}

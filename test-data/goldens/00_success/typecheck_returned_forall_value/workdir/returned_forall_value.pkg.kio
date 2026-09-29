@@ -1,0 +1,17 @@
+package returned_forall_value;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target kio-prime {
+    out "out/kio-prime/"
+  }
+}
+
+bridge {
+  main
+}

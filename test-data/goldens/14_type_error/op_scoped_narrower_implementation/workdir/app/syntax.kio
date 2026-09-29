@@ -1,0 +1,5 @@
+module app/syntax;
+
+pub(app/syntax) fn add(left: ., _right: .) -> . { left }
+
+pub(app) op _ + _ { impl add }

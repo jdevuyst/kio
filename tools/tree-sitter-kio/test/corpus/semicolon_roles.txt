@@ -1,0 +1,219 @@
+================================================================================
+structural semicolon_owner_keyword_prefix
+================================================================================
+fn newtype type signature
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (ERROR
+    (keyword_newtype)
+    (entity_name_label)
+    (entity_name_label)))
+
+================================================================================
+structural semicolon_owner_package_fields
+================================================================================
+package palette; build { docs { md "guide.md"; support "support"; md_out "guide"; html "html"; }; target js { md "data"; path "data"; } }; bridge { palette/api; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (docs_block
+        (keyword_declaration)
+        (bracket_lbrace)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (target_name
+          (identifier))
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (string_literal))
+        (separator_semicolon)
+        (config_field
+          (identifier)
+          (string_literal))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (bracket_rbrace))
+    (separator_semicolon)
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (bridge_glob
+        (identifier)
+        (module_path_sep)
+        (identifier))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolon_owner_source_fields
+================================================================================
+dependency helper; source { git "https://example.com/helper"; ref "main"; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (dependency_file
+    (keyword_dependency)
+    (identifier)
+    (separator_semicolon)
+    (source_block
+      (keyword_source)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolon_owner_source_path
+================================================================================
+dependency helper; source { path "../helper"; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (dependency_file
+    (keyword_dependency)
+    (identifier)
+    (separator_semicolon)
+    (source_block
+      (keyword_source)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolon_owner_resolved_fields
+================================================================================
+lock helper; resolved { git "https://example.com/helper"; ref "main"; commit "abc"; sig "digest"; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (lock_file
+    (keyword_lock)
+    (identifier)
+    (separator_semicolon)
+    (resolved_block
+      (keyword_resolved)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolon_owner_same_line_heads
+================================================================================
+module source; import helper as h; host type Text { owned }; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (keyword_declaration)
+    (entity_name_module)
+    (separator_semicolon))
+  (host_decl
+    (keyword_host)
+    (host_type_head
+      (keyword_type)
+      (entity_name_type)
+      (owned_block
+        (bracket_lbrace)
+        (keyword_declaration)
+        (bracket_rbrace))
+      (separator_semicolon)))
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (grouped_expression
+        (bracket_lparen)
+        (expression_path
+          (identifier))
+        (bracket_rparen))
+      (bracket_rbrace))))

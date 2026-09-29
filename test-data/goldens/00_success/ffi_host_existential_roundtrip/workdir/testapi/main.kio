@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi as t;
+import testapi/arith as arith;
+import testapi/types as types;
+
+pub fn exercise() -> t.I32 & t.I32 {
+  let scalar = types.Packed.mk_packed((37(t.I32), .(value: t.I32) { value }));
+  let pair =
+    types.Packed.mk_packed(((41(t.I32), 83(t.I32)), .((left: t.I32, right: t.I32)) { right }));
+  (arith.observe(scalar), arith.observe(pair))
+}

@@ -1,0 +1,5 @@
+module shadow;
+
+import other as other;
+
+pub type Flag = other.Value & other.Value;

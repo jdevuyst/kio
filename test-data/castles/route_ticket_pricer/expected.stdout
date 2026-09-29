@@ -1,0 +1,13 @@
+route_ticket_pricer
+fare.local_connector.i64=490
+fare.airport_express.i64=960
+fare.harbor_freight.i64=1560
+fare.night_bus.i64=405
+fare.total.i64=3415
+bulk.weekday.u64=600000000000
+bulk.event.u64=720000000000
+bulk.freight.u64=756000000000
+audit.gross.i128=2076000000000000000000
+audit.tax.i128=171270000000000000000
+audit.checksum.i128=3415000000000000002908
+audit.total.i128=5662270000000000002908

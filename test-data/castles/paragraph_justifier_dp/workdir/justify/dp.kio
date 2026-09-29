@@ -1,0 +1,140 @@
+/// The dynamic program: optimal line breaking over break points.
+///
+/// A break point `j` is a gap in the word list — `j` words already set, the
+/// rest still to come. `best[j]` is the cheapest way to set words `0 .. j - 1`
+/// as whole lines, and it obeys
+///
+///     best[j] = min over i < j of (best[i] + badness of the line i .. j - 1)
+///
+/// which is a shortest path through `n + 1` break points. `back[j]` records the
+/// `i` that won, so the layout can be read back out afterwards; `fits[j]` counts
+/// how many of the candidate starts produced a line that did not overflow — the
+/// rest scored `infinite` and were never in the running.
+module justify/dp;
+
+import elab/control(if);
+import elab/match(match);
+import justify/cost as cost;
+import justify/list as list;
+import justify/list(List);
+import justify/word(Word, Words, word_width);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+labels Cell = { score: I32, back: I32, fits: I32 };
+
+fn make_cell(score: I32, back: I32, fits: I32) -> Cell { {score, back, fits} }
+
+fn cell_score(c: Cell) -> I32 { c.?{score} }
+
+fn cell_back(c: Cell) -> I32 { c.?{back} }
+
+fn cell_fits(c: Cell) -> I32 { c.?{fits} }
+
+/// The three columns, one entry per break point `0 .. n`.
+pub newtype Table : List(I32) & List(I32) & List(I32) { pub constructor pack; pub projector unpack }
+
+fn make_table(best: List(I32), back: List(I32), fits: List(I32)) -> Table {
+  Table.pack((best, back, fits))
+}
+
+pub fn table_best(t: Table) -> List(I32) {
+  let .(best: List(I32), _back: List(I32), _fits: List(I32)) = t.>Table.unpack;
+  best
+}
+
+pub fn table_back(t: Table) -> List(I32) {
+  let .(_best: List(I32), back: List(I32), _fits: List(I32)) = t.>Table.unpack;
+  back
+}
+
+pub fn table_fits(t: Table) -> List(I32) {
+  let .(_best: List(I32), _back: List(I32), fits: List(I32)) = t.>Table.unpack;
+  fits
+}
+
+/// The table grows head-first, which is exactly the order `scan` reads it in.
+fn push_cell(t: Table, c: Cell) -> Table {
+  make_table(
+    , list.cons(cell_score(c), table_best(t))
+    , list.cons(cell_back(c), table_back(t))
+    , list.cons(cell_fits(c), table_fits(t))
+    )
+}
+
+/// Only the finished table is flipped back into break-point order.
+fn flip(t: Table) -> Table {
+  make_table(list.reverse(table_best(t)), list.reverse(table_back(t)), list.reverse(table_fits(t)))
+}
+
+fn improve(acc: Cell, candidate: I32, start: I32, fitted: Bool) -> Cell {
+  let counted =
+    if! fitted {
+      add_i32(cell_fits(acc), 1)
+    } else {
+      cell_fits(acc)
+    };
+  if! lt_i32(candidate, cell_score(acc)) {
+    make_cell(candidate, start, counted)
+  } else {
+    make_cell(cell_score(acc), cell_back(acc), counted)
+  }
+}
+
+/// Score every start for the line ending at one break point, walking the start
+/// down from `j - 1` to `0`.
+///
+/// `rev_words` and `rev_best` are the same prefix reversed, so their heads stay
+/// in step: at each step the head word is `words[start]` and the head score is
+/// `best[start]`. Extending the line one word leftward costs a gap plus that
+/// word, so `used` grows by one addition and no line is ever measured twice.
+///
+/// A candidate has to be *strictly* better to win, and the walk goes downward,
+/// so a tie keeps the largest start — the shortest last line of the two.
+rec(loop) fn scan(
+  , start: I32
+  , column: I32
+  , last: Bool
+  , used: I32
+  , rev_words: Words
+  , rev_best: List(I32)
+  , acc: Cell
+  ) -> Cell {
+  match! rev_words.>List.unpack {
+    (
+      , .(w: Word, rest: Words) {
+          let next_used = add_i32(add_i32(used, 1), word_width(w));
+          let prefix = list.head_or(rev_best, cost.infinite());
+          let here = cost.badness(next_used, column, last);
+          let next = improve(acc, cost.sat_add(prefix, here), start, cost.fits(next_used, column));
+          rec scan(sub_i32(start, 1), column, last, next_used, rest, list.tail_of(rev_best), next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn fill(j: I32, n: I32, column: I32, rest: Words, rev_words: Words, acc: Table) -> Table {
+  if! lt_i32(n, j) {
+    flip(acc)
+  } else {
+    let seed = make_cell(cost.infinite(), -1, 0);
+    let cell = scan(sub_i32(j, 1), column, eq_i32(j, n), -1, rev_words, table_best(acc), seed);
+    rec fill(
+      , add_i32(j, 1)
+      , n
+      , column
+      , list.tail_of(rest)
+      , list.push_head(rest, rev_words)
+      , push_cell(acc, cell)
+      )
+  }
+}
+
+/// Break point `0` costs nothing — no words, nothing to pay. It has no
+/// predecessor and no candidate starts, and both `-1`s print as `-`.
+pub fn solve(xs: Words, column: I32) -> Table {
+  let seed = make_table(list.one(0), list.one(-1), list.one(-1));
+  fill(1, list.len(xs), column, list.tail_of(xs), list.push_head(xs, list.nil(Word, ())), seed)
+}

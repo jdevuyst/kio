@@ -1,0 +1,7 @@
+module testapi/arith;
+
+import testapi(Box);
+
+host fn box_make[T](value: T) -> Box(T);
+
+host fn box_get[T](box: Box(T)) -> T;

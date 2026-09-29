@@ -1,0 +1,16 @@
+push
+coin
+push
+1001
+push
+1004
+maint-open
+push
+coin
+maint-close
+1002
+push
+hello
+-3
+coin
+push

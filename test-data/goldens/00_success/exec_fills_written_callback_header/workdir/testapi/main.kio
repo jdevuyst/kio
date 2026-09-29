@@ -1,0 +1,36 @@
+module testapi/main;
+
+import elab/spine_elaborators(widen_sum);
+import observer(keep);
+import testapi(I32, String);
+import testapi/io as io;
+import testapi/iter as iter;
+
+fn drive[S][R](step: S -> S | R, seed: S) -> R { iter.loop(step, seed) }
+
+fn identity[A](value: A) -> A { value }
+
+fn make_identity() -> [A] A -> A { identity }
+
+pure fn apply[A][B](callback: A -> B, value: A) -> B { callback(value) }
+
+equiv callback_header_erases[A](value: A) {
+  keep!(apply(.(input: A) -> A { input }, value));
+  value
+}
+
+fn advance(_state: I32) -> I32 | String { widen_sum!("ok\n") }
+
+pub fn main() -> . {
+  io.print(keep!(drive(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }, 0)));
+  io.print(keep!(identity(drive(
+    , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
+    , 0
+    ))));
+  io.print(keep!(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }.>drive(0)));
+  io.print(keep!(make_identity()(drive(
+    , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
+    , 0
+    ))));
+  io.print(keep!(drive(advance, 0)))
+}

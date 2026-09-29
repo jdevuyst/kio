@@ -1,0 +1,4 @@
+module main;
+
+import origin(pick);
+import origin(pick);

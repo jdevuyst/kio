@@ -1,0 +1,5 @@
+module main;
+
+import provider as p;
+
+fn bad(value: p.Hidden) -> . { () }

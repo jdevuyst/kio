@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+labels Row_fields = { first: I32, second: I32, third: I32 };
+
+type Row = First & Second & Third;
+
+fn mark(label: String, value: I32) -> I32 { print(label); value }
+
+fn sum_bound_record(offset: I32) -> I32 {
+  let row = {first = mark("A", 1), second = mark("B", 2), third = mark("C", 3)};
+  let later = mark("D", 4);
+  add_i32(add_i32(offset, row.?{first}), add_i32(row.?{second}, add_i32(row.?{third}, later)))
+}
+
+pub fn main() -> . {
+  let total = sum_bound_record(0);
+  print("=");
+  print(int_to_string(total));
+  print("\n")
+}

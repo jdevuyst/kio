@@ -1,0 +1,18 @@
+module main;
+
+import elab/match(match);
+
+// Non-exhaustive `match!`. The scrutinee `(Foo | Bar)` has DNF
+// branches `[Foo]` and `[Bar]`; only the Foo branch has a covering
+// clause, so the imported elaborator reports the uncovered branch.
+newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+
+newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
+
+fn handle(p: Foo | Bar) -> . {
+  let _r =
+    match! p {
+      .(f: Foo) { () }
+    };
+  ()
+}

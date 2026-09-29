@@ -1,0 +1,16 @@
+module main;
+
+type Event =
+  | Click_event_kind_one_pretty_long_name
+  | Hover_event_kind_two_pretty_long
+  | Focus_event_kind_three_lengthy
+  | Drag_event_kind_four_yet_more
+  ;
+module main;
+
+type Event =
+  | Click_event_kind_one_pretty_long_name
+  | Hover_event_kind_two_pretty_long
+  | Focus_event_kind_three_lengthy
+  | Drag_event_kind_four_yet_more
+  ;

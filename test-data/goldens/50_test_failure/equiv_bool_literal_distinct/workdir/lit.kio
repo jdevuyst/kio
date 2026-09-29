@@ -1,0 +1,3 @@
+module lit;
+
+host type Bool role(bool);

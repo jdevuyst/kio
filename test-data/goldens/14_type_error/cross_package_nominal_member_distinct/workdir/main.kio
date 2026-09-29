@@ -1,0 +1,22 @@
+/// The consumer declares its own `String` host type and imports the
+/// dependency's `Box` newtype, whose constructor/projector PAYLOAD is the
+/// dependency's *own* `String`. Identity-exact nominal typing
+/// (`specs/language.md` § Nominal types) keeps the two `String`s distinct:
+/// `String` here is `(main, String)`, the dependency's payload is
+/// `(bdep/boxed, String)`. A cross-module newtype's member payload is
+/// qualified in the newtype's *declaring* module, so the
+/// dependency's `Box.mk` wants `(bdep/boxed, String)`. Feeding the
+/// consumer's own `(main, String)` is therefore a type error in the
+/// constructor's PAYLOAD slot — exit 14. Before the fix the typer
+/// requalified `Box`'s payload in the *caller*, conflating the two
+/// same-named `String`s by leaf name and wrongly accepting this.
+module main;
+
+import bdep/boxed(Box);
+
+host type String role(str);
+
+/// Build the dependency's `Box` from the consumer's own `String`. The
+/// member payload distinctness rejects this: `Box.mk` wants the
+/// dependency's `String`, not the consumer's.
+pub fn mix(s: String) -> Box { Box.mk(s) }

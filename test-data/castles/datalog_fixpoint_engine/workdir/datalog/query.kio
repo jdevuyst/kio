@@ -1,0 +1,51 @@
+/// Asking the saturated database a question.
+///
+/// A query is an atom with variables, so answering it is the same
+/// machinery a one-goal rule body uses. The only new decision is which
+/// variables an answer should report.
+module datalog/query;
+
+import datalog/atom(Args, Atom, Atoms, T_const, T_var, Term, args_of);
+import datalog/atom({t_var});
+import datalog/list as list;
+import datalog/subst as subst;
+import datalog/unify as unify;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+import testapi/iter(loop);
+
+pub type Codes = list.List(I32);
+
+pub fn answers(q: Atom, db: Atoms) -> subst.Substs {
+  unify.solve_all(list.of1(q), db, subst.empty())
+}
+
+fn holds_code(codes: Codes, code: I32) -> Bool { list.any(codes, .(c: I32) { eq_i32(c, code) }) }
+
+rec(loop) fn vars_from(args: Args, acc: Codes) -> Codes {
+  match! args.>list.List.un_list {
+    (
+      , .(t: Term, rest: Args) {
+          match! t {
+            (
+              , .(_k: T_const) { rec vars_from(rest, acc) }
+              , .(v: T_var) {
+                  if! holds_code(acc, v.?{t_var}) {
+                    rec vars_from(rest, acc)
+                  } else {
+                    rec vars_from(rest, list.snoc(acc, v.?{t_var}))
+                  }
+                }
+              )
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// In order of first occurrence, and deduplicated - a variable written
+/// twice in one query is still reported once.
+pub fn query_vars(q: Atom) -> Codes { vars_from(args_of(q), list.nil(I32, ())) }

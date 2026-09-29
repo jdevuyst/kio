@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A polymorphic helper whose type-arg gets pinned at the call site.
+fn id[A](x: A) -> A { x }
+
+// Round-trip: with the `(Type)` annotation mandatory on every Kio'
+// literal (specs/grammar.md § Kio' grammar — `LiteralCall ::= LITERAL
+// '(' Type ')'`), the kio-prime emit renders this call as
+// `id(String, "kio prime emit\n"(String))` — the type-arg `(String)`
+// sits side-by-side with the literal's annotation, and both survive
+// the round-trip through the kio-prime backend. The execution check
+// proves the emit composes behaviorally with the rest of the
+// toolchain.
+pub fn main() -> . { print(id(String, "kio prime emit\n"(String))) }

@@ -1,0 +1,18 @@
+module priority_window_scheduler/planner;
+
+import elab/control(if);
+import priority_window_scheduler/model(Window, {handoff}, {impact}, {risk});
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub fn score(window: Window) -> I32 {
+  arith.sub_i32(window.?{impact}, arith.add_i32(window.?{risk}, window.?{handoff}))
+}
+
+pub fn choose(left: Window, right: Window) -> Window {
+  if! arith.lt_i32(score(left), score(right)) {
+    right
+  } else {
+    left
+  }
+}

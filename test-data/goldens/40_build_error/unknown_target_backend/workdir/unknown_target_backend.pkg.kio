@@ -1,0 +1,13 @@
+package unknown_target_backend;
+
+build {
+  cache "out/.kio-cache/";
+
+  target wasm {
+    out "out/wasm/"
+  }
+}
+
+bridge {
+  main
+}

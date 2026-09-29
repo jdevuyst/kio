@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+// Higher-order: function returns a function. The inner function's
+// parameter type was widened in the provider.
+// Source: `. -> (A | B) -> .`. Target: `. -> A -> .`.
+// Walk: top-level WK-FnFn wraps `. -> ...`. The return slot is
+// itself a function pair `(A | B) -> .` → `A -> .`; the walk
+// recurses covariantly into that slot. The inner walk's parameter
+// slot then swaps source and target — leaf sees `(A, A | B)` —
+// and `R-Widen-Sum` widens `A` into `A | B`.
+fn make_consumer() -> (A | B) -> . {
+  .(x: A | B) -> . {
+    print(match! x {
+      (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+    })
+  }
+}
+
+pub fn main() -> . {
+  let narrow_inner = ease!(make_consumer, . -> A -> .);
+  narrow_inner()(A.mk_a("ease! higher order ok\n"))
+}

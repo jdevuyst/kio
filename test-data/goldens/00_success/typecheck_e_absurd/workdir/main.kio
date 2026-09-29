@@ -1,0 +1,28 @@
+module main;
+
+import __intrinsics__;
+
+// Fully explicit type-arg. `__absurd__`'s binder `[α]` is
+// written `()` at the call site; the call's return type pins
+// to `()`.
+fn into_unit_explicit(x: !) -> . { __absurd__(., x) }
+
+// Fully elided type-arg. The call sits in a checked position
+// (the fn body, whose expected return is `()`); the typer
+// solves `[α] = ()` from the return-type unification.
+fn into_unit_elided(x: !) -> . { __absurd__(x) }
+
+// Same path with a different concrete return type. The binder
+// is reachable only through the return, so the typer must use
+// the call's expected return type to solve it — value-arg
+// unification alone cannot do it because the parameter type
+// is `!` regardless of `[α]`.
+fn into_pair(x: !) -> . & . { __absurd__(x) }
+
+// Bottom can be threaded through a polymorphic helper too.
+// `helper`'s `[T]` pins to `!` from `x`'s type; the helper's
+// return is then `!`, and the outer `__absurd__` coerces it
+// to `()`. Exercises the rule on a non-leaf position.
+fn helper[T](v: T) -> T { v }
+
+fn through_helper(x: !) -> . { __absurd__(helper(!, x)) }

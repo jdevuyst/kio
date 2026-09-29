@@ -1,0 +1,13 @@
+module types;
+
+host type Actual role(i64);
+
+host type Bool role(bool);
+
+host fn btrue() -> Actual;
+
+pub fn keep(value: Actual) -> Actual { value }
+
+pub fn keep2(value: Actual) -> Actual { value }
+
+pub fn polymorphic[T](value: T) -> T { value }

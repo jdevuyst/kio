@@ -1,0 +1,6 @@
+// file-header comment above a submodule — preserved by `kio fmt`.
+module lib/detail;
+
+import lib(keep);
+
+pub fn pick[A](x: A) -> A { keep(x) }

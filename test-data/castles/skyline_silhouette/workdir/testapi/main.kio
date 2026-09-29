@@ -1,0 +1,39 @@
+/// skyline_silhouette — the classic sweep-line skyline, computed and then
+/// checked against itself.
+///
+/// Seven buildings stand on a line, each a rectangle `[left, right)` of some
+/// height (`skyline/city`). Their left and right edges become events sorted
+/// into sweep order (`skyline/events`); a left-to-right sweep carries the
+/// heights it is standing under as a multiset (`skyline/multiset`) and emits a
+/// key point every time the tallest of them changes (`skyline/sweep`). The key
+/// points are the silhouette.
+///
+/// The buildings are chosen to break a naive sweep: one is buried inside a
+/// taller one, two of equal height share an edge, two more of equal height
+/// overlap, and a gap splits the city in two. `skyline/area` then computes the
+/// silhouette's area twice — once from the key points, once by rasterizing the
+/// buildings onto a column array the sweep never touches — and `main` prints
+/// whether the two agree.
+module testapi/main;
+
+import skyline/area as area;
+import skyline/city as city;
+import skyline/events as events;
+import skyline/report as report;
+import skyline/sweep as sweep;
+
+pub fn main() -> . {
+  let block = city.buildings();
+  let plan = events.schedule(block);
+  let trace = sweep.run(plan);
+  let points = sweep.points_of(trace);
+  let grid = area.raster(block);
+  let swept = area.from_points(points);
+  let painted = area.from_raster(grid);
+  report.print_header();
+  report.print_buildings(block);
+  report.print_events(plan);
+  report.print_sweep(sweep.steps_of(trace));
+  report.print_skyline(points);
+  report.print_area(grid, swept, painted, area.agree(swept, painted), area.advances(points))
+}

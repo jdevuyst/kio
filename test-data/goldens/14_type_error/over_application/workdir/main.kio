@@ -1,0 +1,9 @@
+module main;
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn f(x: A) -> . { let _ = x; () }
+
+fn caller(a: A, b: B) -> . { f(a, b) }

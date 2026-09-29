@@ -1,0 +1,23 @@
+exports:
+guest.seal : (h{hostapi.I32}) -> n{guest.Sealed}
+guest.Box.mk_box : [#0] (#0) -> n{guest.Box}(#0)
+guest.Box.un_box : [#0] (n{guest.Box}(#0)) -> #0
+guest.Sealed.mk_sealed : [#0] (h{hostapi.I32} & #0) -> n{guest.Sealed}
+guest.Sealed.un_sealed : (n{guest.Sealed}) -> [#0] ([#1] ((h{hostapi.I32} & #1) -> #0)) -> #0
+guest.Outer.mk_outer : [#0] [#1] [#2] ((#0 & #1) & #2) -> n{guest.Outer}(#0, #1)
+guest.Outer.un_outer : [#0] [#1] (n{guest.Outer}(#0, #1)) -> [#2] ([#3] (((#0 & #1) & #3) -> #2)) -> #2
+guest.Free.mk_free : [#0] (h{hostapi.Resource} & #0) -> n{guest.Free}
+guest.Free.un_free : (n{guest.Free}) -> [#0] ([#1] ((h{hostapi.Resource} & #1) -> #0)) -> #0
+guest.Token.mk_token : (h{hostapi.I32}) -> n{guest.Token}
+guest.Mirror.mk_mirror : [#0] (#0 & #0) -> n{guest.Mirror}(#0)
+guest.Mirror.un_mirror : [#0] (n{guest.Mirror}(#0)) -> (#0 & #0)
+Box roundtrip(7) = 7
+un_sealed(seal(20), fst) = 20
+un_sealed(mk_sealed((3, 9)), snd) = 9
+Token.mk_token(5) = 5
+Token.un_token(1) = <error>
+internal.Hidden.mk_hidden(1) = <error>
+guest.Box.nope(1) = <error>
+hidden_fn(1) = <error>
+guest.hidden_fn(1) = <error>
+guest.Leak.mk_leak(1) = <error>

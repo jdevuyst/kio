@@ -1,0 +1,5 @@
+module ops;
+
+pub fn add(_left: ., _right: .) -> . { () }
+
+pub op _ + _ { impl add }

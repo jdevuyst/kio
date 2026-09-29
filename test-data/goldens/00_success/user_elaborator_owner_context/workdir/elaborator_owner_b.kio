@@ -1,0 +1,22 @@
+module elaborator_owner_b;
+
+import __intrinsics__;
+
+import __comptime__;
+import elaborator_owner_c(branch);
+
+pub pure fn choose(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__ | .
+  ) -> __Checked_term__ {
+  __either__(
+    , __Type__
+    , .
+    , __Checked_term__
+    , target
+    , .(target_type: __Type__) -> __Checked_term__ { branch(ct, source, value, target_type) }
+    , .() -> __Checked_term__ { __elab_error__(ct, "elaborator needs a target") }
+    )
+}

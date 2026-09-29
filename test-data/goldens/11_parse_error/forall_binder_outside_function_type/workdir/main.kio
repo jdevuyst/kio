@@ -1,0 +1,6 @@
+module main;
+
+// `<U>` is only legal in a parameter list (declaration or function-
+// type expression), never as a standalone type. A type-alias body
+// that consists of `<U>` followed by a comma is a parse error.
+type Bad = <U>;

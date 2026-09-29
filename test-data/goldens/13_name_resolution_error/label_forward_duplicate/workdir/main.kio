@@ -1,0 +1,7 @@
+module main;
+
+labels { original: . };
+
+type {view} = {original};
+
+type {view} = {original};

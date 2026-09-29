@@ -1,0 +1,3 @@
+module typed_let_partial_pattern_no_unification;
+
+host type I32 role(i32);

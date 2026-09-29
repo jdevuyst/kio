@@ -1,0 +1,3 @@
+module use_op_pattern_no_match;
+
+host type A role(i32);

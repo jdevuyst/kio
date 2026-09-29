@@ -1,0 +1,7 @@
+module u/main;
+
+import u(String);
+
+fn take(s: String) -> String { s }
+
+pub fn caller(s: String) -> String { s.>take(String) }

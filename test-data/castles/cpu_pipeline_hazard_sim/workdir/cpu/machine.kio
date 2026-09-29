@@ -1,0 +1,117 @@
+/// The machine state: the five pipeline stages, the two pipeline
+/// latches, the program counter, and the counters the report reads.
+///
+/// A stage holds at most one instruction, recorded as its index in the
+/// program. A negative index is the stage's valid bit turned off -- the
+/// stage is empty this cycle, because the pipeline is still filling or
+/// draining, because a stall injected a bubble, or because a taken branch
+/// squashed what was there.
+///
+/// The register file and memory are host arrays and live outside this
+/// record: they are handles, so the datapath writes through them in place
+/// and the state value itself never has to carry them.
+module cpu/machine;
+
+import cpu/isa(Instr, is_halt);
+import cpu/num(and, int_eq, int_lt);
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_len, array_make_filled);
+import testapi/iter(loop);
+
+literal reg_count = 8;
+
+literal mem_words = 8;
+
+/// The parts of the machine that do not change from cycle to cycle: the
+/// code it runs, its register file, its memory, and whether its forwarding
+/// network is switched on. The two runs differ in exactly one field of
+/// this record, which is what makes them an experiment rather than two
+/// programs.
+pub labels Cpu = { prog: Array(Instr), regs: Array(I32), mem: Array(I32), forwarding: Bool };
+
+pub labels Machine = {
+  , cycle: I32
+  , pc: I32
+  , st_if: I32
+  , st_id: I32
+  , st_ex: I32
+  , st_mem: I32
+  , st_wb: I32
+  , ex_mem: I32
+  , mem_wb: I32
+  , sealed: Bool
+  , retired: I32
+  , stalls: I32
+  , bubbles: I32
+  , flushes: I32
+  , fwd_ex_mem: I32
+  , fwd_mem_wb: I32
+  };
+
+pub fn empty_stage() -> I32 { -1 }
+
+pub fn stage_empty(slot: I32) -> Bool { int_lt(slot, 0) }
+
+pub fn stage_filled(slot: I32) -> Bool { leq_i32(0, slot) }
+
+/// Cycle 1 already has the first instruction in IF: a cycle's fetch is
+/// part of that cycle, so there is no all-empty cycle 0 to print.
+///
+/// The front end is sealed the moment a HALT is *fetched*, which is what
+/// stops the instruction behind it from ever entering the pipeline. A
+/// program that never fetches a HALT runs the program counter off the end
+/// of the code array and faults there; ending in HALT is an ISA rule, not
+/// a courtesy.
+pub fn initial(prog: Array(Instr)) -> Machine {
+  {
+    , cycle = 1
+    , pc = 1
+    , st_if = 0
+    , st_id = -1
+    , st_ex = -1
+    , st_mem = -1
+    , st_wb = -1
+    , ex_mem = 0
+    , mem_wb = 0
+    , sealed = is_halt(array_get(prog, 0))
+    , retired = 0
+    , stalls = 0
+    , bubbles = 0
+    , flushes = 0
+    , fwd_ex_mem = 0
+    , fwd_mem_wb = 0
+    }
+}
+
+pub fn pipeline_empty(m: Machine) -> Bool {
+  and(
+    , and(stage_empty(m.?{st_if}), stage_empty(m.?{st_id}))
+    , and(stage_empty(m.?{st_ex}), and(stage_empty(m.?{st_mem}), stage_empty(m.?{st_wb})))
+    )
+}
+
+pub fn new_registers() -> Array(I32) { array_make_filled(reg_count, 0) }
+
+pub fn new_memory() -> Array(I32) { array_make_filled(mem_words, 0) }
+
+rec(loop) fn words_agree(a: Array(I32), b: Array(I32), index: I32) -> Bool {
+  if! int_lt(index, array_len(a)) {
+    if! int_eq(array_get(a, index), array_get(b, index)) {
+      rec words_agree(a, b, add_i32(index, 1))
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+/// Element-wise equality of two architectural arrays, both minted here so
+/// both have the same length. This is the simulator's real correctness
+/// check: forwarding is a decision about *when* a value is available, so
+/// a run with it and a run without it must land on the same registers and
+/// the same memory. A bypass that changed a result would not be a faster
+/// pipeline; it would be a broken one.
+pub fn same_words(a: Array(I32), b: Array(I32)) -> Bool { words_agree(a, b, 0) }

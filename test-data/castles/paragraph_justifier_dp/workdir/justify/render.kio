@@ -1,0 +1,182 @@
+/// Turning the model into the transcript.
+///
+/// Nothing here measures a string: the tier supplies no `string_len`. Every
+/// column is padded from a width the model already knows — a word's from its
+/// metrics, an integer's by counting its decimal places. The margin drawn
+/// beside each laid-out line is therefore the real margin, and the ragged edge
+/// the reader sees is the slack the badness was computed from.
+module justify/render;
+
+import elab/control(if);
+import elab/match(match);
+import justify/dp(Table, table_back, table_best, table_fits);
+import justify/layout(Line, line_badness, line_slack, line_start, line_stop, line_used);
+import justify/list as list;
+import justify/list(List);
+import justify/word(Word, Words, widest, word_text, word_width);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec repeat_onto(unit, sub_i32(n, 1), cat(acc, unit))
+  }
+}
+
+fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
+
+/// The loop stops at nine places, which is one short of what an `i32` can hold,
+/// so `bound` never has to reach a power of ten that overflows.
+rec(loop) fn decades(n: I32, bound: I32, acc: I32) -> I32 {
+  if! lt_i32(n, bound) {
+    acc
+  } else if! leq_i32(9, acc) {
+    acc
+  } else {
+    rec decades(n, mul_i32(bound, 10), add_i32(acc, 1))
+  }
+}
+
+/// How many columns `int_to_string(n)` takes — counted, not measured.
+fn int_width(n: I32) -> I32 { decades(n, 10, 1) }
+
+fn pad_num(n: I32, field: I32) -> String {
+  cat(repeat(" ", sub_i32(field, int_width(n))), int_to_string(n))
+}
+
+fn pad_text(text: String, width: I32, field: I32) -> String {
+  cat(text, repeat(" ", sub_i32(field, width)))
+}
+
+/// A break point with no predecessor, or a break point with no candidate starts
+/// to count. There is nothing there, and the table says so.
+fn pad_dash(n: I32, field: I32) -> String {
+  if! lt_i32(n, 0) {
+    cat(repeat(" ", sub_i32(field, 1)), "-")
+  } else {
+    pad_num(n, field)
+  }
+}
+
+fn metric_row(index: I32, w: Word, field: I32) -> String {
+  cat3(
+    , pad_num(index, 4)
+    , cat("  ", pad_text(word_text(w), word_width(w), field))
+    , cat3("  ", pad_num(word_width(w), 2), "\n")
+    )
+}
+
+rec(loop) fn metrics_onto(xs: Words, index: I32, field: I32, acc: String) -> String {
+  match! xs.>List.unpack {
+    (
+      , .(w: Word, rest: Words) {
+          rec metrics_onto(rest, add_i32(index, 1), field, cat(acc, metric_row(index, w, field)))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The paragraph as the typesetter holds it: every word beside the width it was
+/// measured at.
+pub fn metrics(xs: Words) -> String { metrics_onto(xs, 0, widest(xs), "") }
+
+rec(loop) fn join_onto(xs: Words, cursor: I32, from: I32, to: I32, acc: String) -> String {
+  if! leq_i32(to, cursor) {
+    acc
+  } else match! xs.>List.unpack {
+    (
+      , .(w: Word, rest: Words) {
+          if! lt_i32(cursor, from) {
+            rec join_onto(rest, add_i32(cursor, 1), from, to, acc)
+          } else {
+            let sep = if! leq_i32(cursor, from) {
+              ""
+            } else {
+              " "
+            };
+            rec join_onto(rest, add_i32(cursor, 1), from, to, cat3(acc, sep, word_text(w)))
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The words of one line, set with a single space in each gap.
+fn join(xs: Words, from: I32, to: I32) -> String { join_onto(xs, 0, from, to, "") }
+
+fn rule(column: I32) -> String { cat3("  +", repeat("-", column), "+\n") }
+
+fn line_row(xs: Words, l: Line) -> String {
+  cat3(
+    , cat3("  |", join(xs, line_start(l), line_stop(l)), cat(repeat(" ", line_slack(l)), "|"))
+    , cat3(
+        , cat3("  words ", pad_num(line_start(l), 2), cat("..", pad_num(line_stop(l), 2)))
+        , cat3("  used ", pad_num(line_used(l), 2), cat("  slack ", pad_num(line_slack(l), 2)))
+        , cat("  badness ", pad_num(line_badness(l), 5))
+        )
+    , "\n"
+    )
+}
+
+rec(loop) fn layout_onto(xs: Words, ls: List(Line), acc: String) -> String {
+  match! ls.>List.unpack {
+    (
+      , .(l: Line, rest: List(Line)) { rec layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The paragraph as it would be set, between two rules drawn at the column. The
+/// gap between a line's last glyph and the right rule is its slack.
+pub fn layout(xs: Words, column: I32, ls: List(Line)) -> String {
+  cat3(rule(column), layout_onto(xs, ls, ""), rule(column))
+}
+
+rec(loop) fn breaks_onto(bs: List(I32), sep: String, acc: String) -> String {
+  match! bs.>List.unpack {
+    (
+      , .(b: I32, rest: List(I32)) { rec breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn breaks(bs: List(I32)) -> String { breaks_onto(bs, "", "") }
+
+fn table_row(j: I32, best: I32, back: I32, fits: I32) -> String {
+  cat3(cat(pad_num(j, 4), pad_num(best, 9)), cat(pad_dash(back, 9), pad_dash(fits, 7)), "\n")
+}
+
+rec(loop) fn rows_onto(j: I32, best: List(I32), back: List(I32), fits: List(I32), acc: String) -> String {
+  match! best.>List.unpack {
+    (
+      , .(b: I32, rest: List(I32)) {
+          let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));
+          rec rows_onto(add_i32(j, 1), rest, list.tail_of(back), list.tail_of(fits), cat(acc, row))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// One row per break point: the cheapest way to reach it, the break that
+/// achieved that, and how many of the candidate starts produced a line that fit
+/// at all.
+pub fn dp_table(t: Table) -> String {
+  cat(
+    , "   j     best     back   fits\n"
+    , rows_onto(0, table_best(t), table_back(t), table_fits(t), "")
+    )
+}

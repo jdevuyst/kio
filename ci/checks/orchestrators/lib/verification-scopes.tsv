@@ -1,0 +1,3 @@
+scope	owner	parent	classification	fixed_impl	toolchain_class
+kio-prime	golden-tests.sh	goldens	fixed-verification	kio-prime@js	core
+dyn-load-prime	golden-tests.sh	goldens	fixed-verification	dyn-load-prime@kio-prime	core

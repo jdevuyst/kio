@@ -1,0 +1,37 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into, iso, onto);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// CNF: product of sums.
+type Cnf = I32 & (String | I32);
+
+// DNF: sum of products. Equivalent to `Cnf` under iso! via
+// distributivity (`A & (B | C) ↔ (A & B) | (A & C)`), but the
+// runtime value layouts differ: CNF has an outer pair with an
+// inner sum tag, DNF has an outer sum with inner pairs. iso!
+// emits the value-level shaping in either direction.
+type Dnf = (I32 & String) | (I32 & I32);
+
+fn cnf_to_dnf(x: Cnf) -> Dnf { iso!(x) }
+
+fn dnf_to_cnf(y: Dnf) -> Cnf { iso!(y) }
+
+pub fn main() -> . {
+  let cnf = (42, into!("hello\n", String | I32));
+  // Round-trip through DNF and back to CNF.
+  let dnf = cnf_to_dnf(cnf);
+  let cnf_again = dnf_to_cnf(dnf);
+  let i = onto!(cnf_again, I32);
+  let inner = onto!(cnf_again, String | I32);
+  let s =
+    match! inner {
+      (.(s: String) { s }, .(_n: I32) { "wrong\n" })
+    };
+  print(int_to_string(i));
+  print(" ");
+  print(s)
+}

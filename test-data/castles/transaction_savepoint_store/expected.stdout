@@ -1,0 +1,60 @@
+persistent transaction store
+1 OK begin | revision=0 values=[] savepoints=[] audit=PASS
+2 OK put apples=10 | revision=1 values=[apples=10] savepoints=[] audit=PASS
+3 OK put pears=20 | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+4 OK snapshot baseline | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+5 OK save outer | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+6 OK put apples=11 | revision=3 values=[apples=11, pears=20] savepoints=[outer] audit=PASS
+7 OK save inner | revision=3 values=[apples=11, pears=20] savepoints=[inner, outer] audit=PASS
+8 OK put pears=25 | revision=4 values=[pears=25, apples=11] savepoints=[inner, outer] audit=PASS
+9 OK put plums=30 | revision=5 values=[plums=30, pears=25, apples=11] savepoints=[inner, outer] audit=PASS
+10 OK snapshot inner-writes | revision=5 values=[plums=30, pears=25, apples=11] savepoints=[inner, outer] audit=PASS
+11 OK release inner | revision=5 values=[plums=30, pears=25, apples=11] savepoints=[outer] audit=PASS
+12 OK get plums=30 | revision=5 values=[plums=30, pears=25, apples=11] savepoints=[outer] audit=PASS
+13 OK rollback outer | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+14 OK get apples=10 | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+15 OK get plums=<missing> | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+16 ERROR missing savepoint inner | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+17 ERROR duplicate savepoint outer | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+18 ERROR invalid integer many | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+19 ERROR missing key plums | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+20 ERROR unknown operation ROTATE | revision=2 values=[pears=20, apples=10] savepoints=[outer] audit=PASS
+21 OK release outer | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+22 OK commit 1 | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+23 OK snapshot committed-one | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+24 ERROR put requires a transaction | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+25 OK begin | revision=2 values=[pears=20, apples=10] savepoints=[] audit=PASS
+26 OK delete pears | revision=6 values=[apples=10] savepoints=[] audit=PASS
+27 OK put apples=40 | revision=7 values=[apples=40] savepoints=[] audit=PASS
+28 OK save recover | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+29 OK put pears=50 | revision=8 values=[pears=50, apples=40] savepoints=[recover] audit=PASS
+30 OK save leaf | revision=8 values=[pears=50, apples=40] savepoints=[leaf, recover] audit=PASS
+31 OK delete apples | revision=9 values=[pears=50] savepoints=[leaf, recover] audit=PASS
+32 OK rollback recover | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+33 OK get pears=<missing> | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+34 OK get apples=40 | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+35 OK get plums=<missing> | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+36 ERROR missing savepoint leaf | revision=7 values=[apples=40] savepoints=[recover] audit=PASS
+37 OK release recover | revision=7 values=[apples=40] savepoints=[] audit=PASS
+38 OK put plums=60 | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+39 OK snapshot second-pending | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+40 OK commit 2 | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+41 OK begin | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+42 OK save abort-point | revision=10 values=[plums=60, apples=40] savepoints=[abort-point] audit=PASS
+43 OK put apples=90 | revision=11 values=[apples=90, plums=60] savepoints=[abort-point] audit=PASS
+44 OK delete plums | revision=12 values=[apples=90] savepoints=[abort-point] audit=PASS
+45 OK snapshot abandoned | revision=12 values=[apples=90] savepoints=[abort-point] audit=PASS
+46 OK abort | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+47 OK get apples=40 | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+48 OK get pears=<missing> | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+49 OK get plums=60 | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+50 OK snapshot final | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+51 ERROR commit requires a transaction | revision=10 values=[plums=60, apples=40] savepoints=[] audit=PASS
+retained baseline revision=2 values=[pears=20, apples=10] audit=PASS
+retained inner-writes revision=5 values=[plums=30, pears=25, apples=11] audit=PASS
+retained committed-one revision=2 values=[pears=20, apples=10] audit=PASS
+retained second-pending revision=10 values=[plums=60, apples=40] audit=PASS
+retained abandoned revision=12 values=[apples=90] audit=PASS
+retained final revision=10 values=[plums=60, apples=40] audit=PASS
+summary operations=51 rejected=8 commits=2 allocated-revisions=12 audit-failures=0
+committed values=[plums=60, apples=40]

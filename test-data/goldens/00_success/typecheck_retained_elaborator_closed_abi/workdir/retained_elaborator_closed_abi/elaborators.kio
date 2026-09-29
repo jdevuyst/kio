@@ -1,0 +1,14 @@
+module retained_elaborator_closed_abi/elaborators;
+
+import __comptime__;
+
+type Optional_type = __Type__ | .;
+
+pure fn infer_impl(
+  , _ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , _target: Optional_type
+  ) -> __Checked_term__ { value }
+
+pub elab infer : [Source] Source -> [Target] Target { impl infer_impl }

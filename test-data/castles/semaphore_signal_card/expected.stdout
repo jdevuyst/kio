@@ -1,0 +1,18 @@
+SEMAPHORE SIGNAL CARD
+message: SEMAPHORE
+row: letter | left / right | crossed | mnemonic
+----------------------------------------------
+S | NE / E | [X] | left arm reaches over, high
+E | NW / S | [ ] | left arm high, right at rest
+M | NE / SE | [X] | left arm reaches over the body
+A | S / SE | [ ] | left arm at rest, right low
+P | W / E | [ ] | both arms straight out
+H | SW / SE | [ ] | both arms low, a wide V
+O | SW / E | [ ] | left low, right straight out
+R | N / E | [ ] | left straight up, right out
+E | NW / S | [ ] | left arm high, right at rest
+----------------------------------------------
+shape classes        XH -H XH -- -- -- -- -H -H
+contains a vowel     yes
+even arm crossings   yes
+neighbours distinct  no

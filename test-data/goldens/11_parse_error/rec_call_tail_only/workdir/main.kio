@@ -1,0 +1,3 @@
+module main;
+
+pub rec(loop) fn count(n: I32) -> I32 { add_i32(1, rec count(n)) }

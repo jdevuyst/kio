@@ -1,0 +1,43 @@
+module bdd/expression;
+
+import bdd/logic as logic;
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/iter(loop);
+
+pub rec labels Expression =
+  { constant: Bool }
+  | { variable: I32 }
+  | { negation: Expression }
+  | { binary: logic.Operation & Expression & Expression };
+
+pub fn value(b: Bool) -> Expression { {constant = b}.>widen_sum! }
+
+pub fn variable_expr(v: I32) -> Expression { {variable = v}.>widen_sum! }
+
+pub fn negate(e: Expression) -> Expression { {negation = e}.>widen_sum! }
+
+pub fn combine(op: logic.Operation, a: Expression, b: Expression) -> Expression {
+  {binary = (op, a, b)}.>widen_sum!
+}
+
+pub fn both(a: Expression, b: Expression) -> Expression { combine(logic.conjunction_op(), a, b) }
+
+pub fn either(a: Expression, b: Expression) -> Expression { combine(logic.disjunction_op(), a, b) }
+
+pub fn xor(a: Expression, b: Expression) -> Expression { combine(logic.exclusive_op(), a, b) }
+
+pub rec(loop) fn evaluate(expr: Expression, assignment: I32 -> Bool) -> Bool {
+  match! expr {
+    .(c: Constant) { c.?{constant} };
+    .(v: Variable) { assignment(v.?{variable}) };
+    .(n: Negation) { logic.not(rec(cont) evaluate(n.?{negation}, assignment)) };
+    .(b: Binary) {
+      let .(op: logic.Operation, left: Expression, right: Expression) = b.?{binary};
+      let a = rec(cont) evaluate(left, assignment);
+      let b = rec(cont) evaluate(right, assignment);
+      logic.operate(op, a, b)
+    }
+  }
+}

@@ -1,0 +1,3 @@
+module api;
+
+pub(api) fn scoped() -> . { () }

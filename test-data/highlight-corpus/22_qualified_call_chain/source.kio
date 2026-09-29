@@ -1,0 +1,3 @@
+module m;
+
+fn run(x: A) -> . { a.b.c.foo(x); Box.mk_box(x); one.two.Three.member(x) }

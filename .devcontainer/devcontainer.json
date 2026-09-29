@@ -1,0 +1,94 @@
+// Kio dev container manifest.
+//
+// Consumed by VS Code's "Dev Containers" extension and by GitHub
+// Codespaces. We pull the pre-built image from GHCR rather than
+// building the local Dockerfile here, so the image is built exactly
+// once (by `.github/workflows/devcontainer-publish.yml`) and pulled
+// by every consumer (CI Linux jobs, local "Reopen in Container",
+// Codespaces prebuilds). The Dockerfile is the source-of-truth entry
+// point: it pins mise, and the repository's mise.toml / mise.lock pin
+// the tool versions.
+//
+// Lifecycle hooks (onCreateCommand / updateContentCommand /
+// postAttachCommand) trust the workspace mise.toml, warm Cargo
+// registries, install npm dependencies, and install the baked
+// vscode-kio extension into the editor. Paths are resolved from the
+// workspace root (`${containerWorkspaceFolder}`), not from
+// `.devcontainer/`.
+// See `.devcontainer/README.md` for the Codespaces prebuild
+// path-filter configuration the lifecycle hooks pair with.
+{
+  "name": "kio",
+  "image": "ghcr.io/jdevuyst/kio-devcontainer:latest",
+  "remoteUser": "vscode",
+  "onCreateCommand": ".devcontainer/on-create.sh",
+  "updateContentCommand": ".devcontainer/update-content.sh",
+  "postAttachCommand": ".devcontainer/post-attach.sh",
+  // Per-user cargo state lives under the vscode home so credentials
+  // and any plugin caches are owned by the interactive user. mise and
+  // the shared toolchain installs stay under /usr/local.
+  //
+  // PATH extension (`/home/vscode/.cargo/bin` + `/usr/local/cargo/bin`)
+  // is done in the Dockerfile via `ENV PATH=…:$PATH`, not here:
+  // `${containerEnv:PATH}` is invalid inside `containerEnv` itself
+  // (it can only reference variables already set on the container,
+  // and `containerEnv` IS the container env). When the substitution
+  // fails it passes through as the literal string, which then
+  // becomes a single garbage PATH entry and the rest of the system
+  // PATH (`/usr/bin`, `/bin`, …) falls off — breaking even `sleep`,
+  // which crashes the dev container entrypoint.
+  "containerEnv": {
+    "CARGO_HOME": "/home/vscode/.cargo",
+    "RUSTUP_HOME": "/usr/local/rustup"
+  },
+  // Put the built `kio` / `kio-prime` binaries on PATH so they run by
+  // name in terminals after a build, instead of only via
+  // `./kio-rs/target/<profile>/kio`. `release` first (the profile
+  // verified to run in-container), then `debug` as a fallback for the
+  // default `cargo build` output. Unlike `containerEnv`,
+  // `${containerEnv:PATH}` IS valid here — `remoteEnv` is resolved
+  // after the container env exists — so this sidesteps the PATH
+  // pitfall documented on `containerEnv` above.
+  // `KIO_BIN` names the binary the vscode-kio extension spawns for
+  // `kio lsp` — its resolution order is `kio.server.path` → `KIO_BIN`
+  // → `PATH`. Naming it explicitly keeps the language server off the
+  // `PATH` lottery: `target/release` is first on `PATH`, so a release
+  // artifact from any past build shadows every later debug build, and
+  // `target/` is git-ignored, so nothing about pulling new sources
+  // disturbs it. `refresh-kio.sh` (run by the lifecycle hooks) builds
+  // exactly this path on every attach, which is what keeps the server
+  // in step with the checkout. A developer who wants a different
+  // server sets `kio.server.path`.
+  "remoteEnv": {
+    "PATH": "${containerWorkspaceFolder}/kio-rs/target/release:${containerWorkspaceFolder}/kio-rs/target/debug:${containerEnv:PATH}",
+    "KIO_BIN": "${containerWorkspaceFolder}/kio-rs/target/debug/kio"
+  },
+  "customizations": {
+    "vscode": {
+      // Extensions that match the repo's primary editing surfaces.
+      // The locally-built vscode-kio extension is installed from a
+      // local .vsix by postAttachCommand (see post-attach.sh) —
+      // listing it here would resolve it from the Marketplace, which
+      // serves the last release rather than the build that matches
+      // this checkout.
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "dbaeumer.vscode-eslint"
+      ],
+      // Editor defaults aligned with the repo conventions. Kept
+      // minimal: only settings that mirror the lint/format gates the
+      // CI already enforces (rustfmt for Rust, markdownlint for
+      // Markdown).
+      "settings": {
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        },
+        "[markdown]": {
+          "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+        }
+      }
+    }
+  }
+}

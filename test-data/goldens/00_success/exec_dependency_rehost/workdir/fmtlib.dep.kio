@@ -1,0 +1,8 @@
+dependency fmtlib;
+
+source {
+  path "../library/fmtlib/fmtlib.pkg.kio"
+}
+
+rehost fmtlib/show to testapi/fmt;
+rehost fmtlib/types to testapi/adapter;

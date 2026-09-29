@@ -1,0 +1,14 @@
+module signal/decode;
+
+import list/core as lists;
+import list/list as traversal;
+import signal/codec as codec;
+import testapi(I32);
+
+fn expand(run: codec.Run, tail: lists.List(I32)) -> lists.List(I32) {
+  traversal.append(traversal.replicate(run.?{codec.count}, run.?{codec.sample}), tail)
+}
+
+pub fn samples(runs: lists.List(codec.Run)) -> lists.List(I32) {
+  traversal.foldr(expand, lists.nil(), runs)
+}

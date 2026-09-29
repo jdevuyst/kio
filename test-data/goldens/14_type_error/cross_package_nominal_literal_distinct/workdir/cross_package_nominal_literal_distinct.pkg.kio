@@ -1,0 +1,14 @@
+package cross_package_nominal_literal_distinct;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main;
+  bdep/text
+}

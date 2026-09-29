@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+pure fn message(unit: .) -> String { unit; "runner output\n"(String) }
+
+equiv standard_path_pretest() {
+  message(());
+  "runner output\n"(String)
+}
+
+pub fn main() -> . { print(message(())) }

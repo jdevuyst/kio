@@ -1,0 +1,133 @@
+module api;
+
+host type T00;
+
+host type T01;
+
+host type T02;
+
+host type T03;
+
+host type T04;
+
+host type T05;
+
+host type T06;
+
+host type T07;
+
+host type T08;
+
+host type T09;
+
+host type T10;
+
+host type T11;
+
+host type T12;
+
+host type T13;
+
+host type T14;
+
+host type T15;
+
+host type T16;
+
+host type T17;
+
+host type T18;
+
+host type T19;
+
+host type T20;
+
+host type T21;
+
+host type T22;
+
+host type T23;
+
+host type T24;
+
+host type T25;
+
+host type T26;
+
+host type T27;
+
+host type T28;
+
+host type T29;
+
+host type T30;
+
+host type T31;
+
+host type T32;
+
+host type T33;
+
+host type T34;
+
+host type T35;
+
+host type T36;
+
+host type T37;
+
+host type T38;
+
+host type T39;
+
+host type T40;
+
+host type T41;
+
+host type T42;
+
+host type T43;
+
+host type T44;
+
+host type T45;
+
+host type T46;
+
+host type T47;
+
+host type T48;
+
+host type T49;
+
+host type T50;
+
+host type T51;
+
+host type T52;
+
+host type T53;
+
+host type T54;
+
+host type T55;
+
+host type T56;
+
+host type T57;
+
+host type T58;
+
+host type T59;
+
+host type T60;
+
+host type T61;
+
+host type T62;
+
+host type T63;
+
+host type T64;
+
+pub fn unit() -> . { () }

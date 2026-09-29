@@ -1,0 +1,111 @@
+module robot_vacuum_replay/render;
+
+import elab/match(match);
+import robot_vacuum_replay/command(
+  , Charge_cmd
+  , Clean_cmd
+  , Command
+  , Dock_cmd
+  , Left_cmd
+  , Pause_cmd
+  , Right_cmd
+  , Start_cmd
+  , Step_cmd
+  , Unknown_cmd
+  , {charge_cmd}
+  , {unknown_cmd}
+  );
+import robot_vacuum_replay/model(
+  , Cleaning
+  , Direction
+  , Docked
+  , East
+  , Idle
+  , North
+  , Paused
+  , Run_mode
+  , South
+  , Vacuum
+  , West
+  , {battery}
+  , {commands}
+  , {dirt}
+  , {facing}
+  , {faults}
+  , {mode}
+  , {x}
+  , {y}
+  );
+import robot_vacuum_replay/text(cat2, cat3, cat4, cat5, cat6, cat7);
+import testapi(String);
+import testapi/fmt(i32_to_string);
+
+fn direction_name(d: Direction) -> String {
+  match! d {
+    (.(_n: North) { "N" }, .(_e: East) { "E" }, .(_s: South) { "S" }, .(_w: West) { "W" })
+  }
+}
+
+fn mode_name(m: Run_mode) -> String {
+  match! m {
+    (
+      , .(_docked: Docked) { "docked" }
+      , .(_idle: Idle) { "idle" }
+      , .(_cleaning: Cleaning) { "cleaning" }
+      , .(_paused: Paused) { "paused" }
+      )
+  }
+}
+
+fn command_name(cmd: Command) -> String {
+  match! cmd {
+    (
+      , .(_cmd: Start_cmd) { "START" }
+      , .(_cmd: Pause_cmd) { "PAUSE" }
+      , .(_cmd: Left_cmd) { "LEFT" }
+      , .(_cmd: Right_cmd) { "RIGHT" }
+      , .(_cmd: Step_cmd) { "STEP" }
+      , .(_cmd: Clean_cmd) { "CLEAN" }
+      , .(_cmd: Dock_cmd) { "DOCK" }
+      , .(charge: Charge_cmd) { cat3("CHARGE(", i32_to_string(charge.?{charge_cmd}), ")") }
+      , .(unknown: Unknown_cmd) { cat3("UNKNOWN(", unknown.?{unknown_cmd}, ")") }
+      )
+  }
+}
+
+fn position_text(s: Vacuum) -> String {
+  cat5("pos=(", i32_to_string(s.?{x}), ",", i32_to_string(s.?{y}), ")")
+}
+
+fn compact_state(s: Vacuum) -> String {
+  let prefix =
+    cat7(
+      , "mode="
+      , mode_name(s.?{mode})
+      , " "
+      , position_text(s)
+      , " dir="
+      , direction_name(s.?{facing})
+      , " battery="
+      );
+  let with_battery = cat2(prefix, i32_to_string(s.?{battery}));
+  let with_dirt = cat3(with_battery, " dirt=", i32_to_string(s.?{dirt}));
+  cat3(with_dirt, " faults=", i32_to_string(s.?{faults}))
+}
+
+pub fn transcript_line(cmd: Command, state: Vacuum) -> String {
+  cat7(
+    , "#"
+    , i32_to_string(state.?{commands})
+    , " "
+    , command_name(cmd)
+    , " "
+    , compact_state(state)
+    , "\n"
+    )
+}
+
+pub fn summary_line(state: Vacuum) -> String {
+  let prefix = cat3("summary commands=", i32_to_string(state.?{commands}), " ");
+  cat2(prefix, cat2(compact_state(state), "\n"))
+}

@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+pub fn main() -> . {
+  let items = array.array_make_filled(3, "filled"(String));
+  array.array_clear(items);
+  io.print(fmt.int_to_string(array.array_len(items)));
+  io.print("\n")
+}

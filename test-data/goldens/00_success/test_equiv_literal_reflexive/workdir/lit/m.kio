@@ -1,0 +1,18 @@
+module lit/m;
+
+import lit(Bool, Str, U8);
+
+equiv int_reflexive() {
+  1(U8);
+  1(U8)
+}
+
+equiv bool_reflexive() {
+  .t(Bool);
+  .t(Bool)
+}
+
+equiv str_reflexive() {
+  "hi"(Str);
+  "hi"(Str)
+}

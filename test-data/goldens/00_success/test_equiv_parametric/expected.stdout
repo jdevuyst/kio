@@ -1,0 +1,6 @@
+  pass equiv `type_param_only` in m
+  pass equiv `reflexive_value` in m
+  pass equiv `let_through_param` in m
+  pass equiv `id_unfolds` in m
+
+result: 4/4 equiv blocks passed

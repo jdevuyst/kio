@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `widen_sum!` with an explicit trailing target type-arg: usable in
+// synth-only positions where there's no surrounding expected type
+// at the form's site to anchor the elaborator. The `let widened = ...`
+// does not annotate the binding, so without the explicit
+// `<String | I32>` the form would have no target.
+pub fn main() -> . {
+  let widened = widen_sum!("hello", String | I32);
+  let s =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print("left arm: ");
+  print(s);
+  print("\n")
+}

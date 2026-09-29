@@ -1,0 +1,5 @@
+module app/api;
+
+import app/types(Hidden);
+
+pub fn expose(value: Hidden) -> Hidden { value }

@@ -1,0 +1,3 @@
+module lib/types;
+
+pub newtype Token : . { pub constructor mk_token; pub projector un_token }

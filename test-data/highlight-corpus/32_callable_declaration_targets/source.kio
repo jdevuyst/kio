@@ -1,0 +1,62 @@
+module callable_declaration_targets;
+
+op _ %% _ {
+  impl
+  // operator target
+  ops
+  /// operator separator
+  .
+  // operator callable
+  combine
+  // operator terminator
+  ;
+};
+
+varop [[ ]] {
+  foldr
+  // step target
+  folds
+  // step separator
+  .
+  push
+  // initializer target
+  folds
+  // initializer separator
+  .
+  empty
+  // primary terminator
+  ;
+  finalize
+  folds
+  .
+  Box
+  // finalize separator
+  .
+  finish
+  // finalize terminator
+  ;
+};
+
+elab choose : [A] A -> A {
+  captures (values.default, Box.mk);
+  impl
+  // before fills
+  (
+  // after fills open
+  fills
+  // before fills close
+  )
+  // elaborator target
+  impls
+  // elaborator separator
+  .
+  choose
+  // elaborator terminator
+  ;
+};
+
+elab plain : . -> . {
+  impl
+  // plain elaborator target
+  impls.plain;
+};

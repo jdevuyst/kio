@@ -1,0 +1,57 @@
+segment_tree_lazy -- 64 cells, 18 operations
+
+initial array
+  [00..15] 4 13 22 -6 3 12 21 -7 2 11 20 29 1 10 19 28
+  [16..31] 0 9 18 27 -1 8 17 26 -2 7 16 25 -3 6 15 24
+  [32..47] -4 5 14 23 -5 4 13 22 -6 3 12 21 -7 2 11 20
+  [48..63] 29 1 10 19 28 0 9 18 27 -1 8 17 26 -2 7 16
+
+replay -- each operation runs on the lazy tree and on the reference array
+op01  sum [0,63] = 714  ref 714  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op02  min [0,63] = -7  ref -7  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op03  add [0,31] +3  | tree visits=3 pushes=0  | ref touches=32
+op04  sum [0,31] = 470  ref 470  agree yes  | tree visits=3 pushes=0  | ref touches=32
+op05  min [16,23] = 2  ref 2  agree yes  | tree visits=7 pushes=2  | ref touches=8
+op06  add [32,63] +2  | tree visits=3 pushes=0  | ref touches=32
+op07  sum [32,63] = 404  ref 404  agree yes  | tree visits=3 pushes=0  | ref touches=32
+op08  min [0,63] = -5  ref -5  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op09  add [8,55] +5  | tree visits=11 pushes=3  | ref touches=48
+op10  sum [8,55] = 914  ref 914  agree yes  | tree visits=11 pushes=0  | ref touches=48
+op11  set [20] := 100  | tree visits=7 pushes=4  | ref touches=1
+op12  sum [0,63] = 1207  ref 1207  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op13  min [0,63] = -4  ref -4  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op14  add [0,63] +4  | tree visits=1 pushes=0  | ref touches=64
+op15  sum [0,63] = 1463  ref 1463  agree yes  | tree visits=1 pushes=0  | ref touches=64
+op16  min [24,39] = 6  ref 6  agree yes  | tree visits=11 pushes=5  | ref touches=16
+op17  add [0,63] -2  | tree visits=1 pushes=0  | ref touches=64
+op18  sum [0,63] = 1335  ref 1335  agree yes  | tree visits=1 pushes=0  | ref touches=64
+
+work
+  tree node visits: 68
+  tree tag pushes: 14
+  reference element touches: 825
+  reference touches per tree visit: 12
+
+deferred work still parked in the tree
+  nodes holding a pending add: 13
+  first such node, heap index: 0
+
+after draining every pending add down to the leaves
+  tags the drain pushed: 63
+  nodes holding a pending add: 0
+
+final array -- lazy tree, drained
+  [00..15] 9 18 27 -1 8 17 26 -2 12 21 30 39 11 20 29 38
+  [16..31] 10 19 28 37 102 18 27 36 8 17 26 35 7 16 25 34
+  [32..47] 5 14 23 32 4 13 22 31 3 12 21 30 2 11 20 29
+  [48..63] 38 10 19 28 37 9 18 27 31 3 12 21 30 2 11 20
+final array -- brute-force reference
+  [00..15] 9 18 27 -1 8 17 26 -2 12 21 30 39 11 20 29 38
+  [16..31] 10 19 28 37 102 18 27 36 8 17 26 35 7 16 25 34
+  [32..47] 5 14 23 32 4 13 22 31 3 12 21 30 2 11 20 29
+  [48..63] 38 10 19 28 37 9 18 27 31 3 12 21 30 2 11 20
+
+verdict
+  every query answer agreed: yes
+  final arrays identical: yes
+  ANSWERS AGREE: yes

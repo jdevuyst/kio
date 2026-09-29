@@ -1,0 +1,5 @@
+module testapi/types;
+
+import testapi as t;
+
+pub newtype Packed <U> : U & (U -> t.I32) { pub constructor mk_packed; pub projector read_packed }

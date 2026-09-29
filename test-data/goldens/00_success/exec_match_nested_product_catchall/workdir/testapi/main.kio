@@ -1,0 +1,37 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io as io;
+
+labels Version = { value: String, stamp: String };
+
+labels { tail: String };
+
+fn catchall(input: . | (Version & Tail)) -> . {
+  match! input {
+    .(_all: .) { io.print("catchall\n") }
+  }
+}
+
+fn product_first(input: . | (Version & Tail)) -> . {
+  match! input {
+    .(head: Version, rest: Tail) {
+      io.print(head.?{value});
+      io.print(head.?{stamp});
+      io.print(rest.?{tail})
+    };
+    .(_empty: .) { io.print("empty\n") }
+  }
+}
+
+pub fn main() -> . {
+  let empty = widen_sum!((), . | (Version & Tail));
+  let packet =
+    widen_sum!(({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"}), . | (Version & Tail));
+  catchall(empty);
+  catchall(packet);
+  product_first(empty);
+  product_first(packet)
+}

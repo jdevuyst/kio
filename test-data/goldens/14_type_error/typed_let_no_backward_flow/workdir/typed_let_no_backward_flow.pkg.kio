@@ -1,0 +1,18 @@
+package typed_let_no_backward_flow;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  typed_let_no_backward_flow;
+  typed_let_no_backward_flow/**
+}

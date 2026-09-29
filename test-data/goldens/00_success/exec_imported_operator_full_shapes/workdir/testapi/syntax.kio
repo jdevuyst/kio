@@ -1,0 +1,36 @@
+module testapi/syntax;
+
+import testapi(I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+pub fn choose(left: I32, right: I32) -> I32 { add_i32(left, right) }
+
+pub op ? _ : _ { impl choose }
+
+pub fn zero() -> I32 { 0 }
+
+pub fn add_pair((key: I32, value: I32), rest: I32) -> I32 { add_i32(key, add_i32(value, rest)) }
+
+pub fn seed(value: I32) -> I32 { value }
+
+pub fn finish(acc: I32) -> String { print("finalize\n"); i32_to_string(acc) }
+
+pub fn append_pair(acc: I32, key: I32, value: I32) -> I32 {
+  add_i32(mul_i32(acc, 100), add_i32(mul_i32(key, 10), value))
+}
+
+pub fn seed_pair(key: I32, value: I32) -> I32 { add_i32(10000, add_i32(mul_i32(key, 10), value)) }
+
+pub fn entry[K][V](key: K, value: V) -> K & V { (key, value) }
+
+pub op _ => _ { impl entry }
+
+pub varop [% %] { foldr add_pair zero; finalize finish }
+
+pub varop [+ +] { foldr1 add_i32 seed; finalize finish }
+
+pub varop [- -] { foldl append_pair zero; finalize finish }
+
+pub varop [! !] { foldl1 append_pair seed_pair; finalize finish }

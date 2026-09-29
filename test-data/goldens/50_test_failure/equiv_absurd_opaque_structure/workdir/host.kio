@@ -1,0 +1,9 @@
+module host;
+
+host type Input;
+
+host type Output;
+
+host fn never_a(x: Input) -> !;
+
+host fn never_b(x: Input) -> !;

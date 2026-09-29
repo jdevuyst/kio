@@ -1,0 +1,27 @@
+module testapi/main;
+
+import origin(Item, Pack);
+import testapi(String);
+import testapi/io(print);
+import view as field;
+import view({entry});
+
+fn make_item[A](value: A) -> Item(A) { {entry = value} }
+
+fn read_item[A](value: Item(A)) -> A { value.?{field.entry} }
+
+fn inspect_packet(value: Pack(String)) -> . {
+  Pack.get(value)(.[U](prefix: String, payload: U, format: U -> String) {
+    print(prefix);
+    print(format(payload))
+  })
+}
+
+pub fn main() -> . {
+  print(read_item(make_item("generic-string\n")));
+  read_item(make_item(()));
+  print("generic-unit\n");
+  print(read_item(Item.mk("original-generic\n")));
+  inspect_packet({field.packet = ("existential-string: ", "payload\n", .(text: String) { text })});
+  inspect_packet({field.packet = ("existential-unit: ", (), .(_unit: .) { "unit\n" })})
+}

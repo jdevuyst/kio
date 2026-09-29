@@ -1,0 +1,6 @@
+module naming_type_lowercase/main;
+
+newtype box : . {
+  pub constructor mk_box;
+  pub projector un_box;
+};

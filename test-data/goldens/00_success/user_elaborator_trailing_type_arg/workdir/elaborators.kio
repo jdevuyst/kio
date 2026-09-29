@@ -1,0 +1,37 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import elaborator_util(choose_checked_term);
+
+pub type Marker_bool = . | .;
+
+pub fn marker_true() -> Marker_bool { __left__(., ., ()) }
+
+pub fn marker_false() -> Marker_bool { __right__(., ., ()) }
+
+pure fn marker_bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, . -> Marker_bool) }
+
+pure fn call_marker_bool(ct: __Comptime__, fn_type: __Type__, value_fn: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, fn_type, value_fn, __term_unit__(ct))
+}
+
+pub pure fn marker_impl(
+  , ct: __Comptime__
+  , true_fn: __Checked_term__
+  , false_fn: __Checked_term__
+  , _source: __Type__
+  , _value: __Checked_term__
+  , needle: __Type__
+  ) -> __Checked_term__ {
+  let fn_type = marker_bool_fn_type(ct);
+  choose_checked_term(
+    , ct
+    , __type_equal__(ct, needle, _source)
+    , call_marker_bool(ct, fn_type, true_fn)
+    , call_marker_bool(ct, fn_type, false_fn)
+    )
+}
+
+pub elab marker : [Source] Source -> [Needle] Marker_bool { captures (marker_true, marker_false); impl marker_impl }

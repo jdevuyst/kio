@@ -1,0 +1,7 @@
+module testapi/foo_bar;
+
+host type I32 role(i32);
+
+host fn read(left: I32, right: I32) -> I32;
+
+pub fn value(left: I32, right: I32) -> I32 { read(left, right) }

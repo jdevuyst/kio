@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Two anonymous labels whose product `Foo & Bar` is a record.
+labels { foo: I32, bar: String };
+
+// Reading a field of a compound-labeled record uses postfix field
+// access. The frontend lowers it to direct positional projections
+// plus `Foo.get` / `Bar.get`; no field syntax reaches Kio'.
+pub fn main() -> . {
+  let r = {foo = 42, bar = "kio\n"};
+  print(int_to_string(r.?{foo}));
+  print(r.?{bar})
+}

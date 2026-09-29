@@ -1,0 +1,65 @@
+# cargo-mutants exclusions for reports/mutation.sh (see its charter).
+#
+# Every entry here is a mutant reviewed and found SEMANTICALLY
+# EQUIVALENT on all reachable inputs — not a test gap. Each regex is
+# anchored on the function name plus the exact rewrite, never on line
+# numbers, so entries survive unrelated edits — and it must not sweep
+# any sibling mutant that was not itself reviewed. Mutant names
+# differ only by position, so a pattern matches all sites of a
+# same-shaped rewrite in one function or none: such an entry is
+# admissible only when every site is reviewed-equivalent; otherwise
+# the survivors stay visible and carry their explanation in the
+# triage record instead.
+# Before adding an entry, prefer the stronger fixes: delete genuinely
+# redundant code, or add firing coverage for an optimization. An
+# entry whose function is later deleted or reshaped should be removed
+# with it.
+
+exclude_re = [
+    # Pure telemetry recorders behind the KIO_DEBUG stats surface
+    # (debug-only per AGENTS.md § Debug-only surfaces): stubbing a
+    # counter add changes no compile result. (The MemoCtx<P>::
+    # qualifier is load-bearing — Elaborations has a same-named
+    # recorder that is NOT equivalent.)
+    'MemoCtx<P>::record_user_elaborator_',
+    # Interned-type hashes are a performance surface: set membership
+    # is decided by equality, so a degenerate hash only slows lookup.
+    'InternedType<P>>::hash with \(\)',
+    'InternedType<P>::handle_hash',
+    'replace key_hash -> u64',
+    # normalization Env: `insert` always builds a parent chain, so a
+    # root env is empty iff it has no parent. Only these two rewrites
+    # are vacuous; the stub-true direction skips binding collection
+    # for a non-empty env and stays in scope.
+    'replace Env::is_empty -> bool with false',
+    'replace && with \|\| in Env::is_empty',
+    # EvalMetrics::collect's mutant substitutes the expression the
+    # body already evaluates to.
+    'EvalMetrics::collect',
+    # nf_eq closure guard, `true` direction only: the guard merely
+    # short-circuits eta_match's own closure_arity None-check, so
+    # forcing it true routes to the same result. (The `false`
+    # direction is a real gap and stays in scope.)
+    'replace match guard closure_arity\(b\)\.is_some\(\) with true in nf_eq_inner',
+    # Exact-call memo capacity comparison: a one-entry off-by-one in
+    # an eviction bound is output-transparent (memo hits return the
+    # value the evaluator would recompute).
+    'replace < with <= in insert_exact_call_memo',
+    # Structural-recur stuck-message depth guard beyond depth 128:
+    # values are acyclic and the depth counter is monotonic, so the
+    # guard variants differ only on diagnostics past that depth.
+    'replace > with == in structural_recur_stuck_message_inner',
+    'replace \+ with \* in structural_recur_stuck_message_inner',
+    # Group-binding candidate bound: `>` vs `>=` coincide because the
+    # boundary count is filtered out one step earlier.
+    'replace > with >= in eval_group_binding_candidates',
+    # Zero-width and unit-width fast paths that the general path
+    # reproduces exactly when the arm is deleted.
+    'delete match arm 0 in right_fold_product_eval_exprs',
+    'delete match arm 1 in split_product_packet_slots',
+    # Three-element unrolling arm: the general loop below it builds
+    # the identical argument vector. The end anchor is load-bearing:
+    # eval_compiled_args_inline's same-shaped arm returns a different
+    # EvalArgs variant (the no-heap fast path) and stays in scope.
+    'delete match arm \[one, two, three\] in eval_compiled_args$',
+]

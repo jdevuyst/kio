@@ -1,0 +1,17 @@
+package hello;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  hello
+}

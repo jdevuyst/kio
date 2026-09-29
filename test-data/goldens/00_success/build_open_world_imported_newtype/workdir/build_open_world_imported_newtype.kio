@@ -1,0 +1,5 @@
+module build_open_world_imported_newtype;
+
+host type I32 role(i32);
+
+host type String role(str);

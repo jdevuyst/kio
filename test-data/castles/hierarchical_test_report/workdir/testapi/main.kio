@@ -1,0 +1,19 @@
+module testapi/main;
+
+import elab/match(match);
+import report/aggregate as aggregate;
+import report/events as events;
+import report/model as model;
+import report/render as render;
+import testapi(String);
+import testapi/io as io;
+import testapi/iter(loop);
+
+rec(loop) fn consume(state: model.State) -> model.State {
+  match! io.read_ascii_line() {
+    .(tag: String) { rec consume(aggregate.accept(state, events.read(tag))) };
+    .(_eof: .) { aggregate.finish(state) }
+  }
+}
+
+pub fn main() -> . { render.document(consume(model.empty_state())) }

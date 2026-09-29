@@ -1,0 +1,225 @@
+/// The audit: leaf depth, key order, node arity, and stored size, each
+/// recomputed from the tree alone after every operation.
+///
+/// Nothing here trusts a flag that insert or delete set, and nothing takes a
+/// shortcut through the balance it is checking: the depth walk visits every
+/// child instead of following one, and the size walk counts keys instead of
+/// reading the stored count. The arity check is the one an audit cannot fail
+/// against this node type — two keys and three children are a 3-node's shape —
+/// so it is recomputed from counts rather than read off the shape, and the half
+/// that a bad rebalance really can break is those two keys' ascending order.
+module tree/audit;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, lt_i32);
+import testapi/iter(loop);
+import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of, {three}, {two});
+
+/// (a) The uniform leaf depth of a subtree, or `ragged` when its leaves
+/// disagree — the answer that makes a broken rebalance visible.
+labels Depth = { level: I32 } | { ragged: . };
+
+fn level(d: I32) -> Depth { {level = d}.>widen_sum!(Depth) }
+
+fn ragged() -> Depth { {ragged=}.>widen_sum!(Depth) }
+
+/// Sibling depths that agree collapse to one; anything else is ragged, and
+/// raggedness spreads to every ancestor.
+fn agree(a: Depth, b: Depth) -> Depth {
+  match! a {
+    (
+      , .(x: Level) {
+          match! b {
+            (
+              , .(y: Level) {
+                  if! eq_i32(x.?{level}, y.?{level}) {
+                    level(x.?{level})
+                  } else {
+                    ragged()
+                  }
+                }
+              , .(_r: Ragged) { ragged() }
+              )
+          }
+        }
+      , .(_r: Ragged) { ragged() }
+      )
+  }
+}
+
+fn deeper(d: Depth) -> Depth {
+  match! d {
+    (.(x: Level) { level(add_i32(x.?{level}, 1)) }, .(_r: Ragged) { ragged() })
+  }
+}
+
+rec(loop) fn depth_of(t: Node) -> Depth {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { level(0) }
+      , .(n: Two) {
+          let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+          let dl = rec(cont) depth_of(l);
+          let dr = rec(cont) depth_of(r);
+          deeper(agree(dl, dr))
+        }
+      , .(n: Three) {
+          let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) =
+            n.?{three};
+          let dl = rec(cont) depth_of(l);
+          let dm = rec(cont) depth_of(m);
+          let dr = rec(cont) depth_of(r);
+          deeper(agree(agree(dl, dm), dr))
+        }
+      )
+  }
+}
+
+fn depth_uniform(t: Node) -> Bool {
+  match! depth_of(t) {
+    (.(_x: Level) { .t }, .(_r: Ragged) { .f })
+  }
+}
+
+/// (b) The inorder walk's running state: the last key it saw, and whether
+/// every key so far arrived strictly after its predecessor.
+labels Seen = { last: I32 } | { unseen: . };
+
+type Order = Seen & Bool;
+
+fn seen(k: I32) -> Seen { {last = k}.>widen_sum!(Seen) }
+
+fn unseen() -> Seen { {unseen=}.>widen_sum!(Seen) }
+
+fn order_start() -> Order { (unseen(), .t) }
+
+fn order_ok(o: Order) -> Bool { let .(_s: Seen, ok: Bool) = o; ok }
+
+fn order_step(o: Order, k: I32) -> Order {
+  let .(s: Seen, ok: Bool) = o;
+  match! s {
+    (.(p: Last) { (seen(k), and(ok, lt_i32(p.?{last}, k))) }, .(_u: Unseen) { (seen(k), ok) })
+  }
+}
+
+/// Left subtree, first key, middle subtree, second key, right subtree — the
+/// keys arrive in the order the tree claims to hold them.
+rec(loop) fn order_walk(t: Node, o: Order) -> Order {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { o }
+      , .(n: Two) {
+          let .(l: Node, k: I32, _v: String, r: Node) = n.?{two};
+          let after_left = rec(cont) order_walk(l, o);
+          let after_key = order_step(after_left, k);
+          rec order_walk(r, after_key)
+        }
+      , .(n: Three) {
+          let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+          let after_left = rec(cont) order_walk(l, o);
+          let after_k1 = order_step(after_left, k1);
+          let after_mid = rec(cont) order_walk(m, after_k1);
+          let after_k2 = order_step(after_mid, k2);
+          rec order_walk(r, after_k2)
+        }
+      )
+  }
+}
+
+/// (c) and (d): keys, child slots, nodes, and whether every 3-node's key pair
+/// ascends — all four accumulated in one walk.
+type Shape = I32 & I32 & I32 & Bool;
+
+fn shape_leaf() -> Shape { (0, 0, 0, .t) }
+
+fn shape_join(a: Shape, b: Shape) -> Shape {
+  let .(ka: I32, ca: I32, na: I32, oa: Bool) = a;
+  let .(kb: I32, cb: I32, nb: I32, ob: Bool) = b;
+  (add_i32(ka, kb), add_i32(ca, cb), add_i32(na, nb), and(oa, ob))
+}
+
+fn shape_node(keys: I32, children: I32, ordered: Bool, below: Shape) -> Shape {
+  let .(kb: I32, cb: I32, nb: I32, ob: Bool) = below;
+  (add_i32(keys, kb), add_i32(children, cb), add_i32(1, nb), and(ordered, ob))
+}
+
+rec(loop) fn shape_walk(t: Node) -> Shape {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { shape_leaf() }
+      , .(n: Two) {
+          let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+          let sl = rec(cont) shape_walk(l);
+          let sr = rec(cont) shape_walk(r);
+          shape_node(1, 2, .t, shape_join(sl, sr))
+        }
+      , .(n: Three) {
+          let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+          let sl = rec(cont) shape_walk(l);
+          let sm = rec(cont) shape_walk(m);
+          let sr = rec(cont) shape_walk(r);
+          shape_node(2, 3, lt_i32(k1, k2), shape_join(sl, shape_join(sm, sr)))
+        }
+      )
+  }
+}
+
+fn counted_keys(t: Node) -> I32 {
+  let .(keys: I32, _c: I32, _n: I32, _o: Bool) = shape_walk(t);
+  keys
+}
+
+/// Summed over the whole tree, one child slot per key plus one per node is
+/// exactly the 2-node/3-node arity rule.
+fn shape_sound(t: Node) -> Bool {
+  let .(keys: I32, children: I32, nodes: I32, ordered: Bool) = shape_walk(t);
+  and(ordered, eq_i32(children, add_i32(keys, nodes)))
+}
+
+/// The four verdicts, in the order the module documents them.
+pub type Verdict = Bool & Bool & Bool & Bool;
+
+pub fn audit(t: Tree) -> Verdict {
+  let root = root_of(t);
+  (
+    , depth_uniform(root)
+    , order_ok(order_walk(root, order_start()))
+    , shape_sound(root)
+    , eq_i32(size_of(t), counted_keys(root))
+    )
+}
+
+pub fn depth_ok(v: Verdict) -> Bool { let .(d: Bool, _o: Bool, _a: Bool, _n: Bool) = v; d }
+
+pub fn keys_ok(v: Verdict) -> Bool { let .(_d: Bool, o: Bool, _a: Bool, _n: Bool) = v; o }
+
+pub fn arity_ok(v: Verdict) -> Bool { let .(_d: Bool, _o: Bool, a: Bool, _n: Bool) = v; a }
+
+pub fn size_ok(v: Verdict) -> Bool { let .(_d: Bool, _o: Bool, _a: Bool, n: Bool) = v; n }
+
+/// The word the transcript prints after every operation. `ok` means all four
+/// invariants held; anything else names the first one that did not, and is a
+/// bug in the rebalancing rather than a fact about the data.
+pub fn verdict_word(v: Verdict) -> String {
+  let .(d: Bool, o: Bool, a: Bool, n: Bool) = v;
+  if! d {
+    if! o {
+      if! a {
+        if! n {
+          "ok"
+        } else {
+          "BAD-size"
+        }
+      } else {
+        "BAD-arity"
+      }
+    } else {
+      "BAD-order"
+    }
+  } else {
+    "BAD-depth"
+  }
+}

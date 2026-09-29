@@ -1,0 +1,3 @@
+module pure_lambda_annotation_mentions_host;
+
+host type String role(str);

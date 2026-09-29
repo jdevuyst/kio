@@ -1,0 +1,20 @@
+/// Module providing utility functions.
+///
+/// Uses [`helper`] internally.
+/// Also references the [`Identity`] type alias.
+module docref/main;
+
+/// Returns its argument unchanged.
+///
+/// See also [`helper`] and [`Identity`].
+/// Private items are also valid refs: [`private_helper`].
+pub fn identity(x: .) -> . { x }
+
+/// A helper function referenced by [`identity`].
+fn helper() -> . { () }
+
+// Private helper.
+fn private_helper() -> . { () }
+
+/// A type alias.
+pub type Identity = .;

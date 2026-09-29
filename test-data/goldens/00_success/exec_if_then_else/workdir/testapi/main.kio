@@ -1,0 +1,15 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn pick(c: Bool, t: String, e: String) -> String {
+  if! c {
+    t
+  } else {
+    e
+  }
+}
+
+pub fn main() -> . { print(pick(.t, "yes\n", "no\n")); print(pick(.f, "yes\n", "no\n")) }

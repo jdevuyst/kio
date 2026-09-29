@@ -1,0 +1,9 @@
+module testapi/right;
+
+import testapi(I32);
+
+pub newtype Shared : I32 { pub constructor make_shared; pub projector read_shared }
+
+pub fn make(value: I32) -> Shared { Shared.make_shared(value) }
+
+pub fn read(value: Shared) -> I32 { Shared.read_shared(value) }

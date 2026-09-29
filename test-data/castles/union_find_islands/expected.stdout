@@ -1,0 +1,29 @@
+map 3x3:
+##.
+#.#
+.##
+water center land? false
+string check: center is water
+initial parent[8] = 8
+edge candidates = 7
+edge 0: 7-8 union
+edge 1: 1-2 skip-water
+edge 2: 0-3 union
+edge 3: 3-6 skip-water
+edge 4: 4-5 skip-water
+edge 5: 5-8 union
+edge 6: 0-1 union
+unions = 4
+skipped = 3
+land roots:
+cell 0 -> root 3
+cell 1 -> root 3
+cell 3 -> root 3
+cell 5 -> root 8
+cell 7 -> root 8
+cell 8 -> root 8
+components:
+root 3 size 3
+root 8 size 3
+islands = 2
+checksum = 9

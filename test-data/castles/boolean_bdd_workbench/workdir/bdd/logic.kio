@@ -1,0 +1,65 @@
+module bdd/logic;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub fn not(a: Bool) -> Bool {
+  if! a {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn same(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    not(b)
+  }
+}
+
+pub labels Operation = { conjunction: . } | { disjunction: . } | { exclusive: . };
+
+pub fn conjunction_op() -> Operation { {conjunction=}.>widen_sum! }
+
+pub fn disjunction_op() -> Operation { {disjunction=}.>widen_sum! }
+
+pub fn exclusive_op() -> Operation { {exclusive=}.>widen_sum! }
+
+pub fn op_code(op: Operation) -> I32 {
+  match! op {
+    .(_x: Conjunction) { 0 };
+    .(_x: Disjunction) { 1 };
+    .(_x: Exclusive) { 2 }
+  }
+}
+
+pub fn same_op(a: Operation, b: Operation) -> Bool { arith.eq_i32(op_code(a), op_code(b)) }
+
+pub fn operate(op: Operation, a: Bool, b: Bool) -> Bool {
+  match! op {
+    .(_x: Conjunction) { and(a, b) };
+    .(_x: Disjunction) { or(a, b) };
+    .(_x: Exclusive) { not(same(a, b)) }
+  }
+}

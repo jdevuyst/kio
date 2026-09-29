@@ -1,0 +1,13 @@
+/// A retyped generic nominal keeps its existential constructor and CPS
+/// projector through ordinary aliases and across the dependency boundary.
+module testapi/main;
+
+import core/store as core;
+import testapi(I32, String);
+import testapi/fmt(print_i32);
+import testapi/io(print);
+import widget/store as widget;
+
+fn read_counterpart(boxed: core.Box(I32)) -> I32 { widget.extract(I32, boxed) }
+
+pub fn main() -> . { print_i32(read_counterpart(widget.boxed(I32, 37(I32)))); print("\n"(String)) }

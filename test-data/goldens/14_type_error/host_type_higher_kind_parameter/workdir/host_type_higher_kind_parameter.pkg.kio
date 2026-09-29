@@ -1,0 +1,13 @@
+package host_type_higher_kind_parameter;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  invalid
+}

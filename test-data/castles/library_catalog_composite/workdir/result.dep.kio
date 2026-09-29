@@ -1,0 +1,5 @@
+dependency result;
+
+source {
+  path "../../../poc/result/workdir/result.pkg.kio"
+}

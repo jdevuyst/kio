@@ -1,0 +1,8 @@
+gate_array_dp days=8 states=4
+arrays traffic=8 service=8
+max_age=3 final=73
+cell d3 a2=47
+cell d5 a0=48
+cell d8 a1=74
+d8a1_reachable=true
+tag_ok=true

@@ -1,0 +1,5 @@
+module jrpg/main;
+
+import jrpg(String);
+
+pub fn return() -> String { "ok"(String) }

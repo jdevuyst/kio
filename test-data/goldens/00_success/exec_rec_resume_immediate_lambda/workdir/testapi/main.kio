@@ -1,0 +1,24 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+type Identity[A] = A;
+
+rec(loop) {
+  fn initial(value: I32) -> I32 { .[A](tail) -> I32 { tail }(Identity(I32), rec(cont) leaf(value)) };
+  fn successor(value: I32) -> I32 {
+    .[A](first: A)[B](tail) -> I32 { tail }(I32, value, Identity(I32), rec(cont) leaf(value))
+  };
+  fn leaf(value: I32) -> I32 { value }
+}
+
+pub fn main() -> . {
+  io.print("initial\n");
+  io.print(fmt.int_to_string(initial(7)));
+  io.print("\nsuccessor\n");
+  io.print(fmt.int_to_string(successor(9)));
+  io.print("\n")
+}

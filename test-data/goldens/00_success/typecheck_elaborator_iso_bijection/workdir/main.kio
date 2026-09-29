@@ -1,0 +1,41 @@
+module main;
+
+import elab/algebraic_elaborators(iso);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// R-Comm: rearrange product slots at distinct types. The map is
+// `(a, b) ↔ (b, a)`, a bijection on the value-set.
+fn swap_prod(p: A & B) -> B & A { iso!(p) }
+
+// R-Comm on sums: rearrange arms at distinct types. The map is
+// `__left__(a) ↔ __right__(a)`, a bijection on the value-set.
+fn swap_sum(s: A | B) -> B | A { iso!(s) }
+
+// R-Identity-Prod (insert direction): `A → A & .`. Adding the
+// unit-typed slot is information-preserving because `()` has a
+// unique inhabitant.
+fn insert_unit(a: A) -> A & . { iso!(a) }
+
+// R-Identity-Prod (drop direction): `A & . → A`. Dropping the
+// unit-typed slot is the inverse.
+fn drop_unit(p: A & .) -> A { iso!(p) }
+
+// R-Identity-Sum (insert direction): `A → A | !`. Adding the
+// bottom-typed arm is information-preserving because `!` has no
+// inhabitants.
+fn insert_bottom(a: A) -> A | ! { iso!(a) }
+
+// R-Identity-Sum (drop direction): `A | ! → A`. The `!`-arm is
+// statically dead, so removing it preserves the value-set.
+fn drop_bottom(s: A | !) -> A { iso!(s) }
+
+// R-Distrib: `A & (B | C) ↔ (A & B) | (A & C)`. CNF and DNF
+// shapes of the same value-set are iso!-equivalent.
+fn cnf_to_dnf(x: A & (B | C)) -> (A & B) | (A & C) { iso!(x) }
+
+fn dnf_to_cnf(y: (A & B) | (A & C)) -> A & (B | C) { iso!(y) }

@@ -1,0 +1,107 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, div_i32, leq_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn b_and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+fn b_or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+fn b_implies(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .t
+  }
+}
+
+// Power via `loop` + `*` + `<=`. `loop`'s step returns `s | r` —
+// continue (left) with new state, or exit (right) with the final
+// value. State carries `(remaining_exponent, accumulator)`. The
+fn pow_step(base: I32, state: I32 & I32) -> (I32 & I32) | I32 {
+  match! state {
+    .(n: I32, acc: I32) {
+      if! leq_i32(n, 0) {
+        widen_sum!(acc)
+      } else {
+        widen_sum!((sub_i32(n, 1), mul_i32(acc, base)), (I32 & I32) | I32)
+      }
+    }
+  }
+}
+
+fn pow_i32(base: I32, exponent: I32) -> I32 {
+  loop(.(state: I32 & I32) { pow_step(base, state) }, (exponent, 1))
+}
+
+op _ + __ { impl add_i32 }
+
+op _ - __ { impl sub_i32 }
+
+op _ * __ { impl mul_i32 }
+
+op _ / __ { impl div_i32 }
+
+op _ ** __ { impl pow_i32 }
+
+op _ <= _ { impl leq_i32 }
+
+op _ => _ { impl b_implies }
+
+op _ && __ { impl b_and }
+
+op _ || __ { impl b_or }
+
+fn show_bool(x: Bool) -> . {
+  if! x {
+    print("true\n")
+  } else {
+    print("false\n")
+  }
+}
+
+pub fn main() -> . {
+  // Arithmetic
+  print(int_to_string(1 + 2 + 3));
+  print("\n");
+  print(int_to_string(10 - 3));
+  print("\n");
+  print(int_to_string(4 * 5));
+  print("\n");
+  print(int_to_string(20 / 4));
+  print("\n");
+  print(int_to_string(2 ** 8));
+  print("\n");
+  // Mixed operators require explicit parens — Kio operator dispatch
+  // is precedence-free.
+  print(int_to_string((1 + 2) * 3));
+  print("\n");
+  // Relational
+  show_bool(1 <= 2);
+  show_bool(2 <= 1);
+  // Logic
+  show_bool(.t && .t);
+  show_bool(.t && .f);
+  show_bool(.f || .t);
+  show_bool(.f || .f);
+  show_bool(.f => .t);
+  show_bool(.t => .f)
+}

@@ -1,0 +1,7 @@
+use_higher(5) = 5
+contract (rank-2, renamed inner binder) = ok
+contract (rank-2, wrong inner arrow) = dyn_load_prime: contract mismatch — export `guest.higher` declares `[#0] (([#1] (#1 -> #1)) & #0) -> #0` but the host expects `[#0] (([#1] (#1 -> #0)) & #0) -> #0`
+contract (rank-2, shadowed outer spelling) = ok
+contract (alias control binder scope) = ok
+contract (duplicated alias binder scopes) = ok
+contract (erased phantom binder scope) = ok

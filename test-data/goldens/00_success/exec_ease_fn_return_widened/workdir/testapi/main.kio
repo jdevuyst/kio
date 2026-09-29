@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import elab/match(match);
+import testapi/io(print);
+import testapi/types(String);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+// Source: `. -> A`. The call site expects `. -> (A | B)` (e.g.,
+// a wider return-type contract later took shape after this
+// function was written). `ease!` wraps so the source's `A` result
+// lifts into the call-site's `A | B`. The walk recurses covariantly
+// on the return slot — leaf sees source-then-target `(A, A | B)`;
+// the leaf `ease!` engine fires `R-Widen-Sum` to inject `A` into
+// the left arm of the target sum.
+fn source() -> A { A.mk_a("ease! return widened ok\n") }
+
+pub fn main() -> . {
+  let widen_ret = ease!(source, . -> A | B);
+  let r = widen_ret();
+  print(match! r {
+    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+  })
+}

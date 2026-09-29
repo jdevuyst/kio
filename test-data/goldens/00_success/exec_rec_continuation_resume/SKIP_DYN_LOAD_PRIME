@@ -1,0 +1,5 @@
+The full-depth continuation workload is excessively expensive to interpret.
+00_success/exec_rec_continuation_semantics runs the same shared ordinary,
+mutual-generic, nested-argument and tail-hop bodies at compact depths through
+the dynamic interpreter. This case retains the deep compiled-backend and
+Prime roundtrip stress coverage.

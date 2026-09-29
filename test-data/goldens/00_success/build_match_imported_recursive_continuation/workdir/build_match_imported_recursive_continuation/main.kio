@@ -1,0 +1,14 @@
+module build_match_imported_recursive_continuation/main;
+
+import build_match_imported_recursive_continuation(loop);
+import build_match_imported_recursive_continuation/list as list;
+import elab/match(match);
+
+pub rec(loop) fn copy[A](items: list.List(A)) -> list.Copied(A) {
+  match! items.>list.List.un_list {
+    (
+      , .(head: A, tail: list.List(A)) { list.cons(head, rec(cont) copy(tail)) }
+      , .(_empty: .) { list.nil(A, ()) }
+      )
+  }
+}

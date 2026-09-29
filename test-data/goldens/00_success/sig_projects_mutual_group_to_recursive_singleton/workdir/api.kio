@@ -1,0 +1,6 @@
+module api;
+
+rec {
+  pub newtype A : A | B { pub constructor make_a; projector un_a };
+  pub newtype B : A { constructor make_b; projector un_b }
+}

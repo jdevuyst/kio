@@ -1,0 +1,5 @@
+module app;
+
+import cap as cap;
+
+pub fn run() -> . { cap.tick() }

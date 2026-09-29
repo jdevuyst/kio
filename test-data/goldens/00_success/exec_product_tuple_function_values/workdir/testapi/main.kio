@@ -1,0 +1,36 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show_unit(u: .) -> String { "unit-ok\n"(String) }
+
+fn call_unit(f: . -> String) -> String { f() }
+
+fn call_unit_explicit(f: . -> String) -> String { f(()) }
+
+fn pair_join(pair: String & String) -> String { string_concat(pair) }
+
+fn pair_join_flat(left: String, right: String) -> String { string_concat(left, right) }
+
+fn apply_pair(f: (String & String) -> String, pair: String & String) -> String { f(pair) }
+
+fn apply_pair_flat(f: (String & String) -> String, left: String, right: String) -> String {
+  f(left, right)
+}
+
+pub fn main() -> . {
+  let unit_thunk = .() -> String { "thunk-ok\n"(String) };
+  let unit_named = .(u: .) -> String { show_unit(u) };
+  let product_one = .(pair: String & String) -> String { pair_join(pair) };
+  let product_two = .(left: String, right: String) -> String { string_concat(left, right) };
+  let product_one_as_flat = .(left: String, right: String) -> String { product_one((left, right)) };
+  let product_two_as_product = .(pair: String & String) -> String { product_two(pair) };
+  print(call_unit(unit_thunk));
+  print(call_unit_explicit(unit_named));
+  print(apply_pair(product_one, ("one-"(String), "product\n"(String))));
+  print(apply_pair_flat(product_one_as_flat, "flat-"(String), "into-product\n"(String)));
+  print(apply_pair(product_two_as_product, ("tuple-"(String), "into-flat\n"(String))));
+  print(pair_join_flat(("direct-"(String), "product-call\n"(String))))
+}

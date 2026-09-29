@@ -1,0 +1,229 @@
+/// The transcript: the machine, the fixture, the trace, and what the run cost.
+///
+/// The two accounting lines are checks, not decoration. Per process, the ticks
+/// between arrival and completion must be exactly the ticks it ran, trapped,
+/// queued, and blocked; system-wide, every elapsed tick must have been spent
+/// running some process, trapping for one, or idle. A model that lost a tick
+/// anywhere would say so here.
+module os/report;
+
+import elab/control(if);
+import os/config as config;
+import os/fixture as fixture;
+import os/memory as memory;
+import os/num as num;
+import os/proc as proc;
+import os/queue as queue;
+import os/sched as sched;
+import os/text as text;
+import os/trace as trace;
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn line(s: String) -> . { print(text.cat(s, "\n")) }
+
+fn blank() -> . { print("\n") }
+
+fn field(label: String, value: I32) -> String { text.cat3(label, "=", text.num_text(value)) }
+
+fn banner() -> . {
+  line("os_scheduler_sim v1");
+  line(text.cat4(
+    , "config: "
+    , text.cat3(field("procs", config.proc_count()), " ", field("frames", config.frame_count()))
+    , text.cat3(" ", field("pages/proc", config.pages_per_proc()), " ")
+    , text.cat3(
+        , field("quantum", config.quantum())
+        , " "
+        , field("fault_latency", config.fault_latency())
+        )
+    ))
+}
+
+/// A pid tag padded to the three-character `pid` column.
+fn pid_cell(pid: I32) -> String { text.cat(proc.pid_tag(pid), " ") }
+
+rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> String {
+  if! num.geq(i, array_len(program)) {
+    acc
+  } else {
+    let sep = if! num.eq(i, 0) {
+      ""
+    } else {
+      " "
+    };
+    rec program_text(
+      , program
+      , add_i32(i, 1)
+      , text.cat3(acc, sep, proc.phase_text(array_get(program, i)))
+      )
+  }
+}
+
+rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid: I32) -> . {
+  if! leq_i32(config.proc_count(), pid) {
+    ()
+  } else {
+    line(text.cat4(
+      , pid_cell(pid)
+      , "  "
+      , text.pad_num(proc.arrive_at(pcb, pid), 6)
+      , text.cat("  ", program_text(array_get(programs, pid), 0, ""))
+      ));
+    rec fixture_rows(pcb, programs, add_i32(pid, 1))
+  }
+}
+
+fn fixture_table(pcb: proc.Pcb, programs: Array(Array(proc.Phase))) -> . {
+  line("-- process fixture --");
+  line("pid  arrive  program");
+  fixture_rows(pcb, programs, 0)
+}
+
+rec(loop) fn process_rows(pcb: proc.Pcb, pid: I32) -> . {
+  if! leq_i32(config.proc_count(), pid) {
+    ()
+  } else {
+    line(text.cat4(
+      , text.cat4(
+          , pid_cell(pid)
+          , text.cat("  ", text.pad_num(proc.arrive_at(pcb, pid), 6))
+          , text.cat("  ", text.pad_num(proc.finish_at(pcb, pid), 6))
+          , text.cat("  ", text.pad_num(proc.turnaround_at(pcb, pid), 4))
+          )
+      , text.cat4(
+          , "  "
+          , text.pad_num(proc.wait_ticks_at(pcb, pid), 4)
+          , "  "
+          , text.pad_num(proc.cpu_ticks_at(pcb, pid), 3)
+          )
+      , text.cat4(
+          , "  "
+          , text.pad_num(proc.block_ticks_at(pcb, pid), 5)
+          , "  "
+          , text.pad_num(proc.switches_at(pcb, pid), 6)
+          )
+      , text.cat4(
+          , "  "
+          , text.pad_num(proc.faults_at(pcb, pid), 5)
+          , "  "
+          , text.pad_num(proc.hits_at(pcb, pid), 3)
+          )
+      ));
+    rec process_rows(pcb, add_i32(pid, 1))
+  }
+}
+
+fn process_table(pcb: proc.Pcb) -> . {
+  line("-- processes --");
+  line("pid  arrive  finish  turn  wait  cpu  block  switch  fault  hit");
+  process_rows(pcb, 0)
+}
+
+rec(loop) fn accounting_ok(pcb: proc.Pcb, pid: I32) -> Bool {
+  if! leq_i32(config.proc_count(), pid) {
+    .t
+  } else {
+    let spent = add_i32(
+      , add_i32(proc.cpu_ticks_at(pcb, pid), proc.faults_at(pcb, pid))
+      , add_i32(proc.wait_ticks_at(pcb, pid), proc.block_ticks_at(pcb, pid))
+      );
+    if! num.eq(spent, proc.turnaround_at(pcb, pid)) {
+      rec accounting_ok(pcb, add_i32(pid, 1))
+    } else {
+      .f
+    }
+  }
+}
+
+rec(loop) fn order_text(q: queue.Queues, i: I32, acc: String) -> String {
+  if! num.geq(i, queue.retired_len(q)) {
+    acc
+  } else {
+    let sep = if! num.eq(i, 0) {
+      ""
+    } else {
+      " "
+    };
+    rec order_text(q, add_i32(i, 1), text.cat3(acc, sep, proc.pid_tag(queue.retired_at(q, i))))
+  }
+}
+
+fn totals(pcb: proc.Pcb, q: queue.Queues, ticks: I32, idle: I32) -> . {
+  let cpu = proc.column_total(proc.cpu_column(pcb), 0, 0);
+  let faults = proc.column_total(proc.fault_column(pcb), 0, 0);
+  let hits = proc.column_total(proc.hit_column(pcb), 0, 0);
+  let switches = proc.column_total(proc.switch_column(pcb), 0, 0);
+  let refs = add_i32(faults, hits);
+  let system_ok = num.eq(add_i32(add_i32(cpu, faults), idle), ticks);
+  let sound = num.and(accounting_ok(pcb, 0), system_ok);
+  line("-- totals --");
+  line(text.cat("ticks             ", text.pad_num(ticks, 4)));
+  line(text.cat("idle ticks        ", text.pad_num(idle, 4)));
+  line(text.cat("context switches  ", text.pad_num(switches, 4)));
+  line(text.cat("page references   ", text.pad_num(refs, 4)));
+  line(text.cat("page hits         ", text.pad_num(hits, 4)));
+  line(text.cat("page faults       ", text.pad_num(faults, 4)));
+  line(text.cat3("hit ratio         ", text.pad_num(num.permille(hits, refs), 4), " permille"));
+  line(text.cat("completion order  ", order_text(q, 0, "")));
+  line(text.cat(
+    , "accounting        "
+    , if! sound {
+        "ok"
+      } else {
+        "MISMATCH"
+      }
+    ))
+}
+
+/// A frame column, right-aligned to five characters like the numbers beside it.
+fn frame_owner_cell(pid: I32) -> String { text.cat("   ", proc.pid_tag(pid)) }
+
+rec(loop) fn frame_rows(mem: memory.Mem, frame: I32) -> . {
+  if! leq_i32(config.frame_count(), frame) {
+    ()
+  } else {
+    let owner = memory.owner_of(mem, frame);
+    let page = if! num.lt(owner, 0) {
+      "   --"
+    } else {
+      text.pad_num(memory.vpage_of(mem, frame), 5)
+    };
+    line(text.cat4(
+      , text.pad_num(frame, 5)
+      , text.cat("  ", frame_owner_cell(owner))
+      , text.cat("  ", page)
+      , text.cat("  ", text.bool_text(memory.refbit_of(mem, frame)))
+      ));
+    rec frame_rows(mem, add_i32(frame, 1))
+  }
+}
+
+fn frame_table(mem: memory.Mem) -> . {
+  line("-- frame table (final) --");
+  line("frame  owner  vpage  ref");
+  frame_rows(mem, 0)
+}
+
+pub fn run() -> . {
+  let pcb = proc.new_pcb(fixture.arrivals());
+  let programs = fixture.programs();
+  let mem = memory.new_mem();
+  let q = queue.new_queues();
+  banner();
+  blank();
+  fixture_table(pcb, programs);
+  blank();
+  line(text.cat3("-- trace (first ", text.num_text(config.trace_limit()), " ticks) --"));
+  trace.header();
+  let .(ticks: I32, idle: I32) = sched.simulate(pcb, mem, q, programs);
+  blank();
+  process_table(pcb);
+  blank();
+  totals(pcb, q, ticks, idle);
+  blank();
+  frame_table(mem)
+}

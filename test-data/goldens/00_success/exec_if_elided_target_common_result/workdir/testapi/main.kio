@@ -1,0 +1,82 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/io(print);
+
+labels Diverror = { div_by_zero: . };
+
+fn prefer_builder[A](preferred: A, _fallback: A) -> A { preferred }
+
+fn late_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
+  let build =
+    prefer_builder(
+      , .() {
+          if! is_error {
+            widen_sum!({div_by_zero=})
+          } else {
+            widen_sum!(value)
+          }
+        }
+      , .() -> I32 | Div_by_zero { widen_sum!(value) }
+      );
+  build()
+}
+
+fn late_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
+  let build =
+    prefer_builder(
+      , .() {
+          if! has_value {
+            widen_sum!(value)
+          } else {
+            widen_sum!({div_by_zero=})
+          }
+        }
+      , .() -> I32 | Div_by_zero { widen_sum!(value) }
+      );
+  build()
+}
+
+fn explicit_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
+  if! is_error {
+    widen_sum!({div_by_zero=})
+  } else {
+    widen_sum!(value)
+  }
+}
+
+fn explicit_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
+  if! has_value {
+    widen_sum!(value)
+  } else {
+    widen_sum!({div_by_zero=})
+  }
+}
+
+fn render(result: I32 | Div_by_zero) -> String {
+  match! result {
+    (.(_value: I32) { "value\n" }, .(_error: Div_by_zero) { "error\n" })
+  }
+}
+
+pub fn main() -> . {
+  print("explicit error first: ");
+  print(render(explicit_error_first(.t, 1)));
+  print("explicit error first: ");
+  print(render(explicit_error_first(.f, 2)));
+  print("explicit value first: ");
+  print(render(explicit_value_first(.t, 3)));
+  print("explicit value first: ");
+  print(render(explicit_value_first(.f, 4)));
+  print("late error first: ");
+  print(render(late_error_first(.t, 5)));
+  print("late error first: ");
+  print(render(late_error_first(.f, 6)));
+  print("late value first: ");
+  print(render(late_value_first(.t, 7)));
+  print("late value first: ");
+  print(render(late_value_first(.f, 8)))
+}

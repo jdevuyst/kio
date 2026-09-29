@@ -1,0 +1,13 @@
+module store;
+
+pub labels { foo: . };
+
+pub labels Later[A] = { foo: _, box[A]: A };
+
+pub labels Still[A] = { box[A]: _ };
+
+pub fn accept_foo(value: Foo) -> . { value.?{foo} }
+
+pub fn later_box[A](row: Later(A)) -> A { row.?{box} }
+
+pub fn still_box[A](row: Still(A)) -> A { row.?{box} }

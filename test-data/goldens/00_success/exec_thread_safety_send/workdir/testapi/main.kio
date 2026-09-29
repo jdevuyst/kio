@@ -1,0 +1,49 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Exercises the `thread_safety = "send"` build-block key. The emitted
+// crate uses the `Arc<dyn … + Send + Sync>` wrap shape — Rust's
+// `Arc<T>` is `Send` only when `T: Send + Sync`, so `send` realizes
+// the same shape as `send_sync` (see `specs/backends/rust.md`
+// § Output layout, thread safety). Two patterns drive the bound
+// propagation:
+//
+//   1. A polymorphic-newtype payload with an existential type-param
+//      (`boxed`), reached through the CPS-projector apply path — the
+//      sealed value flows through the package as an
+//      `Arc<dyn Any + Send + Sync>`.
+//   2. A rank-N value parameter (`Nat`, the Church-numeral encoding),
+//      whose binder erases to `Arc<dyn Any + Send + Sync>` and whose
+//      closure value is wrapped inline as `Arc::new(...)` at its
+//      construction site.
+//
+// Both reach a host function callback (`print` / `int_to_string` /
+// `add_i32`), so the bound propagation is meaningfully end-to-end.
+labels { boxed[A] <U> : A & U };
+
+fn box_value[A](v: A) -> Boxed(A) { Boxed.mk((v, v)) }
+
+fn extract_via_cps[T](b: Boxed(T)) -> T { Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) }) }
+
+type Nat = [A] ((A -> A) & A) -> A;
+
+fn zero() -> Nat { .[A](_f, x) { x } }
+
+fn succ(n: Nat) -> Nat { .[A](f, x) { f(n(f, x)) } }
+
+fn plus(m: Nat, n: Nat) -> Nat { .[A](f, x) { m(f, n(f, x)) } }
+
+fn to_int(n: Nat) -> I32 { n(.(x) { add_i32(x, 1(I32)) }, 0(I32)) }
+
+pub fn main() -> . {
+  let two = succ(succ(zero()));
+  let three = succ(succ(succ(zero())));
+  print(int_to_string(to_int(plus(two, three))));
+  print("\n"(String));
+  let b = box_value("thread-safety-send-ok\n");
+  print(extract_via_cps(b))
+}

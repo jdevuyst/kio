@@ -1,0 +1,15 @@
+module api;
+
+pub newtype Opaque[A][B] : A & B { constructor make; projector read }
+
+pub newtype Both[A][B] : A & B { pub constructor make; pub projector read }
+
+pub newtype Using[*F] : [A] F(A) -> F(A) { pub constructor make; pub projector read }
+
+host type Native[A][B];
+
+pub fn opaque[A][B](a: A, b: B) -> Opaque(A, B) { Opaque.make((a, b)) }
+
+pub fn partial() -> Using(Both(.)) { Using.make(.[A](x) { x }) }
+
+pub fn echo_native[A][B](x: Native(A, B)) -> Native(A, B) { x }

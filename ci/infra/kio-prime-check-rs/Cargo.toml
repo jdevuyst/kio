@@ -1,0 +1,17 @@
+[package]
+name = "kio-prime-check"
+version = "0.1.0"
+edition = "2024"
+description = "Syntactic verifier for Kio'. Private test artifact."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "kio-prime-check"
+path = "src/main.rs"
+
+[lib]
+name = "kio_prime_check"
+path = "src/lib.rs"
+
+[dependencies]

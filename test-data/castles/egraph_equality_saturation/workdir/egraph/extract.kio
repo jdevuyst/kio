@@ -1,0 +1,153 @@
+module egraph/extract;
+
+import egraph/graph as graph;
+import egraph/numbers as n;
+import elab/control(if);
+import elab/match(match);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as num;
+import testapi/array as arr;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub newtype Selection : Array(I32) & Array(I32) { constructor selection; projector fields }
+
+literal infinity = 100000;
+
+fn costs(s: Selection) -> Array(I32) { let .(values, _) = Selection.fields(s); values }
+
+fn choices(s: Selection) -> Array(I32) { let .(_, nodes) = Selection.fields(s); nodes }
+
+pub fn cost(g: graph.Graph, s: Selection, root: I32) -> I32 {
+  arr.array_get(costs(s), graph.find(g, root))
+}
+
+fn chosen(g: graph.Graph, s: Selection, root: I32) -> I32 {
+  arr.array_get(choices(s), graph.find(g, root))
+}
+
+fn binary_cost(g: graph.Graph, s: Selection, children: I32 & I32) -> I32 {
+  let .(a, b) = children;
+  let left = cost(g, s, a);
+  let right = cost(g, s, b);
+  if! n.both(n.less(left, infinity), n.less(right, infinity)) {
+    n.increment(num.add_i32(left, right))
+  } else {
+    infinity
+  }
+}
+
+fn node_cost(g: graph.Graph, s: Selection, node: graph.Node) -> I32 {
+  match! node {
+    .(value: graph.Addition) { binary_cost(g, s, value.?{graph.addition}) };
+    .(value: graph.Product) { binary_cost(g, s, value.?{graph.product}) };
+    .() { 1 }
+  }
+}
+
+rec(loop) fn relaxation_pass(g: graph.Graph, s: Selection, i: I32, improvements: I32) -> I32 {
+  if! n.equal(i, graph.size(g)) {
+    improvements
+  } else {
+    let candidate = node_cost(g, s, graph.node(g, i));
+    let root = graph.find(g, i);
+    let old = arr.array_get(costs(s), root);
+    if! n.less(candidate, old) {
+      arr.array_set(costs(s), root, candidate);
+      arr.array_set(choices(s), root, i);
+      rec relaxation_pass(g, s, n.increment(i), n.increment(improvements))
+    } else {
+      rec relaxation_pass(g, s, n.increment(i), improvements)
+    }
+  }
+}
+
+rec(loop) fn relax(g: graph.Graph, s: Selection) -> Selection {
+  if! n.equal(relaxation_pass(g, s, 0, 0), 0) {
+    s
+  } else {
+    rec relax(g, s)
+  }
+}
+
+pub fn select(g: graph.Graph) -> Selection {
+  relax(
+    , g
+    , Selection.selection(
+        , arr.array_make_filled(graph.size(g), infinity)
+        , arr.array_make_filled(graph.size(g), -1)
+        )
+    )
+}
+
+fn combine(left: String, op: String, right: String) -> String {
+  text.string_concat(
+    , "("
+    , text.string_concat(left, text.string_concat(op, text.string_concat(right, ")")))
+    )
+}
+
+pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
+  match! graph.node(g, chosen(g, s, root)) {
+    .(value: graph.Constant) { fmt.int_to_string(value.?{graph.constant}) };
+    .(value: graph.Variable) {
+      if! n.equal(value.?{graph.variable}, 0) {
+        "x"
+      } else {
+        "y"
+      }
+    };
+    .(value: graph.Addition) {
+      let .(a, b) = value.?{graph.addition};
+      combine(rec(cont) render(g, s, a), "+", rec(cont) render(g, s, b))
+    };
+    .(value: graph.Product) {
+      let .(a, b) = value.?{graph.product};
+      combine(rec(cont) render(g, s, a), "*", rec(cont) render(g, s, b))
+    }
+  }
+}
+
+pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I32) -> I32 {
+  match! graph.node(g, chosen(g, s, root)) {
+    .(value: graph.Constant) { value.?{graph.constant} };
+    .(value: graph.Variable) {
+      if! n.equal(value.?{graph.variable}, 0) {
+        x
+      } else {
+        y
+      }
+    };
+    .(value: graph.Addition) {
+      let .(a, b) = value.?{graph.addition};
+      num.add_i32(rec(cont) evaluate(g, s, a, x, y), rec(cont) evaluate(g, s, b, x, y))
+    };
+    .(value: graph.Product) {
+      let .(a, b) = value.?{graph.product};
+      num.mul_i32(rec(cont) evaluate(g, s, a, x, y), rec(cont) evaluate(g, s, b, x, y))
+    }
+  }
+}
+
+// Original fixture nodes retain their acyclic child IDs through class merges.
+pub rec(loop) fn source_value(g: graph.Graph, original: I32, x: I32, y: I32) -> I32 {
+  match! graph.node(g, original) {
+    .(value: graph.Constant) { value.?{graph.constant} };
+    .(value: graph.Variable) {
+      if! n.equal(value.?{graph.variable}, 0) {
+        x
+      } else {
+        y
+      }
+    };
+    .(value: graph.Addition) {
+      let .(a, b) = value.?{graph.addition};
+      num.add_i32(rec(cont) source_value(g, a, x, y), rec(cont) source_value(g, b, x, y))
+    };
+    .(value: graph.Product) {
+      let .(a, b) = value.?{graph.product};
+      num.mul_i32(rec(cont) source_value(g, a, x, y), rec(cont) source_value(g, b, x, y))
+    }
+  }
+}

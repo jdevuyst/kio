@@ -1,0 +1,77 @@
+/// The alphabet and the message being coded.
+///
+/// The message is the palindrome "a man a plan a canal panama" with the spaces
+/// dropped, one symbol code per letter. It is built word by word so the source
+/// still reads as the sentence it encodes. Its letter frequencies are what make
+/// the coder interesting: `l`, `m`, and `p` all occur twice, so the very first
+/// merge has to break a tie, and a later merge ties a leaf against an internal
+/// node of the same weight.
+module huffman/message;
+
+import elab/control(if);
+import huffman/list(List, append, fold, of1, of3, of4, of5, of6);
+import huffman/text(cat);
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32);
+
+/// Symbol codes are the alphabet's indices, assigned in glyph order. The
+/// tie-break rule reads a leaf's ordering key straight off this number, so the
+/// assignment is part of the coder's contract, not a display detail.
+fn code_a() -> I32 { 0 }
+
+fn code_c() -> I32 { 1 }
+
+fn code_l() -> I32 { 2 }
+
+fn code_m() -> I32 { 3 }
+
+fn code_n() -> I32 { 4 }
+
+fn code_p() -> I32 { 5 }
+
+pub fn alphabet_size() -> I32 { 6 }
+
+pub fn glyph(code: I32) -> String {
+  if! eq_i32(code, code_a()) {
+    "a"
+  } else if! eq_i32(code, code_c()) {
+    "c"
+  } else if! eq_i32(code, code_l()) {
+    "l"
+  } else if! eq_i32(code, code_m()) {
+    "m"
+  } else if! eq_i32(code, code_n()) {
+    "n"
+  } else if! eq_i32(code, code_p()) {
+    "p"
+  } else {
+    "?"
+  }
+}
+
+fn word_a() -> List(I32) { of1(code_a()) }
+
+fn word_man() -> List(I32) { of3(code_m(), code_a(), code_n()) }
+
+fn word_plan() -> List(I32) { of4(code_p(), code_l(), code_a(), code_n()) }
+
+fn word_canal() -> List(I32) { of5(code_c(), code_a(), code_n(), code_a(), code_l()) }
+
+fn word_panama() -> List(I32) { of6(code_p(), code_a(), code_n(), code_a(), code_m(), code_a()) }
+
+pub fn message() -> List(I32) {
+  append(
+    , word_a()
+    , append(
+        , word_man()
+        , append(
+            , word_a()
+            , append(word_plan(), append(word_a(), append(word_canal(), word_panama())))
+            )
+        )
+    )
+}
+
+pub fn message_text(symbols: List(I32)) -> String {
+  fold(symbols, .(acc: String, code: I32) { cat(acc, glyph(code)) }, "")
+}

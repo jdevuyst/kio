@@ -1,0 +1,5 @@
+module a;
+
+import b(y);
+
+pub fn x() -> . { () }

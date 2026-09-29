@@ -1,0 +1,10 @@
+add = 42
+sub = 42
+mul = 42
+div = 14
+mod = 1
+leq(3,4) = yes
+leq(4,3) = no
+lt(3,3) = no
+streq("ab","ab") = yes
+streq("ab","ba") = no

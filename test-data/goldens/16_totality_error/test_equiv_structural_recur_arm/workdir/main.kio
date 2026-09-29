@@ -1,0 +1,24 @@
+module main;
+
+import __comptime__;
+import elab/control(scope);
+
+pure fn run(ct: __Comptime__, k: . -> .) -> . {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , .
+    , .
+    , __type_unit__(ct)
+    , ()
+    , .(_recur: (__Type__ & .) -> ., _fuel: __Type__, _input: .) -> . { k(()) }
+    )
+}
+
+equiv discarded_totality(ct: __Comptime__) {
+  scope! {
+    let ignored = run(ct, .(_outer: .) -> . { run(ct, .(_inner: .) -> . { () }) });
+    ()
+  };
+  ()
+}

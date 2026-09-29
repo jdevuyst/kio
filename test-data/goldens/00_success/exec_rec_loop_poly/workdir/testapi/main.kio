@@ -1,0 +1,40 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+pub rec(loop) fn countdown[A](n: I32, marker: A) -> I32 {
+  if! leq_i32(n, 0) {
+    n
+  } else {
+    rec(poly) countdown(String, sub_i32(n, 1), "step")
+  }
+}
+
+rec(loop) {
+  pub fn even[A](n: I32, marker: A) -> I32 {
+    if! leq_i32(n, 0) {
+      n
+    } else {
+      rec(poly) odd(String, sub_i32(n, 1), "odd")
+    }
+  };
+  fn odd[A](n: I32, marker: A) -> I32 {
+    if! leq_i32(n, 0) {
+      n
+    } else {
+      rec(poly) even(I32, sub_i32(n, 1), 0)
+    }
+  }
+}
+
+pub fn main() -> . {
+  print(i32_to_string(countdown(I32, 3, 0)));
+  print(",");
+  print(i32_to_string(even(I32, 4, 0)));
+  print("\n")
+}

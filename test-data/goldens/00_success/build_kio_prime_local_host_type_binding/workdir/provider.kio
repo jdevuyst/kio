@@ -1,0 +1,5 @@
+module provider;
+
+pub type Alias = .;
+
+pub newtype Shared : . { pub constructor mk_shared; pub projector un_shared }

@@ -1,0 +1,5 @@
+module mid;
+
+import cap(tick);
+
+pub fn pass() -> . { tick() }

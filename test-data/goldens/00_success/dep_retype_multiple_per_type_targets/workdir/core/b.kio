@@ -1,0 +1,3 @@
+module core/b;
+
+pub newtype B : . { pub constructor mk_b; pub projector un_b }

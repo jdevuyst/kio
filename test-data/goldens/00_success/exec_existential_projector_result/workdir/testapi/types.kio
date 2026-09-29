@@ -1,0 +1,3 @@
+module testapi/types;
+
+pub newtype Pack[A] <U> : A & U { pub constructor pack; pub projector unpack }

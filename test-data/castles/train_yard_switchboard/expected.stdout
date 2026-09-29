@@ -1,0 +1,6 @@
+train yard switchboard
+tracks=5
+before=A1|B7|empty|C3|hold
+after=empty|B7|A1|C3|D9
+occupied=4
+safe=true

@@ -1,0 +1,7 @@
+module main;
+
+fn identity[A](value: A) -> A { value }
+
+pub fn through_local() -> . -> [A] A -> A { let wrapper = .(_unit: .) { identity }; wrapper }
+
+pub fn through_direct_callee() -> [A] A -> A { .(_unit: .) { identity }(()) }

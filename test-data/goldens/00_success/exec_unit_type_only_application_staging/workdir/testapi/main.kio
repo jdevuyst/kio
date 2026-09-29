@@ -1,0 +1,23 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn mark(message: String) -> . { print(message) }
+
+fn marked[A](message: String, value: A) -> A { mark(message); value }
+
+fn stage(_unit: .)[A] -> A -> A {
+  mark("type tick\n"(String));
+  mark("middle tick\n"(String));
+  .(value: A) -> A { value }
+}
+
+fn identity[A](value: A) -> A { value }
+
+pub fn main() -> . {
+  let .(staged: . -> .) = stage()(_);
+  let staged_value = staged(marked("value\n"(String), ()));
+  let explicit_unit = identity(.)(marked("explicit unit value\n"(String), ()));
+  ()
+}

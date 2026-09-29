@@ -1,0 +1,7 @@
+module op_decl_with_hash_run;
+
+op _ ## _ { impl review; };
+
+op _ ### _ { impl apply; };
+
+op _ #+# _ { impl merge; };

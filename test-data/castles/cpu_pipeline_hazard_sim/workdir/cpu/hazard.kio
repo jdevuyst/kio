@@ -1,0 +1,163 @@
+/// The hazard unit and the forwarding network -- the two halves of the
+/// same question, asked one stage apart.
+///
+/// The register file is written in the first half of a WB cycle and read
+/// in the second half of an ID cycle, so an instruction that reaches WB
+/// has already landed as far as the instruction in ID is concerned. What
+/// has *not* landed is the pair still in flight. When the instruction now
+/// in ID reaches EX next cycle, the instruction now in EX will be in MEM
+/// (its result sitting in the EX/MEM latch) and the instruction now in
+/// MEM will be in WB (its result sitting in the MEM/WB latch). Those two
+/// latches are exactly the two bypass paths, and that is why the hazard
+/// unit scans EX and MEM and nothing else.
+///
+/// So with forwarding on, every RAW dependence is covered -- except one.
+/// A LOAD in EX has not touched the memory port yet; its data arrives at
+/// the end of *next* cycle, one cycle after the EX/MEM latch is read.
+/// No bypass can carry a value backwards in time, so the consumer stalls
+/// for exactly one cycle, after which the LOAD is in MEM and the ordinary
+/// MEM/WB path covers it.
+///
+/// With forwarding off there are no latches to read from, so the consumer
+/// waits until its producer has left MEM and written the file: two cycles
+/// for a back-to-back dependence, one for a dependence at distance two,
+/// and none beyond that.
+module cpu/hazard;
+
+import cpu/isa(Instr, dest_of, is_load, reads_reg, writes_reg);
+import cpu/machine(
+  , {ex_mem}
+  , {forwarding}
+  , {mem_wb}
+  , {prog}
+  , {regs}
+  , {st_ex}
+  , {st_id}
+  , {st_mem}
+  , {st_wb}
+  );
+import cpu/machine(Cpu, Machine, stage_empty);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32);
+import testapi/array(array_get);
+
+/// Where an operand value actually came from, which is the same thing as
+/// which wire the EX stage's operand mux selected.
+labels Operand = { from_reg: I32 } | { from_ex_mem: I32 } | { from_mem_wb: I32 };
+
+/// One operand read, with the bypass path it used charged to a counter.
+pub labels Read = { value: I32, hit_ex_mem: I32, hit_mem_wb: I32 };
+
+/// What the hazard unit decided about the instruction sitting in ID.
+/// The stalling arms carry the register that is not ready, which is what
+/// makes the pipeline diagram's event column checkable by hand.
+pub labels Verdict = { proceed: . } | { raw_stall: I32 } | { load_use_stall: I32 };
+
+fn proceed() -> Verdict { {proceed=}.>widen_sum!(Verdict) }
+
+fn raw_stall(r: I32) -> Verdict { {raw_stall = r}.>widen_sum!(Verdict) }
+
+fn load_use_stall(r: I32) -> Verdict { {load_use_stall = r}.>widen_sum!(Verdict) }
+
+fn reading(v: I32, ex_hit: I32, mem_hit: I32) -> Read {
+  {value = v, hit_ex_mem = ex_hit, hit_mem_wb = mem_hit}
+}
+
+/// Does the instruction in `slot` write `r`? An empty stage writes
+/// nothing, and the guard has to be an `if` rather than an `and`: a call
+/// evaluates both its arguments, and indexing the code array with an
+/// empty stage's negative slot would fault.
+fn produces(code: Array(Instr), slot: I32, r: I32) -> Bool {
+  if! stage_empty(slot) {
+    .f
+  } else {
+    writes_reg(array_get(code, slot), r)
+  }
+}
+
+fn select(cpu: Cpu, m: Machine, r: I32) -> Operand {
+  let code = cpu.?{prog};
+  if! cpu.?{forwarding} {
+    if! produces(code, m.?{st_mem}, r) {
+      {from_ex_mem = m.?{ex_mem}}.>widen_sum!(Operand)
+    } else if! produces(code, m.?{st_wb}, r) {
+      {from_mem_wb = m.?{mem_wb}}.>widen_sum!(Operand)
+    } else {
+      {from_reg = array_get(cpu.?{regs}, r)}.>widen_sum!(Operand)
+    }
+  } else {
+    {from_reg = array_get(cpu.?{regs}, r)}.>widen_sum!(Operand)
+  }
+}
+
+/// Read one source register for the instruction now in EX. MEM wins over
+/// WB when both wrote the register: it is the more recent write, and the
+/// older one is what the register file would have handed back.
+///
+/// With forwarding off there is nothing to select and the file is read
+/// directly -- correctly, because the hazard unit has already held the
+/// instruction in ID until no producer of its sources was left in EX or
+/// MEM, which is precisely the condition under which the file is current.
+pub fn read_source(cpu: Cpu, m: Machine, r: I32) -> Read {
+  match! select(cpu, m, r) {
+    (
+      , .(direct: From_reg) { reading(direct.?{from_reg}, 0, 0) }
+      , .(bypass: From_ex_mem) { reading(bypass.?{from_ex_mem}, 1, 0) }
+      , .(late: From_mem_wb) { reading(late.?{from_mem_wb}, 0, 1) }
+      )
+  }
+}
+
+/// The register a producer in `slot` still owes `consumer`, if any.
+fn owed(code: Array(Instr), consumer: Instr, slot: I32) -> I32 | . {
+  if! stage_empty(slot) {
+    widen_sum!((), I32 | .)
+  } else match! dest_of(array_get(code, slot)) {
+    (
+      , .(d: I32) {
+          if! reads_reg(consumer, d) {
+            widen_sum!(d, I32 | .)
+          } else {
+            widen_sum!((), I32 | .)
+          }
+        }
+      , .(_writes_nothing: .) { widen_sum!((), I32 | .) }
+      )
+  }
+}
+
+pub fn hazard(cpu: Cpu, m: Machine) -> Verdict {
+  let code = cpu.?{prog};
+  let waiting = m.?{st_id};
+  if! stage_empty(waiting) {
+    proceed()
+  } else {
+    let consumer = array_get(code, waiting);
+    let from_ex = owed(code, consumer, m.?{st_ex});
+    if! cpu.?{forwarding} {
+      match! from_ex {
+        (
+          , .(r: I32) {
+              if! is_load(array_get(code, m.?{st_ex})) {
+                load_use_stall(r)
+              } else {
+                proceed()
+              }
+            }
+          , .(_clear: .) { proceed() }
+          )
+      }
+    } else match! from_ex {
+      (
+        , .(r: I32) { raw_stall(r) }
+        , .(_clear: .) {
+            match! owed(code, consumer, m.?{st_mem}) {
+              (.(r: I32) { raw_stall(r) }, .(_also_clear: .) { proceed() })
+            }
+          }
+        )
+    }
+  }
+}

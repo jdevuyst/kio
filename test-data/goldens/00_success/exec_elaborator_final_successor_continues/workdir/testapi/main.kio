@@ -1,0 +1,9 @@
+module testapi/main;
+
+import elaborators(finish, infer_unit);
+import testapi(String);
+import testapi/io(print);
+
+fn line(_value: .) -> String { "continued\n" }
+
+pub fn main() -> . { print(line(finish!(infer_unit!(), .))) }

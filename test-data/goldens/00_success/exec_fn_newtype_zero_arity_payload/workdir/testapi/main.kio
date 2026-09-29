@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A zero-arity function-typed newtype payload — the "lazy thunk"
+// pattern. The newtype's projector returns a closure with the same
+// shape as the stored fn: `. -> I32`, callable with no args.
+newtype Lazy : . -> I32 { pub constructor mk_lazy; pub projector force }
+
+fn lazy42() -> Lazy { Lazy.mk_lazy(.() { 42(I32) }) }
+
+pub fn main() -> . { let l = lazy42(); print(int_to_string(Lazy.force(l)())) }

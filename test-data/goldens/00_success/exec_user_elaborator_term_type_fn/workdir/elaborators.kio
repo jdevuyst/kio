@@ -1,0 +1,28 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn polymorphic_unit_impl(ct: __Comptime__, _result: __Type__) -> __Checked_term__ {
+  __term_type_fn__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(_type: __Type_var__) -> __Checked_term__ { __term_unit__(ct) }
+    )
+}
+
+pure fn projected_polymorphic_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let arity = __type_arity_zero__(ct);
+  let result_type = __type_forall__(ct, arity, .(_type: __Type_var__) -> __Type__ { source });
+  let result = __term_type_fn__(ct, arity, .(_type: __Type_var__) -> __Checked_term__ { value });
+  (result, __fill__(ct, fills, target, result_type))
+}
+
+pub elab polymorphic_unit : [Result] . -> Result { impl polymorphic_unit_impl }
+
+pub elab projected_polymorphic : [Source] Source -> [Target] Target { impl(fills) projected_polymorphic_impl }

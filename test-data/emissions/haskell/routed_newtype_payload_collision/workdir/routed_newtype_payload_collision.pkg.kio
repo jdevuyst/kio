@@ -1,0 +1,19 @@
+package routed_newtype_payload_collision;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "BuildHaskellRoutedNewtypePayloadCollision"
+  }
+}
+
+bridge {
+  actual;
+  consumer;
+  domain;
+  list/core;
+  list/list;
+  wrong
+}

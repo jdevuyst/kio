@@ -1,0 +1,4 @@
+# The default `kio test` run reports the skipped dependency equiv block
+# on stderr (the machine-checked stdout stays the consumer's own blocks).
+# The `--include-deps` run that follows emits no note.
+^note: 1 equiv block in dependency modules skipped; pass --include-deps to include$

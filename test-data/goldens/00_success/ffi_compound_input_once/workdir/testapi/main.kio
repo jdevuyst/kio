@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String, produce);
+
+pub newtype Inner : I32 & I32 { pub constructor inner; pub projector un_inner }
+
+pub newtype Outer : String & Inner { pub constructor outer; pub projector un_outer }
+
+pub newtype Choice : I32 | Inner | Outer { pub constructor choice; pub projector un_choice }
+
+pub fn direct() -> I32 & String { produce() }
+
+pub fn callback(f: . -> I32 & String) -> I32 & String { f() }
+
+pub fn echo_outer(value: Outer) -> Outer { value }
+
+pub fn echo_choice(value: Choice) -> Choice { value }
+
+pub fn echo_text(value: String) -> String { value }
+
+pub fn make_outer(text: String, left: I32, right: I32) -> Outer {
+  Outer.outer((text, Inner.inner((left, right))))
+}
+
+pub fn first(value: I32) -> Choice { Choice.choice(widen_sum!(value, I32 | Inner | Outer)) }
+
+pub fn middle(left: I32, right: I32) -> Choice {
+  Choice.choice(widen_sum!(Inner.inner((left, right)), I32 | Inner | Outer))
+}
+
+pub fn last(text: String, left: I32, right: I32) -> Choice {
+  Choice.choice(widen_sum!(make_outer(text, left, right), I32 | Inner | Outer))
+}

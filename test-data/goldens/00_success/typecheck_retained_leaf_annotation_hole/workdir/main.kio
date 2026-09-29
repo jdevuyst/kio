@@ -1,0 +1,5 @@
+module main;
+
+host fn apply[A][B](f: A -> B, value: A) -> B;
+
+fn open() -> . { apply(.(payload: .) { let .(whole: _) = payload; () }, ()) }

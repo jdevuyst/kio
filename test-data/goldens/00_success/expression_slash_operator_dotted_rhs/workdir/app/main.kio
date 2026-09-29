@@ -1,0 +1,8 @@
+module app/main;
+
+import app/syntax(op _ / _);
+import app/value as value;
+
+fn left() -> . { () }
+
+pub fn run() -> . -> . { left / value.item }

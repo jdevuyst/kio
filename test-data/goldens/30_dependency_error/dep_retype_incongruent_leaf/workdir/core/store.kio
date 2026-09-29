@@ -1,0 +1,5 @@
+module core/store;
+
+pub newtype Inner : . { pub constructor mk_i; pub projector un_i }
+
+pub newtype Wrap : Inner { pub constructor mk; pub projector un }

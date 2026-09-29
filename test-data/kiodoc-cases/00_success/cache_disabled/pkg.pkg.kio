@@ -1,0 +1,13 @@
+package pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  };
+
+  target js {
+    out "out/js/"
+  }
+}

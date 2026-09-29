@@ -1,0 +1,24 @@
+{
+  "name": "tree-sitter-kio",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "description": "Tree-sitter grammar for Kio",
+  "main": "bindings/node",
+  "keywords": ["parser", "tree-sitter", "kio"],
+  "files": [
+    "grammar.js",
+    "src/parser.c",
+    "src/scanner.c",
+    "src/node-types.json",
+    "src/tree_sitter/parser.h",
+    "queries/highlights.scm",
+    "tree-sitter.json"
+  ],
+  "tree-sitter": [
+    {
+      "scope": "source.kio",
+      "file-types": ["kio"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ]
+}

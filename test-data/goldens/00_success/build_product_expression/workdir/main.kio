@@ -1,0 +1,5 @@
+module main;
+
+host type Str role(str);
+
+pub fn pair(s: Str) -> Str & Str { (s, s) }

@@ -1,0 +1,7 @@
+module store;
+
+pub rec labels Mixed[A] = { foo[A]: (Foo(A) -> A) -> A, peer[A]: (Peer(A) -> A) -> A };
+
+pub fn mixed_peer[A](row: Mixed(A), next: Peer(A) -> A) -> A { row.?{peer}(next) }
+
+pub fn read_foo[A](value: Foo(A), next: Foo(A) -> A) -> A { value.?{foo}(next) }

@@ -1,0 +1,71 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(one_prod);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+pub rec(loop) fn fact(n: I32) -> I32 {
+  if! leq_i32(n, 1) {
+    1
+  } else {
+    mul_i32(n, rec(cont) fact(sub_i32(n, 1)))
+  }
+}
+
+rec(loop) {
+  pub fn even_steps(n: I32) -> I32 {
+    if! leq_i32(n, 0) {
+      0
+    } else {
+      add_i32(1, rec(cont) odd_steps(sub_i32(n, 1)))
+    }
+  };
+  fn odd_steps(n: I32) -> I32 {
+    if! leq_i32(n, 0) {
+      0
+    } else {
+      add_i32(1, rec(cont) even_steps(sub_i32(n, 1)))
+    }
+  }
+}
+
+pub rec(loop) fn poly_steps[A](n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    0
+  } else {
+    add_i32(1, rec(poly, cont) poly_steps(String, sub_i32(n, 1)))
+  }
+}
+
+pub rec(loop) fn elaborator_steps(n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    0
+  } else {
+    add_i32(1, one_prod!((rec(cont) elaborator_steps(sub_i32(n, 1)), 0(I32)), I32))
+  }
+}
+
+pub rec(loop) fn elaborator_ufcs_steps(n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    0
+  } else {
+    add_i32(1, (rec(cont) elaborator_ufcs_steps(sub_i32(n, 1)), 0(I32)).>one_prod!(I32))
+  }
+}
+
+pub fn main() -> . {
+  print(i32_to_string(fact(5)));
+  print(",");
+  print(i32_to_string(even_steps(3)));
+  print(",");
+  print(i32_to_string(poly_steps(I32, 4)));
+  print(",");
+  print(i32_to_string(elaborator_steps(2)));
+  print(",");
+  print(i32_to_string(elaborator_ufcs_steps(2)));
+  print("\n")
+}

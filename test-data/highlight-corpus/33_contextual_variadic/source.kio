@@ -1,0 +1,16 @@
+module variadic/context;
+
+fn fold(value: .) -> . { value }
+fn variadic(value: .) -> . { value }
+fn foldr(value: .) -> . { value }
+
+fn uses() -> . {
+  let bare = variadic;
+  let qualified = helper.variadic;
+  variadic(());
+  helper.variadic(())
+}
+
+varop [* *] { foldr helper.fold variadic; };
+// varop [! !] { foldr fold variadic; };
+varop [! !] { foldr helper.fold variadic; };

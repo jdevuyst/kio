@@ -1,0 +1,102 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(
+  , array_clone
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_push
+  , array_set
+  , array_swap
+  );
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn readings() -> Array(I32) {
+  let values = array_make_empty(I32, ());
+  array_push(values, 72);
+  array_push(values, 68);
+  array_push(values, 91);
+  array_push(values, 55);
+  array_push(values, 88);
+  values
+}
+
+fn thresholds() -> Array(I32) {
+  let values = array_make_empty(I32, ());
+  array_push(values, 70);
+  array_push(values, 70);
+  array_push(values, 90);
+  array_push(values, 60);
+  array_push(values, 80);
+  values
+}
+
+rec(loop) fn mark(
+  , reads: Array(I32)
+  , limits: Array(I32)
+  , flags: Array(Bool)
+  , index: I32
+  , last: I32
+  , count: I32
+  ) -> I32 {
+  if! leq_i32(index, last) {
+    let ok = leq_i32(array_get(limits, index), array_get(reads, index));
+    array_set(flags, index, ok);
+    if! ok {
+      rec mark(reads, limits, flags, add_i32(index, 1), last, add_i32(count, 1))
+    } else {
+      rec mark(reads, limits, flags, add_i32(index, 1), last, count)
+    }
+  } else {
+    count
+  }
+}
+
+fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+fn row(reads: Array(I32), limits: Array(I32), flags: Array(Bool), index: I32) -> String {
+  cat3(
+    , "sensor "
+    , int_to_string(index)
+    , cat3(
+        , " reading="
+        , int_to_string(array_get(reads, index))
+        , cat3(
+            , " threshold="
+            , int_to_string(array_get(limits, index))
+            , cat3(" pass=", bool_to_string(array_get(flags, index)), "\n")
+            )
+        )
+    )
+}
+
+pub fn main() -> . {
+  let reads = readings();
+  let limits = thresholds();
+  let flags = array_make_filled(array_len(reads), .f);
+  let count = mark(reads, limits, flags, 0, 4, 0);
+  let swapped = array_clone(flags);
+  array_swap(swapped, 0, 4);
+  print("sensor quorum array\n");
+  print(cat3("sensors=", int_to_string(array_len(reads)), "\n"));
+  print(cat3("pass-count=", int_to_string(count), "\n"));
+  print(row(reads, limits, flags, 0));
+  print(row(reads, limits, flags, 1));
+  print(row(reads, limits, flags, 2));
+  print(row(reads, limits, flags, 3));
+  print(row(reads, limits, flags, 4));
+  print(cat3(
+    , "swap-check first="
+    , bool_to_string(array_get(swapped, 0))
+    , cat3(" middle=", bool_to_string(array_get(swapped, 2)), "\n")
+    ))
+}

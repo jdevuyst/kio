@@ -1,0 +1,18 @@
+module litexp/main;
+
+import litexp(I32, I64);
+
+// Tier 2 via function-return type: `7` is checked against the
+// declared return type `I32`.
+fn ret_i32() -> I32 { 7 }
+
+// The same literal shape resolves to a *different* type in a
+// different position — `7` here is pinned to `I64` by the return
+// type, not by anything intrinsic to the literal.
+fn ret_i64() -> I64 { 7 }
+
+// Tier 2 via call-argument / parameter type: the bare `5` is
+// checked against `takes_i32`'s parameter type `I32`.
+fn takes_i32(n: I32) -> I32 { n }
+
+fn call_arg() -> I32 { takes_i32(5) }

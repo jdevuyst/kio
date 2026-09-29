@@ -1,0 +1,13 @@
+package facade_nested_curried_roundtrip;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

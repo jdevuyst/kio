@@ -1,0 +1,9 @@
+module store;
+
+host type I32 role(i32);
+
+pub newtype Dict : [A] A -> A { pub constructor mk; pub projector un }
+
+pub fn poly_id[A](x: A) -> A { x }
+
+pub fn relay_dict() -> Dict { Dict.mk(poly_id) }

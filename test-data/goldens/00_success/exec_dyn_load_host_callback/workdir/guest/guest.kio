@@ -1,0 +1,7 @@
+module guest;
+
+import hostapi(I32);
+
+pub fn apply_cb(f: I32 -> I32, x: I32) -> I32 { f(x) }
+
+pub fn twice(f: I32 -> I32, x: I32) -> I32 { f(f(x)) }

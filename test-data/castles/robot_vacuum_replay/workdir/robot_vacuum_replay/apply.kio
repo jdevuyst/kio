@@ -1,0 +1,44 @@
+module robot_vacuum_replay/apply;
+
+import elab/match(match);
+import robot_vacuum_replay/command(
+  , Charge_cmd
+  , Clean_cmd
+  , Command
+  , Dock_cmd
+  , Left_cmd
+  , Pause_cmd
+  , Right_cmd
+  , Start_cmd
+  , Step_cmd
+  , Unknown_cmd
+  , {charge_cmd}
+  );
+import robot_vacuum_replay/model(
+  , Vacuum
+  , apply_charge
+  , apply_clean
+  , apply_dock
+  , apply_left
+  , apply_pause
+  , apply_right
+  , apply_start
+  , apply_step
+  , apply_unknown
+  );
+
+pub fn apply_command(state: Vacuum, cmd: Command) -> Vacuum {
+  match! cmd {
+    (
+      , .(_cmd: Start_cmd) { apply_start(state) }
+      , .(_cmd: Pause_cmd) { apply_pause(state) }
+      , .(_cmd: Left_cmd) { apply_left(state) }
+      , .(_cmd: Right_cmd) { apply_right(state) }
+      , .(_cmd: Step_cmd) { apply_step(state) }
+      , .(_cmd: Clean_cmd) { apply_clean(state) }
+      , .(_cmd: Dock_cmd) { apply_dock(state) }
+      , .(charge: Charge_cmd) { apply_charge(state, charge.?{charge_cmd}) }
+      , .(_unknown: Unknown_cmd) { apply_unknown(state) }
+      )
+  }
+}

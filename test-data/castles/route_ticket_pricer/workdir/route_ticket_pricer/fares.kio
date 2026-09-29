@@ -1,0 +1,27 @@
+module route_ticket_pricer/fares;
+
+import testapi(I64);
+import testapi/arith(add_i64);
+
+fn local_distance_cents() -> I64 { add_i64(185, 245) }
+
+fn airport_distance_cents() -> I64 { add_i64(add_i64(420, 310), 155) }
+
+fn harbor_distance_cents() -> I64 { add_i64(800, 640) }
+
+fn night_distance_cents() -> I64 { add_i64(175, 190) }
+
+pub fn local_connector_fare() -> I64 { add_i64(local_distance_cents(), 60) }
+
+pub fn airport_express_fare() -> I64 { add_i64(airport_distance_cents(), 75) }
+
+pub fn harbor_freight_fare() -> I64 { add_i64(harbor_distance_cents(), 120) }
+
+pub fn night_bus_fare() -> I64 { add_i64(night_distance_cents(), 40) }
+
+pub fn route_fare_total() -> I64 {
+  add_i64(
+    , add_i64(local_connector_fare(), airport_express_fare())
+    , add_i64(harbor_freight_fare(), night_bus_fare())
+    )
+}

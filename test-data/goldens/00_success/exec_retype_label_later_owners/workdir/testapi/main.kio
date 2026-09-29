@@ -1,0 +1,19 @@
+module testapi/main;
+
+import core/store as target;
+import testapi(String);
+import testapi/io(print);
+import widget/store as source;
+
+pub fn main() -> . {
+  target.accept_foo({source.foo=});
+  print("terminal-identity\n");
+  source.accept_foo(target.Foo.mk(()));
+  target.Foo.mk(()).?{source.foo};
+  print("original-constructor\n");
+  print(source.later_box(({source.foo=}, {source.box = "later-mixed\n"})));
+  print(source.still_box(source.Box.mk("unselected-origin\n")));
+  source.later_box(({source.foo=}, {source.box=}));
+  source.still_box({source.box=});
+  print("generic-unit\n")
+}

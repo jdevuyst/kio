@@ -1,0 +1,2 @@
+input.kio:6:1: invalid fence attribute list in doc-comment: the harness reference must be a fence's first attribute — move it before the others
+input.md:22:1: invalid fence attribute list: the harness reference must be a fence's first attribute — move it before the others

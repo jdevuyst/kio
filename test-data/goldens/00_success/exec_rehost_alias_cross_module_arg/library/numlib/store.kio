@@ -1,0 +1,5 @@
+module store;
+
+host type I32 role(i32);
+
+pub fn relay(p: I32) -> I32 { p }

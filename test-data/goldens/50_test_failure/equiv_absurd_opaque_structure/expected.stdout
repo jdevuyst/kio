@@ -1,0 +1,6 @@
+  pass equiv `same_absurd_source` in host/m
+  fail equiv `different_absurd_source` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): __absurd__(never_a(__param_x__))
+    group B (arms 2): __absurd__(never_b(__param_x__))
+
+result: 1/2 equiv block failed

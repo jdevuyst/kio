@@ -1,0 +1,10 @@
+module testapi/main;
+
+import testapi(Box, I32);
+import testapi/arith(box_get, box_make);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+fn unbox(get: [A] Box(A) -> A, boxed: Box(I32)) -> I32 { get(boxed) }
+
+pub fn main() -> . { let boxed = box_make(42); print(i32_to_string(unbox(box_get, boxed))) }

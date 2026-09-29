@@ -1,0 +1,11 @@
+module testapi/main;
+
+import testapi as t;
+
+pub fn echo_i128(value: t.I128) -> t.I128 { value }
+
+pub fn echo_u128(value: t.U128) -> t.U128 { value }
+
+pub fn echo_f32(value: t.F32) -> t.F32 { value }
+
+pub fn echo_f64(value: t.F64) -> t.F64 { value }

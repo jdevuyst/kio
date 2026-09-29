@@ -1,0 +1,14 @@
+package wrapped_guest;
+
+build {
+  cache "out/.kio-cache/";
+
+  target kio-prime {
+    out "out/kio-prime"
+  }
+}
+
+bridge {
+  guest;
+  hostapi
+}

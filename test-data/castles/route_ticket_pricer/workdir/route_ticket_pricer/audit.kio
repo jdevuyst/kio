@@ -1,0 +1,23 @@
+module route_ticket_pricer/audit;
+
+import testapi(I128);
+import testapi/arith(add_i128);
+
+pub fn gross_audit_total() -> I128 {
+  add_i128(add_i128(600000000000000000000, 720000000000000000000), 756000000000000000000)
+}
+
+pub fn tax_audit_total() -> I128 {
+  add_i128(add_i128(49500000000000000000, 59400000000000000000), 62370000000000000000)
+}
+
+pub fn checksum_total() -> I128 {
+  add_i128(
+    , add_i128(490000000000000000415, 960000000000000000867)
+    , add_i128(1560000000000000001234, 405000000000000000392)
+    )
+}
+
+pub fn grand_audit_total() -> I128 {
+  add_i128(gross_audit_total(), add_i128(tax_audit_total(), checksum_total()))
+}

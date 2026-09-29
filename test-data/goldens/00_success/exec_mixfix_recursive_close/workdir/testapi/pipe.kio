@@ -1,0 +1,8 @@
+module testapi/pipe;
+
+import testapi as host;
+import testapi/arith as arith;
+
+pub fn combine(left: host.I32, right: host.I32) -> host.I32 { arith.add_i32(left, right) }
+
+pub op _ |> _ { impl combine }

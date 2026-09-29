@@ -1,0 +1,64 @@
+module catalog/ledger;
+
+import catalog/domain as dom;
+import catalog/domain(Call_list, Failure, Member, Member_index);
+import catalog/domain(fine_rate);
+import catalog/domain({fines}, {held});
+import dict/dict as dict;
+import elab/control(if);
+import elab/match(match);
+import list/list as list;
+import result/result as result;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, mul_i32);
+
+pub type Member_result = result.Result(Member, Failure);
+
+pub fn find(members: Member_index, id: I32) -> Member_result {
+  let .(missing: Member_result) = result.err(dom.fail_unknown_member(id));
+  match! dict.get(dom.cmp_i32, members, id) {
+    (.(who: Member) { result.ok(who) }, .(_absent: .) { missing })
+  }
+}
+
+pub fn holds_copy(who: Member, call: I32) -> Bool { list.elem(dom.eq_pair, call, who.?{held}) }
+
+pub fn borrow(who: Member, call: I32) -> Member {
+  let .(holding: Call_list) = list.prepend(call, who.?{held});
+  who.!{held = holding}
+}
+
+pub fn give_back(who: Member, call: I32, days_late: I32) -> Member {
+  let .(holding: Call_list) =
+    list.filter(
+      , .(other: I32) {
+          if! eq_i32(other, call) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , who.?{held}
+      );
+  let .(owed: I32) = add_i32(who.?{fines}, mul_i32(days_late, fine_rate));
+  who.!{fines = owed, held = holding}
+}
+
+pub fn save(members: Member_index, id: I32, who: Member) -> Member_index {
+  dict.insert(dom.cmp_i32, members, id, who)
+}
+
+pub fn held_count(who: Member) -> I32 { list.length(who.?{held}) }
+
+pub fn member_count(members: Member_index) -> I32 { dict.size(members) }
+
+pub fn total_fines(members: Member_index) -> I32 {
+  dict.fold_asc(
+    , members
+    , 0
+    , .(step: I32 & I32 & Member) {
+        let .(running: I32, _id: I32, who: Member) = step;
+        add_i32(running, who.?{fines})
+      }
+    )
+}

@@ -1,0 +1,11 @@
+module main;
+
+host type I32;
+
+host type Marker;
+
+host fn make_wrapped[A]() -> A & Marker;
+
+fn same[T](_left: T, _right: T) -> . { () }
+
+fn witness(later: I32 & Marker) -> . { same(make_wrapped(), later) }

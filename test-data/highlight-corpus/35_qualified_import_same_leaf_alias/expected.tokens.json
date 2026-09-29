@@ -1,0 +1,12 @@
+[
+  {"start": 0, "end": 6, "kind": "keyword.declaration"},
+  {"start": 7, "end": 15, "kind": "entity.name.module"},
+  {"start": 15, "end": 16, "kind": "punctuation.separator"},
+  {"start": 18, "end": 24, "kind": "keyword.declaration"},
+  {"start": 25, "end": 28, "kind": "entity.name.module"},
+  {"start": 28, "end": 29, "kind": "operator.user"},
+  {"start": 29, "end": 34, "kind": "entity.name.module"},
+  {"start": 35, "end": 37, "kind": "keyword.declaration"},
+  {"start": 38, "end": 43, "kind": "entity.name.module"},
+  {"start": 43, "end": 44, "kind": "punctuation.separator"}
+]

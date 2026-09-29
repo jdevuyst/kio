@@ -1,0 +1,14 @@
+module main;
+
+import provider as p;
+import provider(Provider_value, provider_identity);
+
+host type Local_value;
+
+host fn local_identity(value: Local_value) -> Local_value;
+
+fn local(value: Local_value) -> Local_value { local_identity(value) }
+
+fn selective(value: Provider_value) -> Provider_value { provider_identity(value) }
+
+fn qualified(value: p.Provider_value) -> p.Provider_value { p.provider_identity(value) }

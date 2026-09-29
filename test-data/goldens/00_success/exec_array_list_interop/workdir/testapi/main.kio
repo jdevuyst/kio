@@ -1,0 +1,126 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_pop_back, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Cons-list of `A`. Same shape as `exec_operators_cons_list`.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Convert a `List(A)` into a freshly-allocated `Array(A)` by
+// walking the list head-to-tail and pushing each element. State
+// is the remaining list; `arr` is captured. Exit value is `()`.
+fn list_to_array_step[A](arr: Array(A), xs: List(A)) -> List(A) | . {
+  match! xs.>List.un_list {
+    (
+      , .(x: A, rest: List(A)) { array_push(arr, x); widen_sum!(rest, List(A) | .) }
+      , .(_empty: .) { widen_sum!((), List(A) | .) }
+      )
+  }
+}
+
+fn list_to_array[A](xs: List(A)) -> Array(A) {
+  let arr = array_make_empty(A, ());
+  loop(List(A), ., .(ys: List(A)) { list_to_array_step(arr, ys) }, xs);
+  arr
+}
+
+// Convert an `Array(A)` into a `List(A)`. Walks the array index
+// from `len - 1` down to `0`, consing each element onto the
+// accumulator — yields a list in original (left-to-right) order.
+// State is `(i, acc)`.
+fn array_to_list_step[A](arr: Array(A), i: I32, acc: List(A)) -> (I32 & List(A)) | List(A) {
+  if! leq_i32(0, i) {
+    widen_sum!((sub_i32(i, 1), push(array_get(arr, i), acc)), (I32 & List(A)) | List(A))
+  } else {
+    widen_sum!(acc, (I32 & List(A)) | List(A))
+  }
+}
+
+fn array_to_list[A](arr: Array(A)) -> List(A) {
+  loop(
+    , I32 & List(A)
+    , List(A)
+    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+        match! state {
+          .(i: I32, acc: List(A)) { array_to_list_step(arr, i, acc) }
+        }
+      }
+    , (sub_i32(array_len(arr), 1), nil(A, ()))
+    )
+}
+
+// Render an `Array(I32)` as comma-separated decimals.
+fn render_array_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
+  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+    widen_sum!(
+      , if! leq_i32(i, 0) {
+          (int_to_string(array_get(arr, i)), add_i32(i, 1))
+        } else {
+          (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
+        }
+      , (String & I32) | String
+      )
+  } else {
+    widen_sum!(acc, (String & I32) | String)
+  }
+}
+
+fn render_array(arr: Array(I32)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) { render_array_step(arr, acc, i) }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+// Render a `List(I32)` as comma-separated decimals by routing
+// through `list_to_array` and reusing `render_array`. Saves a
+// separate list-walking renderer; the bidirectional bridge is
+// the case's subject, so reusing one direction here exercises
+// the symmetry.
+fn render_list(xs: List(I32)) -> String { render_array(list_to_array(xs)) }
+
+pub fn main() -> . {
+  // Build [1, 2, 3, 4, 5] as a List(I32).
+  let xs = push(1, push(2, push(3, push(4, push(5, nil(I32, ()))))));
+  // Convert to Array(I32) and print as CSV.
+  let arr = list_to_array(xs);
+  print(render_array(arr));
+  print("\n");
+  // Pop two elements off the back. `array_pop_back` returns
+  // `t | .` — match against the sum to extract the popped
+  // value (or unit on an empty array). main's array is non-
+  // empty here so the unit arms are unreachable; we discard
+  // the popped value because the test is about the resulting
+  // length, not the popped contents.
+  match! array_pop_back(arr) {
+    (.(_v: I32) { () }, .(_empty: .) { () })
+  };
+  match! array_pop_back(arr) {
+    (.(_v: I32) { () }, .(_empty: .) { () })
+  };
+  // Print the remaining length.
+  print(int_to_string(array_len(arr)));
+  print("\n");
+  // Convert what remains back into a List(I32) and print as CSV.
+  let ys = array_to_list(arr);
+  print(render_list(ys));
+  print("\n")
+}

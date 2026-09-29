@@ -1,0 +1,120 @@
+module testapi/fixtures;
+
+import dict/dict(Dict, empty);
+import list/core(List, cons, nil);
+import testapi(I32, String);
+import testapi/dict_ops(put_sorted_count, put_sorted_name);
+import testapi/domain(Adjustment, Count, Item, adjustment, count, item);
+
+pub fn catalogue() -> List(Item) {
+  cons(
+    , item(101, "bolt")
+    , cons(
+        , item(102, "gear")
+        , cons(item(103, "seal"), cons(item(104, "panel"), cons(item(105, "valve"), nil(Item, ()))))
+        )
+    )
+}
+
+pub fn catalogue_for_report() -> List(Item) {
+  cons(
+    , item(105, "valve")
+    , cons(
+        , item(104, "panel")
+        , cons(item(103, "seal"), cons(item(102, "gear"), cons(item(101, "bolt"), nil(Item, ()))))
+        )
+    )
+}
+
+pub fn ledger_snapshot() -> List(Count) {
+  cons(
+    , count(101, 40)
+    , cons(
+        , count(102, 18)
+        , cons(count(103, 25), cons(count(104, 7), cons(count(105, 12), nil(Count, ()))))
+        )
+    )
+}
+
+pub fn ledger_dict() -> Dict(I32, I32) {
+  put_sorted_count(
+    , put_sorted_count(
+        , put_sorted_count(
+            , put_sorted_count(put_sorted_count(empty(I32, I32, ()), 101, 40), 102, 18)
+            , 103
+            , 25
+            )
+        , 104
+        , 7
+        )
+    , 105
+    , 12
+    )
+}
+
+pub fn adjustments() -> List(Adjustment) {
+  cons(
+    , adjustment(101, -4, "picked")
+    , cons(
+        , adjustment(102, 2, "received")
+        , cons(
+            , adjustment(104, 1, "cycle")
+            , cons(adjustment(105, -3, "damaged"), nil(Adjustment, ()))
+            )
+        )
+    )
+}
+
+pub fn adjustment_dict() -> Dict(I32, I32) {
+  put_sorted_count(
+    , put_sorted_count(
+        , put_sorted_count(put_sorted_count(empty(I32, I32, ()), 101, -4), 102, 2)
+        , 104
+        , 1
+        )
+    , 105
+    , -3
+    )
+}
+
+pub fn physical_snapshot() -> List(Count) {
+  cons(
+    , count(101, 36)
+    , cons(
+        , count(102, 18)
+        , cons(count(104, 11), cons(count(105, 9), cons(count(106, 4), nil(Count, ()))))
+        )
+    )
+}
+
+pub fn physical_dict() -> Dict(I32, I32) {
+  put_sorted_count(
+    , put_sorted_count(
+        , put_sorted_count(
+            , put_sorted_count(put_sorted_count(empty(I32, I32, ()), 101, 36), 102, 18)
+            , 104
+            , 11
+            )
+        , 105
+        , 9
+        )
+    , 106
+    , 4
+    )
+}
+
+pub fn catalogue_dict() -> Dict(I32, String) {
+  put_sorted_name(
+    , put_sorted_name(
+        , put_sorted_name(
+            , put_sorted_name(put_sorted_name(empty(I32, String, ()), 101, "bolt"), 102, "gear")
+            , 103
+            , "seal"
+            )
+        , 104
+        , "panel"
+        )
+    , 105
+    , "valve"
+    )
+}

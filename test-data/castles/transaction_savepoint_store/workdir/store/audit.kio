@@ -1,0 +1,198 @@
+module store/audit;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as cells;
+import list/list as lists;
+import list_host as compare;
+import store/commands as commands;
+import store/history as history;
+import store/transactions as tx;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Item = { item_key: String, amount: I32 };
+
+pub labels Frozen = {
+  , label: String
+  , root: history.Snapshot
+  , expected: cells.List(Item)
+  , signature: String
+  };
+
+fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+fn apply_entry(items: cells.List(Item), entry: history.Entry) -> cells.List(Item) {
+  let without =
+    lists.filter(
+      , .(item: Item) {
+          if! text.string_eq(item.?{item_key}, entry.?{history.key}) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , items
+      );
+  match! entry.?{history.value} {
+    .(amount: I32) { cells.cons({item_key = entry.?{history.key}, amount}, without) };
+    .() { without }
+  }
+}
+
+// Replay oldest to newest into a flat map, independently of first-hit journal lookup.
+fn materialize(snapshot: history.Snapshot) -> cells.List(Item) {
+  lists.foldl(apply_entry, cells.nil(), lists.reverse(snapshot.?{history.journal}))
+}
+
+fn expected_value(items: cells.List(Item), key: String) -> String {
+  match! lists.find(.(item: Item) { text.string_eq(item.?{item_key}, key) }, items) {
+    .(item: Item) { fmt.int_to_string(item.?{amount}) };
+    .() { "<missing>" }
+  }
+}
+
+fn agrees(snapshot: history.Snapshot, items: cells.List(Item)) -> Bool {
+  let same_size = compare.eq_i32(lists.length(items), lists.length(history.visible(snapshot)));
+  lists.foldl(
+    , .(ok: Bool, entry: history.Entry) {
+        and(
+          , ok
+          , text.string_eq(
+              , history.show_value(history.get(snapshot, entry.?{history.key}))
+              , expected_value(items, entry.?{history.key})
+              )
+          )
+      }
+    , same_size
+    , snapshot.?{history.journal}
+    )
+}
+
+rec(loop) fn descending(entries: cells.List(history.Entry), bound: I32) -> Bool {
+  match! cells.uncons(entries) {
+    .(entry: history.Entry, rest: cells.List(history.Entry)) {
+      if! arith.lt_i32(entry.?{history.revision}, bound) {
+        rec descending(rest, entry.?{history.revision})
+      } else {
+        .f
+      }
+    };
+    .() { .t }
+  }
+}
+
+pub fn snapshot_ok(snapshot: history.Snapshot) -> Bool {
+  let head_ok =
+    match! cells.head(snapshot.?{history.journal}) {
+      .(entry: history.Entry) {
+        compare.eq_i32(snapshot.?{history.head}, entry.?{history.revision})
+      };
+      .() { compare.eq_i32(snapshot.?{history.head}, 0) }
+    };
+  and(
+    , head_ok
+    , and(
+        , descending(snapshot.?{history.journal}, arith.add_i32(snapshot.?{history.head}, 1))
+        , agrees(snapshot, materialize(snapshot))
+        )
+    )
+}
+
+pub fn freeze(label: String, root: history.Snapshot) -> Frozen {
+  {label, root, expected = materialize(root), signature = history.signature(root)}
+}
+
+pub fn frozen_ok(frozen: Frozen) -> Bool {
+  and(
+    , text.string_eq(frozen.?{signature}, history.signature(frozen.?{root}))
+    , agrees(frozen.?{root}, frozen.?{expected})
+    )
+}
+
+pub fn all_frozen_ok(frozen: cells.List(Frozen)) -> Bool {
+  lists.foldl(.(ok: Bool, item: Frozen) { and(ok, frozen_ok(item)) }, .t, frozen)
+}
+
+fn restoration_ok(before: tx.State, command: commands.Command, after: tx.State) -> Bool {
+  if! text.string_eq(command.?{commands.opcode}, "ROLLBACK") {
+    match! lists.find(
+      , .(point: tx.Savepoint) { text.string_eq(point.?{tx.name}, command.?{commands.key}) }
+      , before.?{tx.points}
+      ) {
+      .(point: tx.Savepoint) {
+        text.string_eq(history.signature(point.?{tx.saved}), history.signature(after.?{tx.working}))
+      };
+      .() { .f }
+    }
+  } else if! text.string_eq(command.?{commands.opcode}, "ABORT") {
+    text.string_eq(
+      , history.signature(before.?{tx.committed})
+      , history.signature(after.?{tx.working})
+      )
+  } else if! text.string_eq(command.?{commands.opcode}, "RELEASE") {
+    text.string_eq(history.signature(before.?{tx.working}), history.signature(after.?{tx.working}))
+  } else if! text.string_eq(command.?{commands.opcode}, "COMMIT") {
+    text.string_eq(
+      , history.signature(before.?{tx.working})
+      , history.signature(after.?{tx.committed})
+      )
+  } else {
+    .t
+  }
+}
+
+pub fn transition_ok(before: tx.State, command: commands.Command, reply: tx.Reply) -> Bool {
+  let after = reply.?{tx.updated};
+  let action_ok =
+    if! reply.?{tx.successful} {
+      restoration_ok(before, command, after)
+    } else {
+      text.string_eq(tx.signature(before), tx.signature(after))
+    };
+  let points_ok =
+    lists.foldl(
+      , .(ok: Bool, point: tx.Savepoint) { and(ok, snapshot_ok(point.?{tx.saved})) }
+      , .t
+      , after.?{tx.points}
+      );
+  and(
+    , action_ok
+    , and(points_ok, and(snapshot_ok(after.?{tx.working}), snapshot_ok(after.?{tx.committed})))
+    )
+}
+
+pub fn status(ok: Bool) -> String {
+  if! ok {
+    "PASS"
+  } else {
+    "FAIL"
+  }
+}
+
+fn item_text(item: Item) -> String {
+  text.string_concat(item.?{item_key}, text.string_concat("=", fmt.int_to_string(item.?{amount})))
+}
+
+pub fn print_frozen(frozen: Frozen) -> . {
+  io.print(text.string_concat(
+    , text.string_concat("retained ", frozen.?{label})
+    , text.string_concat(
+        , text.string_concat(" revision=", fmt.int_to_string(frozen.?{root}.?{history.head}))
+        , text.string_concat(
+            , text.string_concat(" values=", lists.to_string(item_text, frozen.?{expected}))
+            , text.string_concat(" audit=", text.string_concat(status(frozen_ok(frozen)), "\n"))
+            )
+        )
+    ))
+}

@@ -1,0 +1,6 @@
+module lib/combine;
+
+// A submodule that uses items from its sibling root module `lib`.
+import lib(identity);
+
+pub fn keep_first[A](x: A, y: A) -> A { identity(x) }

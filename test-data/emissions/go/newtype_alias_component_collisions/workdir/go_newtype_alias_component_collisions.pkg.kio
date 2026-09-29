@@ -1,0 +1,13 @@
+package go_newtype_alias_component_collisions;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

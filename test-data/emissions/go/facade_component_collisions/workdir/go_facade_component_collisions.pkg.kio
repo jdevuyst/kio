@@ -1,0 +1,17 @@
+package go_facade_component_collisions;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api;
+  api/child;
+  foo/bar/baz;
+  foo_bar;
+  _foo_bar
+}

@@ -1,0 +1,7 @@
+dependency dict;
+
+source {
+  path "../../../poc/dict/workdir/dict.pkg.kio"
+}
+
+rehost dict/dict to dict_host;

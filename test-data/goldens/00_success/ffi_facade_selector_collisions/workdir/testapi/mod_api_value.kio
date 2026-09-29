@@ -1,0 +1,3 @@
+module testapi/mod_api_value;
+
+pub fn value() -> . { () }

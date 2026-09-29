@@ -1,0 +1,113 @@
+harbor query plan engine
+
+== Q1: deep-draft ships ==
+plan:
+  Project [ship, flag, draft]
+    OrderBy draft desc
+      Filter draft >= 90
+        Scan ships
+  ordered: true
+
+result:
+  ship       flag  draft
+  ---------  ----  -----
+  Cygnus     NO      115
+  Fulmar     LR      103
+  Aurora     PA       92
+  rows: 3
+  stats: scanned=6 compares=9
+
+== Q2: berth assignments ==
+plan:
+  Project [ship, zone, draft, b.id, depth]
+    OrderBy depth asc
+      Join on s.berth = b.id
+        Scan ships
+        Scan berths
+  ordered: true
+
+result:
+  ship       zone    draft  b.id  depth
+  ---------  ------  -----  ----  -----
+  Eos        South      51     4     45
+  Borealis   North      68     2     70
+  Dorado     North      74     2     70
+  Aurora     North      92     1    120
+  Fulmar     North     103     1    120
+  Cygnus     East      115     3    130
+  rows: 6
+  stats: scanned=10 compares=35
+
+== Q3: over-draft alerts ==
+plan:
+  Project [ship, b.id, draft, depth]
+    Filter depth < draft
+      Join on s.berth = b.id
+        Scan ships
+        Scan berths
+  ordered: false
+
+result:
+  ship       b.id  draft  depth
+  ---------  ----  -----  -----
+  Dorado        2     74     70
+  Eos           4     51     45
+  rows: 2
+  stats: scanned=10 compares=30
+
+== Q4: cargo tonnage by zone ==
+plan:
+  OrderBy total desc
+    GroupSum by b.zone, sum(tons)
+      Join on s.berth = b.id
+        Join on m.ship = s.id
+          Scan manifests
+          Scan ships
+        Scan berths
+  ordered: true
+
+result:
+  b.zone   total
+  ------  ------
+      10    1330
+      20     800
+      30      90
+  rows: 3
+  stats: scanned=20 compares=115
+
+== Q5: busiest ships ==
+plan:
+  Limit 3
+    OrderBy count desc
+      GroupCount by m.ship, count(*)
+        Scan manifests
+  ordered: true
+
+result:
+  m.ship  count
+  ------  -----
+       3      3
+       1      2
+       6      2
+  rows: 3
+  stats: scanned=10 compares=39
+
+== Q6: priority cargo ==
+plan:
+  Project [ship, cargo, tons]
+    OrderBy tons desc
+      Filter ((tons > 300 or tons <= 90) and not m.ship = 6)
+        Join on m.ship = s.id
+          Scan manifests
+          Scan ships
+  ordered: true
+
+result:
+  ship       cargo    tons
+  ---------  ------  -----
+  Cygnus     ore       480
+  Aurora     grain     320
+  Eos        timber     90
+  Cygnus     fuel       60
+  rows: 4
+  stats: scanned=16 compares=96

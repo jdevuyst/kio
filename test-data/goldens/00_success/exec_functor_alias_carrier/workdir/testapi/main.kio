@@ -1,0 +1,70 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// An optional payload, expressed as a *type alias* over a `present`
+// label and the empty product: `Option(A) = Present(A) | .`. The
+// alias — not an inline sum, not a newtype — is the load-bearing
+// piece: it is what a leaf's carrier resolves to.
+pub labels { present[A]: A };
+
+pub type Option[A] = Present(A) | .;
+
+fn some[A](x: A) -> Option(A) { widen_sum!({present = x}) }
+
+fn none[A]() -> Option(A) { widen_sum!(()) }
+
+// `Leaf[A]` is a kind-`*→*` brand whose carrier is the **alias**
+// `Option(A)`. Because the carrier is a declared alias that mentions
+// the brand's varying parameter `A` (rather than a bare `A`, a brand
+// binder, or an inline sum), the Rust backend's functor-carrier walk
+// has to unfold the alias to `Present(A) | .` and map through its
+// `present` arm. A brand carrying an aliased optional leaf is exactly
+// the shape a persistent-vector trie leaf takes.
+pub newtype Leaf[A] : Option(A) { pub constructor mk_leaf; pub projector un_leaf }
+
+// A `Functor[*F]` dictionary with a polymorphic-function payload:
+// `fmap` lifts an `A -> B` through the brand to an `F(A) -> F(B)`.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `Leaf`'s functor instance. Crossing the brand goes through
+// `Leaf.mk_leaf` / `Leaf.un_leaf`; the projected carrier is the alias
+// `Option(A)`, which we eliminate on its `present | .` arms — lifting
+// the present payload through the user's step `s`, re-wrapping the
+// absent case unchanged.
+fn leaf_functor() -> Functor(Leaf) {
+  Functor.mk_functor(
+    , Leaf
+    , .[A][B](s, m) {
+        match! Leaf.un_leaf(m) {
+          (
+            , .(p: Present(A)) { Leaf.mk_leaf(some(s(Present.get(A, p)))) }
+            , .(_u: .) { Leaf.mk_leaf(none(B, ())) }
+            )
+        }
+      }
+    )
+}
+
+// Exercise the instance on a present leaf: brand a String into a
+// `Leaf(String)` carrying `some("...")`, lift a function over it via
+// `fmap`, then read the carrier's `present` payload back out. If the
+// brand crossing dropped the mapped function, the recovered string
+// would still be the un-suffixed input.
+fn use_instance() -> String {
+  let inst = leaf_functor();
+  let m = Leaf.mk_leaf(some("functor on alias carrier"));
+  let mapped = Functor.fmap(inst)(String, String, .(s: String) { string_concat(s, " ok\n") }, m);
+  match! Leaf.un_leaf(mapped) {
+    (.(p: Present(String)) { Present.get(String, p) }, .(_u: .) { "absent\n" })
+  }
+}
+
+pub fn main() -> . { print(use_instance()) }

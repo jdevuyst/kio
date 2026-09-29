@@ -1,0 +1,20 @@
+module testapi/main;
+
+import priority_window_scheduler/model as model;
+import priority_window_scheduler/planner as planner;
+import priority_window_scheduler/report as report;
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let early = model.early();
+  let middle = model.middle();
+  let late = model.late();
+  let selected = planner.choose(planner.choose(early, middle), late);
+  print("priority window scheduler\n");
+  print(report.window_line(early));
+  print(report.window_line(middle));
+  print(report.window_line(late));
+  print(report.selected_line(selected));
+  print("rejected=2\n")
+}

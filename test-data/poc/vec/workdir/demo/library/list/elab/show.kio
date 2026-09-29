@@ -1,0 +1,599 @@
+/// Show elaborator that turns supported reflected values into host `String` rendering functions.
+module library/list/elab/show;
+
+import __intrinsics__;
+
+import __comptime__;
+import library/list/elab/elaborator_util(Optional_type);
+import library/list/elab/testapi(String);
+
+/// Renders the unit value.
+pub fn show_unit_text() -> String { "()" }
+
+/// The opening parenthesis that wraps a product's rendered fields.
+pub fn show_open_paren() -> String { "(" }
+
+/// The closing parenthesis that wraps a product's rendered fields.
+pub fn show_close_paren() -> String { ")" }
+
+/// The separator between a product's rendered fields.
+pub fn show_comma_space() -> String { ", " }
+
+/// The prefix tagging a sum's left arm.
+pub fn show_left_prefix() -> String { "left(" }
+
+/// The prefix tagging a sum's right arm.
+pub fn show_right_prefix() -> String { "right(" }
+
+type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+type Render_mode = . | .;
+
+type Render_state = __Checked_term__ & Render_mode;
+
+type Render_recur = (__Type__ & Render_state) -> __Checked_term__;
+
+pure fn type_pair_left(ct: __Comptime__, pair: Type_pair) -> __Type__ {
+  __fst__(__Type__, __Type__, pair)
+}
+
+pure fn type_pair_right(ct: __Comptime__, pair: Type_pair) -> __Type__ {
+  __snd__(__Type__, __Type__, pair)
+}
+
+pure fn call_text(ct: __Comptime__, text_fn_type: __Type__, text_fn: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, text_fn_type, text_fn, __term_unit__(ct))
+}
+
+pure fn concat_terms(
+  , ct: __Comptime__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ {
+  __term_call__(ct, concat_type, concat_fn, __intrinsic_pair__(ct, left, right))
+}
+
+pure fn concat_text_left(
+  , ct: __Comptime__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , text_fn_type: __Type__
+  , text_fn: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ {
+  concat_terms(ct, concat_type, concat_fn, call_text(ct, text_fn_type, text_fn), right)
+}
+
+pure fn concat_text_right(
+  , ct: __Comptime__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , text_fn_type: __Type__
+  , left: __Checked_term__
+  , text_fn: __Checked_term__
+  ) -> __Checked_term__ {
+  concat_terms(ct, concat_type, concat_fn, left, call_text(ct, text_fn_type, text_fn))
+}
+
+pure fn unsupported_show(ct: __Comptime__) -> __Checked_term__ {
+  __elab_error__(ct, "show! supports only host leaves, unit, products, sums, and bottom")
+}
+
+pure fn render_host_or_error(
+  , ct: __Comptime__
+  , string_type: __Type__
+  , converter_source: __Type__
+  , converters: __Checked_term__
+  , typ: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __if_then_else__(
+    , __type_is_host__(ct, typ)
+    , .() -> __Checked_term__ {
+        __term_host_convert__(ct, string_type, converter_source, converters, value)
+      }
+    , .() -> __Checked_term__ { unsupported_show(ct) }
+    )
+}
+
+pure fn render_value_mode() -> Render_mode { __left__(., ., ()) }
+
+pure fn render_product_tail_mode() -> Render_mode { __right__(., ., ()) }
+
+pure fn render_state(ct: __Comptime__, value: __Checked_term__, mode: Render_mode) -> Render_state {
+  (value, mode)
+}
+
+pure fn render_state_value(ct: __Comptime__, state: Render_state) -> __Checked_term__ {
+  __fst__(__Checked_term__, Render_mode, state)
+}
+
+pure fn render_state_mode(ct: __Comptime__, state: Render_state) -> Render_mode {
+  __snd__(__Checked_term__, Render_mode, state)
+}
+
+pure fn recur_value(ct: __Comptime__, recur: Render_recur, typ: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  recur(typ, render_state(ct, value, render_value_mode()))
+}
+
+pure fn recur_product_tail(
+  , ct: __Comptime__
+  , recur: Render_recur
+  , typ: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ { recur(typ, render_state(ct, value, render_product_tail_mode())) }
+
+pure fn render_prefixed_payload(
+  , ct: __Comptime__
+  , string_type: __Type__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , text_fn_type: __Type__
+  , close_paren_fn: __Checked_term__
+  , prefix_fn: __Checked_term__
+  , payload: __Checked_term__
+  ) -> __Checked_term__ {
+  concat_text_left(
+    , ct
+    , concat_type
+    , concat_fn
+    , text_fn_type
+    , prefix_fn
+    , concat_text_right(ct, concat_type, concat_fn, text_fn_type, payload, close_paren_fn)
+    )
+}
+
+pure fn render_regular_step(
+  , ct: __Comptime__
+  , recur: Render_recur
+  , string_type: __Type__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , converter_source: __Type__
+  , converters: __Checked_term__
+  , text_fn_type: __Type__
+  , unit_text_fn: __Checked_term__
+  , open_paren_fn: __Checked_term__
+  , close_paren_fn: __Checked_term__
+  , comma_space_fn: __Checked_term__
+  , left_prefix_fn: __Checked_term__
+  , right_prefix_fn: __Checked_term__
+  , typ: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , .
+    , Type_view_tail1
+    , __Checked_term__
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> __Checked_term__ { call_text(ct, text_fn_type, unit_text_fn) }
+    , .(tail1: Type_view_tail1) -> __Checked_term__ {
+        __either__(
+          , .
+          , Type_view_tail2
+          , __Checked_term__
+          , tail1
+          , .(_bottom: .) -> __Checked_term__ { __intrinsic_absurd__(ct, value, string_type) }
+          , .(tail2: Type_view_tail2) -> __Checked_term__ {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , __Checked_term__
+                , tail2
+                , .(pair: Type_pair) -> __Checked_term__ {
+                    let left_type = type_pair_left(ct, pair);
+                    let right_type = type_pair_right(ct, pair);
+                    let product_type = __type_product__(ct, left_type, right_type);
+                    let rendered_left =
+                      recur_value(ct, recur, left_type, __intrinsic_fst__(ct, product_type, value));
+                    let rendered_right =
+                      recur_product_tail(
+                        , ct
+                        , recur
+                        , right_type
+                        , __intrinsic_snd__(ct, product_type, value)
+                        );
+                    let inner =
+                      concat_terms(
+                        , ct
+                        , concat_type
+                        , concat_fn
+                        , rendered_left
+                        , concat_text_left(
+                            , ct
+                            , concat_type
+                            , concat_fn
+                            , text_fn_type
+                            , comma_space_fn
+                            , rendered_right
+                            )
+                        );
+                    concat_text_left(
+                      , ct
+                      , concat_type
+                      , concat_fn
+                      , text_fn_type
+                      , open_paren_fn
+                      , concat_text_right(
+                          , ct
+                          , concat_type
+                          , concat_fn
+                          , text_fn_type
+                          , inner
+                          , close_paren_fn
+                          )
+                      )
+                  }
+                , .(tail3: Type_view_tail3) -> __Checked_term__ {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , __Checked_term__
+                      , tail3
+                      , .(pair: Type_pair) -> __Checked_term__ {
+                          let left_type = type_pair_left(ct, pair);
+                          let right_type = type_pair_right(ct, pair);
+                          let sum_type = __type_sum__(ct, left_type, right_type);
+                          __intrinsic_either__(
+                            , ct
+                            , sum_type
+                            , string_type
+                            , value
+                            , .(payload: __Checked_term__) -> __Checked_term__ {
+                                render_prefixed_payload(
+                                  , ct
+                                  , string_type
+                                  , concat_type
+                                  , concat_fn
+                                  , text_fn_type
+                                  , close_paren_fn
+                                  , left_prefix_fn
+                                  , recur_value(ct, recur, left_type, payload)
+                                  )
+                              }
+                            , .(payload: __Checked_term__) -> __Checked_term__ {
+                                render_prefixed_payload(
+                                  , ct
+                                  , string_type
+                                  , concat_type
+                                  , concat_fn
+                                  , text_fn_type
+                                  , close_paren_fn
+                                  , right_prefix_fn
+                                  , recur_value(ct, recur, right_type, payload)
+                                  )
+                              }
+                            )
+                        }
+                      , .(_tail4: Type_view_tail4) -> __Checked_term__ {
+                          render_host_or_error(
+                            , ct
+                            , string_type
+                            , converter_source
+                            , converters
+                            , typ
+                            , value
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn render_product_tail_step(
+  , ct: __Comptime__
+  , recur: Render_recur
+  , string_type: __Type__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , converter_source: __Type__
+  , converters: __Checked_term__
+  , text_fn_type: __Type__
+  , unit_text_fn: __Checked_term__
+  , open_paren_fn: __Checked_term__
+  , close_paren_fn: __Checked_term__
+  , comma_space_fn: __Checked_term__
+  , left_prefix_fn: __Checked_term__
+  , right_prefix_fn: __Checked_term__
+  , typ: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , .
+    , Type_view_tail1
+    , __Checked_term__
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> __Checked_term__ { call_text(ct, text_fn_type, unit_text_fn) }
+    , .(tail1: Type_view_tail1) -> __Checked_term__ {
+        __either__(
+          , .
+          , Type_view_tail2
+          , __Checked_term__
+          , tail1
+          , .(_bottom: .) -> __Checked_term__ { __intrinsic_absurd__(ct, value, string_type) }
+          , .(tail2: Type_view_tail2) -> __Checked_term__ {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , __Checked_term__
+                , tail2
+                , .(pair: Type_pair) -> __Checked_term__ {
+                    let left_type = type_pair_left(ct, pair);
+                    let right_type = type_pair_right(ct, pair);
+                    let product_type = __type_product__(ct, left_type, right_type);
+                    let rendered_left =
+                      recur_value(ct, recur, left_type, __intrinsic_fst__(ct, product_type, value));
+                    let rendered_right =
+                      recur_product_tail(
+                        , ct
+                        , recur
+                        , right_type
+                        , __intrinsic_snd__(ct, product_type, value)
+                        );
+                    concat_terms(
+                      , ct
+                      , concat_type
+                      , concat_fn
+                      , rendered_left
+                      , concat_text_left(
+                          , ct
+                          , concat_type
+                          , concat_fn
+                          , text_fn_type
+                          , comma_space_fn
+                          , rendered_right
+                          )
+                      )
+                  }
+                , .(_tail3: Type_view_tail3) -> __Checked_term__ {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , __Checked_term__
+                      , _tail3
+                      , .(pair: Type_pair) -> __Checked_term__ {
+                          let left_type = type_pair_left(ct, pair);
+                          let right_type = type_pair_right(ct, pair);
+                          let sum_type = __type_sum__(ct, left_type, right_type);
+                          __intrinsic_either__(
+                            , ct
+                            , sum_type
+                            , string_type
+                            , value
+                            , .(payload: __Checked_term__) -> __Checked_term__ {
+                                render_prefixed_payload(
+                                  , ct
+                                  , string_type
+                                  , concat_type
+                                  , concat_fn
+                                  , text_fn_type
+                                  , close_paren_fn
+                                  , left_prefix_fn
+                                  , recur_value(ct, recur, left_type, payload)
+                                  )
+                              }
+                            , .(payload: __Checked_term__) -> __Checked_term__ {
+                                render_prefixed_payload(
+                                  , ct
+                                  , string_type
+                                  , concat_type
+                                  , concat_fn
+                                  , text_fn_type
+                                  , close_paren_fn
+                                  , right_prefix_fn
+                                  , recur_value(ct, recur, right_type, payload)
+                                  )
+                              }
+                            )
+                        }
+                      , .(_tail4: Type_view_tail4) -> __Checked_term__ {
+                          render_host_or_error(
+                            , ct
+                            , string_type
+                            , converter_source
+                            , converters
+                            , typ
+                            , value
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn render_step(
+  , ct: __Comptime__
+  , string_type: __Type__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , converter_source: __Type__
+  , converters: __Checked_term__
+  , text_fn_type: __Type__
+  , unit_text_fn: __Checked_term__
+  , open_paren_fn: __Checked_term__
+  , close_paren_fn: __Checked_term__
+  , comma_space_fn: __Checked_term__
+  , left_prefix_fn: __Checked_term__
+  , right_prefix_fn: __Checked_term__
+  , recur: Render_recur
+  , typ: __Type__
+  , state: Render_state
+  ) -> __Checked_term__ {
+  let value = render_state_value(ct, state);
+  __either__(
+    , .
+    , .
+    , __Checked_term__
+    , render_state_mode(ct, state)
+    , .(_regular: .) -> __Checked_term__ {
+        render_regular_step(
+          , ct
+          , recur
+          , string_type
+          , concat_type
+          , concat_fn
+          , converter_source
+          , converters
+          , text_fn_type
+          , unit_text_fn
+          , open_paren_fn
+          , close_paren_fn
+          , comma_space_fn
+          , left_prefix_fn
+          , right_prefix_fn
+          , typ
+          , value
+          )
+      }
+    , .(_tail: .) -> __Checked_term__ {
+        render_product_tail_step(
+          , ct
+          , recur
+          , string_type
+          , concat_type
+          , concat_fn
+          , converter_source
+          , converters
+          , text_fn_type
+          , unit_text_fn
+          , open_paren_fn
+          , close_paren_fn
+          , comma_space_fn
+          , left_prefix_fn
+          , right_prefix_fn
+          , typ
+          , value
+          )
+      }
+    )
+}
+
+pure fn render_value(
+  , ct: __Comptime__
+  , string_type: __Type__
+  , concat_type: __Type__
+  , concat_fn: __Checked_term__
+  , converter_source: __Type__
+  , converters: __Checked_term__
+  , text_fn_type: __Type__
+  , unit_text_fn: __Checked_term__
+  , open_paren_fn: __Checked_term__
+  , close_paren_fn: __Checked_term__
+  , comma_space_fn: __Checked_term__
+  , left_prefix_fn: __Checked_term__
+  , right_prefix_fn: __Checked_term__
+  , typ: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Render_state
+    , __Checked_term__
+    , typ
+    , render_state(ct, value, render_value_mode())
+    , .(loop_recur: Render_recur, loop_fuel: __Type__, loop_state: Render_state) -> __Checked_term__ {
+        render_step(
+          , ct
+          , string_type
+          , concat_type
+          , concat_fn
+          , converter_source
+          , converters
+          , text_fn_type
+          , unit_text_fn
+          , open_paren_fn
+          , close_paren_fn
+          , comma_space_fn
+          , left_prefix_fn
+          , right_prefix_fn
+          , loop_recur
+          , loop_fuel
+          , loop_state
+          )
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn show_checked(
+  , ct: __Comptime__
+  , unit_text_fn: __Checked_term__
+  , open_paren_fn: __Checked_term__
+  , close_paren_fn: __Checked_term__
+  , comma_space_fn: __Checked_term__
+  , left_prefix_fn: __Checked_term__
+  , right_prefix_fn: __Checked_term__
+  , source: __Type__
+  , value: __Checked_term__
+  , _target: Optional_type
+  ) -> __Checked_term__ {
+  let string_type = __reflect_type__(ct, String);
+  let concat_type = __reflect_type__(ct, (String & String) -> String);
+  let text_fn_type = __reflect_type__(ct, . -> String);
+  let converters_type = __type_host_converters__(ct, string_type, source);
+  let show_fn_type =
+    __type_arrow__(
+      , ct
+      , __type_product__(ct, concat_type, converters_type)
+      , __type_arity_succ__(ct, __type_arity_succ__(ct, __type_arity_zero__(ct)))
+      , string_type
+      );
+  __term_fn__(
+    , ct
+    , show_fn_type
+    , .(packet: __Checked_term__) -> __Checked_term__ {
+        let packet_type = __type_product__(ct, concat_type, converters_type);
+        let concat_fn = __intrinsic_fst__(ct, packet_type, packet);
+        let converters = __intrinsic_snd__(ct, packet_type, packet);
+        render_value(
+          , ct
+          , string_type
+          , concat_type
+          , concat_fn
+          , source
+          , converters
+          , text_fn_type
+          , unit_text_fn
+          , open_paren_fn
+          , close_paren_fn
+          , comma_space_fn
+          , left_prefix_fn
+          , right_prefix_fn
+          , source
+          , value
+          )
+      }
+    )
+}
+
+/// Builds a renderer from a value to host `String` using supplied host converters.
+pub elab show : [Source] Source -> [Target] Target { captures (show_unit_text, show_open_paren, show_close_paren, show_comma_space, show_left_prefix, show_right_prefix); impl show_checked }

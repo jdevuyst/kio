@@ -1,0 +1,33 @@
+module main;
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// Per `specs/language.md` § 4c (call-site flattening across curry
+// layers), Kio surface accepts one application that spans multiple
+// consecutive `Forall + Function` layers. `foo`'s type is
+//   `Forall([A], Function(A, Forall([B], Function(B, Unit))))`
+// — two curry layers, each with its own type-binder and value
+// param.
+//
+// The flat call `foo(A, A.mk_a(()), B, B.mk_b(()))` is the spec's
+// canonical example: positional args interleave layer-1 type-arg,
+// layer-1 value-arg, layer-2 type-arg, layer-2 value-arg. The
+// typer walks the type left-to-right, peeling one curry layer per
+// iteration.
+//
+// The explicit curried form `foo(A, A.mk_a(()))(B, B.mk_b(()))`
+// works too — it goes through the same single-layer dispatch
+// twice. The flat form is sugar for the same elaboration.
+//
+// The source parses as Kio' (the flat form is a grammatical call),
+// so the case carries IS_KIO_PRIME; but Kio' rejects the flat form
+// semantically per § 4c (the call-site dual of § 5's no-interleaving
+// rule on declarations), so SKIP_KIO_PRIME_RUN keeps the Kio'-only
+// compiler off this case under --prime-only.
+fn foo[A](v1: A)[B](v2: B) -> . { () }
+
+fn flat() -> . { foo(A, A.mk_a(()), B, B.mk_b(())) }
+
+fn curried() -> . { foo(A, A.mk_a(()))(B, B.mk_b(())) }

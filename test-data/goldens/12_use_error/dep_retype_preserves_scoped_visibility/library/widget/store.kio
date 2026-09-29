@@ -1,0 +1,3 @@
+module store;
+
+pub(store) newtype Token : . { pub constructor mk; pub projector get }

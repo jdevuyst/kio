@@ -1,0 +1,8 @@
+module caller;
+
+import api(run);
+import provider(serve);
+
+newtype Token : . & . { constructor mk_token; projector un_token }
+
+pub fn exercise(_unit: .) -> . { run(serve) }

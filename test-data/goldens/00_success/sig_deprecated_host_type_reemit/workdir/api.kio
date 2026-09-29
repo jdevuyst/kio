@@ -1,0 +1,9 @@
+module api;
+
+host type Scalar;
+
+host type Array[A];
+
+host type Transformer[A][B];
+
+pub fn unit() -> . { () }

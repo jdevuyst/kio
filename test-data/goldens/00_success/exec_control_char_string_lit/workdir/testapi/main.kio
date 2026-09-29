@@ -1,0 +1,37 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq, string_len);
+
+// A guest whose host calls centre on `string_len` — a host capability the
+// dyn_load_prime evaluator never hardcoded (it is outside the closed first-order
+// vocabulary the old `Host_op` enum fixed). Running `main` through dyn_load_prime's
+// interpreter resolves `string_len` through the supplied host record alone,
+// so the dyn-load-prime differential agrees with compile-and-run byte for byte.
+// (A host fn the evaluator's enum could not name was previously unrunnable;
+// the generic key-driven dispatch makes it load and run unchanged.)
+fn line(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+fn yes_no(label: String, b: Bool) -> . {
+  print(string_concat(
+    , label
+    , if! b {
+        "yes\n"
+      } else {
+        "no\n"
+      }
+    ))
+}
+
+pub fn main() -> . {
+  line("len(nul) = ", string_len("\u0000"));
+  line("len(c0 run) = ", string_len("\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007"));
+  line("len(cr lf tab) = ", string_len("\r\n\t"));
+  line("len(mixed) = ", string_len(string_concat("a\u0000b", "\u001fc")));
+  yes_no("nul roundtrips concat = ", string_eq(string_concat("\u0000", "x"), "\u0000x"))
+}

@@ -1,0 +1,14 @@
+module app/elaborators;
+
+import __comptime__;
+
+pub(app/elaborators) fn narrow_capture() -> . { () }
+
+pub(app) pure fn package_impl(
+  , _ct: __Comptime__
+  , _captured: __Checked_term__
+  , _source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ { value }
+
+pub(app) elab scoped_elab : [Source] Source -> Source { captures narrow_capture; impl package_impl }

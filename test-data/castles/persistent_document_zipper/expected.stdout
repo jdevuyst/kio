@@ -1,0 +1,347 @@
+Persistent document editor
+> undo
+  error: no edit to undo
+> snapshots
+  no snapshots
+> parent
+  error: root has no parent
+> prev
+  error: root has no siblings
+> next
+  error: root has no siblings
+> delete
+  error: cannot delete the root
+> before
+  value: [outside]
+  error: cannot insert a sibling of the root
+> after
+  value: [outside]
+  error: cannot insert a sibling of the root
+> child
+  error: focus has no children
+> append
+  value: [Introduction]
+  focus: /document
+> append
+  value: [Body]
+  focus: /document
+> append
+  value: [Appendix]
+  focus: /document
+> child
+  focus: /document/Introduction
+> prev
+  error: no previous sibling
+> append
+  value: [Welcome]
+  focus: /document/Introduction
+> next
+  focus: /document/Body
+> append
+  value: [Methods]
+  focus: /document/Body
+> append
+  value: [Results]
+  focus: /document/Body
+> child
+  focus: /document/Body/Methods
+> append
+  value: [Procedure]
+  focus: /document/Body/Methods
+> child
+  focus: /document/Body/Methods/Procedure
+> rename
+  value: [Detailed procedure]
+  focus: /document/Body/Methods/Detailed procedure
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Results
+    Appendix
+  focus: /document/Body/Methods/Detailed procedure
+  nodes: 8
+  undo depth: 8
+  snapshots: 0
+> snapshot
+  value: [draft]
+  retained: draft
+> parent
+  focus: /document/Body/Methods
+> next
+  focus: /document/Body/Results
+> before
+  value: [Discussion]
+  focus: /document/Body/Results
+> after
+  value: [References]
+  focus: /document/Body/Results
+> rename
+  value: [Findings]
+  focus: /document/Body/Findings
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Discussion
+      Findings
+      References
+    Appendix
+  focus: /document/Body/Findings
+  nodes: 10
+  undo depth: 11
+  snapshots: 1
+> prev
+  focus: /document/Body/Discussion
+> append
+  value: [Notes]
+  focus: /document/Body/Discussion
+> child
+  focus: /document/Body/Discussion/Notes
+> rename
+  value: [Review notes]
+  focus: /document/Body/Discussion/Review notes
+> snapshot
+  value: [review]
+  retained: review
+> root
+  focus: /document
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Discussion
+        Review notes
+      Findings
+      References
+    Appendix
+  focus: /document
+  nodes: 11
+  undo depth: 13
+  snapshots: 2
+> child
+  focus: /document/Introduction
+> next
+  focus: /document/Body
+> child
+  focus: /document/Body/Methods
+> next
+  focus: /document/Body/Discussion
+> delete
+  focus: /document/Body
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Findings
+      References
+    Appendix
+  focus: /document/Body
+  nodes: 9
+  undo depth: 14
+  snapshots: 2
+> undo
+  focus: /document/Body/Discussion
+> where
+  focus: /document/Body/Discussion
+> delete
+  focus: /document/Body
+> child
+  focus: /document/Body/Methods
+> delete
+  focus: /document/Body
+> child
+  focus: /document/Body/Findings
+> next
+  focus: /document/Body/References
+> next
+  error: no next sibling
+> delete
+  focus: /document/Body
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix
+  focus: /document/Body
+  nodes: 6
+  undo depth: 16
+  snapshots: 2
+> undo
+  focus: /document/Body/References
+> delete
+  focus: /document/Body
+> child
+  focus: /document/Body/Findings
+> delete
+  focus: /document/Body
+> child
+  error: focus has no children
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+    Appendix
+  focus: /document/Body
+  nodes: 5
+  undo depth: 17
+  snapshots: 2
+> undo
+  focus: /document/Body/Findings
+> show
+current document
+  document
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix
+  focus: /document/Body/Findings
+  nodes: 6
+  undo depth: 16
+  snapshots: 2
+> root
+  focus: /document
+> rename
+  value: [Article]
+  focus: /Article
+> snapshot
+  value: [published]
+  retained: published
+> snapshots
+snapshot draft
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Results
+    Appendix
+snapshot review
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Discussion
+        Review notes
+      Findings
+      References
+    Appendix
+snapshot published
+  Article
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix
+> snapshot
+  value: [draft]
+  error: snapshot name already exists
+> rename
+  value: []
+  error: name must not be empty
+> sideways
+  error: unknown command
+> root
+  focus: /Article
+> child
+  focus: /Article/Introduction
+> delete
+  focus: /Article
+> child
+  focus: /Article/Body
+> next
+  focus: /Article/Appendix
+> delete
+  focus: /Article
+> show
+current document
+  Article
+    Body
+      Findings
+  focus: /Article
+  nodes: 3
+  undo depth: 19
+  snapshots: 3
+> undo
+  focus: /Article/Appendix
+> undo
+  focus: /Article/Introduction
+> show
+current document
+  Article
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix
+  focus: /Article/Introduction
+  nodes: 6
+  undo depth: 17
+  snapshots: 3
+> rename
+  error: missing name at end of input
+end of document session
+current document
+  Article
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix
+  focus: /Article/Introduction
+  nodes: 6
+  undo depth: 17
+  snapshots: 3
+snapshot draft
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Results
+    Appendix
+snapshot review
+  document
+    Introduction
+      Welcome
+    Body
+      Methods
+        Detailed procedure
+      Discussion
+        Review notes
+      Findings
+      References
+    Appendix
+snapshot published
+  Article
+    Introduction
+      Welcome
+    Body
+      Findings
+    Appendix

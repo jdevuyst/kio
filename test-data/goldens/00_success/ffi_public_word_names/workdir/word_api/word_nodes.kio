@@ -1,0 +1,8 @@
+module word_api/word_nodes;
+
+pub newtype _Word_box__[Item_type] : Item_type {
+  pub constructor wrap_word;
+  pub projector unwrap_word
+  }
+
+pub fn keep_word[Item_type](value: Item_type) -> Item_type { value }

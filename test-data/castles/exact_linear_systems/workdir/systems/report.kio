@@ -1,0 +1,123 @@
+module systems/report;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as c;
+import list/list as l;
+import list_host as integers;
+import systems/input as input;
+import systems/matrix as m;
+import systems/rational as q;
+import systems/reduce as reduction;
+import systems/solution as solution;
+import systems/verify as verify;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn line(prefix: String, value: String) -> . {
+  io.print(text.string_concat(prefix, text.string_concat(value, "\n")))
+}
+
+fn yes_no(value: Bool) -> String {
+  if! value {
+    "yes"
+  } else {
+    "no"
+  }
+}
+
+rec(loop) fn matrix_rows(prefix: String, rows: m.Matrix) -> . {
+  match! c.uncons(rows) {
+    .(row: m.Row, rest: m.Matrix) { line(prefix, m.show(row)); rec matrix_rows(prefix, rest) };
+    .() { () }
+  }
+}
+
+rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, index: I32) -> . {
+  match! c.uncons(vectors) {
+    .(vector: m.Row, rest: m.Matrix) {
+      line(
+        , text.string_concat("  direction ", text.string_concat(fmt.int_to_string(index), " = "))
+        , m.show(vector)
+        );
+      line("    A*direction = ", m.show(verify.residuals(original, variables, vector, .t)));
+      rec directions(original, variables, rest, a.add_i32(index, 1))
+    };
+    .() { () }
+  }
+}
+
+fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List(I32)) -> . {
+  match! c.head(pivots) {
+    .(column: I32) {
+      let changed = m.replace(particular, column, q.add(m.at(particular, column), q.integer(1)));
+      let residual = verify.residuals(original, variables, changed, .f);
+      line("  perturbed witness residual = ", m.show(residual));
+      line(
+        , "  perturbed witness rejected = "
+        , yes_no(if! m.all_zero(residual) {
+            .f
+          } else {
+            .t
+          })
+        )
+    };
+    .() { line("  every vector solves the zero system", "") }
+  }
+}
+
+fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solution.Family) -> . {
+  let particular = values.?{solution.particular};
+  let nullspace = values.?{solution.directions};
+  let free = values.?{solution.free_columns};
+  line(
+    , "  classification = "
+    , if! integers.eq_i32(l.length(pivots), variables) {
+        "unique"
+      } else {
+        "underdetermined"
+      }
+    );
+  line(
+    , "  free columns = "
+    , l.to_string(fmt.int_to_string, l.map(.(column) { a.add_i32(column, 1) }, free))
+    );
+  line("  particular = ", m.show(particular));
+  let residual = verify.residuals(original, variables, particular, .f);
+  line("  A*particular-b = ", m.show(residual));
+  directions(original, variables, nullspace, 1);
+  line("  particular verified = ", yes_no(m.all_zero(residual)));
+  line("  nullspace verified = ", yes_no(verify.all_directions(original, variables, nullspace)));
+  perturbed_check(original, variables, particular, pivots)
+}
+
+pub fn run(system: input.System) -> . {
+  let name = system.?{input.name};
+  let variables = system.?{input.variables};
+  let original = system.?{input.original};
+  let reduced = reduction.rref(original, variables);
+  let pivots = reduced.?{reduction.pivots};
+  let rank = l.length(pivots);
+  line("system ", name);
+  line("  equations = ", fmt.int_to_string(l.length(original)));
+  line("  variables = ", fmt.int_to_string(variables));
+  matrix_rows("  original augmented row = ", original);
+  matrix_rows("  reduced augmented row = ", reduced.?{reduction.reduced});
+  line("  row swaps = ", fmt.int_to_string(reduced.?{reduction.swaps}));
+  line("  rank(A) = ", fmt.int_to_string(rank));
+  match! solution.solve(reduced, variables) {
+    .(success: solution.Solved) {
+      line("  rank([A|b]) = ", fmt.int_to_string(rank));
+      family(original, variables, pivots, success.?{solution.solved})
+    };
+    .(failure: solution.Inconsistent) {
+      line("  rank([A|b]) = ", fmt.int_to_string(a.add_i32(rank, 1)));
+      line("  classification = ", "inconsistent");
+      line("  contradiction: 0 = ", q.show(failure.?{solution.inconsistent}))
+    }
+  }
+}

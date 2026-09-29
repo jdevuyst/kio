@@ -1,0 +1,98 @@
+/// The polynomial representation and its normal form.
+module poly/core;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lc;
+import list/list as ll;
+import list/list(varop [* *]);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32, sub_i32);
+import testapi/iter(loop);
+
+fn value_or[A](default: A, result: A | .) -> A {
+  match! result {
+    (.(value: A) { value }, .(_empty: .) { default })
+  }
+}
+
+/// A coefficient vector, low degree first: the element at index `i` is the
+/// coefficient of `x^i`. The list library owns the spine; this module owns what
+/// the spine means.
+pub type Coeffs = lc.List(I32);
+
+/// A polynomial in this fixture workbench *is* its coefficient vector. The
+/// constructor and projector stay private so `of_coeffs` is the only way in, which
+/// is what makes the trimmed normal form an invariant rather than a convention.
+pub newtype Poly : Coeffs { constructor mk; projector un }
+
+rec(loop) fn drop_zero_head(cs: Coeffs) -> Coeffs {
+  match! lc.uncons(cs) {
+    (
+      , .(c: I32, rest: Coeffs) {
+          if! eq_i32(c, 0) {
+            rec drop_zero_head(rest)
+          } else {
+            cs
+          }
+        }
+      , .(_empty: .) { cs }
+      )
+  }
+}
+
+// The vector is low-degree-first, so the zero coefficients to drop sit at its far
+// end. Reverse, strip the run of leading zeros, reverse back.
+fn trim(cs: Coeffs) -> Coeffs { ll.reverse(drop_zero_head(ll.reverse(cs))) }
+
+/// The single entry point into `Poly`: every polynomial the workbench builds is
+/// normalized here, so the zero polynomial is always the empty vector and the
+/// highest-index coefficient is always non-zero.
+pub fn of_coeffs(cs: Coeffs) -> Poly { Poly.mk(trim(cs)) }
+
+/// The normalized coefficient vector, low degree first.
+pub fn coeffs(p: Poly) -> Coeffs { Poly.un(p) }
+
+pub fn zero() -> Poly { of_coeffs([* *]) }
+
+/// For `k >= 0`, `monomial(c, k)` is the single term `c * x^k`.
+pub fn monomial(c: I32, k: I32) -> Poly { of_coeffs(ll.append(ll.replicate(k, 0), [* c *])) }
+
+pub fn is_zero(p: Poly) -> Bool { ll.null(coeffs(p)) }
+
+/// Degree of the zero polynomial is -1, which keeps `deg` total and makes
+/// `deg(remainder) < deg(divisor)` the single stopping test in long division.
+pub fn deg(p: Poly) -> I32 { sub_i32(ll.length(coeffs(p)), 1) }
+
+/// The vector's head, or 0 for the empty vector — the zero-padding every
+/// coefficient-wise walk needs when one operand runs out before the other.
+pub fn head_or_zero(cs: Coeffs) -> I32 { value_or(0, lc.head(cs)) }
+
+/// The coefficient of `x^i`, or 0 beyond the degree.
+pub fn coeff_at(p: Poly, i: I32) -> I32 { value_or(0, ll.at(i, coeffs(p))) }
+
+/// The highest-degree coefficient, or 0 for the zero polynomial.
+pub fn leading(p: Poly) -> I32 { value_or(0, ll.last(coeffs(p))) }
+
+rec(loop) fn coeffs_equal(xs: Coeffs, ys: Coeffs) -> Bool {
+  match! lc.uncons(xs) {
+    (
+      , .(x: I32, rest: Coeffs) {
+          if! ll.null(ys) {
+            .f
+          } else if! eq_i32(x, head_or_zero(ys)) {
+            rec coeffs_equal(rest, lc.tail(ys))
+          } else {
+            .f
+          }
+        }
+      , .(_empty: .) { ll.null(ys) }
+      )
+  }
+}
+
+/// Both operands are normalized, so coefficient-vector equality *is* polynomial
+/// equality. This walks the vectors directly rather than asking whether `a - b` is
+/// zero: the laws below judge the arithmetic, so the equality they are judged with
+/// must not be built out of the arithmetic under test.
+pub fn equal(a: Poly, b: Poly) -> Bool { coeffs_equal(coeffs(a), coeffs(b)) }

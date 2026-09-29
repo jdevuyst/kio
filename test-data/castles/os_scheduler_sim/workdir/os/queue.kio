@@ -1,0 +1,111 @@
+/// The scheduler's three lists: the round-robin ready queue, the blocked list
+/// of processes waiting on the pager, and the order processes finished in.
+module os/queue;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_pop_back, array_push, array_set);
+import testapi/iter(loop);
+
+pub labels Queues = {
+  , ready: Array(I32)
+  , blocked: Array(I32)
+  , wake: Array(I32)
+  , retired: Array(I32)
+  };
+
+pub fn new_queues() -> Queues {
+  {
+    , ready = array_make_empty(I32, ())
+    , blocked = array_make_empty(I32, ())
+    , wake = array_make_empty(I32, ())
+    , retired = array_make_empty(I32, ())
+    }
+}
+
+pub fn ready_len(q: Queues) -> I32 { array_len(q.?{ready}) }
+
+pub fn ready_at(q: Queues, i: I32) -> I32 { array_get(q.?{ready}, i) }
+
+pub fn enqueue(q: Queues, pid: I32) -> . { array_push(q.?{ready}, pid) }
+
+rec(loop) fn shift_down(r: Array(I32), i: I32, n: I32) -> . {
+  if! leq_i32(n, i) {
+    ()
+  } else {
+    array_set(r, sub_i32(i, 1), array_get(r, i));
+    rec shift_down(r, add_i32(i, 1), n)
+  }
+}
+
+/// Take the head of the ready queue, or nothing when no process is runnable.
+///
+/// The array grows at the back, so a first-in-first-out take shifts the rest
+/// down and drops the duplicated tail. A ready queue holds a handful of
+/// processes, and the shift costs less than the bookkeeping a ring buffer
+/// would need to save.
+pub fn dequeue(q: Queues) -> I32 | . {
+  let r = q.?{ready};
+  let n = array_len(r);
+  if! leq_i32(n, 0) {
+    widen_sum!((), I32 | .)
+  } else {
+    let head = array_get(r, 0);
+    shift_down(r, 1, n);
+    let _duplicate = array_pop_back(r);
+    widen_sum!(head, I32 | .)
+  }
+}
+
+/// Park a process until its page has been fetched.
+pub fn block(q: Queues, pid: I32, wake_at: I32) -> . {
+  array_push(q.?{blocked}, pid);
+  array_push(q.?{wake}, wake_at)
+}
+
+pub fn blocked_len(q: Queues) -> I32 { array_len(q.?{blocked}) }
+
+pub fn blocked_at(q: Queues, i: I32) -> I32 { array_get(q.?{blocked}, i) }
+
+rec(loop) fn wake_scan(q: Queues, tick: I32, read: I32, write: I32, n: I32) -> I32 {
+  if! leq_i32(n, read) {
+    write
+  } else {
+    let pid = array_get(q.?{blocked}, read);
+    let at = array_get(q.?{wake}, read);
+    if! leq_i32(at, tick) {
+      enqueue(q, pid);
+      rec wake_scan(q, tick, add_i32(read, 1), write, n)
+    } else {
+      array_set(q.?{blocked}, write, pid);
+      array_set(q.?{wake}, write, at);
+      rec wake_scan(q, tick, add_i32(read, 1), add_i32(write, 1), n)
+    }
+  }
+}
+
+rec(loop) fn truncate(a: Array(I32), keep: I32) -> . {
+  if! leq_i32(array_len(a), keep) {
+    ()
+  } else {
+    let _dropped = array_pop_back(a);
+    rec truncate(a, keep)
+  }
+}
+
+/// Move every process whose fetch has completed onto the tail of the ready
+/// queue, in the order the faults were taken, and close the blocked list up
+/// around the ones that stay.
+pub fn wake_serviced(q: Queues, tick: I32) -> . {
+  let kept = wake_scan(q, tick, 0, 0, array_len(q.?{blocked}));
+  truncate(q.?{blocked}, kept);
+  truncate(q.?{wake}, kept)
+}
+
+pub fn retire(q: Queues, pid: I32) -> . { array_push(q.?{retired}, pid) }
+
+pub fn retired_len(q: Queues) -> I32 { array_len(q.?{retired}) }
+
+pub fn retired_at(q: Queues, i: I32) -> I32 { array_get(q.?{retired}, i) }

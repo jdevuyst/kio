@@ -1,0 +1,7 @@
+module main;
+
+host type Int role(i32);
+
+host fn show(p0: Int) -> .;
+
+fn unused() -> . { () }

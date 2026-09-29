@@ -1,0 +1,8 @@
+module api/labels;
+
+import api(I32);
+import api(String);
+
+pub labels Pair = { name: String, counter: I32 };
+
+pub labels Choice = { accepted: String } | { retry: I32 } | { rejected: String };

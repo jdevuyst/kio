@@ -1,0 +1,90 @@
+module chain;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as math;
+import testapi/array as arrays;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Matrix = { rows: I32, cols: I32 };
+
+pub labels Evaluation = { rows: _, cols: _, cost: I32, first: I32, last: I32, leaves: I32 };
+
+pub fn matrix(rows: I32, cols: I32) -> Matrix { {rows, cols} }
+
+pub fn equal(a: I32, b: I32) -> Bool {
+  if! math.leq_i32(a, b) {
+    math.leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+fn valid_dimension(value: I32) -> Bool {
+  if! math.leq_i32(1, value) {
+    math.leq_i32(value, 30)
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn validate_at(matrices: Array(Matrix), index: I32, previous_cols: I32) -> String | . {
+  if! math.leq_i32(arrays.array_len(matrices), index) {
+    widen_sum!(())
+  } else {
+    let matrix = arrays.array_get(matrices, index);
+    if! valid_dimension(matrix.?{rows}) {
+      if! valid_dimension(matrix.?{cols}) {
+        if! equal(previous_cols, matrix.?{rows}) {
+          rec validate_at(matrices, math.add_i32(index, 1), matrix.?{cols})
+        } else {
+          widen_sum!(text.string_concat(
+            , "incompatible dimensions before A"
+            , fmt.int_to_string(math.add_i32(index, 1))
+            ))
+        }
+      } else {
+        widen_sum!("dimensions must be in 1..30")
+      }
+    } else {
+      widen_sum!("dimensions must be in 1..30")
+    }
+  }
+}
+
+pub fn validate(matrices: Array(Matrix)) -> String | . {
+  let count = arrays.array_len(matrices);
+  if! math.leq_i32(count, 0) {
+    widen_sum!("chain is empty")
+  } else if! math.leq_i32(count, 8) {
+    validate_at(matrices, 0, arrays.array_get(matrices, 0).?{rows})
+  } else {
+    widen_sum!("chain exceeds 8 matrices")
+  }
+}
+
+pub rec(loop) fn describe(matrices: Array(Matrix), index: I32, result: String) -> String {
+  if! math.leq_i32(arrays.array_len(matrices), index) {
+    result
+  } else {
+    let matrix = arrays.array_get(matrices, index);
+    let prefix = if! equal(index, 0) {
+      result
+    } else {
+      text.string_concat(result, " ")
+    };
+    let name = text.string_concat("A", fmt.int_to_string(math.add_i32(index, 1)));
+    let shape = text.string_concat(
+      , fmt.int_to_string(matrix.?{rows})
+      , text.string_concat("x", fmt.int_to_string(matrix.?{cols}))
+      );
+    rec describe(
+      , matrices
+      , math.add_i32(index, 1)
+      , text.string_concat(prefix, text.string_concat(name, text.string_concat("=", shape)))
+      )
+  }
+}

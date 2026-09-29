@@ -1,0 +1,96 @@
+/// Loads fresh Kio' images with conflicting and repeated binding origins.
+module testapi/main;
+
+import elab/match(match);
+import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn type_conflict_image() -> String {
+  "module consumer;\n\nimport provider(T);\n\ntype T = . & .;\n\npub fn run() -> "
+  ". { () }\n\npackage type_conflict;\n\nbridge { consumer; provider; }\n\nmodule "
+  "provider;\n\npub newtype T : . { pub constructor make; pub projector open; "
+  "};\n"(String)
+}
+
+fn type_same_origin_image() -> String {
+  "module repeated;\n\nimport provider(T);\nimport provider(T);\n\npub fn run() "
+  "-> . { () }\n\npackage type_same_origin;\n\nbridge { repeated; provider; }\n\n"
+  "module provider;\n\npub newtype T : . { pub constructor make; pub "
+  "projector open; };\n"(String)
+}
+
+fn value_conflict_image() -> String {
+  "module value_consumer;\n\nimport p1(f);\nimport p2(f);\n\npub fn broken() -> "
+  ". { missing() }\n\npackage value_conflict;\n\nbridge { value_consumer; p1; "
+  "p2; }\n\nmodule p1;\n\npub fn f() -> . { () }\n\nmodule p2;\n\npub fn f() -> . { "
+  "() }\n"(String)
+}
+
+fn value_same_origin_image() -> String {
+  "module value_repeated;\n\nimport provider(f);\nimport provider(f);\n\npub fn "
+  "run() -> . { () }\n\npackage value_same_origin;\n\nbridge { value_repeated; "
+  "provider; }\n\nmodule provider;\n\npub fn f() -> . { () }\n"(String)
+}
+
+fn module_alias_conflict_image() -> String {
+  "module alias_consumer;\n\nimport p1 as q;\nimport p2 as q;\n\npub fn broken() "
+  "-> . { missing() }\n\npackage module_alias_conflict;\n\nbridge { "
+  "alias_consumer; p1; p2; }\n\nmodule p1;\n\npub fn first() -> . { () }\n\n"
+  "module p2;\n\npub fn second() -> . { () }\n"(String)
+}
+
+fn module_alias_same_origin_image() -> String {
+  "module alias_repeated;\n\nimport provider as q;\nimport provider as q;\n\npub "
+  "fn run() -> . { () }\n\npackage module_alias_same_origin;\n\nbridge { "
+  "alias_repeated; provider; }\n\nmodule provider;\n\npub fn value() -> . { () "
+  "}\n"(String)
+}
+
+fn type_alias_collision_image() -> String {
+  "module alias_collision;\n\nimport provider(T);\nimport provider as source;\n\n"
+  "type T = source.T;\n\npub fn run() -> . { () }\n\npackage alias_collision;\n\n"
+  "bridge { alias_collision; provider; }\n\nmodule provider;\n\npub newtype T : "
+  ". { pub constructor make; pub projector open; };\n"(String)
+}
+
+fn ordinary_alias_members_image() -> String {
+  "module alias_members;\n\nimport provider as source;\n\ntype Mid[A] = "
+  "source.Box(A);\ntype Alias[A] = Mid(A);\n\npub fn run() -> . { "
+  "Alias.open(., Alias.make(., ())) }\n\npackage alias_members;\n\nbridge { "
+  "alias_members; provider; }\n\nmodule provider;\n\npub newtype Box[A] : A { "
+  "pub constructor make; pub projector open; };\n"(String)
+}
+
+fn repeated_compiler_block_image() -> String {
+  "module blocks;\n\nimport __intrinsics__;\nimport __intrinsics__;\n\npub fn "
+  "run() -> . { () }\n\npackage blocks;\n\nbridge { blocks; }\n"(String)
+}
+
+fn outcome(label: String, loaded: Load_outcome) -> String {
+  match! un_load_outcome(loaded) {
+    (
+      , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
+      , .(diagnostic: Lr_diag) {
+          string_concat(label, string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String)))
+        }
+      )
+  }
+}
+
+pub fn main() -> . {
+  print(outcome("type conflict: "(String), load_package(type_conflict_image())));
+  print(outcome("type same origin: "(String), load_package(type_same_origin_image())));
+  print(outcome("value conflict: "(String), load_package(value_conflict_image())));
+  print(outcome("value same origin: "(String), load_package(value_same_origin_image())));
+  print(outcome("module alias conflict: "(String), load_package(module_alias_conflict_image())));
+  print(outcome(
+    , "module alias same origin: "(String)
+    , load_package(module_alias_same_origin_image())
+    ));
+  print(outcome("type alias collision: "(String), load_package(type_alias_collision_image())));
+  print(outcome("ordinary alias members: "(String), load_package(ordinary_alias_members_image())));
+  print(outcome("compiler blocks: "(String), load_package(repeated_compiler_block_image())))
+}

@@ -1,0 +1,172 @@
+/// The learned model: a bigram Markov chain over the training corpus.
+///
+/// For every word the chain records the words observed to follow it, each
+/// with how often that pair occurred. The chain is an association list keyed
+/// by word — there is no host dictionary and no ordering on `String`, so
+/// lookup is a linear walk comparing keys with `string_eq`. Two weighted word
+/// lists sit beside it: the words a phrase started on and the words a phrase
+/// ended on.
+///
+/// Every list here is kept in first-seen order. That is what makes the model
+/// listing in the report stable, and what lets a reader re-derive the
+/// cumulative weight bands of a draw by reading the corpus top to bottom.
+module ballad/model;
+
+import ballad/list(List, cons, nil, of1, rev_onto, reverse);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// One weighted word: how many times it was observed in some position.
+pub labels Tally = { word: String, count: I32 };
+
+fn tally(word: String, count: I32) -> Tally { {word, count} }
+
+/// One chain entry: a word and everything observed to follow it.
+pub labels Row = { row_word: String, row_succs: List(Tally) };
+
+fn row(row_word: String, row_succs: List(Tally)) -> Row { {row_word, row_succs} }
+
+pub labels Model = { rows: List(Row), starts: List(Tally), ends: List(Tally) };
+
+fn model(rows: List(Row), starts: List(Tally), ends: List(Tally)) -> Model { {rows, starts, ends} }
+
+pub fn empty_model() -> Model { model(nil(Row, ()), nil(Tally, ()), nil(Tally, ())) }
+
+pub fn rows_of(m: Model) -> List(Row) { m.?{rows} }
+
+pub fn starts_of(m: Model) -> List(Tally) { m.?{starts} }
+
+pub fn ends_of(m: Model) -> List(Tally) { m.?{ends} }
+
+rec(loop) fn bump_onto(rest: List(Tally), w: String, seen: List(Tally)) -> List(Tally) {
+  match! rest.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) {
+          if! string_eq(t.?{word}, w) {
+            rev_onto(seen, cons(tally(w, add_i32(t.?{count}, 1)), more))
+          } else {
+            rec bump_onto(more, w, cons(t, seen))
+          }
+        }
+      , .(_empty: .) { reverse(cons(tally(w, 1), seen)) }
+      )
+  }
+}
+
+/// Add one observation of `w` to a weighted word list: bump it in place when
+/// already present, otherwise append it at the end so first-seen order holds.
+fn bump(ts: List(Tally), w: String) -> List(Tally) { bump_onto(ts, w, nil(Tally, ())) }
+
+rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List(Row)) -> List(Row) {
+  match! rest.>List.un_list {
+    (
+      , .(r: Row, more: List(Row)) {
+          if! string_eq(r.?{row_word}, from) {
+            rev_onto(seen, cons(row(from, bump(r.?{row_succs}, to)), more))
+          } else {
+            rec add_edge_onto(more, from, to, cons(r, seen))
+          }
+        }
+      , .(_empty: .) { reverse(cons(row(from, of1(tally(to, 1))), seen)) }
+      )
+  }
+}
+
+fn add_edge(rows: List(Row), from: String, to: String) -> List(Row) {
+  add_edge_onto(rows, from, to, nil(Row, ()))
+}
+
+rec(loop) fn learn_edges(rows: List(Row), prev: String, rest: List(String)) -> List(Row) {
+  match! rest.>List.un_list {
+    (
+      , .(w: String, more: List(String)) { rec learn_edges(add_edge(rows, prev, w), w, more) }
+      , .(_empty: .) { rows }
+      )
+  }
+}
+
+rec(loop) fn last_word(w: String, rest: List(String)) -> String {
+  match! rest.>List.un_list {
+    (.(x: String, more: List(String)) { rec last_word(x, more) }, .(_empty: .) { w })
+  }
+}
+
+/// Fold one phrase into the model: its first word starts a line, its last
+/// word ends one, and every adjacent pair is a chain edge.
+fn learn_phrase(m: Model, phrase: List(String)) -> Model {
+  match! phrase.>List.un_list {
+    (
+      , .(first: String, rest: List(String)) {
+          model(
+            , learn_edges(rows_of(m), first, rest)
+            , bump(starts_of(m), first)
+            , bump(ends_of(m), last_word(first, rest))
+            )
+        }
+      , .(_empty: .) { m }
+      )
+  }
+}
+
+pub rec(loop) fn learn(m: Model, phrases: List(List(String))) -> Model {
+  match! phrases.>List.un_list {
+    (
+      , .(p: List(String), more: List(List(String))) { rec learn(learn_phrase(m, p), more) }
+      , .(_empty: .) { m }
+      )
+  }
+}
+
+rec(loop) fn holds(ts: List(Tally), w: String) -> Bool {
+  match! ts.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) {
+          if! string_eq(t.?{word}, w) {
+            .t
+          } else {
+            rec holds(more, w)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+/// True when a phrase in the corpus ended on `w`. A generated line stops as
+/// soon as it draws one of these.
+pub fn is_end(m: Model, w: String) -> Bool { holds(ends_of(m), w) }
+
+rec(loop) fn find_succs(rows: List(Row), w: String) -> List(Tally) {
+  match! rows.>List.un_list {
+    (
+      , .(r: Row, more: List(Row)) {
+          if! string_eq(r.?{row_word}, w) {
+            r.?{row_succs}
+          } else {
+            rec find_succs(more, w)
+          }
+        }
+      , .(_empty: .) { nil(Tally, ()) }
+      )
+  }
+}
+
+/// The successors observed after `w`, empty when the corpus never continued
+/// past it.
+pub fn succs_of(m: Model, w: String) -> List(Tally) { find_succs(rows_of(m), w) }
+
+rec(loop) fn weight_onto(ts: List(Tally), acc: I32) -> I32 {
+  match! ts.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) { rec weight_onto(more, add_i32(acc, t.?{count})) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The total weight of a word list — the modulus a draw rolls against.
+pub fn total_weight(ts: List(Tally)) -> I32 { weight_onto(ts, 0) }

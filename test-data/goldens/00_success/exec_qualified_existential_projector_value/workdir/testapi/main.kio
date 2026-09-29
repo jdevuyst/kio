@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/types as t;
+
+newtype Box <A> : A { constructor mk_local_box; projector open_local_box }
+
+fn apply_proj(p: t.Box -> [R] ([A] (String & A) -> R) -> R, v: t.Box) -> String {
+  p(v)(.[A](text: String, _witness: A) { text })
+}
+
+pub fn main() -> . { print(apply_proj(t.Box.un_box, t.make_box("owner-ok\n"(String), ()))) }

@@ -1,0 +1,7 @@
+module main;
+
+fn nil() -> . { () }
+
+fn cons(head: ., tail: .) -> . { tail }
+
+varop [* *] { foldr .x. { cons(x1, x2) } nil; };

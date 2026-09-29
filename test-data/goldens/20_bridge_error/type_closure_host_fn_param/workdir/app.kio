@@ -1,0 +1,5 @@
+module app;
+
+import lib/types(Token);
+
+host fn accept_host(x: Token) -> .;

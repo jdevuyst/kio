@@ -1,0 +1,31 @@
+module main;
+
+import __intrinsics__;
+
+import __comptime__;
+
+host type Later;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+host fn later() -> Later;
+
+pure fn invoke_then_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _s: __Type__
+  , callback: __Checked_term__
+  , _later: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let unit_type = __reflect_type__(ct, .);
+  let zero = __type_arity_zero__(ct);
+  let callback_type = __type_arrow__(ct, unit_type, zero, unit_type);
+  (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
+}
+
+elab invoke_then : [S] (S -> S) -> Later -> . { impl(fills) invoke_then_impl }
+
+rec(loop) fn repeat(state: .) -> . {
+  let residual = invoke_then!(.(_unit: .) { rec(cont) repeat(state) });
+  residual(later())
+}

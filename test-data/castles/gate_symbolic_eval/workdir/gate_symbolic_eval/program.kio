@@ -1,0 +1,209 @@
+module gate_symbolic_eval/program;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec {
+  labels Expr_node =
+    { lit: I32 }
+    | { var_x: . }
+    | { var_y: . }
+    | { var_z: . }
+    | { add_left: Expr, add_right: Expr }
+    | { mul_left: Expr, mul_right: Expr };
+  newtype Expr : Expr_node { constructor expr; projector un_expr }
+}
+
+labels Maybe_i32 = { some_i32: I32 } | { no_i32: . };
+
+fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
+
+fn line(label: String, value: String) -> String { cat3(label, value, "\n") }
+
+fn lit(value: I32) -> Expr { Expr.expr({lit = value}.>widen_sum!(Expr_node)) }
+
+fn var_x() -> Expr { Expr.expr({var_x=}.>widen_sum!(Expr_node)) }
+
+fn var_y() -> Expr { Expr.expr({var_y=}.>widen_sum!(Expr_node)) }
+
+fn var_z() -> Expr { Expr.expr({var_z=}.>widen_sum!(Expr_node)) }
+
+fn add(left: Expr, right: Expr) -> Expr {
+  Expr.expr({add_left = left, add_right = right}.>widen_sum!(Expr_node))
+}
+
+fn mul(left: Expr, right: Expr) -> Expr {
+  Expr.expr({mul_left = left, mul_right = right}.>widen_sum!(Expr_node))
+}
+
+fn some_i32(value: I32) -> Maybe_i32 { {some_i32 = value}.>widen_sum!(Maybe_i32) }
+
+fn no_i32() -> Maybe_i32 { {no_i32=}.>widen_sum!(Maybe_i32) }
+
+fn as_const(e: Expr) -> Maybe_i32 {
+  match! e.>Expr.un_expr {
+    (
+      , .(n: Lit) { some_i32(n.?{lit}) }
+      , .(_x: Var_x) { no_i32() }
+      , .(_y: Var_y) { no_i32() }
+      , .(_z: Var_z) { no_i32() }
+      , .(_left: Add_left, _right: Add_right) { no_i32() }
+      , .(_left: Mul_left, _right: Mul_right) { no_i32() }
+      )
+  }
+}
+
+fn is_const(e: Expr, value: I32) -> Bool {
+  match! as_const(e) {
+    (.(n: Some_i32) { eq_i32(n.?{some_i32}, value) }, .(_n: No_i32) { .f })
+  }
+}
+
+fn fold_add(left: Expr, right: Expr) -> Expr {
+  match! as_const(left) {
+    (
+      , .(ln: Some_i32) {
+          match! as_const(right) {
+            (
+              , .(rn: Some_i32) { lit(add_i32(ln.?{some_i32}, rn.?{some_i32})) }
+              , .(_rn: No_i32) { add(left, right) }
+              )
+          }
+        }
+      , .(_ln: No_i32) { add(left, right) }
+      )
+  }
+}
+
+fn fold_mul(left: Expr, right: Expr) -> Expr {
+  match! as_const(left) {
+    (
+      , .(ln: Some_i32) {
+          match! as_const(right) {
+            (
+              , .(rn: Some_i32) { lit(mul_i32(ln.?{some_i32}, rn.?{some_i32})) }
+              , .(_rn: No_i32) { mul(left, right) }
+              )
+          }
+        }
+      , .(_ln: No_i32) { mul(left, right) }
+      )
+  }
+}
+
+fn simplify_add(left: Expr, right: Expr) -> Expr {
+  if! is_const(left, 0) {
+    right
+  } else if! is_const(right, 0) {
+    left
+  } else {
+    fold_add(left, right)
+  }
+}
+
+fn simplify_mul(left: Expr, right: Expr) -> Expr {
+  if! is_const(left, 0) {
+    lit(0)
+  } else if! is_const(right, 0) {
+    lit(0)
+  } else if! is_const(left, 1) {
+    right
+  } else if! is_const(right, 1) {
+    left
+  } else {
+    fold_mul(left, right)
+  }
+}
+
+rec(loop) fn simplify(e: Expr) -> Expr {
+  match! e.>Expr.un_expr {
+    (
+      , .(n: Lit) { lit(n.?{lit}) }
+      , .(_x: Var_x) { var_x() }
+      , .(_y: Var_y) { var_y() }
+      , .(_z: Var_z) { var_z() }
+      , .(left: Add_left, right: Add_right) {
+          simplify_add(rec(cont) simplify(left.?{add_left}), rec(cont) simplify(right.?{add_right}))
+        }
+      , .(left: Mul_left, right: Mul_right) {
+          simplify_mul(rec(cont) simplify(left.?{mul_left}), rec(cont) simplify(right.?{mul_right}))
+        }
+      )
+  }
+}
+
+rec(loop) fn eval(e: Expr) -> I32 {
+  match! e.>Expr.un_expr {
+    (
+      , .(n: Lit) { n.?{lit} }
+      , .(_x: Var_x) { 7 }
+      , .(_y: Var_y) { 4 }
+      , .(_z: Var_z) { 9 }
+      , .(left: Add_left, right: Add_right) {
+          add_i32(rec(cont) eval(left.?{add_left}), rec(cont) eval(right.?{add_right}))
+        }
+      , .(left: Mul_left, right: Mul_right) {
+          mul_i32(rec(cont) eval(left.?{mul_left}), rec(cont) eval(right.?{mul_right}))
+        }
+      )
+  }
+}
+
+rec(loop) fn render(e: Expr) -> String {
+  match! e.>Expr.un_expr {
+    (
+      , .(n: Lit) { int_to_string(n.?{lit}) }
+      , .(_x: Var_x) { "x" }
+      , .(_y: Var_y) { "y" }
+      , .(_z: Var_z) { "z" }
+      , .(left: Add_left, right: Add_right) {
+          cat3(
+            , cat3("(", rec(cont) render(left.?{add_left}), " + ")
+            , rec(cont) render(right.?{add_right})
+            , ")"
+            )
+        }
+      , .(left: Mul_left, right: Mul_right) {
+          cat3(
+            , cat3("(", rec(cont) render(left.?{mul_left}), " * ")
+            , rec(cont) render(right.?{mul_right})
+            , ")"
+            )
+        }
+      )
+  }
+}
+
+fn emit_case(name: String, expr_value: Expr) -> . {
+  let simplified = simplify(expr_value);
+  print(line("case ", name));
+  print(line("before: ", render(expr_value)));
+  print(line("after: ", render(simplified)));
+  print(line("value: ", int_to_string(eval(simplified))))
+}
+
+fn alpha() -> Expr { mul(add(var_x(), lit(0)), add(lit(2), lit(3))) }
+
+fn beta() -> Expr { add(mul(var_y(), lit(1)), mul(var_z(), lit(0))) }
+
+fn gamma() -> Expr { mul(add(lit(1), lit(2)), add(var_x(), var_y())) }
+
+fn delta() -> Expr { add(add(var_z(), mul(lit(3), lit(0))), mul(lit(4), lit(5))) }
+
+pub fn run() -> . {
+  print("symbolic simplifier\n\n");
+  emit_case("alpha", alpha());
+  print("\n");
+  emit_case("beta", beta());
+  print("\n");
+  emit_case("gamma", gamma());
+  print("\n");
+  emit_case("delta", delta())
+}

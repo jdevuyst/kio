@@ -1,0 +1,13 @@
+package rust_structural_surface;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  main
+}

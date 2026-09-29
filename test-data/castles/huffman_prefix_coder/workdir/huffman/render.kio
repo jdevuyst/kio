@@ -1,0 +1,183 @@
+/// The transcript. Everything the coder computed, in the order it computed it,
+/// so a run can be read and checked without the source beside it.
+module huffman/render;
+
+import elab/control(if);
+import elab/match(match);
+import huffman/code(Bits, Entry, {entry_bits}, {entry_freq}, {entry_len}, {entry_symbol});
+import huffman/freq(Count, {count_freq}, {count_symbol});
+import huffman/list(List, fold, for_each, len);
+import huffman/message(glyph);
+import huffman/report(Savings, {alphabet}, {baseline_bits}, {coded_bits}, {fixed_width});
+import huffman/report({milli_bits_each}, {saved_bits}, {saved_permille}, {symbol_count});
+import huffman/text(cat, cat3, cat4, line, num, pad_num, pad_text);
+import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
+import huffman/tree({step_left}, {step_merged}, {step_right});
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn bit_glyph(bit: I32) -> String {
+  if! eq_i32(bit, 0) {
+    "0"
+  } else {
+    "1"
+  }
+}
+
+fn bits_text(bits: Bits) -> String {
+  fold(bits, .(acc: String, bit: I32) { cat(acc, bit_glyph(bit)) }, "")
+}
+
+/// A leaf shows as its glyph, an internal node as `*` and its ordering key, so
+/// the build log names exactly the nodes the queue was ordering and pins the
+/// chosen tie-break.
+fn node_name(node: Node) -> String {
+  if! is_leaf(node) {
+    glyph(symbol_or(node, -1))
+  } else {
+    cat("*", num(key(node)))
+  }
+}
+
+fn node_text(node: Node) -> String { cat4(node_name(node), "(", num(weight(node)), ")") }
+
+fn heading(title: String) -> . { print(line(cat("\n", title))) }
+
+fn figure(label: String, value: String) -> . { print(line(cat4("  ", label, ": ", value))) }
+
+pub fn print_message(text: String, symbols: I32, alphabet_size: I32) -> . {
+  heading(cat4(
+    , "message: "
+    , num(symbols)
+    , " symbols over an alphabet of "
+    , cat(num(alphabet_size), " glyphs")
+    ));
+  print(line(cat("  ", text)))
+}
+
+fn count_line(row: Count) -> String {
+  let .({count_symbol, count_freq}) = row;
+  cat4(
+    , cat3("  ", pad_num(count_symbol, 4), "  ")
+    , pad_text(glyph(count_symbol), 1, 5)
+    , "  "
+    , line(pad_num(count_freq, 5))
+    )
+}
+
+pub fn print_frequencies(counts: List(Count)) -> . {
+  heading("frequency table");
+  print(line("  code  glyph  count"));
+  for_each(counts, .(row: Count) { print(count_line(row)) })
+}
+
+fn queue_text(nodes: List(Node)) -> String {
+  fold(nodes, .(acc: String, node: Node) { cat3(acc, " ", node_text(node)) }, "")
+}
+
+pub fn print_queue(queue: List(Node), first_merge_key: I32) -> . {
+  heading("node order: ascending (weight, key)");
+  print(line("  a leaf's key is its symbol code; the k-th merged node takes"));
+  print(line(cat3(
+    , "  key "
+    , num(first_merge_key)
+    , " + k, so an equal weight always breaks toward the leaf"
+    )));
+  heading("initial queue");
+  print(line(cat(" ", queue_text(queue))))
+}
+
+fn step_line(index: I32, entry: Step) -> String {
+  let .({step_left, step_right, step_merged}) = entry;
+  cat4(
+    , cat3("  ", pad_num(index, 2), "  ")
+    , cat3(node_text(step_left), " + ", node_text(step_right))
+    , " -> "
+    , line(node_text(step_merged))
+    )
+}
+
+rec(loop) fn print_steps(steps: List(Step), index: I32) -> . {
+  match! steps.>List.un_list {
+    (
+      , .(head: Step, rest: List(Step)) {
+          print(step_line(index, head));
+          rec print_steps(rest, add_i32(index, 1))
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_build(steps: List(Step)) -> . {
+  heading("build steps: take the two front nodes, merge, re-insert");
+  print_steps(steps, 1)
+}
+
+fn entry_line(row: Entry) -> String {
+  let .({entry_symbol, entry_freq, entry_bits, entry_len}) = row;
+  cat4(
+    , cat3("  ", pad_text(glyph(entry_symbol), 1, 5), "  ")
+    , cat3(pad_num(entry_freq, 5), "  ", pad_num(entry_len, 6))
+    , "  "
+    , line(bits_text(entry_bits))
+    )
+}
+
+pub fn print_codes(rows: List(Entry)) -> . {
+  heading("code table: 0 descends left, 1 descends right");
+  print(line("  glyph  count  length  code"));
+  for_each(rows, .(row: Entry) { print(entry_line(row)) })
+}
+
+pub fn print_encoded(bits: Bits) -> . {
+  heading(cat3("encoded message: ", num(len(bits)), " bits"));
+  print(line(cat("  ", bits_text(bits))))
+}
+
+pub fn print_decoded(symbols: I32, matches: Bool) -> . {
+  heading("decode: walk the tree bit by bit, back to symbols");
+  figure("decoded symbols", num(symbols));
+  print(line(if! matches {
+    "  round trip: OK, the decoded message is the original"
+  } else {
+    "  round trip: FAILED, the decoded message differs"
+  }))
+}
+
+pub fn print_savings(figures: Savings) -> . {
+  let .({
+    , symbol_count
+    , alphabet
+    , fixed_width
+    , baseline_bits
+    , coded_bits
+    , saved_bits
+    , saved_permille
+    , milli_bits_each
+    }) = figures;
+  heading("compression report");
+  figure("symbols coded", num(symbol_count));
+  figure("alphabet size", num(alphabet));
+  figure("fixed-width bits per symbol", num(fixed_width));
+  figure("baseline bits", num(baseline_bits));
+  figure("huffman bits", num(coded_bits));
+  figure("saved bits", num(saved_bits));
+  figure("saved", cat(num(saved_permille), " permille"));
+  figure("cost per symbol", cat(num(milli_bits_each), " milli-bits"))
+}
+
+pub fn print_kraft(longest: I32, scale: I32, total: I32, words: I32, holds: Bool) -> . {
+  heading("kraft check: sum of 2^-length over every codeword");
+  figure("longest codeword", cat(num(longest), " bits"));
+  figure("scale (2 ^ longest)", num(scale));
+  figure("codewords", num(words));
+  figure("sum of scaled terms", num(total));
+  print(line(if! holds {
+    "  verdict: the code lengths satisfy Kraft equality"
+  } else {
+    "  verdict: the code lengths miss Kraft equality"
+  }))
+}

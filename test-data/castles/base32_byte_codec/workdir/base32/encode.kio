@@ -1,0 +1,82 @@
+/// Encoding. The payload is a stream of bits, not a stream of bytes: each
+/// byte pushes eight fresh bits into an accumulator, and every time five
+/// or more bits are pending the top five are drawn off as one glyph.
+///
+/// Because eight and five share no factor, group boundaries drift through
+/// the payload and the two counters — the accumulator and the number of
+/// bits it still holds — are the whole of the state.
+module base32/encode;
+
+import base32/alphabet as alphabet;
+import base32/bits as bits;
+import base32/list as list;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, lt_i32, mod_i32, sub_i32);
+import testapi/iter(loop);
+
+/// Padding glyphs needed to round `emitted` glyphs up to a whole quantum.
+fn pad_needed(emitted: I32) -> I32 {
+  mod_i32(sub_i32(alphabet.quantum(), mod_i32(emitted, alphabet.quantum())), alphabet.quantum())
+}
+
+rec(loop) fn pad_out(count: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
+  if! lt_i32(0, count) {
+    rec pad_out(sub_i32(count, 1), list.cons(alphabet.pad(), done))
+  } else {
+    done
+  }
+}
+
+/// Close the transmission once the payload runs out. Any bits still held
+/// are fewer than a whole group, so they become the *high* bits of one
+/// last glyph whose low bits are zero; the transmission is then padded up
+/// to a whole quantum.
+fn close(acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
+  let tail =
+    if! lt_i32(0, held) {
+      let value = bits.low_bits(
+        , bits.shift_up(acc, sub_i32(alphabet.group_bits(), held))
+        , alphabet.group_bits()
+        );
+      list.cons(alphabet.glyph_of(value), done)
+    } else {
+      done
+    };
+  list.reverse(pad_out(pad_needed(list.length(tail)), tail))
+}
+
+rec(loop) {
+  /// Encode a payload into the glyphs that carry it.
+  pub fn encode(payload: alphabet.Bytes) -> alphabet.Glyphs {
+    rec feed(payload, 0, 0, list.nil(String, ()))
+  };
+  /// Take the next byte into the accumulator, eight bits at a time.
+  fn feed(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
+    match! payload.>list.List.un_list {
+      (
+        , .(byte: I32, rest: alphabet.Bytes) {
+            rec drain(
+              , rest
+              , add_i32(bits.shift_up(acc, alphabet.byte_bits()), byte)
+              , add_i32(held, alphabet.byte_bits())
+              , done
+              )
+          }
+        , .(_empty: .) { close(acc, held, done) }
+        )
+    }
+  };
+  /// Draw off every whole group the accumulator now holds, high bits
+  /// first, and keep only the leftover bits behind.
+  fn drain(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
+    if! lt_i32(held, alphabet.group_bits()) {
+      rec feed(payload, acc, held, done)
+    } else {
+      let left = sub_i32(held, alphabet.group_bits());
+      let value = bits.low_bits(bits.shift_down(acc, left), alphabet.group_bits());
+      rec drain(payload, bits.low_bits(acc, left), left, list.cons(alphabet.glyph_of(value), done))
+    }
+  }
+}

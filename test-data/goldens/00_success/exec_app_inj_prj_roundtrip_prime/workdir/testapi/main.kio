@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Explicit Kio'-target round-trip: build to Kio', then re-build
+// the emitted Kio' source through the impl's primary target. The
+// case asserts that the kinded HKT surface — the applied brand
+// `Wrap(a)` and the brand-crossing members `Wrap.mk_wrap` /
+// `Wrap.un_wrap` — survives the Kio' boundary intact.
+pub newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
+
+fn roundtrip[A](x: A) -> A { Wrap.un_wrap(A, Wrap.mk_wrap(A, x)) }
+
+pub fn main() -> . { print(roundtrip(String, "brand prime round-trip ok\n"(String))) }

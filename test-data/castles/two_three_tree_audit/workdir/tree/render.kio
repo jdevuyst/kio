@@ -1,0 +1,65 @@
+/// Two views of a finished tree: the structure, and the keys in order.
+///
+/// `draw_tree` prints the leaves too, deliberately — every `leaf` line lands at
+/// the same indent exactly when the tree is balanced, so the invariant the audit
+/// reports as a word is also there to see as a shape.
+module tree/render;
+
+import elab/match(match);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+import tree/node(Leaf, Node, Three, Tree, Two, root_of, {three}, {two});
+import tree/text(cat, cat3, cat4, indent, num);
+
+fn entry(k: I32, v: String) -> String { cat3(num(k), "=", v) }
+
+rec(loop) fn draw(t: Node, level: I32) -> . {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { print(cat3(indent(level), "leaf", "\n")) }
+      , .(n: Two) {
+          let .(l: Node, k: I32, v: String, r: Node) = n.?{two};
+          print(cat4(indent(level), "2-node  ", entry(k, v), "\n"));
+          rec(cont) draw(l, add_i32(level, 1));
+          rec draw(r, add_i32(level, 1))
+        }
+      , .(n: Three) {
+          let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+          print(cat4(indent(level), "3-node  ", cat3(entry(k1, v1), "  ", entry(k2, v2)), "\n"));
+          rec(cont) draw(l, add_i32(level, 1));
+          rec(cont) draw(m, add_i32(level, 1));
+          rec draw(r, add_i32(level, 1))
+        }
+      )
+  }
+}
+
+pub fn draw_tree(t: Tree) -> . { draw(root_of(t), 1) }
+
+rec(loop) fn inorder(t: Node, acc: String) -> String {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { acc }
+      , .(n: Two) {
+          let .(l: Node, k: I32, v: String, r: Node) = n.?{two};
+          let after_left = rec(cont) inorder(l, acc);
+          let after_key = cat3(after_left, " ", entry(k, v));
+          rec inorder(r, after_key)
+        }
+      , .(n: Three) {
+          let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+          let after_left = rec(cont) inorder(l, acc);
+          let after_k1 = cat3(after_left, " ", entry(k1, v1));
+          let after_mid = rec(cont) inorder(m, after_k1);
+          let after_k2 = cat3(after_mid, " ", entry(k2, v2));
+          rec inorder(r, after_k2)
+        }
+      )
+  }
+}
+
+/// The keys in ascending order, each entry already carrying its own leading
+/// space — the caller supplies the label the first space follows.
+pub fn inorder_line(t: Tree) -> String { inorder(root_of(t), "") }

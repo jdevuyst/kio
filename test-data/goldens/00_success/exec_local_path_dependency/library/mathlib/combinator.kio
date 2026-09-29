@@ -1,0 +1,5 @@
+module combinator;
+
+pub fn id[A](x: A) -> A { x }
+
+pub fn const_first[A][B](x: A, _y: B) -> A { x }

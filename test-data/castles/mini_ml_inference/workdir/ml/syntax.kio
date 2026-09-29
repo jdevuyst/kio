@@ -1,0 +1,31 @@
+module ml/syntax;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+
+pub rec labels Expr =
+  { integer: . }
+  | { boolean: . }
+  | { variable: String }
+  | { lambda: String & Expr }
+  | { apply: Expr & Expr }
+  | { binding: String & Expr & Expr }
+  | { pair: Expr & Expr };
+
+pub fn integer_expr() -> Expr { {integer=}.>widen_sum! }
+
+pub fn boolean_expr() -> Expr { {boolean=}.>widen_sum! }
+
+pub fn variable_expr(name: String) -> Expr { {variable = name}.>widen_sum! }
+
+pub fn lambda_expr(name: String, body: Expr) -> Expr { {lambda = (name, body)}.>widen_sum! }
+
+pub fn apply_expr(function: Expr, argument: Expr) -> Expr {
+  {apply = (function, argument)}.>widen_sum!
+}
+
+pub fn binding_expr(name: String, value: Expr, body: Expr) -> Expr {
+  {binding = (name, value, body)}.>widen_sum!
+}
+
+pub fn pair_expr(a: Expr, b: Expr) -> Expr { {pair = (a, b)}.>widen_sum! }

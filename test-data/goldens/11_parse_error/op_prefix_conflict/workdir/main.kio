@@ -1,0 +1,10 @@
+module main;
+
+fn f(a: A, b: A) -> A { a }
+fn g(a: A, b: A) -> A { a }
+
+// Prefix-forbidden conflict: `_ && _` has op-token sequence
+// `[&, &]`; `_ && ++ _` has op-token sequence `[&, &, ++]`. The
+// first is a strict prefix of the second, so the second `op`
+// is a name-conflict error per spec.
+op _ && _ { impl f; };op _ && ++ _ { impl g; };

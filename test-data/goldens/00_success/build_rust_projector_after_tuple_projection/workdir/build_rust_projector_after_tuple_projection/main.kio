@@ -1,0 +1,11 @@
+module build_rust_projector_after_tuple_projection/main;
+
+import __intrinsics__;
+
+import build_rust_projector_after_tuple_projection(String);
+
+newtype Greet : String { pub constructor mk_greet; pub projector greet }
+
+fn read() -> String {
+  Greet.greet(__fst__(Greet, ., __pair__(Greet, ., Greet.mk_greet("hello"(String)), ())))
+}

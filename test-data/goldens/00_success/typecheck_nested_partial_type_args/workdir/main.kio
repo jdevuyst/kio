@@ -1,0 +1,7 @@
+module main;
+
+fn view[S][A](get: S -> A, value: S) -> A { get(value) }
+
+fn pair_fst[A][B]() -> (A & B) -> A { .(left: A, _right: B) -> A { left } }
+
+fn run[C][D](c: C, d: D) -> C { view(pair_fst(_, _, ()), (c, d)) }

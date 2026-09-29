@@ -1,0 +1,7 @@
+dead glob: dyn_load_prime: bridge glob `missing/first/**` matches no module in this package
+transitive hidden host: dyn_load_prime: module `host` declares `host` items and is reachable from a bridged module, but is not itself selected by any bridge glob; add a glob matching `host` to the package `bridge { … }` block so the host contract surface is complete
+stable hidden host: dyn_load_prime: module `alpha` declares `host` items and is reachable from a bridged module, but is not itself selected by any bridge glob; add a glob matching `alpha` to the package `bridge { … }` block so the host contract surface is complete
+accepted control: accepted
+manifest without bridge: <empty>
+empty bridge: <empty>
+no manifest: main.entry

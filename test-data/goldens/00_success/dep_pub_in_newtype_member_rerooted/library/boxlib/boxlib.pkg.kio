@@ -1,0 +1,5 @@
+package boxlib;
+
+bridge {
+  box
+}

@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi(Box, I32);
+import testapi/arith(box_get, box_make);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+newtype T : I32 { constructor wrap; projector unwrap }
+
+fn make_box(make: [A] A -> Box(A), value: I32) -> Box(I32) { make(value) }
+
+pub fn main() -> . { let boxed = make_box(box_make, 9); print(i32_to_string(box_get(boxed))) }

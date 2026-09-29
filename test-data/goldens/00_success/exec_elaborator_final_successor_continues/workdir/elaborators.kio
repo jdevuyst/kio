@@ -1,0 +1,20 @@
+module elaborators;
+
+import __comptime__;
+
+type Optional_type = __Type__ | .;
+
+pure fn infer_unit_impl(ct: __Comptime__, _target: Optional_type) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+pure fn finish_impl(
+  , _ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , _target: Optional_type
+  ) -> __Checked_term__ { value }
+
+pub elab infer_unit : [A] . -> A { impl infer_unit_impl }
+
+pub elab finish : [Source] Source -> [Target] Target { impl finish_impl }

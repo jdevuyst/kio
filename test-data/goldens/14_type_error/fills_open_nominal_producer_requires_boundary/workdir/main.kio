@@ -1,0 +1,7 @@
+module main;
+
+import elab(Box, ignore);
+
+host fn boxed[A](callback: . -> .) -> Box(A);
+
+fn run() -> . { let _result = ignore!(boxed(.() { () })); () }

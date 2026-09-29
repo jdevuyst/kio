@@ -1,0 +1,35 @@
+cold/warm stdout matched
+warm cache log:
+equiv-cache: hit <key> m.uses_a
+equiv-cache: hit <key> m.uses_alias
+equiv-cache: hit <key> m.uses_b
+equiv-cache: hit <key> m.uses_imported_private
+equiv-cache: hit <key> m.uses_qualified_with_local
+function edit cached/no-cache stdout matched
+edit cache log:
+equiv-cache: hit <key> m.uses_alias
+equiv-cache: hit <key> m.uses_b
+equiv-cache: hit <key> m.uses_imported_private
+equiv-cache: hit <key> m.uses_qualified_with_local
+equiv-cache: miss <key> m.uses_a (no entry)
+private-helper edit cached/no-cache stdout matched
+private-helper edit cache log:
+equiv-cache: hit <key> m.uses_a
+equiv-cache: hit <key> m.uses_alias
+equiv-cache: hit <key> m.uses_b
+equiv-cache: hit <key> m.uses_qualified_with_local
+equiv-cache: miss <key> m.uses_imported_private (no entry)
+alias edit cached/no-cache stdout matched
+alias edit cache log:
+equiv-cache: miss <key> m.uses_a (no entry)
+equiv-cache: miss <key> m.uses_alias (no entry)
+equiv-cache: miss <key> m.uses_b (no entry)
+equiv-cache: miss <key> m.uses_imported_private (no entry)
+equiv-cache: miss <key> m.uses_qualified_with_local (no entry)
+qualified-alias/local edit cached/no-cache failure matched
+qualified-alias/local edit cache log:
+equiv-cache: hit <key> m.uses_a
+equiv-cache: hit <key> m.uses_alias
+equiv-cache: hit <key> m.uses_b
+equiv-cache: hit <key> m.uses_imported_private
+equiv-cache: miss <key> m.uses_qualified_with_local (no entry)

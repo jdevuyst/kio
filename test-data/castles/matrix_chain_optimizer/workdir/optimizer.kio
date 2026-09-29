@@ -1,0 +1,111 @@
+module optimizer;
+
+import chain as chain;
+import chain(Matrix, {cols}, {rows});
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/arith as math;
+import testapi/array as arrays;
+import testapi/iter(loop);
+import tree as tree;
+
+pub labels Plan = { costs: Array(I32), splits: Array(I32), size: I32 };
+
+fn cell(plan: Plan, first: I32, last: I32) -> I32 {
+  math.add_i32(math.mul_i32(first, plan.?{size}), last)
+}
+
+pub fn cost(plan: Plan, first: I32, last: I32) -> I32 {
+  arrays.array_get(plan.?{costs}, cell(plan, first, last))
+}
+
+pub fn split(plan: Plan, first: I32, last: I32) -> I32 {
+  arrays.array_get(plan.?{splits}, cell(plan, first, last))
+}
+
+fn trial(matrices: Array(Matrix), plan: Plan, first: I32, last: I32, middle: I32) -> I32 {
+  let rows = arrays.array_get(matrices, first).?{rows};
+  let inner = arrays.array_get(matrices, middle).?{cols};
+  let cols = arrays.array_get(matrices, last).?{cols};
+  math.add_i32(
+    , math.add_i32(cost(plan, first, middle), cost(plan, math.add_i32(middle, 1), last))
+    , math.mul_i32(math.mul_i32(rows, inner), cols)
+    )
+}
+
+rec(loop) fn choose(
+  , matrices: Array(Matrix)
+  , plan: Plan
+  , first: I32
+  , last: I32
+  , middle: I32
+  , best: I32
+  , best_split: I32
+  ) -> I32 & I32 {
+  if! math.leq_i32(last, middle) {
+    (best, best_split)
+  } else {
+    let candidate = trial(matrices, plan, first, last, middle);
+    // Ascending splits and strict improvement retain the earliest equal-cost split.
+    if! math.leq_i32(candidate, math.sub_i32(best, 1)) {
+      rec choose(matrices, plan, first, last, math.add_i32(middle, 1), candidate, middle)
+    } else {
+      rec choose(matrices, plan, first, last, math.add_i32(middle, 1), best, best_split)
+    }
+  }
+}
+
+rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I32) -> . {
+  let last = math.sub_i32(math.add_i32(first, width), 1);
+  if! math.leq_i32(plan.?{size}, last) {
+    ()
+  } else {
+    let initial = trial(matrices, plan, first, last, first);
+    let .(best: I32, selected: I32) = choose(
+      , matrices
+      , plan
+      , first
+      , last
+      , math.add_i32(first, 1)
+      , initial
+      , first
+      );
+    arrays.array_set(plan.?{costs}, cell(plan, first, last), best);
+    arrays.array_set(plan.?{splits}, cell(plan, first, last), selected);
+    rec intervals(matrices, plan, width, math.add_i32(first, 1))
+  }
+}
+
+rec(loop) fn widths(matrices: Array(Matrix), plan: Plan, width: I32) -> Plan {
+  if! math.leq_i32(width, plan.?{size}) {
+    intervals(matrices, plan, width, 0);
+    rec widths(matrices, plan, math.add_i32(width, 1))
+  } else {
+    plan
+  }
+}
+
+pub fn optimize(matrices: Array(Matrix)) -> Plan {
+  let size = arrays.array_len(matrices);
+  let count = math.mul_i32(size, size);
+  widths(
+    , matrices
+    , {
+        , costs = arrays.array_make_filled(count, 0)
+        , splits = arrays.array_make_filled(count, -1)
+        , size
+        }
+    , 2
+    )
+}
+
+pub rec(loop) fn reconstruct(plan: Plan, first: I32, last: I32) -> tree.Tree {
+  if! chain.equal(first, last) {
+    tree.leaf(first)
+  } else {
+    let middle = split(plan, first, last);
+    let left = rec(cont) reconstruct(plan, first, middle);
+    let right = rec(cont) reconstruct(plan, math.add_i32(middle, 1), last);
+    tree.join(left, right)
+  }
+}

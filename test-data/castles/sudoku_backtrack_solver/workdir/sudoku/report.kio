@@ -1,0 +1,131 @@
+/// Rendering: the grids, the verdict, the independent re-check, and the
+/// search statistics.
+module sudoku/report;
+
+import elab/control(if);
+import elab/match(match);
+import sudoku/geometry as geo;
+import sudoku/model(
+  , Exhausted
+  , Outcome
+  , Report
+  , Solved
+  , Unsolvable
+  , Work
+  , {backtracks}
+  , {board}
+  , {max_depth}
+  , {placements}
+  , {steps}
+  , {verdict}
+  );
+import sudoku/num as num;
+import sudoku/verify as verify;
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(left: String, right: String) -> String { string_concat(left, right) }
+
+fn cat3(left: String, middle: String, right: String) -> String { cat(left, cat(middle, right)) }
+
+fn field(label: String, value: String) -> . { print(cat3(label, value, "\n")) }
+
+fn field_i32(label: String, value: I32) -> . { field(label, int_to_string(value)) }
+
+fn field_bool(label: String, value: Bool) -> . { field(label, bool_to_string(value)) }
+
+fn digit_text(digit: I32) -> String {
+  if! num.is_zero(digit) {
+    "."
+  } else {
+    int_to_string(digit)
+  }
+}
+
+/// What follows a cell: a box rule after the third and sixth column, a
+/// plain gap inside a box, nothing at the end of the row.
+fn cell_gap(col: I32) -> String {
+  if! num.or_bool(num.eq_i32(col, 2), num.eq_i32(col, 5)) {
+    " | "
+  } else if! num.eq_i32(col, sub_i32(geo.size(), 1)) {
+    ""
+  } else {
+    " "
+  }
+}
+
+rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> String {
+  if! leq_i32(col, sub_i32(geo.size(), 1)) {
+    let cell = digit_text(array_get(cells, geo.cell_at(row, col)));
+    rec row_text(cells, row, add_i32(col, 1), cat3(text, cell, cell_gap(col)))
+  } else {
+    text
+  }
+}
+
+rec(loop) fn print_rows(cells: Array(I32), row: I32) -> . {
+  if! leq_i32(row, sub_i32(geo.size(), 1)) {
+    print(cat(row_text(cells, row, 0, "    "), "\n"));
+    rec print_rows(cells, add_i32(row, 1))
+  } else {
+    ()
+  }
+}
+
+fn print_grid(cells: Array(I32)) -> . { print_rows(cells, 0) }
+
+fn verdict_text(outcome: Outcome) -> String {
+  match! outcome {
+    (
+      , .(_ok: Solved) { "solved" }
+      , .(_no: Unsolvable) { "unsolvable" }
+      , .(_out: Exhausted) { "budget exhausted" }
+      )
+  }
+}
+
+fn print_solved(givens: Array(I32), work: Work) -> . {
+  print("  solved grid:\n");
+  print_grid(work.?{board});
+  field_bool("  every row, column, and box holds 1-9 once: ", verify.is_solved(work.?{board}));
+  field_bool("  keeps every given: ", verify.keeps_givens(givens, work.?{board}))
+}
+
+fn print_refuted(givens: Array(I32), work: Work) -> . {
+  print("  no completion exists\n");
+  field_bool("  board restored to the givens: ", verify.same_board(givens, work.?{board}))
+}
+
+fn print_result(givens: Array(I32), work: Work, summary: Report) -> . {
+  field("  outcome: ", verdict_text(summary.?{verdict}));
+  let verdict = summary.?{verdict};
+  match! verdict {
+    (
+      , .(_ok: Solved) { print_solved(givens, work) }
+      , .(_no: Unsolvable) { print_refuted(givens, work) }
+      , .(_out: Exhausted) { print("  the step budget ran out before a verdict\n") }
+      )
+  }
+}
+
+fn print_stats(summary: Report) -> . {
+  field_i32("  placements: ", summary.?{placements});
+  field_i32("  backtracks: ", summary.?{backtracks});
+  field_i32("  max depth: ", summary.?{max_depth});
+  field_i32("  steps: ", summary.?{steps})
+}
+
+pub fn print_puzzle(index: I32, name: String, givens: Array(I32), work: Work, summary: Report) -> . {
+  field(cat3("puzzle ", int_to_string(index), ": "), name);
+  field_i32("  givens: ", verify.count_givens(givens));
+  field_bool("  givens legal: ", verify.is_consistent(givens));
+  print("  initial grid:\n");
+  print_grid(givens);
+  print_result(givens, work, summary);
+  print_stats(summary)
+}

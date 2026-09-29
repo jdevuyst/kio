@@ -1,0 +1,21 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+host type First_payload;
+
+host type Second_payload;
+
+labels State = { first: First_payload, second: Second_payload };
+
+fn ignore[A](_value: A) -> . { () }
+
+fn run(condition: Bool, state: State, first: First_payload, second: Second_payload) -> . {
+  ignore(if! condition {
+    state.!{second}
+  } else {
+    state.!{first}
+  })
+}

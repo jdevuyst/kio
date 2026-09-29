@@ -1,0 +1,28 @@
+module choose;
+
+import __comptime__;
+
+pure fn select_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _condition_type: __Type__
+  , result_type: __Type__
+  , condition: __Checked_term__
+  , callback: __Checked_term__
+  , fallback: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let result = __term_call__(ct, __term_type__(ct, callback), callback, __term_unit__(ct));
+  let fills = __fill__(ct, fills, result_type, __term_type__(ct, result));
+  (
+    , __intrinsic_if_then_else__(
+        , ct
+        , result_type
+        , condition
+        , .() -> __Checked_term__ { result }
+        , .() -> __Checked_term__ { fallback }
+        )
+    , fills
+    )
+}
+
+pub elab choose : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }

@@ -1,0 +1,215 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(
+  , array_clone
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_pop_back
+  , array_push
+  , array_set
+  , array_swap
+  );
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat, string_eq);
+
+labels Event = { event_key: String, event_value: I32, event_deleted: Bool, event_seq: I32 };
+
+labels Compact = {
+  , compacted_log: Array(Event)
+  , kept_count: I32
+  , dropped_count: I32
+  , superseded_count: I32
+  , delete_count: I32
+  , original_count: I32
+  };
+
+fn put(seq: I32, key: String, value: I32) -> Event {
+  {event_key = key, event_value = value, event_deleted = .f, event_seq = seq}
+}
+
+fn delete_event(seq: I32, key: String) -> Event {
+  {event_key = key, event_value = 0, event_deleted = .t, event_seq = seq}
+}
+
+fn same_key(left: Event, right: Event) -> Bool { string_eq(left.?{event_key}, right.?{event_key}) }
+
+fn is_deleted(item: Event) -> Bool { item.?{event_deleted} }
+
+fn score(item: Event) -> I32 { mul_i32(item.?{event_value}, item.?{event_seq}) }
+
+fn render(index: I32, item: Event) -> String {
+  string_concat(
+    , "slot "
+    , string_concat(
+        , int_to_string(index)
+        , string_concat(
+            , ": "
+            , string_concat(
+                , item.?{event_key}
+                , string_concat(
+                    , "="
+                    , string_concat(
+                        , int_to_string(item.?{event_value})
+                        , string_concat(
+                            , " seq "
+                            , string_concat(int_to_string(item.?{event_seq}), "\n")
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn build_log() -> Array(Event) {
+  let log = array_make_empty(Event, ());
+  array_push(log, put(1, "alpha", 4));
+  array_push(log, put(2, "beta", 7));
+  array_push(log, put(3, "gamma", 2));
+  array_push(log, put(4, "alpha", 8));
+  array_push(log, delete_event(5, "beta"));
+  array_push(log, put(6, "delta", 3));
+  array_push(log, put(7, "gamma", 6));
+  array_push(log, put(8, "alpha", 9));
+  array_push(log, delete_event(9, "epsilon"));
+  array_push(log, put(10, "delta", 5));
+  array_push(log, put(11, "zeta", 1));
+  log
+}
+
+rec(loop) fn has_later_key(log: Array(Event), item: Event, index: I32, last: I32) -> Bool {
+  if! leq_i32(index, last) {
+    let later = array_get(log, index);
+    if! same_key(item, later) {
+      .t
+    } else {
+      rec has_later_key(log, item, add_i32(index, 1), last)
+    }
+  } else {
+    .f
+  }
+}
+
+fn result(log: Array(Event), kept: I32, dropped: I32, superseded: I32, deletes: I32, original: I32) -> Compact {
+  {
+    , compacted_log = log
+    , kept_count = kept
+    , dropped_count = dropped
+    , superseded_count = superseded
+    , delete_count = deletes
+    , original_count = original
+    }
+}
+
+rec(loop) fn compact_loop(
+  , log: Array(Event)
+  , read: I32
+  , write: I32
+  , last: I32
+  , kept: I32
+  , dropped: I32
+  , superseded: I32
+  , deletes: I32
+  , original: I32
+  ) -> Compact {
+  if! leq_i32(read, last) {
+    let item = array_get(log, read);
+    let next_read = add_i32(read, 1);
+    if! has_later_key(log, item, next_read, last) {
+      rec compact_loop(
+        , log
+        , next_read
+        , write
+        , last
+        , kept
+        , add_i32(dropped, 1)
+        , add_i32(superseded, 1)
+        , deletes
+        , original
+        )
+    } else if! is_deleted(item) {
+      rec compact_loop(
+        , log
+        , next_read
+        , write
+        , last
+        , kept
+        , add_i32(dropped, 1)
+        , superseded
+        , add_i32(deletes, 1)
+        , original
+        )
+    } else {
+      array_set(log, write, item);
+      rec compact_loop(
+        , log
+        , next_read
+        , add_i32(write, 1)
+        , last
+        , add_i32(kept, 1)
+        , dropped
+        , superseded
+        , deletes
+        , original
+        )
+    }
+  } else {
+    result(log, kept, dropped, superseded, deletes, original)
+  }
+}
+
+fn compact(log: Array(Event)) -> Compact {
+  let work = array_clone(log);
+  let original = array_len(work);
+  compact_loop(work, 0, 0, sub_i32(original, 1), 0, 0, 0, 0, original)
+}
+
+fn line_count(label: String, value: I32) -> String {
+  string_concat(label, string_concat(int_to_string(value), "\n"))
+}
+
+fn print_count(label: String, value: I32) -> . { print(line_count(label, value)) }
+
+rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32) -> I32 {
+  if! leq_i32(index, last) {
+    let item = array_get(log, index);
+    rec checksum_loop(log, add_i32(index, 1), last, add_i32(total, score(item)))
+  } else {
+    total
+  }
+}
+
+fn checksum(log: Array(Event), kept: I32) -> I32 { checksum_loop(log, 0, sub_i32(kept, 1), 0) }
+
+rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) -> . {
+  if! leq_i32(index, last) {
+    print(render(index, array_get(log, index)));
+    rec print_rows(log, add_i32(index, 1), last)
+  } else {
+    ()
+  }
+}
+
+fn print_summary(summary: Compact) -> . {
+  let log = summary.?{compacted_log};
+  let kept = summary.?{kept_count};
+  print("array_log_compactor\n");
+  print_count("original records: ", summary.?{original_count});
+  print_count("kept live records: ", kept);
+  print_count("removed records: ", summary.?{dropped_count});
+  print_count("removed superseded records: ", summary.?{superseded_count});
+  print_count("removed tombstones: ", summary.?{delete_count});
+  print_count("checksum: ", checksum(log, kept));
+  print("compacted live records:\n");
+  print_rows(log, 0, sub_i32(kept, 1))
+}
+
+pub fn main() -> . { let log = build_log(); let compacted = compact(log); print_summary(compacted) }

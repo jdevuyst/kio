@@ -1,0 +1,15 @@
+module main;
+
+// `Bad`'s parameter `[A]` appears in a negative position in the
+// payload (LHS of an arrow). Applying `Bad(Loop)` smuggles
+// `Loop` into that negative position, which is non-strictly-
+// positive — strict-positivity rejects it per
+// `specs/language.md` § The `rec` type operator.
+//
+// The check has to be variance-aware: it can't conclude `Loop`
+// is benign just because `Bad`'s outer payload is `A -> .`. A
+// non-aware check would accept the program and break strong
+// normalization of the `rec` boundary.
+newtype Bad[A] : A -> . { pub constructor mk_bad; pub projector un_bad }
+
+rec newtype Loop : Bad(Loop) { pub constructor mk_loop; pub projector un_loop }

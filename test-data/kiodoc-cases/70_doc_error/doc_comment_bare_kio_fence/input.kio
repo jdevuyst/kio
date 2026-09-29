@@ -1,0 +1,11 @@
+/// A function with a bare kio fence (no attribute list) in ///.
+///
+/// A bare ```kio fence without an attribute list is a runner error.
+/// Write {@} or {ignore}.
+///
+/// ```kio
+/// ()
+/// ```
+module doctest/bare;
+
+pub fn greet() -> . { () }

@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi as t;
+
+pub fn apply_product((step: t.I32 -> t.I32, seed: t.I32)) -> t.I32 { step(seed) }
+
+pub fn echo_product(value: (t.I32 -> t.I32) & t.I32) -> (t.I32 -> t.I32) & t.I32 { value }
+
+pub fn make_product(seed: t.I32) -> (t.I32 -> t.I32) & t.I32 { (.(value: t.I32) { value }, seed) }
+
+pub fn apply_sum(value: (t.I32 -> t.I32) | t.I32, seed: t.I32) -> t.I32 {
+  match! value {
+    (.(step: t.I32 -> t.I32) { step(seed) }, .(scalar: t.I32) { scalar })
+  }
+}
+
+pub fn echo_sum(value: (t.I32 -> t.I32) | t.I32) -> (t.I32 -> t.I32) | t.I32 { value }
+
+pub fn make_callable_sum() -> (t.I32 -> t.I32) | t.I32 { widen_sum!(.(value: t.I32) { value }) }
+
+pub fn make_scalar_sum(value: t.I32) -> (t.I32 -> t.I32) | t.I32 { value.>widen_sum! }

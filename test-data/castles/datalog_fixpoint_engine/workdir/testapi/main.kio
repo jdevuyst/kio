@@ -1,0 +1,38 @@
+/// datalog_fixpoint_engine - a deductive database evaluated to a fixpoint.
+///
+/// A small transport network is given as an extensional database of
+/// ground facts, with Horn clauses over it: transitive closure, a
+/// mutually recursive odd/even hop-parity pair, a two-goal join on a
+/// shared zone variable, and two unary conclusions drawn through a hub or
+/// a depot. The program saturates that once semi-naively and once
+/// naively, prints both traces, checks the two agree, and then asks four
+/// queries of the result. Nothing is read from stdin.
+module testapi/main;
+
+import datalog/eval as eval;
+import datalog/program as program;
+import datalog/report as report;
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let facts = program.edb();
+  let rules = program.rules();
+  let semi = eval.semi_naive(rules, facts);
+  let naive = eval.naive(rules, facts);
+  print("datalog fixpoint engine\n");
+  report.section("extensional database (EDB)");
+  report.edb(facts);
+  report.section("rules (IDB)");
+  report.rules(rules);
+  report.section("semi-naive fixpoint");
+  report.run(semi);
+  report.section("naive fixpoint");
+  report.run(naive);
+  report.section("agreement");
+  report.agreement(semi, naive);
+  report.section("derived facts by predicate");
+  report.derived(eval.db_of(semi), program.idb_preds());
+  report.section("queries");
+  report.queries(program.queries(), eval.db_of(semi))
+}

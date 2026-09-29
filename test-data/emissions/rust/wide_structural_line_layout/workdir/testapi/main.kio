@@ -1,0 +1,167 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(I32);
+
+pub newtype A : I32 { pub constructor mk_a; pub projector un_a }
+
+pub newtype B : I32 { pub constructor mk_b; pub projector un_b }
+
+pub newtype C : I32 { pub constructor mk_c; pub projector un_c }
+
+pub newtype D : I32 { pub constructor mk_d; pub projector un_d }
+
+pub newtype E : I32 { pub constructor mk_e; pub projector un_e }
+
+pub newtype F : I32 { pub constructor mk_f; pub projector un_f }
+
+pub newtype G : I32 { pub constructor mk_g; pub projector un_g }
+
+pub newtype H : I32 { pub constructor mk_h; pub projector un_h }
+
+pub newtype I : I32 { pub constructor mk_i; pub projector un_i }
+
+pub newtype J : I32 { pub constructor mk_j; pub projector un_j }
+
+pub newtype K : I32 { pub constructor mk_k; pub projector un_k }
+
+pub newtype L : I32 { pub constructor mk_l; pub projector un_l }
+
+pub type Product_tail12 = K & L;
+
+pub type Product_tail11 = J & Product_tail12;
+
+pub type Product_tail10 = I & Product_tail11;
+
+pub type Product_tail9 = H & Product_tail10;
+
+pub type Product_tail8 = G & Product_tail9;
+
+pub type Product_tail7 = F & Product_tail8;
+
+pub type Product_tail6 = E & Product_tail7;
+
+pub type Product_tail5 = D & Product_tail6;
+
+pub type Product_tail4 = C & Product_tail5;
+
+pub type Product_tail3 = B & Product_tail4;
+
+pub type Wide_product = A & Product_tail3;
+
+pub type Sum_tail12 = K | L;
+
+pub type Sum_tail11 = J | Sum_tail12;
+
+pub type Sum_tail10 = I | Sum_tail11;
+
+pub type Sum_tail9 = H | Sum_tail10;
+
+pub type Sum_tail8 = G | Sum_tail9;
+
+pub type Sum_tail7 = F | Sum_tail8;
+
+pub type Sum_tail6 = E | Sum_tail7;
+
+pub type Sum_tail5 = D | Sum_tail6;
+
+pub type Sum_tail4 = C | Sum_tail5;
+
+pub type Sum_tail3 = B | Sum_tail4;
+
+pub type Wide_sum = A | Sum_tail3;
+
+pub fn product_case() -> Wide_product {
+  __pair__(
+    , A
+    , Product_tail3
+    , A.mk_a(1(I32))
+    , __pair__(
+        , B
+        , Product_tail4
+        , B.mk_b(2(I32))
+        , __pair__(
+            , C
+            , Product_tail5
+            , C.mk_c(3(I32))
+            , __pair__(
+                , D
+                , Product_tail6
+                , D.mk_d(4(I32))
+                , __pair__(
+                    , E
+                    , Product_tail7
+                    , E.mk_e(5(I32))
+                    , __pair__(
+                        , F
+                        , Product_tail8
+                        , F.mk_f(6(I32))
+                        , __pair__(
+                            , G
+                            , Product_tail9
+                            , G.mk_g(7(I32))
+                            , __pair__(
+                                , H
+                                , Product_tail10
+                                , H.mk_h(8(I32))
+                                , __pair__(
+                                    , I
+                                    , Product_tail11
+                                    , I.mk_i(9(I32))
+                                    , __pair__(
+                                        , J
+                                        , Product_tail12
+                                        , J.mk_j(10(I32))
+                                        , __pair__(K, L, K.mk_k(11(I32)), L.mk_l(12(I32)))
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+pub fn sum_case() -> Wide_sum {
+  __right__(
+    , A
+    , Sum_tail3
+    , __right__(
+        , B
+        , Sum_tail4
+        , __right__(
+            , C
+            , Sum_tail5
+            , __right__(
+                , D
+                , Sum_tail6
+                , __right__(
+                    , E
+                    , Sum_tail7
+                    , __right__(
+                        , F
+                        , Sum_tail8
+                        , __right__(
+                            , G
+                            , Sum_tail9
+                            , __right__(
+                                , H
+                                , Sum_tail10
+                                , __right__(
+                                    , I
+                                    , Sum_tail11
+                                    , __right__(J, Sum_tail12, __right__(K, L, L.mk_l(12(I32))))
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}

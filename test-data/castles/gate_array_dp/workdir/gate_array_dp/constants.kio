@@ -1,0 +1,14 @@
+module gate_array_dp/constants;
+
+import testapi(I32);
+import testapi/arith(add_i32, mul_i32, sub_i32);
+
+pub fn days() -> I32 { 8 }
+
+pub fn states() -> I32 { 4 }
+
+pub fn max_age() -> I32 { sub_i32(states(), 1) }
+
+pub fn inf() -> I32 { 9000 }
+
+pub fn table_size() -> I32 { mul_i32(add_i32(days(), 1), states()) }

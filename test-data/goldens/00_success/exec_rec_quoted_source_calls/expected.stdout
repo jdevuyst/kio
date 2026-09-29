@@ -1,0 +1,41 @@
+ufcs
+left
+pass
+field
+left
+flat ordinary
+first stage
+left
+second stage
+flat recursive
+first stage
+left
+second stage
+generic direct
+generic left
+identity
+generic ufcs
+generic left
+identity
+update
+row
+left
+nested quotation
+left
+ufcs order
+left
+first stage
+later
+second stage
+nested scope
+left
+scope body
+outer continuation
+pattern scope
+left
+later
+pattern body
+row let scope
+left
+row let body
+done

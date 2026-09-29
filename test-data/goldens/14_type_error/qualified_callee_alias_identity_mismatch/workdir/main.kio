@@ -1,0 +1,7 @@
+module main;
+
+import dep as d;
+import other as types;
+import shadow as dep;
+
+fn call(value: types.Value & types.Value) -> d.Flag { let f = d.id; f(value) }

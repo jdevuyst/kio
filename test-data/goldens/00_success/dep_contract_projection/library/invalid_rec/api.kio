@@ -1,0 +1,6 @@
+module api;
+
+rec(loop) {
+  pub fn left[A](value: A) -> A { rec right(A, value) };
+  pub fn right[A, B](value: A) -> A { rec left(A, value) }
+}

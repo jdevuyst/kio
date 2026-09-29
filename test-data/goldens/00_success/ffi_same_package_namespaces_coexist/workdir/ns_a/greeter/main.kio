@@ -1,0 +1,7 @@
+module greeter/main;
+
+import greeter(I32, String, print);
+
+pub fn main() -> . { print("hello\n") }
+
+pub fn pair() -> I32 & String { (7, "kio") }

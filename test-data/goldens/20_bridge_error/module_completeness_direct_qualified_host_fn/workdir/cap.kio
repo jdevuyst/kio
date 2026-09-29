@@ -1,0 +1,3 @@
+module cap;
+
+host fn tick() -> .;

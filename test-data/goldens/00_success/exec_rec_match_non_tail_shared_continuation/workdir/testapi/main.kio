@@ -1,0 +1,52 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+labels Found = { value: I32 } | { absent: . };
+
+fn not_found() -> Found { {absent=}.>widen_sum!(Found) }
+
+fn found_value(value: I32) -> Found { {value}.>widen_sum!(Found) }
+
+labels Many =
+  { zero: . }
+  | { first: . }
+  | { second: . }
+  | { third: . }
+  | { fourth: . }
+  | { fifth: . };
+
+fn zero_many() -> Many { {zero=}.>widen_sum!(Many) }
+
+rec(loop) fn score_many(outer: I32, step: Many) -> I32 {
+  let selected =
+    match! step {
+      (
+        , .(outer: Zero) { not_found() }
+        , .(_first: First) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 1)) }
+        , .(_second: Second) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 2)) }
+        , .(_third: Third) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 3)) }
+        , .(_fourth: Fourth) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 4)) }
+        , .(_fifth: Fifth) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 5)) }
+        )
+    };
+  add_i32(
+    , outer
+    , match! selected {
+        (.(value: Value) { add_i32(value.?{value}, 6) }, .(_absent: Absent) { 6 })
+      }
+    )
+}
+
+pub fn main() -> . {
+  print(int_to_string(score_many(10, zero_many())));
+  print("\n");
+  print(int_to_string(score_many(10, {fifth=}.>widen_sum!(Many))));
+  print("\n")
+}

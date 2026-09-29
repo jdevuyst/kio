@@ -1,0 +1,9 @@
+module main;
+
+import elab/spine_elaborators(narrow_sum);
+
+// Regression for target inference over a source arm that is itself a
+// sum. The inferred target must keep `(. | .)` as a right-spine arm,
+// not fold it into the terminal position where the spine walk flattens
+// it to two separate `()` arms.
+fn inferred_nested_arm(x: . | (. | .) | .) -> (. | .) | . { x.>narrow_sum! }

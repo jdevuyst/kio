@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn call_logger(logger: String -> .) -> . { logger("first-class host function\n"(String)) }
+
+pub fn main() -> . { call_logger(print) }

@@ -1,0 +1,4 @@
+  pass equiv `eta_host` in host/m
+  pass equiv `eta_fn` in host/m
+
+result: 2/2 equiv blocks passed

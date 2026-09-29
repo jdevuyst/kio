@@ -1,0 +1,3 @@
+hkt transform pipeline
+box/audit: login/form.email=11:true:accept | profile/form.display=38:false:review+manual | checkout/form.coupon=23:false:review+manual | total=72 | approvals=1
+identity/baseline: login/form.email=11:true:accept | profile/form.display=38:false:review+manual | checkout/form.coupon=23:false:review+manual | total=72 | approvals=1

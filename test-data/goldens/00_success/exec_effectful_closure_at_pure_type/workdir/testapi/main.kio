@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn for_each_line(emit: String -> .) -> . { emit("first\n"(String)); emit("second\n"(String)) }
+
+pub fn main() -> . { for_each_line(.(line: String) { print(line) }) }

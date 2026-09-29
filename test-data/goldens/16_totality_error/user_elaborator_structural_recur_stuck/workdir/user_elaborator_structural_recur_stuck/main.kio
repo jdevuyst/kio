@@ -1,0 +1,6 @@
+module user_elaborator_structural_recur_stuck/main;
+
+import elaborators(stuck);
+import user_elaborator_structural_recur_stuck(String);
+
+fn trigger(s: String) -> String { stuck!(s, String) }

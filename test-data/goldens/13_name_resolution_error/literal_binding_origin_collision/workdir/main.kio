@@ -1,0 +1,4 @@
+module main;
+
+import first(pick);
+import second(pick);

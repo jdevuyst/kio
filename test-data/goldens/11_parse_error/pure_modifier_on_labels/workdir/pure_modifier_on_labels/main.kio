@@ -1,0 +1,5 @@
+module pure_modifier_on_labels/main;
+
+import pure_modifier_on_labels(String);
+
+pure labels Bad_labels = { text: String };

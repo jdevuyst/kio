@@ -1,0 +1,10 @@
+module testapi/labels;
+
+import testapi(String);
+
+// A label declared in one module can be imported and used from
+// another. The `pub` on the `labels` propagates uniformly to
+// each entry's newtype-minted constructor and projector members
+// (`mk` and `get`), making the generated nominal type reachable
+// from other modules through ordinary type imports.
+pub labels { greeting: String };

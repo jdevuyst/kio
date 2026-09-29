@@ -1,0 +1,20 @@
+module widget/store;
+
+import core/relay as _rehost_gdgphcgfcphcgfgmgbhj;
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type Foo = _rehost_gdgphcgfcphcgfgmgbhj.Foo;
+
+pub type {foo} = {_rehost_gdgphcgfcphdhegphcgf.foo};
+
+pub labels { box[A]: A };
+
+pub type Later[A] = Foo & Box(A);
+
+pub labels Still[A] = { box[A]: _ };
+
+pub fn accept_foo(value: Foo) -> . { value.?{foo} }
+
+pub fn later_box[A](row: Later(A)) -> A { row.?{box} }
+
+pub fn still_box[A](row: Still(A)) -> A { row.?{box} }

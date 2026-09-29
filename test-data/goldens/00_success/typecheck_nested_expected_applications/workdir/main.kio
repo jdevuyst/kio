@@ -1,0 +1,31 @@
+module main;
+
+host type I32 role(i32);
+
+host type Other role(i32);
+
+host type Marker;
+
+host fn stage[A](value: A) -> [B] A -> B;
+
+host fn marker_then[A](_marker: Marker) -> I32 -> A;
+
+fn identity[A](value: A) -> A { value }
+
+fn keep[T](value: T) -> T { value }
+
+fn same[T](_left: T, right: T) -> T { right }
+
+fn multi_layer[T](seed: T) -> T { keep(stage(seed, seed)) }
+
+fn direct_lambda_outer() -> I32 { keep(.[A](value: A) { value }(42)) }
+
+fn direct_lambda_sibling() -> I32 { same(.[A](value: A) { value }(42), 43(I32)) }
+
+fn scalar_outer() -> I32 { keep(identity(42)) }
+
+fn scalar_sibling() -> I32 { same(identity(42), 43(I32)) }
+
+fn retained_layer_ordinary(marker: Marker, value: I32) -> I32 { marker_then(_)(marker)(value) }
+
+fn retained_layer_ufcs(marker: Marker, value: I32) -> I32 { marker.>marker_then(_)(value) }

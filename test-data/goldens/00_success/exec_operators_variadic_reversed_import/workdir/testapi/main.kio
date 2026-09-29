@@ -1,0 +1,10 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+// The bracket ends the opener and starts its mirrored closer. Importing
+// the varop selects the fold callables without co-importing them. It folds to
+// `cons_str("a", cons_str("b", cons_str("c", nil_str())))`.
+import testapi/lists(varop *[ ]*);
+
+pub fn main() -> . { print(*[ "a", "b", "c" ]*) }

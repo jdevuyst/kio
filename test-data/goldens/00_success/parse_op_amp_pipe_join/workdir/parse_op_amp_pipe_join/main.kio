@@ -1,0 +1,33 @@
+module parse_op_amp_pipe_join/main;
+
+import parse_op_amp_pipe_join(A);
+
+fn op_double(a: A, b: A) -> A { a }
+
+fn op_double_minus(a: A, b: A) -> A { a }
+
+fn op_double_pipe(a: A, b: A) -> A { a }
+
+fn op_double_pipe_eq(a: A, b: A) -> A { a }
+
+// `&` joins op-runs adjacent: `&&` and `&&--` are now disjoint
+// single tokens at the lexer level, so both ops coexist
+// without hitting the prefix-forbidden conflict (which would
+// fire when the two patterns shared a token-sequence prefix).
+op _ && _ { impl op_double; };
+
+op _ &&-- _ { impl op_double_minus; };
+
+// Symmetric rule for `|`: `||` and `||=` coexist for the same
+// reason.
+op _ || _ { impl op_double_pipe; };
+
+op _ ||= _ { impl op_double_pipe_eq; };
+
+fn use_them(x: A, y: A) -> A {
+  let a = x && y;
+  let b = x &&-- y;
+  let c = x || y;
+  let d = x ||= y;
+  a
+}

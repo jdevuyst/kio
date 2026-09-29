@@ -1,0 +1,5 @@
+module lit;
+
+host type F64 role(f64);
+
+host type Str role(str);

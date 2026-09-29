@@ -1,0 +1,14 @@
+module fold/plan;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, I32);
+
+pub labels Decision = { unpaired: . } | { paired: I32 };
+
+pub labels Interval = { lo: I32, hi: I32 };
+
+pub labels Program = { length: I32, scores: Array(I32), decisions: Array(Decision) };
+
+pub fn skip() -> Decision { {unpaired=}.>widen_sum!(Decision) }
+
+pub fn pair(k: I32) -> Decision { {paired = k}.>widen_sum!(Decision) }

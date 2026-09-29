@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Spine equivalent of `exec_into_sum_widening`. The original used
+// algebraic `into!` for the sum-widening injection — `into!` covers
+// many algebraic moves, sum widening among them. The spine palette
+// uses `widen_sum!` directly; the call site names the operation.
+fn widen(s: String) -> String | I32 { widen_sum!(s) }
+
+pub fn main() -> . {
+  let widened = widen("hello\n");
+  let s =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print(s)
+}

@@ -1,0 +1,6 @@
+module main;
+
+rec {
+  newtype Na : . | (Nb -> .) { pub constructor mk_na; pub projector un_na };
+  newtype Nb : . | (Na -> .) { pub constructor mk_nb; pub projector un_nb }
+}

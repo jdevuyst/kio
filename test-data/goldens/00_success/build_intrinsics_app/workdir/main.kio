@@ -1,0 +1,11 @@
+module main;
+
+// Abstract higher-kinded application at the build surface: a
+// function generic over a kind-`*→*` brand binder `[*F]` and a
+// kind-`*` carrier `[A]`, using the applied brand `F(A)` in type
+// position. The backend realizes the public representation; the
+// Kio-level value remains the same carrier.
+fn id_app[*F][A](x: F(A)) -> F(A) { x }
+
+// Two applied-brand arguments; `first_app` keeps the first.
+fn first_app[*F][A][B](x: F(A), y: F(B)) -> F(A) { x }

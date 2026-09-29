@@ -1,0 +1,125 @@
+module ml/types;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as walk;
+import list_host as number;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub rec labels Ty =
+  { variable: I32 }
+  | { integer: . }
+  | { boolean: . }
+  | { arrow: Ty & Ty }
+  | { pair: Ty & Ty };
+
+pub fn variable_type(id: I32) -> Ty { {variable = id}.>widen_sum! }
+
+pub fn integer_type() -> Ty { {integer=}.>widen_sum! }
+
+pub fn boolean_type() -> Ty { {boolean=}.>widen_sum! }
+
+pub fn arrow_type(a: Ty, b: Ty) -> Ty { {arrow = (a, b)}.>widen_sum! }
+
+pub fn pair_type(a: Ty, b: Ty) -> Ty { {pair = (a, b)}.>widen_sum! }
+
+pub type Substitution = lists.List(I32 & Ty);
+
+pub rec(loop) fn lookup(id: I32, substitutions: Substitution) -> . | Ty {
+  match! lists.uncons(substitutions) {
+    .((key: I32, value: Ty), rest: Substitution) {
+      if! number.eq_i32(key, id) {
+        value.>widen_sum!
+      } else {
+        rec lookup(id, rest)
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}
+
+pub rec(loop) fn apply(substitutions: Substitution, ty: Ty) -> Ty {
+  match! ty {
+    .(v: Variable) {
+      match! lookup(v.?{variable}, substitutions) {
+        .(found: Ty) { rec apply(substitutions, found) };
+        .() { ty }
+      }
+    };
+    .(f: Arrow) {
+      let .(a: Ty, b: Ty) = f.?{arrow};
+      arrow_type(rec(cont) apply(substitutions, a), rec(cont) apply(substitutions, b))
+    };
+    .(p: Pair) {
+      let .(a: Ty, b: Ty) = p.?{pair};
+      pair_type(rec(cont) apply(substitutions, a), rec(cont) apply(substitutions, b))
+    };
+    .() { ty }
+  }
+}
+
+pub rec(loop) fn variables(ty: Ty) -> lists.List(I32) {
+  match! ty {
+    .(v: Variable) { lists.singleton(v.?{variable}) };
+    .(f: Arrow) {
+      let .(a: Ty, b: Ty) = f.?{arrow};
+      walk.append(rec(cont) variables(a), rec(cont) variables(b))
+    };
+    .(p: Pair) {
+      let .(a: Ty, b: Ty) = p.?{pair};
+      walk.append(rec(cont) variables(a), rec(cont) variables(b))
+    };
+    .() { lists.nil() }
+  }
+}
+
+pub fn contains(id: I32, ids: lists.List(I32)) -> Bool { walk.elem(number.eq_i32, id, ids) }
+
+pub fn unique(ids: lists.List(I32)) -> lists.List(I32) {
+  walk.reverse(walk.foldl(
+    , .(seen: lists.List(I32), id: I32) {
+        if! contains(id, seen) {
+          seen
+        } else {
+          lists.cons(id, seen)
+        }
+      }
+    , lists.nil()
+    , ids
+    ))
+}
+
+fn combine(a: String, separator: String, b: String) -> String {
+  text.string_concat(
+    , "("
+    , text.string_concat(a, text.string_concat(separator, text.string_concat(b, ")")))
+    )
+}
+
+rec(loop) fn render(ty: Ty, names: lists.List(I32)) -> String {
+  match! ty {
+    .(v: Variable) {
+      match! walk.index_of(number.eq_i32, v.?{variable}, names) {
+        .(index: I32) { text.string_concat("a", fmt.int_to_string(index)) };
+        .() { "?" }
+      }
+    };
+    .(_i: Integer) { "Int" };
+    .(_b: Boolean) { "Bool" };
+    .(f: Arrow) {
+      let .(a: Ty, b: Ty) = f.?{arrow};
+      combine(rec(cont) render(a, names), " -> ", rec(cont) render(b, names))
+    };
+    .(p: Pair) {
+      let .(a: Ty, b: Ty) = p.?{pair};
+      combine(rec(cont) render(a, names), " * ", rec(cont) render(b, names))
+    }
+  }
+}
+
+pub fn show(ty: Ty) -> String { render(ty, unique(variables(ty))) }

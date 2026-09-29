@@ -1,0 +1,7 @@
+module testapi/main;
+
+import mini(Boxed, pack, round_trip);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . { let b = pack(); print(round_trip(b, "ok\n"(String))) }

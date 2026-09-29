@@ -1,0 +1,10 @@
+module main;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+rec(loop) {
+  fn clash(value: .) -> . { rec other(value) };
+  fn other(value: .) -> . { rec clash(value) }
+}
+
+fn clash(value: .) -> . { value }

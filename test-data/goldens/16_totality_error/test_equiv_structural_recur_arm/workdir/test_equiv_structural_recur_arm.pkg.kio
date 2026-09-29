@@ -1,0 +1,18 @@
+package test_equiv_structural_recur_arm;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  main/**
+}

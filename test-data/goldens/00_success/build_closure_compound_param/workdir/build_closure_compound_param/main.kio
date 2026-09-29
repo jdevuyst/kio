@@ -1,0 +1,17 @@
+module build_closure_compound_param/main;
+
+import build_closure_compound_param(Bool, I32, Str);
+import build_closure_compound_param(build, step);
+import elab/match(match);
+
+fn use_step() -> I32 {
+  step(.(t: I32 & Str & Bool) -> I32 {
+    match! t {
+      .(a: I32, _s: Str, _b: Bool) { a }
+    }
+  })
+}
+
+fn use_build() -> I32 { build(.(_n: I32) -> I32 & Str & Bool { (0, "x", .t) }) }
+
+pub fn main() -> . { () }

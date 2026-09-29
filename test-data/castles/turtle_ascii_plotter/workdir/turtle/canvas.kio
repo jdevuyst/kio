@@ -1,0 +1,73 @@
+/// The raster.
+///
+/// This tier has no host arrays, so the canvas is an ordinary Kio value: a
+/// list of rows, each a list of ink codes. Inking one cell rebuilds the row
+/// that holds it and shares every other row untouched — functional
+/// rasterization, done honestly rather than smuggled through a mutable buffer
+/// the host would have had to provide.
+module turtle/canvas;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as list;
+import list/list(append, drop, foldl, replicate, take);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32);
+import testapi/io(print);
+import turtle/glyph as glyph;
+import turtle/num as num;
+import turtle/text as text;
+
+pub type Canvas = list.List(list.List(I32));
+
+/// A `w` by `h` canvas of blank cells.
+pub fn blank(w: I32, h: I32) -> Canvas { replicate(h, replicate(w, glyph.blank_code())) }
+
+/// True when `(x, y)` is a cell of a `w` by `h` canvas. Everything else is off
+/// the paper, and ink aimed there is clipped.
+pub fn on_canvas(w: I32, h: I32, x: I32, y: I32) -> Bool {
+  num.and(num.and(leq_i32(0, x), lt_i32(x, w)), num.and(leq_i32(0, y), lt_i32(y, h)))
+}
+
+fn update_nth[A](xs: list.List(A), i: I32, f: A -> A) -> list.List(A) {
+  match! list.uncons(drop(i, xs)) {
+    (
+      , .(x: A, rest: list.List(A)) { append(take(i, xs), list.cons(f(x), rest)) }
+      , .(_empty: .) { xs }
+      )
+  }
+}
+
+/// Write `code` into the cell at `(x, y)`.
+pub fn ink(cv: Canvas, x: I32, y: I32, code: I32) -> Canvas {
+  update_nth(cv, y, .(row: list.List(I32)) { update_nth(row, x, .(_old: I32) { code }) })
+}
+
+fn count_row(row: list.List(I32)) -> I32 {
+  foldl(
+    , .(acc: I32, code: I32) {
+        if! glyph.is_inked(code) {
+          add_i32(acc, 1)
+        } else {
+          acc
+        }
+      }
+    , 0
+    , row
+    )
+}
+
+/// How many cells carry ink. This is exactly the count of non-`.` characters
+/// in the printed plot, so a reader can check it against the picture by eye.
+pub fn inked_cells(cv: Canvas) -> I32 {
+  foldl(.(acc: I32, row: list.List(I32)) { add_i32(acc, count_row(row)) }, 0, cv)
+}
+
+fn row_line(row: list.List(I32)) -> String {
+  foldl(.(acc: String, code: I32) { text.cat2(acc, glyph.glyph_of(code)) }, "", row)
+}
+
+/// Print the canvas, one line per row, row 0 first.
+pub fn plot(cv: Canvas) -> . {
+  foldl(.(_acc: ., row: list.List(I32)) { print(text.cat2(row_line(row), "\n")) }, (), cv)
+}

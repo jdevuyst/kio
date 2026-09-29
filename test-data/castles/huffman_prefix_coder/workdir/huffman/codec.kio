@@ -1,0 +1,106 @@
+/// Encoding, decoding, and the round trip that ties them together.
+///
+/// Encoding is a table lookup per symbol; decoding never consults the table at
+/// all — it walks the tree one bit at a time and emits a symbol whenever it
+/// lands on a leaf. The two paths therefore share nothing but the tree, so
+/// decoding the encoded message back to the original is a genuine check on the
+/// tree rather than on a single shared lookup.
+module huffman/codec;
+
+import elab/control(if);
+import elab/match(match);
+import huffman/code(Bits, Entry, bits_for);
+import huffman/list(List, cons, is_empty, nil, rev_onto, reverse);
+import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
+import huffman/tree(Leaf_symbol, Leaf_weight);
+import huffman/tree(Node, {fork_left}, {fork_right}, {leaf_symbol});
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+import testapi/iter(loop);
+
+rec(loop) fn encode_onto(rows: List(Entry), symbols: List(I32), acc: Bits) -> Bits {
+  match! symbols.>List.un_list {
+    (
+      , .(symbol: I32, rest: List(I32)) {
+          rec encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil(I32, ())), acc))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The bit stream is accumulated backwards and reversed once, so appending a
+/// codeword stays a walk of that codeword rather than of the stream so far.
+pub fn encode(rows: List(Entry), symbols: List(I32)) -> Bits {
+  reverse(encode_onto(rows, symbols, nil(I32, ())))
+}
+
+labels Walked = { walked_symbol: I32, walked_rest: Bits };
+
+fn walked(symbol: I32, rest: Bits) -> Walked { {walked_symbol = symbol, walked_rest = rest} }
+
+/// Descend from `node`, consuming one bit per fork, until a leaf is reached.
+///
+/// Starting at a fork this always consumes at least one bit, which is what makes
+/// `decode` terminate. A root that is a bare leaf — a one-symbol alphabet, whose
+/// codeword would have to be empty — has no prefix code at all and is outside
+/// what this coder models.
+rec(loop) fn walk(node: Node, bits: Bits) -> Walked {
+  match! node.>Node.un_node {
+    (
+      , .(symbol: Leaf_symbol, _weight: Leaf_weight) { walked(symbol.?{leaf_symbol}, bits) }
+      , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
+          match! bits.>List.un_list {
+            (
+              , .(bit: I32, rest: Bits) {
+                  if! eq_i32(bit, 0) {
+                    rec walk(left.?{fork_left}, rest)
+                  } else {
+                    rec walk(right.?{fork_right}, rest)
+                  }
+                }
+              , .(_empty: .) { walked(-1, bits) }
+              )
+          }
+        }
+      )
+  }
+}
+
+rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
+  match! bits.>List.un_list {
+    (
+      , .(_bit: I32, _rest: Bits) {
+          let reached = walk(root, bits);
+          rec decode_onto(root, reached.?{walked_rest}, cons(reached.?{walked_symbol}, acc))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn decode(root: Node, bits: Bits) -> List(I32) {
+  reverse(decode_onto(root, bits, nil(I32, ())))
+}
+
+pub rec(loop) fn same_symbols(left: List(I32), right: List(I32)) -> Bool {
+  match! left.>List.un_list {
+    (
+      , .(head: I32, rest: List(I32)) {
+          match! right.>List.un_list {
+            (
+              , .(other: I32, other_rest: List(I32)) {
+                  if! eq_i32(head, other) {
+                    rec same_symbols(rest, other_rest)
+                  } else {
+                    .f
+                  }
+                }
+              , .(_empty: .) { .f }
+              )
+          }
+        }
+      , .(_empty: .) { is_empty(right) }
+      )
+  }
+}

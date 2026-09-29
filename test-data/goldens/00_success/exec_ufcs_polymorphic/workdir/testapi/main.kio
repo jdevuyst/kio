@@ -1,0 +1,11 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn id[A](x: A) -> A { x }
+
+// UFCS dispatch where the callee is polymorphic. The type
+// parameter `[A]` is backsolved from the matched conjunct
+// (`String`), giving the elaborated call `id(String, "hi\n")`.
+pub fn main() -> . { let s = "hi\n"; let result = s.>id; print(result) }

@@ -1,0 +1,27 @@
+module testapi/main;
+
+import observer(retain);
+import testapi(String);
+import testapi/io as io;
+
+fn identity[A](value: A) -> A { value }
+
+fn produce[A](callback: . -> A) -> A { callback(()) }
+
+fn exercise(left: String, right: String) -> . {
+  let .(first, second) = retain!((identity(left), identity(right)));
+  io.print(first);
+  io.print(second);
+  let .(outer, middle, inner) = retain!((left, identity(right), identity(left)));
+  io.print(outer);
+  io.print(middle);
+  io.print(inner);
+  let .(literal, _unit) = retain!(("literal\n".>identity, ()));
+  io.print(literal);
+  let .(from_callback, from_call) =
+    retain!((produce(.() -> String { io.print("callback\n"); left }), identity(right)));
+  io.print(from_callback);
+  io.print(from_call)
+}
+
+pub fn main() -> . { exercise("left\n", "right\n") }

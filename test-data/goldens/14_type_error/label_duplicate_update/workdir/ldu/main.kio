@@ -1,0 +1,5 @@
+module ldu/main;
+
+labels { foo: . };
+
+fn bad() -> Foo { {foo=}.!{foo=, foo=} }

@@ -1,0 +1,174 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import ledger_rule_audit/state(
+  , Ledger
+  , balance_value
+  , credit
+  , credit_count_value
+  , credit_total_value
+  , debit
+  , debit_count_value
+  , debit_total_value
+  , empty
+  , fee
+  , fee_count_value
+  , fee_total_value
+  , invalid
+  , invalid_count_value
+  );
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn print_amount_result(command: String, amount: I32, state: Ledger) -> . {
+  io.print(text.string_concat(command, " "));
+  io.print(fmt.i32_to_string(amount));
+  io.print(" -> balance=");
+  io.print(fmt.int_to_string(balance_value(state)));
+  io.print("\n")
+}
+
+fn print_invalid_amount(command: String, amount_text: String) -> . {
+  io.print(command);
+  io.print(" invalid amount '");
+  io.print(amount_text);
+  io.print("'\n")
+}
+
+fn print_missing_amount(command: String) -> . { io.print(command); io.print(" missing amount\n") }
+
+fn print_unknown(command: String) -> . {
+  io.print("unknown command '");
+  io.print(command);
+  io.print("'\n")
+}
+
+fn apply_credit(state: Ledger) -> Ledger {
+  match! io.read_ascii_line() {
+    (
+      , .(amount_text: String) {
+          match! fmt.string_to_int(amount_text) {
+            (
+              , .(amount: I32) {
+                  let next = credit(state, amount);
+                  print_amount_result("credit", amount, next);
+                  next
+                }
+              , .(_bad: .) { print_invalid_amount("credit", amount_text); invalid(state) }
+              )
+          }
+        }
+      , .(_eof: .) { print_missing_amount("credit"); invalid(state) }
+      )
+  }
+}
+
+fn apply_debit(state: Ledger) -> Ledger {
+  match! io.read_ascii_line() {
+    (
+      , .(amount_text: String) {
+          match! fmt.string_to_int(amount_text) {
+            (
+              , .(amount: I32) {
+                  let next = debit(state, amount);
+                  print_amount_result("debit", amount, next);
+                  next
+                }
+              , .(_bad: .) { print_invalid_amount("debit", amount_text); invalid(state) }
+              )
+          }
+        }
+      , .(_eof: .) { print_missing_amount("debit"); invalid(state) }
+      )
+  }
+}
+
+fn apply_fee(state: Ledger) -> Ledger {
+  match! io.read_ascii_line() {
+    (
+      , .(amount_text: String) {
+          match! fmt.string_to_int(amount_text) {
+            (
+              , .(amount: I32) {
+                  let next = fee(state, amount);
+                  print_amount_result("fee", amount, next);
+                  next
+                }
+              , .(_bad: .) { print_invalid_amount("fee", amount_text); invalid(state) }
+              )
+          }
+        }
+      , .(_eof: .) { print_missing_amount("fee"); invalid(state) }
+      )
+  }
+}
+
+fn print_balance_check(state: Ledger) -> Ledger {
+  io.print("balance check -> ");
+  io.print(fmt.int_to_string(balance_value(state)));
+  io.print("\n");
+  state
+}
+
+fn apply_command(command: String, state: Ledger) -> Ledger {
+  if! text.string_eq(command, "credit") {
+    apply_credit(state)
+  } else if! text.string_eq(command, "debit") {
+    apply_debit(state)
+  } else if! text.string_eq(command, "fee") {
+    apply_fee(state)
+  } else if! text.string_eq(command, "balance") {
+    print_balance_check(state)
+  } else {
+    print_unknown(command);
+    invalid(state)
+  }
+}
+
+rec(loop) fn replay(state: Ledger) -> Ledger {
+  match! io.read_ascii_line() {
+    (
+      , .(command: String) {
+          if! text.string_eq(command, "end") {
+            io.print("end\n");
+            state
+          } else {
+            rec replay(apply_command(command, state))
+          }
+        }
+      , .(_eof: .) { io.print("eof\n"); state }
+      )
+  }
+}
+
+fn print_summary(state: Ledger) -> . {
+  io.print("summary credits=");
+  io.print(fmt.int_to_string(credit_count_value(state)));
+  io.print(" debits=");
+  io.print(fmt.int_to_string(debit_count_value(state)));
+  io.print(" fees=");
+  io.print(fmt.int_to_string(fee_count_value(state)));
+  io.print(" invalid=");
+  io.print(fmt.int_to_string(invalid_count_value(state)));
+  io.print("\n");
+  io.print("totals credit=");
+  io.print(fmt.i32_to_string(credit_total_value(state)));
+  io.print(" debit=");
+  io.print(fmt.i32_to_string(debit_total_value(state)));
+  io.print(" fee=");
+  io.print(fmt.i32_to_string(fee_total_value(state)));
+  io.print(" balance=");
+  io.print(fmt.i32_to_string(balance_value(state)));
+  io.print("\n")
+}
+
+pub fn main() -> . {
+  io.print("ledger rule audit\n");
+  io.print("start balance=0\n");
+  let final_state = replay(empty());
+  print_summary(final_state)
+}

@@ -1,0 +1,11 @@
+module main;
+
+fn nil() -> . { () }
+
+fn push(_value: ., rest: .) -> . { rest }
+
+fn finish(_value: . -> .) -> . { () }
+
+varop [* *] { foldr push nil; finalize finish }
+
+fn rejected() -> . { [* *] }

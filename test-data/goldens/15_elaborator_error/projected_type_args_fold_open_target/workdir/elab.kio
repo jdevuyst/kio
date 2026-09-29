@@ -1,0 +1,22 @@
+module elab;
+
+import __comptime__;
+
+pure fn inspect_args_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , _value: __Checked_term__
+  , target: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  __type_args_fold__(
+    , ct
+    , __Checked_term__ & __Fill_ctx__
+    , target
+    , (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct)))
+    , .(result: __Checked_term__ & __Fill_ctx__, _argument: __Type__) -> & __Checked_term__
+      & __Fill_ctx__ { result }
+    )
+}
+
+pub elab inspect_args : [Source] Source -> [Target] Target { impl(fills) inspect_args_impl }

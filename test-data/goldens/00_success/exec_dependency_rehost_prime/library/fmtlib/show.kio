@@ -1,0 +1,10 @@
+module show;
+
+import types as t;
+import types(I32);
+
+host fn print_i32(p0: I32) -> .;
+
+fn pick(a: I32, b: t.I32) -> t.I32 { b }
+
+pub fn show() -> . { print_i32(pick(41(I32), 42(t.I32))) }

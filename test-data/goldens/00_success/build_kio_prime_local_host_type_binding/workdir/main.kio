@@ -1,0 +1,9 @@
+module main;
+
+import provider(Alias);
+
+host type Shared;
+
+pub fn keep_alias(value: Alias) -> Alias { value }
+
+pub fn keep(value: Shared) -> Shared { value }

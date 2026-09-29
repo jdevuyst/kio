@@ -1,0 +1,10 @@
+module testapi/rec_funcs;
+
+import testapi/iter(loop);
+
+rec(loop) {
+  fn local(value: .) -> . { rec scoped(value) };
+  pub(testapi) fn scoped(value: .) -> . { value }
+}
+
+pub fn call_local() -> . { local(()) }

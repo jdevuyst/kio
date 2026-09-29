@@ -1,0 +1,1384 @@
+================================================================================
+empty file parses to empty source_file
+================================================================================
+
+--------------------------------------------------------------------------------
+
+(source_file)
+
+================================================================================
+identifier
+================================================================================
+foo
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier))
+
+================================================================================
+unproved contextual words retain identifier roles
+================================================================================
+if else fn type literal alias
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (identifier)
+  (ERROR
+    (keyword_type)
+    (entity_name_label)
+    (entity_name_label)))
+
+================================================================================
+elaborator bang fusion
+================================================================================
+iso! into! atom!
+--------------------------------------------------------------------------------
+
+(source_file
+  (elaborator_name)
+  (elaborator_name)
+  (elaborator_name))
+
+================================================================================
+elaborator bang requires contiguity
+================================================================================
+iso ! foo!
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (operator_builtin)
+  (elaborator_name))
+
+================================================================================
+literals
+================================================================================
+"hi" 42 3.14 .t .f
+--------------------------------------------------------------------------------
+
+(source_file
+  (string_literal)
+  (number_literal)
+  (number_literal)
+  (bool_literal
+    (bool_prefix)
+    (bool_value))
+  (bool_literal
+    (bool_prefix)
+    (bool_value)))
+
+================================================================================
+underscore-only runs are slot tokens; mixed are identifiers
+================================================================================
+_ __ ___ _x __bar
+--------------------------------------------------------------------------------
+
+(source_file
+  (slot)
+  (slot)
+  (slot)
+  (identifier)
+  (identifier))
+
+================================================================================
+hash runs are ordinary operators
+================================================================================
+# #1 #42
+--------------------------------------------------------------------------------
+
+(source_file
+  (operator_run)
+  (operator_run)
+  (number_literal)
+  (operator_run)
+  (number_literal))
+
+================================================================================
+leading-dot runs are ordinary operators
+================================================================================
+.# .$$$$
+--------------------------------------------------------------------------------
+
+(source_file
+  (operator_run)
+  (operator_run))
+
+================================================================================
+builtin vs user operator discrimination
+================================================================================
+& | = : ! -> .> .>> .< .<<
+++ <= != .. .+.
+--------------------------------------------------------------------------------
+
+(source_file
+  (operator_builtin)
+  (operator_builtin)
+  (operator_builtin)
+  (operator_builtin)
+  (operator_builtin)
+  (operator_arrow_type)
+  (operator_arrow_ufcs)
+  (operator_arrow_ufcs)
+  (operator_arrow_ufcs)
+  (operator_arrow_ufcs)
+  (operator_run)
+  (operator_run)
+  (operator_run)
+  (operator_run)
+  (operator_run))
+
+================================================================================
+UFCS structural roles follow callee direction
+================================================================================
+r.>f
+r.>>T.member
+f(a).<r
+T.member.<<r
+r.>transform!
+r.>>transform!(x)
+transform!.<r
+transform!(x).<<r
+--------------------------------------------------------------------------------
+
+(source_file
+  (ufcs_expr
+    (expression_path
+      (identifier))
+    (operator_arrow_ufcs)
+    (call_callee
+      (entity_name_function)))
+  (ufcs_expr
+    (expression_path
+      (identifier))
+    (operator_arrow_ufcs)
+    (call_callee
+      (identifier)
+      (separator_dot)
+      (entity_name_function)))
+  (ufcs_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen))
+    (operator_arrow_ufcs)
+    (expression_path
+      (identifier)))
+  (ufcs_expr
+    (call_callee
+      (identifier)
+      (separator_dot)
+      (entity_name_function))
+    (operator_arrow_ufcs)
+    (expression_path
+      (identifier)))
+  (ufcs_expr
+    (expression_path
+      (identifier))
+    (operator_arrow_ufcs)
+    (elaborator_name))
+  (ufcs_expr
+    (expression_path
+      (identifier))
+    (operator_arrow_ufcs)
+    (elaborator_name)
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen)))
+  (ufcs_expr
+    (elaborator_name)
+    (operator_arrow_ufcs)
+    (expression_path
+      (identifier)))
+  (ufcs_expr
+    (elaborator_name)
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen))
+    (operator_arrow_ufcs)
+    (expression_path
+      (identifier))))
+
+================================================================================
+brackets and separators
+================================================================================
+( ) { } [ ] , ; .
+--------------------------------------------------------------------------------
+
+(source_file
+  (ERROR
+    (unit_expression
+      (bracket_lparen)
+      (bracket_rparen)))
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (separator_comma)
+  (separator_semicolon)
+  (separator_dot))
+
+================================================================================
+unowned bracket runs recover without fixed operator authority
+================================================================================
+[! ]] ]- ][* [*+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variadic_expression
+    (variadic_open)
+    (variadic_close))
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (incomplete_variadic_expression
+    (variadic_open)))
+
+================================================================================
+rejected bracket markers preserve following lexical boundaries
+================================================================================
+]// flush comment
+]/+
+]/
+]/+/[
+]/+/
+[ /]
+.[! { [! }
+.[!/ { [!/ }
+.[!/+/
+.[!// flush marker comment
+{ [! }
+--------------------------------------------------------------------------------
+
+(source_file
+  (unowned_symbol_run)
+  (comment_line)
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (variadic_expression
+    (variadic_open)
+    (variadic_close))
+  (module_path_sep)
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (unowned_symbol_run)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (incomplete_variadic_expression
+        (variadic_open))
+      (bracket_rbrace)))
+  (unowned_symbol_run)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (incomplete_variadic_expression
+        (variadic_open))
+      (bracket_rbrace)))
+  (unowned_symbol_run)
+  (module_path_sep)
+  (unowned_symbol_run)
+  (comment_line)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (incomplete_variadic_expression
+        (variadic_open))
+      (bracket_rbrace))))
+
+================================================================================
+compact forall brackets stay structural in declarations and lambdas
+================================================================================
+fn id[A][*F](x: F(A)) -> A {}
+.[*F](x: F(.)) -> F(.) { x }
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (type_param_group
+          (ambiguous_lbracket_star
+            (star_open_prefix)
+            (kind_annotation))
+          (variable_parameter)
+          (bracket_rbracket))
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)
+                (type_arguments
+                  (bracket_lparen)
+                  (type_path
+                    (entity_name_type))
+                  (bracket_rparen)))))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (type_path
+        (entity_name_type)))
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (unowned_symbol_run)
+  (identifier)
+  (unowned_symbol_run)
+  (bracket_lparen)
+  (ERROR
+    (operator_expression
+      (expression_path
+        (identifier))
+      (operator_builtin)
+      (expression_path
+        (identifier)))
+    (operator_expression
+      (unit_expression
+        (bracket_lparen)
+        (ERROR
+          (separator_dot)
+          (bracket_rparen))
+        (bracket_rparen))
+      (operator_arrow_type)
+      (expression_path
+        (identifier)))
+    (bracket_lparen)
+    (ERROR
+      (separator_dot)
+      (bracket_rparen))
+    (label_value_expr
+      (bracket_lbrace)
+      (label_value_label
+        (label_path
+          (entity_name_label)))
+      (bracket_rbrace))))
+
+================================================================================
+polymorphic call arguments retain structural type owners
+================================================================================
+consume([ // leading binder
+  A, // kinded binder
+  *B // before close
+] Pair(A, [C] // nested forall
+  C -> A), value)
+--------------------------------------------------------------------------------
+
+(source_file
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (forall_type
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (comment_line)
+            (type_param_binder
+              (variable_parameter))
+            (separator_comma)
+            (comment_line)
+            (type_param_binder
+              (operator_run)
+              (variable_parameter))
+            (comment_line)
+            (bracket_rbracket)))
+        (type_path
+          (entity_name_type)
+          (type_arguments
+            (bracket_lparen)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (forall_type
+              (type_param_list
+                (type_param_group
+                  (bracket_lbracket)
+                  (type_param_binder
+                    (variable_parameter))
+                  (bracket_rbracket)))
+              (comment_line)
+              (type_arrow
+                (type_path
+                  (entity_name_type))
+                (operator_arrow_type)
+                (type_path
+                  (entity_name_type))))
+            (bracket_rparen))))
+      (separator_comma)
+      (expression_path
+        (identifier))
+      (bracket_rparen))))
+
+================================================================================
+polymorphic call argument stops before the outer close
+================================================================================
+consume([A] A)
+--------------------------------------------------------------------------------
+
+(source_file
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (forall_type
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (type_path
+          (entity_name_type)))
+      (bracket_rparen))))
+
+================================================================================
+line comments are extras
+================================================================================
+// header
+foo // trailing
+bar
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment_line)
+  (identifier)
+  (comment_line)
+  (identifier))
+
+================================================================================
+contextual as roles retain comment trivia
+================================================================================
+module contextual/keywords;
+import app/as // provider leaf
+  as // separator
+  as;
+
+fn row(row: .) -> . {
+  let .({
+    ,, as // label
+       as // separator
+       as ,,, owner. // path
+                 as // label leaf
+                 as local ,,
+  }) = row;
+  local
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module)
+      (module_path_sep)
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module)
+      (module_path_sep)
+      (entity_name_module))
+    (comment_line)
+    (keyword_declaration)
+    (comment_line)
+    (entity_name_module)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (row_let_stmt
+        (keyword_let)
+        (separator_dot)
+        (bracket_lparen)
+        (bracket_lbrace)
+        (separator_comma)
+        (separator_comma)
+        (row_let_entry
+          (label_path
+            (entity_name_label))
+          (comment_line)
+          (keyword_declaration)
+          (comment_line)
+          (variable_parameter))
+        (separator_comma)
+        (separator_comma)
+        (separator_comma)
+        (row_let_entry
+          (label_path
+            (identifier)
+            (separator_dot)
+            (comment_line)
+            (entity_name_label))
+          (comment_line)
+          (keyword_declaration)
+          (variable_parameter))
+        (separator_comma)
+        (separator_comma)
+        (bracket_rbrace)
+        (bracket_rparen)
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+selective label import is structural
+================================================================================
+import source(Item, item, {item});
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (separator_comma)
+    (import_label_item
+      (bracket_lbrace)
+      (entity_name_label)
+      (bracket_rbrace))
+    (bracket_rparen)
+    (separator_semicolon)))
+
+================================================================================
+package-file smoke test
+================================================================================
+package hello;
+
+build {
+  cache "out/.kio-cache/";
+  target js { out "out/js/"; }
+}
+
+bridge {
+  main;
+  main/**;
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (cache_declaration
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (target_name
+          (identifier))
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (string_literal))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (bracket_rbrace))
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (bridge_glob
+        (identifier))
+      (separator_semicolon)
+      (bridge_glob
+        (identifier)
+        (operator_run))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+contextual keywords in module paths and bridge targets
+================================================================================
+module env/fn/build;
+
+bridge { env; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module)
+      (module_path_sep)
+      (entity_name_module)
+      (module_path_sep)
+      (entity_name_module))
+    (separator_semicolon))
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+pure is a function-only declaration modifier
+================================================================================
+pure type Alias;
+pure newtype Box : . {};
+pure labels Row = { field: . };
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (ERROR
+    (uppercase_identifier))
+  (separator_semicolon)
+  (identifier)
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (operator_builtin)
+    (separator_dot)
+    (newtype_body
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (identifier)
+  (labels_decl_head
+    (keyword_labels)
+    (entity_name_type)
+    (operator_builtin)
+    (labels_arms
+      (labels_block
+        (bracket_lbrace)
+        (label_entry
+          (entity_name_label)
+          (operator_builtin)
+          (separator_dot))
+        (bracket_rbrace)))
+    (separator_semicolon)))
+
+================================================================================
+pure function modifier accepts both visibility orders
+================================================================================
+pure fn first() -> . {}
+pub pure fn second() -> . {}
+pure pub fn third() -> . {}
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_pure)
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_pub)
+      (keyword_pure)
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_pure)
+      (keyword_pub)
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace))))
+
+================================================================================
+recursive data markers and mutual type groups are structural
+================================================================================
+rec newtype Cell : . | Cell { constructor mk; projector get; };
+rec labels Tree = { branch: Tree };
+rec {
+  pub type Link = Node;
+  pub newtype Node : Link { pub constructor mk_node; pub projector un_node; };
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (newtype_decl_head
+    (keyword_rec)
+    (keyword_newtype)
+    (entity_name_type)
+    (operator_builtin)
+    (type_product
+      (separator_dot)
+      (operator_builtin)
+      (type_path
+        (entity_name_type)))
+    (newtype_body
+      (bracket_lbrace)
+      (newtype_member
+        (keyword_constructor)
+        (entity_name_function))
+      (separator_semicolon)
+      (newtype_member
+        (keyword_projector)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (labels_decl_head
+    (keyword_rec)
+    (keyword_labels)
+    (entity_name_type)
+    (operator_builtin)
+    (labels_arms
+      (labels_block
+        (bracket_lbrace)
+        (label_entry
+          (entity_name_label)
+          (operator_builtin)
+          (type_path
+            (entity_name_type)))
+        (bracket_rbrace)))
+    (separator_semicolon))
+  (type_rec_group
+    (keyword_rec)
+    (bracket_lbrace)
+    (type_alias_decl_head
+      (keyword_pub)
+      (keyword_type)
+      (entity_name_type)
+      (operator_builtin)
+      (type_path
+        (entity_name_type)))
+    (separator_semicolon)
+    (newtype_decl_head
+      (keyword_pub)
+      (keyword_newtype)
+      (entity_name_type)
+      (operator_builtin)
+      (type_path
+        (entity_name_type))
+      (newtype_body
+        (bracket_lbrace)
+        (newtype_member
+          (keyword_pub)
+          (keyword_constructor)
+          (entity_name_function))
+        (separator_semicolon)
+        (newtype_member
+          (keyword_pub)
+          (keyword_projector)
+          (entity_name_function))
+        (separator_semicolon)
+        (bracket_rbrace)))
+    (separator_semicolon)
+    (bracket_rbrace)))
+
+================================================================================
+marked later-uppercase spelling remains a generic token, not a type name
+================================================================================
+type _FooBar = .;
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (operator_builtin)
+  (separator_dot)
+  (separator_semicolon))
+
+================================================================================
+callable declaration targets are structural lexical paths
+================================================================================
+op _ %% _ { impl ops.combine; };
+varop [* *] {
+  foldr1 folds.push folds.empty;
+  finalize folds.finish;
+};
+elab choose : [A] A -> A {
+  captures (values.default, Box.mk);
+  impl(fills) impls.choose;
+};
+--------------------------------------------------------------------------------
+
+(source_file
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_star_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (forall_type
+      (type_param_list
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (type_arrow
+        (type_path
+          (entity_name_type))
+        (operator_arrow_type)
+        (type_path
+          (entity_name_type))))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_captures_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (plain_value_path
+          (identifier)
+          (separator_dot)
+          (identifier))
+        (separator_comma)
+        (plain_value_path
+          (identifier)
+          (separator_dot)
+          (identifier))
+        (bracket_rparen))
+      (separator_semicolon)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (keyword_declaration)
+        (bracket_rparen)
+        (callable_path
+          (identifier)
+          (separator_dot)
+          (entity_name_function)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+callable path comments preserve declaration structure
+================================================================================
+op _ %% _ {
+  impl
+  // op target
+  ops
+  /// op separator
+  .
+  // op callable
+  combine
+  // op terminator
+  ;
+};
+varop [* *] {
+  foldr
+  folds
+  // step separator
+  .
+  push
+  // between targets
+  folds
+  // initializer separator
+  .
+  empty
+  // initializer terminator
+  ;
+};
+elab choose : . -> . {
+  impl(fills)
+  // elab target
+  impls
+  .
+  // elab callable
+  choose
+  // elab terminator
+  ;
+};
+--------------------------------------------------------------------------------
+
+(source_file
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (comment_line)
+        (identifier)
+        (comment_doc)
+        (separator_dot)
+        (comment_line)
+        (entity_name_function)
+        (comment_line))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_star_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (comment_line)
+        (separator_dot)
+        (entity_name_function)
+        (comment_line))
+      (callable_path
+        (identifier)
+        (comment_line)
+        (separator_dot)
+        (entity_name_function)
+        (comment_line))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (keyword_declaration)
+        (bracket_rparen)
+        (callable_path
+          (comment_line)
+          (identifier)
+          (separator_dot)
+          (comment_line)
+          (entity_name_function)
+          (comment_line)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+callable field trivia surrounds fills markers and variadic targets
+================================================================================
+varop [* *] {
+  foldr1
+  // before step
+  helper.push
+  // between targets
+  helper.empty
+  // after initializer
+  ;
+};
+elab filled : . -> . {
+  impl
+  // before fills
+  (
+  // after open
+  fills
+  // before close
+  )
+  // before filled target
+  helper.run;
+};
+elab normal : . -> . {
+  impl
+  // before normal target
+  helper.run;
+};
+--------------------------------------------------------------------------------
+
+(source_file
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_star_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (comment_line)
+        (identifier)
+        (separator_dot)
+        (entity_name_function)
+        (comment_line))
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function)
+        (comment_line))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (comment_line)
+        (bracket_lparen)
+        (comment_line)
+        (keyword_declaration)
+        (comment_line)
+        (bracket_rparen)
+        (callable_path
+          (comment_line)
+          (identifier)
+          (separator_dot)
+          (entity_name_function)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (callable_path
+          (comment_line)
+          (identifier)
+          (separator_dot)
+          (entity_name_function)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+pure remains a contextual function name at call sites
+================================================================================
+fn caller(x: A) -> A { pure(x); helpers.pure(x) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (type_path
+        (entity_name_type)))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+ordinary and marked type names share structural roles
+================================================================================
+type Alias[A] = A;
+type _Alias[_A] = _A;
+newtype Box[B] : B { constructor mk_box; projector un_box; };
+newtype _Box[_B] : _B { constructor mk_marked; projector un_marked; };
+fn use_types[A][_A](x: Box(A), y: _Box(_A)) -> _Alias(_A) { let _ = Box.un_box(A, x); _Box.un_marked(_A, y) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (type_param_list
+      (type_param_group
+        (bracket_lbracket)
+        (type_param_binder
+          (variable_parameter))
+        (bracket_rbracket)))
+    (operator_builtin)
+    (type_path
+      (entity_name_type))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (type_param_list
+      (type_param_group
+        (bracket_lbracket)
+        (type_param_binder
+          (variable_parameter))
+        (bracket_rbracket)))
+    (operator_builtin)
+    (type_path
+      (entity_name_type))
+    (separator_semicolon))
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (type_param_list
+      (type_param_group
+        (bracket_lbracket)
+        (type_param_binder
+          (variable_parameter))
+        (bracket_rbracket)))
+    (operator_builtin)
+    (type_path
+      (entity_name_type))
+    (newtype_body
+      (bracket_lbrace)
+      (newtype_member
+        (keyword_constructor)
+        (entity_name_function))
+      (separator_semicolon)
+      (newtype_member
+        (keyword_projector)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (type_param_list
+      (type_param_group
+        (bracket_lbracket)
+        (type_param_binder
+          (variable_parameter))
+        (bracket_rbracket)))
+    (operator_builtin)
+    (type_path
+      (entity_name_type))
+    (newtype_body
+      (bracket_lbrace)
+      (newtype_member
+        (keyword_constructor)
+        (entity_name_function))
+      (separator_semicolon)
+      (newtype_member
+        (keyword_projector)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)
+                (type_arguments
+                  (bracket_lparen)
+                  (type_path
+                    (entity_name_type))
+                  (bracket_rparen)))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)
+                (type_arguments
+                  (bracket_lparen)
+                  (type_path
+                    (entity_name_type))
+                  (bracket_rparen)))))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (type_path
+        (entity_name_type)
+        (type_arguments
+          (bracket_lparen)
+          (type_path
+            (entity_name_type))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (slot)
+        (operator_builtin)
+        (call_expr
+          (call_callee
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (expression_path
+              (identifier))
+            (bracket_rparen))))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (type_path
+            (entity_name_type))
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))

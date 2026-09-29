@@ -1,0 +1,92 @@
+/// Every way this calculator can fail, as a value.
+///
+/// Nothing here throws, exits, or traps: a fault is an ordinary sum arm
+/// carrying the 1-based position of the token it failed at, and the driver
+/// dispatches it with `match!` exactly the way it dispatches a success. The
+/// seven arms are the complete failure surface of an integer desk calculator
+/// over this grammar, and the fixture exercises every one of them.
+module desk/outcome;
+
+import desk/list(List, cons, count, nil);
+import desk/num(int_eq);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+
+pub labels Fault_kind =
+  { bad_token: . }
+  | { unmatched_close: . }
+  | { unclosed_open: . }
+  | { missing_operand: . }
+  | { extra_operand: . }
+  | { divide_by_zero: . }
+  | { negative_exponent: . };
+
+/// A fault kind together with the token position it was raised at.
+pub labels Failure = { fault: Fault_kind, pos: I32 };
+
+/// What one expression came to: a value, or a failure.
+pub labels Answer = { value: I32 } | { failed: Failure };
+
+pub fn bad_token_fault() -> Fault_kind { {bad_token=}.>widen_sum!(Fault_kind) }
+
+pub fn unmatched_close_fault() -> Fault_kind { {unmatched_close=}.>widen_sum!(Fault_kind) }
+
+pub fn unclosed_open_fault() -> Fault_kind { {unclosed_open=}.>widen_sum!(Fault_kind) }
+
+pub fn missing_operand_fault() -> Fault_kind { {missing_operand=}.>widen_sum!(Fault_kind) }
+
+pub fn extra_operand_fault() -> Fault_kind { {extra_operand=}.>widen_sum!(Fault_kind) }
+
+pub fn divide_by_zero_fault() -> Fault_kind { {divide_by_zero=}.>widen_sum!(Fault_kind) }
+
+pub fn negative_exponent_fault() -> Fault_kind { {negative_exponent=}.>widen_sum!(Fault_kind) }
+
+pub fn fault_at(kind: Fault_kind, pos: I32) -> Failure { {fault = kind, pos} }
+
+pub fn fault_of(f: Failure) -> Fault_kind { f.?{fault} }
+
+pub fn pos_of(f: Failure) -> I32 { f.?{pos} }
+
+pub fn value_answer(n: I32) -> Answer { {value = n}.>widen_sum!(Answer) }
+
+pub fn failed_answer(f: Failure) -> Answer { {failed = f}.>widen_sum!(Answer) }
+
+/// One row per fault kind: how it prints, and an ordinal. Two sum values
+/// cannot be compared without walking both, so the summary counts a kind by
+/// projecting it to its ordinal and comparing integers — and reading the name
+/// and the ordinal off one row keeps the report and the tally in step.
+labels Facts = { code: I32, text: String };
+
+fn facts(kind: Fault_kind) -> Facts {
+  match! kind {
+    (
+      , .(_b: Bad_token) { {code = 0, text = "bad-token"} }
+      , .(_c: Unmatched_close) { {code = 1, text = "unmatched-close"} }
+      , .(_o: Unclosed_open) { {code = 2, text = "unclosed-open"} }
+      , .(_m: Missing_operand) { {code = 3, text = "missing-operand"} }
+      , .(_e: Extra_operand) { {code = 4, text = "extra-operand"} }
+      , .(_d: Divide_by_zero) { {code = 5, text = "divide-by-zero"} }
+      , .(_n: Negative_exponent) { {code = 6, text = "negative-exponent"} }
+      )
+  }
+}
+
+pub fn kind_name(kind: Fault_kind) -> String { facts(kind).?{text} }
+
+/// Every fault kind, in report order. The summary walks this rather than
+/// carrying seven counters, so no arm can quietly lose its counter.
+pub fn all_kinds() -> List(Fault_kind) {
+  let ks = cons(negative_exponent_fault(), nil(Fault_kind, ()));
+  let ks = cons(divide_by_zero_fault(), ks);
+  let ks = cons(extra_operand_fault(), ks);
+  let ks = cons(missing_operand_fault(), ks);
+  let ks = cons(unclosed_open_fault(), ks);
+  let ks = cons(unmatched_close_fault(), ks);
+  cons(bad_token_fault(), ks)
+}
+
+pub fn count_kind(log: List(Fault_kind), kind: Fault_kind) -> I32 {
+  let wanted = facts(kind).?{code};
+  count(log, .(seen: Fault_kind) { int_eq(facts(seen).?{code}, wanted) })
+}

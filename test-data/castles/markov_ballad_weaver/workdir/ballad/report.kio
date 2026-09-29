@@ -1,0 +1,337 @@
+/// The report. Generated text proves nothing on its own — any string of words
+/// could have come from any model, or from a broken one. So the program shows
+/// its work: the recurrence and its first states, the whole learned chain with
+/// its counts, the verses, and then every draw of the first verse with the
+/// cumulative bands it rolled against. A reader with the fixture and a pencil
+/// can re-derive the first verse exactly, which is the only reason to trust
+/// the rest.
+module ballad/report;
+
+import ballad/list(List, len);
+import ballad/model(Model, Row, Tally, ends_of, rows_of, starts_of, total_weight);
+import ballad/model({count}, {word});
+import ballad/model({row_succs}, {row_word});
+import ballad/prng(first_states, increment, modulus, multiplier, seed_state);
+import ballad/stats(
+  , distinct_words
+  , lines_by_end_word
+  , lines_by_no_successor
+  , lines_by_word_cap
+  , longest_line
+  , words_generated
+  );
+import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, Step, Stop);
+import ballad/weave({line_draws}, {line_stop}, {line_words});
+import ballad/weave({step_from}, {step_roll}, {step_state}, {step_succs}, {step_to});
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, div_i32, leq_i32, mod_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat, string_eq);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+fn say(s: String) -> . { print(cat(s, "\n")) }
+
+fn field(label: String, value: String) -> . { say(cat(label, cat(": ", value))) }
+
+/// Integer equality, composed from `<=` in both directions: the host tier
+/// supplies comparisons but no `eq_i32`.
+fn int_eq(a: I32, b: I32) -> Bool {
+  if! leq_i32(a, b) {
+    leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn words_onto(ws: List(String), first: Bool, acc: String) -> String {
+  match! ws.>List.un_list {
+    (
+      , .(w: String, more: List(String)) {
+          let next =
+            if! first {
+              w
+            } else {
+              acc.>cat(" ").>cat(w)
+            };
+          rec words_onto(more, .f, next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn words_text(ws: List(String)) -> String { words_onto(ws, .t, "") }
+
+rec(loop) fn states_onto(ns: List(I32), first: Bool, acc: String) -> String {
+  match! ns.>List.un_list {
+    (
+      , .(n: I32, more: List(I32)) {
+          let next =
+            if! first {
+              num(n)
+            } else {
+              acc.>cat(" ").>cat(num(n))
+            };
+          rec states_onto(more, .f, next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn tallies_onto(ts: List(Tally), first: Bool, acc: String) -> String {
+  match! ts.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) {
+          let piece = t.?{word}.>cat("*").>cat(num(t.?{count}));
+          let next =
+            if! first {
+              piece
+            } else {
+              acc.>cat(" ").>cat(piece)
+            };
+          rec tallies_onto(more, .f, next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// A weighted word list, plus the total a draw against it rolls modulo.
+fn tallies_text(ts: List(Tally)) -> String {
+  tallies_onto(ts, .t, "").>cat(" (total ").>cat(num(total_weight(ts))).>cat(")")
+}
+
+/// The same list as the half-open cumulative bands a draw actually walks:
+/// `moon[0,2) river[2,3)` says a roll of 0 or 1 lands on `moon` and a roll of
+/// 2 lands on `river`. This is the line that makes the weighting checkable.
+rec(loop) fn bands_onto(ts: List(Tally), lo: I32, first: Bool, acc: String) -> String {
+  match! ts.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) {
+          let hi = add_i32(lo, t.?{count});
+          let piece = t.?{word}.>cat("[").>cat(num(lo)).>cat(",").>cat(num(hi)).>cat(")");
+          let next =
+            if! first {
+              piece
+            } else {
+              acc.>cat(" ").>cat(piece)
+            };
+          rec bands_onto(more, hi, .f, next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn bands_text(ts: List(Tally)) -> String { bands_onto(ts, 0, .t, "") }
+
+fn stop_text(s: Stop) -> String {
+  match! s {
+    (
+      , .(_e: By_end_word) { "end word" }
+      , .(_c: By_word_cap) { "word cap" }
+      , .(_d: By_no_successor) { "no successor" }
+      )
+  }
+}
+
+pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) -> . {
+  field("markov_ballad_weaver", "v1");
+  field("seed", num(seed));
+  field(
+    , "recurrence"
+    , "next = ("
+        .>cat(num(multiplier()))
+        .>cat(" * state + ")
+        .>cat(num(increment()))
+        .>cat(") mod ")
+        .>cat(num(modulus()))
+    );
+  field("seed state", num(seed_state(seed)));
+  field("first draws", states_onto(first_states(seed_state(seed), 5), .t, ""));
+  field("verses", num(verses));
+  field("lines per verse", num(per_verse));
+  field("word cap", num(cap))
+}
+
+rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) -> . {
+  match! phrases.>List.un_list {
+    (
+      , .(p: List(String), more: List(List(String))) {
+          say(num(i).>cat(": ").>cat(words_text(p)));
+          rec print_phrases(more, add_i32(i, 1))
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+rec(loop) fn count_tokens(phrases: List(List(String)), acc: I32) -> I32 {
+  match! phrases.>List.un_list {
+    (
+      , .(p: List(String), more: List(List(String))) {
+          rec count_tokens(more, add_i32(acc, len(p)))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn rows_hold(rows: List(Row), w: String) -> Bool {
+  match! rows.>List.un_list {
+    (
+      , .(r: Row, more: List(Row)) {
+          if! string_eq(r.?{row_word}, w) {
+            .t
+          } else {
+            rec rows_hold(more, w)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+rec(loop) fn count_end_only(ends: List(Tally), rows: List(Row), acc: I32) -> I32 {
+  match! ends.>List.un_list {
+    (
+      , .(t: Tally, more: List(Tally)) {
+          let next =
+            if! rows_hold(rows, t.?{word}) {
+              acc
+            } else {
+              add_i32(acc, 1)
+            };
+          rec count_end_only(more, rows, next)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// Every corpus word is either a row key or a phrase end. Count their union,
+/// including an end word only when it is not also a row key.
+fn vocabulary(m: Model) -> I32 {
+  add_i32(len(rows_of(m)), count_end_only(ends_of(m), rows_of(m), 0))
+}
+
+pub fn print_corpus(phrases: List(List(String)), m: Model) -> . {
+  say("");
+  say("-- corpus --");
+  field("phrases", num(len(phrases)));
+  field("tokens", num(count_tokens(phrases, 0)));
+  field("vocabulary", num(vocabulary(m)));
+  print_phrases(phrases, 1)
+}
+
+rec(loop) fn print_rows(rows: List(Row)) -> . {
+  match! rows.>List.un_list {
+    (
+      , .(r: Row, more: List(Row)) {
+          say(r.?{row_word}.>cat(" -> ").>cat(tallies_text(r.?{row_succs})));
+          rec print_rows(more)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_model(m: Model) -> . {
+  say("");
+  say("-- model --");
+  field("starts", tallies_text(starts_of(m)));
+  field("ends", tallies_text(ends_of(m)));
+  print_rows(rows_of(m))
+}
+
+rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) -> . {
+  match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) {
+          if! int_eq(mod_i32(i, per_verse), 0) {
+            say("verse ".>cat(num(add_i32(div_i32(i, per_verse), 1))))
+          } else {
+            ()
+          };
+          say("  ".>cat(words_text(l.?{line_words})));
+          rec print_lines(more, add_i32(i, 1), per_verse)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_verses(lines: List(Line), per_verse: I32) -> . {
+  say("");
+  say("-- verses --");
+  print_lines(lines, 0, per_verse)
+}
+
+rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
+  match! draws.>List.un_list {
+    (
+      , .(d: Step, more: List(Step)) {
+          say("  draw "
+            .>cat(num(n))
+            .>cat(": state ")
+            .>cat(num(d.?{step_state}))
+            .>cat(" from ")
+            .>cat(d.?{step_from})
+            .>cat(" | ")
+            .>cat(bands_text(d.?{step_succs}))
+            .>cat(" | total ")
+            .>cat(num(total_weight(d.?{step_succs})))
+            .>cat(" roll ")
+            .>cat(num(d.?{step_roll}))
+            .>cat(" -> ")
+            .>cat(d.?{step_to}));
+          rec print_draws(more, add_i32(n, 1))
+        }
+      , .(_empty: .) { n }
+      )
+  }
+}
+
+rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) -> . {
+  if! leq_i32(per_verse, i) {
+    ()
+  } else match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) {
+          say("line ".>cat(num(add_i32(i, 1))));
+          let next = print_draws(l.?{line_draws}, n);
+          say("  stop: ".>cat(stop_text(l.?{line_stop})));
+          rec print_trace(more, add_i32(i, 1), per_verse, next)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+/// Only the first verse is traced. One verse is enough to check the generator
+/// by hand, and tracing all of them would bury the verses under their own
+/// arithmetic.
+pub fn print_first_verse_draws(lines: List(Line), per_verse: I32) -> . {
+  say("");
+  say("-- draws (verse 1) --");
+  print_trace(lines, 0, per_verse, 1)
+}
+
+pub fn print_stats(lines: List(Line)) -> . {
+  say("");
+  say("-- stats --");
+  field("words generated", num(words_generated(lines)));
+  field("distinct words used", num(distinct_words(lines)));
+  field("longest line", num(longest_line(lines)));
+  field("lines by end word", num(lines_by_end_word(lines)));
+  field("lines by word cap", num(lines_by_word_cap(lines)));
+  field("lines by no successor", num(lines_by_no_successor(lines)))
+}

@@ -1,0 +1,50 @@
+package shared_pkg;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    namespace "shared_a"
+  };
+
+  target ts {
+    out "out/ts/";
+    namespace "shared_a"
+  };
+
+  target python {
+    out "out/python/";
+    namespace "shared_a"
+  };
+
+  target java {
+    out "out/java/";
+    namespace "shared_a"
+  };
+
+  target rust {
+    out "out/rust/";
+    namespace "shared_a"
+  };
+
+  target go {
+    out "out/go/";
+    namespace "shared_a"
+  };
+
+  target swift {
+    out "out/swift/";
+    namespace "SharedA"
+  };
+
+  target haskell {
+    out "out/haskell/";
+    namespace "Data.Text"
+  }
+}
+
+bridge {
+  greeter;
+  greeter/**
+}

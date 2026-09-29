@@ -1,0 +1,131 @@
+/// The disassembler: render a resolved image back to a readable listing.
+///
+/// Each instruction prints on its own line with its address, and each
+/// label prints on a line of its own above the address it names - the
+/// same shape the source was written in, with the jump targets now
+/// numeric. A label that pass one placed one past the last instruction
+/// still prints, at the end of the listing.
+///
+/// Mnemonics are padded by hand: this host tier has no string-length
+/// primitive, so the column is a property of the literal, not something
+/// measured at run time.
+module forge/disasm;
+
+import elab/control(if);
+import elab/match(match);
+import forge/isa as isa;
+import forge/isa(
+  , Add
+  , Div
+  , Emit
+  , Halt
+  , Ins
+  , Jmp_addr
+  , Jmpz_addr
+  , Loadi
+  , Mod
+  , Mov
+  , Mul
+  , Pop
+  , Push
+  , Reg
+  , Sub
+  );
+import forge/list as l;
+import forge/program as p;
+import forge/program(Prog, Symbol, Symbols);
+import forge/text as t;
+import forge/vm(int_eq);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// `dst, src` - the operand pair every two-address opcode carries.
+fn two(ops: Reg & Reg) -> String {
+  let .(dst: Reg, src: Reg) = ops;
+  t.cat3(isa.reg_name(dst), ", ", isa.reg_name(src))
+}
+
+/// One instruction's mnemonic and operands.
+fn text(i: Ins) -> String {
+  match! i {
+    (
+      , .(x: Loadi) {
+          let .(r: Reg, n: I32) = x.?{isa.loadi};
+          t.cat4("LOADI  ", isa.reg_name(r), ", ", t.num(n))
+        }
+      , .(x: Mov) { t.cat("MOV    ", two(x.?{isa.mov})) }
+      , .(x: Add) { t.cat("ADD    ", two(x.?{isa.add})) }
+      , .(x: Sub) { t.cat("SUB    ", two(x.?{isa.sub})) }
+      , .(x: Mul) { t.cat("MUL    ", two(x.?{isa.mul})) }
+      , .(x: Div) { t.cat("DIV    ", two(x.?{isa.div})) }
+      , .(x: Mod) { t.cat("MOD    ", two(x.?{isa.mod})) }
+      , .(x: Push) { t.cat("PUSH   ", isa.reg_name(x.?{isa.push})) }
+      , .(x: Pop) { t.cat("POP    ", isa.reg_name(x.?{isa.pop})) }
+      , .(x: Emit) { t.cat("EMIT   ", isa.reg_name(x.?{isa.emit})) }
+      , .(_x: Halt) { "HALT" }
+      , .(x: Jmp_addr) { t.cat("JMP    ", t.addr(x.?{isa.jmp_addr})) }
+      , .(x: Jmpz_addr) {
+          let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
+          t.cat4("JMPZ   ", isa.reg_name(r), ", ", t.addr(at))
+        }
+      )
+  }
+}
+
+rec(loop) fn marks_at(syms: Symbols, at: I32) -> . {
+  match! l.un_cons(syms) {
+    (
+      , .(s: Symbol, rest: Symbols) {
+          if! int_eq(s.?{p.sym_addr}, at) {
+            t.line(t.cat3("  ", s.?{p.sym_name}, ":"));
+            rec marks_at(rest, at)
+          } else {
+            rec marks_at(rest, at)
+          }
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) -> . {
+  match! l.un_cons(code) {
+    (
+      , .(i: Ins, rest: Prog) {
+          marks_at(syms, at);
+          t.line(t.cat4("  ", t.addr(at), "  ", text(i)));
+          rec rows(rest, syms, add_i32(at, 1))
+        }
+      , .(_empty: .) { marks_at(syms, at) }
+      )
+  }
+}
+
+/// Print the listing.
+pub fn listing(code: Prog, syms: Symbols) -> . { rows(code, syms, 0) }
+
+rec(loop) fn joined(syms: Symbols, acc: String, first: Bool) -> String {
+  match! l.un_cons(syms) {
+    (
+      , .(s: Symbol, rest: Symbols) {
+          let entry = t.cat3(s.?{p.sym_name}, "=", t.addr(s.?{p.sym_addr}));
+          let next =
+            if! first {
+              entry
+            } else {
+              t.cat3(acc, " ", entry)
+            };
+          rec joined(rest, next, .f)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The symbol table on one line.
+pub fn symbols_text(syms: Symbols) -> String {
+  match! l.un_cons(syms) {
+    (.(_s: Symbol, _rest: Symbols) { joined(syms, "", .t) }, .(_empty: .) { "(none)" })
+  }
+}

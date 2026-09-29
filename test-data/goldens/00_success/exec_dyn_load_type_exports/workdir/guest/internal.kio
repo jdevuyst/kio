@@ -1,0 +1,7 @@
+module internal;
+
+import hostapi(I32, add_i32);
+
+pub newtype Hidden : I32 { pub constructor mk_hidden; pub projector un_hidden }
+
+pub fn bump(n: I32) -> I32 { add_i32(n, 1) }

@@ -1,0 +1,48 @@
+module provider;
+
+import __comptime__;
+
+pub newtype Box[A] : A { pub constructor box; pub projector un_box }
+
+pub pure fn box_pure[A](value: A) -> Box(A) { Box.box(value) }
+
+pub pure fn box_bind[A][B](value: Box(A), continuation: A -> Box(B)) -> Box(B) {
+  continuation(Box.un_box(value))
+}
+
+pub type Bind[*F] = [A][B] (F(A) & (A -> F(B))) -> F(B);
+
+pub type Sequence[*F][R] = Bind(F) -> F(R);
+
+pure fn identity_checked(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pure fn first_checked(ct: __Comptime__, _values: __Checked_term__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+pure fn enter_checked(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _result: __Type__
+  , body: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  (__term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct)), fills)
+}
+
+pure fn sequence_checked(
+  , ct: __Comptime__
+  , _constructor: __Type__
+  , _result: __Type__
+  , receiver: __Checked_term__
+  , body: __Checked_term__
+  ) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, body), body, receiver) }
+
+pub elab packet : [A] A -> A { trailing product; impl identity_checked }
+
+pub elab two : (. & .) -> . { trailing product; trailing product fallback; impl first_checked }
+
+pub elab enter : [R] (. -> R) -> R { trailing thunk; impl(fills) enter_checked }
+
+pub elab sequence : [*F][R] Bind(F) -> Sequence(F, R) -> F(R) { trailing sequence; impl sequence_checked }

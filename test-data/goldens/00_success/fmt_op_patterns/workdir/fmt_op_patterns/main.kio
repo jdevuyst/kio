@@ -1,0 +1,13 @@
+module fmt_op_patterns/main;
+
+op _ + _ { impl add; };
+
+op _ ? _ : __ { impl if_then_else; };
+
+op _ <| __ |> { impl index; };
+
+fn add(x: I32, y: I32) -> I32 { x }
+
+fn if_then_else(c: I32, t: I32, e: I32) -> I32 { c }
+
+fn index(s: I32, i: I32) -> I32 { s }

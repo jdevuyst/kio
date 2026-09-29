@@ -1,0 +1,31 @@
+module main;
+
+import elab/spine_elaborators(flatten_prod);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+newtype D : . { pub constructor mk_d; pub projector un_d }
+
+// Single R-Assoc-Prod step. Source `(A & B) & C` is left-nested
+// (`Prod(Prod(A, B), C)`); target `A & B & C` right-associates to
+// `Prod(A, Prod(B, C))`. assoc_depth(S) = 1, assoc_depth(T) = 0, so
+// k = 1 step. Factor multisets agree (`{A, B, C}` on both sides).
+fn single_step(p: (A & B) & C) -> A & B & C { flatten_prod!(p) }
+
+// Multi-step R-Assoc-Prod. Source `((A & B) & C) & D` has
+// assoc_depth 3; target `A & B & C & D` right-associates to depth
+// 0. k = 3 steps. Each step rebuilds via `__pair__` at the new
+// shape; factor multisets `{A, B, C, D}` preserved every step.
+fn multi_step(p: ((A & B) & C) & D) -> A & B & C & D { flatten_prod!(p) }
+
+// Identity short-circuit. Source `A & B & C` right-associates to
+// `A & (B & C)`, identical to the target. k = 0 — no rewrite
+// fires; the rule produces identity glue.
+fn identity_short_circuit(p: A & B & C) -> A & B & C { flatten_prod!(p) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(p: (A & B) & C) -> A & B & C { p.>flatten_prod!(A & B & C) }

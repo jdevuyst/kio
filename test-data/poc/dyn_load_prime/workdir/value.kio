@@ -1,0 +1,325 @@
+/// The universal runtime value model `prime_eval` produces: ordinary Kio types are erased, while staged host functions retain exact declaration descriptors.
+module value;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn);
+import prime(Group_slots, Term);
+import testapi(Scalar);
+
+// `value.kio` — the universal value model.
+//
+// This is the runtime representation every Kio' value inhabits — the same
+// shape the emit backends target, so `prime_eval` is the *eval* counterpart of
+// the *emit* backends. Ordinary Kio types are erased into a closed set of value
+// shapes. `V_hostfn` retains an exact host-function descriptor alongside a
+// private evaluator schedule derived from the separate public value-group
+// inventory. The descriptor is host-boundary identity; the schedule is
+// evaluator-only runtime structure, not ordinary Kio type structure.
+//
+// The closed value sum:
+//
+//   V_closure   Env & Term            a function: a captured env + a body term
+//   V_product   Value & Value         a pair (the `&` product)
+//   V_sum       Side & Value          a tagged sum injection (the `|` sum)
+//   V_unit      ()                    the unit value ()
+//   V_host      Scalar                an opaque host value (literal / host result)
+//   V_hostfn    Host_fn & Group_slots & Vals
+//                                      a staged host function the host provides
+//
+// The first four arms are **fully structural and host-free**: closures,
+// products, sums, and unit never mention a host type. `V_host` carries an
+// **opaque host value** — the `role`-less `host type Scalar` the host owns
+// (`testapi/scalar.kio`) — which the interpreter threads but never
+// introspects. *Whether* a `V_host` is an i32, a string, a bool, a float,
+// or a wider numeric is the host's concern alone: the host constructs every
+// scalar (from a literal's text, or by lifting an op result) and inspects
+// every scalar (projecting a typed value, testing a bool), through the `call`,
+// `make_lit`, and `test_bool` capabilities. The value model therefore names no
+// scalar type, and any host scalar a host supports rides `V_host` opaquely.
+// `V_hostfn` carries a host function *as a value*: its exact declaration
+// descriptor, remaining evaluator-stage arities, and already-applied flattened
+// host-value slots. A zero-slot stage consumes Unit and may represent either an
+// erased `forall` or a declared Unit value group; a positive stage consumes one
+// declared non-Unit group. This private staging data is ordinary runtime
+// structure, not host-contract authority; the exact descriptor is the only
+// identity the separately supplied host `call` capability receives (`eval.kio`).
+//
+// **Why host fns are values.** A host supplies its capabilities as values
+// bound into the guest's environment; a guest applies one like any
+// function. So a host-fn reference resolves to a `V_hostfn` (seeded at load
+// time) and a guest call `add_i32(x, y)` is an ordinary application of that
+// value — not a string key dispatched at the call site. The structural
+// value core stays host-free: a `V_hostfn` names no operation, it only
+// carries the exact descriptor the separately supplied `call` capability will
+// interpret.
+//
+// **Why a closure stores a term, not a host function.** Kio' has no
+// first-class recursion, and the evaluator drives application by walking
+// the body term — not by invoking a stored native function. So a
+// closure is its captured environment paired with the un-evaluated body
+// term; applying it extends the env and evaluates the body
+// (`eval.kio`). This is the standard tree-walking-interpreter closure.
+
+// =====================================================================
+// Side — the pure structural sum tag
+// =====================================================================
+//
+// A sum value records which arm it injects. Tagging it with a host
+// `Bool` would drag a host type into the structural core; instead the
+// tag is the pure two-state shape `. | .` (left vs. right), labeled so
+// `match!` can tell the arms apart.
+/// Defines the left-injection sum tag.
+pub labels { side_l: . };
+
+/// Defines the right-injection sum tag.
+pub labels { side_r: . };
+
+/// Which arm a sum value injects: left or right.
+pub type Side = Side_l | Side_r;
+
+/// The left-injection tag.
+pub fn s_left() -> Side { widen_sum!({side_l=}, Side_l | Side_r) }
+
+/// The right-injection tag.
+pub fn s_right() -> Side { widen_sum!({side_r=}, Side_l | Side_r) }
+
+/// Eliminates a `Side` tag, choosing the left or right result.
+pub fn side_select[A](on_left: A, on_right: A, sd: Side) -> A {
+  match! sd {
+    (.(_l: Side_l) { on_left }, .(_r: Side_r) { on_right })
+  }
+}
+
+// =====================================================================
+// Value — the closed runtime value sum
+// =====================================================================
+//
+/// Defines the unit value arm.
+pub labels { v_unit: . };
+
+/// Defines the host-value arm: an opaque host `Scalar`.
+pub labels { v_host: Scalar };
+
+// A closure captures an `Env`, each environment cell carries a `Value`, and
+// host-function accumulation ties `Vals` back to `Value`. The explicit group
+// is their complete nominally grounded recursive component.
+rec {
+  /// Defines the closure value arm: a captured environment paired with a body term.
+  pub labels { v_closure: Env & Term };
+  /// Defines the product (pair) value arm.
+  pub labels { v_product: Value & Value };
+  /// Defines the tagged-sum value arm.
+  pub labels { v_sum: Side & Value };
+  /// Defines the host-function value arm: its exact declaration descriptor,
+  /// remaining `Group_slots`, and accumulated argument `Vals`.
+  pub labels { v_hostfn: Host_fn & Group_slots & Vals };
+  /// The universal erased runtime value — a nominal knot over the closed sum of value shapes.
+  pub labels { value: V_closure | V_product | V_sum | V_unit | V_host | V_hostfn };
+  /// A cons-list of values: the evaluation environment, innermost binding first.
+  pub labels { env: . | (Value & Env) };
+  /// A reverse-ordered list of already-applied host-boundary slots.
+  pub labels { vals: . | (Value & Vals) }
+}
+
+/// The bare value-shape sum inside a `Value` — the widen target the
+/// value constructors inject into before wrapping with the `Value` newtype.
+pub type Value_shape = V_closure | V_product | V_sum | V_unit | V_host | V_hostfn;
+
+/// One-step destructor on a `Value`: projects out the value-shape sum for dispatch.
+pub fn un_value(v: Value) -> Value_shape { Value.get(v) }
+
+// =====================================================================
+// Opaque-scalar extraction — Value → the opaque host Scalar it carries
+// =====================================================================
+//
+// A loaded guest fn produces a universal `Value`; the host capabilities (and
+// the loader's marshalling) want the opaque `Scalar` a `V_host` carries back,
+// to project a typed host value out of it host-side. This is a **structural
+// value-shape unwrap** — it reads which arm the value is and hands back the
+// carried `Scalar` — **not** a scalar introspection: it never learns the
+// scalar's shape (i32 / string / bool / float), which only the host knows.
+// `()` when the value is not a `V_host` (a well-typed marshalling never
+// triggers it, but a total accessor needs no `Eval_result` dependency). The
+// mirror direction — a typed host value → `Value` — is `vhost` composed with
+// `testapi/scalar.kio`'s `scalar_of_*` lifts.
+/// Recovers the opaque host `Scalar` a `V_host` value carries, or `()` otherwise.
+pub fn value_to_scalar(v: Value) -> . | Scalar {
+  match! un_value(v) {
+    (
+      , .(hv: V_host) { widen_sum!(V_host.get(hv), . | Scalar) }
+      , .(_c: V_closure) { widen_sum!((), . | Scalar) }
+      , .(_p: V_product) { widen_sum!((), . | Scalar) }
+      , .(_s: V_sum) { widen_sum!((), . | Scalar) }
+      , .(_u: V_unit) { widen_sum!((), . | Scalar) }
+      , .(_f: V_hostfn) { widen_sum!((), . | Scalar) }
+      )
+  }
+}
+
+// =====================================================================
+// Vals — flattened host-boundary slots accumulated across value groups
+// =====================================================================
+/// The empty slot accumulator.
+pub fn vals_nil() -> Vals { {vals = widen_sum!((), . | (Value & Vals))} }
+
+/// Prepends one flattened slot.
+pub fn vals_push(v: Value, vs: Vals) -> Vals { {vals = widen_sum!((v, vs), . | (Value & Vals))} }
+
+/// Splits the next accumulated slot from the remainder.
+pub fn un_vals(vs: Vals) -> . | (Value & Vals) { Vals.get(vs) }
+
+// =====================================================================
+// Value constructors
+// =====================================================================
+/// Builds a closure value from a captured environment and a body term.
+pub fn vclosure(e: Env, body: Term) -> Value {
+  {value = widen_sum!({v_closure = (e, body)}, Value_shape)}
+}
+
+/// Builds a product value from its two components.
+pub fn vproduct(a: Value, b: Value) -> Value {
+  {value = widen_sum!({v_product = (a, b)}, Value_shape)}
+}
+
+/// Builds a tagged-sum value from an arm tag and a payload.
+pub fn vsum(sd: Side, payload: Value) -> Value {
+  {value = widen_sum!({v_sum = (sd, payload)}, Value_shape)}
+}
+
+/// Builds a left-injected sum value.
+pub fn vleft(payload: Value) -> Value { vsum(s_left(), payload) }
+
+/// Builds a right-injected sum value.
+pub fn vright(payload: Value) -> Value { vsum(s_right(), payload) }
+
+/// The unit value.
+pub fn vunit() -> Value { {value = widen_sum!({v_unit=}, Value_shape)} }
+
+/// Builds a host value from an opaque host `Scalar`.
+pub fn vhost(s: Scalar) -> Value { {value = widen_sum!({v_host = s}, Value_shape)} }
+
+/// Builds a host-function value from its exact declaration descriptor,
+/// remaining `Group_slots`, and accumulated argument `Vals`.
+pub fn vhostfn(descriptor: Host_fn, groups: Group_slots, args: Vals) -> Value {
+  {value = widen_sum!({v_hostfn = (descriptor, (groups, args))}, Value_shape)}
+}
+
+/// Builds an unapplied host-function value.
+pub fn vhostfn_fresh(descriptor: Host_fn, groups: Group_slots) -> Value {
+  vhostfn(descriptor, groups, vals_nil())
+}
+
+// =====================================================================
+// Environment constructors and lookup
+// =====================================================================
+/// The empty environment.
+pub fn env_nil() -> Env { {env = widen_sum!((), . | (Value & Env))} }
+
+/// Extends the environment with one binding at index 0.
+pub fn env_push(v: Value, e: Env) -> Env { {env = widen_sum!((v, e), . | (Value & Env))} }
+
+/// One-step destructor on an environment.
+pub fn un_env(e: Env) -> . | (Value & Env) { Env.get(e) }
+
+// =====================================================================
+// Value-model laws (`equiv`)
+// =====================================================================
+//
+// `kio test` discharges these by partial evaluation, with opaque atoms
+// for the value parameters. They are the value-model algebra: every
+// constructor followed by its destructor recovers the payload in the
+// expected arm, and the `Side` eliminator picks the matching branch.
+// These are host-free — no `loop`, no host function — so they reduce to
+// a Kio' normal form and discharge here. The evaluator itself
+// (`eval.kio` § prime_eval) folds the host `loop`, which the partial
+// evaluator leaves opaque, so its end-to-end behaviour is exercised by
+// the differential runner rather than by `equiv`.
+
+// --- Side eliminator ---
+
+// `side_select(l, r, s_left()) ≡ l`.
+equiv side_left[A](l: A, r: A) {
+  side_select(l, r, s_left());
+  l
+}
+
+// `side_select(l, r, s_right()) ≡ r`.
+equiv side_right[A](l: A, r: A) {
+  side_select(l, r, s_right());
+  r
+}
+
+// --- value-shape round-trips: un_value . constructor ---
+
+// `un_value(vclosure(e, t))` recovers the closure arm.
+equiv un_closure(e: Env, t: Term) {
+  un_value(vclosure(e, t));
+  widen_sum!({v_closure = (e, t)}, Value_shape)
+}
+
+// `un_value(vproduct(a, b))` recovers the product arm.
+equiv un_product(a: Value, b: Value) {
+  un_value(vproduct(a, b));
+  widen_sum!({v_product = (a, b)}, Value_shape)
+}
+
+// `un_value(vsum(sd, p))` recovers the sum arm.
+equiv un_sum(sd: Side, p: Value) {
+  un_value(vsum(sd, p));
+  widen_sum!({v_sum = (sd, p)}, Value_shape)
+}
+
+// `un_value(vleft(p))` is the left-tagged sum arm.
+equiv un_left(p: Value) {
+  un_value(vleft(p));
+  widen_sum!({v_sum = (s_left(), p)}, Value_shape)
+}
+
+// `un_value(vright(p))` is the right-tagged sum arm.
+equiv un_right(p: Value) {
+  un_value(vright(p));
+  widen_sum!({v_sum = (s_right(), p)}, Value_shape)
+}
+
+// `un_value(vunit())` recovers the unit arm.
+equiv un_unit() {
+  un_value(vunit());
+  widen_sum!({v_unit=}, Value_shape)
+}
+
+// `un_value(vhost(s))` recovers the host-value arm.
+equiv un_host_val(s: Scalar) {
+  un_value(vhost(s));
+  widen_sum!({v_host = s}, Value_shape)
+}
+
+// `un_value(vhostfn(descriptor, groups, args))` recovers the host-fn arm.
+equiv un_hostfn_val(descriptor: Host_fn, groups: Group_slots, args: Vals) {
+  un_value(vhostfn(descriptor, groups, args));
+  widen_sum!({v_hostfn = (descriptor, (groups, args))}, Value_shape)
+}
+
+equiv un_vals_push(v: Value, vs: Vals) {
+  un_vals(vals_push(v, vs));
+  widen_sum!((v, vs), . | (Value & Vals))
+}
+
+equiv un_vals_nil() {
+  un_vals(vals_nil());
+  widen_sum!((), . | (Value & Vals))
+}
+
+// --- environment round-trips ---
+
+// `un_env(env_push(v, e)) ≡ (v, e)` (the non-empty arm).
+equiv un_env_push(v: Value, e: Env) {
+  un_env(env_push(v, e));
+  widen_sum!((v, e), . | (Value & Env))
+}
+
+// `un_env(env_nil()) ≡ ()` (the empty arm).
+equiv un_env_nil() {
+  un_env(env_nil());
+  widen_sum!((), . | (Value & Env))
+}

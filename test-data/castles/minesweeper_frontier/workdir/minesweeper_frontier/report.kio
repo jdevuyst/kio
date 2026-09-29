@@ -1,0 +1,99 @@
+module minesweeper_frontier/report;
+
+import elab/control(if);
+import minesweeper_frontier/counts(build_counts, sum_revealed_counts);
+import minesweeper_frontier/frontier(
+  , build_classes
+  , class_mine_frontier
+  , class_remote
+  , class_revealed
+  , class_safe_frontier
+  , count_class
+  , find_best_safe
+  , rotate_recommendations
+  , safe_frontier_indices
+  );
+import minesweeper_frontier/model(
+  , build_mines
+  , build_revealed
+  , cell_count
+  , last_index
+  , mine_total
+  , revealed_total
+  );
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn print_i32(value: I32) -> . { print(int_to_string(value)) }
+
+fn print_line(label: String, value: I32) -> . { print(label); print_i32(value); print("\n") }
+
+fn print_summary(size_label: String) -> . {
+  print("board=");
+  print(size_label);
+  print(" cells=");
+  print_i32(cell_count());
+  print(" mines=");
+  print_i32(mine_total());
+  print(" revealed=");
+  print_i32(revealed_total());
+  print("\n")
+}
+
+fn report_frontier(classes: Array(I32)) -> . {
+  print("frontier safe=");
+  print_i32(count_class(0, classes, class_safe_frontier(), 0));
+  print(" mine=");
+  print_i32(count_class(0, classes, class_mine_frontier(), 0));
+  print(" remote=");
+  print_i32(count_class(0, classes, class_remote(), 0));
+  print(" revealed=");
+  print_i32(count_class(0, classes, class_revealed(), 0));
+  print("\n")
+}
+
+fn report_clone(revealed: Array(Bool), best_index: I32) -> . {
+  let plan = array.array_clone(revealed);
+  array.array_set(plan, best_index, .t);
+  print("clone original=");
+  print(bool_to_string(array.array_get(revealed, best_index)));
+  print(" plan=");
+  print(bool_to_string(array.array_get(plan, best_index)));
+  print("\n")
+}
+
+fn report_recommendation(counts: Array(I32), classes: Array(I32), revealed: Array(Bool)) -> . {
+  let .(best_index: I32, best_count: I32) = find_best_safe(0, classes, counts, cell_count(), 9);
+  if! arith.leq_i32(best_index, last_index()) {
+    print("recommend index=");
+    print_i32(best_index);
+    print(" neighboring_mines=");
+    print_i32(best_count);
+    print("\n");
+    let picks = rotate_recommendations(safe_frontier_indices(classes));
+    print("frontier_list len=");
+    print_i32(array.array_len(picks));
+    print(" first_after_swap=");
+    print_i32(array.array_get(picks, 0));
+    print("\n");
+    report_clone(revealed, best_index)
+  } else {
+    print("recommend none\n")
+  }
+}
+
+pub fn run() -> . {
+  let mines = build_mines();
+  let revealed = build_revealed();
+  let counts = build_counts(mines);
+  let classes = build_classes(mines, revealed);
+  print("minesweeper_frontier\n");
+  print_summary("6x5");
+  report_frontier(classes);
+  report_recommendation(counts, classes, revealed);
+  print_line("revealed_neighbor_total=", sum_revealed_counts(0, counts, revealed, 0))
+}

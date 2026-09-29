@@ -1,0 +1,82 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(
+  , array_clone
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_push
+  , array_set
+  , array_swap
+  );
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat, string_eq);
+
+fn initial_yard() -> Array(String) {
+  let yard = array_make_empty(String, ());
+  array_push(yard, "A1");
+  array_push(yard, "B7");
+  array_push(yard, "empty");
+  array_push(yard, "C3");
+  array_push(yard, "hold");
+  yard
+}
+
+fn is_empty(slot: String) -> Bool { string_eq(slot, "empty") }
+
+rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I32) -> I32 {
+  if! leq_i32(index, last) {
+    if! is_empty(array_get(yard, index)) {
+      rec occupied_count(yard, add_i32(index, 1), last, count)
+    } else {
+      rec occupied_count(yard, add_i32(index, 1), last, add_i32(count, 1))
+    }
+  } else {
+    count
+  }
+}
+
+fn render(yard: Array(String)) -> String {
+  string_concat(
+    , array_get(yard, 0)
+    , string_concat(
+        , "|"
+        , string_concat(
+            , array_get(yard, 1)
+            , string_concat(
+                , "|"
+                , string_concat(
+                    , array_get(yard, 2)
+                    , string_concat(
+                        , "|"
+                        , string_concat(array_get(yard, 3), string_concat("|", array_get(yard, 4)))
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn safe(yard: Array(String)) -> Bool { is_empty(array_get(yard, 0)) }
+
+pub fn main() -> . {
+  let before = initial_yard();
+  let after = array_clone(before);
+  array_swap(after, 0, 2);
+  array_set(after, 4, "D9");
+  print("train yard switchboard\n");
+  print(string_concat("tracks=", string_concat(int_to_string(array_len(after)), "\n")));
+  print(string_concat("before=", string_concat(render(before), "\n")));
+  print(string_concat("after=", string_concat(render(after), "\n")));
+  print(string_concat(
+    , "occupied="
+    , string_concat(int_to_string(occupied_count(after, 0, 4, 0)), "\n")
+    ));
+  print(string_concat("safe=", string_concat(bool_to_string(safe(after)), "\n")))
+}

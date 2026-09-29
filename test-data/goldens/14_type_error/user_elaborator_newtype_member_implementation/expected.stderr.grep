@@ -1,0 +1,2 @@
+newtype member `Box.mk` cannot implement elaborator `demo` because it does not have the elaborator ABI
+define a function that accepts the elaborator's reflected ABI inputs and returns `__Checked_term__`

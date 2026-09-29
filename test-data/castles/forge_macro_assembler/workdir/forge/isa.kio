@@ -1,0 +1,107 @@
+/// The FORGE-4 instruction set.
+///
+/// FORGE-4 is a four-register accumulator machine with an operand stack.
+/// Every arithmetic opcode is two-address - it reads both operands and
+/// writes the destination register - and the only control flow is an
+/// unconditional jump and a jump-if-zero.
+///
+/// The set is declared twice, once per assembler phase. `Src` is what a
+/// program is written in: its jumps name a label. `Ins` is what the
+/// machine runs: its jumps carry an address. The eleven opcodes that
+/// never mention a jump target are declared once and *reused* by the
+/// second declaration through `{ opcode: _ }`, so `Loadi` in a `Src` and
+/// `Loadi` in an `Ins` are the same nominal type. Pass two of the
+/// assembler therefore carries an untouched opcode straight across with
+/// `widen_sum!` and rebuilds only the two jumps.
+module forge/isa;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+
+/// The four general registers, as a selector. `forge/vm` holds their
+/// values in a separate labeled record; this sum only says *which* one an
+/// instruction names.
+pub labels Reg = { ra: . } | { rb: . } | { rc: . } | { rd: . };
+
+pub fn ra() -> Reg { {ra=}.>widen_sum!(Reg) }
+
+pub fn rb() -> Reg { {rb=}.>widen_sum!(Reg) }
+
+pub fn rc() -> Reg { {rc=}.>widen_sum!(Reg) }
+
+pub fn rd() -> Reg { {rd=}.>widen_sum!(Reg) }
+
+/// The assembly-language name of a register, as it appears in a listing.
+pub fn reg_name(r: Reg) -> String {
+  match! r {
+    (.(_a: Ra) { "a" }, .(_b: Rb) { "b" }, .(_c: Rc) { "c" }, .(_d: Rd) { "d" })
+  }
+}
+
+/// A source instruction, as written in a program: `jmp` and `jmpz` name a
+/// label that pass one has not yet placed.
+pub labels Src =
+  { loadi: Reg & I32 }
+  | { mov: Reg & Reg }
+  | { add: Reg & Reg }
+  | { sub: Reg & Reg }
+  | { mul: Reg & Reg }
+  | { div: Reg & Reg }
+  | { mod: Reg & Reg }
+  | { push: Reg }
+  | { pop: Reg }
+  | { emit: Reg }
+  | { halt: . }
+  | { jmp: String }
+  | { jmpz: Reg & String };
+
+/// A resolved instruction, as the machine runs it. The eleven `_` entries
+/// reuse the nominals `Src` declared above; only the jumps differ, and
+/// they carry a program address.
+pub labels Ins =
+  { loadi: _ }
+  | { mov: _ }
+  | { add: _ }
+  | { sub: _ }
+  | { mul: _ }
+  | { div: _ }
+  | { mod: _ }
+  | { push: _ }
+  | { pop: _ }
+  | { emit: _ }
+  | { halt: _ }
+  | { jmp_addr: I32 }
+  | { jmpz_addr: Reg & I32 };
+
+pub fn loadi(r: Reg, n: I32) -> Src { {loadi = (r, n)}.>widen_sum!(Src) }
+
+pub fn mov(dst: Reg, src: Reg) -> Src { {mov = (dst, src)}.>widen_sum!(Src) }
+
+pub fn add(dst: Reg, src: Reg) -> Src { {add = (dst, src)}.>widen_sum!(Src) }
+
+pub fn sub(dst: Reg, src: Reg) -> Src { {sub = (dst, src)}.>widen_sum!(Src) }
+
+pub fn mul(dst: Reg, src: Reg) -> Src { {mul = (dst, src)}.>widen_sum!(Src) }
+
+pub fn div(dst: Reg, src: Reg) -> Src { {div = (dst, src)}.>widen_sum!(Src) }
+
+pub fn mod(dst: Reg, src: Reg) -> Src { {mod = (dst, src)}.>widen_sum!(Src) }
+
+pub fn push(r: Reg) -> Src { {push = r}.>widen_sum!(Src) }
+
+pub fn pop(r: Reg) -> Src { {pop = r}.>widen_sum!(Src) }
+
+pub fn emit(r: Reg) -> Src { {emit = r}.>widen_sum!(Src) }
+
+pub fn halt() -> Src { {halt=}.>widen_sum!(Src) }
+
+pub fn jmp(target: String) -> Src { {jmp = target}.>widen_sum!(Src) }
+
+pub fn jmpz(r: Reg, target: String) -> Src { {jmpz = (r, target)}.>widen_sum!(Src) }
+
+/// A resolved unconditional jump. Only pass two builds these.
+pub fn jmp_at(addr: I32) -> Ins { {jmp_addr = addr}.>widen_sum!(Ins) }
+
+/// A resolved jump-if-zero. Only pass two builds these.
+pub fn jmpz_at(r: Reg, addr: I32) -> Ins { {jmpz_addr = (r, addr)}.>widen_sum!(Ins) }

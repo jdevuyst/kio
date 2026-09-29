@@ -1,0 +1,18 @@
+/// A module whose doc-comment fence carries a run-trigger attribute.
+///
+/// The run-trigger attributes — `stdout`, `stderr`, `run_exit_code=N` —
+/// pair a snippet with a following output fence, a `.md` document form.
+/// They are not part of the doc-comment fence vocabulary, which is
+/// `{@}`, `{ignore}`, and `check_exit_code=N`.
+///
+/// ```kio {@ stdout}
+/// ()
+/// ```
+module doctest/run_trigger;
+
+/// The key-value run-trigger attribute is rejected the same way.
+///
+/// ```kio {@ run_exit_code=0}
+/// ()
+/// ```
+pub fn greet() -> . { () }

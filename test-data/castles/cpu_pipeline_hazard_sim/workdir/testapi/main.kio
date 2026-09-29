@@ -1,0 +1,75 @@
+/// cpu_pipeline_hazard_sim -- the same program run twice through the same
+/// five-stage pipeline, once with the forwarding network switched off and
+/// once with it on.
+///
+/// `main` is the experiment. Each run gets a fresh register file and a
+/// fresh memory, so the two are comparable; the code is shared, because
+/// the program is what is held constant. The cycle counts must differ --
+/// that is the whole point of a bypass network -- and the architectural
+/// state must not.
+module testapi/main;
+
+import cpu/machine(initial, new_memory, new_registers, same_words);
+import cpu/machine({forwarding}, {mem}, {prog}, {regs});
+import cpu/num(and);
+import cpu/pipeline(run);
+import cpu/program(build);
+import cpu/report(
+  , blank
+  , counters
+  , dump_memory
+  , dump_registers
+  , heading
+  , headline
+  , labeled
+  , line
+  , pipeline_header
+  , program_listing
+  , yes_no
+  );
+import testapi(Bool, String);
+
+pub fn main() -> . {
+  let prog = build();
+  line("cpu_pipeline_hazard_sim");
+  line("a five-stage in-order pipeline: IF ID EX MEM WB, one instruction per "
+       "stage");
+  line("`--` in a stage column means the stage is empty that cycle: filling, "
+       "draining,");
+  line("a bubble a stall pushed in, or a slot a taken branch squashed");
+  blank();
+  heading("program");
+  program_listing(prog);
+  blank();
+  heading("run 1: forwarding disabled");
+  let regs_off = new_registers();
+  let mem_off = new_memory();
+  pipeline_header();
+  let off = run({prog, regs = regs_off, mem = mem_off, forwarding = .f}, initial(prog));
+  blank();
+  counters(off);
+  blank();
+  heading("run 2: forwarding enabled");
+  let regs_on = new_registers();
+  let mem_on = new_memory();
+  pipeline_header();
+  let on = run({prog, regs = regs_on, mem = mem_on, forwarding = .t}, initial(prog));
+  blank();
+  counters(on);
+  blank();
+  heading("architectural results");
+  line("forwarding decides when a value is available, never what it is,");
+  line("so the two runs have to land on the same registers and the same memory");
+  dump_registers("regs (forwarding off)", regs_off);
+  dump_registers("regs (forwarding on) ", regs_on);
+  dump_memory("mem  (forwarding off)", mem_off);
+  dump_memory("mem  (forwarding on) ", mem_on);
+  let regs_agree = same_words(regs_off, regs_on);
+  let mem_agree = same_words(mem_off, mem_on);
+  labeled("registers identical", yes_no(regs_agree));
+  labeled("memory identical", yes_no(mem_agree));
+  labeled("results identical", yes_no(and(regs_agree, mem_agree)));
+  blank();
+  heading("headline");
+  headline(off, on)
+}

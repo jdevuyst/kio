@@ -1,0 +1,9 @@
+vec_patch_journal
+length=4
+reads=3
+misses=2
+final_checksum=12070
+checkpoint_checksum=5109741
+journal_checksum=-1493624347
+report=25584914
+balanced=true

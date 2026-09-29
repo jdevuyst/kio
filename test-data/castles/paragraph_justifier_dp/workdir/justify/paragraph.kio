@@ -1,0 +1,40 @@
+/// The fixture: one measured paragraph and the column it has to fit.
+///
+/// The words are chosen so that first-fit demonstrably loses. Greedy fills the
+/// opening line as tightly as it can — `typesetting is`, two columns of slack —
+/// and pays for it immediately: the next line can then only reach `the art of`
+/// and leaves six columns bare, which cubes into 216. The optimum gives the
+/// opening line away, setting `typesetting` alone with five columns of slack,
+/// and buys a second line of `is the art of` that is three columns short
+/// instead of six. It spends 125 + 27 where greedy spends 8 + 216, and the two
+/// layouts agree on every line after that.
+module justify/paragraph;
+
+import justify/list(append, nil, one);
+import justify/word(Word, Words, make_word);
+import testapi(I32, String);
+
+/// The right margin, in columns.
+pub fn column() -> I32 { 16 }
+
+/// One space between adjacent words on a line.
+pub fn gap() -> I32 { 1 }
+
+fn word(xs: Words, text: String, width: I32) -> Words { append(xs, one(make_word(text, width))) }
+
+pub fn paragraph() -> Words {
+  nil(Word, ())
+    .>word("typesetting", 11)
+    .>word("is", 2)
+    .>word("the", 3)
+    .>word("art", 3)
+    .>word("of", 2)
+    .>word("breaking", 8)
+    .>word("a", 1)
+    .>word("paragraph", 9)
+    .>word("into", 4)
+    .>word("lines", 5)
+    .>word("that", 4)
+    .>word("read", 4)
+    .>word("evenly", 6)
+}

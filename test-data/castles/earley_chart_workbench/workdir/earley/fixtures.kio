@@ -1,0 +1,68 @@
+module earley/fixtures;
+
+import earley/arrays(varop [* *]);
+import earley/model as model;
+import testapi(Array, I32, String);
+
+pub labels Example = { name: String, tokens: Array(I32) };
+
+fn example(title: String, input: Array(I32)) -> Example { {name = title, tokens = input} }
+
+pub fn title(value: Example) -> String { value.?{name} }
+
+pub fn input(value: Example) -> Array(I32) { value.?{tokens} }
+
+pub fn nullable() -> model.Grammar {
+  [*
+    , model.production(0, [* model.category(1), model.category(1) *])
+    , model.production(1, [* *])
+    , model.production(1, [* model.token(1) *])
+    *]
+}
+
+pub fn nullable_examples() -> Array(Example) {
+  [*
+    , example("epsilon", [* *])
+    , example("a", [* 1 *])
+    , example("aa", [* 1, 1 *])
+    , example("aaa", [* 1, 1, 1 *])
+    *]
+}
+
+pub fn balanced() -> model.Grammar {
+  [*
+    , model.production(0, [* model.category(0), model.category(0) *])
+    , model.production(0, [* model.token(1), model.category(0), model.token(2) *])
+    , model.production(0, [* *])
+    *]
+}
+
+pub fn balanced_examples() -> Array(Example) {
+  [*
+    , example("epsilon", [* *])
+    , example("()", [* 1, 2 *])
+    , example("(())", [* 1, 1, 2, 2 *])
+    , example("()()", [* 1, 2, 1, 2 *])
+    , example("(()", [* 1, 1, 2 *])
+    , example(")(", [* 2, 1 *])
+    *]
+}
+
+pub fn cyclic() -> model.Grammar {
+  [*
+    , model.production(0, [* model.category(1), model.category(2) *])
+    , model.production(1, [* model.category(2) *])
+    , model.production(2, [* model.category(1) *])
+    , model.production(2, [* *])
+    , model.production(2, [* model.token(3) *])
+    *]
+}
+
+pub fn cyclic_examples() -> Array(Example) {
+  [*
+    , example("epsilon", [* *])
+    , example("b", [* 3 *])
+    , example("bb", [* 3, 3 *])
+    , example("bbb", [* 3, 3, 3 *])
+    *]
+}

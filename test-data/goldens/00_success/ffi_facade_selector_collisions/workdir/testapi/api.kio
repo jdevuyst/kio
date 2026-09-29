@@ -1,0 +1,11 @@
+module testapi/api;
+
+import testapi(I32);
+
+pub newtype Child : I32 { pub constructor make_child; pub projector read_child }
+
+pub fn child() -> . { () }
+
+pub fn pkg() -> . { () }
+
+pub fn value() -> . { () }

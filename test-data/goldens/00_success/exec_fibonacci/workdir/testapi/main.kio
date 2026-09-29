@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(reorder_sum, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// First 10 Fibonacci numbers, one per line. State is `(n, a, b)`;
+// each step prints `a`, then advances to `(n-1, b, a+b)`. Exit
+// fires when `n == 0` and returns the final `a` (which `main`
+// discards). The two-state recurrence
+// `f(n+2) = f(n+1) + f(n)` rephrased via the iteration template;
+// the side-effect (print) fires inside each step so the loop's
+// observable is the sequence of printed lines, not the final
+// `loop`-returned value.
+fn fib_step((n: I32, a: I32, b: I32)) -> (I32 & I32 & I32) | I32 {
+  reorder_sum!(if! leq_i32(n, 0) {
+    widen_sum!(a, I32 | (I32 & I32 & I32))
+  } else {
+    print(int_to_string(a));
+    print("\n");
+    widen_sum!((sub_i32(n, 1), b, add_i32(a, b)), I32 | (I32 & I32 & I32))
+  })
+}
+
+fn fib_print(n: I32) -> I32 { loop(.(state: I32 & I32 & I32) { fib_step(state) }, (n, 0, 1)) }
+
+pub fn main() -> . { let _last = fib_print(10); () }

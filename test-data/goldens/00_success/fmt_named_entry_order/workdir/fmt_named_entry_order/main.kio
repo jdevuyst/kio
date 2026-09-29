@@ -1,0 +1,21 @@
+module fmt_named_entry_order/main;
+
+varop [* *] { ; finalize finish; foldl step base // fold tail
+; // varop close
+} // varop outer
+;
+
+elab make: . { ; impl run; captures (first, second) // capture tail
+; // elab close
+} // elab outer
+;
+
+newtype Box : . { ;; projector read; constructor create // constructor tail
+;; // newtype close
+} // newtype outer
+;
+
+op _ + _ { ; impl step // implementation tail
+; // op close
+} // op outer
+;

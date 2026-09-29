@@ -1,0 +1,7 @@
+dependency library;
+
+source {
+  path "../result.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;

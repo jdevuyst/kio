@@ -1,0 +1,1 @@
+type mismatch: expected `\[X\] \(A & X\) -> A`, found `\[A_n2\] \(A_n2 & A_n2\) -> A_n2`

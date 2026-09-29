@@ -1,0 +1,5 @@
+module typed_let_no_backward_flow/main;
+
+import typed_let_no_backward_flow(I32);
+
+fn bad(n: I32) -> I32 { let f = .x. { x1 }; f(n) }

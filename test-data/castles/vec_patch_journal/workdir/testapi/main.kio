@@ -1,0 +1,269 @@
+module testapi/main;
+
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+import vec/core(Tree, branch, descend_step, dir_left, dir_right, leaf, leaf_value);
+import vec/elab/control(if);
+import vec/elab/match(match);
+import vec/elab/spine_elaborators(widen_sum);
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn value_or[A](default: A, result: A | .) -> A {
+  fold_result(default, .(value: A) { value }, result)
+}
+
+labels Patch_vec = { count: I32, root: Tree(I32) };
+
+labels Journal_state = {
+  , data: Patch_vec
+  , checkpoints: Patch_vec
+  , reads: I32
+  , misses: I32
+  , checksum: I32
+  , step: I32
+  };
+
+fn line(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(value, "\n")))
+}
+
+fn line_i32(label: String, value: I32) -> . { line(label, int_to_string(value)) }
+
+fn line_bool(label: String, value: Bool) -> . { line(label, bool_to_string(value)) }
+
+fn mk_vec(count: I32, root: Tree(I32)) -> Patch_vec { {count, root} }
+
+fn empty_root() -> Tree(I32) {
+  let empty_leaf = leaf(absent(I32, ()));
+  branch(branch(empty_leaf, empty_leaf), branch(empty_leaf, empty_leaf))
+}
+
+fn empty_vec() -> Patch_vec { mk_vec(0, empty_root()) }
+
+fn left(t: Tree(I32)) -> Tree(I32) { descend_step(dir_left(), t) }
+
+fn right(t: Tree(I32)) -> Tree(I32) { descend_step(dir_right(), t) }
+
+fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
+  if! eq_i32(index, 0) {
+    leaf_value(left(left(root)))
+  } else if! eq_i32(index, 1) {
+    leaf_value(right(left(root)))
+  } else if! eq_i32(index, 2) {
+    leaf_value(left(right(root)))
+  } else if! eq_i32(index, 3) {
+    leaf_value(right(right(root)))
+  } else {
+    absent(I32, ())
+  }
+}
+
+fn in_bounds(index: I32, count: I32) -> Bool {
+  if! leq_i32(0, index) {
+    lt_i32(index, count)
+  } else {
+    .f
+  }
+}
+
+fn at_vec(v: Patch_vec, index: I32) -> I32 | . {
+  if! in_bounds(index, v.?{count}) {
+    leaf_at(v.?{root}, index)
+  } else {
+    absent(I32, ())
+  }
+}
+
+fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
+  let fresh = leaf(present(value));
+  if! eq_i32(index, 0) {
+    branch(branch(fresh, right(left(root))), right(root))
+  } else if! eq_i32(index, 1) {
+    branch(branch(left(left(root)), fresh), right(root))
+  } else if! eq_i32(index, 2) {
+    branch(left(root), branch(fresh, right(right(root))))
+  } else if! eq_i32(index, 3) {
+    branch(left(root), branch(left(right(root)), fresh))
+  } else {
+    root
+  }
+}
+
+fn set_vec(v: Patch_vec, index: I32, value: I32) -> Patch_vec | . {
+  fold_result(
+    , absent(Patch_vec, ())
+    , .(_old: I32) { present(mk_vec(v.?{count}, set_leaf(v.?{root}, index, value))) }
+    , at_vec(v, index)
+    )
+}
+
+fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
+  let count = v.?{count};
+  if! lt_i32(count, 4) {
+    present(mk_vec(add_i32(count, 1), set_leaf(v.?{root}, count, value)))
+  } else {
+    absent(Patch_vec, ())
+  }
+}
+
+fn mk_state(
+  , data: Patch_vec
+  , checkpoints: Patch_vec
+  , reads: I32
+  , misses: I32
+  , checksum: I32
+  , step: I32
+  ) -> Journal_state { {data, checkpoints, reads, misses, checksum, step} }
+
+fn same_step(
+  , st: Journal_state
+  , data: Patch_vec
+  , checkpoints: Patch_vec
+  , reads: I32
+  , misses: I32
+  , checksum: I32
+  ) -> Journal_state { mk_state(data, checkpoints, reads, misses, checksum, st.?{step}) }
+
+fn bump_miss(st: Journal_state, salt: I32) -> Journal_state {
+  let .({data, checkpoints, reads, misses, checksum}) = st;
+  same_step(st, data, checkpoints, reads, add_i32(misses, 1), add_i32(mul_i32(checksum, 29), salt))
+}
+
+fn hit_read(st: Journal_state, value: I32) -> Journal_state {
+  let .({data, checkpoints, reads, misses, checksum}) = st;
+  same_step(st, data, checkpoints, add_i32(reads, 1), misses, add_i32(mul_i32(checksum, 31), value))
+}
+
+fn apply_read(st: Journal_state, index: I32) -> Journal_state {
+  fold_result(
+    , bump_miss(st, index)
+    , .(value: I32) { hit_read(st, value) }
+    , at_vec(st.?{data}, index)
+    )
+}
+
+fn hit_set(st: Journal_state, data: Patch_vec, value: I32) -> Journal_state {
+  let .({checkpoints, reads, misses, checksum}) = st;
+  same_step(st, data, checkpoints, reads, misses, add_i32(mul_i32(checksum, 37), value))
+}
+
+fn apply_set(st: Journal_state, index: I32, value: I32) -> Journal_state {
+  fold_result(
+    , bump_miss(st, index)
+    , .(data: Patch_vec) { hit_set(st, data, value) }
+    , set_vec(st.?{data}, index, value)
+    )
+}
+
+fn fold_checksum(acc: I32, value: I32) -> I32 { add_i32(mul_i32(acc, 17), value) }
+
+rec(loop) fn fold_from(index: I32, acc: I32, v: Patch_vec) -> I32 {
+  if! lt_i32(index, v.?{count}) {
+    rec fold_from(
+      , add_i32(index, 1)
+      , fold_result(acc, .(value: I32) { fold_checksum(acc, value) }, at_vec(v, index))
+      , v
+      )
+  } else {
+    acc
+  }
+}
+
+fn vector_checksum(data: Patch_vec) -> I32 { fold_from(0, 0, data) }
+
+fn checkpoint(st: Journal_state) -> Journal_state {
+  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let mark = vector_checksum(data);
+  let next_checkpoints = value_or(checkpoints, push_vec(checkpoints, mark));
+  same_step(st, data, next_checkpoints, reads, misses, add_i32(mul_i32(checksum, 41), mark))
+}
+
+fn advance(st: Journal_state) -> Journal_state {
+  let .({data, checkpoints, reads, misses, checksum, step}) = st;
+  mk_state(data, checkpoints, reads, misses, checksum, add_i32(step, 1))
+}
+
+fn apply_step(st: Journal_state) -> Journal_state {
+  let step = st.?{step};
+  if! eq_i32(step, 0) {
+    apply_set(st, 1, 7)
+  } else if! eq_i32(step, 1) {
+    apply_read(st, 1)
+  } else if! eq_i32(step, 2) {
+    apply_set(st, 4, 21)
+  } else if! eq_i32(step, 3) {
+    apply_set(st, 3, 34)
+  } else if! eq_i32(step, 4) {
+    checkpoint(st)
+  } else if! eq_i32(step, 5) {
+    apply_read(st, 4)
+  } else if! eq_i32(step, 6) {
+    apply_set(st, 0, 2)
+  } else if! eq_i32(step, 7) {
+    apply_read(st, 0)
+  } else if! eq_i32(step, 8) {
+    checkpoint(st)
+  } else if! eq_i32(step, 9) {
+    apply_set(st, 2, 11)
+  } else if! eq_i32(step, 10) {
+    apply_read(st, 2)
+  } else {
+    checkpoint(st)
+  }
+}
+
+rec(loop) fn replay(st: Journal_state) -> Journal_state {
+  if! lt_i32(st.?{step}, 12) {
+    rec replay(advance(apply_step(st)))
+  } else {
+    st
+  }
+}
+
+fn seed_vector() -> Patch_vec {
+  let v0 = empty_vec();
+  let v1 = value_or(v0, push_vec(v0, 3));
+  let v2 = value_or(v1, push_vec(v1, 5));
+  let v3 = value_or(v2, push_vec(v2, 8));
+  value_or(v3, push_vec(v3, 13))
+}
+
+fn initial_state() -> Journal_state { mk_state(seed_vector(), empty_vec(), 0, 0, 0, 0) }
+
+fn report_value(final_checksum: I32, checkpoint_checksum: I32, reads: I32, misses: I32) -> I32 {
+  add_i32(
+    , add_i32(mul_i32(final_checksum, 3), mul_i32(checkpoint_checksum, 5))
+    , sub_i32(mul_i32(reads, 7), mul_i32(misses, 11))
+    )
+}
+
+fn ok_counts(reads: I32, misses: I32) -> Bool { eq_i32(add_i32(reads, misses), 5) }
+
+pub fn main() -> . {
+  let st = replay(initial_state());
+  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let final_checksum = vector_checksum(data);
+  let checkpoint_checksum = vector_checksum(checkpoints);
+  print("vec_patch_journal\n");
+  line_i32("length=", data.?{count});
+  line_i32("reads=", reads);
+  line_i32("misses=", misses);
+  line_i32("final_checksum=", final_checksum);
+  line_i32("checkpoint_checksum=", checkpoint_checksum);
+  line_i32("journal_checksum=", checksum);
+  line_i32("report=", report_value(final_checksum, checkpoint_checksum, reads, misses));
+  line_bool("balanced=", ok_counts(reads, misses))
+}

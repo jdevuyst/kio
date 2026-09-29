@@ -1,0 +1,45 @@
+module fixtures;
+
+import forest as forest;
+import testapi(I32);
+
+pub fn branching(root_symbol: I32, internal_symbol: I32) -> forest.Tree {
+  let tree = forest.empty();
+  let root = forest.open(tree, root_symbol);
+  let internal = forest.open(tree, internal_symbol);
+  forest.leaf(tree, 3);
+  forest.leaf(tree, 4);
+  forest.close(tree, internal);
+  forest.leaf(tree, 5);
+  forest.close(tree, root);
+  tree
+}
+
+pub fn promoted() -> forest.Tree {
+  let tree = forest.empty();
+  let root = forest.open(tree, 1);
+  forest.leaf(tree, 3);
+  forest.leaf(tree, 4);
+  forest.leaf(tree, 5);
+  forest.close(tree, root);
+  tree
+}
+
+pub fn fork(first: I32, second: I32) -> forest.Tree {
+  let tree = forest.empty();
+  let root = forest.open(tree, 1);
+  forest.leaf(tree, first);
+  forest.leaf(tree, second);
+  forest.close(tree, root);
+  tree
+}
+
+pub fn chain() -> forest.Tree {
+  let tree = forest.empty();
+  let root = forest.open(tree, 1);
+  let internal = forest.open(tree, 2);
+  forest.leaf(tree, 3);
+  forest.close(tree, internal);
+  forest.close(tree, root);
+  tree
+}

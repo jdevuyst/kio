@@ -1,0 +1,54 @@
+/// huffman_prefix_coder — build a Huffman prefix code and report its checks.
+///
+/// The message is a fixture in the source: the palindrome "a man a plan a canal
+/// panama" as a list of symbol codes. From it the program counts letter
+/// frequencies, merges the two lightest nodes over and over until one tree is
+/// left, reads a codeword off the path to each leaf, encodes the message,
+/// decodes it back through the tree, and reports what the code cost.
+///
+/// The round trip decodes with the tree alone, never the code table, so it checks
+/// the table-derived encoder against the tree for this message. Root-to-leaf
+/// paths are prefix-free by construction. The Kraft equality separately checks
+/// that the recorded lengths account for the complete leaf tree; it does not
+/// distinguish valid tie-breaks or independently establish prefix-freeness or
+/// optimality. The exact build log and code table pin the selected tie-break.
+module testapi/main;
+
+import huffman/code(code_table);
+import huffman/codec(decode, encode, same_symbols);
+import huffman/freq(present, tally, zero_counts);
+import huffman/list(len, nil);
+import huffman/message(alphabet_size, message, message_text);
+import huffman/render(print_build, print_codes, print_decoded, print_encoded);
+import huffman/render(print_frequencies, print_kraft, print_message, print_queue, print_savings);
+import huffman/report(kraft_holds, kraft_sum, longest_code, pow2, savings);
+import huffman/tree(Step, build, initial_queue, {built_log}, {built_root});
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let symbols = message();
+  let counts = tally(symbols, zero_counts());
+  let queue = initial_queue(present(counts));
+  let .({built_root, built_log}) = build(queue, alphabet_size(), nil(Step, ()));
+  let table = code_table(built_root);
+  let bits = encode(table, symbols);
+  let decoded = decode(built_root, bits);
+  let longest = longest_code(table);
+  print("huffman prefix coder\n");
+  print_message(message_text(symbols), len(symbols), alphabet_size());
+  print_frequencies(counts);
+  print_queue(queue, alphabet_size());
+  print_build(built_log);
+  print_codes(table);
+  print_encoded(bits);
+  print_decoded(len(decoded), same_symbols(decoded, symbols));
+  print_savings(savings(symbols, alphabet_size(), len(bits)));
+  print_kraft(
+    , longest
+    , pow2(longest)
+    , kraft_sum(table, longest)
+    , len(table)
+    , kraft_holds(table, longest)
+    )
+}

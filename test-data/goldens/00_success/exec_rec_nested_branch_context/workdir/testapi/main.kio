@@ -1,0 +1,36 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+rec(loop) fn search(outer: Bool, inner: Bool) -> I32 | . {
+  if! outer {
+    if! inner {
+      widen_sum!(7)
+    } else {
+      rec search(.f, .f)
+    }
+  } else {
+    widen_sum!(())
+  }
+}
+
+fn report(value: I32 | .) -> . {
+  match! value {
+    (.(number: I32) { io.print(fmt.int_to_string(number)) }, .(_empty: .) { io.print("empty") })
+  }
+}
+
+pub fn main() -> . {
+  report(search(.t, .t));
+  io.print("\n");
+  report(search(.t, .f));
+  io.print("\n");
+  report(search(.f, .t));
+  io.print("\n")
+}

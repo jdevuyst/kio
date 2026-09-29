@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `A` is phantom: it appears in neither the value parameters nor the
+// return type. The Rust public wrapper must forward it by turbofish to
+// the mangled inner fn (`__mod_…_ignore_type::<A>(n)`); without it,
+// rustc cannot infer the type-param and fails with E0283.
+pub fn ignore_type[A](n: Int) -> Int { n }
+
+pub fn main() -> . { print(int_to_string(ignore_type(String, 42(Int)))) }

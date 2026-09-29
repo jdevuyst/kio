@@ -1,0 +1,7 @@
+priority dispatch trace
+tick 0 cap cpu=2 io=1 -> alert rank=589 deadline=2 duration=1 blocked=2
+tick 1 cap cpu=2 io=2 -> ingress rank=483 deadline=3 duration=2 blocked=0
+tick 2 cap cpu=1 io=2 -> audit rank=469 deadline=6 duration=1 blocked=1
+tick 3 cap cpu=2 io=1 -> reconcile rank=378 deadline=4 duration=2 blocked=1
+tick 4 cap cpu=1 io=2 -> backup rank=274 deadline=5 duration=1 blocked=0
+summary dispatched=5 blocked-slots=4 cpu=7 io=6 duration=7 slack=10 complete=true

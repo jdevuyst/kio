@@ -1,0 +1,5 @@
+module pure_fn_mentions_host/main;
+
+import pure_fn_mentions_host(String);
+
+pure fn keep(value: String) -> String { value }

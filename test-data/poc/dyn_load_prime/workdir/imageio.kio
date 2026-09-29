@@ -1,0 +1,46 @@
+/// Host-side plumbing for getting an image's text into the loader: read the whole standard input as one string.
+module imageio;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32);
+import testapi/io(read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// `imageio.kio` — the one piece of host plumbing a loading host always
+// needs beyond the loader itself: the image text. A host that ships
+// images as files pipes one in and reads it here; the newline-joined
+// result is the concatenated emitted tree `load_package` consumes.
+/// Wraps the accumulated text so the read loop's exit arm is nominal.
+labels { image_text: String };
+
+/// Reads the whole standard input (newline-joined) — the image text a
+/// host pipes in.
+pub fn read_image_stdin() -> String {
+  Image_text.get(loop(
+    , .(st: I32 & String) {
+        match! st {
+          .(first: I32, acc: String) {
+            match! read_ascii_line() {
+              (
+                , .(line: String) {
+                    let acc1 =
+                      if! eq_i32(first, 1(I32)) {
+                        line
+                      } else {
+                        string_concat(acc, string_concat("\n"(String), line))
+                      };
+                    widen_sum!((0(I32), acc1), (I32 & String) | Image_text)
+                  }
+                , .(_eof: .) { widen_sum!({image_text = acc}, (I32 & String) | Image_text) }
+                )
+            }
+          }
+        }
+      }
+    , (1(I32), ""(String))
+    ))
+}

@@ -1,0 +1,103 @@
+module ml/infer;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import ml/schemes as schemes;
+import ml/syntax as ast;
+import ml/types as types;
+import ml/unify as unify;
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/iter(loop);
+import testapi/text as text;
+
+type Inferred = (types.Ty & types.Substitution & I32) | String;
+
+rec(loop) fn infer(
+  , expr: ast.Expr
+  , environment: schemes.Environment
+  , substitutions: types.Substitution
+  , next: I32
+  ) -> Inferred {
+  match! expr {
+    .(_i: ast.Integer) { (types.integer_type(), substitutions, next).>widen_sum! };
+    .(_b: ast.Boolean) { (types.boolean_type(), substitutions, next).>widen_sum! };
+    .(v: ast.Variable) {
+      let name = ast.Variable.get(v);
+      match! schemes.lookup(name, environment) {
+        .(scheme: schemes.Scheme) {
+          let .(ty: types.Ty, after: I32) = schemes.instantiate(scheme, substitutions, next);
+          (ty, substitutions, after).>widen_sum!
+        };
+        .() { text.string_concat("unbound variable ", name).>widen_sum! }
+      }
+    };
+    .(lambda: ast.Lambda) {
+      let .(name: String, body: ast.Expr) = ast.Lambda.get(lambda);
+      let argument = types.variable_type(next);
+      let extended = schemes.extend(name, schemes.monomorphic(argument), environment);
+      match! rec(cont) infer(body, extended, substitutions, arith.add_i32(next, 1)) {
+        .(result: types.Ty, solved: types.Substitution, after: I32) {
+          (types.arrow_type(types.apply(solved, argument), result), solved, after).>widen_sum!
+        };
+        .(error: String) { error.>widen_sum! }
+      }
+    };
+    .(application: ast.Apply) {
+      let .(function: ast.Expr, argument: ast.Expr) = ast.Apply.get(application);
+      match! rec(cont) infer(function, environment, substitutions, next) {
+        .(function_type: types.Ty, first: types.Substitution, after_function: I32) {
+          match! rec(cont) infer(argument, environment, first, after_function) {
+            .(argument_type: types.Ty, second: types.Substitution, after_argument: I32) {
+              let result = types.variable_type(after_argument);
+              match! unify.unify(function_type, types.arrow_type(argument_type, result), second) {
+                .(solved: types.Substitution) {
+                  (types.apply(solved, result), solved, arith.add_i32(after_argument, 1))
+                    .>widen_sum!
+                };
+                .(error: String) { error.>widen_sum! }
+              }
+            };
+            .(error: String) { error.>widen_sum! }
+          }
+        };
+        .(error: String) { error.>widen_sum! }
+      }
+    };
+    .(binding: ast.Binding) {
+      let .(name: String, value: ast.Expr, body: ast.Expr) = ast.Binding.get(binding);
+      match! rec(cont) infer(value, environment, substitutions, next) {
+        .(ty: types.Ty, solved: types.Substitution, after: I32) {
+          let scheme = schemes.generalize(ty, environment, solved);
+          rec infer(body, schemes.extend(name, scheme, environment), solved, after)
+        };
+        .(error: String) { error.>widen_sum! }
+      }
+    };
+    .(pair: ast.Pair) {
+      let .(left: ast.Expr, right: ast.Expr) = ast.Pair.get(pair);
+      match! rec(cont) infer(left, environment, substitutions, next) {
+        .(left_type: types.Ty, first: types.Substitution, after_left: I32) {
+          match! rec(cont) infer(right, environment, first, after_left) {
+            .(right_type: types.Ty, second: types.Substitution, after_right: I32) {
+              (types.pair_type(types.apply(second, left_type), right_type), second, after_right)
+                .>widen_sum!
+            };
+            .(error: String) { error.>widen_sum! }
+          }
+        };
+        .(error: String) { error.>widen_sum! }
+      }
+    }
+  }
+}
+
+pub fn report(expr: ast.Expr) -> String {
+  match! infer(expr, lists.nil(), lists.nil(), 0) {
+    .(ty: types.Ty, substitutions: types.Substitution, _next: I32) {
+      text.string_concat("type ", types.show(types.apply(substitutions, ty)))
+    };
+    .(error: String) { text.string_concat("error ", error) }
+  }
+}

@@ -1,0 +1,19 @@
+package derive_specialization_diagnostic_term;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  derive_specialization_diagnostic_term/**;
+  elab/testapi
+}

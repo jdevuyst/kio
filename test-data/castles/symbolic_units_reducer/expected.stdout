@@ -1,0 +1,25 @@
+symbolic_units_reducer
+case gear_ratio
+before: ((m^2 * s^-1) * ((s^3 / m) * kg^2))
+after: m^1 s^2 kg^2
+score: 39
+balanced: false
+
+case density_flux
+before: (((kg * m) / s^2) * (s / m^2))
+after: m^-1 s^-1 kg^1
+score: 23
+balanced: false
+
+case cancel_all
+before: ((m * s) / (s * m))
+after: m^0 s^0 kg^0
+score: 0
+balanced: true
+
+case inertial_step
+before: (((kg * m) / s^2) * m)
+after: m^2 s^-2 kg^1
+score: 35
+balanced: false
+

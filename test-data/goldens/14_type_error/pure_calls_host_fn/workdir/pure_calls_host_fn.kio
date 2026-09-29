@@ -1,0 +1,3 @@
+module pure_calls_host_fn;
+
+host fn tick() -> .;

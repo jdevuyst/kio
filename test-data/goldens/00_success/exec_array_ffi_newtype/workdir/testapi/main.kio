@@ -1,0 +1,73 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// A nominal newtype whose payload is itself structural: `Point`
+// wraps an `(I32 & I32)` product. The point of the case is that an
+// `Array(Point)` carries the nominal wrapper across the FFI — the
+// host stores `Point` values, and Kio reads them back, unwraps the
+// projector, and destructures the inner product.
+newtype Point : I32 & I32 { pub constructor mk_point; pub projector un_point }
+
+fn point(x: I32, y: I32) -> Point { Point.mk_point((x, y)) }
+
+fn show_point(p: Point) -> String {
+  match! p.>Point.un_point {
+    .(x: I32, y: I32) {
+      string_concat(
+        , "("
+        , string_concat(int_to_string(x), string_concat(",", string_concat(int_to_string(y), ")")))
+        )
+    }
+  }
+}
+
+// Render an `Array(Point)` left-to-right as space-separated points.
+fn render_points(arr: Array(Point)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) {
+            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+              widen_sum!(
+                , if! leq_i32(i, 0) {
+                    (show_point(array_get(arr, i)), add_i32(i, 1))
+                  } else {
+                    (
+                      , string_concat(acc, string_concat(" ", show_point(array_get(arr, i))))
+                      , add_i32(i, 1)
+                      )
+                  }
+                , (String & I32) | String
+                )
+            } else {
+              widen_sum!(acc, (String & I32) | String)
+            }
+          }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+pub fn main() -> . {
+  // Kio builds Point newtypes wrapping a structural payload and
+  // pushes them across the FFI into the host array.
+  let pts = array_make_empty(Point, ());
+  array_push(pts, point(0, 0));
+  array_push(pts, point(3, 4));
+  array_push(pts, point(sub_i32(10, 1), add_i32(1, 1)));
+  print(render_points(pts));
+  print("\n")
+}

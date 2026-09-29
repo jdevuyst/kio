@@ -1,0 +1,7 @@
+module testapi;
+
+host type I32 role(i32);
+
+host type String role(str);
+
+host fn produce() -> I32 & String;

@@ -1,0 +1,36 @@
+module host/m;
+
+import __intrinsics__;
+
+import host(A, B);
+
+labels { box[T]: T };
+
+// ι-Fst (specs/formal/equiv.md section 2.1): a projection over a built
+// pair selects the first component.
+equiv fst_picks_first(x: A, y: B) {
+  __fst__(A, B, __pair__(A, B, x, y));
+  x
+}
+
+// ι-Snd: a projection over a built pair selects the second component.
+equiv snd_picks_second(x: A, y: B) {
+  __snd__(A, B, __pair__(A, B, x, y));
+  y
+}
+
+// product-η (specs/formal/equiv.md section 4.2): re-pairing the
+// projections of an opaque product `p` reconstructs `p`.
+equiv product_eta(p: A & B) {
+  __pair__(A, B, __fst__(A, B, p), __snd__(A, B, p));
+  p
+}
+
+// ι-Newtype (specs/formal/equiv.md section 2.1): a newtype projector
+// applied to its matching constructor unwraps the payload.
+// `labels { box }` mints newtype `Box` with constructor `mk` and
+// projector `get`.
+equiv newtype_unwrap_of_wrap(x: A) {
+  Box.get({box = x});
+  x
+}

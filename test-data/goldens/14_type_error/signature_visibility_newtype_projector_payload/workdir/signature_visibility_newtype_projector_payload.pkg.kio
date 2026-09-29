@@ -1,0 +1,9 @@
+package signature_visibility_newtype_projector_payload;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}

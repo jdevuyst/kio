@@ -1,0 +1,13 @@
+package fills_polymorphic_lambda_inferred_return;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

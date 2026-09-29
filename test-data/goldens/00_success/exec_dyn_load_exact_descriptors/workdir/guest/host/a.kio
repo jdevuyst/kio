@@ -1,0 +1,9 @@
+module host/a;
+
+host type Value role(i32);
+
+pub type Value_alias = Value;
+
+host fn ping() -> Value_alias;
+
+host fn staged[A](first: A, second: A)[A](third: A) -> A;

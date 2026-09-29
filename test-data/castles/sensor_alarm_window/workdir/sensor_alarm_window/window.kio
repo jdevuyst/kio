@@ -1,0 +1,64 @@
+module sensor_alarm_window/window;
+
+import elab/control(if);
+import sensor_alarm_window/scanner as scanner;
+import testapi(Bool, I32, String);
+import testapi/text as text;
+
+fn both(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+fn count3(first: Bool, second: Bool, third: Bool) -> I32 {
+  if! first {
+    if! second {
+      if! third {
+        3
+      } else {
+        2
+      }
+    } else if! third {
+      2
+    } else {
+      1
+    }
+  } else if! second {
+    if! third {
+      2
+    } else {
+      1
+    }
+  } else if! third {
+    1
+  } else {
+    0
+  }
+}
+
+pub fn interval(start: String, end: String) -> String {
+  text.string_concat(text.string_concat(start, ".."), end)
+}
+
+pub fn sustained_window(first: scanner.Reading, second: scanner.Reading) -> Bool {
+  both(scanner.is_alert(first), scanner.is_alert(second))
+}
+
+pub fn single_sample_window(first: scanner.Reading, next: scanner.Reading) -> Bool {
+  both(scanner.is_alert(first), text.string_eq(scanner.state(next), "CLEAR"))
+}
+
+pub fn alert_sample_count(
+  , north_first: scanner.Reading
+  , north_second: scanner.Reading
+  , south_first: scanner.Reading
+  ) -> I32 {
+  count3(
+    , scanner.is_alert(north_first)
+    , scanner.is_alert(north_second)
+    , scanner.is_alert(south_first)
+    )
+}

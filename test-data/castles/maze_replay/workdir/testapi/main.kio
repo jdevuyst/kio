@@ -1,0 +1,89 @@
+/// maze_replay — a seeded grid-walk replay.
+///
+/// The fixture supplies, one value per line: a PRNG seed, the grid width
+/// and height, the number of replay commands, then that many cardinal
+/// commands (`N` / `E` / `S` / `W`). A small LCG (`maze/prng`) turns the
+/// seed into a deterministic obstacle-and-item field (`maze/world`); the
+/// player replays the commands against it (`maze/replay`), banking items,
+/// counting blocked bumps, and trying to reach the far corner. `main`
+/// prints a compact transcript summary — dimensions, the seed read from
+/// the fixture, a seed-derived checksum, the final position, the score,
+/// the ledger, and whether the player escaped.
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import maze/replay(Ledger, bumps, escaped, moves, px, py, score, start_player, step);
+import maze/world(checksum, goal_x, goal_y);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/fmt(int_to_string, string_to_int);
+import testapi/io(print, read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn line(label: String, value: String) -> . { print(cat(label, cat(": ", cat(value, "\n")))) }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+fn pos(x: I32, y: I32) -> String { cat(num(x), cat(",", num(y))) }
+
+fn dims(w: I32, h: I32) -> String { cat(num(w), cat("x", num(h))) }
+
+/// Read the next line as a base-10 integer, defaulting to `fallback` on
+/// EOF or unparseable input. The fixture's settings are well-formed, so
+/// the fallback only guards against a short or malformed fixture.
+fn read_int(fallback: I32) -> I32 {
+  match! read_ascii_line() {
+    (
+      , .(s: String) {
+          match! string_to_int(s) {
+            (.(n: I32) { n }, .(_bad: .) { fallback })
+          }
+        }
+      , .(_eof: .) { fallback }
+      )
+  }
+}
+
+/// Replay up to `remaining` commands, reading one per line and threading
+/// the player through `maze/replay`'s pure `step`. Stops early at EOF.
+rec(loop) fn replay(seed: I32, w: I32, h: I32, remaining: I32, p: Ledger) -> Ledger {
+  if! leq_i32(remaining, 0) {
+    p
+  } else match! read_ascii_line() {
+    (
+      , .(cmd: String) { rec replay(seed, w, h, sub_i32(remaining, 1), step(seed, w, h, p, cmd)) }
+      , .(_eof: .) { p }
+      )
+  }
+}
+
+fn yes_no(b: Bool) -> String {
+  if! b {
+    "escaped"
+  } else {
+    "stranded"
+  }
+}
+
+pub fn main() -> . {
+  let seed = read_int(0);
+  let w = read_int(1);
+  let h = read_int(1);
+  let cmd_count = read_int(0);
+  let final = replay(seed, w, h, cmd_count, start_player());
+  line("maze_replay", "v1");
+  line("seed", num(seed));
+  line("grid", dims(w, h));
+  line("goal", pos(goal_x(w), goal_y(h)));
+  line("commands", num(cmd_count));
+  line("checksum", num(checksum(seed, w, h)));
+  line("final", pos(px(final), py(final)));
+  line("moves", num(moves(final)));
+  line("bumps", num(bumps(final)));
+  line("score", num(score(final)));
+  line("status", yes_no(escaped(w, h, final)))
+}

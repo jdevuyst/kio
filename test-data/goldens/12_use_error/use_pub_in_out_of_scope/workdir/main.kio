@@ -1,0 +1,9 @@
+module main;
+
+// `main` is not within the `helper` subtree, so importing the sealed
+// `secret` must fail with a use-error (exit 12). Mirrors `use_non_pub`,
+// but exercises the `pub(P)` subtree restriction rather than a
+// fully-private declaration.
+import helper/submod(secret);
+
+fn main() -> . { secret() }

@@ -1,0 +1,40 @@
+module bdd/fixtures;
+
+import bdd/expression as expr;
+import list/core as lists;
+import list/list(varop [* *]);
+import testapi(String);
+
+pub fn x() -> expr.Expression { expr.variable_expr(0) }
+
+pub fn y() -> expr.Expression { expr.variable_expr(1) }
+
+pub fn z() -> expr.Expression { expr.variable_expr(2) }
+
+pub fn factored() -> expr.Expression { expr.both(x(), expr.either(y(), z())) }
+
+pub fn expanded() -> expr.Expression { expr.either(expr.both(x(), y()), expr.both(x(), z())) }
+
+pub fn contradiction() -> expr.Expression { expr.both(x(), expr.negate(x())) }
+
+pub fn tautology() -> expr.Expression { expr.either(x(), expr.negate(x())) }
+
+pub fn shared() -> expr.Expression { expr.both(expr.xor(x(), y()), z()) }
+
+pub fn equivalent_bits() -> expr.Expression { expr.negate(expr.xor(x(), y())) }
+
+pub fn mux() -> expr.Expression {
+  expr.either(expr.both(x(), y()), expr.both(expr.negate(x()), z()))
+}
+
+pub fn cases() -> lists.List(String & expr.Expression) {
+  [*
+    , ("factored", factored())
+    , ("expanded", expanded())
+    , ("contradiction", contradiction())
+    , ("tautology", tautology())
+    , ("shared", shared())
+    , ("equivalent-bits", equivalent_bits())
+    , ("mux", mux())
+    *]
+}

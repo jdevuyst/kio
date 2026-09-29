@@ -1,0 +1,2 @@
+newtype member `Box.mk` must be at least as visible as operator `op \+ _`
+give newtype member `Box.mk` visibility equal to or wider than operator `op \+ _`

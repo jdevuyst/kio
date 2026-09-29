@@ -1,0 +1,19 @@
+package typecheck_user_elaborator_target_placeholder;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  typecheck_user_elaborator_target_placeholder;
+  typecheck_user_elaborator_target_placeholder/**;
+  elaborators
+}

@@ -1,0 +1,182 @@
+module queue_backlog_sim/sim;
+
+import elab/control(if);
+import elab/match(match);
+import queue/core(Queue, empty);
+import queue_backlog_sim/fifo as fifo;
+import queue_backlog_sim/model(
+  , Arrived
+  , Backlog_count
+  , Completed_effort
+  , Current_tick
+  , Enqueue_result
+  , Enqueued_next
+  , Enqueued_queue
+  , Job
+  , Job_queue
+  , Max_backlog
+  , Next_ticket
+  , Serve_result
+  , Served_effort
+  , Served_jobs
+  , Served_queue
+  , Served_wait
+  , State
+  , Total_wait
+  , {arrived_count}
+  , {arrived}
+  , {backlog_count}
+  , {completed_effort}
+  , {current_tick}
+  , {effort}
+  , {enqueued_next}
+  , {enqueued_queue}
+  , {job_queue}
+  , {max_backlog}
+  , {next_ticket}
+  , {served_count}
+  , {served_effort}
+  , {served_jobs}
+  , {served_queue}
+  , {served_wait}
+  , {ticket}
+  , {total_wait}
+  );
+import queue_backlog_sim/schedule as schedule;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn max_i32(a: I32, b: I32) -> I32 {
+  if! lt_i32(a, b) {
+    b
+  } else {
+    a
+  }
+}
+
+fn make_job(ticket_id: I32, tick: I32) -> Job {
+  {ticket = ticket_id, arrived = tick, effort = schedule.effort_for(ticket_id, tick)}
+}
+
+fn initial_state() -> State {
+  {
+    , current_tick = 0
+    , next_ticket = 1
+    , job_queue = empty(Job, ())
+    , backlog_count = 0
+    , total_wait = 0
+    , max_backlog = 0
+    , served_count = 0
+    , completed_effort = 0
+    , arrived_count = 0
+    }
+}
+
+rec(loop) fn enqueue_arrivals(remaining: I32, tick_value: I32, next_id: I32, q: Queue(Job)) -> Enqueue_result {
+  if! leq_i32(remaining, 0) {
+    {enqueued_queue = q, enqueued_next = next_id}
+  } else {
+    rec enqueue_arrivals(
+      , sub_i32(remaining, 1)
+      , tick_value
+      , add_i32(next_id, 1)
+      , fifo.enqueue(make_job(next_id, tick_value), q)
+      )
+  }
+}
+
+fn serve_one(tick_value: I32, q: Queue(Job)) -> Serve_result {
+  let empty_result = {served_queue = q, served_jobs = 0, served_wait = 0, served_effort = 0};
+  fold_result(
+    , empty_result
+    , .(pair: Job & Queue(Job)) {
+        let .(job: Job, rest: Queue(Job)) = pair;
+        {
+          , served_queue = rest
+          , served_jobs = 1
+          , served_wait = sub_i32(tick_value, job.?{arrived})
+          , served_effort = job.?{effort}
+          }
+      }
+    , fifo.dequeue(q)
+    )
+}
+
+rec(loop) fn serve_capacity(
+  , remaining: I32
+  , tick_value: I32
+  , q: Queue(Job)
+  , jobs: I32
+  , wait: I32
+  , effort_units: I32
+  ) -> Serve_result {
+  if! leq_i32(remaining, 0) {
+    {served_queue = q, served_jobs = jobs, served_wait = wait, served_effort = effort_units}
+  } else {
+    let one = serve_one(tick_value, q);
+    if! eq_i32(one.?{served_jobs}, 0) {
+      {served_queue = q, served_jobs = jobs, served_wait = wait, served_effort = effort_units}
+    } else {
+      rec serve_capacity(
+        , sub_i32(remaining, 1)
+        , tick_value
+        , one.?{served_queue}
+        , add_i32(jobs, one.?{served_jobs})
+        , add_i32(wait, one.?{served_wait})
+        , add_i32(effort_units, one.?{served_effort})
+        )
+    }
+  }
+}
+
+fn serve_tick(capacity: I32, tick_value: I32, q: Queue(Job)) -> Serve_result {
+  serve_capacity(capacity, tick_value, q, 0, 0, 0)
+}
+
+fn step_tick(state: State) -> State {
+  let .({
+    , current_tick
+    , next_ticket
+    , job_queue
+    , backlog_count
+    , total_wait
+    , max_backlog
+    , served_count
+    , completed_effort
+    , arrived_count
+    }) = state;
+  let arrivals = schedule.arrivals_at(current_tick);
+  let enqueued = enqueue_arrivals(arrivals, current_tick, next_ticket, job_queue);
+  let backlog_after_arrivals = add_i32(backlog_count, arrivals);
+  let served =
+    serve_tick(schedule.capacity_at(current_tick), current_tick, enqueued.?{enqueued_queue});
+  let backlog_after_service = sub_i32(backlog_after_arrivals, served.?{served_jobs});
+  {
+    , current_tick = add_i32(current_tick, 1)
+    , next_ticket = enqueued.?{enqueued_next}
+    , job_queue = served.?{served_queue}
+    , backlog_count = backlog_after_service
+    , total_wait = add_i32(total_wait, served.?{served_wait})
+    , max_backlog = max_i32(max_backlog, backlog_after_arrivals)
+    , served_count = add_i32(served_count, served.?{served_jobs})
+    , completed_effort = add_i32(completed_effort, served.?{served_effort})
+    , arrived_count = add_i32(arrived_count, arrivals)
+    }
+}
+
+rec(loop) fn run_from(state: State) -> State {
+  if! leq_i32(schedule.total_ticks(), state.?{current_tick}) {
+    state
+  } else {
+    rec run_from(step_tick(state))
+  }
+}
+
+pub fn run() -> State { run_from(initial_state()) }

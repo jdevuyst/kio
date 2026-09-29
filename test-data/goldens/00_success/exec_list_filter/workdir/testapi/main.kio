@@ -1,0 +1,110 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, mod_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// `x == 0` via the antisymmetric leq idiom.
+fn is_zero(x: I32) -> Bool {
+  if! leq_i32(x, 0) {
+    leq_i32(0, x)
+  } else {
+    .f
+  }
+}
+
+fn is_even(x: I32) -> Bool { is_zero(mod_i32(x, 2)) }
+
+fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
+  match! state {
+    .(remaining: List(A), output: List(A)) {
+      match! remaining.>List.un_list {
+        (
+          , .(x: A, rest: List(A)) {
+              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+            }
+          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+          )
+      }
+    }
+  }
+}
+
+fn reverse[A](xs: List(A)) -> List(A) {
+  loop(.(state: List(A) & List(A)) { reverse_step(state) }, (xs, nil(A, ())))
+}
+
+// Keep even elements via fold + cons. State is `(remaining, output_reversed)`;
+// each step conditionally conses the head onto the accumulator. A final
+// reverse produces the output in input order.
+fn filter_step(state: List(I32) & List(I32)) -> (List(I32) & List(I32)) | List(I32) {
+  match! state {
+    .(remaining: List(I32), output: List(I32)) {
+      match! remaining.>List.un_list {
+        (
+          , .(x: I32, rest: List(I32)) {
+              let next =
+                if! is_even(x) {
+                  push(x, output)
+                } else {
+                  output
+                };
+              widen_sum!((rest, next), (List(I32) & List(I32)) | List(I32))
+            }
+          , .(_empty: .) { widen_sum!(output, (List(I32) & List(I32)) | List(I32)) }
+          )
+      }
+    }
+  }
+}
+
+fn filter_even(xs: List(I32)) -> List(I32) {
+  reverse(loop(.(state: List(I32) & List(I32)) { filter_step(state) }, (xs, nil(I32, ()))))
+}
+
+// Print a list of I32 as comma-separated values followed by a newline.
+fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
+  match! state {
+    .(xs: List(I32), acc: String) {
+      match! xs.>List.un_list {
+        (
+          , .(x: I32, rest: List(I32)) {
+              let sep =
+                match! rest.>List.un_list {
+                  (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
+                };
+              widen_sum!(
+                , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
+                , (List(I32) & String) | .
+                )
+            }
+          , .(_empty: .) {
+              print(string_concat(acc, "\n"));
+              widen_sum!((), (List(I32) & String) | .)
+            }
+          )
+      }
+    }
+  }
+}
+
+fn print_list(xs: List(I32)) -> . {
+  loop(.(state: List(I32) & String) { print_list_step(state) }, (xs, ""))
+}
+
+pub fn main() -> . {
+  let xs = push(1, push(2, push(3, push(4, push(5, push(6, nil(I32, ())))))));
+  print_list(filter_even(xs))
+}

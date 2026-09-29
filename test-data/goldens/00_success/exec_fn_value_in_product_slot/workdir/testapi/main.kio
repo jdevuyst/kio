@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod);
+import testapi(I32, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A generic capability bundle pairing a binary integer op with a
+// state-threading step typed by the bundle's type parameter. The op's slot
+// type `(I32 & I32) -> I32` groups its two operands as a single product
+// domain; a host fn stored into that slot must be carried at the slot's
+// product-domain grouping, not at its own flat two-argument shape, so that
+// the later projection-and-apply reaches it.
+type Bundle[S] = ((I32 & I32) -> I32) & (S -> S);
+
+// Assemble the bundle: `add` is the host binary op, `step` threads state.
+fn make_bundle[S](step: S -> S) -> Bundle(S) { (add, step) }
+
+// Project the binary op out of the bundle by its (distinct) type.
+fn plus[S](b: Bundle(S)) -> (I32 & I32) -> I32 { one_prod!(b, (I32 & I32) -> I32) }
+
+pub fn main() -> . {
+  // Instantiate at `S = I32` with an identity step, then apply the
+  // projected op with one product argument `plus(b)(2, 3)`. The bundled
+  // `add` must be carried at the slot's `(I32 & I32) -> I32` grouping for
+  // this application to reach it.
+  let b = make_bundle(.(s: I32) -> I32 { s });
+  print(int_to_string(plus(b)(2(I32), 3(I32))));
+  print("\n"(String))
+}

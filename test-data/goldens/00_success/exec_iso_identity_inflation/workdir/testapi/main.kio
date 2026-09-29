@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(iso);
+import testapi(String);
+import testapi/io(print);
+
+// `iso!` identity absorption — inflate direction:
+//   add_unit  : String → (String & .)
+//   add_bottom: String → (String | !)
+fn add_unit(s: String) -> String & . { iso!(s) }
+
+fn add_bottom(s: String) -> String | ! { iso!(s) }
+
+// Surface helpers: peel the `()` from a (String & .) pair via a
+// `match!` destructure, and peel the `!` arm from (String | !) via
+// `iso!`'s identity absorption (the dual direction of `add_bottom`
+// above — both directions go through the elaborator).
+fn peel_unit((s: String, _u: .)) -> String { s }
+
+fn peel_bottom(s: String | !) -> String { iso!(s) }
+
+pub fn main() -> . {
+  let inflated_pair = add_unit("unit-inflated\n");
+  print(peel_unit(inflated_pair));
+  let inflated_sum = add_bottom("bottom-inflated\n");
+  print(peel_bottom(inflated_sum))
+}

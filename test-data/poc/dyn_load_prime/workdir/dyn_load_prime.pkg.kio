@@ -1,0 +1,67 @@
+package dyn_load_prime;
+
+build {
+  cache "out/.kio-cache/";
+
+  docs {
+    md ".";
+    md_out "out/docs-md/";
+    html "out/docs/"
+  };
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  };
+
+  target python {
+    out "out/python/"
+  };
+
+  target java {
+    out "out/java/"
+  };
+
+  target rust {
+    out "out/rust/"
+  };
+
+  target go {
+    out "out/go/"
+  };
+
+  target swift {
+    out "out/swift/"
+  };
+
+  target haskell {
+    out "out/haskell/"
+  }
+}
+
+bridge {
+  list/core;
+  testapi;
+  testapi/**;
+  prime;
+  host_descriptor;
+  value;
+  result;
+  marshal;
+  eval;
+  hostrec;
+  imageio;
+  token;
+  chars;
+  lex;
+  parse;
+  loader;
+  defaults;
+  loader/scan;
+  elab/elaborator_util;
+  elab/match;
+  elab/spine_elaborators
+}

@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+
+newtype Message : String { constructor make; projector read }
+
+pure fn first(value: String, other: String) -> String { value }
+
+pure fn keep(value: String) -> String { value }
+
+op _ <+> _ { impl first }
+
+varop [* *] { foldr1 first keep }
+
+equiv first_message() {
+  [* "boundaries", "discarded" *] <+> "ignored";
+  "boundaries"
+}
+
+pub fn main() -> . {
+  let text = [* "boundaries", "discarded" *] <+> "ignored";
+  io.print(text.>Message.make.>Message.read);
+  io.print("\n")
+}

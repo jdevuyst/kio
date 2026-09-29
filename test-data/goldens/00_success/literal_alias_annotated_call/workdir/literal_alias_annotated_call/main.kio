@@ -1,0 +1,12 @@
+module literal_alias_annotated_call/main;
+
+import literal_alias_annotated_call(I32, I64);
+
+// A literal alias can be used with an explicit type annotation at
+// the call site. The declaration stores only the bare literal token;
+// `one(I32)` and `one(I64)` expand to `1(I32)` and `1(I64)`.
+literal one = 1;
+
+fn one_i32() -> I32 { one(I32) }
+
+fn one_i64() -> I64 { one(I64) }

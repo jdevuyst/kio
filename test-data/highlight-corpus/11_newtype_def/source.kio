@@ -1,0 +1,3 @@
+module m;
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };

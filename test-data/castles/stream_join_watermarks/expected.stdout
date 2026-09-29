@@ -1,0 +1,30 @@
+Temporal join: equal keys, right time in [left-2,left+3]
+session interleaved
+checkpoint initial wm=0/0 retained=4/7 evicted=0/0 pairs=12
+checkpoint inclusive-expiry wm=0/13 retained=4/7 evicted=0/0 pairs=12
+late rejected right id=18 time=12
+checkpoint watermark-equality wm=12/13 retained=5/6 evicted=0/1 pairs=16
+late rejected left id=6 time=11
+watermark rejected right value=13
+checkpoint expired wm=13/14 retained=3/4 evicted=2/3 pairs=16
+checkpoint immediate-expiry wm=22/14 retained=4/1 evicted=2/9 pairs=19
+late rejected right id=22 time=25
+late rejected left id=9 time=25
+checkpoint drained wm=26/26 retained=0/0 evicted=7/10 pairs=20
+accepted=7/10 late=4 regressed-watermarks=1 emitted=20 distinct=20
+pairs [1/11, 1/12, 1/15, 1/16, 2/11, 2/12, 2/15, 2/16, 3/14, 4/12, 4/13, 4/17, 4/20, 5/12, 5/13, 5/15, 5/16, 5/20, 7/19, 8/19]
+session reordered
+checkpoint initial wm=0/0 retained=4/7 evicted=0/0 pairs=12
+checkpoint inclusive-expiry wm=0/13 retained=4/7 evicted=0/0 pairs=12
+late rejected right id=18 time=12
+checkpoint watermark-equality wm=12/13 retained=5/6 evicted=0/1 pairs=16
+late rejected left id=6 time=11
+watermark rejected right value=13
+checkpoint expired wm=13/14 retained=3/4 evicted=2/3 pairs=16
+checkpoint immediate-expiry wm=22/14 retained=4/1 evicted=2/9 pairs=19
+late rejected right id=22 time=25
+late rejected left id=9 time=25
+checkpoint drained wm=26/26 retained=0/0 evicted=7/10 pairs=20
+accepted=7/10 late=4 regressed-watermarks=1 emitted=20 distinct=20
+pairs [1/11, 1/12, 1/15, 1/16, 2/11, 2/12, 2/15, 2/16, 3/14, 4/12, 4/13, 4/17, 4/20, 5/12, 5/13, 5/15, 5/16, 5/20, 7/19, 8/19]
+arrival-order agreement: yes

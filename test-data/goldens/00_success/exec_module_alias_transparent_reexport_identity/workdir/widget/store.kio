@@ -1,0 +1,5 @@
+module widget/store;
+
+import core/store as core;
+
+pub type Tag = core.Tag;

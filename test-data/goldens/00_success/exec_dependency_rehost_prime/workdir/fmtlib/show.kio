@@ -1,0 +1,11 @@
+module fmtlib/show;
+
+import fmtlib/types as t;
+import fmtlib/types(I32);
+import testapi/fmt as _rehost_hegfhdhegbhagjcpgggnhe;
+
+pub fn print_i32(p0: I32) -> . { _rehost_hegfhdhegbhagjcpgggnhe.print_i32(p0) }
+
+fn pick(a: I32, b: t.I32) -> t.I32 { b }
+
+pub fn show() -> . { print_i32(pick(41(I32), 42(t.I32))) }

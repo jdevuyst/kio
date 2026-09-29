@@ -1,0 +1,15 @@
+module main;
+
+import elab/spine_elaborators(fit);
+
+fn unit_rule() -> . { () }
+
+fn id[A](value: A) -> A { value }
+
+type Candidate_pair = (. -> .) & ([A] A -> A);
+
+fn use_candidates(_candidates: Candidate_pair) -> . { () }
+
+fn force_surface(value: .) -> . { fit!(value, .) }
+
+pub fn main() -> . { force_surface(use_candidates((unit_rule, id))) }

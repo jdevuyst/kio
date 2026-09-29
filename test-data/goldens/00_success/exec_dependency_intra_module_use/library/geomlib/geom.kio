@@ -1,0 +1,12 @@
+module geom;
+
+import ops(swap);
+import vec as v;
+import vec(Vec2, fst);
+
+// Two more intra-dependency reference forms, both of which must be
+// re-rooted with the dependency: a qualified-alias import (`use vec as
+// v;`) whose `v.mk` call resolves *through* the re-rooted alias path,
+// and a selective import of `swap` from the sibling `ops` module
+// (which itself imports from `vec`).
+pub fn first_after_swap[A](a: A, b: A) -> A { fst(swap(v.mk(a, b))) }

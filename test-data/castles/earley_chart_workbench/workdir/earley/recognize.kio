@@ -1,0 +1,50 @@
+module earley/recognize;
+
+import earley/arrays as numbers;
+import earley/chart as chart;
+import earley/closure as closure;
+import earley/model as model;
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as arrays;
+import testapi/iter(loop);
+
+rec(loop) fn columns(grammar: model.Grammar, tokens: Array(I32), table: model.Chart, position: I32) -> . {
+  if! arith.leq_i32(arrays.array_len(table), position) {
+    ()
+  } else {
+    closure.close(grammar, tokens, table, position);
+    rec columns(grammar, tokens, table, arith.add_i32(position, 1))
+  }
+}
+
+rec(loop) fn accepted(grammar: model.Grammar, column: model.Column, category: I32, index: I32) -> Bool {
+  if! arith.leq_i32(arrays.array_len(column), index) {
+    .f
+  } else {
+    let state = arrays.array_get(column, index);
+    let production = arrays.array_get(grammar, model.rule_index(state));
+    let starts_here = if! numbers.equal(model.start(state), 0) {
+      numbers.equal(model.left(production), category)
+    } else {
+      .f
+    };
+    if! starts_here {
+      if! model.finished(grammar, state) {
+        .t
+      } else {
+        rec accepted(grammar, column, category, arith.add_i32(index, 1))
+      }
+    } else {
+      rec accepted(grammar, column, category, arith.add_i32(index, 1))
+    }
+  }
+}
+
+pub fn run(grammar: model.Grammar, category: I32, tokens: Array(I32)) -> model.Chart & Bool {
+  let table = chart.create(arrays.array_len(tokens));
+  chart.seed(grammar, arrays.array_get(table, 0), category);
+  columns(grammar, tokens, table, 0);
+  (table, accepted(grammar, arrays.array_get(table, arrays.array_len(tokens)), category, 0))
+}

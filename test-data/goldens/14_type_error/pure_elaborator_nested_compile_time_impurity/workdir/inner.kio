@@ -1,0 +1,13 @@
+module inner;
+
+import __comptime__;
+
+host fn effect() -> .;
+
+pub type Effect = . -> .;
+
+pub pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, effect_term), effect_term, __term_unit__(ct))
+}
+
+pub elab effect_call : . -> Effect { captures effect; impl effect_call_impl }

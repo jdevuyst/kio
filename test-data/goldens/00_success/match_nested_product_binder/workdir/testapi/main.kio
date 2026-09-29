@@ -1,0 +1,47 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A cons-list whose head is itself a **nested product**:
+// `((I32 & a) & I32)` — a `(key-value, sibling-key)` frame. The
+// `match!` clause that walks this list binds the head with a
+// nested-product binder `(hd: I32 & a, sib: I32)`, which is the
+// shape that used to panic the typer at the `fit!`-at-match-slot
+// reconstruction (a clause binder that is itself a nested product).
+rec newtype Z[A] : . | (((I32 & A) & I32) & Z(A)) { pub constructor mk_z; pub projector un_z }
+
+fn znil[A]() -> Z(A) { Z.mk_z(widen_sum!((), . | (((I32 & A) & I32) & Z(A)))) }
+
+fn zcons[A](k: I32, v: A, sib: I32, rest: Z(A)) -> Z(A) {
+  Z.mk_z(widen_sum!((((k, v), sib), rest), . | (((I32 & A) & I32) & Z(A))))
+}
+
+// Project the head key of a non-empty `Z`, or `0` for the empty
+// list. The non-empty clause binds the head with a **nested-product
+// binder** `(hd: I32 & a, sib: I32)` and then projects the key out
+// of the inner `(I32 & a)` pair with a second nested match. Two
+// clauses sharing result type `I32` collapse to `I32` with `one_sum!`.
+fn head_key[A](z: Z(A)) -> I32 {
+  match! z.>Z.un_z {
+    (
+      , .((hd: I32 & A, _sib: I32), _rest: Z(A)) {
+          match! hd {
+            .(k: I32, _v: A) { k }
+          }
+        }
+      , .(_empty: .) { 0 }
+      )
+  }
+}
+
+pub fn main() -> . {
+  let xs = zcons(7, "seven", 2, zcons(3, "three", 9, znil()));
+  let empty = znil(String, ());
+  print(string_concat(int_to_string(head_key(xs)), "\n"));
+  print(string_concat(int_to_string(head_key(empty)), "\n"))
+}

@@ -1,0 +1,10 @@
+module main;
+
+// Braced label forms are not type syntax. The canonical place for
+// the payload `X` is the `labels` declaration, and type positions
+// use the generated nominal name (`Foo`). Writing an explicit
+// payload at a type-position use site (`{foo: .}`) is rejected with
+// a directed parse error.
+labels { foo: . };
+
+fn id_foo(x: {foo: .}) -> {foo} { x }

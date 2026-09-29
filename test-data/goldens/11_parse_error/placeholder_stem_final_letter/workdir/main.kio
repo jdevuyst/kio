@@ -1,0 +1,3 @@
+module main;
+
+fn subject() -> . { .x1. { x11 } }

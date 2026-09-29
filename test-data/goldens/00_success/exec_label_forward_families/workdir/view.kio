@@ -1,0 +1,7 @@
+module view;
+
+import origin as original;
+
+pub type {entry} = {original.item};
+
+pub type {packet} = {original.pack};

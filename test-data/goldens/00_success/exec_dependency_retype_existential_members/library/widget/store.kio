@@ -1,0 +1,7 @@
+module store;
+
+pub newtype Box[A] <X> : A & X { pub constructor pack; pub projector open }
+
+pub fn boxed[A](value: A) -> Box(A) { Box.pack(A, ., (value, ())) }
+
+pub fn extract[A](boxed: Box(A)) -> A { Box.open(A, boxed)(A, .[X](first: A, _rest: X) { first }) }

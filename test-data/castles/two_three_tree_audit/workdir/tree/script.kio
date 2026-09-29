@@ -1,0 +1,161 @@
+/// The operation script and the transcript it prints. Fourteen inserts — one a
+/// re-insert that only replaces a payload — then eight deletes, one of a key
+/// that was never there. Between them they fire every structural event a 2-3
+/// tree has; the README lists them against the step that causes each.
+///
+/// After every operation the tree is audited from scratch and one line goes out.
+module tree/script;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+import tree/audit(audit, verdict_word);
+import tree/delete(delete);
+import tree/insert(insert);
+import tree/node(Tree, contains, empty_tree, height, root_of, size_of);
+import tree/tally(
+  , Tally
+  , borrow_lefts
+  , borrow_rights
+  , merges
+  , root_grows
+  , root_shrinks
+  , splits
+  , tally_add
+  , tally_zero
+  );
+import tree/text(cat, cat3, cat4, num, pad_num);
+
+labels Op_kind = { put: I32 & String } | { remove: I32 };
+
+newtype Op : Op_kind { constructor mk_op; projector un_op }
+
+rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
+
+type Ops = List(Op);
+
+/// The tree, the events every operation so far has caused, and the step number.
+pub type Run = Tree & Tally & I32;
+
+fn put_op(k: I32, v: String) -> Op { Op.mk_op({put = (k, v)}.>widen_sum!(Op_kind)) }
+
+fn remove_op(k: I32) -> Op { Op.mk_op({remove = k}.>widen_sum!(Op_kind)) }
+
+fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+
+fn cons[A](x: A, rest: List(A)) -> List(A) {
+  List.mk_list(widen_sum!((x, rest), . | (A & List(A))))
+}
+
+/// Append at the end, so the script below reads top to bottom in the order it
+/// runs rather than inside out.
+rec(loop) fn snoc[A](xs: List(A), x: A) -> List(A) {
+  match! xs.>List.un_list {
+    (
+      , .(head: A, rest: List(A)) { let tail = rec(cont) snoc(rest, x); cons(head, tail) }
+      , .(_e: .) { cons(x, nil(A, ())) }
+      )
+  }
+}
+
+fn script() -> Ops {
+  let s = nil(Op, ());
+  let s = snoc(s, put_op(50, "curlew"));
+  let s = snoc(s, put_op(30, "osprey"));
+  let s = snoc(s, put_op(70, "falcon"));
+  let s = snoc(s, put_op(20, "heron"));
+  let s = snoc(s, put_op(40, "kestrel"));
+  let s = snoc(s, put_op(60, "petrel"));
+  let s = snoc(s, put_op(80, "gannet"));
+  let s = snoc(s, put_op(10, "wren"));
+  let s = snoc(s, put_op(35, "merlin"));
+  let s = snoc(s, put_op(45, "avocet"));
+  let s = snoc(s, put_op(55, "godwit"));
+  let s = snoc(s, put_op(65, "puffin"));
+  let s = snoc(s, put_op(25, "grebe"));
+  let s = snoc(s, put_op(40, "harrier"));
+  let s = snoc(s, remove_op(10));
+  let s = snoc(s, remove_op(25));
+  let s = snoc(s, remove_op(20));
+  let s = snoc(s, remove_op(45));
+  let s = snoc(s, remove_op(30));
+  let s = snoc(s, remove_op(50));
+  let s = snoc(s, remove_op(33));
+  snoc(s, remove_op(35))
+}
+
+fn event_part(acc: String, name: String, n: I32) -> String {
+  if! eq_i32(n, 0) {
+    acc
+  } else {
+    cat4(acc, " ", name, cat("=", num(n)))
+  }
+}
+
+/// Name the rebalances one operation caused, so the transcript says *which*
+/// repair fired and not merely that the tree survived it.
+fn events(t: Tally) -> String {
+  let after_splits = event_part("", "split", splits(t));
+  let after_bl = event_part(after_splits, "borrow-left", borrow_lefts(t));
+  let after_br = event_part(after_bl, "borrow-right", borrow_rights(t));
+  let after_merges = event_part(after_br, "merge", merges(t));
+  let after_grows = event_part(after_merges, "root-grow", root_grows(t));
+  event_part(after_grows, "root-shrink", root_shrinks(t))
+}
+
+fn emit(step: I32, op: String, k: I32, t: Tree, note: String, ev: Tally) -> . {
+  let head = cat4(pad_num(step, 2), " ", op, cat(" ", pad_num(k, 3)));
+  let shape = cat4("  h=", num(height(root_of(t))), " n=", pad_num(size_of(t), 2));
+  let tail = cat4("  ", verdict_word(audit(t)), "  ", cat(note, events(ev)));
+  print(cat3(head, shape, cat(tail, "\n")))
+}
+
+fn apply_op(r: Run, o: Op) -> Run {
+  let .(t: Tree, acc: Tally, step: I32) = r;
+  match! o.>Op.un_op {
+    (
+      , .(p: Put) {
+          let .(k: I32, v: String) = p.?{put};
+          let note =
+            if! contains(root_of(t), k) {
+              "replaced"
+            } else {
+              "added"
+            };
+          let .(next: Tree, ev: Tally) = insert(t, k, v);
+          emit(step, "ins", k, next, note, ev);
+          (next, tally_add(acc, ev), add_i32(step, 1))
+        }
+      , .(d: Remove) {
+          let k = d.?{remove};
+          let note =
+            if! contains(root_of(t), k) {
+              "removed"
+            } else {
+              "absent"
+            };
+          let .(next: Tree, ev: Tally) = delete(t, k);
+          emit(step, "del", k, next, note, ev);
+          (next, tally_add(acc, ev), add_i32(step, 1))
+        }
+      )
+  }
+}
+
+rec(loop) fn walk(ops: Ops, r: Run) -> Run {
+  match! ops.>List.un_list {
+    (.(o: Op, rest: Ops) { let next = apply_op(r, o); rec walk(rest, next) }, .(_e: .) { r })
+  }
+}
+
+/// Run the whole script against an empty tree, printing a transcript line per
+/// operation, and hand back the tree it ended with and everything it did.
+pub fn run_script() -> Run { walk(script(), (empty_tree(), tally_zero(), 1)) }
+
+pub fn run_tree(r: Run) -> Tree { let .(t: Tree, _a: Tally, _s: I32) = r; t }
+
+pub fn run_tally(r: Run) -> Tally { let .(_t: Tree, a: Tally, _s: I32) = r; a }

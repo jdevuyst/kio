@@ -1,0 +1,13 @@
+dependency lib;
+
+retype lib/types to fmt_named_entry_order/types;
+
+source {
+  ;;
+  ref "main";
+  git "https://example.invalid/lib" // source tail
+  ;; // source close
+} // source outer
+;
+
+rehost lib/io to fmt_named_entry_order/io;

@@ -1,0 +1,33 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pure fn run_callbacks_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , result_type: __Type__
+  , callbacks: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let unit_type = __reflect_type__(ct, .);
+  let zero = __type_arity_zero__(ct);
+  let required_type = __type_arrow__(ct, unit_type, zero, result_type);
+  let optional_type = __type_arrow__(ct, unit_type, zero, unit_type);
+  let callbacks_type = __type_product__(ct, required_type, optional_type);
+  let required = __intrinsic_fst__(ct, callbacks_type, callbacks);
+  let optional = __intrinsic_snd__(ct, callbacks_type, callbacks);
+  let optional_result = __term_call__(ct, optional_type, optional, __term_unit__(ct));
+  let result =
+    __term_let__(
+      , ct
+      , unit_type
+      , optional_result
+      , .(_ignored: __Checked_term__) -> __Checked_term__ {
+          __term_call__(ct, required_type, required, __term_unit__(ct))
+        }
+      );
+  (result, fills)
+}
+
+pub elab run_callbacks : [Result] ((. -> Result) & (. -> .)) -> Result { impl(fills) run_callbacks_impl }

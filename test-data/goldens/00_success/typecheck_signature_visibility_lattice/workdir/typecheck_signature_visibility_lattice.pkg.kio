@@ -1,0 +1,9 @@
+package typecheck_signature_visibility_lattice;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}

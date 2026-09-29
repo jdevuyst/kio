@@ -1,0 +1,5 @@
+module origin;
+
+pub fn choose(a: ., b: .) -> . { a }
+
+pub op _ ? _ { impl choose }

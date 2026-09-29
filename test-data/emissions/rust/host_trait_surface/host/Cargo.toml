@@ -1,0 +1,8 @@
+[package]
+name = "host-trait-surface-host"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rust_host_trait_surface = { path = "../workdir/out/rust" }

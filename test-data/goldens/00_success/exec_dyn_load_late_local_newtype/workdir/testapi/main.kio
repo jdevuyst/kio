@@ -1,0 +1,58 @@
+/// Rejects raw images whose earlier declarations refer to a later local newtype.
+module testapi/main;
+
+import elab/match(match);
+import loader(Load_outcome, Lr_diag, Lr_image);
+import loader(diag_message, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn describe(outcome: Load_outcome) -> String {
+  match! un_load_outcome(outcome) {
+    (
+      , .(_loaded: Lr_image) { "(loaded)"(String) }
+      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn line(label: String, source: String) -> String {
+  string_concat(label, string_concat(describe(load_package(source)), "\n"(String)))
+}
+
+pub fn main() -> . {
+  print(line(
+    , "host fn before newtype: "(String)
+    , "module guest;\nhost fn consume(value: Later) -> .;\npub newtype Later : . "
+      "{ pub constructor mk_later; pub projector un_later; };\npackage guest;\n"
+      "bridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "alias before newtype: "(String)
+    , "module guest;\npub type Before = Later;\npub fn expose(value: Before) -> "
+      "Before { value }\npub newtype Later : . { pub constructor mk_later; pub "
+      "projector un_later; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "self-recursive newtype: "(String)
+    , "module guest;\npub rec newtype Loop : . | Loop { pub constructor mk_loop; "
+      "pub projector un_loop; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "mutually recursive newtypes: "(String)
+    , "module guest;\nrec {\npub newtype First : Second { pub constructor "
+      "mk_first; pub projector un_first; };\npub newtype Second : . | First { "
+      "pub constructor mk_second; pub projector un_second; };\n}\npackage guest;\n"
+      "bridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "later provider newtype: "(String)
+    , "module guest;\nimport provider(Later);\nimport provider as p;\npub fn "
+      "selective(value: Later) -> Later { value }\npub fn qualified(value: "
+      "p.Later) -> p.Later { value }\nmodule provider;\npub newtype Later : . { "
+      "pub constructor mk_later; pub projector un_later; };\npackage guest;\n"
+      "bridge { guest; provider; }\n"(String)
+    ))
+}

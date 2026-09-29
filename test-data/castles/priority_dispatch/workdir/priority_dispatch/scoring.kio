@@ -1,0 +1,118 @@
+module priority_dispatch/scoring;
+
+import elab/control(if);
+import priority_dispatch/model(
+  , Choice
+  , Job
+  , Slot
+  , choice
+  , {choice_cpu}
+  , {choice_deadline}
+  , {choice_duration}
+  , {choice_eligible}
+  , {choice_id}
+  , {choice_io}
+  , {choice_name}
+  , {choice_priority}
+  , {choice_rank}
+  , {job_cpu}
+  , {job_deadline}
+  , {job_duration}
+  , {job_id}
+  , {job_io}
+  , {job_name}
+  , {job_priority}
+  , {slot_cpu}
+  , {slot_io}
+  );
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+
+pub fn and_bool(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn not_bool(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn all_done(
+  , ingress_done: Bool
+  , backup_done: Bool
+  , alert_done: Bool
+  , reconcile_done: Bool
+  , audit_done: Bool
+  ) -> Bool {
+  and_bool(
+    , ingress_done
+    , and_bool(backup_done, and_bool(alert_done, and_bool(reconcile_done, audit_done)))
+    )
+}
+
+fn fits(job: Job, slot: Slot) -> Bool {
+  and_bool(leq_i32(job.?{job_cpu}, slot.?{slot_cpu}), leq_i32(job.?{job_io}, slot.?{slot_io}))
+}
+
+pub fn rank_job(job: Job) -> I32 {
+  sub_i32(
+    , add_i32(mul_i32(job.?{job_priority}, 100), mul_i32(sub_i32(20, job.?{job_deadline}), 5))
+    , job.?{job_duration}
+    )
+}
+
+pub fn choose_job(job: Job, slot: Slot, done: Bool) -> Choice {
+  let eligible = and_bool(not_bool(done), fits(job, slot));
+  let rank =
+    if! eligible {
+      rank_job(job)
+    } else {
+      0
+    };
+  choice(
+    , job.?{job_id}
+    , job.?{job_name}
+    , rank
+    , job.?{job_priority}
+    , job.?{job_deadline}
+    , job.?{job_cpu}
+    , job.?{job_io}
+    , job.?{job_duration}
+    , eligible
+    )
+}
+
+pub fn better(left: Choice, right: Choice) -> Choice {
+  let .({choice_eligible as left_ok, choice_rank as left_rank}) = left;
+  let .({choice_eligible as right_ok, choice_rank as right_rank}) = right;
+  if! left_ok {
+    if! right_ok {
+      if! lt_i32(right_rank, left_rank) {
+        left
+      } else {
+        right
+      }
+    } else {
+      left
+    }
+  } else {
+    right
+  }
+}
+
+pub fn blocked_for(job: Job, slot: Slot, done: Bool) -> I32 {
+  if! done {
+    0
+  } else if! fits(job, slot) {
+    0
+  } else {
+    1
+  }
+}

@@ -1,0 +1,7 @@
+module host;
+
+host type A;
+
+host type B;
+
+host fn source(x: A) -> A | B;

@@ -1,0 +1,55 @@
+/// The comparison and boolean vocabulary the rest of the package uses.
+///
+/// The host supplies exactly one integer comparison, `leq_i32`. Equality,
+/// strict order, and the boolean connectives are all derived from it here
+/// so no other module has to think about it again.
+module sudoku/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+
+fn not_bool(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn and_bool(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn or_bool(left: Bool, right: Bool) -> Bool {
+  if! left {
+    .t
+  } else {
+    right
+  }
+}
+
+pub fn eq_i32(left: I32, right: I32) -> Bool {
+  if! leq_i32(left, right) {
+    leq_i32(right, left)
+  } else {
+    .f
+  }
+}
+
+/// `left < right` is the negation of `right <= left`.
+pub fn lt_i32(left: I32, right: I32) -> Bool { not_bool(leq_i32(right, left)) }
+
+pub fn is_zero(value: I32) -> Bool { eq_i32(value, 0) }
+
+pub fn max_i32(left: I32, right: I32) -> I32 {
+  if! leq_i32(left, right) {
+    right
+  } else {
+    left
+  }
+}

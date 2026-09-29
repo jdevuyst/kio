@@ -1,0 +1,9 @@
+lock helper;
+
+resolved {
+  sig "digest";
+  path "packages/helper/helper.pkg.kio";
+  commit "abc";
+  ref "main";
+  git "https://example.com/libraries.git"
+}

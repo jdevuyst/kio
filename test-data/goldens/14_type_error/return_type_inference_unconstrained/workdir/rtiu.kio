@@ -1,0 +1,3 @@
+module rtiu;
+
+host type String role(str);

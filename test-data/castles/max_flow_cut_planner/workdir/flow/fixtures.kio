@@ -1,0 +1,36 @@
+module flow/fixtures;
+
+import flow/network as net;
+import testapi(I32, String);
+
+pub labels Fixture = { title: String, network: net.Network, source: I32, sink: I32, expected: I32 };
+
+pub fn cancellation() -> Fixture {
+  let network = net.empty(4);
+  net.connect(network, 0, 1, 1);
+  net.connect(network, 1, 2, 1);
+  net.connect(network, 2, 3, 1);
+  net.connect(network, 0, 2, 1);
+  net.connect(network, 1, 3, 1);
+  {title = "reverse-edge rerouting", network, source = 0, sink = 3, expected = 2}
+}
+
+pub fn parallel() -> Fixture {
+  let network = net.empty(3);
+  net.connect(network, 0, 1, 2);
+  net.connect(network, 0, 1, 3);
+  net.connect(network, 1, 2, 4);
+  net.connect(network, 1, 0, 1);
+  net.connect(network, 0, 2, 1);
+  {title = "parallel links and shared bottleneck", network, source = 0, sink = 2, expected = 5}
+}
+
+pub fn disconnected() -> Fixture {
+  let network = net.empty(5);
+  net.connect(network, 0, 1, 3);
+  net.connect(network, 1, 2, 2);
+  net.connect(network, 2, 1, 1);
+  net.connect(network, 3, 4, 5);
+  net.connect(network, 0, 3, 0);
+  {title = "unreachable sink and zero-capacity bridge", network, source = 0, sink = 4, expected = 0}
+}

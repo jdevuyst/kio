@@ -1,0 +1,26 @@
+module regex/format;
+
+import testapi(String);
+import testapi/text(string_concat);
+
+pub fn join3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
+
+pub fn join4(a: String, b: String, c: String, d: String) -> String {
+  string_concat(join3(a, b, c), d)
+}
+
+pub fn join5(a: String, b: String, c: String, d: String, e: String) -> String {
+  string_concat(join4(a, b, c, d), e)
+}
+
+pub fn join6(a: String, b: String, c: String, d: String, e: String, f: String) -> String {
+  string_concat(join5(a, b, c, d, e), f)
+}
+
+pub fn join7(a: String, b: String, c: String, d: String, e: String, f: String, g: String) -> String {
+  string_concat(join6(a, b, c, d, e, f), g)
+}
+
+pub fn join8(a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String) -> String {
+  string_concat(join7(a, b, c, d, e, f, g), h)
+}

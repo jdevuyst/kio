@@ -1,0 +1,24 @@
+/// A module with various item kinds to exercise `@source` directives.
+///
+/// Source for fn: [`@source compute`].
+/// Source for type alias: [`@source Count`].
+/// Source for labels: [`@source Color`].
+/// Source for op: [`@source add`].
+module src/main;
+
+/// Computes a result.
+///
+/// Embed its source with [`@source compute`].
+/// Its bound-value type is [`@type compute`].
+pub fn compute(n: .) -> . { n }
+
+/// Count type alias.
+pub type Count = .;
+
+/// Color labels.
+pub labels Color = { red: ., green: ., blue: . };
+
+pub fn add(x: ., y: .) -> . { () }
+
+/// Addition op.
+pub op _ + _ { impl add; };

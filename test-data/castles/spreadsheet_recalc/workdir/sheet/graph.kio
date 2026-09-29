@@ -1,0 +1,165 @@
+/// The dependency graph, and the two questions asked of it: which cells sit
+/// on a reference cycle, and in what order may the rest be evaluated.
+module sheet/graph;
+
+import elab/control(if);
+import elab/match(match);
+import sheet/addr(Addr, addr_eq, all_addrs, in_grid, mem);
+import sheet/cells(Sheet, content_at, fold_content);
+import sheet/formula(Expr);
+import sheet/formula(precedents);
+import sheet/list(List, append, cons, filter, len, nil, reverse);
+import sheet/table(Table, empty, get_or, put);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32, sub_i32);
+import testapi/iter(loop);
+
+/// Address -> the cells that read it.
+pub type Deps = Table(List(Addr));
+
+/// Address -> how many of its precedents are still unevaluated.
+pub type Degs = Table(I32);
+
+/// A reference outside the sheet reads a blank, so it is not an edge.
+pub fn cell_precedents(s: Sheet, a: Addr) -> List(Addr) {
+  fold_content(
+    , content_at(s, a)
+    , nil(Addr, ())
+    , .(_n: I32) { nil(Addr, ()) }
+    , .(e: Expr) { filter(precedents(e), .(p: Addr) { in_grid(p) }) }
+    )
+}
+
+/// The cells that read `a`, in address order — the one canonical order that
+/// makes the topological order below reproducible.
+pub fn dependents_of(s: Sheet, a: Addr) -> List(Addr) {
+  filter(all_addrs(), .(c: Addr) { mem(cell_precedents(s, c), a) })
+}
+
+rec(loop) fn deps_onto(s: Sheet, todo: List(Addr), acc: Deps) -> Deps {
+  match! todo.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) { rec deps_onto(s, rest, put(acc, a, dependents_of(s, a))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn build_deps(s: Sheet) -> Deps { deps_onto(s, all_addrs(), empty(List(Addr), ())) }
+
+pub fn deps_of(deps: Deps, a: Addr) -> List(Addr) { get_or(deps, a, nil(Addr, ())) }
+
+fn deg_of(degs: Degs, a: Addr) -> I32 { get_or(degs, a, 0) }
+
+rec(loop) fn degs_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), acc: Degs) -> Degs {
+  match! todo.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          let live =
+            filter(
+              , cell_precedents(s, a)
+              , .(p: Addr) {
+                  if! mem(cyc, p) {
+                    .f
+                  } else {
+                    .t
+                  }
+                }
+              );
+          rec degs_onto(s, cyc, rest, put(acc, a, len(live)))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// How many precedents each cell must wait for. A precedent on a cycle is
+/// settled before the ordering starts, so it is not counted.
+pub fn build_degs(s: Sheet, cyc: List(Addr)) -> Degs {
+  degs_onto(s, cyc, all_addrs(), empty(I32, ()))
+}
+
+rec(loop) fn walk(s: Sheet, frontier: List(Addr), seen: List(Addr), target: Addr) -> Bool {
+  match! frontier.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          if! addr_eq(a, target) {
+            .t
+          } else if! mem(seen, a) {
+            rec walk(s, rest, seen, target)
+          } else {
+            rec walk(s, append(rest, cell_precedents(s, a)), cons(a, seen), target)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+/// Can `from` reach `target` through precedents? A cell is expanded once,
+/// so the walk terminates even when the graph cycles — the point of asking.
+fn reaches(s: Sheet, from: Addr, target: Addr) -> Bool {
+  walk(s, cell_precedents(s, from), nil(Addr, ()), target)
+}
+
+/// The cells on a genuine cycle: exactly those that reach themselves. A cell
+/// that merely *reads* a cycling cell reaches the cycle but never comes back
+/// to itself, so it is not one of them — it picks up `#CYCLE` by evaluating.
+pub fn cycle_cells(s: Sheet) -> List(Addr) { filter(all_addrs(), .(a: Addr) { reaches(s, a, a) }) }
+
+rec(loop) fn release(dependents: List(Addr), degs: Degs, cyc: List(Addr), ready: List(Addr)) ->
+  Degs & List(Addr)
+   {
+  match! dependents.>List.unpack {
+    (
+      , .(d: Addr, rest: List(Addr)) {
+          if! mem(cyc, d) {
+            rec release(rest, degs, cyc, ready)
+          } else {
+            let left = sub_i32(deg_of(degs, d), 1);
+            let degs2 = put(degs, d, left);
+            if! eq_i32(left, 0) {
+              rec release(rest, degs2, cyc, cons(d, ready))
+            } else {
+              rec release(rest, degs2, cyc, ready)
+            }
+          }
+        }
+      , .(_empty: .) { (degs, reverse(ready)) }
+      )
+  }
+}
+
+rec(loop) fn kahn(deps: Deps, degs: Degs, queue: List(Addr), cyc: List(Addr), out: List(Addr)) -> List(Addr) {
+  match! queue.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          let .(degs2: Degs, freed: List(Addr)) =
+            release(deps_of(deps, a), degs, cyc, nil(Addr, ()));
+          rec kahn(deps, degs2, append(rest, freed), cyc, cons(a, out))
+        }
+      , .(_empty: .) { reverse(out) }
+      )
+  }
+}
+
+/// Kahn's algorithm: seed the queue with the cells that wait for nobody, and
+/// release a cell's dependents as it leaves. Cells on a cycle are excluded up
+/// front — they are what would otherwise leave the queue empty with work
+/// remaining.
+pub fn topo_order(s: Sheet, deps: Deps, cyc: List(Addr)) -> List(Addr) {
+  let degs = build_degs(s, cyc);
+  let live =
+    filter(
+      , all_addrs()
+      , .(a: Addr) {
+          if! mem(cyc, a) {
+            .f
+          } else {
+            .t
+          }
+        }
+      );
+  let seeds = filter(live, .(a: Addr) { eq_i32(deg_of(degs, a), 0) });
+  kahn(deps, degs, seeds, cyc, nil(Addr, ()))
+}

@@ -1,0 +1,2 @@
+slash-qualified item paths are not value expressions
+import the item or its module and use the local name or module alias

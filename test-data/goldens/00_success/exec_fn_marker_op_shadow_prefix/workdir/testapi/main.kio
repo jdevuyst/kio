@@ -1,0 +1,20 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+// Prefix operators and numbered parameters occupy their ordinary source roles.
+fn neg(x: I32) -> I32 { sub_i32(0, x) }
+
+op - __ { impl neg }
+
+fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
+
+pub fn main() -> . {
+  let .(f: I32 -> I32) = .x. { add_i32(x1, 1000) };
+  print(i32_to_string(apply(f, 5)));
+  print("\n");
+  print(i32_to_string(- 40))
+}

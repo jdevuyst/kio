@@ -1,0 +1,130 @@
+/// The arithmetic behind the compression figures and the Kraft length check.
+///
+/// The host tier supplies add, subtract, multiply and the comparisons — and no
+/// division, no remainder, and no floats. Every ratio the transcript prints is
+/// therefore a scaled integer produced by the long division below, and the Kraft
+/// check is done in whole numbers by scaling every term by `2^maxlen`.
+module huffman/report;
+
+import elab/control(if);
+import huffman/code(Entry, {entry_len});
+import huffman/list(List, fold, len);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+labels Divided = { quotient: I32, remainder: I32 };
+
+fn divided(quotient: I32, remainder: I32) -> Divided { {quotient, remainder} }
+
+/// Long division by doubling. `divide(n, d)` recurses on `2d` until the divisor
+/// runs past `n`, then unwinds: each level doubles the quotient it got back and
+/// takes one more `d` where the remainder still allows. That is ordinary school
+/// long division in base 2, and it needs nothing but add, subtract, and compare.
+/// It is not a tail call — the recursion's result is what the level above
+/// doubles — so the depth is one frame per bit of the quotient.
+rec(loop) fn divide(n: I32, d: I32) -> Divided {
+  if! lt_i32(n, d) {
+    divided(0, n)
+  } else {
+    let half = rec(cont) divide(n, mul_i32(d, 2));
+    let doubled = mul_i32(half.?{quotient}, 2);
+    let rest = half.?{remainder};
+    if! leq_i32(d, rest) {
+      divided(add_i32(doubled, 1), sub_i32(rest, d))
+    } else {
+      divided(doubled, rest)
+    }
+  }
+}
+
+/// `n / d` rounded down. A non-positive divisor has no answer to give, so it
+/// reports zero rather than diverging on a divisor that can never reach `n`.
+fn div_floor(n: I32, d: I32) -> I32 {
+  if! leq_i32(d, 0) {
+    0
+  } else {
+    divide(n, d).?{quotient}
+  }
+}
+
+rec(loop) fn pow2_from(exponent: I32, acc: I32) -> I32 {
+  if! leq_i32(exponent, 0) {
+    acc
+  } else {
+    rec pow2_from(sub_i32(exponent, 1), mul_i32(acc, 2))
+  }
+}
+
+pub fn pow2(exponent: I32) -> I32 { pow2_from(exponent, 1) }
+
+rec(loop) fn ceil_log2_from(value: I32, width: I32, reach: I32) -> I32 {
+  if! leq_i32(value, reach) {
+    width
+  } else {
+    rec ceil_log2_from(value, add_i32(width, 1), mul_i32(reach, 2))
+  }
+}
+
+/// Bits a fixed-width code needs per symbol: the smallest `w` with `2^w >= n`.
+fn ceil_log2(value: I32) -> I32 { ceil_log2_from(value, 0, 1) }
+
+pub fn longest_code(rows: List(Entry)) -> I32 {
+  fold(
+    , rows
+    , .(best: I32, row: Entry) {
+        let width = row.?{entry_len};
+        if! lt_i32(best, width) {
+          width
+        } else {
+          best
+        }
+      }
+    , 0
+    )
+}
+
+/// Kraft's sum, `sum of 2^-length`, cleared of fractions by scaling every term
+/// by `2^longest`. The codewords are already prefix-free because they are paths
+/// to distinct leaves; equality with the scale checks that their recorded
+/// lengths account for the complete leaf tree. It does not select a tie-break or
+/// independently establish prefix-freeness or optimality.
+pub fn kraft_sum(rows: List(Entry), longest: I32) -> I32 {
+  fold(rows, .(acc: I32, row: Entry) { add_i32(acc, pow2(sub_i32(longest, row.?{entry_len}))) }, 0)
+}
+
+pub fn kraft_holds(rows: List(Entry), longest: I32) -> Bool {
+  eq_i32(kraft_sum(rows, longest), pow2(longest))
+}
+
+pub labels Savings = {
+  , symbol_count: I32
+  , alphabet: I32
+  , fixed_width: I32
+  , baseline_bits: I32
+  , coded_bits: I32
+  , saved_bits: I32
+  , saved_permille: I32
+  , milli_bits_each: I32
+  };
+
+/// The baseline is what a fixed-width code would have cost: every symbol spends
+/// `ceil(log2(alphabet))` bits whatever its frequency. The saving is reported in
+/// permille because the tier has no floats, and the long division above is what
+/// scales it.
+pub fn savings(symbols: List(I32), alphabet: I32, coded_bits: I32) -> Savings {
+  let symbol_count = len(symbols);
+  let fixed_width = ceil_log2(alphabet);
+  let baseline_bits = mul_i32(symbol_count, fixed_width);
+  let saved_bits = sub_i32(baseline_bits, coded_bits);
+  {
+    , symbol_count
+    , alphabet
+    , fixed_width
+    , baseline_bits
+    , coded_bits
+    , saved_bits
+    , saved_permille = div_floor(mul_i32(saved_bits, 1000), baseline_bits)
+    , milli_bits_each = div_floor(mul_i32(coded_bits, 1000), symbol_count)
+    }
+}

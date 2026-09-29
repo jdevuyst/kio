@@ -1,0 +1,20 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// `widen_sum!` injects a `String` into a wider sum. We use it
+// directly inside each `if`/`else` arm to construct a value of the
+// triple-sum target type.
+fn build(s: String) -> String | String | String { widen_sum!(s) }
+
+// `one_sum!` collapses uniform same-typed arms down to one. Here
+// the source is a `String | String | String` triple — every arm's
+// type matches the target `String`, so the form forwards whichever
+// arm is inhabited. Compare to algebraic `atom!`, which requires
+// an atomic / nominal / product target leaf; one_sum! only
+// requires the target's sum-spine length to be 1.
+fn collapse(s: String | String | String) -> String { one_sum!(s) }
+
+pub fn main() -> . { let triple = build("one_sum: forwarded\n"); print(collapse(triple)) }

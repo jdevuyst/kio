@@ -1,0 +1,154 @@
+/// Thompson's construction: a pattern tree becomes a nondeterministic
+/// automaton with epsilon transitions.
+///
+/// Every fragment the recursion builds has exactly one entry and one exit.
+/// That invariant is why the operator cases never inspect what they wrap —
+/// and why the three postfix operators differ only in which of the same
+/// four epsilons they add.
+module automata/nfa;
+
+import automata/pattern(
+  , Alt
+  , Cat
+  , Chr
+  , Opt
+  , Pattern
+  , Plus
+  , Star
+  , {alt}
+  , {cat}
+  , {chr}
+  , {opt}
+  , {plus}
+  , {star}
+  );
+import automata/seq(List, append, cons, one);
+import automata/symbol(epsilon);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// One transition. `sym` is a letter code, or `epsilon()`.
+pub labels Edge = { src: I32, sym: I32, dst: I32 };
+
+pub type Edges = List(Edge);
+
+fn edge(src: I32, sym: I32, dst: I32) -> Edge { {src, sym, dst} }
+
+pub fn edge_src(e: Edge) -> I32 { e.?{src} }
+
+pub fn edge_sym(e: Edge) -> I32 { e.?{sym} }
+
+pub fn edge_dst(e: Edge) -> I32 { e.?{dst} }
+
+pub labels Nfa = { nfa_count: I32, nfa_start: I32, nfa_accept: I32, nfa_edges: Edges };
+
+pub fn state_count(n: Nfa) -> I32 { n.?{nfa_count} }
+
+pub fn start_state(n: Nfa) -> I32 { n.?{nfa_start} }
+
+pub fn accept_state(n: Nfa) -> I32 { n.?{nfa_accept} }
+
+pub fn edges_of(n: Nfa) -> Edges { n.?{nfa_edges} }
+
+/// A fragment in progress: entry, exit, edges so far, and the lowest state
+/// number still unused.
+labels Frag = { f_start: I32, f_accept: I32, f_next: I32, f_edges: Edges };
+
+fn frag(f_start: I32, f_accept: I32, f_next: I32, f_edges: Edges) -> Frag {
+  {f_start, f_accept, f_next, f_edges}
+}
+
+fn eps(src: I32, dst: I32) -> Edge { edge(src, epsilon(), dst) }
+
+/// The shape `*`, `+`, and `?` share: a fresh entry `s` and exit `t` around
+/// `inner`, always with the two epsilons that enter and leave it. `skip`
+/// adds the bypass `s -> t`, so the body may be taken zero times; `again`
+/// adds the back edge, so it may be taken more than once.
+fn postfix(inner: Frag, skip: Bool, again: Bool) -> Frag {
+  let s = inner.?{f_next};
+  let t = add_i32(s, 1);
+  let body = cons(eps(s, inner.?{f_start}), one(eps(inner.?{f_accept}, t)));
+  let bypassed =
+    if! skip {
+      cons(eps(s, t), body)
+    } else {
+      body
+    };
+  let looped =
+    if! again {
+      cons(eps(inner.?{f_accept}, inner.?{f_start}), bypassed)
+    } else {
+      bypassed
+    };
+  frag(s, t, add_i32(s, 2), append(inner.?{f_edges}, looped))
+}
+
+/// In series: the left's exit epsilon-jumps to the right's entry, and no
+/// new state is minted.
+fn series(left: Frag, right: Frag) -> Frag {
+  frag(
+    , left.?{f_start}
+    , right.?{f_accept}
+    , right.?{f_next}
+    , append(
+        , append(left.?{f_edges}, right.?{f_edges})
+        , one(eps(left.?{f_accept}, right.?{f_start}))
+        )
+    )
+}
+
+/// In parallel: a fresh entry epsilon-forks into both, and both exits
+/// epsilon-join into a fresh exit.
+fn parallel(left: Frag, right: Frag) -> Frag {
+  let s = right.?{f_next};
+  let t = add_i32(s, 1);
+  let wiring =
+    cons(
+      , eps(s, left.?{f_start})
+      , cons(
+          , eps(s, right.?{f_start})
+          , cons(eps(left.?{f_accept}, t), one(eps(right.?{f_accept}, t)))
+          )
+      );
+  frag(s, t, add_i32(s, 2), append(append(left.?{f_edges}, right.?{f_edges}), wiring))
+}
+
+/// State numbers are handed out in source order: `next` is the first free
+/// number going in, and the fragment reports the first free number coming
+/// out.
+rec(loop) fn build(p: Pattern, next: I32) -> Frag {
+  match! p.>Pattern.unpack {
+    (
+      , .(x: Chr) {
+          let t = add_i32(next, 1);
+          frag(next, t, add_i32(next, 2), one(edge(next, x.?{chr}, t)))
+        }
+      , .(x: Cat) {
+          let .(left: Pattern, right: Pattern) = x.?{cat};
+          let built = rec(cont) build(left, next);
+          series(built, rec(cont) build(right, built.?{f_next}))
+        }
+      , .(x: Alt) {
+          let .(left: Pattern, right: Pattern) = x.?{alt};
+          let built = rec(cont) build(left, next);
+          parallel(built, rec(cont) build(right, built.?{f_next}))
+        }
+      , .(x: Star) { postfix(rec(cont) build(x.?{star}, next), .t, .t) }
+      , .(x: Plus) { postfix(rec(cont) build(x.?{plus}, next), .f, .t) }
+      , .(x: Opt) { postfix(rec(cont) build(x.?{opt}, next), .t, .f) }
+      )
+  }
+}
+
+pub fn compile(p: Pattern) -> Nfa {
+  let built = build(p, 0);
+  {
+    , nfa_count = built.?{f_next}
+    , nfa_start = built.?{f_start}
+    , nfa_accept = built.?{f_accept}
+    , nfa_edges = built.?{f_edges}
+    }
+}

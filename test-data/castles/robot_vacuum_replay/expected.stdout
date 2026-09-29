@@ -1,0 +1,14 @@
+robot_vacuum_replay
+#1 START mode=cleaning pos=(0,0) dir=N battery=9 dirt=0 faults=0
+#2 STEP mode=cleaning pos=(0,1) dir=N battery=8 dirt=1 faults=0
+#3 RIGHT mode=cleaning pos=(0,1) dir=E battery=7 dirt=1 faults=0
+#4 STEP mode=cleaning pos=(1,1) dir=E battery=6 dirt=2 faults=0
+#5 CLEAN mode=cleaning pos=(1,1) dir=E battery=4 dirt=1 faults=0
+#6 PAUSE mode=paused pos=(1,1) dir=E battery=4 dirt=1 faults=0
+#7 STEP mode=paused pos=(1,1) dir=E battery=4 dirt=1 faults=1
+#8 CHARGE(5) mode=paused pos=(1,1) dir=E battery=9 dirt=1 faults=1
+#9 LEFT mode=paused pos=(1,1) dir=N battery=8 dirt=1 faults=1
+#10 DOCK mode=docked pos=(0,0) dir=N battery=13 dirt=1 faults=1
+#11 UNKNOWN(SPOT) mode=docked pos=(0,0) dir=N battery=13 dirt=1 faults=2
+#12 CHARGE(-2) mode=docked pos=(0,0) dir=N battery=11 dirt=1 faults=2
+summary commands=12 mode=docked pos=(0,0) dir=N battery=11 dirt=1 faults=2

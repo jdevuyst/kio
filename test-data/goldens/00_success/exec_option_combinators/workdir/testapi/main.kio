@@ -1,0 +1,98 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(div_i32, leq_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `Option[A]` as `. | A`: the `()` branch is absence, the `A`
+// branch carries a present value. `some` / `none` are the
+// canonical constructors; `map` / `and_then` / `or_else` are the
+// textbook combinators for chained partial computation.
+newtype Option[A] : . | A { pub constructor mk_option; pub projector un_option }
+
+fn some[A](v: A) -> Option(A) { Option.mk_option(widen_sum!(v, . | A)) }
+
+fn none[A]() -> Option(A) { Option.mk_option(widen_sum!((), . | A)) }
+
+// `map` lifts a total `A -> B` over `Option`. Clause order matters:
+// the value arm `.(v: A)` is strictly more specific than the
+// empty arm `.(_: .)`; the dispatcher's per-clause coercion
+// admits drops, so a `.(_: .)` slot placed first would absorb
+// both arms.
+fn map[A][B](f: A -> B, o: Option(A)) -> Option(B) {
+  match! o.>Option.un_option {
+    (.(v: A) { some(f(v)) }, .(_empty: .) { none(B, ()) })
+  }
+}
+
+// `and_then` chains an `A -> Option(B)` over `Option(A)`. Same
+// clause-order rule as `map`.
+fn and_then[A][B](f: A -> Option(B), o: Option(A)) -> Option(B) {
+  match! o.>Option.un_option {
+    (.(v: A) { f(v) }, .(_empty: .) { none(B, ()) })
+  }
+}
+
+// `or_else` returns `o` when it is `some`, falls back to `default`
+// when it is `none`. The value arm ignores its payload and returns
+// the original `o` because that preserves the option's identity.
+fn or_else[A](default: Option(A), o: Option(A)) -> Option(A) {
+  match! o.>Option.un_option {
+    (.(_v: A) { o }, .(_empty: .) { default })
+  }
+}
+
+// Render an `Option(I32)` as `"some(v)"` or `"none"`. The
+// option-printer pattern: a thin wrapper around the projector +
+// `match!`. Reused by the BST case to render its `lookup` result.
+fn print_option(o: Option(I32)) -> String {
+  match! o.>Option.un_option {
+    (
+      , .(v: I32) { string_concat("some(", string_concat(int_to_string(v), ")")) }
+      , .(_empty: .) { "none" }
+      )
+  }
+}
+
+fn double(x: I32) -> I32 { mul_i32(x, 2) }
+
+// `x == 0` via the antisymmetric `<=` idiom; surfaces a `Bool`
+// the `if`/`else` condition needs.
+fn is_zero(x: I32) -> Bool {
+  if! leq_i32(x, 0) {
+    leq_i32(0, x)
+  } else {
+    .f
+  }
+}
+
+// Partial application: `safe_div_by(d)` is `I32 -> Option(I32)`.
+// `safe_div_by(0)` returns `none` for every input; non-zero `d`
+// returns `some(v / d)`. Used as the `and_then` argument to
+// surface the chaining behavior.
+fn safe_div_by(d: I32) -> I32 -> Option(I32) {
+  .(v: I32) -> Option(I32) {
+    if! is_zero(d) {
+      none(I32, ())
+    } else {
+      some(div_i32(v, d))
+    }
+  }
+}
+
+fn show_eq(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" == ", string_concat(value, "\n"))))
+}
+
+pub fn main() -> . {
+  show_eq("some(2) |> map(double)", print_option(map(double, some(2))));
+  show_eq("none |> map(double)", print_option(map(double, none(I32, ()))));
+  show_eq("some(2) |> and_then(safe_div_by(2))", print_option(and_then(safe_div_by(2), some(2))));
+  show_eq("some(2) |> and_then(safe_div_by(0))", print_option(and_then(safe_div_by(0), some(2))));
+  show_eq("none |> or_else(some(7))", print_option(or_else(some(7), none(I32, ()))))
+}

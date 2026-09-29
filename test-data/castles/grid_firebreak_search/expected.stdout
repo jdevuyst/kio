@@ -1,0 +1,9 @@
+grid_firebreak_search
+grid: 6x5 cells=30
+frontier sources: 5
+candidate cells: 11
+chosen firebreak cells: 7,8,13,15
+budget spent: 12
+risk blocked: 57
+plan score: 177
+budget ok: true

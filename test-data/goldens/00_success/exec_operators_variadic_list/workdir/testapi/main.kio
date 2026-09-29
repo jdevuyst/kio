@@ -1,0 +1,24 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Cons-list scaffolding. `cat` and `nil` are no-ops over String
+// payloads — the test exercises the variadic desugaring shape,
+// not what the cons-list ultimately computes. `cat` returns its
+// first arg so the result of the fold is the leftmost element.
+fn nil() -> String { "[]" }
+
+fn cat(head: String, tail: String) -> String { head }
+
+// The right-fold `[* a, b, c *]` desugars to
+// `cat(a, cat(b, cat(c, nil())))`.
+varop [* *] { foldr cat nil }
+
+pub fn main() -> . {
+  print([* "a", "b", "c" *]);
+  print("\n");
+  print([* "solo" *]);
+  print("\n");
+  print([* *])
+}

@@ -1,0 +1,7 @@
+module main;
+
+host type N;
+
+host fn nil[A]() -> A;
+
+fn type_only_is_not_unit() -> N { nil(N) }

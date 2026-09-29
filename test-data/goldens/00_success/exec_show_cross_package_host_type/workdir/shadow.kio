@@ -1,0 +1,3 @@
+module shadow;
+
+host type String role(str);

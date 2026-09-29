@@ -1,0 +1,20 @@
+module testapi/main;
+
+import geomlib/geom(first_after_swap);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through `geomlib/geom`, whose body reaches
+// two sibling dependency modules: `vec` (via a `use vec as v;`
+// qualified-alias import) and `ops` (via `use swap from ops;`), and
+// `ops` in turn imports from `vec`. The dependency is pulled in by the
+// local `path` dependency in `geomlib.dep.kio` and re-rooted under the
+// `geomlib/` prefix; this whole chain only typechecks if those
+// intra-dependency `use` paths were re-rooted along with each module's
+// declaration. `first_after_swap(a, b)` swaps `(a, b)` and projects
+// the first component, so it returns `b`.
+pub fn greeting() -> String {
+  first_after_swap("discarded\n"(String), "dependency works\n"(String))
+}
+
+pub fn main() -> . { print(greeting()) }

@@ -1,0 +1,102 @@
+module interpreter/parser;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import interpreter/syntax as ast;
+import list/core as lists;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+labels { parsed: ast.Expr & lists.List(String) };
+
+type Result = Parsed | String;
+
+fn success(expr: ast.Expr, rest: lists.List(String)) -> Result {
+  {parsed = (expr, rest)}.>widen_sum!(Result)
+}
+
+fn failure(message: String) -> Result { message.>widen_sum!(Result) }
+
+rec(loop) {
+  fn expression(tokens: lists.List(String)) -> Result {
+    match! lists.uncons(tokens) {
+      .(token: String, rest: lists.List(String)) {
+        if! text.string_eq(token, "add") {
+          rec binary(rest, ast.add)
+        } else if! text.string_eq(token, "app") {
+          rec binary(rest, ast.apply)
+        } else if! text.string_eq(token, "fn") {
+          match! lists.uncons(rest) {
+            .(name: String, body_tokens: lists.List(String)) {
+              let body = rec(cont) expression(body_tokens);
+              match! body {
+                .(parsed_body: Parsed) {
+                  let .(expr, remaining) = parsed_body.?{parsed};
+                  success(ast.function(name, expr), remaining)
+                };
+                .(error: String) { failure(error) }
+              }
+            };
+            .() { failure("expected function parameter") }
+          }
+        } else if! text.string_eq(token, "let") {
+          match! lists.uncons(rest) {
+            .(name: String, body_tokens: lists.List(String)) {
+              rec binary(
+                , body_tokens
+                , .(value: ast.Expr, body: ast.Expr) { ast.bind(name, value, body) }
+                )
+            };
+            .() { failure("expected binding name") }
+          }
+        } else if! text.string_eq(token, "var") {
+          match! lists.uncons(rest) {
+            .(name: String, remaining: lists.List(String)) {
+              success(ast.reference(name), remaining)
+            };
+            .() { failure("expected variable name") }
+          }
+        } else match! fmt.string_to_int(token) {
+          .(n: I32) { success(ast.number(n), rest) };
+          .() { failure(text.string_concat("unknown token: ", token)) }
+        }
+      };
+      .() { failure("expected expression") }
+    }
+  };
+  fn binary(tokens: lists.List(String), construct: (ast.Expr & ast.Expr) -> ast.Expr) -> Result {
+    let first = rec(cont) expression(tokens);
+    match! first {
+      .(left: Parsed) {
+        let .(left_expr, rest) = left.?{parsed};
+        let second = rec(cont) expression(rest);
+        match! second {
+          .(right: Parsed) {
+            let .(right_expr, remaining) = right.?{parsed};
+            success(construct(left_expr, right_expr), remaining)
+          };
+          .(error: String) { failure(error) }
+        }
+      };
+      .(error: String) { failure(error) }
+    }
+  }
+}
+
+pub fn parse(tokens: lists.List(String)) -> String | ast.Expr {
+  match! expression(tokens) {
+    .(result: Parsed) {
+      let .(expr, rest) = result.?{parsed};
+      match! lists.uncons(rest) {
+        .(extra: String, _tail: lists.List(String)) {
+          text.string_concat("trailing token: ", extra).>widen_sum!(String | ast.Expr)
+        };
+        .() { expr.>widen_sum!(String | ast.Expr) }
+      }
+    };
+    .(error: String) { error.>widen_sum!(String | ast.Expr) }
+  }
+}

@@ -1,0 +1,3 @@
+module eus;
+
+host type String role(str);

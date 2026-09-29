@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/sequence(Bind, do);
+import testapi(String);
+import testapi/io as io;
+
+newtype Box[A] : A { constructor box; projector un_box }
+
+fn pure[A](value: A) -> Box(A) { Box.box(value) }
+
+fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(value)) }
+
+fn receiver() -> Bind(Box) { io.print("receiver\n"); bind }
+
+pub fn main() -> . {
+  let result =
+    do! receiver() {
+      let value <- pure("retained\n");
+      pure(value)
+    };
+  io.print(Box.un_box(result))
+}

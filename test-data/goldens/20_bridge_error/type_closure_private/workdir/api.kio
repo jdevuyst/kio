@@ -1,0 +1,5 @@
+module api;
+
+type Hidden = .;
+
+pub fn expose(value: Hidden) -> Hidden { value }

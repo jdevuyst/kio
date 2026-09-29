@@ -1,0 +1,17 @@
+package fn_value_return_type_mismatch;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main
+}

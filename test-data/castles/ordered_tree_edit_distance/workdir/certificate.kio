@@ -1,0 +1,133 @@
+module certificate;
+
+import elab/control(if);
+import forest as forest;
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+pub labels Counts = { deleted: I32, inserted: I32, renamed: I32, kept: I32 };
+
+// A mapped pair must preserve ancestry in both directions. For unrelated
+// nodes, the strictly increasing target positions preserve sibling order.
+rec(loop) fn ancestry(
+  , source: forest.Tree
+  , target: forest.Tree
+  , mapping: Array(I32)
+  , first: I32
+  , second: I32
+  ) -> Bool {
+  if! forest.less(second, forest.size(source)) {
+    let target_second = array.array_get(mapping, second);
+    if! forest.less(target_second, 0) {
+      rec ancestry(source, target, mapping, first, arith.add_i32(second, 1))
+    } else {
+      let source_ancestor = forest.less(second, forest.after(source, first));
+      let target_ancestor = forest.less(
+        , target_second
+        , forest.after(target, array.array_get(mapping, first))
+        );
+      let agrees = if! source_ancestor {
+        target_ancestor
+      } else if! target_ancestor {
+        .f
+      } else {
+        .t
+      };
+      if! agrees {
+        rec ancestry(source, target, mapping, first, arith.add_i32(second, 1))
+      } else {
+        .f
+      }
+    }
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn check_nodes(
+  , source: forest.Tree
+  , target: forest.Tree
+  , mapping: Array(I32)
+  , position: I32
+  , previous: I32
+  ) -> Bool {
+  if! forest.less(position, forest.size(source)) {
+    let destination = array.array_get(mapping, position);
+    if! forest.equal(destination, -1) {
+      rec check_nodes(source, target, mapping, arith.add_i32(position, 1), previous)
+    } else if! forest.less(previous, destination) {
+      if! forest.less(destination, forest.size(target)) {
+        if! ancestry(source, target, mapping, position, arith.add_i32(position, 1)) {
+          rec check_nodes(source, target, mapping, arith.add_i32(position, 1), destination)
+        } else {
+          .f
+        }
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+pub fn valid(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> Bool {
+  if! forest.equal(array.array_len(mapping), forest.size(source)) {
+    check_nodes(source, target, mapping, 0, -1)
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn tally(
+  , source: forest.Tree
+  , target: forest.Tree
+  , mapping: Array(I32)
+  , position: I32
+  , matched: I32
+  , renamed: I32
+  ) -> I32 & I32 {
+  if! forest.less(position, forest.size(source)) {
+    let destination = array.array_get(mapping, position);
+    if! forest.less(destination, 0) {
+      rec tally(source, target, mapping, arith.add_i32(position, 1), matched, renamed)
+    } else {
+      let renamed = if! forest.equal(
+        , forest.symbol(source, position)
+        , forest.symbol(target, destination)
+        ) {
+        renamed
+      } else {
+        arith.add_i32(renamed, 1)
+      };
+      rec tally(
+        , source
+        , target
+        , mapping
+        , arith.add_i32(position, 1)
+        , arith.add_i32(matched, 1)
+        , renamed
+        )
+    }
+  } else {
+    (matched, renamed)
+  }
+}
+
+pub fn counts(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> Counts {
+  let .(matched, renamed) = tally(source, target, mapping, 0, 0, 0);
+  {
+    , deleted = arith.sub_i32(forest.size(source), matched)
+    , inserted = arith.sub_i32(forest.size(target), matched)
+    , renamed
+    , kept = arith.sub_i32(matched, renamed)
+    }
+}
+
+pub fn cost(counts: Counts) -> I32 {
+  arith.add_i32(arith.add_i32(counts.?{deleted}, counts.?{inserted}), counts.?{renamed})
+}

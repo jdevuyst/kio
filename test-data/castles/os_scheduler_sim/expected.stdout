@@ -1,0 +1,63 @@
+os_scheduler_sim v1
+config: procs=4 frames=4 pages/proc=4 quantum=3 fault_latency=3
+
+-- process fixture --
+pid  arrive  program
+p0        0  read1 cpu2 read0 cpu1 read1 read2 cpu2
+p1        1  read1 cpu3 read2 read1 cpu1
+p2        2  cpu2 read0 read3 cpu1 read0 cpu2 read3
+p3        6  read2 cpu4 read2 read0
+
+-- trace (first 26 ticks) --
+tick  cpu  state   event
+   0  p0   blocked read vp1 -> FAULT, loaded into frame 0 (was free); blocked until t=4
+   1  p1   blocked read vp1 -> FAULT, loaded into frame 1 (was free); blocked until t=5
+   2  p2   running compute, 1 tick(s) left in phase
+   3  p2   running compute, 0 tick(s) left in phase
+   4  p2   blocked read vp0 -> FAULT, loaded into frame 2 (was free); blocked until t=8
+   5  p0   running read vp1 -> hit in frame 0
+   6  p0   running compute, 1 tick(s) left in phase
+   7  p0   preempt compute, 0 tick(s) left in phase; quantum spent, requeued
+   8  p1   running read vp1 -> hit in frame 1
+   9  p1   running compute, 2 tick(s) left in phase
+  10  p1   preempt compute, 1 tick(s) left in phase; quantum spent, requeued
+  11  p3   blocked read vp2 -> FAULT, loaded into frame 3 (was free); blocked until t=15
+  12  p0   blocked read vp0 -> FAULT, loaded into frame 0 (evicted p0 vp1); blocked until t=16
+  13  p2   running read vp0 -> hit in frame 2
+  14  p2   blocked read vp3 -> FAULT, loaded into frame 1 (evicted p1 vp1); blocked until t=18
+  15  p1   running compute, 0 tick(s) left in phase
+  16  p1   blocked read vp2 -> FAULT, loaded into frame 3 (evicted p3 vp2); blocked until t=20
+  17  p3   blocked read vp2 -> FAULT, loaded into frame 2 (evicted p2 vp0); blocked until t=21
+  18  p0   running read vp0 -> hit in frame 0
+  19  p0   running compute, 0 tick(s) left in phase
+  20  p0   blocked read vp1 -> FAULT, loaded into frame 1 (evicted p2 vp3); blocked until t=24
+  21  p2   blocked read vp3 -> FAULT, loaded into frame 3 (evicted p1 vp2); blocked until t=25
+  22  p1   blocked read vp2 -> FAULT, loaded into frame 0 (evicted p0 vp0); blocked until t=26
+  23  p3   running read vp2 -> hit in frame 2
+  24  p3   running compute, 3 tick(s) left in phase
+  25  p3   preempt compute, 2 tick(s) left in phase; quantum spent, requeued
+
+-- processes --
+pid  arrive  finish  turn  wait  cpu  block  switch  fault  hit
+p0        0      37    38    13    9     12       6      4    4
+p1        1      49    49    22    7     15       7      5    3
+p2        2      50    49    20    9     15       7      5    4
+p3        6      46    41    18    7     12       6      4    3
+
+-- totals --
+ticks               51
+idle ticks           1
+context switches    26
+page references     32
+page hits           14
+page faults         18
+hit ratio          437 permille
+completion order  p0 p3 p1 p2
+accounting        ok
+
+-- frame table (final) --
+frame  owner  vpage  ref
+    0     p3      0  true
+    1     p1      1  true
+    2     p2      3  true
+    3     p1      2  true

@@ -1,0 +1,10 @@
+module cmqsa/consumer;
+
+import cmqsa as m;
+import cmqsa/n(A);
+
+// `x` has the imported alias `A`, which is transparently the root's `A`,
+// so passing it to `m.shout` (expecting the root's `A`) typechecks. This
+// only terminates because alias unfolding stops re-expanding `A` instead
+// of looping on its bare leaf name.
+pub fn echo(x: A) -> A { m.shout(x) }

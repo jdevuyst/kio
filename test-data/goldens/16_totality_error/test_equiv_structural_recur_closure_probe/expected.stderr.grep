@@ -1,0 +1,2 @@
+`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure
+root=1, current=1, next=1

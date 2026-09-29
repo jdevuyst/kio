@@ -1,0 +1,54 @@
+Ordered tree edits: unit insert, delete, rename
+Node numbers in mappings are zero-based preorder positions.
+case: internal deletion promotes children
+source: 1(2(3,4),5)
+target: 1(3,4,5)
+distance: 1
+mapping: 0->0 2->1 3->2 4->3
+edits: delete=1 insert=0 rename=0 keep=4
+certificate: valid; cost agrees
+case: internal insertion adopts children
+source: 1(3,4,5)
+target: 1(2(3,4),5)
+distance: 1
+mapping: 0->0 1->2 2->3 3->4
+edits: delete=0 insert=1 rename=0 keep=4
+certificate: valid; cost agrees
+case: sibling order
+source: 1(2,3)
+target: 1(3,2)
+distance: 2
+mapping: 0->0 1->1 2->2
+edits: delete=0 insert=0 rename=2 keep=1
+certificate: valid; cost agrees
+case: same preorder; different ancestry
+source: 1(2(3))
+target: 1(2,3)
+distance: 2
+mapping: 0->0 1->1
+edits: delete=1 insert=1 rename=0 keep=2
+certificate: valid; cost agrees
+case: root rename
+source: 1(2(3,4),5)
+target: 6(2(3,4),5)
+distance: 1
+mapping: 0->0 1->1 2->2 3->3 4->4
+edits: delete=0 insert=0 rename=1 keep=4
+certificate: valid; cost agrees
+case: internal rename
+source: 1(2(3,4),5)
+target: 1(6(3,4),5)
+distance: 1
+mapping: 0->0 1->1 2->2 3->3 4->4
+edits: delete=0 insert=0 rename=1 keep=4
+certificate: valid; cost agrees
+case: identical tree
+source: 1(2(3,4),5)
+target: 1(2(3,4),5)
+distance: 0
+mapping: 0->0 1->1 2->2 3->3 4->4
+edits: delete=0 insert=0 rename=0 keep=5
+certificate: valid; cost agrees
+control: flattening ancestry -> rejected
+control: introducing ancestry -> rejected
+control: reversing siblings -> rejected

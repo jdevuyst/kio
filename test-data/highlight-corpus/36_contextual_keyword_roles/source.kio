@@ -1,0 +1,19 @@
+module contextual/keywords;
+
+import app/as as // separator
+  as;
+
+fn identity(as: .) -> . {
+  as
+}
+
+fn row(row: .) -> . {
+  let .({
+    ,, as // label
+       as // separator
+       as ,,, owner. // path
+                 as // label leaf
+                 as local ,,
+  }) = row;
+  local
+}

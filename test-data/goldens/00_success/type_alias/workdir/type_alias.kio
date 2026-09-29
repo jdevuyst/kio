@@ -1,0 +1,3 @@
+module type_alias;
+
+host type I32 role(i32);

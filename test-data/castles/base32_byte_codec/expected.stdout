@@ -1,0 +1,37 @@
+base32 byte codec
+alphabet: A-Z 2-7, pad =, quantum 8 glyphs
+
+packet 1: payload, 5 bytes
+  bytes: 75 105 111 33 10
+  encoded: JNUW6IIK
+  verdict: OK, round trip verified, 5 bytes recovered
+
+packet 2: payload, 7 bytes
+  bytes: 0 255 128 1 64 32 16
+  encoded: AD7YAAKAEAIA====
+  verdict: OK, round trip verified, 7 bytes recovered
+
+packet 3: payload, 11 bytes
+  bytes: 104 101 108 108 111 32 119 111 114 108 100
+  encoded: NBSWY3DPEB3W64TMMQ======
+  verdict: OK, round trip verified, 11 bytes recovered
+
+packet 4: payload, 3 bytes
+  bytes: 102 111 111
+  encoded: MZXW6===
+  verdict: OK, round trip verified, 3 bytes recovered
+
+packet 5: payload, 4 bytes
+  bytes: 102 111 111 98
+  encoded: MZXW6YQ=
+  verdict: OK, round trip verified, 4 bytes recovered
+
+packet 6: received transmission, 8 glyphs
+  received: MZXW6===
+  verdict: OK, received transmission decoded, 3 bytes recovered
+
+packet 7: received transmission, 8 glyphs
+  received: JNUW61IK
+  verdict: REJECT, glyph 6 is outside the alphabet
+
+summary: packets ok 6, packets rejected 1, bytes recovered 33

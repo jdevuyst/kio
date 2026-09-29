@@ -1,0 +1,2 @@
+Leading and repeated recursion-annotation commas are deliberate parser-acceptance
+input; the runtime runner executes these original bytes without canonicalizing them.

@@ -1,0 +1,7 @@
+dependency w1;
+
+source {
+  path "../library/w1/w1.pkg.kio"
+}
+
+retype w1/store to w2/store;

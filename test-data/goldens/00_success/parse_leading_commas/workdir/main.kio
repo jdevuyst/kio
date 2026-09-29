@@ -1,0 +1,19 @@
+module main;
+
+// Comma-separated lists accept any number of commas in any
+// position — leading runs (before the first item), interior runs
+// (between items, beyond the single separator), and trailing runs
+// (after the last item) all collapse to the same AST as the
+// canonical one-comma-per-separator layout. The formatter relies
+// on this for the leading-comma multi-line layout.
+
+// Leading commas, plus mixed type and value params.
+fn three[A](x: A, y: A, z: A) -> A { x }
+
+// Repeated commas in any position.
+fn ugly[A](x: A) -> A { x }
+
+type Three3[A][B][C] = (A & B) & C;
+
+// Type-application argument list with leading commas.
+type Triple[A] = Three3(A, A, A);

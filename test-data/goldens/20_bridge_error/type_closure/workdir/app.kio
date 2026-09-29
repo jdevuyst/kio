@@ -1,0 +1,5 @@
+module app;
+
+import lib(Widget);
+
+pub fn wrap(w: Widget) -> Widget { w }

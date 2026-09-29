@@ -1,0 +1,37 @@
+module main;
+
+host type I32 role(i32);
+
+pub newtype Identity[A] : A { pub constructor make_identity; pub projector read_identity }
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor make_list; pub projector read_list }
+
+pub newtype Packed_triple : (I32 & I32 & I32) -> I32 {
+  pub constructor make_packed_triple;
+  pub projector read_packed_triple
+  }
+
+pub newtype Higher_order_parameter : (I32 -> I32) -> I32 {
+  pub constructor make_higher_order_parameter;
+  pub projector read_higher_order_parameter
+  }
+
+pub newtype Higher_order_return : I32 -> I32 -> I32 {
+  pub constructor make_higher_order_return;
+  pub projector read_higher_order_return
+  }
+
+pub newtype Polymorphic[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor make_polymorphic;
+  pub projector read_polymorphic
+  }
+
+pub rec newtype Recursive_poly : [A] A -> Recursive_poly {
+  pub constructor make_recursive_poly;
+  pub projector read_recursive_poly
+  }
+
+pub rec newtype Recursive_existential_function <U> : U -> Recursive_existential_function {
+  pub constructor make_recursive_existential_function;
+  pub projector read_recursive_existential_function
+  }

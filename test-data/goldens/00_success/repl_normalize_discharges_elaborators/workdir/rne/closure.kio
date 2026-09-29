@@ -1,0 +1,7 @@
+module rne/closure;
+
+pub newtype Marker : . { pub constructor mark; pub projector unmark }
+
+pub pure fn make_marker(value: .) -> Marker { Marker.mark() }
+
+pub pure fn marker_fn() -> . -> Marker { make_marker }

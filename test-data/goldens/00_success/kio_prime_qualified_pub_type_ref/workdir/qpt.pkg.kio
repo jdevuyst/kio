@@ -1,0 +1,20 @@
+package qpt;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target kio-prime {
+    out "out/kio-prime/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**;
+  scale;
+  report
+}

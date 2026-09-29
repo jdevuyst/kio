@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+newtype Foo : I32 { pub constructor mk_foo; pub projector foo }
+
+// Overlapping clauses with ordering: clause 1 fits the Foo branch
+// only; clause 2 is polymorphic and would fit either branch. Both
+// fit Foo; first-match dispatch picks clause 1 there. Clause 2 is
+// reachable on the I32 branch (where clause 1 doesn't fit), so the
+// reachability check accepts it. This asserts that clause-selection
+// honors first-match without flagging the polymorphic catch-all
+// clause as unreachable.
+fn handle(p: Foo | I32) -> String {
+  match! p {
+    (.(v: Foo) { "foo-specific\n" }, .[A](v: A) { "polymorphic-fallback\n" })
+  }
+}
+
+pub fn main() -> . {
+  // Foo branch: should hit the first clause.
+  print(handle(widen_sum!(Foo.mk_foo(42))));
+  // I32 branch: first clause doesn't fit, so the polymorphic clause
+  // wins. Confirms the second clause is reachable.
+  print(handle(widen_sum!(7)))
+}

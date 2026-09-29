@@ -1,0 +1,8 @@
+module main;
+
+// language.md § Function definitions: the `-> .` return-type
+// annotation may be elided. The two declarations below produce the
+// same fn type and both typecheck.
+fn elided() { () }
+
+fn explicit() -> . { () }

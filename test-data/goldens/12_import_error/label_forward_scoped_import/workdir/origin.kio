@@ -1,0 +1,3 @@
+module origin;
+
+pub labels { visible: . };

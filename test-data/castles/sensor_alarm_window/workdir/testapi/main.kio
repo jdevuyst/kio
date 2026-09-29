@@ -1,0 +1,92 @@
+module testapi/main;
+
+import elab/control(if);
+import sensor_alarm_window/fixtures as fixtures;
+import sensor_alarm_window/scanner as scanner;
+import sensor_alarm_window/window as window;
+import testapi(Bool, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+fn both(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+fn all_layouts_ok() -> Bool {
+  both(
+    , scanner.has_expected_layout(fixtures.line0800())
+    , both(
+        , scanner.has_expected_layout(fixtures.line0805())
+        , both(
+            , scanner.has_expected_layout(fixtures.line0810())
+            , both(
+                , scanner.has_expected_layout(fixtures.line0815())
+                , both(
+                    , scanner.has_expected_layout(fixtures.line0820())
+                    , scanner.has_expected_layout(fixtures.line0825())
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn print_north_window(north_first: scanner.Reading, north_second: scanner.Reading) -> . {
+  io.print("N1 window=");
+  io.print(window.interval(scanner.time(north_first), scanner.time(north_second)));
+  io.print(" state=");
+  if! window.sustained_window(north_first, north_second) {
+    io.print("sustained")
+  } else {
+    io.print("unstable")
+  };
+  io.print(" samples=2 temp=");
+  io.print(scanner.temp(north_first));
+  io.print("..");
+  io.print(scanner.temp(north_second));
+  io.print(" co=");
+  io.print(scanner.co(north_first));
+  io.print("..");
+  io.print(scanner.co(north_second));
+  io.print("\n")
+}
+
+fn print_south_window(south_first: scanner.Reading, south_next: scanner.Reading) -> . {
+  io.print("S2 window=");
+  io.print(window.interval(scanner.time(south_first), scanner.time(south_first)));
+  io.print(" state=");
+  if! window.single_sample_window(south_first, south_next) {
+    io.print("single-sample")
+  } else {
+    io.print("open")
+  };
+  io.print(" samples=1 temp=");
+  io.print(scanner.temp(south_first));
+  io.print(" co=");
+  io.print(scanner.co(south_first));
+  io.print("\n")
+}
+
+pub fn main() -> . {
+  let base = scanner.scan(fixtures.line0800());
+  let north_first = scanner.scan(fixtures.line0805());
+  let north_second = scanner.scan(fixtures.line0810());
+  let south_first = scanner.scan(fixtures.line0820());
+  let south_next = scanner.scan(fixtures.line0825());
+  io.print("sensor alarm window summary\n");
+  io.print("records=6 line_len=");
+  io.print(fmt.int_to_string(scanner.line_len(base)));
+  io.print("\n");
+  print_north_window(north_first, north_second);
+  print_south_window(south_first, south_next);
+  io.print("alerts=");
+  fmt.print_i32(window.alert_sample_count(north_first, north_second, south_first));
+  io.print(" all_fixed_width=");
+  io.print(fmt.bool_to_string(all_layouts_ok()));
+  io.print("\n")
+}

@@ -1,0 +1,7 @@
+module main;
+
+import elab/algebraic_elaborators(align);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn duplicate(a: A) -> A & A { align!(a) }

@@ -1,0 +1,12 @@
+module main;
+
+import elab/algebraic_elaborators(onto);
+
+// Identity-`onto!` on `A | A` (two identical DNF branches). The
+// source's two arms are routed to distinct target arms by the
+// source-order rule lifted to sums: the kth source DNF branch
+// of type `T` lands on the kth target slot of type `T`. With a
+// greedy first-fit alone, both source arms would collapse onto
+// target branch 0 and the unreached target branch 1 would
+// trigger a spurious widening rejection.
+fn identity[A](v: A | A) -> A | A { onto!(v) }

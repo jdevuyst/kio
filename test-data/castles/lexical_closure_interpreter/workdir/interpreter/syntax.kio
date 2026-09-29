@@ -1,0 +1,28 @@
+module interpreter/syntax;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+
+pub rec labels Expr =
+  { integer: I32 }
+  | { variable: String }
+  | { lambda: String & Expr }
+  | { application: Expr & Expr }
+  | { addition: Expr & Expr }
+  | { binding: String & Expr & Expr };
+
+pub fn number(n: I32) -> Expr { {integer = n}.>widen_sum!(Expr) }
+
+pub fn reference(name: String) -> Expr { {variable = name}.>widen_sum!(Expr) }
+
+pub fn function(name: String, body: Expr) -> Expr { {lambda = (name, body)}.>widen_sum!(Expr) }
+
+pub fn apply(callee: Expr, argument: Expr) -> Expr {
+  {application = (callee, argument)}.>widen_sum!(Expr)
+}
+
+pub fn add(left: Expr, right: Expr) -> Expr { {addition = (left, right)}.>widen_sum!(Expr) }
+
+pub fn bind(name: String, value: Expr, body: Expr) -> Expr {
+  {binding = (name, value, body)}.>widen_sum!(Expr)
+}

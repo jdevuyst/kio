@@ -1,0 +1,21 @@
+module main;
+
+import __intrinsics__;
+
+// Top-level fn registry entry: `helper`'s scheme is
+// `[A] A -> A`. `via_top_level` invokes it; the typer reads
+// the scheme from the registry via E-Named, then runs E-App.
+fn helper[A](x: A) -> A { x }
+
+fn via_top_level(x: .) -> . { helper(., x) }
+
+// Intrinsic registry entry: `__fst__`'s scheme
+// `[A][B](p: A & B) -> A` lives in the registry only —
+// no fn declaration introduces it. E-Named is the rule that
+// makes the lookup admissible.
+fn via_intrinsic(p: . & .) -> . { __fst__(., ., p) }
+
+// Composing two E-Named lookups in one body: the inner call
+// reads `__pair__`'s scheme, the outer reads `__fst__`'s.
+// Both lookups go through the same registry rule.
+fn via_two_intrinsics(x: .) -> . { __fst__(., ., __pair__(., ., x, x)) }

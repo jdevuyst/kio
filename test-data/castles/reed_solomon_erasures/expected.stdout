@@ -1,0 +1,74 @@
+Reed-Solomon erasures over F17
+frame nonconsecutive-survivors
+  F17 code: k=3 n=6
+  message coefficients = [3, 5, 2]
+  evaluation coordinates = [0, 1, 3, 5, 7, 9]
+  received = [9:6, 3:2, 7:0]
+  encoded = [0:3, 1:10, 3:2, 5:10, 7:0, 9:6]
+  recovered coefficients = [3, 5, 2]
+  erased symbols recovered = [0:3, 1:10, 5:10]
+  repaired = [0:3, 1:10, 3:2, 5:10, 7:0, 9:6]
+  surviving evaluations checked = 3
+  surplus evaluations checked = 0
+  message restored = yes
+  codeword restored = yes
+  erased evaluations verified = yes
+  altered erased symbol rejected = yes
+  status = recovered
+frame surplus-and-wraparound
+  F17 code: k=4 n=7
+  message coefficients = [16, 0, 7, 3]
+  evaluation coordinates = [16, 0, 2, 4, 6, 8, 10]
+  received = [8:11, 16:3, 4:14, 0:16, 10:10]
+  encoded = [16:3, 0:16, 2:0, 4:14, 6:15, 8:11, 10:10]
+  recovered coefficients = [16, 0, 7, 3]
+  erased symbols recovered = [2:0, 6:15]
+  repaired = [16:3, 0:16, 2:0, 4:14, 6:15, 8:11, 10:10]
+  surviving evaluations checked = 5
+  surplus evaluations checked = 1
+  message restored = yes
+  codeword restored = yes
+  erased evaluations verified = yes
+  altered erased symbol rejected = yes
+  status = recovered
+frame constant-message
+  F17 code: k=1 n=3
+  message coefficients = [5]
+  evaluation coordinates = [0, 8, 16]
+  received = [8:5]
+  encoded = [0:5, 8:5, 16:5]
+  recovered coefficients = [5]
+  erased symbols recovered = [0:5, 16:5]
+  repaired = [0:5, 8:5, 16:5]
+  surviving evaluations checked = 1
+  surplus evaluations checked = 0
+  message restored = yes
+  codeword restored = yes
+  erased evaluations verified = yes
+  altered erased symbol rejected = yes
+  status = recovered
+frame insufficient-survivors
+  F17 code: k=3 n=4
+  message coefficients = [3, 5, 2]
+  evaluation coordinates = [0, 1, 3, 5]
+  received = [1:10, 5:10]
+  rejected: insufficient surviving symbols
+frame duplicate-survivor
+  F17 code: k=2 n=3
+  message coefficients = [4, 2]
+  evaluation coordinates = [0, 1, 2]
+  received = [1:6, 1:6]
+  rejected: repeated surviving coordinate
+frame coordinate-outside-field
+  F17 code: k=2 n=3
+  message coefficients = [4, 2]
+  evaluation coordinates = [0, 1, 17]
+  received = [0:4, 1:6]
+  rejected: codeword coordinate outside F17
+frame contradictory-surplus
+  F17 code: k=2 n=4
+  message coefficients = [4, 2]
+  evaluation coordinates = [0, 1, 2, 3]
+  received = [0:4, 2:8, 3:11]
+  rejected: surviving samples contradict degree bound
+complete: recovered=3 rejected=4

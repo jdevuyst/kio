@@ -1,0 +1,11 @@
+module testapi/main;
+
+import elaborators as e;
+import elaborators(fill);
+import testapi/io(print);
+
+fn empty() -> . { let .(result: .) = fill!(e.boxed()); result }
+
+fn explicit() -> . { let .(result: .) = fill!(e.boxed(())); result }
+
+pub fn main() -> . { empty(); print("empty\n"); explicit(); print("explicit\n") }

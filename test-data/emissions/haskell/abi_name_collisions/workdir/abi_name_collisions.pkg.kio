@@ -1,0 +1,21 @@
+package abi_name_collisions;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "BuildHaskellAbiNameCollisions"
+  }
+}
+
+bridge {
+  a;
+  a/_b;
+  a/b;
+  a_/b;
+  api;
+  main;
+  shape;
+  slot0
+}

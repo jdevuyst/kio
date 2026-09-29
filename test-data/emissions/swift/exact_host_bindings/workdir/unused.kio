@@ -1,0 +1,3 @@
+module unused;
+
+host type Unused role(bool);

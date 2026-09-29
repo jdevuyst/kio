@@ -1,0 +1,176 @@
+module captured;
+
+import __intrinsics__;
+
+import __comptime__;
+import other as types;
+import reflect_helper(reflected_actual);
+import types as real;
+import types(Actual);
+
+pub type Keeper = real.Actual -> real.Actual;
+
+pub type Keepers = Keeper & Keeper;
+
+type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+pure fn type_name_required(ct: __Comptime__, source: __Type__) -> __Checked_term__ {
+  __elab_error__(ct, __type_display__(ct, source))
+}
+
+pure fn keep_type_name(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __either__(
+    , .
+    , Type_view_tail1
+    , __Checked_term__
+    , __type_view__(ct, source)
+    , .(_unit: .) -> __Checked_term__ { type_name_required(ct, source) }
+    , .(tail1: Type_view_tail1) -> __Checked_term__ {
+        __either__(
+          , .
+          , Type_view_tail2
+          , __Checked_term__
+          , tail1
+          , .(_bottom: .) -> __Checked_term__ { type_name_required(ct, source) }
+          , .(tail2: Type_view_tail2) -> __Checked_term__ {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , __Checked_term__
+                , tail2
+                , .(_product: Type_pair) -> __Checked_term__ { type_name_required(ct, source) }
+                , .(tail3: Type_view_tail3) -> __Checked_term__ {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , __Checked_term__
+                      , tail3
+                      , .(_sum: Type_pair) -> __Checked_term__ { type_name_required(ct, source) }
+                      , .(tail4: Type_view_tail4) -> __Checked_term__ {
+                          __either__(
+                            , Function_view
+                            , Type_view_tail5
+                            , __Checked_term__
+                            , tail4
+                            , .(_function: Function_view) -> __Checked_term__ {
+                                type_name_required(ct, source)
+                              }
+                            , .(tail5: Type_view_tail5) -> __Checked_term__ {
+                                __either__(
+                                  , Forall_view
+                                  , Type_view_tail6
+                                  , __Checked_term__
+                                  , tail5
+                                  , .(_forall: Forall_view) -> __Checked_term__ {
+                                      type_name_required(ct, source)
+                                    }
+                                  , .(tail6: Type_view_tail6) -> __Checked_term__ {
+                                      __either__(
+                                        , __Type_var__
+                                        , __Type_name__
+                                        , __Checked_term__
+                                        , tail6
+                                        , .(_var: __Type_var__) -> __Checked_term__ {
+                                            type_name_required(ct, source)
+                                          }
+                                        , .(name: __Type_name__) -> __Checked_term__ {
+                                            __if_then_else__(
+                                              , __type_equal__(
+                                                  , ct
+                                                  , __type_name_type__(ct, name)
+                                                  , source
+                                                  )
+                                              , .() -> __Checked_term__ { value }
+                                              , .() -> __Checked_term__ {
+                                                  type_name_required(ct, source)
+                                                }
+                                              )
+                                          }
+                                        )
+                                    }
+                                  )
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pub pure fn captured_keep_impl(
+  , ct: __Comptime__
+  , expected: __Type__
+  , keep: __Checked_term__
+  , source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  let checked_keep = keep_type_name(ct, source, keep);
+  __if_then_else__(
+    , __type_equal__(ct, expected, source)
+    , .() -> __Checked_term__ {
+        __if_then_else__(
+          , __type_equal__(ct, expected, reflected_actual(ct))
+          , .() -> __Checked_term__ {
+              __if_then_else__(
+                , __type_equal__(ct, reflected_actual(ct), __reflect_type__(ct, types.Actual))
+                , .() -> __Checked_term__ {
+                    __elab_error__(ct, __type_display__(ct, __reflect_type__(ct, types.Actual)))
+                  }
+                , .() -> __Checked_term__ {
+                    __term_call__(ct, __term_type__(ct, checked_keep), checked_keep, value)
+                  }
+                )
+            }
+          , .() -> __Checked_term__ {
+              __elab_error__(ct, __type_display__(ct, reflected_actual(ct)))
+            }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, __type_display__(ct, source)) }
+    )
+}
+
+pub pure fn captured_pair_impl(
+  , ct: __Comptime__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  , _source: __Type__
+  ) -> __Checked_term__ { __intrinsic_pair__(ct, left, right) }
+
+pub pure fn captured_type_app_impl(
+  , ct: __Comptime__
+  , polymorphic: __Checked_term__
+  , _source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  let specialized = __term_type_app__(ct, polymorphic, reflected_actual(ct));
+  __term_call__(ct, __term_type__(ct, specialized), specialized, value)
+}
+
+pub elab captured_keep : [T] . -> Keeper { captures (Actual, real.keep); impl captured_keep_impl }
+
+pub elab captured_pair : [T] . -> Keepers { captures (real.keep, real.keep2); impl captured_pair_impl }
+
+pub elab captured_type_app : [T] . -> Keeper { captures real.polymorphic; impl captured_type_app_impl }

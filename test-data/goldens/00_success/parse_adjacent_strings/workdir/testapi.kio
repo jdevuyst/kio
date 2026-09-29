@@ -1,0 +1,3 @@
+module testapi;
+
+host type Str role(str);

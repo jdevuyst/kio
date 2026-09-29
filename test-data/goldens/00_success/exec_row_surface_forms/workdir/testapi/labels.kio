@@ -1,0 +1,5 @@
+module testapi/labels;
+
+import testapi(String);
+
+pub labels { tag: String };

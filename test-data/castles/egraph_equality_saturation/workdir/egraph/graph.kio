@@ -1,0 +1,200 @@
+module egraph/graph;
+
+import egraph/numbers as n;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32);
+import testapi/arith as num;
+import testapi/array as arr;
+import testapi/iter(loop);
+
+pub labels Node =
+  { constant: I32 }
+  | { variable: I32 }
+  | { addition: I32 & I32 }
+  | { product: I32 & I32 };
+
+pub newtype Graph : Array(Node) & Array(I32) & Array(I32) { constructor graph; projector fields }
+
+pub fn create() -> Graph {
+  Graph.graph(arr.array_make_empty(), arr.array_make_empty(), arr.array_make_filled(1, 0))
+}
+
+fn nodes(g: Graph) -> Array(Node) { let .(items, _, _) = Graph.fields(g); items }
+
+fn parents(g: Graph) -> Array(I32) { let .(_, links, _) = Graph.fields(g); links }
+
+fn revisions(g: Graph) -> Array(I32) { let .(_, _, counter) = Graph.fields(g); counter }
+
+pub fn size(g: Graph) -> I32 { arr.array_len(nodes(g)) }
+
+pub fn node(g: Graph, index: I32) -> Node { arr.array_get(nodes(g), index) }
+
+pub fn revision(g: Graph) -> I32 { arr.array_get(revisions(g), 0) }
+
+fn changed(g: Graph) -> . { arr.array_set(revisions(g), 0, n.increment(revision(g))) }
+
+pub rec(loop) fn find(g: Graph, id: I32) -> I32 {
+  let parent = arr.array_get(parents(g), id);
+  if! n.equal(id, parent) {
+    id
+  } else {
+    rec find(g, parent)
+  }
+}
+
+pub fn same_class(g: Graph, a: I32, b: I32) -> Bool { n.equal(find(g, a), find(g, b)) }
+
+pub fn merge(g: Graph, a: I32, b: I32) -> Bool {
+  let root_a = find(g, a);
+  let root_b = find(g, b);
+  if! n.equal(root_a, root_b) {
+    .f
+  } else {
+    if! n.less(root_a, root_b) {
+      arr.array_set(parents(g), root_b, root_a)
+    } else {
+      arr.array_set(parents(g), root_a, root_b)
+    };
+    changed(g);
+    .t
+  }
+}
+
+fn same_children(g: Graph, left: I32 & I32, right: I32 & I32) -> Bool {
+  let .(a, b) = left;
+  let .(c, d) = right;
+  n.both(same_class(g, a, c), same_class(g, b, d))
+}
+
+fn same_key(g: Graph, a: Node, b: Node) -> Bool {
+  match! a {
+    .(a: Constant) {
+      match! b {
+        .(b: Constant) { n.equal(a.?{constant}, b.?{constant}) };
+        .() { .f }
+      }
+    };
+    .(a: Variable) {
+      match! b {
+        .(b: Variable) { n.equal(a.?{variable}, b.?{variable}) };
+        .() { .f }
+      }
+    };
+    .(a: Addition) {
+      match! b {
+        .(b: Addition) { same_children(g, a.?{addition}, b.?{addition}) };
+        .() { .f }
+      }
+    };
+    .(a: Product) {
+      match! b {
+        .(b: Product) { same_children(g, a.?{product}, b.?{product}) };
+        .() { .f }
+      }
+    }
+  }
+}
+
+rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
+  if! n.equal(i, size(g)) {
+    arr.array_push(nodes(g), value);
+    arr.array_push(parents(g), i);
+    changed(g);
+    i
+  } else if! same_key(g, value, node(g, i)) {
+    find(g, i)
+  } else {
+    rec intern_walk(g, value, n.increment(i))
+  }
+}
+
+pub fn constant_node(g: Graph, value: I32) -> I32 {
+  intern_walk(g, {constant = value}.>widen_sum!(Node), 0)
+}
+
+pub fn variable_node(g: Graph, symbol: I32) -> I32 {
+  intern_walk(g, {variable = symbol}.>widen_sum!(Node), 0)
+}
+
+pub fn add(g: Graph, a: I32, b: I32) -> I32 {
+  intern_walk(g, {addition = (a, b)}.>widen_sum!(Node), 0)
+}
+
+pub fn multiply(g: Graph, a: I32, b: I32) -> I32 {
+  intern_walk(g, {product = (a, b)}.>widen_sum!(Node), 0)
+}
+
+rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
+  if! n.equal(i, size(g)) {
+    merges
+  } else if! num.leq_i32(size(g), j) {
+    rec rebuild_pairs(g, n.increment(i), num.add_i32(i, 2), merges)
+  } else {
+    let extra = if! same_key(g, node(g, i), node(g, j)) {
+      if! merge(g, i, j) {
+        1
+      } else {
+        0
+      }
+    } else {
+      0
+    };
+    rec rebuild_pairs(g, i, n.increment(j), num.add_i32(merges, extra))
+  }
+}
+
+rec(loop) fn rebuild_until_quiet(g: Graph, total: I32) -> I32 {
+  let merges = rebuild_pairs(g, 0, 1, 0);
+  if! n.equal(merges, 0) {
+    total
+  } else {
+    rec rebuild_until_quiet(g, num.add_i32(total, merges))
+  }
+}
+
+pub fn rebuild(g: Graph) -> I32 { rebuild_until_quiet(g, 0) }
+
+rec(loop) fn class_walk(g: Graph, i: I32, total: I32) -> I32 {
+  if! n.equal(i, size(g)) {
+    total
+  } else {
+    rec class_walk(
+      , g
+      , n.increment(i)
+      , num.add_i32(
+          , total
+          , if! n.equal(find(g, i), i) {
+              1
+            } else {
+              0
+            }
+          )
+      )
+  }
+}
+
+pub fn class_count(g: Graph) -> I32 { class_walk(g, 0, 0) }
+
+rec(loop) fn member_walk(g: Graph, root: I32, i: I32, total: I32) -> I32 {
+  if! n.equal(i, size(g)) {
+    total
+  } else {
+    rec member_walk(
+      , g
+      , root
+      , n.increment(i)
+      , num.add_i32(
+          , total
+          , if! same_class(g, i, root) {
+              1
+            } else {
+              0
+            }
+          )
+      )
+  }
+}
+
+pub fn member_count(g: Graph, root: I32) -> I32 { member_walk(g, root, 0, 0) }

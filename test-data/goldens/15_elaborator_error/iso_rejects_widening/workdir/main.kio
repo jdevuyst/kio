@@ -1,0 +1,9 @@
+module main;
+
+import elab/algebraic_elaborators(iso);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn widen(a: A) -> A | B { iso!(a) }

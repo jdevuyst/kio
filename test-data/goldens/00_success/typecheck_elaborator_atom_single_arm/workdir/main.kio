@@ -1,0 +1,38 @@
+module main;
+
+import elab/algebraic_elaborators(atom);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// R-Project-Prod against a single-arm target: pick the `A`
+// component from a product. The target `A` is a singleton in DNF
+// (one atomic arm); R-Single-Arm holds.
+fn pick_from_pair(p: A & B) -> A { atom!(p) }
+
+// R-Project-Prod against a single-arm target, larger source:
+// pick `B` from a 3-slot product. Source-order pinning picks the
+// (unique) `B` slot.
+fn pick_middle(p: A & B & C) -> B { atom!(p) }
+
+// R-Collapse-Sum and R-Project-Prod composed: source `A | A`
+// (uniform sum) collapses onto the singleton target `A`. Each
+// source arm matches the target directly, and the like-typed
+// arms identify onto the unique target arm. The elided form
+// infers `T = A` from the source's per-arm uniform type — every
+// DNF arm contains `A` as its only component.
+fn collapse_uniform(s: A | A) -> A { atom!(s) }
+
+// Cross-arm projection: source is a sum-of-products where every
+// arm contains an `A`. Each DNF branch projects to its `A`, then
+// the arms collapse onto the singleton target. This is the
+// "focused picker" idiom — pulling one type out of every arm.
+fn cross_arm_pick(s: (A & B) | (A & C)) -> A { atom!(s) }
+
+// The arms uniformly project to `A & B`, which is itself a single
+// arm in DNF (one product, no sum). R-Single-Arm holds against a
+// composite single-arm target.
+fn pick_composite(s: (A & B & C) | (A & B & C)) -> A & B { atom!(s) }

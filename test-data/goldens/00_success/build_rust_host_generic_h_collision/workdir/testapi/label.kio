@@ -1,0 +1,7 @@
+module testapi/label;
+
+import testapi(I32);
+
+pub labels { h: I32 };
+
+pub fn label_identity(value: H) -> H { value }

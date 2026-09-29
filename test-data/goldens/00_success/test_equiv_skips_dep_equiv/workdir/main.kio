@@ -1,0 +1,8 @@
+module main;
+
+import libdep/lib as lib;
+
+equiv app_unit_law() {
+  lib.unit();
+  ()
+}

@@ -1,0 +1,125 @@
+module planner/scheduler;
+
+import elab/control(if);
+import planner/deps(is_blocked, is_ready);
+import planner/state(Plan_state, completed, empty, mark_done);
+import planner/tasks(total);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+pub labels Scan_result = { selected_task: I32, ready_seen: I32, blocked_seen: I32 };
+
+pub labels Plan_result = {
+  , final_state: Plan_state
+  , rounds: I32
+  , stop_ready: I32
+  , stop_blocked: I32
+  , peak_ready: I32
+  , peak_blocked: I32
+  , cycle_risk: Bool
+  };
+
+fn none() -> I32 { sub_i32(0, 1) }
+
+fn increment_if(value: I32, flag: Bool) -> I32 {
+  if! flag {
+    add_i32(value, 1)
+  } else {
+    value
+  }
+}
+
+fn choose(current: I32, candidate: I32, ready: Bool) -> I32 {
+  if! eq_i32(current, none()) {
+    if! ready {
+      candidate
+    } else {
+      current
+    }
+  } else {
+    current
+  }
+}
+
+fn max_i32(left: I32, right: I32) -> I32 {
+  if! lt_i32(left, right) {
+    right
+  } else {
+    left
+  }
+}
+
+fn scan_result(selected_task: I32, ready_seen: I32, blocked_seen: I32) -> Scan_result {
+  {selected_task, ready_seen, blocked_seen}
+}
+
+rec(loop) fn scan(
+  , plan: Plan_state
+  , index: I32
+  , selected_task: I32
+  , ready_seen: I32
+  , blocked_seen: I32
+  ) -> Scan_result {
+  if! lt_i32(index, total()) {
+    let ready = is_ready(plan, index);
+    rec scan(
+      , plan
+      , add_i32(index, 1)
+      , choose(selected_task, index, ready)
+      , increment_if(ready_seen, ready)
+      , increment_if(blocked_seen, is_blocked(plan, index))
+      )
+  } else {
+    scan_result(selected_task, ready_seen, blocked_seen)
+  }
+}
+
+fn plan_result(
+  , final_state: Plan_state
+  , rounds: I32
+  , stop_ready: I32
+  , stop_blocked: I32
+  , peak_ready: I32
+  , peak_blocked: I32
+  , cycle_risk: Bool
+  ) -> Plan_result {
+  {final_state, rounds, stop_ready, stop_blocked, peak_ready, peak_blocked, cycle_risk}
+}
+
+rec(loop) fn plan_from(plan: Plan_state, rounds: I32, peak_ready: I32, peak_blocked: I32) -> Plan_result {
+  if! eq_i32(completed(plan), total()) {
+    plan_result(plan, rounds, 0, 0, peak_ready, peak_blocked, .f)
+  } else {
+    let scan_report = scan(plan, 0, none(), 0, 0);
+    let ready_seen = scan_report.?{ready_seen};
+    let blocked_seen = scan_report.?{blocked_seen};
+    let selected_task = scan_report.?{selected_task};
+    if! eq_i32(selected_task, none()) {
+      plan_result(plan, rounds, ready_seen, blocked_seen, peak_ready, peak_blocked, .t)
+    } else {
+      rec plan_from(
+        , mark_done(plan, selected_task)
+        , add_i32(rounds, 1)
+        , max_i32(peak_ready, ready_seen)
+        , max_i32(peak_blocked, blocked_seen)
+        )
+    }
+  }
+}
+
+pub fn plan() -> Plan_result { plan_from(empty(), 0, 0, 0) }
+
+pub fn result_state(result: Plan_result) -> Plan_state { result.?{final_state} }
+
+pub fn result_rounds(result: Plan_result) -> I32 { result.?{rounds} }
+
+pub fn result_stop_ready(result: Plan_result) -> I32 { result.?{stop_ready} }
+
+pub fn result_stop_blocked(result: Plan_result) -> I32 { result.?{stop_blocked} }
+
+pub fn result_peak_ready(result: Plan_result) -> I32 { result.?{peak_ready} }
+
+pub fn result_peak_blocked(result: Plan_result) -> I32 { result.?{peak_blocked} }
+
+pub fn result_cycle_risk(result: Plan_result) -> Bool { result.?{cycle_risk} }

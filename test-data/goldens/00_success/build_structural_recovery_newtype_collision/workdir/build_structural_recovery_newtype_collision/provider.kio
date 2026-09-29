@@ -1,0 +1,7 @@
+module build_structural_recovery_newtype_collision/provider;
+
+pub newtype Hed : . { pub constructor put_hed; pub projector get_hed }
+
+pub newtype Tal : . { pub constructor put_tal; pub projector get_tal }
+
+pub newtype Box : . { pub constructor wrap; pub projector unwrap }

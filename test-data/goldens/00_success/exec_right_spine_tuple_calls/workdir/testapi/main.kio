@@ -1,0 +1,52 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn line(s: String) -> String { string_concat(s, "\n"(String)) }
+
+fn unit_text() -> String { "unit"(String) }
+
+fn unary(a: String) -> String { a }
+
+fn join2(a: String, b: String) -> String { string_concat(a, b) }
+
+fn join3(a: String, b: String, c: String) -> String { join2(a, join2(b, c)) }
+
+fn whole(p: String & String & String) -> String { join3(p) }
+
+fn mixed(a: String, rest: String & String) -> String { join3(a, rest) }
+
+fn call3(f: (String & String & String) -> String, p: String & String & String) -> String { f(p) }
+
+fn first_class() -> String { call3(join3, ("s"(String), "t"(String), "u"(String))) }
+
+fn host_tuple() -> String { string_concat(("v"(String), "h"(String))) }
+
+fn indirect_lambda() -> String {
+  .(a: String, b: String, c: String) { join3(a, b, c) }(("i"(String), "l"(String), "m"(String)))
+}
+
+pub fn main() -> . {
+  print(line(unit_text()));
+  print(line(unit_text(())));
+  print(line(unit_text(())));
+  print(line(unary("one"(String))));
+  print(line(unary("two"(String))));
+  print(line(unary("three"(String))));
+  print(line(join2("a"(String), "b"(String))));
+  print(line(join2(("c"(String), "d"(String)))));
+  print(line(join2(("e"(String), "f"(String)))));
+  print(line(join3("a"(String), "b"(String), "c"(String))));
+  print(line(join3("d"(String), ("e"(String), "f"(String)))));
+  print(line(join3(("g"(String), "h"(String), "i"(String)))));
+  print(line(join3(("j"(String), "k"(String), "l"(String)))));
+  print(line(whole("w"(String), "x"(String), "y"(String))));
+  print(line(whole(("z"(String), "a"(String), "b"(String)))));
+  print(line(mixed("m"(String), "n"(String), "o"(String))));
+  print(line(mixed(("p"(String), "q"(String), "r"(String)))));
+  print(line(first_class()));
+  print(line(host_tuple()));
+  print(line(indirect_lambda()))
+}

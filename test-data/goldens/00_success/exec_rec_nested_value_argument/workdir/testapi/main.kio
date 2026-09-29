@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+rec(loop) {
+  fn nested_outer(n: I32, value: I32) -> I32 {
+    if! leq_i32(n, 0) {
+      value
+    } else {
+      rec nested_outer(0, rec(cont) nested_leaf(41))
+    }
+  };
+  fn nested_leaf(value: I32) -> I32 { value }
+}
+
+pub fn main() -> . { print(i32_to_string(nested_outer(1, 0))); print("\n") }

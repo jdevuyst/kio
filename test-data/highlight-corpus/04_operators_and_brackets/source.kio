@@ -1,0 +1,16 @@
+.> .>> .< .<< & | = : ! ->
++ ++ <= < > ~ ? .. .+.
+( ) { } [ ] , ; .
+[! ]] ]- ][*
+[ ! ] ] ] - ] [ *
+a[A]
+] -1
+a -1
++ -2
+a
+-3
+] // operator leaves expression-starting context across trivia
+-4
+]// flush comment starts after the bracket operator run
+]/+/
+.[!/+/

@@ -1,0 +1,7 @@
+module testapi/opaque;
+
+import testapi(I32, Token);
+
+host fn make_token(p0: I32) -> Token;
+
+host fn token_value(p0: Token) -> I32;

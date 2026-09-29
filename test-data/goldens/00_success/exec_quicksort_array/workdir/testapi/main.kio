@@ -1,0 +1,198 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push, array_swap);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Cons-list of `a`. Same shape as the other host-loop goldens —
+// `()` is empty, `(A & List(A))` is a cons cell. Used here for
+// the worklist of `(lo, hi)` sub-range jobs.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Build the nine-element input `[5, 2, 8, 1, 9, 3, 7, 4, 6]` by
+// pushing each value in source order. Same content as
+// `exec_mergesort`'s input so a reader can confirm both sorts
+// produce the same CSV. Pivot is `array_get(arr, lo)` —
+// deterministic for golden-output reproducibility. A production
+// quicksort would randomize pivot selection to avoid O(N^2) on
+// adversarial inputs; this fixture sticks with the textbook
+// Lomuto-or-Hoare partition over a fixed pivot.
+fn make_input() -> Array(I32) {
+  let a = array_make_empty(I32, ());
+  array_push(a, 5);
+  array_push(a, 2);
+  array_push(a, 8);
+  array_push(a, 1);
+  array_push(a, 9);
+  array_push(a, 3);
+  array_push(a, 7);
+  array_push(a, 4);
+  array_push(a, 6);
+  a
+}
+
+// Decide the next `(i, j)` pair after one partition step. Pivot
+// is `array_get(arr, lo)` (captured). Returns the new `(i, j)`
+// pair as a 2-tuple; the caller wraps it into the loop's state-
+// or-exit sum.
+//
+// Per cursor pair, four cases. `i_in_place` means `arr[i] <=
+// pivot` (so position `i` already holds a left-side element);
+// `j_in_place` means `arr[j] >= pivot` (so position `j` already
+// holds a right-side element).
+//
+// - both in place: advance both cursors past their settled cells.
+// - i in place, j not: advance only i. j stays put for the next
+//   round; its value (< pivot) will end up on the left after the
+//   final `array_swap(arr, lo, j)`.
+// - j in place, i not: advance only j, symmetrically.
+// - neither in place: swap the two misplaced cells and advance
+//   both cursors.
+//
+// The four-branch dispatch lives here so `partition_step` can
+// wrap the resulting `(i, j)` pair into the loop's `(I32 & I32) |
+// I32` sum exactly once — keeping the post-coerce type narrow
+// enough that the kio-prime back-end's pretty-printer doesn't
+// break the chain across multiple lines with a leading `|`,
+// which the regular Kio parser then rejects.
+fn next_cursors(arr: Array(I32), pivot: I32, i: I32, j: I32) -> I32 & I32 {
+  let i_in_place = leq_i32(array_get(arr, i), pivot);
+  let j_in_place = leq_i32(pivot, array_get(arr, j));
+  if! i_in_place {
+    if! j_in_place {
+      (add_i32(i, 1), sub_i32(j, 1))
+    } else {
+      (add_i32(i, 1), j)
+    }
+  } else if! j_in_place {
+    (i, sub_i32(j, 1))
+  } else {
+    array_swap(arr, i, j);
+    (add_i32(i, 1), sub_i32(j, 1))
+  }
+}
+
+// Hoare-style partition step over `(i, j)` cursors. State is
+// `(i, j)`; the loop exits when the cursors cross, returning the
+// final `j` for the caller's `array_swap(arr, lo, j)` pivot-
+// placement step.
+fn partition_step(arr: Array(I32), pivot: I32, i: I32, j: I32) -> (I32 & I32) | I32 {
+  if! leq_i32(i, j) {
+    widen_sum!(next_cursors(arr, pivot, i, j), (I32 & I32) | I32)
+  } else {
+    widen_sum!(j, (I32 & I32) | I32)
+  }
+}
+
+// Drive the partition step over `[lo, hi]` with pivot
+// `arr[lo]`. Returns the final pivot index `p` so the worklist
+// step can enqueue `(lo, p - 1)` and `(p + 1, hi)`.
+fn partition(arr: Array(I32), lo: I32, hi: I32) -> I32 {
+  let pivot = array_get(arr, lo);
+  let j =
+    loop(
+      , I32 & I32
+      , I32
+      , .(state: I32 & I32) -> (I32 & I32) | I32 {
+          match! state {
+            .(i: I32, jj: I32) { partition_step(arr, pivot, i, jj) }
+          }
+        }
+      , (add_i32(lo, 1), hi)
+      );
+  array_swap(arr, lo, j);
+  j
+}
+
+// Worklist-driven outer recursion. State is the pending list of
+// `(lo, hi)` sub-range jobs; `arr` is captured. Each step pops
+// the head job; if its range is trivial (`lo >= hi`), drops it
+// and continues; otherwise partitions and enqueues the two
+// halves. Exits with `()` when the worklist is empty.
+fn quicksort_step(arr: Array(I32), worklist: List(I32 & I32)) -> List(I32 & I32) | . {
+  match! worklist.>List.un_list {
+    (
+      , .(job: I32 & I32, rest: List(I32 & I32)) {
+          widen_sum!(
+            , match! job {
+                .(lo: I32, hi: I32) {
+                  if! leq_i32(hi, lo) {
+                    rest
+                  } else {
+                    let p = partition(arr, lo, hi);
+                    // Push (lo, p - 1) and (p + 1, hi) onto the
+                    // worklist. Order doesn't matter for correctness
+                    // (sets of sub-ranges are independent), but
+                    // walking left-first keeps the trace easier to
+                    // think about.
+                    let with_right = push((add_i32(p, 1), hi), rest);
+                    push((lo, sub_i32(p, 1)), with_right)
+                  }
+                }
+              }
+            , List(I32 & I32) | .
+            )
+        }
+      , .(_empty: .) { widen_sum!((), List(I32 & I32) | .) }
+      )
+  }
+}
+
+// In-place quicksort over `arr`. The initial worklist is one
+// job covering the whole array. Returns the (now-sorted) array
+// handle for `main` to render.
+fn quicksort(arr: Array(I32)) -> Array(I32) {
+  let initial = push((0, sub_i32(array_len(arr), 1)), nil(I32 & I32, ()));
+  let _ = loop(.(wl: List(I32 & I32)) -> List(I32 & I32) | . { quicksort_step(arr, wl) }, initial);
+  arr
+}
+
+// Render an `Array(I32)` as comma-separated decimals — same
+// shape as `exec_insertion_sort`'s `render_csv`. State is
+// `(acc, i)`; appends a leading "," before every cell but the
+// first.
+fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
+  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+    widen_sum!(
+      , if! leq_i32(i, 0) {
+          (int_to_string(array_get(arr, i)), add_i32(i, 1))
+        } else {
+          (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
+        }
+      , (String & I32) | String
+      )
+  } else {
+    widen_sum!(acc, (String & I32) | String)
+  }
+}
+
+fn render_csv(arr: Array(I32)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) { render_step(arr, acc, i) }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+pub fn main() -> . {
+  let arr = make_input();
+  let sorted = quicksort(arr);
+  print(render_csv(sorted));
+  print("\n")
+}

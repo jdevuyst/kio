@@ -1,0 +1,1 @@
+bare ```kio fence in doc-comment: write `\{@\}` to use the surrounding module as harness, or `\{ignore\}` to skip

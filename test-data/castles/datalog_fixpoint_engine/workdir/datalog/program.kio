@@ -1,0 +1,162 @@
+/// The Datalog program: the facts given, the Horn clauses over them, and
+/// the questions asked once no clause fires any more.
+///
+/// This is the only module that names a symbol by its bare code, so it is
+/// the only one importing the symbol vocabulary unqualified - the point
+/// of the module is that its bodies read like the Datalog they stand for.
+module datalog/program;
+
+import datalog/atom(Atom, Atoms, atom1, atom2, atom3, fact1, fact2, fact3, tconst, tvar);
+import datalog/list as list;
+import datalog/symbols(
+  , c_alder
+  , c_birch
+  , c_cedar
+  , c_cost
+  , c_dover
+  , c_elm
+  , c_fen
+  , c_mid
+  , c_north
+  , c_south
+  );
+import datalog/symbols(p_depot, p_depotzone, p_evenhop, p_hub, p_hubserved);
+import datalog/symbols(p_link, p_oddhop, p_reach, p_samezone, p_station);
+import datalog/symbols(v_c, v_x, v_y, v_z);
+import testapi(I32);
+
+/// A Horn clause. A clause with an empty body would be a fact, and facts
+/// live in the extensional database instead, so every rule has a body.
+pub labels Rule = { r_head: Atom, r_body: Atoms };
+
+pub type Rules = list.List(Rule);
+
+fn rule(head: Atom, body: Atoms) -> Rule { {r_head = head, r_body = body} }
+
+pub fn head_of(r: Rule) -> Atom { r.?{r_head} }
+
+pub fn body_of(r: Rule) -> Atoms { r.?{r_body} }
+
+/// A six-station one-way transport network.
+///
+///   alder --4--> birch --3--> dover --5--> elm --6--> fen
+///       \                       ^
+///        \--7--> cedar --2-----/
+pub fn edb() -> Atoms {
+  list.append(
+    , list.of6(
+        , fact3(p_link, c_alder, c_birch, c_cost(4))
+        , fact3(p_link, c_alder, c_cedar, c_cost(7))
+        , fact3(p_link, c_birch, c_dover, c_cost(3))
+        , fact3(p_link, c_cedar, c_dover, c_cost(2))
+        , fact3(p_link, c_dover, c_elm, c_cost(5))
+        , fact3(p_link, c_elm, c_fen, c_cost(6))
+        )
+    , list.append(
+        , list.of6(
+            , fact2(p_station, c_alder, c_north)
+            , fact2(p_station, c_birch, c_north)
+            , fact2(p_station, c_cedar, c_mid)
+            , fact2(p_station, c_dover, c_mid)
+            , fact2(p_station, c_elm, c_south)
+            , fact2(p_station, c_fen, c_south)
+            )
+        , list.of4(
+            , fact1(p_hub, c_alder)
+            , fact1(p_hub, c_dover)
+            , fact1(p_depot, c_cedar)
+            , fact1(p_depot, c_fen)
+            )
+        )
+    )
+}
+
+/// reach(X, Y) :- link(X, Y, C).
+fn reach_base() -> Rule {
+  rule(
+    , atom2(p_reach, tvar(v_x), tvar(v_y))
+    , list.of1(atom3(p_link, tvar(v_x), tvar(v_y), tvar(v_c)))
+    )
+}
+
+/// reach(X, Z) :- link(X, Y, C), reach(Y, Z).
+fn reach_step() -> Rule {
+  rule(
+    , atom2(p_reach, tvar(v_x), tvar(v_z))
+    , list.of2(atom3(p_link, tvar(v_x), tvar(v_y), tvar(v_c)), atom2(p_reach, tvar(v_y), tvar(v_z)))
+    )
+}
+
+/// oddhop(X, Y) :- link(X, Y, C).
+fn oddhop_base() -> Rule {
+  rule(
+    , atom2(p_oddhop, tvar(v_x), tvar(v_y))
+    , list.of1(atom3(p_link, tvar(v_x), tvar(v_y), tvar(v_c)))
+    )
+}
+
+/// oddhop(X, Z) :- link(X, Y, C), evenhop(Y, Z).
+fn oddhop_step() -> Rule {
+  rule(
+    , atom2(p_oddhop, tvar(v_x), tvar(v_z))
+    , list.of2(
+        , atom3(p_link, tvar(v_x), tvar(v_y), tvar(v_c))
+        , atom2(p_evenhop, tvar(v_y), tvar(v_z))
+        )
+    )
+}
+
+/// evenhop(X, Z) :- link(X, Y, C), oddhop(Y, Z).
+fn evenhop_step() -> Rule {
+  rule(
+    , atom2(p_evenhop, tvar(v_x), tvar(v_z))
+    , list.of2(
+        , atom3(p_link, tvar(v_x), tvar(v_y), tvar(v_c))
+        , atom2(p_oddhop, tvar(v_y), tvar(v_z))
+        )
+    )
+}
+
+/// samezone(X, Y) :- station(X, Z), station(Y, Z).
+fn samezone() -> Rule {
+  rule(
+    , atom2(p_samezone, tvar(v_x), tvar(v_y))
+    , list.of2(atom2(p_station, tvar(v_x), tvar(v_z)), atom2(p_station, tvar(v_y), tvar(v_z)))
+    )
+}
+
+/// hubserved(Y) :- hub(X), reach(X, Y).
+fn hubserved() -> Rule {
+  rule(
+    , atom1(p_hubserved, tvar(v_y))
+    , list.of2(atom1(p_hub, tvar(v_x)), atom2(p_reach, tvar(v_x), tvar(v_y)))
+    )
+}
+
+/// depotzone(Y) :- depot(X), samezone(X, Y).
+fn depotzone() -> Rule {
+  rule(
+    , atom1(p_depotzone, tvar(v_y))
+    , list.of2(atom1(p_depot, tvar(v_x)), atom2(p_samezone, tvar(v_x), tvar(v_y)))
+    )
+}
+
+pub fn rules() -> Rules {
+  list.append(
+    , list.of4(reach_base(), reach_step(), oddhop_base(), oddhop_step())
+    , list.of4(evenhop_step(), samezone(), hubserved(), depotzone())
+    )
+}
+
+pub fn idb_preds() -> list.List(I32) {
+  list.of6(p_reach, p_oddhop, p_evenhop, p_samezone, p_hubserved, p_depotzone)
+}
+
+pub fn queries() -> Atoms {
+  list.of4(
+    , atom2(p_reach, tconst(c_alder), tvar(v_y))
+    , atom3(p_link, tvar(v_x), tconst(c_dover), tvar(v_c))
+    , atom2(p_evenhop, tvar(v_x), tconst(c_fen))
+    , atom1(p_depotzone, tvar(v_y))
+    )
+}

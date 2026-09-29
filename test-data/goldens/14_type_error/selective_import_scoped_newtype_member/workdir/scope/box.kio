@@ -1,0 +1,3 @@
+module scope/box;
+
+pub newtype Box[A] : A { pub(scope) constructor mk; pub(scope) projector un }

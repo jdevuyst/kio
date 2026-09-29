@@ -1,0 +1,7 @@
+module fmt_doc_comments;
+
+/// Docs for host type.
+host type String role(str);
+
+/// Docs for host fn.
+host fn print(s: String) -> .;

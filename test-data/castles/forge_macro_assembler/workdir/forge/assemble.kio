@@ -1,0 +1,185 @@
+/// The two assembly passes.
+///
+/// Pass one walks the expanded items, hands each instruction the next
+/// address, and binds each label mark to the address of the instruction
+/// that follows it. Pass two walks the resulting straight-line code and
+/// turns every symbolic jump into an address.
+///
+/// The eleven opcodes that never name a jump target need no work in pass
+/// two: `forge/isa` declares them once and reuses the same nominals in
+/// both instruction sets, so a `Loadi` read out of a `Src` *is* an `Ins`
+/// arm and crosses with a widen. Only `jmp` and `jmpz` are rebuilt.
+module forge/assemble;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import forge/expand as e;
+import forge/isa as isa;
+import forge/isa(
+  , Add
+  , Div
+  , Emit
+  , Halt
+  , Ins
+  , Jmp
+  , Jmpz
+  , Loadi
+  , Mod
+  , Mov
+  , Mul
+  , Pop
+  , Push
+  , Reg
+  , Src
+  , Sub
+  );
+import forge/list as l;
+import forge/program as p;
+import forge/program(
+  , Built
+  , Duplicate_label
+  , Fixed
+  , Flat
+  , Flats
+  , Instr
+  , Items
+  , Macros
+  , Mark
+  , Prog
+  , Srcs
+  , Symbol
+  , Symbols
+  , Undefined_label
+  , Unknown_macro
+  );
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// Pass one's result: address-ordered code and the placed symbols, or the
+/// label that was marked twice.
+type Placed = (Srcs & Symbols) | Duplicate_label;
+
+rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
+  match! l.un_cons(fs) {
+    (
+      , .(f: Flat, rest: Flats) {
+          match! f {
+            (
+              , .(x: Instr) { rec place(rest, add_i32(at, 1), l.cons(x.?{p.instr}, code), syms) }
+              , .(x: Mark) {
+                  let name = x.?{p.mark};
+                  if! p.is_placed(syms, name) {
+                    widen_sum!(p.duplicate_label(name))
+                  } else {
+                    rec place(rest, at, code, l.cons(p.symbol(name, at), syms))
+                  }
+                }
+              )
+          }
+        }
+      , .(_empty: .) { widen_sum!((l.reverse(code), l.reverse(syms))) }
+      )
+  }
+}
+
+/// Pass one. A mark takes no address of its own; it names the address the
+/// next instruction will occupy, which is why a mark at the very end binds
+/// one past the last instruction.
+fn pass_one(fs: Flats) -> Placed { place(fs, 0, l.nil(Src, ()), l.nil(Symbol, ())) }
+
+/// Pass two's result: runnable code, or the label a jump named that pass
+/// one never placed.
+type Resolved = Prog | Undefined_label;
+
+/// One resolved instruction, or the label it could not find.
+type Fix = Fixed | Undefined_label;
+
+fn addr_of(syms: Symbols, name: String) -> I32 | Undefined_label {
+  match! p.find_symbol(syms, name) {
+    (.(at: I32) { widen_sum!(at) }, .(_none: .) { widen_sum!(p.undefined_label(name)) })
+  }
+}
+
+fn carried(i: Ins) -> Fix { widen_sum!(p.fixed(i), Fix) }
+
+/// Resolve one source instruction. The two jumps consult the symbol table;
+/// every other opcode is already an `Ins` arm and only has to be widened
+/// into the resolved set.
+fn fix(i: Src, syms: Symbols) -> Fix {
+  match! i {
+    (
+      , .(x: Jmp) {
+          match! addr_of(syms, x.?{isa.jmp}) {
+            (.(at: I32) { carried(isa.jmp_at(at)) }, .(err: Undefined_label) { widen_sum!(err) })
+          }
+        }
+      , .(x: Jmpz) {
+          let .(r: Reg, name: String) = x.?{isa.jmpz};
+          match! addr_of(syms, name) {
+            (
+              , .(at: I32) { carried(isa.jmpz_at(r, at)) }
+              , .(err: Undefined_label) { widen_sum!(err) }
+              )
+          }
+        }
+      , .(x: Loadi) { carried(widen_sum!(x, Ins)) }
+      , .(x: Mov) { carried(widen_sum!(x, Ins)) }
+      , .(x: Add) { carried(widen_sum!(x, Ins)) }
+      , .(x: Sub) { carried(widen_sum!(x, Ins)) }
+      , .(x: Mul) { carried(widen_sum!(x, Ins)) }
+      , .(x: Div) { carried(widen_sum!(x, Ins)) }
+      , .(x: Mod) { carried(widen_sum!(x, Ins)) }
+      , .(x: Push) { carried(widen_sum!(x, Ins)) }
+      , .(x: Pop) { carried(widen_sum!(x, Ins)) }
+      , .(x: Emit) { carried(widen_sum!(x, Ins)) }
+      , .(x: Halt) { carried(widen_sum!(x, Ins)) }
+      )
+  }
+}
+
+rec(loop) fn resolve(code: Srcs, syms: Symbols, acc: Prog) -> Resolved {
+  match! l.un_cons(code) {
+    (
+      , .(i: Src, rest: Srcs) {
+          match! fix(i, syms) {
+            (
+              , .(f: Fixed) { rec resolve(rest, syms, l.cons(f.?{p.fixed}, acc)) }
+              , .(err: Undefined_label) { widen_sum!(err) }
+              )
+          }
+        }
+      , .(_empty: .) { widen_sum!(l.reverse(acc)) }
+      )
+  }
+}
+
+/// Pass two.
+fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil(Ins, ())) }
+
+/// The whole build: expand the macros, place the labels, resolve the jumps.
+/// Each phase can only fail its own way, and every failure widens into the
+/// one rejection sum the caller reports.
+pub fn build(items: Items, macros: Macros) -> Built {
+  match! e.expand(items, macros) {
+    (
+      , .(fs: Flats) {
+          match! pass_one(fs) {
+            (
+              , .(code: Srcs, syms: Symbols) {
+                  match! pass_two(code, syms) {
+                    (
+                      , .(prog: Prog) { widen_sum!(p.image(prog, syms, l.len(fs))) }
+                      , .(err: Undefined_label) { widen_sum!(err) }
+                      )
+                  }
+                }
+              , .(err: Duplicate_label) { widen_sum!(err) }
+              )
+          }
+        }
+      , .(err: Unknown_macro) { widen_sum!(err) }
+      )
+  }
+}

@@ -1,0 +1,13 @@
+package build_rust_module_alias_scope_collision;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  build_rust_module_alias_scope_collision/**
+}

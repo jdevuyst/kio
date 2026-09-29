@@ -1,0 +1,35 @@
+/// The instrumentation cell. Kio has no mutable scalar, but a host `Array(T)`
+/// is a handle -- passing it shares it -- so a two-slot array is the counter
+/// pair every structure in this package carries around.
+///
+/// Slot 0 counts *work*: one node the tree's descent enters, or one element
+/// the reference reads or writes. Slot 1 counts *tag pushes*, which only the
+/// tree ever bumps -- a plain array has nothing to defer.
+module seg/meter;
+
+import testapi(Array, I32);
+import testapi/arith(add_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+
+literal work_slot = 0;
+
+literal push_slot = 1;
+
+pub newtype Meter : Array(I32) { constructor of_cells; projector cells }
+
+pub fn new_meter() -> Meter { Meter.of_cells(array_make_filled(2, 0)) }
+
+fn read_slot(m: Meter, slot: I32) -> I32 { array_get(Meter.cells(m), slot) }
+
+fn bump_slot(m: Meter, slot: I32) -> . {
+  let c = Meter.cells(m);
+  array_set(c, slot, add_i32(array_get(c, slot), 1))
+}
+
+pub fn work(m: Meter) -> I32 { read_slot(m, work_slot) }
+
+pub fn pushes(m: Meter) -> I32 { read_slot(m, push_slot) }
+
+pub fn bump_work(m: Meter) -> . { bump_slot(m, work_slot) }
+
+pub fn bump_push(m: Meter) -> . { bump_slot(m, push_slot) }

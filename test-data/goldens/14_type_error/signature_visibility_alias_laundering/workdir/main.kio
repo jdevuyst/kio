@@ -1,0 +1,7 @@
+module main;
+
+newtype Hidden : . { constructor mk; projector un }
+
+type Hidden_alias = Hidden;
+
+pub type Public_secret = Hidden_alias;

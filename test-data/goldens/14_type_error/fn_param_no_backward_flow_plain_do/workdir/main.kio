@@ -1,0 +1,10 @@
+module main;
+
+import elab/control(scope);
+
+fn caller() -> . {
+  scope! {
+    let identity = .(value) { value };
+    identity(())
+  }
+}

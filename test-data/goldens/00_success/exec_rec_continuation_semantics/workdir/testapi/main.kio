@@ -1,0 +1,5 @@
+module testapi/main;
+
+import continuations/testapi/main as continuations;
+
+pub fn main() -> . { continuations.exercise(100, 1000) }

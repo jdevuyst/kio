@@ -1,0 +1,322 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(
+  , array_clone
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_push
+  , array_set
+  , array_swap
+  );
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat, string_eq);
+
+fn not_bool(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn and_bool(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+fn eq_i32(left: I32, right: I32) -> Bool { and_bool(leq_i32(left, right), leq_i32(right, left)) }
+
+fn println(text: String) -> . { print(text); print("\n") }
+
+fn concat3(left: String, middle: String, right: String) -> String {
+  string_concat(left, string_concat(middle, right))
+}
+
+fn i32_line(prefix: String, value: I32) -> String { string_concat(prefix, int_to_string(value)) }
+
+fn bool_line(prefix: String, value: Bool) -> String { string_concat(prefix, bool_to_string(value)) }
+
+fn cell_count() -> I32 { mul_i32(3, 3) }
+
+fn mark_land(land: Array(Bool), index: I32) -> . { array_set(land, index, .t) }
+
+fn make_land() -> Array(Bool) {
+  let land = array_make_filled(9, .f);
+  mark_land(land, 0);
+  mark_land(land, 1);
+  mark_land(land, 3);
+  mark_land(land, 5);
+  mark_land(land, 7);
+  mark_land(land, 8);
+  land
+}
+
+fn push_edge(froms: Array(I32), tos: Array(I32), from: I32, to: I32) -> . {
+  array_push(froms, from);
+  array_push(tos, to)
+}
+
+fn make_edge_froms() -> Array(I32) {
+  let froms = array_make_empty(I32, ());
+  let tos = array_make_empty(I32, ());
+  push_edge(froms, tos, 0, 1);
+  push_edge(froms, tos, 1, 2);
+  push_edge(froms, tos, 0, 3);
+  push_edge(froms, tos, 3, 6);
+  push_edge(froms, tos, 4, 5);
+  push_edge(froms, tos, 5, 8);
+  push_edge(froms, tos, 7, 8);
+  array_swap(froms, 0, sub_i32(array_len(froms), 1));
+  froms
+}
+
+fn make_edge_tos() -> Array(I32) {
+  let froms = array_make_empty(I32, ());
+  let tos = array_make_empty(I32, ());
+  push_edge(froms, tos, 0, 1);
+  push_edge(froms, tos, 1, 2);
+  push_edge(froms, tos, 0, 3);
+  push_edge(froms, tos, 3, 6);
+  push_edge(froms, tos, 4, 5);
+  push_edge(froms, tos, 5, 8);
+  push_edge(froms, tos, 7, 8);
+  array_swap(tos, 0, sub_i32(array_len(tos), 1));
+  tos
+}
+
+rec(loop) fn init_parents_at(index: I32, parents: Array(I32)) -> Array(I32) {
+  if! leq_i32(index, sub_i32(cell_count(), 1)) {
+    array_set(parents, index, index);
+    rec init_parents_at(add_i32(index, 1), parents)
+  } else {
+    parents
+  }
+}
+
+fn make_parents() -> Array(I32) { init_parents_at(0, array_make_filled(cell_count(), 0)) }
+
+fn make_sizes() -> Array(I32) { array_make_filled(cell_count(), 1) }
+
+rec(loop) fn root_of(parents: Array(I32), cell: I32) -> I32 {
+  let parent = array_get(parents, cell);
+  if! eq_i32(parent, cell) {
+    cell
+  } else {
+    rec root_of(parents, parent)
+  }
+}
+
+fn attach_roots(parents: Array(I32), sizes: Array(I32), left_root: I32, right_root: I32) -> I32 {
+  let left_size = array_get(sizes, left_root);
+  let right_size = array_get(sizes, right_root);
+  if! leq_i32(left_size, right_size) {
+    array_set(parents, left_root, right_root);
+    array_set(sizes, right_root, add_i32(left_size, right_size));
+    right_root
+  } else {
+    array_set(parents, right_root, left_root);
+    array_set(sizes, left_root, add_i32(left_size, right_size));
+    left_root
+  }
+}
+
+fn union_cells(parents: Array(I32), sizes: Array(I32), left: I32, right: I32) -> Bool {
+  let left_root = root_of(parents, left);
+  let right_root = root_of(parents, right);
+  if! eq_i32(left_root, right_root) {
+    .f
+  } else {
+    let _root = attach_roots(parents, sizes, left_root, right_root);
+    .t
+  }
+}
+
+fn both_land(land: Array(Bool), left: I32, right: I32) -> Bool {
+  and_bool(array_get(land, left), array_get(land, right))
+}
+
+fn edge_header(index: I32, left: I32, right: I32) -> String {
+  string_concat(
+    , "edge "
+    , string_concat(
+        , int_to_string(index)
+        , string_concat(": ", concat3(int_to_string(left), "-", int_to_string(right)))
+        )
+    )
+}
+
+fn print_edge_union(index: I32, left: I32, right: I32, changed: Bool) -> . {
+  if! changed {
+    println(string_concat(edge_header(index, left, right), " union"))
+  } else {
+    println(string_concat(edge_header(index, left, right), " already-connected"))
+  }
+}
+
+fn print_edge_skip(index: I32, left: I32, right: I32) -> . {
+  println(string_concat(edge_header(index, left, right), " skip-water"))
+}
+
+rec(loop) fn run_edges(
+  , index: I32
+  , froms: Array(I32)
+  , tos: Array(I32)
+  , land: Array(Bool)
+  , parents: Array(I32)
+  , sizes: Array(I32)
+  , union_count: I32
+  , skipped_count: I32
+  ) -> I32 & I32 {
+  if! leq_i32(index, sub_i32(array_len(froms), 1)) {
+    let left = array_get(froms, index);
+    let right = array_get(tos, index);
+    if! both_land(land, left, right) {
+      let changed = union_cells(parents, sizes, left, right);
+      print_edge_union(index, left, right, changed);
+      if! changed {
+        rec run_edges(
+          , add_i32(index, 1)
+          , froms
+          , tos
+          , land
+          , parents
+          , sizes
+          , add_i32(union_count, 1)
+          , skipped_count
+          )
+      } else {
+        rec run_edges(
+          , add_i32(index, 1)
+          , froms
+          , tos
+          , land
+          , parents
+          , sizes
+          , union_count
+          , skipped_count
+          )
+      }
+    } else {
+      print_edge_skip(index, left, right);
+      rec run_edges(
+        , add_i32(index, 1)
+        , froms
+        , tos
+        , land
+        , parents
+        , sizes
+        , union_count
+        , add_i32(skipped_count, 1)
+        )
+    }
+  } else {
+    (union_count, skipped_count)
+  }
+}
+
+fn cell_kind(land: Array(Bool), index: I32) -> String {
+  if! array_get(land, index) {
+    "#"
+  } else {
+    "."
+  }
+}
+
+fn print_map(land: Array(Bool)) -> . {
+  println("map 3x3:");
+  println(concat3(cell_kind(land, 0), cell_kind(land, 1), cell_kind(land, 2)));
+  println(concat3(cell_kind(land, 3), cell_kind(land, 4), cell_kind(land, 5)));
+  println(concat3(cell_kind(land, 6), cell_kind(land, 7), cell_kind(land, 8)))
+}
+
+fn print_cell_root(cell: I32, root: I32) -> . {
+  println(string_concat(
+    , "cell "
+    , string_concat(int_to_string(cell), string_concat(" -> root ", int_to_string(root)))
+    ))
+}
+
+fn print_root_size(root: I32, size: I32) -> . {
+  println(string_concat(
+    , "root "
+    , string_concat(int_to_string(root), string_concat(" size ", int_to_string(size)))
+    ))
+}
+
+rec(loop) fn report_cells(index: I32, land: Array(Bool), parents: Array(I32)) -> . {
+  if! leq_i32(index, sub_i32(cell_count(), 1)) {
+    if! array_get(land, index) {
+      print_cell_root(index, root_of(parents, index));
+      rec report_cells(add_i32(index, 1), land, parents)
+    } else {
+      rec report_cells(add_i32(index, 1), land, parents)
+    }
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn report_roots(
+  , index: I32
+  , land: Array(Bool)
+  , parents: Array(I32)
+  , sizes: Array(I32)
+  , count: I32
+  ) -> I32 {
+  if! leq_i32(index, sub_i32(cell_count(), 1)) {
+    if! and_bool(array_get(land, index), eq_i32(root_of(parents, index), index)) {
+      print_root_size(index, array_get(sizes, index));
+      rec report_roots(add_i32(index, 1), land, parents, sizes, add_i32(count, 1))
+    } else {
+      rec report_roots(add_i32(index, 1), land, parents, sizes, count)
+    }
+  } else {
+    count
+  }
+}
+
+fn print_bool_diagnostics(land: Array(Bool)) -> . {
+  println(bool_line("water center land? ", array_get(land, 4)));
+  if! string_eq(bool_to_string(array_get(land, 4)), "false") {
+    println("string check: center is water")
+  } else {
+    println("string check: center unexpected")
+  }
+}
+
+fn print_initial_snapshot(snapshot: Array(I32)) -> . {
+  println(i32_line("initial parent[8] = ", array_get(snapshot, 8)))
+}
+
+pub fn main() -> . {
+  let land = make_land();
+  let parents = make_parents();
+  let sizes = make_sizes();
+  let initial_parents = array_clone(parents);
+  let froms = make_edge_froms();
+  let tos = make_edge_tos();
+  print_map(land);
+  print_bool_diagnostics(land);
+  print_initial_snapshot(initial_parents);
+  println(i32_line("edge candidates = ", array_len(froms)));
+  let .(union_count: I32, skipped_count: I32) =
+    run_edges(0, froms, tos, land, parents, sizes, 0, 0);
+  println(i32_line("unions = ", union_count));
+  println(i32_line("skipped = ", skipped_count));
+  println("land roots:");
+  report_cells(0, land, parents);
+  println("components:");
+  let root_count = report_roots(0, land, parents, sizes, 0);
+  println(i32_line("islands = ", root_count));
+  println(i32_line("checksum = ", add_i32(add_i32(union_count, skipped_count), root_count)))
+}

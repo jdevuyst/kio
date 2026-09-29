@@ -1,0 +1,9 @@
+module main;
+
+// A kind-`*→*` brand binder `[*F]` is callable in type position:
+// `F(A)` applies the brand to the kind-`*` carrier `A`. The kind
+// discipline (no inference, structural kind equality) admits the
+// application — `F` is annotated kind-`*→*`, `A` is kind-`*`, so
+// `F(A)` is kind-`*`. No brand crossing happens here; the value
+// flows through unchanged.
+fn rebrand[*F][A](x: F(A)) -> F(A) { x }

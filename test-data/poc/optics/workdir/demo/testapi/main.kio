@@ -1,0 +1,282 @@
+module testapi/main;
+
+import library/elab/match(match);
+import library/elab/spine_elaborators(narrow_prod, widen_sum);
+import library/optics(
+  , Iso
+  , Lens
+  , Prism
+  , assoc_iso
+  , compose_iso
+  , compose_lens
+  , compose_prism
+  , fst_lens
+  , id_lens
+  , iso_to_lens
+  , iso_to_prism
+  , left_prism
+  , over
+  , over_iso
+  , over_prism
+  , preview
+  , review
+  , review_iso
+  , right_prism
+  , set
+  , snd_lens
+  , swap_iso
+  , view
+  , view_iso
+  );
+import testapi(I32, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// optics — host-facing tour of the optic library.
+//
+// Drop the contents of `optics.kio` (the pure optic
+// vocabulary, with its laws) plus this file into your own Kio package
+// and the API works as-is. The optic logic is host-capability-free and
+// lives in the root module; this file supplies the host display
+// and a demonstrative `main` that exercises the whole surface, named-API
+// and operator-DSL alike. No external dependency beyond the host items
+// this demo imports.
+
+// =====================================================================
+// Display helpers
+// =====================================================================
+
+// Print an `I32` followed by a newline.
+fn say_i32(n: I32) -> . { print(int_to_string(n)); print("\n") }
+
+// Print a `String` followed by a newline.
+fn say_str(s: String) -> . { print(s); print("\n") }
+
+// Render an `(I32 | .)` option as `Some(n)` / `None`, then a newline.
+fn say_opt_i32(x: I32 | .) -> . {
+  match! x {
+    (.(n: I32) { print("Some("); print(int_to_string(n)); print(")") }, .(_u: .) { print("None") })
+  };
+  print("\n")
+}
+
+// Render an `(String | .)` option as `Some(s)` / `None`, then a newline.
+fn say_opt_str(x: String | .) -> . {
+  match! x {
+    (.(s: String) { print("Some("); print(s); print(")") }, .(_u: .) { print("None") })
+  };
+  print("\n")
+}
+
+// =====================================================================
+// Operator-driven optic DSL
+// =====================================================================
+//
+//   l ^ x      view(l, x)             — lens / iso forward
+//   l1 ** l2   compose_lens(l1, l2)   — lens compose, left-assoc
+//   p ^? x     preview(p, x)          — prism preview
+//   p ## a     review(p, a)           — prism review (and iso backward)
+//
+// Each callee takes its receiver first, so the operator desugar threads
+// the operands through in the right order.
+op _ ^ _ { impl view }
+
+op __ ** _ { impl compose_lens }
+
+op _ ^? _ { impl preview }
+
+op _ ## _ { impl review }
+
+// A per-label row-update setter, bound to a left-associative `%%` operator:
+// `r %% n` replaces the `hed` field; `r %% a %% b` chains, last write wins.
+// `set_hed` is a lens's "set" half specialised to a named field — the
+// concrete link between optics and row types.
+labels { hed: I32, mid: String, tal: I32 };
+
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod!(x, R)) }
+
+op __ %% _ { impl set_hed }
+
+fn show_hmt(x: Hed & Mid & Tal) -> . {
+  match! x {
+    .(h: Hed, m: Mid, t: Tal) {
+      print(int_to_string(h.>Hed.get));
+      print(", ");
+      print(m.>Mid.get);
+      print(", ");
+      print(int_to_string(t.>Tal.get));
+      print("\n")
+    }
+  }
+}
+
+// =====================================================================
+// The worked tour
+// =====================================================================
+fn tour() -> . {
+  let inc = .(n: I32) -> I32 { add(n, 1) };
+  // ---------- Lens basics ----------
+  let p = (42, "hello");
+  let l_fst = fst_lens(I32, String, ());
+  let l_snd = snd_lens(I32, String, ());
+  say_i32(view(l_fst, p));
+  say_str(view(l_snd, p));
+  // set fst
+  let p2 = set(l_fst, 99, p);
+  print(int_to_string(view(l_fst, p2)));
+  print(", ");
+  say_str(view(l_snd, p2));
+  // over fst with increment
+  let p3 = over(l_fst, inc, p);
+  print(int_to_string(view(l_fst, p3)));
+  print(", ");
+  say_str(view(l_snd, p3));
+  // ---------- Lens compose ----------
+  // outer : (I32 & String) & I32; reach the inner String via
+  // fst_lens(I32 & String, I32) >>> snd_lens(I32, String).
+  let outer = ((42, "hello"), 7);
+  let l_outer = fst_lens(I32 & String, I32, ());
+  let l_inner = snd_lens(I32, String, ());
+  let l_deep = compose_lens(l_outer, l_inner);
+  say_str(view(l_deep, outer));
+  // set through the composed lens
+  let outer2 = set(l_deep, "world", outer);
+  say_str(view(l_deep, outer2));
+  // ---------- Prism basics ----------
+  let p_left = left_prism(I32, String, ());
+  let p_right = right_prism(I32, String, ());
+  let v_left = widen_sum!(42, I32 | String);
+  let v_right = widen_sum!("kio", I32 | String);
+  // preview: hit
+  say_opt_i32(preview(p_left, v_left));
+  // preview: miss (left prism on right value)
+  say_opt_i32(preview(p_left, v_right));
+  // preview: hit on right arm
+  say_opt_str(preview(p_right, v_right));
+  // review: inject and observe round-trip
+  let rebuilt = review(p_left, 11);
+  say_opt_i32(preview(p_left, rebuilt));
+  // over_prism: apply f when the prism matches, leave unchanged otherwise
+  let bumped_left = over_prism(p_left, inc, v_left);
+  say_opt_i32(preview(p_left, bumped_left));
+  let bumped_right = over_prism(p_left, inc, v_right);
+  say_opt_str(preview(p_right, bumped_right));
+  // ---------- Prism compose ----------
+  // Outer sum is (I32 | String) | I32; reach the inner I32 via
+  // left_prism((I32 | String), I32) >>> left_prism(I32, String).
+  let p_outer = left_prism(I32 | String, I32, ());
+  let p_deep = compose_prism(p_outer, left_prism());
+  // The `deep_hit` / `deep_inner_miss` constructions need the *whole*
+  // source value (a `(I32 | String)` already built) to land in the
+  // outer-left arm of `(I32 | String) | I32`. A monomorphic spine
+  // `widen_sum!` cannot do this: it walks the source's right-spine
+  // arm-by-arm against the target's right-spine slots `[(I32 | String),
+  // I32]`, and the source's `String` arm has no like-typed target slot.
+  // The adopter-natural construction is the OUTER prism's own `review`:
+  // `left_prism(I32 | String, I32)`'s `rev` is `widen_sum!(av, A | B)`
+  // generated against the abstract `A` (a single opaque spine slot), so
+  // its `__left__` glue stays valid when `A` is instantiated to the
+  // sum `I32 | String`. No intrinsic, no algebraic elaborator.
+  let deep_hit = review(p_outer, widen_sum!(5, I32 | String));
+  let deep_inner_miss = review(p_outer, widen_sum!("no", I32 | String));
+  // The outer-right arm IS reachable via `widen_sum!` directly: source
+  // `100: I32` finds a like-typed target arm in `(I32 | String) | I32`'s
+  // outer spine at position 1 (the outer-right `I32`).
+  let deep_outer_miss = widen_sum!(100, (I32 | String) | I32);
+  say_opt_i32(preview(p_deep, deep_hit));
+  say_opt_i32(preview(p_deep, deep_inner_miss));
+  say_opt_i32(preview(p_deep, deep_outer_miss));
+  // review through compose: 99 → Left(Left(99)) → preview → Some(99)
+  let rebuilt_deep = review(p_deep, 99);
+  say_opt_i32(preview(p_deep, rebuilt_deep));
+  // ---------- Iso basics ----------
+  // swap_iso forward: (42, "hello") → ("hello", 42); project the
+  // first String of the swapped pair.
+  let si = swap_iso(I32, String, ());
+  let swapped = view_iso(si, p);
+  say_str(view(fst_lens(), swapped));
+  // review (backward): ("world", 7) → (7, "world"); project the I32.
+  let unswapped = review_iso(si, ("world", 7));
+  say_i32(view(l_fst, unswapped));
+  // ---------- Iso compose ----------
+  // swap >>> swap = identity. Round-tripped value matches the input.
+  let double_swap = compose_iso(si, swap_iso());
+  let round_trip = view_iso(double_swap, p);
+  print(int_to_string(view(l_fst, round_trip)));
+  print(", ");
+  say_str(view(l_snd, round_trip));
+  // assoc_iso: ((1, 2), 3) → (1, (2, 3)). Project the new head and the
+  // head of the inner pair.
+  let triple = ((1, 2), 3);
+  let ai = assoc_iso(I32, I32, I32, ());
+  let reassoc = view_iso(ai, triple);
+  print(int_to_string(view(fst_lens(), reassoc)));
+  print(", ");
+  let inner23 = view(snd_lens(), reassoc);
+  print(int_to_string(view(fst_lens(), inner23)));
+  print(", ");
+  say_i32(view(snd_lens(), inner23));
+  // ---------- over_iso ----------
+  // Map through the iso: increment the I32 component, observed back on
+  // the original side via l_snd (post-swap → pre-swap).
+  let bumped_via_iso =
+    over_iso(
+      , si
+      , .(q: String & I32) -> String & I32 {
+          match! q {
+            .(s: String, n: I32) { (s, inc(n)) }
+          }
+        }
+      , p
+      );
+  print(int_to_string(view(l_fst, bumped_via_iso)));
+  print(", ");
+  say_str(view(l_snd, bumped_via_iso));
+  // ---------- id_lens ----------
+  // view returns the value unchanged; set replaces it.
+  let il = id_lens(I32, ());
+  print(int_to_string(view(il, 7)));
+  print(", ");
+  say_i32(set(il, 100, 7));
+  // ---------- iso_to_lens composed with a lens ----------
+  // swap then fst-of-swapped = "snd of original" — the coercion lets a
+  // swap iso slot into a lens compose chain.
+  let lens_via_iso = compose_lens(iso_to_lens(si), fst_lens());
+  say_str(view(lens_via_iso, p));
+  // ---------- iso_to_prism: review round-trip ----------
+  // An iso-derived prism always hits on preview. Test via a review
+  // round-trip: build a value, then project its components back.
+  let ipr = iso_to_prism(si);
+  let built = review(ipr, ("hi", 11));
+  print(int_to_string(view(l_fst, built)));
+  print(", ");
+  say_str(view(l_snd, built));
+  // ---------- op lens DSL ----------
+  // `l ^ x` ≡ view(l, x), with `[S]`, `[A]` inferred from the value-arg
+  // types. Same for `^?` over a prism. `**` chains compose_lens left-assoc.
+  print(int_to_string(l_fst ^ p));
+  print(", ");
+  say_str(l_snd ^ p);
+  // Compose chain: outer is `((I32 & String) & I32)`; reach the inner
+  // String via fst_lens >>> snd_lens, expressed with `**`.
+  let l_chain = fst_lens(I32 & String, I32, ()) ** snd_lens(I32, String, ());
+  say_str(l_chain ^ outer);
+  // Prism preview via `^?`. Hit, then miss.
+  say_opt_i32(p_left ^? v_left);
+  say_opt_i32(p_left ^? v_right);
+  // Prism review via `##`. Then preview the result.
+  let inj = p_left ## 77;
+  say_opt_i32(p_left ^? inj);
+  // ---------- op row-update ----------
+  // `r %% n` desugars to `set_hed(R, n)`. The `[R]` binder for the rest of
+  // the row is inferred from the receiver's value type — no type arguments
+  // at the call site. Left-assoc `__ %% _` chains without parens:
+  // `r %% a %% b` is `set_hed(set_hed(r, a), b)`.
+  let row = ({hed = 7}, ({mid = "kio"}, {tal = 11}));
+  show_hmt(row);
+  show_hmt(row %% 100);
+  show_hmt(row %% 200 %% 300)
+}
+
+pub fn main() -> . { tour() }

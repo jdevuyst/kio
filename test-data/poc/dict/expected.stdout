@@ -1,0 +1,26 @@
+literal |> fold_asc = [1=10, 2=20, 5=50, 8=80, 9=90]
+size = 5
+get(d, 8) = present(80)
+get(d, 4) = absent
+member(d, 2) = true
+get_or(d, 4, 0) = 0
+insert(d, 7, 70) = [1=10, 2=20, 5=50, 7=70, 8=80, 9=90]
+delete(d, 2) = [1=10, 5=50, 8=80, 9=90]
+insert(d, 5, 500) |> get 5 = present(500)
+map_values(*2, d) = [1=20, 2=40, 5=100, 8=160, 9=180]
+filter(v>40, d) = [5=50, 8=80, 9=90]
+union(l, r) = [1=1, 2=2, 3=3]
+intersection(l, r) = [2=2]
+d[8] = present(80)
+d +> (6, 60) = [1=10, 2=20, 5=50, 6=60, 8=80, 9=90]
+d -< 9 = [1=10, 2=20, 5=50, 8=80]
+l |+| r = [1=1, 2=2, 3=3]
+empty literal = []
+repeated keys = [1=100, 2=200]
+descending comparator = [3=30, 2=20, 1=10]
+empty fold carry = 17
+unit present = present-unit
+unit absent = absent
+sum number = present-number(7)
+sum unit = present-unit
+sum absent = absent

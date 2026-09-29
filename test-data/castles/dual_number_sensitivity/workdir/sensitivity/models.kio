@@ -1,0 +1,25 @@
+module sensitivity/models;
+
+import sensitivity/jet as jet;
+
+pub fn elastic_energy(x: jet.Jet, y: jet.Jet) -> jet.Jet {
+  let u = jet.sub(jet.scale(2.0, x), y);
+  let v = jet.add(x, y);
+  let coupled = jet.add(jet.square(u), jet.mul(u, v));
+  jet.scale(0.5, jet.add(coupled, jet.scale(3.0, jet.square(v))))
+}
+
+pub fn calibration_objective(x: jet.Jet, y: jet.Jet) -> jet.Jet {
+  let first = jet.sub(jet.add(jet.square(x), y), jet.constant(1.0));
+  let second = jet.add(jet.sub(x, jet.square(y)), jet.constant(2.0));
+  let residuals = jet.add(jet.square(first), jet.square(second));
+  jet.add(residuals, jet.scale(0.5, jet.mul(x, y)))
+}
+
+pub fn coupled_response(x: jet.Jet, y: jet.Jet) -> jet.Jet {
+  let sum = jet.add(x, y);
+  let cubic = jet.mul(sum, jet.square(sum));
+  let contrast = jet.square(jet.sub(x, y));
+  let interaction = jet.mul(jet.mul(x, y), jet.sub(x, jet.scale(2.0, y)));
+  jet.add(jet.sub(cubic, contrast), interaction)
+}

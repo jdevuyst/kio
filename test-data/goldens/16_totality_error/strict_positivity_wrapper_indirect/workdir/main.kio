@@ -1,0 +1,6 @@
+module main;
+
+rec {
+  newtype P : . | (Q -> .) { pub constructor mk_p; pub projector un_p };
+  newtype Q : P { pub constructor mk_q; pub projector un_q }
+}

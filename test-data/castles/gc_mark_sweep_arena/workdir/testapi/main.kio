@@ -1,0 +1,53 @@
+/// gc_mark_sweep_arena -- a mark-sweep-compact garbage collector over a
+/// simulated heap. `main` is the collector's driver: it builds the
+/// fixture arena and runs the phases in the only order they work in,
+/// printing what each one decided.
+module testapi/main;
+
+import gc/compact(compact, plan);
+import gc/fixture(build_image);
+import gc/heap(top, {heap_cells}, {heap_roots});
+import gc/mark(mark_heap, {mark_bits}, {mark_trace});
+import gc/report(
+  , addr_list
+  , blank
+  , labeled
+  , line
+  , print_heap
+  , print_mark
+  , print_plan
+  , print_relocation
+  , print_sweep
+  , print_verify
+  );
+import gc/sweep(sweep, {live_objects});
+import gc/verify(audit);
+import testapi(String);
+
+pub fn main() -> . {
+  let image = build_image();
+  let cells = image.?{heap_cells};
+  let roots = image.?{heap_roots};
+  let before_top = top(cells);
+  line("gc_mark_sweep_arena");
+  blank();
+  labeled("roots", addr_list(roots));
+  blank();
+  print_heap("heap before gc", cells);
+  blank();
+  let marking = mark_heap(cells, roots);
+  let marks = marking.?{mark_bits};
+  print_mark(marking.?{mark_trace});
+  blank();
+  let census = sweep(cells, marks);
+  print_sweep(cells, marks, census);
+  blank();
+  let layout = plan(cells, marks);
+  print_plan(cells, marks, layout);
+  compact(cells, roots, marks, layout);
+  print_relocation(roots, before_top, top(cells));
+  blank();
+  print_heap("heap after gc", cells);
+  blank();
+  print_verify(audit(cells, roots, census.?{live_objects}))
+}

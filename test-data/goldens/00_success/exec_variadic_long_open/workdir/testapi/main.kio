@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/numeric(local_result, varop [%? ?%], varop [%?:+-*=!@$^& &^$@!=*-+:?%]);
+
+pub fn main() -> . {
+  print(i32_to_string([%?:+-*=!@$^& 1, 2, 3 &^$@!=*-+:?%]));
+  print("\n");
+  print(i32_to_string([%? 4, 5 ?%]));
+  print("\n");
+  print(i32_to_string(local_result()));
+  print("\n")
+}

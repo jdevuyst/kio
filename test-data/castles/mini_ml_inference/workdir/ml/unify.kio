@@ -1,0 +1,82 @@
+module ml/unify;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list_host as number;
+import ml/types as types;
+import testapi(Bool, I32, String);
+import testapi/iter(loop);
+
+type Equations = lists.List(types.Ty & types.Ty);
+
+pub type Result = types.Substitution | String;
+
+fn bind(id: I32, ty: types.Ty, substitutions: types.Substitution) -> Result {
+  match! ty {
+    .(v: types.Variable) {
+      if! number.eq_i32(id, types.Variable.get(v)) {
+        substitutions.>widen_sum!
+      } else {
+        lists.cons((id, ty), substitutions).>widen_sum!
+      }
+    };
+    .() {
+      if! types.contains(id, types.variables(ty)) {
+        "occurs check".>widen_sum!
+      } else {
+        lists.cons((id, ty), substitutions).>widen_sum!
+      }
+    }
+  }
+}
+
+rec(loop) fn solve(equations: Equations, substitutions: types.Substitution) -> Result {
+  match! lists.uncons(equations) {
+    .((left: types.Ty, right: types.Ty), rest: Equations) {
+      let a = types.apply(substitutions, left);
+      let b = types.apply(substitutions, right);
+      match! a {
+        .(v: types.Variable) {
+          match! bind(types.Variable.get(v), b, substitutions) {
+            .(next: types.Substitution) { rec solve(rest, next) };
+            .(error: String) { error.>widen_sum! }
+          }
+        };
+        .() {
+          match! b {
+            .(v: types.Variable) {
+              match! bind(types.Variable.get(v), a, substitutions) {
+                .(next: types.Substitution) { rec solve(rest, next) };
+                .(error: String) { error.>widen_sum! }
+              }
+            };
+            .() {
+              match!((a, b)) {
+                .(_a: types.Integer, _b: types.Integer) { rec solve(rest, substitutions) };
+                .(_a: types.Boolean, _b: types.Boolean) { rec solve(rest, substitutions) };
+                .(a: types.Arrow, b: types.Arrow) {
+                  let .(a1: types.Ty, a2: types.Ty) = types.Arrow.get(a);
+                  let .(b1: types.Ty, b2: types.Ty) = types.Arrow.get(b);
+                  rec solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
+                };
+                .(a: types.Pair, b: types.Pair) {
+                  let .(a1: types.Ty, a2: types.Ty) = types.Pair.get(a);
+                  let .(b1: types.Ty, b2: types.Ty) = types.Pair.get(b);
+                  rec solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
+                };
+                .() { "incompatible types".>widen_sum! }
+              }
+            }
+          }
+        }
+      }
+    };
+    .() { substitutions.>widen_sum! }
+  }
+}
+
+pub fn unify(a: types.Ty, b: types.Ty, substitutions: types.Substitution) -> Result {
+  solve(lists.singleton((a, b)), substitutions)
+}

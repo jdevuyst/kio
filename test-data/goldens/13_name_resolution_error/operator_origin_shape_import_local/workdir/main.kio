@@ -1,0 +1,9 @@
+module main;
+
+import origin(op _ ? _);
+
+fn choose(a: ., b: ., c: .) -> . { a }
+
+op _ ? _ : _ { impl choose }
+
+pub fn run(a: ., b: .) -> . { a ? b }

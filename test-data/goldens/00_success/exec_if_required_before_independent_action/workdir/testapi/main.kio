@@ -1,0 +1,18 @@
+module testapi/main;
+
+import actions(finish, identity_target);
+import elab/control(if);
+import testapi(Bool);
+import testapi/io as io;
+
+fn exercise(condition: Bool) -> . {
+  let selected =
+    if! condition {
+      identity_target!(.(value) { value })
+    } else {
+      finish!(.(value: .) -> . { value }, _)
+    };
+  selected(())
+}
+
+pub fn main() -> . { exercise(.t); io.print("first\n"); exercise(.f); io.print("second\n") }

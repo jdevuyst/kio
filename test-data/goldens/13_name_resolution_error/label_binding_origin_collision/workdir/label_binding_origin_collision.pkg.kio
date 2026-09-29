@@ -1,0 +1,13 @@
+package label_binding_origin_collision;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

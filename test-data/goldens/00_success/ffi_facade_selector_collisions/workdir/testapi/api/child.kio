@@ -1,0 +1,3 @@
+module testapi/api/child;
+
+pub fn value() -> . { () }

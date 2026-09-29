@@ -1,0 +1,17 @@
+package dt;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target js {
+    out "out/js-again/"
+  }
+}
+
+bridge {
+  main
+}

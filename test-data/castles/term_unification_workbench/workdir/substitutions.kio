@@ -1,0 +1,99 @@
+module substitutions;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import terms as term;
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub labels Binding = { key: I32, replacement: term.Term };
+
+pub type Substitution = lists.List(Binding);
+
+pub fn empty() -> Substitution { lists.nil() }
+
+pub fn lookup(bindings: Substitution, id: I32) -> term.Term | . {
+  match! traversal.find(.(binding) { arith.eq_i32(binding.?{key}, id) }, bindings) {
+    .(binding: Binding) { binding.?{replacement}.>widen_sum! };
+    .(_missing: .) { ().>widen_sum! }
+  }
+}
+
+labels Frame = { symbol: I32, completed: lists.List(term.Term), remaining: lists.List(term.Term) };
+
+rec(loop) {
+  fn descend(bindings: Substitution, original: term.Term, parents: lists.List(Frame)) -> term.Term {
+    match! original.>term.Term.unwrap {
+      .(v: term.Variable) {
+        match! lookup(bindings, v.>term.Variable.get) {
+          .(replacement: term.Term) { rec ascend(bindings, replacement, parents) };
+          .(_missing: .) { rec ascend(bindings, original, parents) }
+        }
+      };
+      .(symbol: I32, arguments: lists.List(term.Term)) {
+        match! lists.uncons(arguments) {
+          .(first: term.Term, rest: lists.List(term.Term)) {
+            rec descend(
+              , bindings
+              , first
+              , lists.cons({symbol, completed = lists.nil(), remaining = rest}, parents)
+              )
+          };
+          .(_empty: .) { rec ascend(bindings, original, parents) }
+        }
+      }
+    }
+  };
+  fn ascend(bindings: Substitution, value: term.Term, parents: lists.List(Frame)) -> term.Term {
+    match! lists.uncons(parents) {
+      .(frame: Frame, outer: lists.List(Frame)) {
+        let completed = lists.cons(value, frame.?{completed});
+        match! lists.uncons(frame.?{remaining}) {
+          .(first: term.Term, rest: lists.List(term.Term)) {
+            rec descend(
+              , bindings
+              , first
+              , lists.cons({symbol = frame.?{symbol}, completed, remaining = rest}, outer)
+              )
+          };
+          .(_empty: .) {
+            rec ascend(bindings, term.node(frame.?{symbol}, traversal.reverse(completed)), outer)
+          }
+        }
+      };
+      .(_root: .) { value }
+    }
+  }
+}
+
+pub fn apply(bindings: Substitution, original: term.Term) -> term.Term {
+  descend(bindings, original, lists.nil())
+}
+
+pub fn extend(bindings: Substitution, id: I32, value: term.Term) -> Substitution {
+  let binding = {key = id, replacement = value};
+  let singleton = lists.singleton(binding);
+  let composed =
+    traversal.map(
+      , .(old) { {key = old.?{key}, replacement = apply(singleton, old.?{replacement})} }
+      , bindings
+      );
+  lists.cons(binding, composed)
+}
+
+fn show_binding(binding: Binding) -> String {
+  string_concat(
+    , "v"
+    , string_concat(
+        , fmt.int_to_string(binding.?{key})
+        , string_concat("=", term.render(binding.?{replacement}))
+        )
+    )
+}
+
+pub fn render(bindings: Substitution) -> String { traversal.to_string(show_binding, bindings) }

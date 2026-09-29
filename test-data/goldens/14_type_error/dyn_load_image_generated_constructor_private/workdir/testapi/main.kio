@@ -1,0 +1,5 @@
+module testapi/main;
+
+import loader(Image);
+
+pub fn main() -> . { let constructor = Image.mk; () }

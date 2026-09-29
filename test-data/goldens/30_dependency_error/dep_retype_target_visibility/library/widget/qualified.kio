@@ -1,0 +1,5 @@
+module qualified;
+
+import store as source;
+
+pub fn keep(value: source.Token) -> source.Token { value }

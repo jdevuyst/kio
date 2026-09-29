@@ -1,0 +1,137 @@
+/// Proves whole-package loading resolves qualified aliases and selective imports
+/// to exact host declarations.
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import host_descriptor(Host_fn, Host_type, Host_types);
+import host_descriptor(host_fn_eq, host_types_cons, host_types_nil);
+import host_descriptor(i32_role, mk_host_fn, mk_host_id, mk_role_host_type);
+import hostrec(make_lit_default, test_bool_default);
+import loader(Diag, Host_adapter, Host_fn_binding);
+import loader(Host_fn_bindings, Image, Loaded, Lr_diag, Lr_image, Surface);
+import loader(diag_message, host_fn_bindings_cons, host_fn_bindings_nil);
+import loader(instantiate, mk_host_adapter, mk_host_fn_binding);
+import loader(un_load_outcome);
+import loader({apply}, {i32_out}, {lookup}, {unit_in});
+import loader/scan(load_package);
+import prime(group_slots_cons, group_slots_nil);
+import result(Call_result, call_done, call_stuck);
+import testapi(Bool, I32, Scalar, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/scalar(scalar_of_i32);
+import testapi/text(string_concat);
+import value(Value, vhost);
+
+fn source() -> String {
+  "module external/host;\n\nhost type Value role(i32);\n\nhost fn ping() -> "
+  "Value;\nhost fn _ping() -> Value;\n\nmodule guest/qualified;\n\nimport "
+  "external/host as h;\n\npub fn call_qualified() -> h.Value { h.ping() }\npub "
+  "fn call_underscore() -> h.Value { h._ping() }\n\nmodule guest/selective;\n\n"
+  "import external/host(Value, ping);\n\npub fn call_selective() -> Value { "
+  "ping() }\n\npackage guest;\n\nbridge { external/host; guest/**; }\n"
+}
+
+fn target_type() -> Host_type {
+  mk_role_host_type(mk_host_id("external/host"(String), "Value"(String)), i32_role())
+}
+
+fn target_function(name: String) -> Host_fn {
+  mk_host_fn(mk_host_id("external/host"(String), name), "() -> h{external/host.Value}"(String))
+}
+
+fn zero_group_binding(descriptor: Host_fn) -> Host_fn_binding {
+  mk_host_fn_binding(descriptor, group_slots_cons(0(I32), group_slots_nil()))
+}
+
+fn exact_target_types() -> Host_types { host_types_cons(target_type(), host_types_nil()) }
+
+fn exact_target_functions() -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , zero_group_binding(target_function("ping"(String)))
+    , host_fn_bindings_cons(
+        , zero_group_binding(target_function("_ping"(String)))
+        , host_fn_bindings_nil()
+        )
+    )
+}
+
+fn target_adapter() -> Host_adapter {
+  mk_host_adapter(exact_target_types(), exact_target_functions())
+}
+
+fn serve_target(call: Host_fn & Value) -> Call_result {
+  match! call {
+    .(descriptor: Host_fn, _domain: Value) {
+      if! host_fn_eq(descriptor, target_function("ping"(String))) {
+        call_done(vhost(scalar_of_i32(73(I32))))
+      } else if! host_fn_eq(descriptor, target_function("_ping"(String))) {
+        call_done(vhost(scalar_of_i32(91(I32))))
+      } else {
+        call_stuck("unexpected external host function"(String))
+      }
+    }
+  }
+}
+
+fn call_loaded[P](surface: Surface(P), name: String) -> String {
+  match! surface.?{lookup}(name) {
+    (
+      , .(callee: P) {
+          match! surface.?{apply}((callee, surface.?{unit_in})) {
+            (
+              , .(answer: P) {
+                  match! surface.?{i32_out}(answer) {
+                    (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn line(label: String, body: String) -> String {
+  string_concat(label, string_concat(body, "\n"(String)))
+}
+
+fn run_loaded(image: Image) -> String {
+  match! instantiate(target_adapter(), serve_target, make_lit_default, test_bool_default, image) {
+    (
+      , .(loaded: Loaded) {
+          Loaded.get(loaded)(.[P](surface: Surface(P)) {
+            string_concat(
+              , line(
+                  , "qualified alias callback: "(String)
+                  , call_loaded(surface, "call_qualified"(String))
+                  )
+              , string_concat(
+                  , line(
+                      , "underscore alias callback: "(String)
+                      , call_loaded(surface, "call_underscore"(String))
+                      )
+                  , line(
+                      , "selective import callback: "(String)
+                      , call_loaded(surface, "call_selective"(String))
+                      )
+                  )
+              )
+          })
+        }
+      , .(diag: Diag) { line("instantiation: "(String), diag_message(diag)) }
+      )
+  }
+}
+
+pub fn main() -> . {
+  match! un_load_outcome(load_package(source())) {
+    (
+      , .(loaded: Lr_image) { print(run_loaded(Lr_image.get(loaded))) }
+      , .(diag: Lr_diag) { print(line("load: "(String), diag_message(Lr_diag.get(diag)))) }
+      )
+  }
+}

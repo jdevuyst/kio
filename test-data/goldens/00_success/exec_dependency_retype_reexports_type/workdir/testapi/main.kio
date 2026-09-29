@@ -1,0 +1,18 @@
+/// `retype` keeps the remapped `newtype` on the module's public export
+/// surface. `widget/store`'s `pub newtype Tag` is collapsed
+/// onto `core/store`'s by the `widget.dep.kio`'s `retype`. A consumer that
+/// imports `Tag` from `widget/store` — natural, since `Tag` was a `pub`
+/// export there before the remap — must still resolve it (`specs/package.md`
+/// § Retyping: every `pub` item stays importable). Materialization
+/// re-exports the remapped type (a `pub type Tag = <counterpart>.Tag`
+/// preserving the shared identity). Its constructor/projector surface remains
+/// available through that identity alias, so both `widget.Tag` and
+/// `widget.Tag.mk` resolve to the shared `core/store.Tag` nominal.
+module testapi/main;
+
+import core/store(tag_val);
+import testapi(I32);
+import testapi/fmt(print_i32);
+import widget/store as widget;
+
+pub fn main() -> . { let .(t: widget.Tag) = widget.Tag.mk(7(I32)); print_i32(tag_val(t)) }

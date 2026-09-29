@@ -1,0 +1,62 @@
+module grid_firebreak_search/report;
+
+import elab/control(if);
+import grid_firebreak_search/model(
+  , Plan
+  , {blocked}
+  , {candidate_count}
+  , {frontier_count}
+  , {score}
+  , {selected}
+  , {spend}
+  );
+import grid_firebreak_search/search as search;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+import testapi/text as text;
+
+fn concat3(a: String, b: String, c: String) -> String {
+  text.string_concat(a, text.string_concat(b, c))
+}
+
+fn line_i32(label: String, value: I32) -> . {
+  io.print(concat3(label, fmt.int_to_string(value), "\n"))
+}
+
+fn line_bool(label: String, value: I32) -> . {
+  io.print(concat3(label, fmt.bool_to_string(arith.leq_i32(value, search.budget())), "\n"))
+}
+
+rec(iter.loop) fn print_cell_list(cursor: I32, cells: Array(I32)) -> . {
+  if! arith.leq_i32(cursor, arith.sub_i32(array.array_len(cells), 1)) {
+    let cell_text = fmt.int_to_string(array.array_get(cells, cursor));
+    if! arith.leq_i32(cursor, 0) {
+      io.print(cell_text);
+      rec print_cell_list(arith.add_i32(cursor, 1), cells)
+    } else {
+      io.print(text.string_concat(",", cell_text));
+      rec print_cell_list(arith.add_i32(cursor, 1), cells)
+    }
+  } else {
+    io.print("\n")
+  }
+}
+
+fn print_plan(plan: Plan) -> . {
+  io.print("grid_firebreak_search\n");
+  io.print("grid: 6x5 cells=30\n");
+  line_i32("frontier sources: ", plan.?{frontier_count});
+  line_i32("candidate cells: ", plan.?{candidate_count});
+  io.print("chosen firebreak cells: ");
+  print_cell_list(0, plan.?{selected});
+  line_i32("budget spent: ", plan.?{spend});
+  line_i32("risk blocked: ", plan.?{blocked});
+  line_i32("plan score: ", plan.?{score});
+  line_bool("budget ok: ", plan.?{spend})
+}
+
+pub fn run() -> . { print_plan(search.make_plan()) }

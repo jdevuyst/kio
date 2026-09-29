@@ -1,0 +1,30 @@
+package fmt_named_entry_order;
+
+bridge {
+  ; fmt_named_entry_order/** // bridge tail
+  ; // bridge close
+} // bridge outer
+;
+
+build {
+  ;; target js {
+    ;
+    namespace "example";
+    out "out/js/" // target tail
+    ; // target close
+  };
+
+  docs {
+    ;;
+    html "out/docs";
+    support "first";
+    md "docs";
+    support "second" // docs tail
+    ;; // docs close
+  };
+
+  // Build cache.
+  cache () // cache tail
+  ;; // build close
+} // build outer
+;

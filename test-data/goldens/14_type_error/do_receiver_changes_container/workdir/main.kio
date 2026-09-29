@@ -1,0 +1,17 @@
+module main;
+
+import elab/sequence(do);
+
+pub newtype Box[A] : A { constructor box; projector unbox }
+
+pub newtype Other[A] : A { constructor other; projector unother }
+
+host fn bind[A][B](value: Box(A), next: A -> Other(B)) -> Other(B);
+
+fn run() -> Other(.) {
+  do! bind {
+    let first <- Box.box(());
+    let second <- Box.box(());
+    Other.other(second)
+  }
+}

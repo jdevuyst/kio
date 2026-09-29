@@ -1,0 +1,143 @@
+/// The turtle and the paper it draws on, threaded through the interpreter as
+/// one value.
+///
+/// The turtle walks an unbounded integer plane; the canvas is only the window
+/// onto it. Motion is never blocked — a stroke may run off the paper, keep
+/// going, and come back to draw again — so the plotter clips *ink*, not
+/// movement. That is what a rasterizer does, and it is why the state carries a
+/// clip counter rather than a bounds check on the position.
+module turtle/state;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32);
+import turtle/canvas as canvas;
+
+/// Which way the turtle faces. Row 0 is the top of the plot, so `north` walks
+/// toward smaller `y`.
+pub labels Facing = { north: . } | { east: . } | { south: . } | { west: . };
+
+fn north_facing() -> Facing { {north=}.>widen_sum!(Facing) }
+
+fn east_facing() -> Facing { {east=}.>widen_sum!(Facing) }
+
+fn south_facing() -> Facing { {south=}.>widen_sum!(Facing) }
+
+fn west_facing() -> Facing { {west=}.>widen_sum!(Facing) }
+
+pub fn facing_name(f: Facing) -> String {
+  match! f {
+    (.(_n: North) { "N" }, .(_e: East) { "E" }, .(_s: South) { "S" }, .(_w: West) { "W" })
+  }
+}
+
+/// The horizontal component of one step along `f`.
+pub fn facing_dx(f: Facing) -> I32 {
+  match! f {
+    (.(_n: North) { 0 }, .(_e: East) { 1 }, .(_s: South) { 0 }, .(_w: West) { -1 })
+  }
+}
+
+/// The vertical component of one step along `f`.
+pub fn facing_dy(f: Facing) -> I32 {
+  match! f {
+    (.(_n: North) { -1 }, .(_e: East) { 0 }, .(_s: South) { 1 }, .(_w: West) { 0 })
+  }
+}
+
+pub fn turn_right(f: Facing) -> Facing {
+  match! f {
+    (
+      , .(_n: North) { east_facing() }
+      , .(_e: East) { south_facing() }
+      , .(_s: South) { west_facing() }
+      , .(_w: West) { north_facing() }
+      )
+  }
+}
+
+pub fn turn_left(f: Facing) -> Facing {
+  match! f {
+    (
+      , .(_n: North) { west_facing() }
+      , .(_e: East) { north_facing() }
+      , .(_s: South) { east_facing() }
+      , .(_w: West) { south_facing() }
+      )
+  }
+}
+
+/// The whole interpreter state: the paper, the turtle, and the two counters
+/// the report reads back.
+pub labels State = {
+  , paper: canvas.Canvas
+  , width: I32
+  , height: I32
+  , tx: I32
+  , ty: I32
+  , heading: Facing
+  , down: Bool
+  , executed: I32
+  , clipped: I32
+  };
+
+/// The turtle before the first command: origin of a blank canvas, facing east,
+/// pen up.
+pub fn start_state(w: I32, h: I32) -> State {
+  {
+    , paper = canvas.blank(w, h)
+    , width = w
+    , height = h
+    , tx = 0
+    , ty = 0
+    , heading = east_facing()
+    , down = .f
+    , executed = 0
+    , clipped = 0
+    }
+}
+
+pub fn paper_of(s: State) -> canvas.Canvas { s.?{paper} }
+
+pub fn width_of(s: State) -> I32 { s.?{width} }
+
+pub fn height_of(s: State) -> I32 { s.?{height} }
+
+pub fn tx_of(s: State) -> I32 { s.?{tx} }
+
+pub fn ty_of(s: State) -> I32 { s.?{ty} }
+
+pub fn heading_of(s: State) -> Facing { s.?{heading} }
+
+pub fn down_of(s: State) -> Bool { s.?{down} }
+
+pub fn executed_of(s: State) -> I32 { s.?{executed} }
+
+pub fn clipped_of(s: State) -> I32 { s.?{clipped} }
+
+/// Each update is its own named function because a row update reorders the
+/// product it rebuilds; the declared `State` return type is what puts the
+/// fields back in the order every other reader expects.
+pub fn with_paper(s: State, cv: canvas.Canvas) -> State { s.!{paper = cv} }
+
+pub fn with_pos(s: State, x: I32, y: I32) -> State { s.!{tx = x, ty = y} }
+
+pub fn with_heading(s: State, f: Facing) -> State { s.!{heading = f} }
+
+pub fn with_pen(s: State, d: Bool) -> State { s.!{down = d} }
+
+/// One more command executed.
+pub fn tick(s: State) -> State { s.!{executed = add_i32(s.?{executed}, 1)} }
+
+/// One more dab of ink discarded for landing off the paper.
+pub fn clip(s: State) -> State { s.!{clipped = add_i32(s.?{clipped}, 1)} }
+
+pub fn pen_name(d: Bool) -> String {
+  if! d {
+    "down"
+  } else {
+    "up"
+  }
+}

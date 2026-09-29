@@ -1,0 +1,52 @@
+skyline_silhouette v1
+
+buildings (7)  span [left,right), height
+  spire  [ 1, 5)  h=11
+  annex  [ 2, 7)  h= 6
+  kiosk  [ 3, 4)  h= 4
+  porch  [ 7, 9)  h= 6
+  depot  [12,17)  h= 7
+  vault  [14,19)  h= 7
+  tower  [15,16)  h=12
+
+events (14)  in sweep order
+   1  enter  spire  h=11
+   2  enter  annex  h= 6
+   3  enter  kiosk  h= 4
+   4  leave  kiosk  h= 4
+   5  leave  spire  h=11
+   7  enter  porch  h= 6
+   7  leave  annex  h= 6
+   9  leave  porch  h= 6
+  12  enter  depot  h= 7
+  14  enter  vault  h= 7
+  15  enter  tower  h=12
+  16  leave  tower  h=12
+  17  leave  depot  h= 7
+  19  leave  vault  h= 7
+
+sweep  position, edge, resulting height, key point?, active heights
+   1  enter  top=11  key  [11]
+   2  enter  top=11  ---  [11,6]
+   3  enter  top=11  ---  [11,6,4]
+   4  leave  top=11  ---  [11,6]
+   5  leave  top= 6  key  [6]
+   7  enter  top= 6  ---  [6,6]
+   7  leave  top= 6  ---  [6]
+   9  leave  top= 0  key  []
+  12  enter  top= 7  key  [7]
+  14  enter  top= 7  ---  [7,7]
+  15  enter  top=12  key  [12,7,7]
+  16  leave  top= 7  key  [7,7]
+  17  leave  top= 7  ---  [7]
+  19  leave  top= 0  key  []
+
+skyline (7 key points)
+  (1,11) (5,6) (9,0) (12,7) (15,12) (16,7) (19,0)
+
+area
+  columns (19): 0 11 11 11 11 6 6 6 6 0 0 0 7 7 7 12 7 7 7
+  from key points: 122
+  from raster:     122
+  areas agree:     true
+  points advance:  true

@@ -1,0 +1,16 @@
+Lexical closure interpreter
+Lexical shadowing (captured x=10, caller x=100): 15
+Escaping closure (make-adder 7, then apply 8): 15
+Higher-order application (twice 6): 12
+Argument evaluated in caller scope (x=20): 20
+Parameter shadows captured binding (4+1): 5
+Closure is a first-class result: <closure y>
+Unbound variable: evaluation error: unbound variable: ghost
+Caller cannot supply missing capture: evaluation error: unbound variable: missing
+Non-function application: evaluation error: application expects a closure
+Non-integer addition: evaluation error: addition expects two integers
+Self-application bounded by fuel: evaluation error: evaluation fuel exhausted
+Missing operand: parse error: expected expression
+Trailing expression: parse error: trailing token: 2
+Unknown expression token: parse error: unknown token: wobble
+Programs reported: 14

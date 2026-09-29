@@ -1,0 +1,25 @@
+module host/m;
+
+import host(f);
+
+fn g(u: .) -> . { u }
+
+equiv fn_lambda_then_bare() {
+  .(x: .) { g(x) };
+  g
+}
+
+equiv fn_bare_then_lambda() {
+  g;
+  .(x: .) { g(x) }
+}
+
+equiv host_lambda_then_bare() {
+  .(x: .) { f(x) };
+  f
+}
+
+equiv host_bare_then_lambda() {
+  f;
+  .(x: .) { f(x) }
+}

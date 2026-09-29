@@ -1,0 +1,5 @@
+module pure_lambda_annotation_mentions_host/main;
+
+import pure_lambda_annotation_mentions_host(String);
+
+pure fn keep() -> . { let _f = .(x: String) -> String { x }; () }

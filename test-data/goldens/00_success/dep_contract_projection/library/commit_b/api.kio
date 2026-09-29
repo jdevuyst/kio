@@ -1,0 +1,12 @@
+module api;
+
+import surface(Choice, Tag, zero, {tag});
+import surface(op _ + _);
+
+pub type Identity[Value] = Value;
+
+pub newtype Pack[Visible] <Secret> : Visible & Secret { pub constructor pack; pub projector unpack }
+
+pub fn id[Item](value: Item) -> Item { value + value }
+
+pub fn first[Left][Right]((head: Left, _: Right)) -> Left { head }

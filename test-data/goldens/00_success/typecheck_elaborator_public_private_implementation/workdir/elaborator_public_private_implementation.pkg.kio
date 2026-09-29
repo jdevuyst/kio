@@ -1,0 +1,13 @@
+package elaborator_public_private_implementation;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

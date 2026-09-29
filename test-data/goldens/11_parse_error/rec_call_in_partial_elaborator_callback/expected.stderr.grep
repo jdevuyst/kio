@@ -1,0 +1,2 @@
+`rec\(escape\)` is reserved for recursive calls captured by escaping continuations
+restructure the recursion so the recursive call is not captured by an escaping closure

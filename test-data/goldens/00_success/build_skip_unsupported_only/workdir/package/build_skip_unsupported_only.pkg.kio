@@ -1,0 +1,13 @@
+package build_skip_unsupported_only;
+
+build {
+  cache "out/.kio-cache/";
+
+  target wasm {
+    out "out/wasm/"
+  }
+}
+
+bridge {
+  main
+}

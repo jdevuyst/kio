@@ -1,0 +1,13 @@
+package demo;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  demo/**
+}

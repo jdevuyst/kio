@@ -1,0 +1,18 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+// A module-local operator keeps its meaning inside and outside the family.
+op _ & _ { impl add_i32 }
+
+fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
+
+pub fn main() -> . {
+  let .(f: I32 -> I32) = .x. { x1 & 100 };
+  print(i32_to_string(apply(f, 10)));
+  print("\n");
+  print(i32_to_string(7 & 20))
+}

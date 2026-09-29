@@ -1,0 +1,25 @@
+module egraph/numbers;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as host;
+
+pub fn both(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn equal(a: I32, b: I32) -> Bool { both(host.leq_i32(a, b), host.leq_i32(b, a)) }
+
+pub fn less(a: I32, b: I32) -> Bool {
+  if! host.leq_i32(b, a) {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn increment(a: I32) -> I32 { host.add_i32(a, 1) }

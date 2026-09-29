@@ -1,0 +1,11 @@
+module packet_frame_decoder/data;
+
+import testapi(String);
+
+pub fn alpha() -> String { "PF|A1|D|07|PING|326" }
+
+pub fn beta() -> String { "PF|B2|A|08|PONG|329" }
+
+pub fn gamma() -> String { "PF|C3|D|09|DROP|313" }
+
+pub fn delta() -> String { "XX|D4|H|10|PING|999" }

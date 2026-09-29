@@ -1,0 +1,25 @@
+/// Sequencing through an explicitly supplied bind function.
+module result/elab/sequence;
+
+import __comptime__;
+
+/// Composes an effectful value with its continuation.
+pub type Bind[*F] = [A][B] (F(A) & (A -> F(B))) -> F(B);
+
+/// A computation parameterized by its bind function.
+pub type Sequence[*F][Result] = Bind(F) -> F(Result);
+
+pure fn do_checked(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _receiver_type: __Type__
+  , result_type: __Type__
+  , receiver: __Checked_term__
+  , body: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let result = __term_call__(ct, __term_type__(ct, body), body, receiver);
+  (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
+}
+
+/// Evaluates the receiver expression exactly once, then runs its sequence.
+pub elab do : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { trailing sequence; impl(fills) do_checked }

@@ -1,0 +1,78 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+labels { pack <U> : U };
+
+labels { boxed[A] <U> : A & U };
+
+fn pack() -> Pack { Pack.mk(()) }
+
+fn boxed[A](value: A) -> Boxed(A) { Boxed.mk((value, ())) }
+
+fn named[U](_payload: U) -> String { "named\n"(String) }
+
+fn make_continuation(_unit: .) -> [U] U -> String { .[U](_payload: U) { "computed\n"(String) } }
+
+fn direct() -> String { Pack.get(pack())(String, .[U](_payload: U) { "direct\n"(String) }) }
+
+fn untyped_payload() -> String { Pack.get(pack())(String, .[U](_payload) { "untyped\n"(String) }) }
+
+fn named_value() -> String { Pack.get(pack())(String, named) }
+
+fn outer_let() -> String {
+  let continuation = .[U](_payload: U) { "outer-let\n"(String) };
+  Pack.get(pack())(String, continuation)
+}
+
+fn outer_let_function_result() -> . {
+  let continuation =
+    .[U](_payload: U) { .(left: String, right: String) { print(left); print(right) } };
+  Pack.get(pack())((String & String) -> ., continuation)((
+    , "outer-let-function-1-"(String)
+    , "result\n"(String)
+    ));
+  Pack.get(pack())((String & String) -> ., continuation)((
+    , "outer-let-function-2-"(String)
+    , "result\n"(String)
+    ))
+}
+
+fn computed() -> String { Pack.get(pack())(String, make_continuation(())) }
+
+fn collision[U](value: Boxed(U), fallback: U) -> U {
+  Boxed.get(U, value)(.[Hidden](_payload: U & Hidden) -> U { fallback })
+}
+
+fn function_result() -> . {
+  Pack.get(pack())(
+    , (String & String) -> .
+    , .[U](_payload: U) { .(left: String, right: String) { print(left); print(right) } }
+    )(("function-"(String), "result\n"(String)))
+}
+
+fn function_result_ordering() -> . {
+  let returned =
+    Pack.get(pack())(
+      , (String & String) -> .
+      , .[U](_payload: U) {
+          print("construct\n"(String));
+          .(left: String, right: String) { print(left); print(right) }
+        }
+      );
+  print("between\n"(String));
+  returned(("invoke-"(String), "result\n"(String)))
+}
+
+pub fn main() -> . {
+  print(direct());
+  print(untyped_payload());
+  print(named_value());
+  print(outer_let());
+  outer_let_function_result();
+  print(computed());
+  print(collision(boxed("ignored"(String)), "collision\n"(String)));
+  function_result();
+  function_result_ordering()
+}

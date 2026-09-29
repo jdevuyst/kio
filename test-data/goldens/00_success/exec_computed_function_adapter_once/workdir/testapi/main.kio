@@ -1,0 +1,46 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn use_twice(function: [A] (A & A) -> A, first: String, second: String) -> . {
+  print(function(String, (first, second)));
+  print(function(String, (second, first)))
+}
+
+fn run_nested(function: [A] A -> A, value: String) -> . { print(function(String, value)) }
+
+fn pure_local[A](kept: A) -> A {
+  let polymorphic = .[B](_discarded: B) { kept };
+  let _ = polymorphic(., ());
+  polymorphic(String, "ignored\n")
+}
+
+fn staged[A](kept: A)[B](_ignored: B) -> A { print("named use\n"); kept }
+
+fn ordered(_value: String)[String](later: String) -> String { later }
+
+fn run_named(function: [B] B -> String) -> . {
+  print(function(., ()));
+  print(function(String, "ignored\n"))
+}
+
+pub fn main() -> . {
+  use_twice(
+    , .(_ignored: .) { .[A](left: A, _right: A) { left } }(print("made\n"))
+    , "first\n"
+    , "second\n"
+    );
+  run_nested(
+    , .[A](kept: A) {
+        let polymorphic =
+          .(_ignored: .) { .[B](_discarded: B) { print("used\n"); kept } }(print("nested\n"));
+        let _ = polymorphic(., ());
+        polymorphic(String, "ignored\n")
+      }
+    , "kept\n"
+    );
+  print(pure_local(String, "pure\n"));
+  ordered("scope\n", ., ());
+  run_named(staged(String, "named\n"))
+}

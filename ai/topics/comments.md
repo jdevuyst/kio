@@ -1,0 +1,13 @@
+# Comment discipline
+
+On-demand reference: the project's settled style for code comments. Navigate here when writing or reviewing comments in any tracked file (Rust source, `.kio` sources, scripts, specs).
+
+The repo's stated rule for `.kio` sources is **"default to no comments if the code speaks for itself"** ([`test-data/README.md`](../../test-data/README.md) § Where case commentary goes). The same discipline applies to code comments everywhere in the repo:
+
+- **Default to no comments.** A comment is justified only when the code can't speak for itself. Well-named identifiers and a clear structure are the first line of explanation; reach for a comment when, and only when, they leave a genuine gap.
+- **Comment the WHY, not the WHAT.** A comment that restates what the code does in prose is noise — it duplicates what a reader can already see and rots the moment the code changes. The thing worth recording is *why*: the constraint, invariant, or non-obvious reason a maintainer would otherwise miss (`// no early return: the cleanup below must run on every path`).
+- **No task, fix, or caller context.** Comments don't reference the current task, the fix being made, the issue number, or which callers depend on this code (`// added for X flow`, `// fixes the bug where …`, `// used by Y`). That context belongs in the commit message or PR description, where it has provenance and won't go stale in place.
+- **No historical residue or negative-space narration.** Don't preserve what the code *used to* do (`// previously this lived in …`) or announce what it deliberately doesn't do without a concrete, still-true reason (`// not memoized`, `// Kio has no block comments`). A bare negation tells the reader nothing; keep only the negative comment that names a live constraint stopping a wrong "improvement."
+- **Don't park owed work in comments.** A comment that defers work the code still owes — `// left for a future change`, `// not yet supported`, `// TODO` — is a partial-implementation smell, not a plan; if the missing half is really owed, it belongs in a tracked issue or a `ROADMAP.md` thread (see AGENTS.md § Universal rules — No partial implementations). Extensibility and guard rationale are different and fine: naming what a design deliberately leaves room for or protects against ("the struct stays a bundle so a future annotation can land here", "so a future regression trips this test") explains the present shape. The dividing line is in [`no-future-extensions.md`](no-future-extensions.md) § Code comments.
+
+[`audit-comment-quality`](../skills/audit-comment-quality/SKILL.md) sweeps existing comments for drift against this discipline.

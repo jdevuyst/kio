@@ -1,0 +1,9 @@
+cold cache log:
+typed-cache: miss typedcache_elab main <key> (no entry)
+typed-cache: miss typedcache_elab provider <key> (no entry)
+warm cache log:
+typed-cache: hit typedcache_elab main <key>
+typed-cache: hit typedcache_elab provider <key>
+edited-helper cache log:
+typed-cache: miss typedcache_elab main <key> (no entry)
+typed-cache: miss typedcache_elab provider <key> (no entry)

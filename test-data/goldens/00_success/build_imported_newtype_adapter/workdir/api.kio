@@ -1,0 +1,5 @@
+module api;
+
+import provider(Token);
+
+pub fn run(callback: (Token & .) -> .) -> . { callback(Token.mk_token(()), ()) }

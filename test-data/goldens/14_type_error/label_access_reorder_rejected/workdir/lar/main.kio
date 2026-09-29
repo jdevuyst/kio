@@ -1,0 +1,7 @@
+module lar/main;
+
+import lar(I32, String);
+
+labels { foo: I32, bar: String };
+
+fn bad(row: Foo & Bar) -> String & I32 { row.?{foo, bar} }

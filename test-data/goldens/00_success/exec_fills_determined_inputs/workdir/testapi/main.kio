@@ -1,0 +1,28 @@
+module testapi/main;
+
+import elaborators as e;
+import elaborators(fill, inspect, with_sibling);
+import testapi/io(print);
+
+fn explicit_factory() -> . { let result = fill!(e.boxed(., ())); result }
+
+fn outside_result() -> . { let .(result: .) = fill!(e.boxed()); result }
+
+fn sibling_result() -> . { let result = with_sibling!(e.boxed(), ()); result }
+
+fn generic[A](value: e.Box(A)) -> . { inspect!(value) }
+
+fn complete_product() -> . { inspect!((e.boxed(., ()), ())) }
+
+pub fn main() -> . {
+  explicit_factory();
+  print("explicit\n");
+  outside_result();
+  print("outside\n");
+  sibling_result();
+  print("sibling\n");
+  generic(e.boxed(., ()));
+  print("generic\n");
+  complete_product();
+  print("product\n")
+}

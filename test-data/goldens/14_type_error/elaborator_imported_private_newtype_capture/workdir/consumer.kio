@@ -1,0 +1,13 @@
+module consumer;
+
+import __comptime__;
+import provider as p;
+
+pub pure fn capture_impl(
+  , _ct: __Comptime__
+  , _captured: __Checked_term__
+  , _source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ { value }
+
+pub elab demo : . -> . { captures p.Box.make; impl capture_impl }

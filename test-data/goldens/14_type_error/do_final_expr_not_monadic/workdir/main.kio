@@ -1,0 +1,21 @@
+module main;
+
+import elab/sequence(do);
+
+host type String role(str);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Type error: the final expression `"plain string"` is not of
+// type `Box(_)`. A do-block's final expression must match the
+// receiver's monad shape.
+fn bad() -> Box(.) {
+  do! box_bind {
+    let _x <- box_pure(());
+    "plain string"
+  }
+}

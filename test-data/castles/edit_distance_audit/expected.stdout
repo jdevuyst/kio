@@ -1,0 +1,15 @@
+edit_distance_audit
+left_len=6
+right_len=7
+row 0 values=0 1 2 3 4 5 6 7 checksum=168
+row 1 values=1 1 2 3 4 5 6 7 checksum=169
+row 2 values=2 2 1 2 3 4 5 6 checksum=139
+row 3 values=3 3 2 1 2 3 4 5 checksum=115
+row 4 values=4 4 3 2 1 2 3 4 checksum=99
+row 5 values=5 5 4 3 2 2 3 4 checksum=114
+row 6 values=6 6 5 4 3 3 2 3 checksum=120
+matrix_checksum=-547983552
+distance=3
+classification=minor drift
+within_review_budget=true
+classification_expected=true

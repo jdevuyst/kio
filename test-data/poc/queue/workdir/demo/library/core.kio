@@ -1,0 +1,274 @@
+/// Root module FIFO queue core with two-list representation, invariant predicates, and loop-step helpers.
+module library/core;
+
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/list/core(cons, head, nil, uncons);
+import list/core(List);
+
+// The representation is Okasaki's two-list queue (Purely Functional Data
+// Structures §5.2): a `Queue(A)` is a `front` cons-list we dequeue from and
+// a `back` we enqueue onto (stored reversed, newest at its head). When the
+// front would empty, the back is reversed onto it in one batch, so each
+// element moves between the lists at most once and both ends amortize to
+// O(1).
+//
+//   Invariant: **`front` is empty only when `back` is empty too.** So a
+//   non-empty queue always has a non-empty `front`, and `peek` / `is_empty`
+//   read the head in O(1) without inspecting `back`. The ordinary constructors
+//   and normalized dequeue path establish it; raw construction must preserve it.
+//
+// Reversal walks a spine of arbitrary length, and Kio' has no in-language
+// recursion (it is strongly normalizing), so the loop-driven layer — `mkq`,
+// `enqueue`, `dequeue`, and the bulk walks — lives in `queue.kio`, which
+// declares the host `loop`. This pure file keeps the two spines, their O(1)
+// constructors and destructors, the queue type, the pure O(1) operations,
+// the invariant predicate, and the per-element step functions.
+
+// =====================================================================
+// A pure two-state truth value
+// =====================================================================
+//
+// The two arms are labeled so `match!` can tell them apart — a bare `. | .`
+// has no labels to branch on.
+/// Defines the two labels that make the module-local boolean shape matchable.
+pub labels { btrue: ., bfalse: . };
+
+/// Boolean-like result type used by pure predicates in this module.
+pub type Bool = Btrue | Bfalse;
+
+/// Builds the true branch of the module-local boolean shape.
+pub fn yes() -> Bool { widen_sum!({btrue=}, Btrue | Bfalse) }
+
+/// Builds the false branch of the module-local boolean shape.
+pub fn no() -> Bool { widen_sum!({bfalse=}, Btrue | Bfalse) }
+
+/// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
+/// labels inside this module — a consumer never names `Btrue` /
+/// `Bfalse` to branch on a predicate's result.
+pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
+  match! b {
+    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
+  }
+}
+
+/// Returns logical conjunction for the module-local boolean shape.
+pub fn band(x: Bool, y: Bool) -> Bool { bool_to(y, no(), x) }
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn has_value[A](result: A | .) -> Bool { fold_result(no(), .(_value: A) -> Bool { yes() }, result) }
+
+fn list_is_empty[A](xs: List(A)) -> Bool {
+  match! uncons(xs) {
+    (.(_pair: A & List(A)) { no() }, .(_empty: .) { yes() })
+  }
+}
+
+// =====================================================================
+// The queue type
+// =====================================================================
+//
+// The newtype keeps the two spine roles from being swapped by a stray
+// product reorder. Callers of `mk_unchecked` must preserve the front/back
+// invariant; the loop-driven API restores it through its smart constructor.
+/// Two-list FIFO queue whose front is empty only when the back is empty.
+pub newtype Queue[A] : List(A) & List(A) { pub constructor mk_unchecked; pub projector un_queue }
+
+/// `front(q)` / `back(q)` project the two spines out of a queue. They are
+/// the pure reads the loop-driven layer in `queue.kio` threads through
+/// `mkq` / `enqueue` / `dequeue`.
+pub fn front[A](q: Queue(A)) -> List(A) {
+  match! q.>Queue.un_queue {
+    .(f: List(A), _b: List(A)) { f }
+  }
+}
+
+/// Projects the reversed back spine from a queue.
+pub fn back[A](q: Queue(A)) -> List(A) {
+  match! q.>Queue.un_queue {
+    .(_f: List(A), b: List(A)) { b }
+  }
+}
+
+// =====================================================================
+// O(1) pure operations
+// =====================================================================
+/// `empty()` is the canonical empty queue: both spines `nil`. It
+/// trivially satisfies the invariant (front empty, back empty).
+pub fn empty[A]() -> Queue(A) { Queue.mk_unchecked((nil(A, ()), nil(A, ()))) }
+
+/// `singleton(x)` is the one-element queue. The element lives at the
+/// front so the invariant ("front empty only when back empty") holds
+/// directly, with no reversal — hence `singleton` stays pure.
+pub fn singleton[A](x: A) -> Queue(A) { Queue.mk_unchecked((cons(x, nil(A, ())), nil(A, ()))) }
+
+/// `is_empty(q)` reads the front head in O(1). The invariant guarantees a
+/// non-empty queue has a non-empty front, so an empty front means an
+/// empty queue: `back` need not be inspected.
+pub fn is_empty[A](q: Queue(A)) -> Bool { list_is_empty(front(q)) }
+
+/// `peek(q)` reads the head element without removing it, or returns `()`. By
+/// the invariant the head is always the front head, so this is O(1) and
+/// pure.
+pub fn peek[A](q: Queue(A)) -> A | . { head(front(q)) }
+
+/// `reverse(q)` reverses the FIFO order in O(1) by swapping the two
+/// spines — the front (oldest-first) becomes the back and vice versa. It
+/// is pure: no element moves, the two lists just trade roles. (The
+/// resulting pair may violate the front-non-empty invariant, so `reverse`
+/// is paired with a `mkq` re-canonicalization in the loop-driven layer;
+/// the raw swap itself is the pure O(1) core.)
+pub fn swap_spines[A](q: Queue(A)) -> Queue(A) {
+  match! q.>Queue.un_queue {
+    .(f: List(A), b: List(A)) { Queue.mk_unchecked((b, f)) }
+  }
+}
+
+// =====================================================================
+// The representation invariant, as a checkable predicate
+// =====================================================================
+/// Checks the two-list queue invariant: empty front implies empty back.
+pub fn well_formed[A](q: Queue(A)) -> Bool {
+  bool_to(list_is_empty(back(q)), yes(), list_is_empty(front(q)))
+}
+
+// =====================================================================
+// The pure per-element step functions the bulk walks fold with
+// =====================================================================
+//
+// The pure per-element work of each bulk walk; the walk itself (the host
+// `loop`) lives in `queue.kio`.
+/// `count_step(carry, _x)` is the per-element step `length` folds. It
+/// takes the running count and the element and asks the caller-injected
+/// successor for `carry + 1`; the successor is threaded in because the
+/// host integer addition is not available in this pure file. Stated
+/// as a higher-order step so the file stays pure.
+pub fn count_step[A][N](succ: N -> N, carry: N, _x: A) -> N { succ(carry) }
+
+/// `snoc_into_back(x, q)` conses `x` onto the back spine, leaving the
+/// front untouched — the O(1) part of `enqueue` before `mkq` restores
+/// the invariant. Pure; the only non-pure part of enqueue is the `mkq`
+/// reversal when the front is empty.
+pub fn snoc_into_back[A](x: A, q: Queue(A)) -> Queue(A) {
+  match! q.>Queue.un_queue {
+    .(f: List(A), b: List(A)) { Queue.mk_unchecked((f, cons(x, b))) }
+  }
+}
+
+/// `pop_front(q)` removes the front head, returning the head paired with
+/// the residual `(front_tail & back)` queue, or `()` when the front is
+/// empty. The residual still needs `mkq` to restore the invariant (if the
+/// front tail emptied); that re-canonicalization is the loop-driven part
+/// in `queue.kio`. This pure step does the O(1) head split.
+pub fn pop_front[A](q: Queue(A)) -> (A & Queue(A)) | . {
+  match! q.>Queue.un_queue {
+    .(f: List(A), b: List(A)) {
+      match! uncons(f) {
+        (
+          , .(pair: A & List(A)) {
+              match! pair {
+                .(h: A, t: List(A)) { present((h, Queue.mk_unchecked((t, b)))) }
+              }
+            }
+          , .(_empty: .) { absent(A & Queue(A), ()) }
+          )
+      }
+    }
+  }
+}
+
+// =====================================================================
+// Algebraic laws (`equiv`) - the pure part
+// =====================================================================
+//
+// These cover the O(1) pure surface. The FIFO-discipline laws that drive
+// `enqueue` / `dequeue` (and so the host `loop` through `mkq`) live in
+// `queue.kio`, stated on concrete spines whose front stays populated so no
+// `loop` call survives into the residual.
+
+// ---- empty / singleton invariants ----
+equiv empty_is_empty[A]() {
+  is_empty(empty(A, ()));
+  yes()
+}
+
+equiv empty_well_formed[A]() {
+  well_formed(empty(A, ()));
+  yes()
+}
+
+equiv singleton_not_empty[A](x: A) {
+  is_empty(singleton(x));
+  no()
+}
+
+equiv singleton_well_formed[A](x: A) {
+  well_formed(singleton(x));
+  yes()
+}
+
+// ---- peek ----
+equiv peek_empty_is_none[A]() {
+  has_value(peek(empty(A, ())));
+  no()
+}
+
+equiv peek_singleton[A](x: A) {
+  peek(singleton(x));
+  present(x)
+}
+
+// ---- swap_spines is an involution: swap twice ≡ identity ----
+// Stated on a concrete two-element front spine so the projector /
+// constructor round-trips reduce without walking an opaque queue.
+equiv swap_spines_involution[A](f0: A, f1: A, b0: A) {
+  swap_spines(swap_spines(Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), cons(b0, nil(A, ()))))));
+  Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), cons(b0, nil(A, ()))))
+}
+
+// ---- pop_front splits the head off a populated front (O(1), no loop) ----
+equiv pop_front_singleton[A](x: A) {
+  pop_front(singleton(x));
+  present((x, Queue.mk_unchecked((nil(A, ()), nil(A, ())))))
+}
+
+equiv pop_front_empty_is_none[A]() {
+  has_value(pop_front(empty(A, ())));
+  no()
+}
+
+// ---- snoc_into_back conses onto the back, leaving the front intact ----
+equiv snoc_back_preserves_front[A](f0: A, x: A) {
+  front(snoc_into_back(x, singleton(f0)));
+  cons(f0, nil(A, ()))
+}
+
+// ---- pure predicates and partial-read elimination ----
+equiv band_true[A](on: A, off: A) {
+  bool_to(on, off, band(yes(), yes()));
+  on
+}
+
+equiv band_false[A](on: A, off: A) {
+  bool_to(on, off, band(yes(), no()));
+  off
+}
+
+equiv peek_present_eliminates[A][B](d: B, f: A -> B, x: A) {
+  fold_result(d, f, peek(singleton(x)));
+  f(x)
+}
+
+equiv peek_absent_eliminates[A][B](d: B, f: A -> B) {
+  fold_result(d, f, peek(empty(A, ())));
+  d
+}

@@ -1,0 +1,7 @@
+module boxlib/box;
+
+// The members are restricted to their declaring module subtree: `roundtrip`
+// can use them here, while code outside the subtree cannot.
+pub newtype Box[A] : A { pub(boxlib/box) constructor mk; pub(boxlib/box) projector un }
+
+pub fn roundtrip[A](value: A) -> A { Box.un(Box.mk(value)) }

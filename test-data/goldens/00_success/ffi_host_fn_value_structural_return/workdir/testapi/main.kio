@@ -1,0 +1,20 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(I32, String);
+import testapi/arith(make_pair);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+fn use_builder(builder: (I32 & String) -> I32 & String) -> I32 & String {
+  builder(42, "first-class-pair"(String))
+}
+
+pub fn main() -> . {
+  let pair = use_builder(make_pair);
+  print(i32_to_string(__fst__(I32, String, pair)));
+  print(" "(String));
+  print(__snd__(I32, String, pair));
+  print("\n"(String))
+}

@@ -1,0 +1,118 @@
+/// This case's loading host: qualified export lookups and typed contract checks over the piped-in image.
+module testapi/main;
+
+import defaults(apply_default, eval_default);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import imageio(read_image_stdin);
+import loader(Contract, Image, Lr_diag, Lr_image);
+import loader(Diag);
+import loader(contract_check, contract_cons, contract_nil, mk_expect);
+import loader(diag_message, export_term, un_load_outcome);
+import loader/scan(load_package);
+import prime(Term);
+import result(Ev_done, Ev_stuck);
+import testapi(I32, Scalar, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/scalar(scalar_as_i32);
+import testapi/text(string_concat);
+import value(Value);
+import value(value_to_scalar, vunit);
+
+// Call a zero-parameter export (one unit application) and render its i32;
+// a name that resolves to no unique surface export renders so.
+fn call0_i32(im: Image, name: String) -> String {
+  match! export_term(im, name) {
+    (
+      , .(t: Term) {
+          match! eval_default(t) {
+            (
+              , .(v: Ev_done) {
+                  match! apply_default(Ev_done.get(v), vunit()) {
+                    (
+                      , .(r: Ev_done) {
+                          match! value_to_scalar(Ev_done.get(r)) {
+                            (
+                              , .(s: Scalar) {
+                                  match! scalar_as_i32(s) {
+                                    (
+                                      , .(n: I32) { int_to_string(n) }
+                                      , .(_no: .) { "<not an i32>"(String) }
+                                      )
+                                  }
+                                }
+                              , .(_no: .) { "<not a scalar>"(String) }
+                              )
+                          }
+                        }
+                      , .(_s: Ev_stuck) { "<stuck>"(String) }
+                      )
+                  }
+                }
+              , .(_s: Ev_stuck) { "<stuck>"(String) }
+              )
+          }
+        }
+      , .(_absent: .) { "<no unique export>"(String) }
+      )
+  }
+}
+
+fn one_expect(name: String, sig: String) -> Contract {
+  contract_cons(mk_expect(name, sig), contract_nil())
+}
+
+fn show_check(label: String, im: Image, c: Contract) -> String {
+  match! contract_check(im, c) {
+    (
+      , .(d: Diag) { string_concat(label, string_concat(diag_message(d), "\n"(String))) }
+      , .(_ok: .) { string_concat(label, "ok\n"(String)) }
+      )
+  }
+}
+
+/// Loads the piped-in image, calls both qualified exports, and reports
+/// the contract outcomes.
+pub fn main() -> . {
+  match! un_load_outcome(load_package(read_image_stdin())) {
+    (
+      , .(im0: Lr_image) {
+          let im = Lr_image.get(im0);
+          print(string_concat(
+            , "m1.ping = "(String)
+            , string_concat(call0_i32(im, "m1.ping"(String)), "\n"(String))
+            ));
+          print(string_concat(
+            , "m2.ping = "(String)
+            , string_concat(call0_i32(im, "m2.ping"(String)), "\n"(String))
+            ));
+          print(string_concat(
+            , "bare ping = "(String)
+            , string_concat(call0_i32(im, "ping"(String)), "\n"(String))
+            ));
+          print(show_check(
+            , "contract (bare) = "(String)
+            , im
+            , one_expect("ping"(String), "() -> h{hostapi.I32}"(String))
+            ));
+          print(show_check(
+            , "contract (qualified) = "(String)
+            , im
+            , one_expect("m2.ping"(String), "() -> h{hostapi.I32}"(String))
+            ));
+          print(show_check(
+            , "contract (wrong signature) = "(String)
+            , im
+            , one_expect("m1.ping"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+            ))
+        }
+      , .(d: Lr_diag) {
+          print(string_concat(
+            , "load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+            ))
+        }
+      )
+  }
+}

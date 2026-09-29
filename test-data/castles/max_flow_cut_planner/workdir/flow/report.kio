@@ -1,0 +1,164 @@
+module flow/report;
+
+import elab/control(if);
+import flow/certificate as cert;
+import flow/fixtures as fixtures;
+import flow/math as math;
+import flow/network as net;
+import flow/solver as solver;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as a;
+import testapi/array as ar;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn number(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+fn flag(label: String, value: Bool) -> . {
+  io.print(label);
+  io.print(fmt.bool_to_string(value));
+  io.print("\n")
+}
+
+rec(loop) fn print_history(history: Array(solver.Augmentation), index: I32) -> . {
+  if! math.less(index, ar.array_len(history)) {
+    let step = ar.array_get(history, index);
+    io.print("  augment ");
+    number(a.add_i32(index, 1));
+    io.print(": ");
+    io.print(step.?{solver.route});
+    io.print(" amount=");
+    number(step.?{solver.amount});
+    io.print(" cancelled=");
+    number(step.?{solver.cancelled});
+    io.print("\n");
+    rec print_history(history, a.add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn print_edges(network: net.Network, residual: Array(I32), index: I32) -> . {
+  if! math.less(index, ar.array_len(network.?{net.edges})) {
+    let edge = ar.array_get(network.?{net.edges}, index);
+    if! edge.?{net.backward} {
+      ()
+    } else {
+      io.print("  link ");
+      number(edge.?{net.from});
+      io.print("->");
+      number(edge.?{net.to});
+      io.print(" flow=");
+      number(a.sub_i32(edge.?{net.capacity}, ar.array_get(residual, index)));
+      io.print("/");
+      number(edge.?{net.capacity});
+      io.print("\n")
+    };
+    rec print_edges(network, residual, a.add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn print_side(side: Array(Bool), node: I32, separator: String) -> . {
+  if! math.less(node, ar.array_len(side)) {
+    if! ar.array_get(side, node) {
+      io.print(separator);
+      number(node);
+      rec print_side(side, a.add_i32(node, 1), ",")
+    } else {
+      rec print_side(side, a.add_i32(node, 1), separator)
+    }
+  } else {
+    ()
+  }
+}
+
+pub fn run(fixture: fixtures.Fixture) -> solver.Solution {
+  let network = fixture.?{fixtures.network};
+  let solution = solver.solve(network, fixture.?{fixtures.source}, fixture.?{fixtures.sink});
+  let certificate =
+    cert.inspect(
+      , network
+      , solution.?{solver.residual}
+      , fixture.?{fixtures.source}
+      , fixture.?{fixtures.sink}
+      , solution.?{solver.value}
+      );
+  io.print(text.string_concat("network: ", fixture.?{fixtures.title}));
+  io.print("\n");
+  print_history(solution.?{solver.history}, 0);
+  print_edges(network, solution.?{solver.residual}, 0);
+  io.print("  source side={");
+  print_side(certificate.?{cert.source_side}, 0, "");
+  io.print("} flow=");
+  number(solution.?{solver.value});
+  io.print(" cut=");
+  number(certificate.?{cert.cut_capacity});
+  io.print("\n");
+  flag("  capacity bounds: ", certificate.?{cert.capacity_ok});
+  flag("  reverse pairs: ", certificate.?{cert.pairing_ok});
+  flag("  conservation: ", certificate.?{cert.conservation_ok});
+  flag("  minimum-cut certificate: ", certificate.?{cert.boundary_ok});
+  flag(
+    , "  independent expected value: "
+    , math.equal(solution.?{solver.value}, fixture.?{fixtures.expected})
+    );
+  solution
+}
+
+pub fn cancellation_witness(fixture: fixtures.Fixture, solution: solver.Solution) -> . {
+  let network = fixture.?{fixtures.network};
+  let history = solution.?{solver.history};
+  let first = ar.array_get(history, 0);
+  let second = ar.array_get(history, 1);
+  let middle_edge = ar.array_get(network.?{net.edges}, 2);
+  let remaining_flow =
+    a.sub_i32(middle_edge.?{net.capacity}, ar.array_get(solution.?{solver.residual}, 2));
+  let trace_ok =
+    math.both(
+      , text.string_eq(first.?{solver.route}, "0->1->2->3")
+      , text.string_eq(second.?{solver.route}, "0->2-cancel->1->3")
+      );
+  let cancellation_ok =
+    math.both(
+      , math.equal(first.?{solver.cancelled}, 0)
+      , math.both(math.equal(second.?{solver.cancelled}, 1), math.equal(remaining_flow, 0))
+      );
+  flag("cancellation witness: ", math.both(trace_ok, cancellation_ok))
+}
+
+pub fn reject_damaged_witnesses(fixture: fixtures.Fixture, solution: solver.Solution) -> . {
+  let network = fixture.?{fixtures.network};
+  let residual = solution.?{solver.residual};
+  let source = fixture.?{fixtures.source};
+  let sink = fixture.?{fixtures.sink};
+  let value = solution.?{solver.value};
+  let bad_bounds = ar.array_clone(residual);
+  ar.array_set(bad_bounds, 0, -1);
+  let bounds = cert.inspect(network, bad_bounds, source, sink, value);
+  flag("reject negative residual: ", math.invert(bounds.?{cert.capacity_ok}));
+  let bad_pair = ar.array_clone(residual);
+  ar.array_set(bad_pair, 1, 0);
+  let pairs = cert.inspect(network, bad_pair, source, sink, value);
+  flag("reject broken reverse pair: ", math.invert(pairs.?{cert.pairing_ok}));
+  let bad_balance = ar.array_clone(residual);
+  ar.array_set(bad_balance, 0, 1);
+  ar.array_set(bad_balance, 1, 0);
+  let balance = cert.inspect(network, bad_balance, source, sink, value);
+  flag(
+    , "reject unconserved feasible edge flows: "
+    , math.both(
+        , balance.?{cert.capacity_ok}
+        , math.both(balance.?{cert.pairing_ok}, math.invert(balance.?{cert.conservation_ok}))
+        )
+    );
+  let exaggerated = cert.inspect(network, residual, source, sink, a.add_i32(value, 1));
+  flag("reject exaggerated value: ", math.invert(cert.valid(exaggerated)));
+  flag(
+    , "original witness remains valid: "
+    , cert.valid(cert.inspect(network, residual, source, sink, value))
+    )
+}

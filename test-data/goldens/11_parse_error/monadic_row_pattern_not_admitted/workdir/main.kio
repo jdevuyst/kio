@@ -1,0 +1,3 @@
+module main;
+
+fn subject() -> . { do! bind { let .({slot}) <- value; result } }

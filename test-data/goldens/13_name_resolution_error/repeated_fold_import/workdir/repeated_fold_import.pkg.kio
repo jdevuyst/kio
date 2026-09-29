@@ -1,0 +1,13 @@
+package repeated_fold_import;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

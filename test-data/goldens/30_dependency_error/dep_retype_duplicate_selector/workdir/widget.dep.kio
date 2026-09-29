@@ -1,0 +1,8 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}
+
+retype widget/store.Token to core/store.Token;
+retype widget/store.Token to core/store.Token;

@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import testapi(String);
+import testapi/io(print);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+// Source: `A -> .`. The call site has a richer (product) view
+// of the value it has — it carries an `A & B` (both factors)
+// because some later pipeline kept the `B` payload around —
+// and wants to invoke the source while passing the whole product.
+// `ease!` wraps so the source still receives just the `A` factor.
+// The walk swaps source/target at the contravariant leaf
+// `(A & B, A)`; the leaf `ease!` engine fires `R-Project-Prod` to
+// drop the `B` factor.
+fn source(x: A) -> . { print(A.un_a(x)) }
+
+pub fn main() -> . {
+  let wider_arg = ease!(source, (A & B) -> .);
+  wider_arg((A.mk_a("ease! param narrowed ok\n"), B.mk_b("unused")))
+}

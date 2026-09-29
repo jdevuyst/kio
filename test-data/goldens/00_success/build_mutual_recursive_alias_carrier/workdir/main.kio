@@ -1,0 +1,10 @@
+module main;
+
+rec {
+  pub type Odd_tail = Odd;
+  pub type Even_tail = Even;
+  pub newtype Even : . | Odd_tail { pub constructor mk_even; pub projector un_even };
+  pub newtype Odd : . | Even_tail { pub constructor mk_odd; pub projector un_odd }
+}
+
+pub fn keep(e: Even) -> Even { e }

@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `match!` clause type parameters bind from the scrutinee during
+// per-clause dispatch. The clause `.[A](b: Box(A)) { … }` matches
+// both `Box(I32)` and `Box(String)`, binding `a` per branch (per
+// spec § Pattern matching, "tests whether the branch can be coerced
+// to the clause's parameter-product type").
+//
+// The body returns a concrete `String` regardless of `a`, so the
+// `match!` call's overall type is `String`.
+//
+// **Regression note.** The body calls `label(b)` with the
+// clause-bound `[A]` *elided* — inference fills it from `b`'s
+// type. With clauses as ordinary function expressions, each
+// polymorphic clause is inlined per scrutinee branch with the
+// branch's concrete type as the explicit type-argument, so the
+// body type-checks against the polymorphic signature and survives
+// Kio' emission without losing the elided type-arg.
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn label[A](b: Box(A)) -> String { "matched\n" }
+
+fn handle(p: Box(I32) | Box(String)) -> String {
+  match! p {
+    .[A](b: Box(A)) { label(b) }
+  }
+}
+
+pub fn main() -> . { print(handle(widen_sum!(Box.mk_box("hi")))) }

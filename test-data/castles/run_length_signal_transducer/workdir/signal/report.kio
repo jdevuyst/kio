@@ -1,0 +1,110 @@
+module signal/report;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import list_host as numbers;
+import signal/codec as codec;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+fn integer(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32) -> . {
+  match! lists.uncons(rest) {
+    .(run: codec.Run, tail: lists.List(codec.Run)) {
+      let value = run.?{codec.sample};
+      io.print("run ");
+      integer(index);
+      io.print(": value=");
+      integer(value);
+      io.print(" length=");
+      integer(run.?{codec.count});
+      io.print(" boundary=");
+      match! previous {
+        .(old: I32) {
+          io.print(if! numbers.eq_i32(old, value) {
+            "split\n"
+          } else {
+            "change\n"
+          })
+        };
+        .() { io.print("start\n") }
+      };
+      rec packets(tail, value.>widen_sum!(I32 | .), arith.add_i32(index, 1))
+    };
+    .() { () }
+  }
+}
+
+pub fn encoding(state: codec.Encoder, runs: lists.List(codec.Run)) -> . {
+  io.print("Run-length signal codec: cap=");
+  integer(codec.cap());
+  io.print("\nsamples=");
+  integer(state.?{codec.samples});
+  io.print(" transitions=");
+  integer(state.?{codec.transitions});
+  io.print(" splits=");
+  integer(state.?{codec.splits});
+  io.print(" packets=");
+  integer(traversal.length(runs));
+  io.print("\n");
+  packets(runs, ().>widen_sum!(I32 | .), 1)
+}
+
+rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index: I32, valid: Bool) -> Bool {
+  match! lists.uncons(original) {
+    .(expected: I32, original_tail: lists.List(I32)) {
+      match! lists.uncons(decoded) {
+        .(actual: I32, decoded_tail: lists.List(I32)) {
+          let equal = numbers.eq_i32(expected, actual);
+          io.print("sample ");
+          integer(index);
+          io.print(": expected=");
+          integer(expected);
+          io.print(" decoded=");
+          integer(actual);
+          io.print(if! equal {
+            " ok\n"
+          } else {
+            " MISMATCH\n"
+          });
+          rec compare(
+            , original_tail
+            , decoded_tail
+            , arith.add_i32(index, 1)
+            , if! equal {
+                valid
+              } else {
+                .f
+              }
+            )
+        };
+        .() { io.print("decoded stream ended early\n"); .f }
+      }
+    };
+    .() {
+      match! lists.uncons(decoded) {
+        .(_extra: I32, _tail: lists.List(I32)) {
+          io.print("decoded stream has extra samples\n");
+          .f
+        };
+        .() { valid }
+      }
+    }
+  }
+}
+
+pub fn roundtrip(original: lists.List(I32), decoded: lists.List(I32)) -> . {
+  let valid = compare(original, decoded, 1, .t);
+  io.print(if! valid {
+    "roundtrip=ok\n"
+  } else {
+    "roundtrip=FAILED\n"
+  })
+}

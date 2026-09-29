@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(I32, String);
+
+// `Inner` is a label-minted newtype wrapping the product `(I32 & I32)`;
+// `Outer` nests it as a slot of its own product payload. Crossing the
+// FFI as an exported-fn return, the nested named product exercises the
+// skin's recursive product Out conversion: each nesting level opens its
+// own binding scope, and the inner scope's binder must not shadow the
+// enclosing one it reads (the JS skin once re-bound `__slots` inside its
+// own initializer — a temporal-dead-zone ReferenceError at every call).
+pub labels { inner: I32 & I32 };
+
+pub labels { outer: String & Inner };
+
+pub fn make(s: String, a: I32, b: I32) -> Outer { {outer = (s, {inner = (a, b)})} }

@@ -1,0 +1,7 @@
+module testapi;
+
+host type String role(str);
+
+// The rank-N `T` in `apply_poly` is lexically scoped; this unrelated
+// nominal declaration must not change the host call boundary.
+newtype T : String { constructor make_t; projector un_t }

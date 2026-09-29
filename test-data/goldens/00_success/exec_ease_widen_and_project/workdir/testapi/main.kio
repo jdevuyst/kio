@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease, into);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `ease!` admits both sum widening and product projection in one
+// coercion. Source `String & I32` projects to its `String`
+// component (R-Project-Prod) and then widens into the target's
+// left arm (R-Widen-Sum). Neither `onto!` (no widening) nor
+// `align!` (no projection) alone admits this case.
+fn project_and_widen(p: String & I32) -> String | I32 { ease!(p) }
+
+// `ease!` also collapses uniform sum arms while widening. Source
+// `(String & I32) | (String & I32)` projects each arm's `String`
+// (R-Project-Prod), collapses the two arms onto one (R-Collapse-
+// Sum), and widens into the target's left arm (R-Widen-Sum).
+fn collapse_and_widen(s: (String & I32) | (String & I32)) -> String | I32 { ease!(s) }
+
+pub fn main() -> . {
+  let r1 = project_and_widen(("projected-and-widened\n", 0));
+  let s1 =
+    match! r1 {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(s1);
+  let r2 = collapse_and_widen(into!(("collapsed-and-widened\n", 0)));
+  let s2 =
+    match! r2 {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(s2)
+}

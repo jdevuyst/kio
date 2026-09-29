@@ -1,0 +1,124 @@
+module main;
+
+import control(if);
+
+host type Text role(str);
+
+host type Token;
+
+host type Flag role(bool);
+
+host type Wide_signed role(i128);
+
+host type Wide_unsigned role(u128);
+
+host type Float_box role(f32);
+
+host fn echo_text(value: Text) -> Text;
+
+host fn echo_token(value: Token) -> Token;
+
+host fn echo_flag(value: Flag) -> Flag;
+
+host fn make_choice(value: Text) -> Text | Token;
+
+pub newtype Bundle : Text & Token { pub constructor bundle; pub projector unbundle }
+
+pub newtype A_b : Text & Token { pub constructor c; projector un_a_b }
+
+pub newtype A : Text & Token { pub constructor b_c; projector un_a }
+
+pub fn roundtrip_text(value: Text) -> Text { echo_text(value) }
+
+pub fn roundtrip_text_literal() -> Text { echo_text("direct literal") }
+
+pub fn keep_token(value: Token) -> Token { echo_token(value) }
+
+pub fn apply_text(step: Text -> Text, value: Text) -> Text { step(value) }
+
+pub fn pair(value: Text, token: Token) -> Text & Token { (value, token) }
+
+pub fn flag_pair(flag: Flag, token: Token) -> Flag & Token { (flag, token) }
+
+pub fn text_or_token(value: Text) -> Text | Token { make_choice(value) }
+
+pub fn wide_signed_min() -> Wide_signed { -170141183460469231731687303715884105728 }
+
+pub fn wide_unsigned_max() -> Wide_unsigned { 340282366920938463463374607431768211455 }
+
+pub fn float_from_integer() -> Float_box { 16777217 }
+
+pub fn float_literal() -> Float_box { 1.25 }
+
+pub fn flag_literal() -> Flag { .t }
+
+fn identity_flag(flag: Flag) -> Flag { flag }
+
+pub fn choose(flag: Flag, yes: Token, no: Token) -> Token {
+  if! flag {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_call(flag: Flag, yes: Token, no: Token) -> Token {
+  if! identity_flag(flag) {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_host_call(flag: Flag, yes: Token, no: Token) -> Token {
+  if! echo_flag(flag) {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_let(flag: Flag, yes: Token, no: Token) -> Token {
+  let copied = flag;
+  if! copied {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_literal(yes: Token, no: Token) -> Token {
+  if! .t {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_closure(flag: Flag, yes: Token, no: Token) -> Token {
+  .(condition: Flag) {
+    if! condition {
+      yes
+    } else {
+      no
+    }
+  }(flag)
+}
+
+pub fn choose_inferred_closure(flag: Flag, yes: Token, no: Token) -> Token {
+  .(condition) {
+    if! condition {
+      yes
+    } else {
+      no
+    }
+  }(flag)
+}
+
+pub fn choose_destructured((flag: Flag, yes: Token), no: Token) -> Token {
+  if! flag {
+    yes
+  } else {
+    no
+  }
+}

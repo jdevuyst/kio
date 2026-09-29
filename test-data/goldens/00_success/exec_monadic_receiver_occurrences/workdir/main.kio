@@ -1,0 +1,21 @@
+module main;
+
+import elab/sequence(do);
+
+newtype Left : . { constructor left; projector unleft }
+
+newtype Right : . { constructor right; projector unright }
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+fn pure[A](value: A) -> Box(A) { Box.box(value) }
+
+fn choose_second[A](first: A, second: Right) -> Box(Right) {
+  do!(.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }) {
+    let first_value <- pure(first);
+    let second_value <- pure(second);
+    pure(second_value)
+  }
+}
+
+pub fn main() -> . { choose_second(Left.left(), Right.right()).>Box.unbox.>Right.unright }

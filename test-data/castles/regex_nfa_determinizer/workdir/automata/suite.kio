@@ -1,0 +1,58 @@
+/// The fixtures: four patterns and six probe words.
+///
+/// The patterns are chosen so that the two kinds of merging stay
+/// distinguishable — determinization folding many NFA states into one DFA
+/// state, and refinement folding several DFA states into one block.
+module automata/suite;
+
+import automata/pattern(Pattern, alt, cat, chr, opt, plus, star);
+import automata/seq(Ints, List, cons, empty, one);
+import automata/symbol(code_a, code_b, code_c);
+import testapi(I32);
+
+fn a() -> Pattern { chr(code_a()) }
+
+fn b() -> Pattern { chr(code_b()) }
+
+fn c() -> Pattern { chr(code_c()) }
+
+/// `(a|b)*abb` — the textbook case. Fourteen NFA states collapse to six DFA
+/// states, and the refinement then finds that "nothing seen yet" and "the
+/// last letter was a b" are the same state: a b makes no progress toward a
+/// literal that begins with an a.
+fn classic() -> Pattern { cat(cat(cat(star(alt(a(), b())), a()), b()), b()) }
+
+/// `ac|bc` — two branches that converge. Determinization keeps them apart,
+/// because the two `c` edges leave different NFA states; only the refinement
+/// sees that both branches accept the same suffix. It merges twice.
+fn converge() -> Pattern { alt(cat(a(), c()), cat(b(), c())) }
+
+/// `a(b|c)+` — one or more letters drawn from a two-letter class.
+fn tail_class() -> Pattern { cat(a(), plus(alt(b(), c()))) }
+
+/// `(ab)?c*` — an optional prefix in front of a star. Its start state
+/// accepts, which is the case a refinement that assumed otherwise would get
+/// wrong.
+fn optional_prefix() -> Pattern { cat(opt(cat(a(), b())), star(c())) }
+
+pub fn patterns() -> List(Pattern) {
+  cons(classic(), cons(converge(), cons(tail_class(), one(optional_prefix()))))
+}
+
+fn w_abb() -> Ints { cons(code_a(), cons(code_b(), one(code_b()))) }
+
+fn w_aabb() -> Ints { cons(code_a(), w_abb()) }
+
+fn w_ac() -> Ints { cons(code_a(), one(code_c())) }
+
+fn w_bc() -> Ints { cons(code_b(), one(code_c())) }
+
+fn w_abcc() -> Ints { cons(code_a(), cons(code_b(), cons(code_c(), one(code_c())))) }
+
+/// Every probe runs against every pattern, so the verdict grid is the
+/// pipeline's oracle: each of the twenty-four cells is fixed by what the
+/// pattern *means*, and a determinization or a refinement that lost the
+/// language would have to flip one of them.
+pub fn probes() -> List(Ints) {
+  cons(empty(), cons(w_abb(), cons(w_aabb(), cons(w_ac(), cons(w_bc(), one(w_abcc()))))))
+}

@@ -1,0 +1,35 @@
+module testapi/arith;
+
+import testapi(Bool, F64, I32);
+
+host fn add_i32(p0: I32, p1: I32) -> I32;
+
+host fn sub_i32(p0: I32, p1: I32) -> I32;
+
+host fn mul_i32(p0: I32, p1: I32) -> I32;
+
+host fn div_i32(p0: I32, p1: I32) -> I32;
+
+host fn mod_i32(p0: I32, p1: I32) -> I32;
+
+host fn leq_i32(p0: I32, p1: I32) -> Bool;
+
+host fn lt_i32(p0: I32, p1: I32) -> Bool;
+
+host fn eq_i32(p0: I32, p1: I32) -> Bool;
+
+host fn add_f64(p0: F64, p1: F64) -> F64;
+
+host fn sub_f64(p0: F64, p1: F64) -> F64;
+
+host fn mul_f64(p0: F64, p1: F64) -> F64;
+
+host fn add(p0: I32, p1: I32) -> I32;
+
+host fn sub(p0: I32, p1: I32) -> I32;
+
+host fn mul(p0: I32, p1: I32) -> I32;
+
+host fn div(p0: I32, p1: I32) -> I32;
+
+host fn mod(p0: I32, p1: I32) -> I32;

@@ -1,0 +1,7 @@
+module main;
+
+import provider as helper;
+
+elab unit : . -> . { impl helper.unit_impl }
+
+pub fn run() -> . { unit!() }

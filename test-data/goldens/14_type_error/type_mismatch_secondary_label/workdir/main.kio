@@ -1,0 +1,7 @@
+module main;
+
+newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+
+newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
+
+fn convert(x: Foo) -> Bar { x }

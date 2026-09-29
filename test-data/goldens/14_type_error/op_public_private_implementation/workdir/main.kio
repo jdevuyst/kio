@@ -1,0 +1,5 @@
+module main;
+
+fn add(left: ., _right: .) -> . { left }
+
+pub op _ + _ { impl add }

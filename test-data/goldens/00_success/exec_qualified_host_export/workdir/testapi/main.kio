@@ -1,0 +1,9 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Root host items are ambient in submodules.
+// Calling `print(...)` emits as `__host__.print(...)` per
+// `specs/backends/js.md`.
+pub fn main() -> . { print("hi from whole-package alias\n"(String)) }

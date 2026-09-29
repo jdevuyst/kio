@@ -1,0 +1,7 @@
+module u/main;
+
+import u(String);
+
+fn staged(prefix: String)[A](value: A) -> String { prefix }
+
+pub fn caller(s: String) -> String { s.>staged(String, s) }

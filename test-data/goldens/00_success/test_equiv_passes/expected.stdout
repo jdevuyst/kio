@@ -1,0 +1,4 @@
+  pass equiv `simple` in m
+  pass equiv `let_binding` in m
+
+result: 2/2 equiv blocks passed

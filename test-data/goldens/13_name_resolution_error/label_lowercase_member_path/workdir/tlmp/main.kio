@@ -1,0 +1,11 @@
+module tlmp/main;
+
+import tlmp(String);
+
+labels { hed: String };
+
+// `labels { hed: ... }` does not generate a lowercase `hed.hed`
+// accessor. The label accessor is reached as `h.?{hed}` or as
+// `Hed.get(h)`. This multi-segment path is left un-rewritten and then
+// rejected because no ordinary `hed` path head is in scope.
+fn use_proj(h: Hed) -> String { hed.hed(h) }

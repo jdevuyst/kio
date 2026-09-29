@@ -1,0 +1,18 @@
+package pure_modifier_on_labels;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  pure_modifier_on_labels;
+  pure_modifier_on_labels/**
+}

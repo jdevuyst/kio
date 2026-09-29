@@ -1,0 +1,39 @@
+/// Scalar helpers the rest of the merge builds on. The host tier this
+/// package declares supplies `leq_i32` and `lt_i32` but no integer
+/// equality and no boolean formatter, so both are derived here once
+/// rather than re-derived at every use site.
+module diff3/prim;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/text(string_concat);
+
+pub fn and(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn or(left: Bool, right: Bool) -> Bool {
+  if! left {
+    .t
+  } else {
+    right
+  }
+}
+
+/// Integer equality from the antisymmetry of `<=`.
+pub fn int_eq(left: I32, right: I32) -> Bool { and(leq_i32(left, right), leq_i32(right, left)) }
+
+pub fn int_max(left: I32, right: I32) -> I32 {
+  if! leq_i32(left, right) {
+    right
+  } else {
+    left
+  }
+}
+
+pub fn cat(left: String, right: String) -> String { string_concat(left, right) }

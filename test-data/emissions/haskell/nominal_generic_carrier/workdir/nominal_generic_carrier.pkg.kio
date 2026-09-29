@@ -1,0 +1,14 @@
+package nominal_generic_carrier;
+
+build {
+  cache ();
+
+  target haskell {
+    out "out/haskell/";
+    namespace "NominalGenericCarrier"
+  }
+}
+
+bridge {
+  api
+}

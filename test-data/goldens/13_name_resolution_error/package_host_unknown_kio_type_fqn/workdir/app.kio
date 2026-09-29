@@ -1,0 +1,5 @@
+module app;
+
+pub newtype Box : . { pub constructor mk_box; pub projector un_box }
+
+host fn accept(p0: Missing) -> .;

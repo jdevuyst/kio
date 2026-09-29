@@ -1,0 +1,6 @@
+module pure_elaborator_emits_host_call/main;
+
+import pure_elaborator_emits_host_call(I32);
+import pure_elaborator_emits_host_call/elaborators(apply);
+
+pure fn bad(value: I32) -> I32 { apply!(value, I32) }

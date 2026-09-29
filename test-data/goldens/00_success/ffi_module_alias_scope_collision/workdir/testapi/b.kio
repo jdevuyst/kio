@@ -1,0 +1,7 @@
+module testapi/b;
+
+pub type State = . & . & .;
+
+pub fn make() -> State { ((), ((), ())) }
+
+pub fn consume(_state: State) -> . { () }

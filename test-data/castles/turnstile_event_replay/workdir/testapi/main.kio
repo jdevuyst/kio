@@ -1,0 +1,356 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+labels Gate_state = {
+  , locked: Bool
+  , maintenance: Bool
+  , credit: Bool
+  , entries: I32
+  , accepted_badges: I32
+  , denied_badges: I32
+  , coins: I32
+  , pushes: I32
+  , forced_pushes: I32
+  , maintenance_events: I32
+  , unknown_events: I32
+  , line_no: I32
+  };
+
+fn cat3(a: String, b: String, c: String) -> String {
+  text.string_concat(text.string_concat(a, b), c)
+}
+
+fn cat4(a: String, b: String, c: String, d: String) -> String {
+  text.string_concat(cat3(a, b, c), d)
+}
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  text.string_concat(cat4(a, b, c, d), e)
+}
+
+fn cat6(a: String, b: String, c: String, d: String, e: String, f: String) -> String {
+  text.string_concat(cat5(a, b, c, d, e), f)
+}
+
+fn make_state(
+  , locked_value: Bool
+  , maintenance_value: Bool
+  , credit_value: Bool
+  , entries_value: I32
+  , accepted_badges_value: I32
+  , denied_badges_value: I32
+  , coins_value: I32
+  , pushes_value: I32
+  , forced_pushes_value: I32
+  , maintenance_events_value: I32
+  , unknown_events_value: I32
+  , line_no_value: I32
+  ) -> Gate_state {
+  {
+    , locked = locked_value
+    , maintenance = maintenance_value
+    , credit = credit_value
+    , entries = entries_value
+    , accepted_badges = accepted_badges_value
+    , denied_badges = denied_badges_value
+    , coins = coins_value
+    , pushes = pushes_value
+    , forced_pushes = forced_pushes_value
+    , maintenance_events = maintenance_events_value
+    , unknown_events = unknown_events_value
+    , line_no = line_no_value
+    }
+}
+
+fn initial_state() -> Gate_state { make_state(.t, .f, .f, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
+
+fn bool_word(value: Bool) -> String {
+  if! value {
+    "yes"
+  } else {
+    "no"
+  }
+}
+
+fn gate_mode(state: Gate_state) -> String {
+  if! state.?{maintenance} {
+    "maintenance-open"
+  } else if! state.?{locked} {
+    "locked"
+  } else {
+    "unlocked"
+  }
+}
+
+fn print_plain_event(line_no_value: I32, message: String) -> . {
+  io.print(cat4("line ", fmt.i32_to_string(line_no_value), ": ", message))
+}
+
+fn print_badge_event(line_no_value: I32, badge_text: String, message: String) -> . {
+  io.print(cat6("line ", fmt.i32_to_string(line_no_value), ": badge ", badge_text, " ", message))
+}
+
+fn show_i32(label: String, value: I32) -> . {
+  io.print(cat4(label, ": ", fmt.i32_to_string(value), "\n"))
+}
+
+fn show_bool(label: String, value: Bool) -> . {
+  io.print(cat4(label, ": ", bool_word(value), "\n"))
+}
+
+fn is_authorized_badge(badge_id: I32) -> Bool {
+  if! arith.lt_i32(1000, badge_id) {
+    arith.lt_i32(badge_id, 1004)
+  } else {
+    .f
+  }
+}
+
+fn handle_coin(state: Gate_state, next_line: I32) -> Gate_state {
+  if! state.?{maintenance} {
+    print_plain_event(next_line, "coin ignored while maintenance open\n");
+    make_state(
+      , state.?{locked}
+      , state.?{maintenance}
+      , state.?{credit}
+      , state.?{entries}
+      , state.?{accepted_badges}
+      , state.?{denied_badges}
+      , state.?{coins}
+      , state.?{pushes}
+      , state.?{forced_pushes}
+      , state.?{maintenance_events}
+      , state.?{unknown_events}
+      , next_line
+      )
+  } else {
+    print_plain_event(next_line, "coin accepted; gate unlocked\n");
+    make_state(
+      , .f
+      , .f
+      , .t
+      , state.?{entries}
+      , state.?{accepted_badges}
+      , state.?{denied_badges}
+      , arith.add_i32(state.?{coins}, 1)
+      , state.?{pushes}
+      , state.?{forced_pushes}
+      , state.?{maintenance_events}
+      , state.?{unknown_events}
+      , next_line
+      )
+  }
+}
+
+fn handle_push(state: Gate_state, next_line: I32) -> Gate_state {
+  if! state.?{maintenance} {
+    print_plain_event(next_line, "push allowed by maintenance\n");
+    make_state(
+      , state.?{locked}
+      , state.?{maintenance}
+      , state.?{credit}
+      , arith.add_i32(state.?{entries}, 1)
+      , state.?{accepted_badges}
+      , state.?{denied_badges}
+      , state.?{coins}
+      , arith.add_i32(state.?{pushes}, 1)
+      , state.?{forced_pushes}
+      , state.?{maintenance_events}
+      , state.?{unknown_events}
+      , next_line
+      )
+  } else if! state.?{credit} {
+    print_plain_event(next_line, "push accepted; gate relocked\n");
+    make_state(
+      , .t
+      , .f
+      , .f
+      , arith.add_i32(state.?{entries}, 1)
+      , state.?{accepted_badges}
+      , state.?{denied_badges}
+      , state.?{coins}
+      , arith.add_i32(state.?{pushes}, 1)
+      , state.?{forced_pushes}
+      , state.?{maintenance_events}
+      , state.?{unknown_events}
+      , next_line
+      )
+  } else {
+    print_plain_event(next_line, "push rejected; gate locked\n");
+    make_state(
+      , state.?{locked}
+      , .f
+      , .f
+      , state.?{entries}
+      , state.?{accepted_badges}
+      , state.?{denied_badges}
+      , state.?{coins}
+      , arith.add_i32(state.?{pushes}, 1)
+      , arith.add_i32(state.?{forced_pushes}, 1)
+      , state.?{maintenance_events}
+      , state.?{unknown_events}
+      , next_line
+      )
+  }
+}
+
+fn handle_maintenance_open(state: Gate_state, next_line: I32) -> Gate_state {
+  print_plain_event(next_line, "maintenance opened; gate held open\n");
+  make_state(
+    , .f
+    , .t
+    , .f
+    , state.?{entries}
+    , state.?{accepted_badges}
+    , state.?{denied_badges}
+    , state.?{coins}
+    , state.?{pushes}
+    , state.?{forced_pushes}
+    , arith.add_i32(state.?{maintenance_events}, 1)
+    , state.?{unknown_events}
+    , next_line
+    )
+}
+
+fn handle_maintenance_close(state: Gate_state, next_line: I32) -> Gate_state {
+  print_plain_event(next_line, "maintenance closed; gate locked\n");
+  make_state(
+    , .t
+    , .f
+    , .f
+    , state.?{entries}
+    , state.?{accepted_badges}
+    , state.?{denied_badges}
+    , state.?{coins}
+    , state.?{pushes}
+    , state.?{forced_pushes}
+    , arith.add_i32(state.?{maintenance_events}, 1)
+    , state.?{unknown_events}
+    , next_line
+    )
+}
+
+fn handle_accepted_badge(state: Gate_state, next_line: I32, badge_text: String) -> Gate_state {
+  print_badge_event(next_line, badge_text, "accepted; gate unlocked\n");
+  make_state(
+    , .f
+    , state.?{maintenance}
+    , if! state.?{maintenance} {
+        .f
+      } else {
+        .t
+      }
+    , state.?{entries}
+    , arith.add_i32(state.?{accepted_badges}, 1)
+    , state.?{denied_badges}
+    , state.?{coins}
+    , state.?{pushes}
+    , state.?{forced_pushes}
+    , state.?{maintenance_events}
+    , state.?{unknown_events}
+    , next_line
+    )
+}
+
+fn handle_denied_badge(state: Gate_state, next_line: I32, badge_text: String) -> Gate_state {
+  print_badge_event(next_line, badge_text, "denied; gate unchanged\n");
+  make_state(
+    , state.?{locked}
+    , state.?{maintenance}
+    , state.?{credit}
+    , state.?{entries}
+    , state.?{accepted_badges}
+    , arith.add_i32(state.?{denied_badges}, 1)
+    , state.?{coins}
+    , state.?{pushes}
+    , state.?{forced_pushes}
+    , state.?{maintenance_events}
+    , state.?{unknown_events}
+    , next_line
+    )
+}
+
+fn handle_unknown(state: Gate_state, next_line: I32, line: String) -> Gate_state {
+  print_plain_event(next_line, cat3("unknown event ", line, "\n"));
+  make_state(
+    , state.?{locked}
+    , state.?{maintenance}
+    , state.?{credit}
+    , state.?{entries}
+    , state.?{accepted_badges}
+    , state.?{denied_badges}
+    , state.?{coins}
+    , state.?{pushes}
+    , state.?{forced_pushes}
+    , state.?{maintenance_events}
+    , arith.add_i32(state.?{unknown_events}, 1)
+    , next_line
+    )
+}
+
+fn handle_badge(state: Gate_state, next_line: I32, line: String, badge_id: I32) -> Gate_state {
+  if! is_authorized_badge(badge_id) {
+    handle_accepted_badge(state, next_line, line)
+  } else {
+    handle_denied_badge(state, next_line, line)
+  }
+}
+
+fn handle_numeric_or_unknown(state: Gate_state, next_line: I32, line: String) -> Gate_state {
+  match! fmt.string_to_int(line) {
+    (
+      , .(badge_id: I32) { handle_badge(state, next_line, line, badge_id) }
+      , .(_not_number: .) { handle_unknown(state, next_line, line) }
+      )
+  }
+}
+
+fn apply_event(state: Gate_state, line: String) -> Gate_state {
+  let next_line = arith.add_i32(state.?{line_no}, 1);
+  if! text.string_eq(line, "coin") {
+    handle_coin(state, next_line)
+  } else if! text.string_eq(line, "push") {
+    handle_push(state, next_line)
+  } else if! text.string_eq(line, "maint-open") {
+    handle_maintenance_open(state, next_line)
+  } else if! text.string_eq(line, "maint-close") {
+    handle_maintenance_close(state, next_line)
+  } else {
+    handle_numeric_or_unknown(state, next_line, line)
+  }
+}
+
+rec(loop) fn replay(state: Gate_state) -> Gate_state {
+  match! io.read_ascii_line() {
+    (.(line: String) { rec replay(apply_event(state, line)) }, .(_done: .) { state })
+  }
+}
+
+fn print_summary(state: Gate_state) -> . {
+  io.print("\nfinal counters\n");
+  show_i32("lines", state.?{line_no});
+  show_i32("entries", state.?{entries});
+  show_i32("pushes", state.?{pushes});
+  show_i32("forced_pushes", state.?{forced_pushes});
+  show_i32("coins", state.?{coins});
+  show_i32("accepted_badges", state.?{accepted_badges});
+  show_i32("denied_badges", state.?{denied_badges});
+  show_i32("maintenance_events", state.?{maintenance_events});
+  show_i32("unknown_events", state.?{unknown_events});
+  io.print(cat3("final_mode: ", gate_mode(state), "\n"));
+  show_bool("credit_pending", state.?{credit})
+}
+
+pub fn main() -> . {
+  io.print("turnstile event replay\n");
+  let final_state = replay(initial_state());
+  print_summary(final_state)
+}

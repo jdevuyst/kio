@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(Str);
+import testapi/io(print);
+
+// Two or more string-literal tokens with only trivia between them
+// fold into a single string literal whose value is the
+// concatenation. The chunking present in the source is
+// informational only — the AST stores the joined value, and the
+// formatter re-chunks deterministically on emission. Lets the
+// formatter break long literals across source lines without
+// runtime cost.
+pub fn main() -> . {
+  print("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
+        "tempor incididunt\n"(Str))
+}

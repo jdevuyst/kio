@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi/io as io;
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+
+fn make_bind[*M](operation: [A][B] (M(A) & (A -> M(B))) -> M(B)) -> [A][B] (M(A) & (A -> M(B))) -> M(B) {
+  operation
+}
+
+pub fn main() -> . {
+  let explicit =
+    do! make_bind(Box, bind) {
+      let value <- Box.box(());
+      Box.box(value)
+    };
+  Box.unbox(explicit);
+  io.print("explicit\n");
+  let inferred =
+    do! make_bind(bind) {
+      let value <- Box.box(());
+      Box.box(value)
+    };
+  Box.unbox(inferred);
+  io.print("inferred\n")
+}

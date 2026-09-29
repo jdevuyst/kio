@@ -1,0 +1,18 @@
+/// `@type` against a type-level name is a Kiodoc contract error.
+///
+/// A type alias binds no value: [`@type Count`].
+/// A `labels` declaration binds no value: [`@type Color`].
+/// A `newtype` binds no value: [`@type Wrapped`].
+module typelevel/main;
+
+/// A type alias.
+pub type Count = .;
+
+/// Color labels.
+pub labels Color = { red: ., green: . };
+
+/// A wrapper newtype.
+pub newtype Wrapped : . { pub constructor mk_wrapped; pub projector un_wrapped; };
+
+/// A value binding — `@type` resolves against this fine.
+pub fn compute() -> . { () }

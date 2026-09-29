@@ -1,0 +1,31 @@
+{
+  "grammars": [
+    {
+      "name": "kio",
+      "camelcase": "Kio",
+      "title": "Kio",
+      "scope": "source.kio",
+      "path": ".",
+      "file-types": ["kio"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT OR Apache-2.0",
+    "description": "Tree-sitter grammar for the Kio programming language",
+    "authors": [],
+    "links": {
+      "repository": "https://github.com/jdevuyst/kio"
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

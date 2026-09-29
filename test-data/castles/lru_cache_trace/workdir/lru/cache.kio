@@ -1,0 +1,260 @@
+module lru/cache;
+
+import elab/control(if);
+import lru/text as text;
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_push
+  , array_set
+  );
+import testapi/iter(loop);
+
+pub labels Cache = {
+  , keys: Array(I32)
+  , values: Array(I32)
+  , ages: Array(I32)
+  , stats: Array(I32)
+  , victims: Array(I32)
+  };
+
+pub fn capacity() -> I32 { 3 }
+
+pub fn operation_count() -> I32 { 10 }
+
+fn hits_index() -> I32 { 0 }
+
+fn misses_index() -> I32 { 1 }
+
+fn evictions_index() -> I32 { 2 }
+
+fn clock_index() -> I32 { 3 }
+
+fn missing_key() -> I32 { sub_i32(0, 1) }
+
+fn keys_array(c: Cache) -> Array(I32) { c.?{keys} }
+
+fn values_array(c: Cache) -> Array(I32) { c.?{values} }
+
+fn ages_array(c: Cache) -> Array(I32) { c.?{ages} }
+
+fn stats_array(c: Cache) -> Array(I32) { c.?{stats} }
+
+fn victims_array(c: Cache) -> Array(I32) { c.?{victims} }
+
+fn next(n: I32) -> I32 { add_i32(n, 1) }
+
+pub fn eq_i32(a: I32, b: I32) -> Bool {
+  if! leq_i32(a, b) {
+    leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+fn lt_i32(a: I32, b: I32) -> Bool { leq_i32(next(a), b) }
+
+fn is_missing(slot: I32) -> Bool { eq_i32(slot, missing_key()) }
+
+fn inc_stat(stats: Array(I32), index: I32) -> . {
+  array_set(stats, index, next(array_get(stats, index)))
+}
+
+fn bump_clock(c: Cache) -> I32 {
+  let stats = stats_array(c);
+  let clock = next(array_get(stats, clock_index()));
+  array_set(stats, clock_index(), clock);
+  clock
+}
+
+pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32 {
+  if! leq_i32(limit, i) {
+    missing_key()
+  } else if! eq_i32(array_get(keys, i), key) {
+    i
+  } else {
+    rec find_key(next(i), limit, key, keys)
+  }
+}
+
+pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
+  if! leq_i32(limit, i) {
+    missing_key()
+  } else if! eq_i32(array_get(keys, i), missing_key()) {
+    i
+  } else {
+    rec find_empty_slot(next(i), limit, keys)
+  }
+}
+
+pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array(I32)) -> I32 {
+  if! leq_i32(limit, i) {
+    best
+  } else if! lt_i32(array_get(ages, i), array_get(ages, best)) {
+    rec find_lru_slot(next(i), limit, i, ages)
+  } else {
+    rec find_lru_slot(next(i), limit, best, ages)
+  }
+}
+
+fn write_slot(c: Cache, slot: I32, key: I32, value: I32, clock: I32) -> . {
+  array_set(keys_array(c), slot, key);
+  array_set(values_array(c), slot, value);
+  array_set(ages_array(c), slot, clock)
+}
+
+fn render_get_hit(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
+  let prefix =
+    text.cat6(
+      , "op "
+      , text.int_text(step)
+      , " get key="
+      , text.int_text(key)
+      , " -> hit slot="
+      , text.int_text(slot)
+      );
+  let suffix = text.cat5(" value=", text.int_text(value), " clock=", text.int_text(clock), "\n");
+  text.cat2(prefix, suffix)
+}
+
+fn render_get_miss(step: I32, key: I32, clock: I32) -> String {
+  text.cat2(
+    , text.cat6(
+        , "op "
+        , text.int_text(step)
+        , " get key="
+        , text.int_text(key)
+        , " -> miss clock="
+        , text.int_text(clock)
+        )
+    , "\n"
+    )
+}
+
+fn render_put_insert(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
+  let prefix =
+    text.cat6(
+      , "op "
+      , text.int_text(step)
+      , " put key="
+      , text.int_text(key)
+      , " value="
+      , text.int_text(value)
+      );
+  let suffix =
+    text.cat5(" -> insert slot=", text.int_text(slot), " clock=", text.int_text(clock), "\n");
+  text.cat2(prefix, suffix)
+}
+
+fn render_put_update(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
+  let prefix =
+    text.cat6(
+      , "op "
+      , text.int_text(step)
+      , " put key="
+      , text.int_text(key)
+      , " value="
+      , text.int_text(value)
+      );
+  let suffix =
+    text.cat5(" -> update slot=", text.int_text(slot), " clock=", text.int_text(clock), "\n");
+  text.cat2(prefix, suffix)
+}
+
+fn render_put_replace(step: I32, key: I32, value: I32, slot: I32, old_key: I32, clock: I32) -> String {
+  let prefix =
+    text.cat6(
+      , "op "
+      , text.int_text(step)
+      , " put key="
+      , text.int_text(key)
+      , " value="
+      , text.int_text(value)
+      );
+  let middle =
+    text.cat6(
+      , " -> replace slot="
+      , text.int_text(slot)
+      , " evicted="
+      , text.int_text(old_key)
+      , " clock="
+      , text.int_text(clock)
+      );
+  text.cat3(prefix, middle, "\n")
+}
+
+pub fn new_cache() -> Cache {
+  let key_slots = array_make_filled(capacity(), missing_key());
+  let value_slots = array_make_filled(capacity(), 0);
+  let age_slots = array_make_filled(capacity(), 0);
+  let stat_slots = array_make_filled(4, 0);
+  let victim_slots = array_make_empty(I32, ());
+  {
+    , keys = key_slots
+    , values = value_slots
+    , ages = age_slots
+    , stats = stat_slots
+    , victims = victim_slots
+    }
+}
+
+pub fn get(c: Cache, step: I32, key: I32) -> String {
+  let clock = bump_clock(c);
+  let slot = find_key(0, array_len(keys_array(c)), key, keys_array(c));
+  if! is_missing(slot) {
+    inc_stat(stats_array(c), misses_index());
+    render_get_miss(step, key, clock)
+  } else {
+    inc_stat(stats_array(c), hits_index());
+    array_set(ages_array(c), slot, clock);
+    render_get_hit(step, key, array_get(values_array(c), slot), slot, clock)
+  }
+}
+
+pub fn put(c: Cache, step: I32, key: I32, value: I32) -> String {
+  let clock = bump_clock(c);
+  let found = find_key(0, array_len(keys_array(c)), key, keys_array(c));
+  if! is_missing(found) {
+    let empty = find_empty_slot(0, array_len(keys_array(c)), keys_array(c));
+    if! is_missing(empty) {
+      let victim = find_lru_slot(1, array_len(keys_array(c)), 0, ages_array(c));
+      let old_key = array_get(keys_array(c), victim);
+      inc_stat(stats_array(c), evictions_index());
+      array_push(victims_array(c), old_key);
+      write_slot(c, victim, key, value, clock);
+      render_put_replace(step, key, value, victim, old_key, clock)
+    } else {
+      write_slot(c, empty, key, value, clock);
+      render_put_insert(step, key, value, empty, clock)
+    }
+  } else {
+    write_slot(c, found, key, value, clock);
+    render_put_update(step, key, value, found, clock)
+  }
+}
+
+pub fn hits(c: Cache) -> I32 { array_get(stats_array(c), hits_index()) }
+
+pub fn misses(c: Cache) -> I32 { array_get(stats_array(c), misses_index()) }
+
+pub fn evictions(c: Cache) -> I32 { array_get(stats_array(c), evictions_index()) }
+
+pub fn clock(c: Cache) -> I32 { array_get(stats_array(c), clock_index()) }
+
+pub fn is_full(c: Cache) -> Bool {
+  is_missing(find_empty_slot(0, array_len(keys_array(c)), keys_array(c)))
+}
+
+pub fn victim_count(c: Cache) -> I32 { array_len(victims_array(c)) }
+
+pub fn victim_at(c: Cache, index: I32) -> I32 { array_get(victims_array(c), index) }
+
+pub fn slot_key(c: Cache, slot: I32) -> I32 { array_get(keys_array(c), slot) }
+
+pub fn slot_value(c: Cache, slot: I32) -> I32 { array_get(values_array(c), slot) }
+
+pub fn slot_age(c: Cache, slot: I32) -> I32 { array_get(ages_array(c), slot) }

@@ -1,0 +1,20 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(align);
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// The branches explicitly construct `String | String`; `align!`
+// collapses to `String`, payload preserved (only the arm tag is
+// dropped).
+fn pick(b: Bool) -> String {
+  align!(if! b {
+    widen_sum!("collapsed\n", String | String)
+  } else {
+    widen_sum!("collapsed\n", String | String)
+  })
+}
+
+pub fn main() -> . { print(pick(.t)) }

@@ -1,0 +1,5 @@
+/// Small utilities used elsewhere in the package.
+module render_pkg/sub/util;
+
+/// Discards its argument and returns unit.
+pub fn drop[A](x: A) -> . { () }

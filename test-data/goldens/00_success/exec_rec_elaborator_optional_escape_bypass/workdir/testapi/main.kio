@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/control(if);
+import elaborators(run_callbacks);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+rec(loop) fn repeat(remaining: I32) -> String {
+  run_callbacks!((
+    , .(_unit: .) -> String {
+        if! leq_i32(remaining, 0) {
+          "optional callback bypass\n"
+        } else {
+          rec repeat(sub_i32(remaining, 1))
+        }
+      }
+    , .(_unit: .) { () }
+    ))
+}
+
+pub fn main() -> . { print(repeat(2)) }

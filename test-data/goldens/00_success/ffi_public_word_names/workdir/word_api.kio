@@ -1,0 +1,20 @@
+module word_api;
+
+import word_api/other_nodes as other_nodes;
+import word_api/word_nodes as word_nodes;
+
+host type Count_value role(i32);
+
+pub fn read_word() -> Count_value { 11(Count_value) }
+
+pub fn _read_word() -> Count_value { 22(Count_value) }
+
+pub fn read_word_() -> Count_value { 33(Count_value) }
+
+pub fn _read_word_() -> Count_value { 44(Count_value) }
+
+pub fn read_word__() -> Count_value { 45(Count_value) }
+
+pub fn keep_pair(value: word_nodes._Word_box__(Count_value) & other_nodes._Word_box__(Count_value)) ->
+  word_nodes._Word_box__(Count_value) & other_nodes._Word_box__(Count_value)
+   { value }

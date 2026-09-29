@@ -1,0 +1,6 @@
+module user_elaborator_target_placeholder_needs_context/main;
+
+import elaborators(id_user);
+import user_elaborator_target_placeholder_needs_context(String);
+
+fn unresolved(s: String) -> String { let selected = id_user!(s, _); selected }

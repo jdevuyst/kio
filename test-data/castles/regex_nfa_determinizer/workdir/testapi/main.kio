@@ -1,0 +1,124 @@
+/// regex_nfa_determinizer — a regular expression compiled into an automaton,
+/// three stages deep.
+///
+/// Each pattern arrives as abstract syntax over the alphabet {a, b, c}.
+/// Thompson's construction (`automata/nfa`) turns it into a nondeterministic
+/// automaton with epsilon transitions; the subset construction
+/// (`automata/subset`) determinizes that, a DFA state being the epsilon
+/// closure of a set of NFA states; Moore's partition refinement
+/// (`automata/minimize`) then merges the DFA states no word can tell apart.
+///
+/// The last stage checks the other two. Determinization and minimization
+/// each rewrite the machine wholesale, so six probe words are run against
+/// the *minimized* automaton: the twenty-four accept/reject cells are fixed
+/// by what the patterns mean, and they are what pins the rewrites to the
+/// language they started from.
+module testapi/main;
+
+import automata/dfa as dfa;
+import automata/minimize as minimize;
+import automata/nfa as nfa;
+import automata/pattern as pattern;
+import automata/report as report;
+import automata/seq as seq;
+import automata/seq(List, fold, len, nth_or);
+import automata/subset as subset;
+import automata/suite as suite;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+
+fn stat(label: String, value: I32) -> . {
+  report.line(report.cat3("  ", label, report.cat(": ", report.num(value))))
+}
+
+/// The NFA state set behind each DFA state — the evidence for what
+/// determinization merged.
+rec(loop) fn emit_sets(sets: List(seq.Ints), at: I32) -> . {
+  if! leq_i32(len(sets), at) {
+    ()
+  } else {
+    report.line(report.cat3(
+      , "    "
+      , report.cell(at, 2)
+      , report.cat("  ", report.show_set(nth_or(sets, at, seq.empty())))
+      ));
+    rec emit_sets(sets, add_i32(at, 1))
+  }
+}
+
+rec(loop) fn emit_rows(d: dfa.Dfa, at: I32) -> . {
+  if! leq_i32(dfa.count(d), at) {
+    ()
+  } else {
+    report.line(report.table_row(d, at));
+    rec emit_rows(d, add_i32(at, 1))
+  }
+}
+
+fn emit_probes(d: dfa.Dfa, words: List(seq.Ints)) -> . {
+  fold(
+    , words
+    , .(_u: ., word: seq.Ints) {
+        report.line(report.cat3(
+          , "    "
+          , report.show_word(word, 8)
+          , report.verdict(dfa.recognizes(d, word))
+          ))
+      }
+    , ()
+    )
+}
+
+/// One pattern through the whole pipeline. Returns the DFA size before and
+/// after refinement so `main` can total them.
+fn emit_pattern(index: I32, p: pattern.Pattern) -> I32 & I32 {
+  let machine = nfa.compile(p);
+  let .(det: dfa.Dfa, sets: List(seq.Ints)) = subset.determinize(machine);
+  let small = minimize.minimize(det);
+  let before = dfa.count(det);
+  let after = dfa.count(small);
+  report.line(report.cat3("pattern ", report.num(index), report.cat(": ", pattern.show(p))));
+  stat("nfa states", nfa.state_count(machine));
+  stat("dfa states", before);
+  report.line(report.cat3(
+    , "  min states: "
+    , report.num(after)
+    , report.cat3("  (merged ", report.num(sub_i32(before, after)), ")")
+    ));
+  report.line("  subset states, as sets of nfa states:");
+  emit_sets(sets, 0);
+  report.line("  minimized transitions:");
+  report.line(report.table_header());
+  emit_rows(small, 0);
+  report.line("  recognition on the minimized automaton:");
+  emit_probes(small, suite.probes());
+  (before, after)
+}
+
+rec(loop) fn emit_all(ps: List(pattern.Pattern), index: I32, before: I32, after: I32) -> I32 & I32 {
+  match! ps.>List.unpack {
+    (
+      , .(p: pattern.Pattern, rest: List(pattern.Pattern)) {
+          let .(d: I32, m: I32) = emit_pattern(index, p);
+          report.line("");
+          rec emit_all(rest, add_i32(index, 1), add_i32(before, d), add_i32(after, m))
+        }
+      , .(_empty: .) { (before, after) }
+      )
+  }
+}
+
+pub fn main() -> . {
+  report.line("regex_nfa_determinizer");
+  report.line("legend: > start state, * accepting state");
+  report.line("");
+  let .(before: I32, after: I32) = emit_all(suite.patterns(), 1, 0, 0);
+  report.line(report.cat3(
+    , "totals: "
+    , report.num(before)
+    , report.cat3(" dfa states refined to ", report.num(after), " across 4 patterns")
+    ))
+}

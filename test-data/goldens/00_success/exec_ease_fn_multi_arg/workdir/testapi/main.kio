@@ -1,0 +1,28 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+fn show(x: A | B) -> String {
+  match! x {
+    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+  }
+}
+
+// Source: `(A | B & A | B) -> .` — both positional args were widened.
+// Target: `(A & A) -> .` — the call site still uses two `A`s. The
+// surface arity is 2 on both sides, so the walk descends per-arg
+// rather than against the opaque function type; each contravariant
+// leaf sees `(A, A | B)` and fires `R-Widen-Sum`.
+fn provider(x: A | B, y: A | B) -> . { print(show(x)); print(show(y)) }
+
+pub fn main() -> . {
+  let narrow_call = ease!(provider, (A & A) -> .);
+  narrow_call(A.mk_a("ease! "), A.mk_a("multi arg ok\n"))
+}

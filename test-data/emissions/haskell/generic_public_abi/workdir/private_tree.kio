@@ -1,0 +1,3 @@
+module private_tree;
+
+rec newtype Tree : . | Tree { constructor mk_tree; projector un_tree }

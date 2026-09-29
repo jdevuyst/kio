@@ -1,0 +1,38 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Interleaved pure-let and bind-let statements. The pure-let
+// stays a lexical scope wrapper around the continuation tree —
+// no `box_bind` step gets inserted at that position. The bind
+// statements are the only ones that introduce a `box_bind` call.
+//
+// Elaboration (roughly):
+//
+//   box_bind(box_pure("hello"),
+//     .(a: String) {
+//       let b = "world";
+//       box_bind(box_pure(string_concat(a, b)),
+//         .(c: String) {
+//           box_pure(string_concat(c, "\n"))
+//         })
+//     })
+fn run() -> Box(String) {
+  do! box_bind {
+    let a <- box_pure("hello");
+    let b = "world";
+    let c <- box_pure(string_concat(a, b));
+    box_pure(string_concat(c, "\n"))
+  }
+}
+
+pub fn main() -> . { print(Box.un_box(run())) }

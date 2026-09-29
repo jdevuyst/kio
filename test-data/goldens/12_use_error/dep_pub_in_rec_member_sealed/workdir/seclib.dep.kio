@@ -1,0 +1,5 @@
+dependency seclib;
+
+source {
+  path "../library/seclib/seclib.pkg.kio"
+}

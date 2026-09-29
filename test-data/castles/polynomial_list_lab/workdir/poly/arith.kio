@@ -1,0 +1,69 @@
+/// The polynomial operations: add, subtract, scale, shift, multiply.
+module poly/arith;
+
+import elab/control(if);
+import list/core as lc;
+import list/list as ll;
+import list/list(varop [* *]);
+import poly/core as core;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+type Coeffs = core.Coeffs;
+
+type Step = (I32 & I32) -> I32;
+
+// Addition and subtraction differ only in the coefficient operation, so both go
+// through one walk. `head_or_zero` supplies the implicit zero coefficients of
+// whichever vector runs out first, which is why the shorter operand needs no
+// separate padding pass.
+rec(loop) fn zip_rev(op: Step, acc: Coeffs, xs: Coeffs, ys: Coeffs) -> Coeffs {
+  if! ll.null(xs) {
+    if! ll.null(ys) {
+      acc
+    } else {
+      rec zip_rev(op, lc.cons(op(0, core.head_or_zero(ys)), acc), xs, lc.tail(ys))
+    }
+  } else {
+    let paired = op(core.head_or_zero(xs), core.head_or_zero(ys));
+    rec zip_rev(op, lc.cons(paired, acc), lc.tail(xs), lc.tail(ys))
+  }
+}
+
+fn zip_with(op: Step, a: core.Poly, b: core.Poly) -> core.Poly {
+  core.of_coeffs(ll.reverse(zip_rev(op, [* *], core.coeffs(a), core.coeffs(b))))
+}
+
+pub fn add(a: core.Poly, b: core.Poly) -> core.Poly {
+  zip_with(.(x: I32, y: I32) -> I32 { add_i32(x, y) }, a, b)
+}
+
+pub fn sub(a: core.Poly, b: core.Poly) -> core.Poly {
+  zip_with(.(x: I32, y: I32) -> I32 { sub_i32(x, y) }, a, b)
+}
+
+/// Multiplies every coefficient by `k`. Scaling by 0 collapses to the zero
+/// polynomial, because `of_coeffs` trims the all-zero vector away.
+pub fn scale(p: core.Poly, k: I32) -> core.Poly {
+  core.of_coeffs(ll.map(.(c: I32) -> I32 { mul_i32(k, c) }, core.coeffs(p)))
+}
+
+/// For `k >= 0`, `shift(p, k)` is `p * x^k`: `k` zero coefficients pushed under
+/// the vector.
+pub fn shift(p: core.Poly, k: I32) -> core.Poly {
+  core.of_coeffs(ll.append(ll.replicate(k, 0), core.coeffs(p)))
+}
+
+// Convolution, accumulated one coefficient of `a` at a time: the term `a_i x^i`
+// contributes `a_i * x^i * b` to the product, which is `b` scaled and shifted.
+rec(loop) fn convolve(acc: core.Poly, i: I32, cs: Coeffs, b: core.Poly) -> core.Poly {
+  if! ll.null(cs) {
+    acc
+  } else {
+    let term = shift(scale(b, core.head_or_zero(cs)), i);
+    rec convolve(add(acc, term), add_i32(i, 1), lc.tail(cs), b)
+  }
+}
+
+pub fn mul(a: core.Poly, b: core.Poly) -> core.Poly { convolve(core.zero(), 0, core.coeffs(a), b) }

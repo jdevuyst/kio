@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi/types as t;
+
+pub fn box_functor() -> t.Functor(t.Box) {
+  t.Functor.mk_functor(.[A][B](step, boxed) {
+    let .(value, unit) = boxed.>t.Box.un_box;
+    t.Box.mk_box((step(value), unit))
+  })
+}
+
+pub fn echo_functor(value: t.Functor(t.Box)) -> t.Functor(t.Box) { value }
+
+pub fn apply_functor[A][B](dict: t.Functor(t.Box), step: A -> B, value: t.Box(A)) -> t.Box(B) {
+  let map = dict.>t.Functor.fmap;
+  map(step, value)
+}

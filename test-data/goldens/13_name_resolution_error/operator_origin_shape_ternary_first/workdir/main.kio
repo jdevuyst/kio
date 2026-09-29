@@ -1,0 +1,6 @@
+module main;
+
+import a_ternary(op _ ? _ : _);
+import b_binary(op _ ? _);
+
+pub fn run(a: ., b: ., c: .) -> . { a ? b : c }

@@ -1,0 +1,18 @@
+expression_formatter: v1
+source: total=base+(tax*3)
+normalized: total = base + (tax * 3)
+shape: assign:add(grouped-mul)
+valid: true
+tokens: 9
+max-depth: 1
+bindings: 1
+token-table:
+  01 identifier span=[0,5) depth=0 text=total
+  02 equals span=[5,6) depth=0 text==
+  03 identifier span=[6,10) depth=0 text=base
+  04 operator span=[10,11) depth=0 text=+
+  05 open span=[11,12) depth=1 text=(
+  06 identifier span=[12,15) depth=1 text=tax
+  07 operator span=[15,16) depth=1 text=*
+  08 number span=[16,17) depth=1 text=3
+  09 close span=[17,18) depth=0 text=)

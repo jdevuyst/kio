@@ -1,0 +1,2 @@
+type `api.Hidden` is reachable from the package's host contract surface but is private
+api[.]kio:

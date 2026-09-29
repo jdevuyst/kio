@@ -1,0 +1,9 @@
+module main;
+
+fn seed(value: .) -> . { value }
+
+fn push(value: ., rest: .) -> . { rest }
+
+varop [* *] { foldr1 push seed }
+
+fn empty() -> . { [* *] }

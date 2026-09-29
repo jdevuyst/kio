@@ -1,0 +1,123 @@
+/// The seven fixtures.
+///
+/// Five are payloads the codec encodes and decodes straight back. Their
+/// lengths exercise all five padding widths the scheme can produce.
+///
+/// The sixth and seventh are transmissions received without their original
+/// payloads: one canonical, one damaged.
+module base32/packets;
+
+import base32/alphabet as alphabet;
+import base32/list as list;
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+
+/// A fixture is either a payload to round-trip or a transmission to
+/// decode as received.
+pub labels Fixture = { payload: alphabet.Bytes } | { received: alphabet.Glyphs };
+
+fn byte(rest: alphabet.Bytes, value: I32) -> alphabet.Bytes { list.cons(value, rest) }
+
+fn glyph(rest: alphabet.Glyphs, spelling: String) -> alphabet.Glyphs { list.cons(spelling, rest) }
+
+/// The ASCII bytes of `Kio!` and a newline. Five bytes is exactly one
+/// forty-bit quantum, so this payload encodes with no padding at all.
+fn payload_a() -> alphabet.Bytes {
+  list.reverse(list.nil(I32, ()).>byte(75).>byte(105).>byte(111).>byte(33).>byte(10))
+}
+
+/// Seven bytes chosen to sit at the edges of the byte range — an empty
+/// byte, a full one, and single set bits walking down the payload — so a
+/// dropped or misplaced bit shows up in the transmission. Seven bytes
+/// leave four glyphs of the quantum unfilled.
+fn payload_b() -> alphabet.Bytes {
+  list.reverse(list.nil(I32, ())
+    .>byte(0)
+    .>byte(255)
+    .>byte(128)
+    .>byte(1)
+    .>byte(64)
+    .>byte(32)
+    .>byte(16))
+}
+
+/// The ASCII bytes of `hello world`. Eleven bytes overrun two whole
+/// quanta by a single byte, which is the widest padding the scheme
+/// produces: six glyphs.
+fn payload_c() -> alphabet.Bytes {
+  list.reverse(list.nil(I32, ())
+    .>byte(104)
+    .>byte(101)
+    .>byte(108)
+    .>byte(108)
+    .>byte(111)
+    .>byte(32)
+    .>byte(119)
+    .>byte(111)
+    .>byte(114)
+    .>byte(108)
+    .>byte(100))
+}
+
+/// The ASCII bytes of `foo`. Three bytes produce five data glyphs and
+/// therefore three padding glyphs.
+fn payload_d() -> alphabet.Bytes {
+  list.reverse(list.nil(I32, ()).>byte(102).>byte(111).>byte(111))
+}
+
+/// The ASCII bytes of `foob`. Four bytes produce seven data glyphs and
+/// therefore one padding glyph.
+fn payload_e() -> alphabet.Bytes {
+  list.reverse(list.nil(I32, ()).>byte(102).>byte(111).>byte(111).>byte(98))
+}
+
+/// The canonical base32 transmission for `foo`, received without its
+/// original payload.
+fn received_valid() -> alphabet.Glyphs {
+  list.reverse(list.nil(String, ())
+    .>glyph("M")
+    .>glyph("Z")
+    .>glyph("X")
+    .>glyph("W")
+    .>glyph("6")
+    .>glyph("=")
+    .>glyph("=")
+    .>glyph("="))
+}
+
+/// Payload A's transmission, with one transcription slip: the sixth glyph
+/// should be the letter `I` but arrived as the digit `1`. RFC 4648 keeps
+/// `1` out of the alphabet precisely because the two look alike, and that
+/// is what lets the decoder catch the slip instead of quietly recovering
+/// the wrong bytes.
+fn damaged() -> alphabet.Glyphs {
+  list.reverse(list.nil(String, ())
+    .>glyph("J")
+    .>glyph("N")
+    .>glyph("U")
+    .>glyph("W")
+    .>glyph("6")
+    .>glyph("1")
+    .>glyph("I")
+    .>glyph("K"))
+}
+
+fn to_encode(payload: alphabet.Bytes) -> Fixture { widen_sum!({payload}, Fixture) }
+
+fn off_the_wire(glyphs: alphabet.Glyphs) -> Fixture { widen_sum!({received = glyphs}, Fixture) }
+
+fn queue(rest: list.List(Fixture), fixture: Fixture) -> list.List(Fixture) {
+  list.cons(fixture, rest)
+}
+
+/// The fixtures in transmission order.
+pub fn fixtures() -> list.List(Fixture) {
+  list.reverse(list.nil(Fixture, ())
+    .>queue(to_encode(payload_a()))
+    .>queue(to_encode(payload_b()))
+    .>queue(to_encode(payload_c()))
+    .>queue(to_encode(payload_d()))
+    .>queue(to_encode(payload_e()))
+    .>queue(off_the_wire(received_valid()))
+    .>queue(off_the_wire(damaged())))
+}

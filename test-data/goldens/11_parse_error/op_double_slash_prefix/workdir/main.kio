@@ -1,0 +1,1 @@
+module main; fn f(a: A, b: A) -> A { a } op _ / / _ { impl f; };

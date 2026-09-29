@@ -1,0 +1,13 @@
+signature app v(1);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Handle role(i32);
+        host fn open() -> Handle;
+        pub fn serve(h: Handle) -> Handle
+      }
+    }
+  }
+}

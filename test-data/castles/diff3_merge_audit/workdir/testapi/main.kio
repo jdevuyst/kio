@@ -1,0 +1,26 @@
+/// diff3_merge_audit — a three-way line merge of a small config-like
+/// document read from stdin.
+///
+/// The fixture carries three versions of the same document, each opened by
+/// a `#base` / `#ours` / `#theirs` marker line. The program aligns ours and
+/// theirs against the base with two line-level LCS alignments (`diff3/lcs`),
+/// intersects the two alignments into the base lines both sides kept, and
+/// splits the document into regions on those anchors (`diff3/merge`). Each
+/// region is judged: untouched, rewritten by one side, rewritten the same
+/// way by both, or a conflict. `diff3/render` prints the merged document —
+/// with conflict markers around the text it could not reconcile — and then
+/// an audit of what the merge did.
+module testapi/main;
+
+import diff3/lcs as lcs;
+import diff3/merge as merge;
+import diff3/render as render;
+import diff3/scan as scan;
+
+pub fn main() -> . {
+  let doc = scan.read_document();
+  let ours = lcs.align(scan.base_lines(doc), scan.our_lines(doc));
+  let theirs = lcs.align(scan.base_lines(doc), scan.their_lines(doc));
+  let found_anchors = merge.anchors(ours, theirs);
+  render.report(doc, ours, theirs, found_anchors, merge.regions(doc, found_anchors))
+}

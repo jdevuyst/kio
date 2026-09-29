@@ -1,0 +1,33 @@
+module regex/result;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import regex/format(join4);
+import testapi(String);
+
+pub labels Verdict = { span: String } | { miss: String };
+
+pub fn hit(span: String) -> Verdict { {span}.>widen_sum!(Verdict) }
+
+pub fn fail(reason: String) -> Verdict { {miss = reason}.>widen_sum!(Verdict) }
+
+fn heading(pattern: String, candidate: String) -> String {
+  join4("pattern ", pattern, " / ", candidate)
+}
+
+fn render_hit(pattern: String, candidate: String, span: String) -> String {
+  join4(heading(pattern, candidate), " -> match ", span, "\n")
+}
+
+fn render_miss(pattern: String, candidate: String, reason: String) -> String {
+  join4(heading(pattern, candidate), " -> miss ", reason, "\n")
+}
+
+pub fn render(pattern: String, candidate: String, verdict: Verdict) -> String {
+  match! verdict {
+    (
+      , .(s: Span) { render_hit(pattern, candidate, s.?{span}) }
+      , .(m: Miss) { render_miss(pattern, candidate, m.?{miss}) }
+      )
+  }
+}

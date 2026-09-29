@@ -1,0 +1,112 @@
+module flow/solver;
+
+import elab/control(if);
+import elab/match(match);
+import flow/math as math;
+import flow/network as net;
+import flow/search as search;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as a;
+import testapi/array as ar;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Augmentation = { route: String, amount: I32, cancelled: I32 };
+
+pub labels Solution = { residual: Array(I32), value: I32, history: Array(Augmentation) };
+
+rec(loop) fn bottleneck(path: Array(I32), residual: Array(I32), index: I32, limit: I32) -> I32 {
+  if! math.less(index, ar.array_len(path)) {
+    rec bottleneck(
+      , path
+      , residual
+      , a.add_i32(index, 1)
+      , math.minimum(limit, ar.array_get(residual, ar.array_get(path, index)))
+      )
+  } else {
+    limit
+  }
+}
+
+rec(loop) fn send(
+  , network: net.Network
+  , residual: Array(I32)
+  , path: Array(I32)
+  , amount: I32
+  , index: I32
+  , cancelled: I32
+  ) -> I32 {
+  if! math.less(index, ar.array_len(path)) {
+    let edge_index = ar.array_get(path, index);
+    let edge = ar.array_get(network.?{net.edges}, edge_index);
+    let back = edge.?{net.reverse};
+    ar.array_set(residual, edge_index, a.sub_i32(ar.array_get(residual, edge_index), amount));
+    ar.array_set(residual, back, a.add_i32(ar.array_get(residual, back), amount));
+    let cancellation = if! edge.?{net.backward} {
+      amount
+    } else {
+      0
+    };
+    rec send(
+      , network
+      , residual
+      , path
+      , amount
+      , a.add_i32(index, 1)
+      , a.add_i32(cancelled, cancellation)
+      )
+  } else {
+    cancelled
+  }
+}
+
+rec(loop) fn describe_path(network: net.Network, path: Array(I32), index: I32, route: String) -> String {
+  if! a.leq_i32(0, index) {
+    let edge = ar.array_get(network.?{net.edges}, ar.array_get(path, index));
+    let arrow = if! edge.?{net.backward} {
+      "-cancel->"
+    } else {
+      "->"
+    };
+    let next = text.string_concat(
+      , route
+      , text.string_concat(arrow, fmt.int_to_string(edge.?{net.to}))
+      );
+    rec describe_path(network, path, a.sub_i32(index, 1), next)
+  } else {
+    route
+  }
+}
+
+rec(loop) fn improve(
+  , network: net.Network
+  , source: I32
+  , sink: I32
+  , residual: Array(I32)
+  , value: I32
+  , history: Array(Augmentation)
+  ) -> Solution {
+  match! search.augmenting_path(network, residual, source, sink) {
+    .(path: Array(I32)) {
+      let amount = bottleneck(path, residual, 1, ar.array_get(residual, ar.array_get(path, 0)));
+      let route =
+        describe_path(network, path, a.sub_i32(ar.array_len(path), 1), fmt.int_to_string(source));
+      let cancelled = send(network, residual, path, amount, 0, 0);
+      ar.array_push(history, {route, amount, cancelled});
+      rec improve(network, source, sink, residual, a.add_i32(value, amount), history)
+    };
+    .(_done: .) { {residual, value, history} }
+  }
+}
+
+pub fn solve(network: net.Network, source: I32, sink: I32) -> Solution {
+  improve(
+    , network
+    , source
+    , sink
+    , net.initial_residual(network)
+    , 0
+    , ar.array_make_empty(Augmentation, ())
+    )
+}

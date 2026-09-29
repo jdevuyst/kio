@@ -1,0 +1,9 @@
+module testapi/main;
+
+import ops(op _ + _);
+import testapi(String);
+import testapi/io(print);
+
+fn keep_unit() -> . { () }
+
+pub fn main() -> . { keep_unit(); () + (); print("operator-roundtrip-ok\n") }

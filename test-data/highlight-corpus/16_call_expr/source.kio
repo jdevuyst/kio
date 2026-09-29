@@ -1,0 +1,15 @@
+module m;
+
+fn caller(x: Int) -> . {
+  print(x);
+  Box.mk_box(Int, x);
+  outer(inner(x), other_inner(x));
+  consume([A] A -> A, identity);
+  consume([*F] F(.) -> ., x);
+  consume([A][*F] F(A) -> A, x);
+  consume([A] A -> [B] B -> A, value);
+  consume([A] Pair(A, [B] B -> A), value);
+  consume([A] // type trivia
+    A -> A, identity);
+  consume([A]., x)
+}

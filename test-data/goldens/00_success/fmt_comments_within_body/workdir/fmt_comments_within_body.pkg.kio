@@ -1,0 +1,18 @@
+package fmt_comments_within_body;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  elab/testapi
+}

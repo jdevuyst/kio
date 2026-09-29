@@ -1,0 +1,15 @@
+package qual_guest;
+
+build {
+  cache "out/.kio-cache/";
+
+  target kio-prime {
+    out "out/kio-prime"
+  }
+}
+
+bridge {
+  m1;
+  m2;
+  hostapi
+}

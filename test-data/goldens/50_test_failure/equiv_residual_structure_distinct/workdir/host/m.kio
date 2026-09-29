@@ -1,0 +1,24 @@
+module host/m;
+
+import elab/control(scope);
+import host(T, effect);
+
+newtype Box : T { pub constructor mk_box; pub projector un_box }
+
+equiv nested_stuck_callee(f: T -> T -> T, x: T, y: T) {
+  f(x)(x);
+  f(y)(x)
+}
+
+equiv newtype_payload(x: T, y: T) {
+  Box.mk_box(x);
+  Box.mk_box(y)
+}
+
+equiv effect_inside_newtype(x: T) {
+  Box.mk_box(scope! {
+    effect(x);
+    x
+  });
+  Box.mk_box(x)
+}

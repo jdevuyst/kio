@@ -1,0 +1,7 @@
+module main;
+
+import elab(inspect_apply);
+
+fn erased[A]() -> . { () }
+
+fn witness() -> . { let _inspected = inspect_apply!(erased); () }

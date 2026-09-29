@@ -1,0 +1,5 @@
+module m;
+
+pub type Box[A] = A & A;
+
+pub literal pi = 3.14;

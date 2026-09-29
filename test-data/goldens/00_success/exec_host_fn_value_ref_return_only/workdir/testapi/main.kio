@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(Array, I32);
+import testapi/array(array_get, array_make_empty, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn make(make_empty: [A] . -> Array(A)) -> Array(I32) { make_empty(I32, ()) }
+
+pub fn main() -> . {
+  let items = make(array_make_empty);
+  array_push(items, 7);
+  print(int_to_string(array_get(items, 0)))
+}

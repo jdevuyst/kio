@@ -1,0 +1,132 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Render an `Array(I32)` left-to-right as `,`-separated cells. Used to
+// observe an `Array(I32)` that travels *inside* a structural shape —
+// the host array is reconstructed when read back via `array_get`.
+fn render_array(arr: Array(I32)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) {
+            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+              widen_sum!(
+                , if! leq_i32(i, 0) {
+                    (int_to_string(array_get(arr, i)), add_i32(i, 1))
+                  } else {
+                    (
+                      , string_concat(acc, string_concat(",", int_to_string(array_get(arr, i))))
+                      , add_i32(i, 1)
+                      )
+                  }
+                , (String & I32) | String
+                )
+            } else {
+              widen_sum!(acc, (String & I32) | String)
+            }
+          }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+// --- Prod_ (binary product) with a host-type leaf: `Array(I32) & I32`.
+// The struct's first slot stores an `H::Array<i32>`; after #21 the
+// `Prod_<name>` shape carries no `<H>` and the host type enters only
+// as the slot's use-site type argument. ---
+fn show_arr_and_int(p: Array(I32) & I32) -> String {
+  match! p {
+    .(a: Array(I32), n: I32) {
+      string_concat("[", string_concat(render_array(a), string_concat("]+", int_to_string(n))))
+    }
+  }
+}
+
+// --- Role-only product `I32 & I32` collides on the SAME `Prod_<name>`
+// mint as `Array(I32) & I32` (every leaf is one positional `_T<N>`
+// slot, so both canonicalize to `(_T0 & _T1)`). Constructing and
+// matching both pins the "one mint, one bound" invariant. ---
+fn show_two_ints(p: I32 & I32) -> String {
+  match! p {
+    .(a: I32, b: I32) { string_concat(int_to_string(a), string_concat("&", int_to_string(b))) }
+  }
+}
+
+// --- ProdN_ (flat 3-wide n-ary) with a host-type leaf:
+// `Array(I32) & I32 & String`. Exported, so the 3-wide compound
+// reaches the FFI surface as a flat `ProdN_<name>` (not the
+// nested-binary internal rep). ---
+pub fn show_triple(p: Array(I32) & I32 & String) -> String {
+  match! p {
+    .(a: Array(I32), n: I32, s: String) {
+      string_concat(
+        , "["
+        , string_concat(
+            , render_array(a)
+            , string_concat("]/", string_concat(int_to_string(n), string_concat("/", s)))
+            )
+        )
+    }
+  }
+}
+
+// --- Sum_ with a host-type leaf: `Array(I32) | String`. `match!`
+// dispatches on which arm the value inhabits. ---
+fn show_arr_or_str(v: Array(I32) | String) -> String {
+  match! v {
+    (
+      , .(a: Array(I32)) { string_concat("arr[", string_concat(render_array(a), "]")) }
+      , .(s: String) { string_concat("str:", s) }
+      )
+  }
+}
+
+// --- Role-only sum `I32 | String` collides on the SAME `Sum_<name>`
+// mint as `Array(I32) | String`. ---
+fn show_int_or_str(v: I32 | String) -> String {
+  match! v {
+    (
+      , .(n: I32) { string_concat("int:", int_to_string(n)) }
+      , .(s: String) { string_concat("str:", s) }
+      )
+  }
+}
+
+pub fn main() -> . {
+  let xs = array_make_empty(I32, ());
+  array_push(xs, 4);
+  array_push(xs, 5);
+  array_push(xs, 6);
+  // Prod_ with a host-type leaf.
+  print(show_arr_and_int((xs, 9)));
+  print("\n");
+  // Role-only Prod_ collision on the same mint.
+  print(show_two_ints((1, 2)));
+  print("\n");
+  // ProdN_ flat 3-wide with a host-type leaf.
+  print(show_triple((xs, 8, "tail")));
+  print("\n");
+  // Sum_ with a host-type leaf, both arms.
+  print(show_arr_or_str(widen_sum!(xs, Array(I32) | String)));
+  print("\n");
+  print(show_arr_or_str(widen_sum!("solo", Array(I32) | String)));
+  print("\n");
+  // Role-only Sum_ collision on the same mint, both arms.
+  print(show_int_or_str(widen_sum!(7, I32 | String)));
+  print("\n");
+  print(show_int_or_str(widen_sum!("ok", I32 | String)));
+  print("\n")
+}

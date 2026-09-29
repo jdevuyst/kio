@@ -1,0 +1,5 @@
+module main;
+
+labels { secret: . };
+
+pub type {view} = {secret};

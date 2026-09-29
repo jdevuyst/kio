@@ -1,0 +1,5 @@
+module first;
+
+pub fn first_value() -> . { () }
+
+pub op + _ { impl first_value }

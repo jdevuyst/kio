@@ -1,0 +1,76 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `derive!` composes instances from rules with two levels of nesting —
+// the resolver-recursion shape `specs/language.md` § The `derive!`
+// solver walks through, here over a kind-`*` `Render` family of nested
+// products. (The real monad-transformer stack lives in its own golden,
+// `exec_derive_transformer_stack`; this one isolates the resolver's
+// nested-rule recursion in a kind-`*` family.)
+
+// A value-carrying wrapper and a pair, both kind-`*` brands.
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+// `Render[A]` — an instance dictionary turning an `A` into a String.
+pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+
+// Base instance for `Cell(String)` (zero preconditions).
+fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+
+// Compositional rule: given instances for `a` and `b`, render a
+// `Pair(a, b)`. Both preconditions are strict sub-terms of the result.
+fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
+  Render.mk_render(
+    , Pair(A, B)
+    , .(p) {
+        let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
+        let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
+        string_concat(left, right)
+      }
+    )
+}
+
+// Derive a two-level nested instance. The synthesized call tree is
+// `render_pair(Cell(String), Pair(Cell(String), Cell(String)),
+//    render_cell_string(),
+//    render_pair(Cell(String), Cell(String),
+//      render_cell_string(), render_cell_string()))`
+// — `render_pair` fires twice and `render_cell_string` is the base.
+fn run() -> String {
+  let inst =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let value =
+    Pair.mk_pair(
+      , Cell(String)
+      , Pair(Cell(String), Cell(String))
+      , __pair__(
+          , Cell(String)
+          , Pair(Cell(String), Cell(String))
+          , Cell.mk_cell("derive!"(String))
+          , Pair.mk_pair(
+              , Cell(String)
+              , Cell(String)
+              , __pair__(
+                  , Cell(String)
+                  , Cell(String)
+                  , Cell.mk_cell(" stack:"(String))
+                  , Cell.mk_cell(" ok\n"(String))
+                  )
+              )
+          )
+      );
+  Render.render(inst)(value)
+}
+
+pub fn main() -> . { print(run()) }

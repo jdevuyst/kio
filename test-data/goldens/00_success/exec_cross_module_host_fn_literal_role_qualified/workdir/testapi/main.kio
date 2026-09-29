@@ -1,0 +1,15 @@
+/// `wrap` names its parameter through a qualified module alias without also
+/// importing `I32` into the unqualified lexical namespace. Its argument gives
+/// `40` the exact expected type `t.I32`; that declaration's `role(i32)` admits
+/// the literal without turning every role-bearing member of `testapi` into a
+/// candidate. The emitted Kio' retains the exact qualified annotation.
+module testapi/main;
+
+import testapi as t;
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+pub fn wrap(x: t.I32) -> t.I32 { x }
+
+pub fn main() -> . { print(int_to_string(add_i32(wrap(40), 2))) }

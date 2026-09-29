@@ -1,0 +1,13 @@
+module main;
+
+import __comptime__;
+
+pure fn inspect_impl(ct: __Comptime__, fills: __Fill_ctx__, _t: __Type__, _value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (__term_unit__(ct), fills) }
+
+elab inspect : [T] T -> . { impl(fills) inspect_impl }
+
+fn identity[A](value: A) -> A { value }
+
+fn check[A](raw: A) -> . { inspect!(identity(identity(raw))) }

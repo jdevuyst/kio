@@ -1,0 +1,32 @@
+/// The machine the simulation models.
+///
+/// The frame count is deliberately smaller than the processes' combined
+/// working set: with nine distinct pages competing for four frames, the
+/// replacement policy decides the run rather than decorating it.
+module os/config;
+
+import testapi(I32);
+
+pub fn proc_count() -> I32 { 4 }
+
+/// Virtual pages a process may address, so its pages are `0 .. 3`.
+pub fn pages_per_proc() -> I32 { 4 }
+
+pub fn frame_count() -> I32 { 4 }
+
+/// Consecutive ticks a process may hold the CPU before it is preempted.
+pub fn quantum() -> I32 { 3 }
+
+/// Ticks a faulting process stays blocked while its page is fetched.
+pub fn fault_latency() -> I32 { 3 }
+
+/// Ticks the per-tick trace prints before it is truncated.
+pub fn trace_limit() -> I32 { 26 }
+
+/// A run that cannot finish would otherwise never return; the budget bounds
+/// the simulation rather than the model.
+pub fn tick_budget() -> I32 { 500 }
+
+/// Absence, wherever an id or a tick is optional: an unowned frame, a
+/// process that has not finished, an idle CPU.
+pub fn nothing() -> I32 { -1 }

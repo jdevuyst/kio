@@ -1,0 +1,3 @@
+module labels;
+
+pub labels { item: . };

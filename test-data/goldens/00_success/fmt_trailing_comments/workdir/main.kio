@@ -1,0 +1,43 @@
+module main;
+
+import elab/control(scope);
+
+fn f(x: I32) -> I32 {
+  let y = x;
+  // bind y
+  y
+  // the result
+}
+
+fn g(x: I32) -> I32 {
+  inc(
+    , x
+    , 1
+    // the increment
+    // dangling before the closing paren
+    )
+}
+
+fn pair_of(x: I32) -> I32 & I32 {
+  (
+    , x
+    , x
+    // last tuple element
+    )
+}
+
+fn block_with_dangling(x: I32) -> I32 {
+  x
+  // a comment dangling at the end of the block
+}
+
+fn use_do(x: I32) -> I32 {
+  scope! {
+    x
+    // dangling in a do block
+  }
+}
+
+fn last() -> . { () }
+
+// trailing after the final item

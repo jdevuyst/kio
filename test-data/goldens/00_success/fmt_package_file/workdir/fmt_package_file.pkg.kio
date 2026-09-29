@@ -1,0 +1,17 @@
+// Package interface: the bridged modules whose host items and pub
+// exports form the package boundary.
+package fmt_package_file;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {fmt_package_file;fmt_package_file/main;fmt_package_file/boxlib}

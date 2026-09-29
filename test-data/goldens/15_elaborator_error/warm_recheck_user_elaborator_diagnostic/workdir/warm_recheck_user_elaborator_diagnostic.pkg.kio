@@ -1,0 +1,19 @@
+package warm_recheck_user_elaborator_diagnostic;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  warm_recheck_user_elaborator_diagnostic;
+  warm_recheck_user_elaborator_diagnostic/**;
+  elaborators
+}

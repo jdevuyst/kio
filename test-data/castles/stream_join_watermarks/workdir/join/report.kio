@@ -1,0 +1,127 @@
+module join/report;
+
+import elab/control(if);
+import elab/match(match);
+import join/model as m;
+import list/core as core;
+import list/list as lists;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn same_pair(left: m.Pair, right: m.Pair) -> Bool {
+  if! a.leq_i32(left.?{m.left_id}, right.?{m.left_id}) {
+    if! a.leq_i32(right.?{m.left_id}, left.?{m.left_id}) {
+      if! a.leq_i32(left.?{m.right_id}, right.?{m.right_id}) {
+        a.leq_i32(right.?{m.right_id}, left.?{m.right_id})
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+fn before(left: m.Pair, right: m.Pair) -> Bool {
+  if! a.lt_i32(left.?{m.left_id}, right.?{m.left_id}) {
+    .t
+  } else if! a.lt_i32(right.?{m.left_id}, left.?{m.left_id}) {
+    .f
+  } else {
+    a.leq_i32(left.?{m.right_id}, right.?{m.right_id})
+  }
+}
+
+rec(loop) fn insert(pair: m.Pair, sorted: core.List(m.Pair)) -> core.List(m.Pair) {
+  match! core.uncons(sorted) {
+    .(head: m.Pair, tail: core.List(m.Pair)) {
+      if! before(pair, head) {
+        core.cons(pair, sorted)
+      } else {
+        core.cons(head, rec(cont) insert(pair, tail))
+      }
+    };
+    .() { core.singleton(pair) }
+  }
+}
+
+fn pair_text(pair: m.Pair) -> String {
+  text.string_concat(
+    , fmt.int_to_string(pair.?{m.left_id})
+    , text.string_concat("/", fmt.int_to_string(pair.?{m.right_id}))
+    )
+}
+
+pub fn signature(state: m.State) -> String {
+  let sorted =
+    lists.foldl(
+      , .(acc: core.List(m.Pair), pair: m.Pair) { insert(pair, acc) }
+      , core.nil()
+      , state.?{m.pairs}
+      );
+  lists.to_string(pair_text, sorted)
+}
+
+fn number(label: String, value: I32) -> . { io.print(label); io.print(fmt.int_to_string(value)) }
+
+pub fn checkpoint(label: String, state: m.State) -> . {
+  io.print(text.string_concat("checkpoint ", label));
+  number(" wm=", state.?{m.left_watermark});
+  number("/", state.?{m.right_watermark});
+  number(" retained=", lists.length(state.?{m.left}));
+  number("/", lists.length(state.?{m.right}));
+  number(" evicted=", state.?{m.evicted_left});
+  number("/", state.?{m.evicted_right});
+  number(" pairs=", lists.length(state.?{m.pairs}));
+  io.print("\n")
+}
+
+pub fn finish(state: m.State) -> . {
+  let unique =
+    lists.foldl(
+      , .(acc: core.List(m.Pair), pair: m.Pair) {
+          if! lists.elem(same_pair, pair, acc) {
+            acc
+          } else {
+            core.cons(pair, acc)
+          }
+        }
+      , core.nil()
+      , state.?{m.pairs}
+      );
+  number("accepted=", state.?{m.accepted_left});
+  number("/", state.?{m.accepted_right});
+  number(" late=", state.?{m.late});
+  number(" regressed-watermarks=", state.?{m.regressed});
+  number(" emitted=", lists.length(state.?{m.pairs}));
+  number(" distinct=", lists.length(unique));
+  io.print("\n");
+  io.print(text.string_concat("pairs ", text.string_concat(signature(state), "\n")))
+}
+
+pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) -> . {
+  if! a.lt_i32(old.?{m.late}, next.?{m.late}) {
+    io.print(text.string_concat("late rejected ", side));
+    number(" id=", event.?{m.id});
+    number(" time=", event.?{m.time});
+    io.print("\n")
+  } else {
+    ()
+  }
+}
+
+pub fn watermark(side: String, value: I32, old: m.State, next: m.State) -> . {
+  if! a.lt_i32(old.?{m.regressed}, next.?{m.regressed}) {
+    io.print(text.string_concat("watermark rejected ", side));
+    number(" value=", value);
+    io.print("\n")
+  } else {
+    ()
+  }
+}

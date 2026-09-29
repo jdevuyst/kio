@@ -1,0 +1,41 @@
+/// Boolean connectives and the integer comparisons the collector needs.
+/// The host env supplies exactly one integer comparison, `leq_i32`, so
+/// equality and strict order are derived from it here, once.
+module gc/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+
+fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// Strict in both arguments, like any Kio call: a guard that must not
+/// evaluate its second operand uses `if` instead.
+pub fn and(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn bool_eq(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    not(right)
+  }
+}
+
+/// `a == b` by the antisymmetry of a total order.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// `a < b` as the negation of `b <= a`, so no address arithmetic is
+/// needed to compare two addresses.
+pub fn int_lt(a: I32, b: I32) -> Bool { not(leq_i32(b, a)) }

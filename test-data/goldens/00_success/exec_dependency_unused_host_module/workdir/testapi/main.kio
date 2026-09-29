@@ -1,0 +1,13 @@
+module testapi/main;
+
+import sinklib/core(pick);
+import testapi(String);
+import testapi/io(print);
+
+// Use only `sinklib/core` (a pure helper). The dependency also ships
+// `sinklib/sink`, which declares a host fn the `testapi-print` protocol
+// does not supply — but this consumer never reaches `sink` through its
+// bridge, so the bridge-scoped emit prunes it. Were `sink` emitted, its
+// `discard` host requirement would leak into the host interface and the
+// rust / go targets would fail to build.
+pub fn main() -> . { print(pick(("dependency works\n"(String), "discarded"(String)))) }

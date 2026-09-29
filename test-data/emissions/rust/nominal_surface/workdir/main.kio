@@ -1,0 +1,33 @@
+module main;
+
+host type I32 role(i32);
+
+host type Str role(str);
+
+host type Scalar;
+
+pub newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap }
+
+pub newtype Boxed : Scalar { pub constructor box_it; pub projector unbox }
+
+pub newtype Pair : Boxed & Boxed { pub constructor pair; pub projector unpair }
+
+pub labels { name: Str, value: I32 };
+
+pub fn wrap(value: I32) -> Wrap { Wrap.mk_wrap(value) }
+
+pub fn unwrap(value: Wrap) -> I32 { Wrap.un_wrap(value) }
+
+pub fn box_scalar(value: Scalar) -> Boxed { Boxed.box_it(value) }
+
+pub fn unbox_scalar(value: Boxed) -> Scalar { Boxed.unbox(value) }
+
+pub fn pair_boxed(left: Boxed, right: Boxed) -> Pair { Pair.pair((left, right)) }
+
+pub fn make_name(value: Str) -> Name { Name.mk(value) }
+
+pub fn read_name(value: Name) -> Str { Name.get(value) }
+
+pub fn make_value(value: I32) -> Value { Value.mk(value) }
+
+pub fn read_value(value: Value) -> I32 { Value.get(value) }

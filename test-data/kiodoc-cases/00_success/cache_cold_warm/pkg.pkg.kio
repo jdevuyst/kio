@@ -1,0 +1,13 @@
+package pkg;
+
+build {
+  cache "out/.kio-cache/";
+
+  docs {
+    md "."
+  };
+
+  target js {
+    out "out/js/"
+  }
+}

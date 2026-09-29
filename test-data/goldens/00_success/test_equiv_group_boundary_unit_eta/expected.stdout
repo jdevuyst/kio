@@ -1,0 +1,7 @@
+  pass equiv `comma_prefix_suspends` in evalreg/m
+  pass equiv `packet_prefix_suspends` in evalreg/m
+  pass equiv `comma_prefix_applies` in evalreg/m
+  pass equiv `nullary_eta` in evalreg/m
+  pass equiv `unit_constant_spelling` in evalreg/m
+
+result: 5/5 equiv blocks passed

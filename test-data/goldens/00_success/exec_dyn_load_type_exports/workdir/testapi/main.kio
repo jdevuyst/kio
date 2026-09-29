@@ -1,0 +1,234 @@
+/// This case's loading host: read the freshly-emitted guest image from stdin, load it, list its export surface, and drive the member exports.
+module testapi/main;
+
+import defaults(apply_default, eval_default);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import imageio(read_image_stdin);
+import loader(Export_info, Export_infos);
+import loader(Image, Lr_diag, Lr_image);
+import loader(diag_message, export_term, un_load_outcome);
+import loader(export_info_name, export_info_sig, image_exports, un_export_infos);
+import loader/scan(load_package);
+import prime(Term, fst, nz, snd, var);
+import result(Ev_done, Ev_stuck);
+import testapi(I32, Scalar, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/scalar(scalar_as_i32, scalar_of_i32);
+import testapi/text(string_concat);
+import value(Value);
+import value(env_nil, vclosure, vhost, vproduct);
+import value(value_to_scalar);
+
+/// The argument list one call applies, in order.
+rec labels { vargs: . | (Value & Vargs) };
+
+fn vargs_nil() -> Vargs { {vargs = widen_sum!((), . | (Value & Vargs))} }
+
+fn vargs_cons(a: Value, rest: Vargs) -> Vargs {
+  {vargs = widen_sum!((a, rest), . | (Value & Vargs))}
+}
+
+fn vargs_one(a: Value) -> Vargs { vargs_cons(a, vargs_nil()) }
+
+fn un_vargs(v: Vargs) -> . | (Value & Vargs) { Vargs.get(v) }
+
+fn vi32(n: I32) -> Value { vhost(scalar_of_i32(n)) }
+
+// Apply `f` to each argument in turn (each parameter takes one
+// application), or `()` on a stuck application.
+fn apply_chain(f: Value, args: Vargs) -> . | Value {
+  loop(
+    , .(st: Value & Vargs) {
+        match! st {
+          .(cur: Value, rem: Vargs) {
+            match! un_vargs(rem) {
+              (
+                , .(a: Value, rest: Vargs) {
+                    match! apply_default(cur, a) {
+                      (
+                        , .(v: Ev_done) {
+                            widen_sum!((Ev_done.get(v), rest), (Value & Vargs) | . | Value)
+                          }
+                        , .(_s: Ev_stuck) {
+                            widen_sum!(widen_sum!((), . | Value), (Value & Vargs) | . | Value)
+                          }
+                        )
+                    }
+                  }
+                , .(_done: .) {
+                    widen_sum!(widen_sum!(cur, . | Value), (Value & Vargs) | . | Value)
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (f, args)
+    )
+}
+
+// Evaluate the named export in the loaded image and apply it to the
+// arguments, or `()` on any failure.
+fn call_export(im: Image, name: String, args: Vargs) -> . | Value {
+  match! export_term(im, name) {
+    (
+      , .(t: Term) {
+          match! eval_default(t) {
+            (
+              , .(v: Ev_done) { apply_chain(Ev_done.get(v), args) }
+              , .(_s: Ev_stuck) { widen_sum!((), . | Value) }
+              )
+          }
+        }
+      , .(_absent: .) { widen_sum!((), . | Value) }
+      )
+  }
+}
+
+// Render an optional call result through the i32 scalar projection.
+fn show_i32(label: String, r: . | Value) -> String {
+  match! r {
+    (
+      , .(v: Value) {
+          match! value_to_scalar(v) {
+            (
+              , .(s: Scalar) {
+                  match! scalar_as_i32(s) {
+                    (
+                      , .(n: I32) {
+                          string_concat(label, string_concat(int_to_string(n), "\n"(String)))
+                        }
+                      , .(_no: .) { string_concat(label, "<not an i32>\n"(String)) }
+                      )
+                  }
+                }
+              , .(_no: .) { string_concat(label, "<not a scalar>\n"(String)) }
+              )
+          }
+        }
+      , .(_e: .) { string_concat(label, "<error>\n"(String)) }
+      )
+  }
+}
+
+// Print each surface export as a `name : signature` line, listing order.
+fn print_exports(im: Image) -> . {
+  loop(
+    , .(st: Export_infos) {
+        match! un_export_infos(st) {
+          (
+            , .(e: Export_info, rest: Export_infos) {
+                print(string_concat(
+                  , export_info_name(e)
+                  , string_concat(" : "(String), string_concat(export_info_sig(e), "\n"(String)))
+                  ));
+                widen_sum!(rest, Export_infos | .)
+              }
+            , .(_done: .) { widen_sum!((), Export_infos | .) }
+            )
+        }
+      }
+    , image_exports(im)
+    )
+}
+
+// The CPS continuations the existential projector is driven with: each is
+// a host-built closure taking the opened payload pair.
+fn kfst() -> Value { vclosure(env_nil(), fst(var(nz()))) }
+
+fn ksnd() -> Value { vclosure(env_nil(), snd(var(nz()))) }
+
+// Constructor then projector through the bare and qualified spellings:
+// `Box.mk_box(7)` fed to `guest.Box.un_box`.
+fn roundtrip_box(im: Image) -> . | Value {
+  match! call_export(im, "Box.mk_box"(String), vargs_one(vi32(7(I32)))) {
+    (
+      , .(b: Value) { call_export(im, "guest.Box.un_box"(String), vargs_one(b)) }
+      , .(_e: .) { widen_sum!((), . | Value) }
+      )
+  }
+}
+
+// The existential projector driven CPS over a guest-built value: the
+// continuation receives the opened payload.
+fn cps_via_guest(im: Image) -> . | Value {
+  match! call_export(im, "guest.seal"(String), vargs_one(vi32(20(I32)))) {
+    (
+      , .(s: Value) {
+          call_export(im, "Sealed.un_sealed"(String), vargs_cons(s, vargs_one(kfst())))
+        }
+      , .(_e: .) { widen_sum!((), . | Value) }
+      )
+  }
+}
+
+// The existential pair introduced by the exported constructor itself,
+// then opened with the second projection as the continuation.
+fn cps_via_ctor(im: Image) -> . | Value {
+  match! call_export(
+    , im
+    , "guest.Sealed.mk_sealed"(String)
+    , vargs_one(vproduct(vi32(3(I32)), vi32(9(I32))))
+    ) {
+    (
+      , .(s: Value) {
+          call_export(im, "guest.Sealed.un_sealed"(String), vargs_cons(s, vargs_one(ksnd())))
+        }
+      , .(_e: .) { widen_sum!((), . | Value) }
+      )
+  }
+}
+
+/// Loads the piped-in image, lists the export surface, and prints each
+/// probed member export's result; a load failure prints the diagnostic.
+pub fn main() -> . {
+  match! un_load_outcome(load_package(read_image_stdin())) {
+    (
+      , .(im0: Lr_image) {
+          let im = Lr_image.get(im0);
+          print("exports:\n"(String));
+          print_exports(im);
+          print(show_i32("Box roundtrip(7) = "(String), roundtrip_box(im)));
+          print(show_i32("un_sealed(seal(20), fst) = "(String), cps_via_guest(im)));
+          print(show_i32("un_sealed(mk_sealed((3, 9)), snd) = "(String), cps_via_ctor(im)));
+          print(show_i32(
+            , "Token.mk_token(5) = "(String)
+            , call_export(im, "Token.mk_token"(String), vargs_one(vi32(5(I32))))
+            ));
+          print(show_i32(
+            , "Token.un_token(1) = "(String)
+            , call_export(im, "Token.un_token"(String), vargs_one(vi32(1(I32))))
+            ));
+          print(show_i32(
+            , "internal.Hidden.mk_hidden(1) = "(String)
+            , call_export(im, "internal.Hidden.mk_hidden"(String), vargs_one(vi32(1(I32))))
+            ));
+          print(show_i32(
+            , "guest.Box.nope(1) = "(String)
+            , call_export(im, "guest.Box.nope"(String), vargs_one(vi32(1(I32))))
+            ));
+          print(show_i32(
+            , "hidden_fn(1) = "(String)
+            , call_export(im, "hidden_fn"(String), vargs_one(vi32(1(I32))))
+            ));
+          print(show_i32(
+            , "guest.hidden_fn(1) = "(String)
+            , call_export(im, "guest.hidden_fn"(String), vargs_one(vi32(1(I32))))
+            ));
+          print(show_i32(
+            , "guest.Leak.mk_leak(1) = "(String)
+            , call_export(im, "guest.Leak.mk_leak"(String), vargs_one(vi32(1(I32))))
+            ))
+        }
+      , .(d: Lr_diag) {
+          print(string_concat(
+            , "load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+            ))
+        }
+      )
+  }
+}

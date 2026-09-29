@@ -1,0 +1,17 @@
+module main;
+
+import elab/match(match);
+
+newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+
+newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn handle(p: Box(Foo) | Bar) -> . {
+  let _r =
+    match! p {
+      .[A](b: Box(A)) -> . { () }
+    };
+  ()
+}

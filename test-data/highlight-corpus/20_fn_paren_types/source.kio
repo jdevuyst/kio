@@ -1,0 +1,7 @@
+module m;
+
+fn foo(a: A) -> A { a }
+
+fn bar(b: B) -> B { b }
+
+fn baz(c: C(I32, Box(A))) -> C(I32) { c }

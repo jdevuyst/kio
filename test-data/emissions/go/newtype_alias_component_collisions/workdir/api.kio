@@ -1,0 +1,7 @@
+module api;
+
+host type I32 role(i32);
+
+pub newtype A_b : I32 & I32 { pub constructor c; pub projector un_c }
+
+pub newtype A : I32 & I32 { pub constructor b_c; pub projector un_b_c }

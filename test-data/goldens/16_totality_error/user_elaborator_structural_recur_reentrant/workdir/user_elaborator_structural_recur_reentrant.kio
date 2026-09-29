@@ -1,0 +1,3 @@
+module user_elaborator_structural_recur_reentrant;
+
+host type String role(str);

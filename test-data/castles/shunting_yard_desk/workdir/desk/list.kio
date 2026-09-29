@@ -1,0 +1,78 @@
+/// The one collection this desk calculator has. The host tier supplies no
+/// array type, so the token stream, the RPN queue, the operator stack, the
+/// value stack, and the fault log are all instantiations of this cons list.
+module desk/list;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// An anonymous sum cannot mention itself, so the newtype ties the knot.
+pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; pub projector un_list }
+
+pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, tail: List(A)) -> List(A) {
+  List.mk_list(widen_sum!((head, tail), . | (A & List(A))))
+}
+
+pub fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.un_list {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+/// Push every element of `xs` onto `acc` in order, which leaves `acc` holding
+/// them reversed. Both stacks and the output queue accumulate head-first, so
+/// this one walk is what turns an accumulator back into reading order.
+rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+
+rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
+  match! xs.>List.un_list {
+    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
+
+rec(loop) fn map_onto[A][B](xs: List(A), f: A -> B, acc: List(B)) -> List(B) {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { rec map_onto(rest, f, cons(f(head), acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn map[A][B](xs: List(A), f: A -> B) -> List(B) { reverse(map_onto(xs, f, nil(B, ()))) }
+
+rec(loop) fn count_onto[A](xs: List(A), pick: A -> Bool, acc: I32) -> I32 {
+  match! xs.>List.un_list {
+    (
+      , .(head: A, rest: List(A)) {
+          let hit =
+            if! pick(head) {
+              1
+            } else {
+              0
+            };
+          rec count_onto(rest, pick, add_i32(acc, hit))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn count[A](xs: List(A), pick: A -> Bool) -> I32 { count_onto(xs, pick, 0) }
+
+pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) -> . {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { action(head); rec for_each(rest, action) }, .(_empty: .) { () })
+  }
+}

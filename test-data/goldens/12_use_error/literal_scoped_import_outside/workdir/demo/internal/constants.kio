@@ -1,0 +1,5 @@
+module demo/internal/constants;
+
+import demo/api(String);
+
+pub(demo/internal) literal greeting = "hello";

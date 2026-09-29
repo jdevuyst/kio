@@ -1,0 +1,9 @@
+module main;
+
+host type String role(str);
+
+labels { hello: String };
+
+fn read_hello() -> String { Hello.get({hello = "hello"}) }
+
+pub fn main() -> String { read_hello() }

@@ -1,0 +1,54 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn emit(value: I32) -> . { io.print(fmt.int_to_string(value)); io.print("\n") }
+
+fn marked(label: String, value: I32) -> I32 { io.print(label); value }
+
+fn pair_factory() -> [A][B] (A & B) -> A & B { __pair__ }
+
+fn passed(make: [A][B] (A & B) -> A & B, a: I32, b: I32) -> I32 & I32 { make(a, b) }
+
+fn select(value: I32 | I32) -> I32 {
+  let fold = __either__;
+  fold(value, .(n: I32) { arith.add_i32(n, 100) }, .(n: I32) { arith.add_i32(n, 200) })
+}
+
+// Bottom has no value: construct and pass its elimination function, then execute
+// the inhabited branch of the ordinary sum eliminator.
+pub fn from_bottom(value: ! | I32) -> I32 {
+  let impossible = __absurd__;
+  let fold = __either__;
+  fold(value, impossible(I32), .(n: I32) { n })
+}
+
+pub fn main() -> . {
+  let make = __pair__;
+  let first = __fst__;
+  let second = __snd__;
+  let pair = make(marked("a\n", 10), marked("b\n", 20));
+  emit(first(pair));
+  emit(second(pair));
+  emit(first(make(3, 4)));
+  let partial = __pair__(I32, I32);
+  emit(second(partial(5, 6)));
+  let returned = pair_factory();
+  emit(first(returned(7, 8)));
+  emit(second(passed(__pair__, 9, 11)));
+  let left = __left__;
+  let right = __right__;
+  emit(select(left(I32, I32, 12)));
+  emit(select(right(I32, I32, 13)));
+  let choose = __if_then_else__;
+  emit(choose(arith.lt_i32(1, 2), .() { marked("then\n", 14) }, .() { marked("bad\n", 0) }));
+  emit(choose(arith.lt_i32(2, 1), .() { marked("bad\n", 0) }, .() { marked("else\n", 15) }));
+  emit(from_bottom(right(!, I32, 16)));
+  let callback = first(make(.(n: I32) { arith.add_i32(n, 1) }, ()));
+  emit(callback(20))
+}

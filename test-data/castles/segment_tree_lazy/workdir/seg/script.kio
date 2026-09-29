@@ -1,0 +1,121 @@
+/// The fixture: the array the run starts from, and the operation script both
+/// structures replay. The script is a flat opcode table -- four `I32` cells
+/// per row, `(code, p0, p1, p2)` -- which `op_at` decodes into an `Op`, so the
+/// driver dispatches once on a real sum instead of re-reading raw cells.
+///
+/// The script leans on wide ranges. That is not a thumb on the scale: wide
+/// updates and wide queries are the workload a lazy segment tree exists for.
+/// The two point operations and the narrow `min[16,23]` are here precisely
+/// because they are the cases where the tree does *not* win, and the
+/// transcript should say so.
+module seg/script;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import seg/num(int_eq);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
+import testapi/iter(loop);
+
+literal code_add = 1;
+
+literal code_sum = 2;
+
+literal code_min = 3;
+
+literal code_set = 4;
+
+/// Four cells per script row.
+literal row_width = 4;
+
+pub fn leaf_count() -> I32 { 64 }
+
+pub fn op_count() -> I32 { 18 }
+
+pub labels Op =
+  { add_range: I32 & I32 & I32 }
+  | { sum_range: I32 & I32 }
+  | { min_range: I32 & I32 }
+  | { set_point: I32 & I32 };
+
+fn add_op(l: I32, r: I32, x: I32) -> Op { {add_range = (l, r, x)}.>widen_sum!(Op) }
+
+fn sum_op(l: I32, r: I32) -> Op { {sum_range = (l, r)}.>widen_sum!(Op) }
+
+fn min_op(l: I32, r: I32) -> Op { {min_range = (l, r)}.>widen_sum!(Op) }
+
+fn set_op(i: I32, v: I32) -> Op { {set_point = (i, v)}.>widen_sum!(Op) }
+
+/// A sawtooth: step up by 9 and wrap back down by 37 whenever the value would
+/// leave the band. It spreads the minimum around the array instead of parking
+/// it at one end, so a `min` query has somewhere interesting to look.
+rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I32) {
+  if! leq_i32(n, i) {
+    cells
+  } else {
+    array_set(cells, i, value);
+    let stepped = add_i32(value, 9);
+    let wrapped = if! leq_i32(30, stepped) {
+      sub_i32(stepped, 37)
+    } else {
+      stepped
+    };
+    rec fill_from(cells, add_i32(i, 1), n, wrapped)
+  }
+}
+
+pub fn initial() -> Array(I32) { let n = leaf_count(); fill_from(array_make_filled(n, 0), 0, n, 4) }
+
+fn row(table: Array(I32), code: I32, p0: I32, p1: I32, p2: I32) -> . {
+  array_push(table, code);
+  array_push(table, p0);
+  array_push(table, p1);
+  array_push(table, p2)
+}
+
+/// The eighteen scripted operations, in order. Rows 3, 6, 14 and 17 each stop
+/// on a single node that covers their whole range -- node 1, node 2, and the
+/// root twice -- so each parks one tag and touches nothing below it; row 9's
+/// range is ragged and settles on several covering nodes instead. Rows 5, 11
+/// and 16 are the ones that then have to walk through those nodes and pay the
+/// deferred bill.
+pub fn script_table() -> Array(I32) {
+  let t = array_make_empty(I32, ());
+  row(t, code_sum, 0, 63, 0);
+  row(t, code_min, 0, 63, 0);
+  row(t, code_add, 0, 31, 3);
+  row(t, code_sum, 0, 31, 0);
+  row(t, code_min, 16, 23, 0);
+  row(t, code_add, 32, 63, 2);
+  row(t, code_sum, 32, 63, 0);
+  row(t, code_min, 0, 63, 0);
+  row(t, code_add, 8, 55, 5);
+  row(t, code_sum, 8, 55, 0);
+  row(t, code_set, 20, 100, 0);
+  row(t, code_sum, 0, 63, 0);
+  row(t, code_min, 0, 63, 0);
+  row(t, code_add, 0, 63, 4);
+  row(t, code_sum, 0, 63, 0);
+  row(t, code_min, 24, 39, 0);
+  row(t, code_add, 0, 63, -2);
+  row(t, code_sum, 0, 63, 0);
+  t
+}
+
+pub fn op_at(table: Array(I32), k: I32) -> Op {
+  let at = mul_i32(row_width, k);
+  let code = array_get(table, at);
+  let p0 = array_get(table, add_i32(at, 1));
+  let p1 = array_get(table, add_i32(at, 2));
+  let p2 = array_get(table, add_i32(at, 3));
+  if! int_eq(code, code_add) {
+    add_op(p0, p1, p2)
+  } else if! int_eq(code, code_sum) {
+    sum_op(p0, p1)
+  } else if! int_eq(code, code_min) {
+    min_op(p0, p1)
+  } else {
+    set_op(p0, p1)
+  }
+}

@@ -1,0 +1,12 @@
+dependency library;
+
+source {
+  path "../option.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;
+rehost library/list/elab/testapi to testapi;
+rehost library/list/list to option_host;
+rehost library/option to option_host;
+
+retype library/list/core.List to list/core.List;

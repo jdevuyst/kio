@@ -1,0 +1,14 @@
+module api;
+
+import labels({item});
+import types as t;
+import types(A);
+import types(Kept);
+
+pub fn make() -> . { {item=}.?{item} }
+
+pub fn keep(value: Kept) -> Kept { value }
+
+pub fn keep_qualified(value: t.Kept) -> t.Kept { value }
+
+pub fn shadow(value: A)[A](shadowed: A) -> A { shadowed }

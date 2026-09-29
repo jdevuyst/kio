@@ -1,0 +1,22 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type String = _rehost_hegfhdhegbhagj.String;
+
+pub type Item[A] = _rehost_gdgphcgfcphdhegphcgf.Item(A);
+
+pub type Pack[A] = _rehost_gdgphcgfcphdhegphcgf.Pack(A);
+
+pub type Family[A] = Item(A) & Pack(A);
+
+pub type {item} = {_rehost_gdgphcgfcphdhegphcgf.item};
+
+pub type {pack} = {_rehost_gdgphcgfcphdhegphcgf.pack};
+
+pub type Later[A] = Item(A) & Pack(A);
+
+pub fn family_item[A](row: Family(A)) -> A { row.?{item} }
+
+pub fn later_item[A](row: Later(A)) -> A { row.?{item} }

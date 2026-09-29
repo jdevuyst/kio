@@ -1,0 +1,13 @@
+package typecheck_user_elaborator_higher_kinded_type_argument;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

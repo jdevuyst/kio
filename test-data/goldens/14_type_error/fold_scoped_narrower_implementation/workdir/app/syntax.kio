@@ -1,0 +1,7 @@
+module app/syntax;
+
+pub(app/syntax) fn empty() -> . { () }
+
+pub(app/syntax) fn push(_head: ., tail: .) -> . { tail }
+
+pub(app) varop [* *] { foldr push empty }

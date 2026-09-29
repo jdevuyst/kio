@@ -1,0 +1,3 @@
+an explicitly empty UFCS argument list is ambiguous
+bare UFCS form
+pass Unit

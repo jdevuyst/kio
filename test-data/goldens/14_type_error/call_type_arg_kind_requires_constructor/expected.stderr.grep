@@ -1,0 +1,1 @@
+type argument `I32` has kind `\*`, but type parameter `F` requires kind `\*→\*`

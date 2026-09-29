@@ -1,0 +1,5 @@
+module pkg;
+
+import pkg/types(Secret);
+
+pub fn reveal() -> Secret { Secret.mk_secret(()) }

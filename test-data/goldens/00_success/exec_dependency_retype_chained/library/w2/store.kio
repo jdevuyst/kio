@@ -1,0 +1,7 @@
+module store;
+
+host type I32 role(i32);
+
+pub newtype Tag : I32 { pub constructor mk; pub projector un }
+
+pub fn make2(n: I32) -> Tag { Tag.mk(n) }

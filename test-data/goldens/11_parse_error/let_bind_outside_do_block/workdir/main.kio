@@ -1,0 +1,10 @@
+module let_bind_outside_do_block/main;
+
+// Parse error: `let x <- e;` at ordinary block scope (not
+// inside a do-block). The ordinary let-statement parser expects
+// `=` after the binder; `<-` triggers a connective-mismatch
+// parse error.
+fn bad() -> . {
+  let x <- ();
+  ()
+}

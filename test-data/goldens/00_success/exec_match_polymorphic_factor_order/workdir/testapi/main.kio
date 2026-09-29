@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io as io;
+
+newtype Box[A] : A { pub constructor make; pub projector unpack }
+
+labels { other: String, tag: . };
+
+fn choose(input: (Box(String) & Tag) | (Other & Tag)) -> String {
+  match! input {
+    .[A](_box: Box(A)) -> String { "polymorphic-first\n" };
+    .(_whole: (Box(String) | Other) & Tag) -> String { "whole-second\n" }
+  }
+}
+
+pub fn main() -> . {
+  io.print(choose(widen_sum!((Box.make("box"), {tag=}), (Box(String) & Tag) | (Other & Tag))));
+  io.print(choose(widen_sum!(({other = "other"}, {tag=}), (Box(String) & Tag) | (Other & Tag))))
+}

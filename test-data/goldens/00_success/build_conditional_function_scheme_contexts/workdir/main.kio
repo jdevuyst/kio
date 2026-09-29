@@ -1,0 +1,47 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+fn identity_a[A](value: A) -> A { value }
+
+fn identity_b[B](value: B) -> B { value }
+
+fn identity_c[C](value: C) -> C { value }
+
+fn same[T](_left: T, _right: T) -> . { () }
+
+pub fn uncontextual(condition: Bool) -> . {
+  let selected =
+    if! condition {
+      identity_a
+    } else {
+      identity_b
+    };
+  selected(())
+}
+
+pub fn contextual_goal(condition: Bool) -> . {
+  same(
+    , if! condition {
+        identity_a
+      } else {
+        identity_b
+      }
+    , identity_c
+    )
+}
+
+pub fn connected_result() -> . {
+  same(
+    , .(condition: Bool) {
+        if! condition {
+          identity_a
+        } else {
+          identity_b
+        }
+      }
+    , .(_condition: Bool) -> [T] T -> T { identity_c }
+    )
+}

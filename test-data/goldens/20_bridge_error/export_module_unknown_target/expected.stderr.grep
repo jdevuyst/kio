@@ -1,0 +1,1 @@
+bridge glob `pkg/does_not_exist` matches no module

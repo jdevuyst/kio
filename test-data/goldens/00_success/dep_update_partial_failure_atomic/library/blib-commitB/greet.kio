@@ -1,0 +1,3 @@
+module greet;
+
+pub fn first[A](x: A, _y: A) -> A { x }

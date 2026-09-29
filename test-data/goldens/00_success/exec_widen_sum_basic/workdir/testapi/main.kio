@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `widen_sum!`: source's arm-type multiset `{String}` ⊆ target's
+// `{String, I32}`. The injection lands in the matching `String`
+// arm; the `I32` arm is unreachable from this source.
+fn lift(s: String) -> String | I32 { widen_sum!(s) }
+
+pub fn main() -> . {
+  let widened = lift("widen_sum: lifted\n");
+  let out =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print(out)
+}

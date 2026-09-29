@@ -1,0 +1,803 @@
+/// The Kio' lexer: source text → a positioned token list, driven by the host `loop`.
+module lex;
+
+import chars(and2, c_backslash, c_dot, c_minus, c_nl, c_quote, c_slash, or2);
+import chars(is_digit, is_space, is_word_cont, is_word_start);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32);
+import testapi/iter(loop);
+import testapi/text(string_code_at, string_concat, string_len, string_slice);
+import token(Token, Toks);
+import token(tk_num, tk_punct, tk_str, tk_word, toks_cons, toks_nil, un_toks);
+
+// `lex.kio` — turn Kio' source text into a positioned token list.
+//
+// Kio' has no in-language recursion (`specs/prime.md` § Order-sensitive
+// visibility), so a scan of arbitrary length is *iteration*, driven by
+// the host `loop` — the same shape `eval.kio`'s CEK machine uses. The
+// outer scanner folds over source positions; each word / number / string
+// scan is itself a small inner `loop` advancing a cursor while a
+// character class holds.
+//
+// Tokens accumulate most-recent-first and are reversed once at the end
+// (`toks_reverse`), so the scanner never has to append at the tail. Each
+// token carries its lexeme's **byte offset** into the source, so a
+// malformed image is diagnosed at its source position.
+//
+// **Numeric literals carry their raw text.** A numeric literal token
+// holds the verbatim source text — sign, digits, a single `.`-separated
+// fractional part, and an optional `e` / `E` exponent with an optional
+// sign (`562.406`, `1.5e-3`) — not a parsed number. The interpreter never
+// parses a scalar: the parser pairs this text with the literal's `(Type)`
+// annotation and the host constructs the scalar (`testapi/scalar.kio`'s
+// `make_scalar`). So every numeric shape a host scalar supports lexes as
+// one raw-text run.
+//
+// **The negative-literal carve-out** (`specs/prime.md` § Lexical
+// structure): a `-` flush against a digit fuses into the literal at an
+// expression-starting position. The Prime emitter writes negative
+// numeric literals exactly so — `-5(I32)`, `-1.5(F64)`. In the
+// fully-parenthesized, operator-free term subset a `-` that precedes a
+// digit is always at an expression start (the only neighbours a `-` can
+// have before a digit are `(`, `,`, `{`, `=`, or the buffer start), so the
+// lexer fuses unconditionally on `- <digit>`, keeping the `-` in the
+// literal's text. A `-` before `>` is the type-level arrow `->`, emitted
+// only inside the type positions the parser erases; the lexer leaves it as
+// two punctuation tokens.
+//
+// **String escapes.** The emitter writes the JSON escape set —
+// `\n \t \r \b \f \" \\ \/ \uXXXX` — and the lexer decodes all of it.
+// `\uXXXX` decodes through the ASCII table below; the emitter writes it
+// only for control characters (printable ASCII is written verbatim and
+// non-ASCII rides the UTF-8 bytes raw), so an escape naming a code point
+// past 0x7F is rejected as malformed rather than silently corrupted.
+//
+// **Malformed text is an error, not a guess.** An unterminated string
+// literal or a malformed escape yields a `Lex_err` carrying a message and
+// the offending byte offset; the scanner (`scan.kio`) surfaces it as a
+// load diagnostic. The lexer never truncates or passes garbage through.
+//
+// **Comments.** The Prime emitter writes `///` doc comments; the Kio'
+// lexer admits line comments (`//` / `///`; `specs/prime.md` § Lexical
+// structure). The scanner skips from a `//` run to end-of-line.
+
+// =====================================================================
+// Cursor reads — a character at a position, or end-of-input
+// =====================================================================
+//
+// `char_at` reports the code at `pos`, or `()` at or past the end. The
+// host `string_code_at` already returns `I32 | .`; this wrapper names
+// it for the scanner.
+/// The character code at `pos` in `src`, or `()` at or past end-of-input.
+fn char_at(src: String, pos: I32) -> I32 | . { string_code_at(src, pos) }
+
+/// The one-character string at `pos` in `src`.
+fn char_str(src: String, pos: I32) -> String { string_slice(src, pos, add_i32(pos, 1(I32))) }
+
+// =====================================================================
+// Lex_err — a lexical error at a source offset
+// =====================================================================
+/// Defines a lexical error: a message and the byte offset it points at.
+pub labels { lex_err: String & I32 };
+
+/// Builds a lexical error from its message and byte offset.
+pub fn mk_lex_err(message: String, pos: I32) -> Lex_err { {lex_err = (message, pos)} }
+
+/// The lexical error's message.
+pub fn lex_err_message(e: Lex_err) -> String {
+  match! Lex_err.get(e) {
+    .(m: String, _p: I32) { m }
+  }
+}
+
+/// The lexical error's byte offset.
+pub fn lex_err_pos(e: Lex_err) -> I32 {
+  match! Lex_err.get(e) {
+    .(_m: String, p: I32) { p }
+  }
+}
+
+/// The outcome of a lex run: the token list, or a lexical error.
+pub type Lex_outcome = Toks | Lex_err;
+
+// =====================================================================
+// The ASCII table — one character per code, for `\uXXXX` decoding
+// =====================================================================
+//
+// `string_slice(table, c, c+1)` recovers the one-character string for any
+// ASCII code `c`, which is how a `\uXXXX` escape becomes its character:
+// the loader has no code-point-to-string host capability, and needs none —
+// the emitter writes `\uXXXX` only for ASCII control characters. Codes
+// 0x00–0x7F appear in order, the controls spelled with their own escapes.
+fn ascii_table() -> String {
+  "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f "
+  "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"(String)
+}
+
+/// The one-character string for an ASCII code, or `()` past 0x7F.
+pub fn ascii_char(code: I32) -> . | String {
+  if! and2(leq_i32(0(I32), code), leq_i32(code, 127(I32))) {
+    widen_sum!(string_slice(ascii_table(), code, add_i32(code, 1(I32))), . | String)
+  } else {
+    widen_sum!((), . | String)
+  }
+}
+
+// Offsets from a hex digit's character code to its value ('0' 48, 'a' 87,
+// 'A' 55). Named because Kio has no subtraction literal-fusion at use sites.
+fn sub48(c: I32) -> I32 { add_i32(c, -48(I32)) }
+
+fn sub87(c: I32) -> I32 { add_i32(c, -87(I32)) }
+
+fn sub55(c: I32) -> I32 { add_i32(c, -55(I32)) }
+
+// The numeric value of one hex digit's character code, or `()` when the
+// character is not a hex digit.
+fn hex_digit_val(c: I32) -> . | I32 {
+  if! is_digit(c) {
+    widen_sum!(sub48(c), . | I32)
+  } else if! and2(leq_i32(97(I32), c), leq_i32(c, 102(I32))) {
+    widen_sum!(sub87(c), . | I32)
+  } else if! and2(leq_i32(65(I32), c), leq_i32(c, 70(I32))) {
+    widen_sum!(sub55(c), . | I32)
+  } else {
+    widen_sum!((), . | I32)
+  }
+}
+
+// =====================================================================
+// Reverse a token list — applied once at scan end
+// =====================================================================
+/// Reverses a token list (most-recent-first into source order).
+fn toks_reverse(ts: Toks) -> Toks {
+  loop(
+    , .(st: Toks & Toks) {
+        match! st {
+          .(remaining: Toks, acc: Toks) {
+            match! un_toks(remaining) {
+              (
+                , .(head: Token, pos: I32, rest: Toks) {
+                    widen_sum!((rest, toks_cons(head, pos, acc)), (Toks & Toks) | Toks)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Toks & Toks) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts, toks_nil())
+    )
+}
+
+// =====================================================================
+// Scan exit-markers — distinct nominal types for a loop's exit arm
+// =====================================================================
+//
+// A `loop` step returns `S | R` (continue `S`, exit `R`); the host
+// driver picks the continue arm on the sum's left and the exit arm on
+// its right. When the continue and exit values have the *same*
+// structural type, `widen_sum!(x, S | R)` cannot tell the arms apart and
+// always lands `x` on the left (continue) — the loop never terminates.
+// The scans below all compute a position (and the string scan a value
+// too) and would otherwise have `S` ≡ `R`, so each exit value is
+// wrapped in a distinct nominal marker, making the exit arm a different
+// type and the `widen_sum!` choice unambiguous. The scan unwraps the
+// marker once the loop returns.
+/// Wraps a scan's final position so the exit arm differs from the `I32` continue arm.
+labels { endp: I32 };
+
+/// Wraps a string-scan's final `(position, content)` so the exit arm differs from the continue arm.
+labels { strp: I32 & String };
+
+// =====================================================================
+// Scan a word — advance while `is_word_cont` holds
+// =====================================================================
+//
+// Returns the end position one past the last word character. The caller
+// holds the start position and slices `[start, end)` for the spelling.
+/// Finds the end position of the word run starting at `start`.
+fn scan_word_end(src: String, start: I32, len: I32) -> I32 {
+  Endp.get(loop(
+    , .(pos: I32) {
+        if! lt_i32(pos, len) {
+          match! char_at(src, pos) {
+            (
+              , .(c: I32) {
+                  if! is_word_cont(c) {
+                    widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
+                  } else {
+                    widen_sum!({endp = pos}, I32 | Endp)
+                  }
+                }
+              , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
+              )
+          }
+        } else {
+          widen_sum!({endp = pos}, I32 | Endp)
+        }
+      }
+    , start
+    ))
+}
+
+// =====================================================================
+// Scan a numeric literal's text run
+// =====================================================================
+//
+// The run is `digit+ (. digit+)? ((e|E) (+|-)? digit+)?` — a digit run, an
+// optional single `.`-separated fractional part, and an optional exponent
+// (`specs/grammar.md` § Lexical structure). Returns the end position one
+// past the last numeric character; the caller slices `[start, end)` for
+// the raw text. The scan phases forward-only through integer part (0),
+// fractional part (1), and exponent (2): a `.` is consumed only in phase 0
+// with a digit following; an `e` / `E` (with its optional sign) only in
+// phases 0–1 with a digit following. A trailing `.` / `e` (no digit after)
+// stops the run instead, so `1.x`, `2e`, and `1.2.3` end at the offending
+// mark.
+
+// Whether the character `c` at `pos` is a `.` that continues the
+// fractional part: phase 0, and a digit immediately follows.
+fn dot_continues(src: String, pos: I32, len: I32, c: I32, phase: I32) -> Bool {
+  if! and2(eq_i32(c, c_dot()), eq_i32(phase, 0(I32))) {
+    let nextpos = add_i32(pos, 1(I32));
+    if! lt_i32(nextpos, len) {
+      match! char_at(src, nextpos) {
+        (.(d: I32) { is_digit(d) }, .(_e: .) { .f(Bool) })
+      }
+    } else {
+      .f(Bool)
+    }
+  } else {
+    .f(Bool)
+  }
+}
+
+// Whether the character `c` at `pos` is a `_` digit separator that
+// continues the run: a digit immediately follows (`specs/grammar.md`
+// § Lexical structure — digit sequences may be grouped with `_`).
+fn sep_continues(src: String, pos: I32, len: I32, c: I32) -> Bool {
+  if! eq_i32(c, 95(I32)) {
+    let nextpos = add_i32(pos, 1(I32));
+    if! lt_i32(nextpos, len) {
+      match! char_at(src, nextpos) {
+        (.(d: I32) { is_digit(d) }, .(_e: .) { .f(Bool) })
+      }
+    } else {
+      .f(Bool)
+    }
+  } else {
+    .f(Bool)
+  }
+}
+
+// When the character `c` at `pos` is an `e` / `E` that begins the exponent
+// (phases 0–1, an optional `+` / `-`, then a mandatory digit), the position
+// of that first exponent digit; `()` otherwise.
+fn exp_digit_pos(src: String, pos: I32, len: I32, c: I32, phase: I32) -> . | I32 {
+  if! and2(or2(eq_i32(c, 101(I32)), eq_i32(c, 69(I32))), leq_i32(phase, 1(I32))) {
+    let signpos = add_i32(pos, 1(I32));
+    let digitpos = match! char_at(src, signpos) {
+      (
+        , .(s: I32) {
+            if! or2(eq_i32(s, 43(I32)), eq_i32(s, c_minus())) {
+              add_i32(signpos, 1(I32))
+            } else {
+              signpos
+            }
+          }
+        , .(_e: .) { signpos }
+        )
+    };
+    if! lt_i32(digitpos, len) {
+      match! char_at(src, digitpos) {
+        (
+          , .(d: I32) {
+              if! is_digit(d) {
+                widen_sum!(digitpos, . | I32)
+              } else {
+                widen_sum!((), . | I32)
+              }
+            }
+          , .(_e: .) { widen_sum!((), . | I32) }
+          )
+      }
+    } else {
+      widen_sum!((), . | I32)
+    }
+  } else {
+    widen_sum!((), . | I32)
+  }
+}
+
+/// Finds the end position of the numeric run starting at `start`. The loop
+/// state is `(pos, phase)`; each step advances over a digit, enters the
+/// fractional part on a digit-followed `.`, enters the exponent on a
+/// digit-reachable `e` / `E`, and stops at the first character that fits
+/// none of those.
+fn scan_number_end(src: String, start: I32, len: I32) -> I32 {
+  Endp.get(loop(
+    , .(st: I32 & I32) {
+        match! st {
+          .(pos: I32, phase: I32) {
+            if! lt_i32(pos, len) {
+              match! char_at(src, pos) {
+                (
+                  , .(c: I32) {
+                      if! is_digit(c) {
+                        widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
+                      } else if! sep_continues(src, pos, len, c) {
+                        widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
+                      } else if! dot_continues(src, pos, len, c, phase) {
+                        widen_sum!((add_i32(pos, 1(I32)), 1(I32)), (I32 & I32) | Endp)
+                      } else match! exp_digit_pos(src, pos, len, c, phase) {
+                        (
+                          , .(dp: I32) { widen_sum!((dp, 2(I32)), (I32 & I32) | Endp) }
+                          , .(_stop: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
+                          )
+                      }
+                    }
+                  , .(_e: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
+                  )
+              }
+            } else {
+              widen_sum!({endp = pos}, (I32 & I32) | Endp)
+            }
+          }
+        }
+      }
+    , (start, 0(I32))
+    ))
+}
+
+// =====================================================================
+// Scan a string literal body — from just past the opening quote
+// =====================================================================
+//
+// Returns `(end-pos, content)` where `end-pos` is one past the closing
+// quote, or a `Lex_err` for an unterminated literal or a malformed
+// escape. The loop state is `(pos, acc-string)`; each step appends one
+// decoded character.
+
+// Read four hex digits at `pos`, folding them into one code, or `()` when
+// any of the four is missing or not a hex digit.
+fn read_hex4(src: String, pos: I32, len: I32) -> . | I32 {
+  loop(
+    , .(st: I32 & I32 & I32) {
+        match! st {
+          .(p: I32, remaining: I32, acc: I32) {
+            if! eq_i32(remaining, 0(I32)) {
+              widen_sum!(widen_sum!(acc, . | I32), (I32 & I32 & I32) | . | I32)
+            } else if! lt_i32(p, len) {
+              match! char_at(src, p) {
+                (
+                  , .(c: I32) {
+                      match! hex_digit_val(c) {
+                        (
+                          , .(v: I32) {
+                              widen_sum!(
+                                , (
+                                    , add_i32(p, 1(I32))
+                                    , (
+                                        , add_i32(remaining, -1(I32))
+                                        , add_i32(mul_i32(acc, 16(I32)), v)
+                                        )
+                                    )
+                                , (I32 & I32 & I32) | . | I32
+                                )
+                            }
+                          , .(_bad: .) {
+                              widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
+                            }
+                          )
+                      }
+                    }
+                  , .(_e: .) { widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32) }
+                  )
+              }
+            } else {
+              widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
+            }
+          }
+        }
+      }
+    , (pos, (4(I32), 0(I32)))
+    )
+}
+
+// Decode the four hex digits of a `\uXXXX` escape starting at `pos` (the
+// first digit) into the escaped character, or a `Lex_err` when a digit is
+// missing / not hex or the code point is past ASCII (the emitter writes
+// `\uXXXX` only for control characters; anything wider rides raw UTF-8).
+fn decode_u_escape(src: String, pos: I32, len: I32) -> String | Lex_err {
+  match! read_hex4(src, pos, len) {
+    (
+      , .(code: I32) {
+          match! ascii_char(code) {
+            (
+              , .(ch: String) { widen_sum!(ch, String | Lex_err) }
+              , .(_wide: .) {
+                  widen_sum!(
+                    , mk_lex_err(
+                        , "a `\\u` escape names a code point past ASCII — the emitter writes "
+                          "non-ASCII text as raw UTF-8, so this image text is malformed"(String)
+                        , pos
+                        )
+                    , String | Lex_err
+                    )
+                }
+              )
+          }
+        }
+      , .(_bad: .) {
+          widen_sum!(
+            , mk_lex_err("a `\\u` escape is not followed by four hex digits"(String), pos)
+            , String | Lex_err
+            )
+        }
+      )
+  }
+}
+
+// The decoded character for a single-character escape code, or `()` when
+// the escape is `\u` (handled separately) or unknown. The named escapes
+// are the JSON set the emitter writes: `\n \t \r \b \f`; `\"` `\\` `\/`
+// decode to the escaped character itself.
+fn named_escape(e: I32) -> . | String {
+  if! eq_i32(e, 110(I32)) {
+    widen_sum!("\n"(String), . | String)
+  } else if! eq_i32(e, 116(I32)) {
+    widen_sum!("\t"(String), . | String)
+  } else if! eq_i32(e, 114(I32)) {
+    widen_sum!("\r"(String), . | String)
+  } else if! eq_i32(e, 98(I32)) {
+    widen_sum!("\b"(String), . | String)
+  } else if! eq_i32(e, 102(I32)) {
+    widen_sum!("\f"(String), . | String)
+  } else if! eq_i32(e, c_quote()) {
+    widen_sum!("\""(String), . | String)
+  } else if! eq_i32(e, c_backslash()) {
+    widen_sum!("\\"(String), . | String)
+  } else if! eq_i32(e, c_slash()) {
+    widen_sum!("/"(String), . | String)
+  } else {
+    widen_sum!((), . | String)
+  }
+}
+
+// Decode one escape sequence at `pos` (the backslash) and return the next
+// loop step `(pos-past-escape, acc')`, or a `Lex_err` for a malformed or
+// unterminated escape.
+fn scan_str_escape(src: String, pos: I32, len: I32, acc: String) -> (I32 & String) | Strp | Lex_err {
+  let escpos = add_i32(pos, 1(I32));
+  if! lt_i32(escpos, len) {
+    match! char_at(src, escpos) {
+      (
+        , .(e: I32) {
+            match! named_escape(e) {
+              (
+                , .(ch: String) {
+                    widen_sum!(
+                      , (add_i32(escpos, 1(I32)), string_concat(acc, ch))
+                      , (I32 & String) | Strp | Lex_err
+                      )
+                  }
+                , .(_notnamed: .) {
+                    if! eq_i32(e, 117(I32)) {
+                      match! decode_u_escape(src, add_i32(escpos, 1(I32)), len) {
+                        (
+                          , .(ch: String) {
+                              widen_sum!(
+                                , (add_i32(escpos, 5(I32)), string_concat(acc, ch))
+                                , (I32 & String) | Strp | Lex_err
+                                )
+                            }
+                          , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Strp | Lex_err) }
+                          )
+                      }
+                    } else {
+                      widen_sum!(
+                        , mk_lex_err("unknown escape sequence in a string literal"(String), pos)
+                        , (I32 & String) | Strp | Lex_err
+                        )
+                    }
+                  }
+                )
+            }
+          }
+        , .(_e: .) {
+            widen_sum!(
+              , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
+              , (I32 & String) | Strp | Lex_err
+              )
+          }
+        )
+    }
+  } else {
+    widen_sum!(
+      , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
+      , (I32 & String) | Strp | Lex_err
+      )
+  }
+}
+
+/// Scans a string-literal body from `start` (just past the opening quote)
+/// to `(position-past-closing-quote, decoded-content)`, or a `Lex_err` for
+/// an unterminated literal or malformed escape.
+fn scan_str(src: String, start: I32, len: I32) -> (I32 & String) | Lex_err {
+  let loop_result =
+    loop(
+      , .(st: I32 & String) {
+          match! st {
+            .(pos: I32, acc: String) {
+              if! lt_i32(pos, len) {
+                match! char_at(src, pos) {
+                  (
+                    , .(c: I32) {
+                        if! eq_i32(c, c_quote()) {
+                          widen_sum!(
+                            , {strp = (add_i32(pos, 1(I32)), acc)}
+                            , (I32 & String) | Strp | Lex_err
+                            )
+                        } else if! eq_i32(c, c_backslash()) {
+                          scan_str_escape(src, pos, len, acc)
+                        } else {
+                          let acc1 = string_concat(acc, char_str(src, pos));
+                          widen_sum!((add_i32(pos, 1(I32)), acc1), (I32 & String) | Strp | Lex_err)
+                        }
+                      }
+                    , .(_e: .) {
+                        widen_sum!(
+                          , mk_lex_err(
+                              , "unterminated string literal — no closing `\"` before end-of-input"(String)
+                              , add_i32(start, -1(I32))
+                              )
+                          , (I32 & String) | Strp | Lex_err
+                          )
+                      }
+                    )
+                }
+              } else {
+                widen_sum!(
+                  , mk_lex_err(
+                      , "unterminated string literal — no closing `\"` before end-of-input"(String)
+                      , add_i32(start, -1(I32))
+                      )
+                  , (I32 & String) | Strp | Lex_err
+                  )
+              }
+            }
+          }
+        }
+      , (start, ""(String))
+      );
+  match! loop_result {
+    (
+      , .(done: Strp) {
+          match! Strp.get(done) {
+            .(endp: I32, content: String) { widen_sum!((endp, content), (I32 & String) | Lex_err) }
+          }
+        }
+      , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Lex_err) }
+      )
+  }
+}
+
+// =====================================================================
+// Skip a line comment — from a `//` run to end-of-line
+// =====================================================================
+/// Advances past a line comment, returning the position at the next newline or end-of-input.
+fn skip_line(src: String, start: I32, len: I32) -> I32 {
+  Endp.get(loop(
+    , .(pos: I32) {
+        if! lt_i32(pos, len) {
+          match! char_at(src, pos) {
+            (
+              , .(c: I32) {
+                  if! eq_i32(c, c_nl()) {
+                    widen_sum!({endp = pos}, I32 | Endp)
+                  } else {
+                    widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
+                  }
+                }
+              , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
+              )
+          }
+        } else {
+          widen_sum!({endp = pos}, I32 | Endp)
+        }
+      }
+    , start
+    ))
+}
+
+// Whether a `/` at `pos` opens a line comment: a second `/` follows.
+fn is_comment_start(src: String, len: I32, pos: I32, c: I32) -> Bool {
+  if! eq_i32(c, c_slash()) {
+    match! char_at(src, add_i32(pos, 1(I32))) {
+      (.(c2: I32) { eq_i32(c2, c_slash()) }, .(_e: .) { .f(Bool) })
+    }
+  } else {
+    .f(Bool)
+  }
+}
+
+// =====================================================================
+// The per-lexeme emitters — one token (with its start offset) each
+// =====================================================================
+//
+// Each returns the outer scanner's step: continue `(next-pos, acc')`, or
+// exit with the finished tokens / a lexical error.
+type Lex_step = (I32 & Toks) | Toks | Lex_err;
+
+// Emit a word token spanning `[pos, word-end)`.
+fn lex_word(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
+  let endp = scan_word_end(src, add_i32(pos, 1(I32)), len);
+  let word = string_slice(src, pos, endp);
+  widen_sum!((endp, toks_cons(tk_word(word), pos, acc)), Lex_step)
+}
+
+// Whether the sliced numeric text contains a `_` digit separator.
+fn has_sep(text: String) -> Bool {
+  loop(
+    , .(pos: I32) {
+        match! string_code_at(text, pos) {
+          (
+            , .(c: I32) {
+                if! eq_i32(c, 95(I32)) {
+                  widen_sum!(.t(Bool), I32 | Bool)
+                } else {
+                  widen_sum!(add_i32(pos, 1(I32)), I32 | Bool)
+                }
+              }
+            , .(_e: .) { widen_sum!(.f(Bool), I32 | Bool) }
+            )
+        }
+      }
+    , 0(I32)
+    )
+}
+
+// The numeric text with `_` digit separators removed. The token hands its
+// text to the host's `make_scalar`, whose number parse expects a plain
+// numeral, so the separators (pure source-grouping trivia) are dropped at
+// the token boundary. The common separator-free literal takes the
+// zero-copy path in `numeric_text`.
+fn drop_seps(text: String) -> String {
+  match! Strp.get(loop(
+    , .(st: I32 & String) {
+        match! st {
+          .(pos: I32, acc: String) {
+            match! string_code_at(text, pos) {
+              (
+                , .(c: I32) {
+                    if! eq_i32(c, 95(I32)) {
+                      widen_sum!((add_i32(pos, 1(I32)), acc), (I32 & String) | Strp)
+                    } else {
+                      widen_sum!(
+                        , (add_i32(pos, 1(I32)), string_concat(acc, char_str(text, pos)))
+                        , (I32 & String) | Strp
+                        )
+                    }
+                  }
+                , .(_e: .) { widen_sum!({strp = (pos, acc)}, (I32 & String) | Strp) }
+                )
+            }
+          }
+        }
+      }
+    , (0(I32), ""(String))
+    )) {
+    .(_p: I32, out: String) { out }
+  }
+}
+
+// The separator-free text of the numeric run `[start, end)`.
+fn numeric_text(src: String, start: I32, endp: I32) -> String {
+  let text = string_slice(src, start, endp);
+  if! has_sep(text) {
+    drop_seps(text)
+  } else {
+    text
+  }
+}
+
+// Emit a numeric-literal token starting at `pos`, carrying its
+// separator-free text.
+fn lex_number(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
+  let endp = scan_number_end(src, pos, len);
+  widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
+}
+
+// Handle a `-`: fuse a negative numeric literal when a digit follows (the
+// negative-literal carve-out), keeping the `-` in the literal's text;
+// otherwise emit a `-` punctuation token.
+fn lex_minus(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
+  let after = add_i32(pos, 1(I32));
+  match! char_at(src, after) {
+    (
+      , .(c2: I32) {
+          if! is_digit(c2) {
+            let endp = scan_number_end(src, after, len);
+            widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
+          } else {
+            widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step)
+          }
+        }
+      , .(_e: .) { widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step) }
+      )
+  }
+}
+
+// Emit a string-literal token; `pos` is the opening quote. A malformed
+// literal exits the whole scan with its lexical error.
+fn lex_string(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
+  match! scan_str(src, add_i32(pos, 1(I32)), len) {
+    (
+      , .(done: I32 & String) {
+          match! done {
+            .(endp: I32, content: String) {
+              widen_sum!((endp, toks_cons(tk_str(content), pos, acc)), Lex_step)
+            }
+          }
+        }
+      , .(err: Lex_err) { widen_sum!(err, Lex_step) }
+      )
+  }
+}
+
+// =====================================================================
+// The scanner step — one token (or skipped span) per outer transition
+// =====================================================================
+//
+// The outer loop state is `(pos, rev-toks)`. Each step inspects the
+// character at `pos` and either skips whitespace / a comment (advancing
+// `pos`, tokens unchanged) or emits one token (prepending it and
+// advancing `pos` past the lexeme). At end-of-input it returns the
+// reversed accumulator; a malformed string literal exits with its error.
+
+// Dispatch on the (non-end) character `c` at `pos`.
+fn lex_char(src: String, len: I32, pos: I32, acc: Toks, c: I32) -> Lex_step {
+  if! is_space(c) {
+    widen_sum!((add_i32(pos, 1(I32)), acc), Lex_step)
+  } else if! is_comment_start(src, len, pos, c) {
+    widen_sum!((skip_line(src, pos, len), acc), Lex_step)
+  } else if! is_word_start(c) {
+    lex_word(src, len, pos, acc)
+  } else if! is_digit(c) {
+    lex_number(src, len, pos, acc)
+  } else if! eq_i32(c, c_minus()) {
+    lex_minus(src, len, pos, acc)
+  } else if! eq_i32(c, c_quote()) {
+    lex_string(src, len, pos, acc)
+  } else {
+    widen_sum!((add_i32(pos, 1(I32)), toks_cons(tk_punct(c), pos, acc)), Lex_step)
+  }
+}
+
+/// The lexer step: dispatch on the character at `pos`, producing the next
+/// scan state or — at end-of-input — the finished token list.
+fn lex_step(src: String, len: I32, st: I32 & Toks) -> Lex_step {
+  match! st {
+    .(pos: I32, acc: Toks) {
+      match! char_at(src, pos) {
+        (
+          , .(c: I32) { lex_char(src, len, pos, acc, c) }
+          , .(_e: .) { widen_sum!(toks_reverse(acc), Lex_step) }
+          )
+      }
+    }
+  }
+}
+
+// =====================================================================
+// lex — the entry point
+// =====================================================================
+/// Tokenizes a Kio' source string into a positioned token list, or a
+/// `Lex_err` for a malformed string literal.
+pub fn lex(src: String) -> Lex_outcome {
+  let len = string_len(src);
+  loop(.(st: I32 & Toks) { lex_step(src, len, st) }, (0(I32), toks_nil()))
+}

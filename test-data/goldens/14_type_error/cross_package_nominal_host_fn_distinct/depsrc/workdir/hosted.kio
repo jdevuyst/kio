@@ -1,0 +1,9 @@
+/// A host fn the dependency owns, whose SIGNATURE names the
+/// dependency's own `String`.
+module hosted;
+
+host type String role(str);
+
+/// The dependency's host capability: its signature's `String` is the
+/// dependency's own `(hosted, String)`.
+host fn dep_id(s: String) -> String;

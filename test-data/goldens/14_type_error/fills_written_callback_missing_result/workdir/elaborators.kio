@@ -1,0 +1,12 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn observe_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , _value: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+
+pub elab observe : [Source] Source -> . { impl(fills) observe_impl }

@@ -1,0 +1,36 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A trivial arity-1 type constructor: the payload is the
+// type-parameter itself, so `Box(A)` is just its carrier `A`.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A `Functor[*F]` dictionary with a polymorphic-function payload:
+// `fmap` lifts an `A -> B` through the type constructor to an
+// `F(A) -> F(B)`. The dictionary is an ordinary polymorphic value
+// the body constructs and applies; its `[A][B]` binders are
+// instantiated at each call site.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// The Box instance: peel via `Box.un_box`, apply the function, re-
+// brand via `Box.mk_box`. Polymorphic in `[A][B]`; the body
+// operates uniformly across instantiations.
+fn box_functor() -> Functor(Box) {
+  Functor.mk_functor(Box, .[A][B](step, m) { Box.mk_box(B, step(Box.un_box(A, m))) })
+}
+
+// Surface a String through the dictionary: brand a literal, lift
+// an identity step through `fmap`, peel the brand back.
+fn use_dictionary() -> String {
+  let dict = box_functor();
+  let branded = Box.mk_box(String, "functor dictionary ok\n"(String));
+  let mapped = Functor.fmap(Box, dict)(String, String, .(s) { s }, branded);
+  Box.un_box(String, mapped)
+}
+
+pub fn main() -> . { print(use_dictionary()) }

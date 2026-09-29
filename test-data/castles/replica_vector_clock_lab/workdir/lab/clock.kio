@@ -1,0 +1,102 @@
+module lab/clock;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/text(string_concat);
+
+pub labels Clock = { a: I32, b: I32, c: I32 };
+
+pub labels Node = { alpha: . } | { beta: . } | { gamma: . };
+
+pub labels Relation = { same: . } | { before: . } | { after: . } | { concurrent: . };
+
+pub fn zero() -> Clock { {a = 0, b = 0, c = 0} }
+
+fn maximum(x: I32, y: I32) -> I32 {
+  if! arith.lt_i32(x, y) {
+    y
+  } else {
+    x
+  }
+}
+
+pub fn join(x: Clock, y: Clock) -> Clock {
+  {a = maximum(x.?{a}, y.?{a}), b = maximum(x.?{b}, y.?{b}), c = maximum(x.?{c}, y.?{c})}
+}
+
+pub fn tick(node: Node, clock: Clock) -> Clock {
+  match! node {
+    .(_a: Alpha) { clock.!{a = arith.add_i32(clock.?{a}, 1)} };
+    .(_b: Beta) { clock.!{b = arith.add_i32(clock.?{b}, 1)} };
+    .(_c: Gamma) { clock.!{c = arith.add_i32(clock.?{c}, 1)} }
+  }
+}
+
+pub fn leq(x: Clock, y: Clock) -> Bool {
+  if! arith.leq_i32(x.?{a}, y.?{a}) {
+    if! arith.leq_i32(x.?{b}, y.?{b}) {
+      arith.leq_i32(x.?{c}, y.?{c})
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+pub fn compare(x: Clock, y: Clock) -> Relation {
+  if! leq(x, y) {
+    if! leq(y, x) {
+      {same=}.>widen_sum!
+    } else {
+      {before=}.>widen_sum!
+    }
+  } else if! leq(y, x) {
+    {after=}.>widen_sum!
+  } else {
+    {concurrent=}.>widen_sum!
+  }
+}
+
+pub fn equal(x: Clock, y: Clock) -> Bool {
+  if! leq(x, y) {
+    leq(y, x)
+  } else {
+    .f
+  }
+}
+
+pub fn lexical_before(x: Clock, y: Clock) -> Bool {
+  if! arith.eq_i32(x.?{a}, y.?{a}) {
+    if! arith.eq_i32(x.?{b}, y.?{b}) {
+      arith.lt_i32(x.?{c}, y.?{c})
+    } else {
+      arith.lt_i32(x.?{b}, y.?{b})
+    }
+  } else {
+    arith.lt_i32(x.?{a}, y.?{a})
+  }
+}
+
+pub fn show(clock: Clock) -> String {
+  "["
+    .>string_concat(fmt.int_to_string(clock.?{a}))
+    .>string_concat(",")
+    .>string_concat(fmt.int_to_string(clock.?{b}))
+    .>string_concat(",")
+    .>string_concat(fmt.int_to_string(clock.?{c}))
+    .>string_concat("]")
+}
+
+pub fn describe(relation: Relation) -> String {
+  match! relation {
+    .(_s: Same) { "same" };
+    .(_b: Before) { "before" };
+    .(_a: After) { "after" };
+    .(_c: Concurrent) { "concurrent" }
+  }
+}

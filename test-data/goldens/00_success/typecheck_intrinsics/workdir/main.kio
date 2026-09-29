@@ -1,0 +1,11 @@
+module main;
+
+import __intrinsics__;
+
+fn pair[A][B](x: A, y: B) -> A & B { __pair__(A, B, x, y) }
+
+fn first[A][B](p: A & B) -> A { __fst__(A, B, p) }
+
+fn left[A][B](x: A) -> A | B { __left__(A, B, x) }
+
+fn dispatch[A](s: A | A) -> A { __either__(A, A, A, s, .(x) { x }, .(y) { y }) }

@@ -1,0 +1,21 @@
+module testapi/a;
+
+import testapi(String);
+
+// Modules `a` and `b` each define a newtype `Functor` with the same
+// leaf name, so the Rust emitter must disambiguate the host-facing
+// struct names and route the polymorphic-fn projector turbofish
+// through those mangled names — not the dotted module-qualified key.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+pub fn run_a() -> String {
+  let dict = Functor.mk_functor(Box, .[A][B](step, m) { Box.mk_box(B, step(Box.un_box(A, m))) });
+  let branded = Box.mk_box(String, "left ok\n"(String));
+  let mapped = Functor.fmap(Box, dict)(String, String, .(s) { s }, branded);
+  Box.un_box(String, mapped)
+}

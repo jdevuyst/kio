@@ -1,0 +1,5 @@
+module right;
+
+pub newtype Token : . { pub constructor make; pub projector read }
+
+pub fn token() -> Token { Token.make(()) }

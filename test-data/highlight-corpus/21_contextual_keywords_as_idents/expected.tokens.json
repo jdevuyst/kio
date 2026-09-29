@@ -1,0 +1,11 @@
+[
+  {"start": 0, "end": 6, "kind": "keyword.declaration"},
+  {"start": 7, "end": 9, "kind": "entity.name.module"},
+  {"start": 9, "end": 10, "kind": "operator.user"},
+  {"start": 10, "end": 12, "kind": "entity.name.module"},
+  {"start": 12, "end": 13, "kind": "operator.user"},
+  {"start": 13, "end": 16, "kind": "entity.name.module"},
+  {"start": 16, "end": 17, "kind": "operator.user"},
+  {"start": 17, "end": 22, "kind": "entity.name.module"},
+  {"start": 22, "end": 23, "kind": "punctuation.separator"}
+]

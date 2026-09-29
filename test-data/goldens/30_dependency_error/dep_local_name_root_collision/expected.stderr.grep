@@ -1,0 +1,2 @@
+# The dependency local name clashes with a consumer root module.
+collides with the local module root

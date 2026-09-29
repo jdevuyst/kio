@@ -1,0 +1,96 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// A payload-free label enum: each label carries `()`. `Color` is the
+// sum of the three label-generated types — the labels-derived nominal
+// shape an `Array(Color)` carries across the FFI.
+labels { red: ., green: ., blue: . };
+
+type Color = Red | Green | Blue;
+
+fn show_color(c: Color) -> String {
+  match! c {
+    (.(_r: Red) { "red" }, .(_g: Green) { "green" }, .(_b: Blue) { "blue" })
+  }
+}
+
+// A payload-bearing label enum: `circle` carries an `I32` radius,
+// `square` carries an `I32 & I32` (side, color-index) product.
+labels { circle: I32, square: I32 & I32 };
+
+type Shape = Circle | Square;
+
+fn show_shape(s: Shape) -> String {
+  match! s {
+    (
+      , .(c: Circle) { string_concat("circle(", string_concat(int_to_string(Circle.get(c)), ")")) }
+      , .(sq: Square) {
+          match! Square.get(sq) {
+            .(side: I32, idx: I32) {
+              string_concat(
+                , "square("
+                , string_concat(
+                    , int_to_string(side)
+                    , string_concat(",", string_concat(int_to_string(idx), ")"))
+                    )
+                )
+            }
+          }
+        }
+      )
+  }
+}
+
+fn render[A](show: A -> String, arr: Array(A)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) {
+            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+              widen_sum!(
+                , if! leq_i32(i, 0) {
+                    (show(array_get(arr, i)), add_i32(i, 1))
+                  } else {
+                    (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
+                  }
+                , (String & I32) | String
+                )
+            } else {
+              widen_sum!(acc, (String & I32) | String)
+            }
+          }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+pub fn main() -> . {
+  // Array(Color): a payload-free labels-derived enum across the FFI.
+  let colors = array_make_empty(Color, ());
+  array_push(colors, widen_sum!({green=}, Color));
+  array_push(colors, widen_sum!({red=}, Color));
+  array_push(colors, widen_sum!({blue=}, Color));
+  print(render(show_color, colors));
+  print("\n");
+  // Array(Shape): a payload-bearing labels-derived enum across the
+  // FFI — each element carries the label's payload alongside its
+  // discriminant.
+  let shapes = array_make_empty(Shape, ());
+  array_push(shapes, widen_sum!({circle = 5}, Shape));
+  array_push(shapes, widen_sum!({square = (3, 7)}, Shape));
+  print(render(show_shape, shapes));
+  print("\n")
+}

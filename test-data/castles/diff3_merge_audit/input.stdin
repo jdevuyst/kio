@@ -1,0 +1,38 @@
+#base
+# service config
+name = api-gateway
+workers = 4
+timeout = 30
+retries = 2
+cache = off
+log_level = info
+region = us-east
+tls = disabled
+metrics = basic
+queue_depth = 16
+# end
+#ours
+# service config
+name = api-gateway
+workers = 8
+timeout = 30
+cache = off
+log_level = debug
+region = us-east
+tls = required
+metrics = basic
+queue_depth = 16
+# end
+#theirs
+# service config
+name = api-gateway
+workers = 4
+timeout = 30
+retries = 2
+cache = off
+log_level = debug
+region = us-east
+tls = optional
+metrics = basic
+queue_depth = 64
+# end

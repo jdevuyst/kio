@@ -1,0 +1,8 @@
+module host/m;
+
+import host(a, b, f);
+
+equiv neq_arg() {
+  f(a());
+  f(b())
+}

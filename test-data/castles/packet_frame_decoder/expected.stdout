@@ -1,0 +1,8 @@
+packet_frame_decoder report
+compiled frames: 4
+format: PF|id|kind|seq|payload|checksum
+frame alpha id=A1 seq=07 kind=DATA len=19 first=P kind_byte=D checksum=326 expected=326 result=ACCEPT
+frame beta id=B2 seq=08 kind=ACK len=19 first=P kind_byte=A checksum=329 expected=329 result=ACCEPT
+frame gamma id=C3 seq=09 kind=DATA len=19 first=P kind_byte=D checksum=313 expected=320 result=CHECKSUM_FAIL
+frame delta id=D4 seq=10 kind=HEARTBEAT len=19 first=X kind_byte=H checksum=999 expected=999 result=MAGIC_FAIL
+summary: accept=2 checksum_fail=1 magic_fail=1

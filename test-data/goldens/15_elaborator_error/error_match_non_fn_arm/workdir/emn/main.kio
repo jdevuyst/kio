@@ -1,0 +1,17 @@
+module emn/main;
+
+import elab/match(match);
+import testapi(I32, String);
+
+// A `match!` arms-tuple element that isn't a function. The first arm
+// `42` is an `I32` literal, not a fn, so the imported elaborator
+// reports that the clause is not callable.
+fn bad(v: I32 | String) -> . {
+  let .(_r: .) =
+    match! v {
+      (42, .(s: String) { () })
+    };
+  ()
+}
+
+pub fn main() -> . { () }

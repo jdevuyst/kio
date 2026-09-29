@@ -1,0 +1,22 @@
+/// The consumer declares its own `String` host type and imports the
+/// dependency's host fn `dep_id`, whose SIGNATURE names the dependency's
+/// *own* `String`. Identity-exact nominal typing
+/// (`specs/language.md` § Nominal types) keeps the two `String`s distinct:
+/// `String` here is `(main, String)`, the dependency's signature names
+/// `(bdep/hosted, String)`. A cross-module host fn's signature is
+/// qualified in its *declaring* module, so `dep_id`'s
+/// parameter wants `(bdep/hosted, String)`. Passing the consumer's own
+/// `(main, String)` is therefore a type error in the host-fn SIGNATURE
+/// slot — exit 14. Before the fix the typer requalified `dep_id`'s
+/// signature in the *caller*, conflating the two same-named `String`s by
+/// leaf name and wrongly accepting this.
+module main;
+
+import bdep/hosted(dep_id);
+
+host type String role(str);
+
+/// Feed the consumer's own `String` to the dependency's host fn. The
+/// host-fn signature distinctness rejects this: `dep_id` wants the
+/// dependency's `String`, not the consumer's.
+pub fn mix(s: String) -> String { dep_id(s) }

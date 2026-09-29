@@ -1,0 +1,13 @@
+module test_equiv_validates_elaborated_pure_body/elaborators;
+
+import __comptime__;
+import test_equiv_validates_elaborated_pure_body(effect);
+
+pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ {
+  let unit = __type_unit__(ct);
+  let one = __type_arity_succ__(ct, __type_arity_zero__(ct));
+  let effect_type = __type_arrow__(ct, unit, one, unit);
+  __term_call__(ct, effect_type, effect_term, __term_unit__(ct))
+}
+
+pub elab effect_call : . -> . { captures effect; impl effect_call_impl }

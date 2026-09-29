@@ -1,0 +1,33 @@
+module main;
+
+// Per specs/formal/elaboration.md § 6 E-Let: "A polymorphic RHS
+// yields a polymorphic local only when the RHS itself synthesizes
+// a polytype (e.g., a path expression to a top-level polymorphic
+// `fn`); the elaborator never lifts a monomorphic synthesized
+// type to a generalized scheme."
+//
+// The user-facing principle: polymorphism is visible at the
+// binder. `id`'s declaration is where the polymorphism lives;
+// `let f = id;` aliases it. `f` inherits `id`'s polytype.
+fn id[A](x: A) -> A { x }
+
+// Aliasing alone — `f` synthesizes the same polytype as `id`.
+fn alias_only() -> . { let f = id; () }
+
+// After aliasing, applying `f` at a specific type-arg works the
+// same as applying `id` directly. The local-position polytype
+// reaches the call site through standard E-App dispatch.
+fn alias_and_apply(y: .) -> . { let f = id; f(., y) }
+
+// Chained aliasing — each let-binding carries the polytype
+// forward.
+fn double_alias(y: .) -> . { let f = id; let g = f; g(., y) }
+
+// The polytype-aliased local feeds a rank-2 polytype-slot value-arg
+// per § 5.2 (value-argument checking against polytype slots). The
+// receiving slot `f: [A] A -> A` carries an explicit polytype
+// shape; the structural equality check between the local's polytype
+// and the slot's polytype admits the call.
+fn apply_id_to_unit(f: [A] A -> A) -> . { f(., ()) }
+
+fn rank2_via_alias() -> . { let h = id; apply_id_to_unit(h) }

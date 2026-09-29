@@ -1,0 +1,11 @@
+/// The bare `@` obeys the same position rule as `@NAME`.
+///
+/// `check_exit_code=14` precedes it, so the fence is a runner error —
+/// `{@ check_exit_code=14}` is the spelling.
+///
+/// ```kio {check_exit_code=14 @}
+/// identity(identity)
+/// ```
+module doctest/trailing_self_ref;
+
+pub fn identity(x: .) -> . { x }

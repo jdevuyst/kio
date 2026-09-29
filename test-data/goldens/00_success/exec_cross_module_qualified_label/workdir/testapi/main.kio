@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/labels as t;
+import testapi/labels(Greeting);
+
+// Cross-module qualified label syntax: `{t.greeting = ...}` resolves
+// the value-surface label from module `t`, while `Greeting` names the
+// generated nominal type.
+fn make() -> Greeting { {t.greeting = "qualified\n"} }
+
+pub fn main() -> . { print(make().?{t.greeting}) }

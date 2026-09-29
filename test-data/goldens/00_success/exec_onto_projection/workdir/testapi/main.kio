@@ -1,0 +1,16 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(onto);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `onto!` drops source factors that aren't in the target. Here
+// we project a 3-tuple `(String & I32 & I32)` to just the `String`.
+// `iso!` and `into!` would refuse this (information-preserving
+// forms can't drop a component) — only `onto!` does.
+//
+// `onto!` works at any `&`-product — whether labels / records or
+// raw products. We use a raw product here for simplicity.
+fn project_string(p: String & I32 & I32) -> String { onto!(p) }
+
+pub fn main() -> . { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }

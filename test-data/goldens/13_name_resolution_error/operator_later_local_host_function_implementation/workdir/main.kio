@@ -1,0 +1,5 @@
+module main;
+
+op + _ { impl host_add }
+
+host fn host_add(value: .) -> .;

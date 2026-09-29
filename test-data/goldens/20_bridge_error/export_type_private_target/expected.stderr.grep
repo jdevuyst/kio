@@ -1,0 +1,2 @@
+type `pkg/types.Secret` is reachable from the package's host contract surface
+module `pkg/types` is not selected by any bridge glob

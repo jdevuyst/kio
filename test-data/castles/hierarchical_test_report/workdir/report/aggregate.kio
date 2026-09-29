@@ -1,0 +1,127 @@
+module report/aggregate;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as cells;
+import list/list as lists;
+import report/events as events;
+import report/model as model;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+fn append_closed(state: model.State, closed: model.Suite, rest: cells.List(model.Suite)) -> model.State {
+  match! cells.uncons(rest) {
+    .(parent: model.Suite, ancestors: cells.List(model.Suite)) {
+      state.!{model.stack = cells.cons(model.attach(parent, closed), ancestors)}
+    };
+    .(_empty: .) {
+      state.!{model.stack = rest, model.roots = cells.cons(closed, state.?{model.roots})}
+    }
+  }
+}
+
+fn close(state: model.State, name: String, declared: I32) -> model.State {
+  match! cells.uncons(state.?{model.stack}) {
+    .(suite: model.Suite, rest: cells.List(model.Suite)) {
+      if! text.string_eq(name, model.suite_name(suite)) {
+        let actual = model.total(model.suite_counts(suite));
+        let checked = if! arith.leq_i32(actual, declared) {
+          if! arith.leq_i32(declared, actual) {
+            state
+          } else {
+            model.error(state, text.string_concat("count mismatch: ", name))
+          }
+        } else {
+          model.error(state, text.string_concat("count mismatch: ", name))
+        };
+        append_closed(checked, suite, rest)
+      } else {
+        model.error(
+          , state
+          , text.string_concat(
+              , "end "
+              , text.string_concat(
+                  , name
+                  , text.string_concat(" while open: ", model.suite_name(suite))
+                  )
+              )
+          )
+      }
+    };
+    .(_empty: .) { model.error(state, text.string_concat("end without suite: ", name)) }
+  }
+}
+
+fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bool) -> model.State {
+  if! arith.leq_i32(test.?{model.count}, 0) {
+    model.error(state, "test count must be positive")
+  } else match! cells.uncons(state.?{model.stack}) {
+    .(suite: model.Suite, rest: cells.List(model.Suite)) {
+      let failures =
+        if! failed {
+          cells.cons(test, model.failures(suite))
+        } else {
+          model.failures(suite)
+        };
+      state.!{model.stack = cells.cons(model.add_case(suite, counts, failures), rest)}
+    };
+    .(_empty: .) {
+      model.error(state, text.string_concat("test outside suite: ", test.?{model.name}))
+    }
+  }
+}
+
+pub fn accept(state: model.State, event: events.Event) -> model.State {
+  match! event {
+    .(e: events.Open_suite) {
+      state.!{model.stack = cells.cons(
+        , model.empty_suite(e.?{events.open_suite})
+        , state.?{model.stack}
+        )}
+    };
+    .(e: events.Close_suite) {
+      let .(name, count) = e.?{events.close_suite};
+      close(state, name, count)
+    };
+    .(e: events.Passed_case) {
+      let test = e.?{events.passed_case};
+      record(
+        , state
+        , test
+        , {model.passed = test.?{model.count}, model.failed = 0, model.skipped = 0}
+        , .f
+        )
+    };
+    .(e: events.Failed_case) {
+      let test = e.?{events.failed_case};
+      record(
+        , state
+        , test
+        , {model.passed = 0, model.failed = test.?{model.count}, model.skipped = 0}
+        , .t
+        )
+    };
+    .(e: events.Skipped_case) {
+      let test = e.?{events.skipped_case};
+      record(
+        , state
+        , test
+        , {model.passed = 0, model.failed = 0, model.skipped = test.?{model.count}}
+        , .f
+        )
+    };
+    .(e: events.Invalid) { model.error(state, e.?{events.invalid}) }
+  }
+}
+
+pub fn finish(state: model.State) -> model.State {
+  lists.foldl(
+    , .(acc: model.State, suite: model.Suite) {
+        model.error(acc, text.string_concat("unclosed suite: ", model.suite_name(suite)))
+      }
+    , state
+    , state.?{model.stack}
+    )
+}

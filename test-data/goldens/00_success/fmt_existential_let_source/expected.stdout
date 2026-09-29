@@ -1,0 +1,26 @@
+module main;
+
+fn opened() -> . {
+  // opening
+  let .(<Hidden> payload) =
+    // source
+    rhs;
+  // continuation
+  payload
+}
+
+fn explicit() -> . {
+  // authored call
+  rhs(_, .[Hidden](payload) { payload })
+}
+
+fn typed() -> . {
+  // typed opening
+  let .(<Hidden> (left: _, right: _)) =
+    // typed source
+    rhs;
+  // typed continuation
+  left
+}
+
+fn explicit_pattern() -> . { rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left }) }

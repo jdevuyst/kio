@@ -1,0 +1,7 @@
+module widget/feature/store;
+
+import widget/feature/target as _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe;
+
+pub(widget/feature) type Token = _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe.Token;
+
+pub(widget/feature) fn identity(value: Token) -> Token { value }

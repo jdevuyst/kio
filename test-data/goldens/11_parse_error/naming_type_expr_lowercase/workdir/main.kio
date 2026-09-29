@@ -1,0 +1,3 @@
+module naming_type_expr_lowercase/main;
+
+fn id(value: string) -> string { value }

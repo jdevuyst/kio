@@ -1,0 +1,38 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/remote as remote;
+
+newtype Pack <U> : U { constructor mk_pack; projector unpack }
+
+fn pack() -> Pack { Pack.mk_pack(()) }
+
+fn module_thunk() -> . { print("module\n") }
+
+fn direct() -> . { Pack.unpack(pack())(. -> ., .[U](_value: U) { .() { print("direct\n") } })() }
+
+fn sequenced() -> . {
+  Pack.unpack(pack())(
+    , . -> .
+    , .[U](_value: U) { print("seq-prefix\n"); .() { print("seq-tail\n") } }
+    )()
+}
+
+fn named_module_result() -> . { Pack.unpack(pack())(. -> ., .[U](_value: U) { module_thunk })() }
+
+fn named_host_result() -> . {
+  Pack.unpack(pack())(String -> ., .[U](_value: U) { print })("host\n")
+}
+
+fn qualified() -> . {
+  remote.Pack.unpack(remote.pack())(. -> ., .[U](_value: U) { .() { print("qualified\n") } })()
+}
+
+pub fn main() -> . {
+  direct();
+  sequenced();
+  named_module_result();
+  named_host_result();
+  qualified()
+}

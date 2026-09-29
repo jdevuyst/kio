@@ -1,0 +1,49 @@
+module quotation;
+
+import __comptime__;
+
+pure fn second_impl(
+  , ct: __Comptime__
+  , _a: __Type__
+  , _b: __Type__
+  , _ignored: __Checked_term__
+  , result: __Checked_term__
+  ) -> __Checked_term__ { result }
+
+pure fn duplicate_impl(ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_pair__(ct, value, value)
+}
+
+pure fn marked_duplicate_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _a: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (__intrinsic_pair__(ct, value, value), fills) }
+
+pure fn swap_impl(
+  , ct: __Comptime__
+  , _a: __Type__
+  , _b: __Type__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ { __intrinsic_pair__(ct, right, left) }
+
+pure fn marked_swap_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _a: __Type__
+  , _b: __Type__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (__intrinsic_pair__(ct, right, left), fills) }
+
+pub elab second : [A][B] A -> B -> B { impl second_impl }
+
+pub elab duplicate : [A] A -> A & A { impl duplicate_impl }
+
+pub elab marked_duplicate : [A] A -> A & A { impl(fills) marked_duplicate_impl }
+
+pub elab swap : [A][B] A -> B -> B & A { impl swap_impl }
+
+pub elab marked_swap : [A][B] A -> B -> B & A { impl(fills) marked_swap_impl }

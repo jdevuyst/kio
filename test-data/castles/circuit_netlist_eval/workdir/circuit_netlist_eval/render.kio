@@ -1,0 +1,73 @@
+module circuit_netlist_eval/render;
+
+import circuit_netlist_eval/domain(
+  , State
+  , {checksum}
+  , {enable}
+  , {fanout_ok}
+  , {fanout_probe}
+  , {gate_ab_and}
+  , {gate_bc_or}
+  , {gate_enable_a}
+  , {gate_mask}
+  , {gate_xor}
+  , {pin_a}
+  , {pin_b}
+  , {pin_c}
+  , {probe_alarm}
+  , {probe_carry}
+  , {truth_ok}
+  , {warning_count}
+  );
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+fn cat3(a: String, b: String, c: String) -> String {
+  text.string_concat(a, text.string_concat(b, c))
+}
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  text.string_concat(a, text.string_concat(b, text.string_concat(c, text.string_concat(d, e))))
+}
+
+fn bool_text(v: Bool) -> String { fmt.bool_to_string(v) }
+
+fn int_text(v: I32) -> String { fmt.int_to_string(v) }
+
+fn print_bool_line(prefix: String, v: Bool) -> . { io.print(cat3(prefix, bool_text(v), "\n")) }
+
+pub fn render_report(s: State) -> . {
+  io.print("circuit_netlist_eval\n");
+  io.print(cat5(
+    , "pins: A="
+    , bool_text(s.?{pin_a})
+    , " B="
+    , bool_text(s.?{pin_b})
+    , cat5(" C=", bool_text(s.?{pin_c}), " EN=", bool_text(s.?{enable}), "\n")
+    ));
+  io.print("stage0 gates:\n");
+  print_bool_line("  g_and = AND(A,B) -> ", s.?{gate_ab_and});
+  print_bool_line("  g_or = OR(B,C) -> ", s.?{gate_bc_or});
+  print_bool_line("  g_en = AND(EN,A) -> ", s.?{gate_enable_a});
+  io.print("stage1 gates:\n");
+  print_bool_line("  g_xor = XOR(g_or,g_en) -> ", s.?{gate_xor});
+  print_bool_line("  g_mask = OR(g_and,C) -> ", s.?{gate_mask});
+  io.print("fanout:\n");
+  io.print(cat5(
+    , "  g_or -> xor.left="
+    , bool_text(s.?{gate_bc_or})
+    , " probe.bus="
+    , bool_text(s.?{fanout_probe})
+    , "\n"
+    ));
+  io.print("probes:\n");
+  print_bool_line("  carry=", s.?{probe_carry});
+  print_bool_line("  alarm=", s.?{probe_alarm});
+  io.print(cat3("  checksum=", int_text(s.?{checksum}), "\n"));
+  io.print("diagnostics:\n");
+  print_bool_line("  fanout_consistent=", s.?{fanout_ok});
+  print_bool_line("  truth_tables_consistent=", s.?{truth_ok});
+  io.print(cat3("  warning_count=", int_text(s.?{warning_count}), "\n"))
+}

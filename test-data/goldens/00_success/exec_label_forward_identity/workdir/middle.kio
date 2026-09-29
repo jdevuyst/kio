@@ -1,0 +1,10 @@
+module middle;
+
+import origin as original;
+import testapi(String);
+
+type Caption = .;
+
+pub type {caption} = {original.item};
+
+pub fn caption() -> String { "ordinary-value\n" }

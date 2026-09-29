@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/spine_elaborators(fit);
+import noise(touch);
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/opt(Option, none, some);
+
+// `widen` widens the imported `Option` (= `Present | .`) into a larger
+// sum with `fit!` (the source is itself a sum arm of the target, so the
+// composer threads it in recursively). The consumer imports only
+// `Option` / `some` / `none` — never the `present` projector — yet the
+// typer unfolds the alias at the `fit!` site, carrying the minted
+// `Present` newtype into the target sum. The resolved owner survives
+// into Prime and is rendered through an exact module binding, so the
+// emitted Kio' is self-contained and re-builds. The already-imported
+// `noise` module deliberately exports a different `Present`; that
+// unrelated declaration cannot change which nominal the alias denotes.
+fn widen(o: Option) -> Option | String { fit!(o) }
+
+pub fn main() -> . {
+  touch();
+  // `widen`'s result is non-unit; bind-and-discard to satisfy the
+  // expression-statement `: .` rule. The point of the call is to force
+  // the cross-module alias unfold in the emitted Kio', not the value.
+  let _ = widen(some(42));
+  let _ = widen(none());
+  print("done\n"(String))
+}

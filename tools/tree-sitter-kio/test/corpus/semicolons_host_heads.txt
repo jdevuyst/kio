@@ -1,0 +1,57 @@
+================================================================================
+structural semicolons_signature_host_head_children
+================================================================================
+signature app v(1); v(1) { breaking { add { module api { host type T; host fn fetch() -> T } } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_add_block
+          (keyword_add)
+          (bracket_lbrace)
+          (signature_module_section
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (variant_block
+              (bracket_lbrace)
+              (host_decl
+                (keyword_host)
+                (host_type_head
+                  (keyword_type)
+                  (entity_name_type)))
+              (separator_semicolon)
+              (host_decl
+                (keyword_host)
+                (host_fn_head
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen)))
+                  (operator_arrow_type)
+                  (type_path
+                    (entity_name_type))))
+              (bracket_rbrace)))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))

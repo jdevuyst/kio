@@ -1,0 +1,13 @@
+module main;
+
+newtype Wrap : . { pub constructor mk_wrap; pub projector un_wrap }
+
+fn make() -> Wrap { Wrap.mk_wrap(()) }
+
+fn open(w: Wrap) -> . { Wrap.un_wrap(w) }
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn wrap[A](x: A) -> Box(A) { Box.mk_box(A, x) }
+
+fn unwrap[A](b: Box(A)) -> A { Box.un_box(A, b) }

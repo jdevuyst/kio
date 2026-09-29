@@ -1,0 +1,3 @@
+module efhm;
+
+host type String role(str);

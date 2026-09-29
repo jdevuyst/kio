@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// The captured value stays distinct from the placeholder parameter.
+// The explicit type argument supplies the lambda's expected type.
+fn id[A](x: A) -> A { x }
+
+pub fn main() -> . {
+  let captured = "outer\n";
+  let f = id(String -> String, .x. { let _x = x1; captured });
+  print(f("placeholder argument ignored\n"))
+}

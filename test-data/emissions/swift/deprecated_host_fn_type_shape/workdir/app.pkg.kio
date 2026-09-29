@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache "out/.kio-cache/";
+
+  target swift {
+    out "out/swift/"
+  }
+}
+
+bridge {
+  api
+}

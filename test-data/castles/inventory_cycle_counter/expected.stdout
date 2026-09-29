@@ -1,0 +1,7 @@
+inventory cycle counter
+bin A expected=12 observed=12 delta=0 status=ok
+bin B expected=8 observed=6 delta=-2 status=missing
+bin C expected=5 observed=9 delta=4 status=overage
+bin D expected=14 observed=13 delta=-1 status=missing
+discrepancy=7
+summary ok=1 missing=2 overage=1

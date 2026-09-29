@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  api
+}

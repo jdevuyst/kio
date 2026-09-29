@@ -1,0 +1,5 @@
+module feature/store;
+
+pub(feature) newtype Token : . { pub constructor mk; pub projector get }
+
+pub(feature) fn identity(value: Token) -> Token { value }

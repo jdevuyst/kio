@@ -1,0 +1,5 @@
+module provider;
+
+pub newtype Token : . { pub constructor mk_token; pub projector un_token }
+
+pub fn serve(_token: Token, _tail: .) -> . { () }

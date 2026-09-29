@@ -1,0 +1,60 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+import testapi/relay(Forwarded, selected);
+import testapi/types as remote;
+
+newtype Pack <U> : U { constructor pack; projector unpack }
+
+fn marked_pack() -> Pack { io.print("receiver\n"); Pack.pack(()) }
+
+fn returned(value: Pack) -> [R] ([U] U -> R) -> R { Pack.unpack(value) }
+
+fn passed(unpack: [R] ([U] U -> R) -> R) -> . {
+  unpack(.[U](_payload: U) { io.print("passed-first\n") });
+  unpack(.[U](_payload: U) { io.print("passed-second\n") })
+}
+
+fn direct(value: Pack) -> . { Pack.unpack(value)(.[U](_payload: U) { io.print("direct\n") }) }
+
+fn stored() -> . {
+  let unpack = Pack.unpack(marked_pack());
+  unpack(.[U](_payload: U) { io.print("stored-first\n") });
+  unpack(.[U](_payload: U) { io.print("stored-second\n") })
+}
+
+fn returned_result(value: Pack) -> . {
+  let unpack = returned(value);
+  unpack(.[U](_payload: U) { io.print("returned-first\n") });
+  unpack(.[U](_payload: U) { io.print("returned-second\n") })
+}
+
+fn specialized(value: Pack) -> . {
+  let unpack = Pack.unpack(value)(.);
+  unpack(.[U](_payload: U) { io.print("specialized-first\n") });
+  unpack(.[U](_payload: U) { io.print("specialized-second\n") })
+}
+
+fn qualified(value: remote.Pack(String)) -> . {
+  let unpack = remote.Pack.unpack(value);
+  io.print(unpack(.[U](message: String, _payload: U) { message }));
+  io.print(unpack(.[U](message: String, _payload: U) { message }))
+}
+
+fn forwarded(value: Forwarded(String)) -> . {
+  let unpack = Forwarded.unpack(value);
+  io.print(unpack(.[U](message: String, _payload: U) { message }));
+  io.print(unpack(.[U](message: String, _payload: U) { message }))
+}
+
+pub fn main() -> . {
+  direct(Pack.pack(()));
+  stored();
+  returned_result(Pack.pack(()));
+  passed(Pack.unpack(Pack.pack(())));
+  specialized(Pack.pack(()));
+  qualified(remote.Pack.pack(("qualified\n", ())));
+  selected(remote.Pack.pack(("selected\n", ())));
+  forwarded(Forwarded.pack(("forwarded\n", ())))
+}

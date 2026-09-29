@@ -1,0 +1,92 @@
+/// The exercise expression language and its evaluator.
+module rational/expr;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import rational/arith as ops;
+import rational/core as core;
+import rational/core(Division_by_zero, Eval, Fraction, Rational);
+import testapi(I32);
+import testapi/iter(loop);
+
+pub labels { lit: Fraction };
+
+rec {
+  pub labels { expr: Lit | Add | Sub | Mul | Div };
+  pub labels { add: Expr & Expr };
+  pub labels { sub: Expr & Expr };
+  pub labels { mul: Expr & Expr };
+  pub labels { div: Expr & Expr }
+}
+
+type Node = Lit | Add | Sub | Mul | Div;
+
+fn wrap(node: Node) -> Expr { {expr = node} }
+
+pub fn lit(numerator: I32, denominator: I32) -> Expr {
+  wrap({lit = core.fraction(numerator, denominator)}.>widen_sum!(Node))
+}
+
+pub fn add(left: Expr, right: Expr) -> Expr { wrap({add = (left, right)}.>widen_sum!(Node)) }
+
+pub fn sub(left: Expr, right: Expr) -> Expr { wrap({sub = (left, right)}.>widen_sum!(Node)) }
+
+pub fn mul(left: Expr, right: Expr) -> Expr { wrap({mul = (left, right)}.>widen_sum!(Node)) }
+
+pub fn div(left: Expr, right: Expr) -> Expr { wrap({div = (left, right)}.>widen_sum!(Node)) }
+
+/// Thread two evaluated children into a binary operation, stopping at the first
+/// fault. This is the whole of the error propagation: a division by zero found
+/// arbitrarily deep in the tree rides out through every node above it without
+/// any of them having to look for it.
+fn combine(left: Eval, right: Eval, op: (Rational & Rational) -> Eval) -> Eval {
+  match! left {
+    (
+      , .(ready: Rational) {
+          match! right {
+            (
+              , .(other: Rational) { op(ready, other) }
+              , .(fault: Division_by_zero) { widen_sum!(fault, Eval) }
+              )
+          }
+        }
+      , .(fault: Division_by_zero) { widen_sum!(fault, Eval) }
+      )
+  }
+}
+
+pub rec(loop) fn eval(value: Expr) -> Eval {
+  match! Expr.get(value) {
+    (
+      , .(node: Lit) { core.reduce(Lit.get(node)) }
+      , .(node: Add) {
+          match! Add.get(node) {
+            .(left: Expr, right: Expr) {
+              combine(rec(cont) eval(left), rec(cont) eval(right), ops.add)
+            }
+          }
+        }
+      , .(node: Sub) {
+          match! Sub.get(node) {
+            .(left: Expr, right: Expr) {
+              combine(rec(cont) eval(left), rec(cont) eval(right), ops.sub)
+            }
+          }
+        }
+      , .(node: Mul) {
+          match! Mul.get(node) {
+            .(left: Expr, right: Expr) {
+              combine(rec(cont) eval(left), rec(cont) eval(right), ops.mul)
+            }
+          }
+        }
+      , .(node: Div) {
+          match! Div.get(node) {
+            .(left: Expr, right: Expr) {
+              combine(rec(cont) eval(left), rec(cont) eval(right), ops.div)
+            }
+          }
+        }
+      )
+  }
+}

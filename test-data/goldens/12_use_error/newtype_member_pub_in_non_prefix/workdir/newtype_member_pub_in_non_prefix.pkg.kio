@@ -1,0 +1,17 @@
+package newtype_member_pub_in_non_prefix;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  deep/sub
+}

@@ -1,0 +1,37 @@
+module http_status_window/strings;
+
+import testapi(String);
+import testapi/text as text;
+
+pub fn cat(left: String, right: String) -> String { text.string_concat(left, right) }
+
+pub fn cat3(first: String, second: String, third: String) -> String {
+  cat(cat(first, second), third)
+}
+
+pub fn cat4(first: String, second: String, third: String, fourth: String) -> String {
+  cat(cat3(first, second, third), fourth)
+}
+
+pub fn cat5(first: String, second: String, third: String, fourth: String, fifth: String) -> String {
+  cat(cat4(first, second, third, fourth), fifth)
+}
+
+pub fn cat6(
+  , first: String
+  , second: String
+  , third: String
+  , fourth: String
+  , fifth: String
+  , sixth: String
+  ) -> String { cat(cat5(first, second, third, fourth, fifth), sixth) }
+
+pub fn cat7(
+  , first: String
+  , second: String
+  , third: String
+  , fourth: String
+  , fifth: String
+  , sixth: String
+  , seventh: String
+  ) -> String { cat(cat6(first, second, third, fourth, fifth, sixth), seventh) }

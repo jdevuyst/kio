@@ -1,0 +1,8 @@
+module m;
+
+fn t() -> T {
+  do! bind {
+    let x <- m;
+    bind(x)
+  }
+}

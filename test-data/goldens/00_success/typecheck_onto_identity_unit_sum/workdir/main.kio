@@ -1,0 +1,10 @@
+module main;
+
+import elab/algebraic_elaborators(onto);
+
+// Identity-`onto!` on a sum whose DNF has an empty branch (`()`)
+// alongside a non-empty branch (`[A]`). The empty branch's factor
+// multi-set is a subset of the non-empty branch's, but `onto!`
+// still accepts identity per acceptance monotonicity
+// (specs/language.md § iso! / into! / onto! / align! mechanics).
+fn identity[A](v: . | A) -> . | A { onto!(v) }

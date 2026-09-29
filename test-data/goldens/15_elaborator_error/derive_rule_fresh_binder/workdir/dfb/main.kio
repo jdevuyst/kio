@@ -1,0 +1,24 @@
+module dfb/main;
+
+import __intrinsics__;
+
+import dfb(I32, zero);
+import elab/derive(derive);
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+// A rule with a fresh binder `B` in its precondition `Pair(A, B)` that
+// does not appear in its result `Pair(A, I32)`. The unbound `B` would
+// let resolution wander over arbitrary instantiations, so the rule is
+// rejected at the `derive!` site (the `derive_rule_fresh_binder`
+// condition) — on its signature, before resolution explores anything.
+fn weird[A][B](inner: Pair(A, B)) -> Pair(A, I32) {
+  let first = __fst__(A, B, Pair.un_pair(A, B, inner));
+  Pair.mk_pair(A, I32, __pair__(A, I32, first, zero()))
+}
+
+fn base() -> Pair(I32, I32) { Pair.mk_pair(I32, I32, __pair__(I32, I32, zero(), zero())) }
+
+fn bad() -> Pair(I32, I32) { derive!((weird, base), Pair(I32, I32)) }
+
+pub fn main() -> . { () }

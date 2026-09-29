@@ -1,0 +1,43 @@
+module queue_backlog_sim/model;
+
+import queue/core(Queue);
+import testapi(I32);
+
+pub labels Job = { ticket: I32, arrived: I32, effort: I32 };
+
+pub labels State_fields = {
+  , current_tick: I32
+  , next_ticket: I32
+  , job_queue: Queue(Job)
+  , backlog_count: I32
+  , total_wait: I32
+  , max_backlog: I32
+  , served_count: I32
+  , completed_effort: I32
+  , arrived_count: I32
+  };
+
+pub type State =
+  & Current_tick
+  & Next_ticket
+  & Job_queue
+  & Backlog_count
+  & Total_wait
+  & Max_backlog
+  & Served_count
+  & Completed_effort
+  & Arrived_count
+  ;
+
+pub labels Enqueue_fields = { enqueued_queue: Queue(Job), enqueued_next: I32 };
+
+pub type Enqueue_result = Enqueued_queue & Enqueued_next;
+
+pub labels Serve_fields = {
+  , served_queue: Queue(Job)
+  , served_jobs: I32
+  , served_wait: I32
+  , served_effort: I32
+  };
+
+pub type Serve_result = Served_queue & Served_jobs & Served_wait & Served_effort;

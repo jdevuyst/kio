@@ -1,0 +1,25 @@
+Second-order forward sensitivity
+elastic energy at (1, 2)
+  value=13.5 gradient=(12, 7.5)
+  hessian=(9, 1.5; 1.5, 3)
+  direction=(1, -1) slope=4.5 curvature=9
+elastic energy at (-2, 0.5)
+  value=16.875 gradient=(-17.25, -1.5)
+  hessian=(9, 1.5; 1.5, 3)
+  direction=(1, -1) slope=-15.75 curvature=9
+calibration objective at (1, 1)
+  value=5.5 gradient=(8.5, -5.5)
+  hessian=(14, 0.5; 0.5, 2)
+  direction=(0.5, -1) slope=9.75 curvature=5
+calibration objective at (0.5, -1)
+  value=5.0625 gradient=(-1, 2.75)
+  hessian=(-3, 6.5; 6.5, 4)
+  direction=(1, 0.5) slope=0.375 curvature=4.5
+coupled response at (2, -1)
+  value=-16 gradient=(-9, 21)
+  hessian=(2, 16; 16, -4)
+  direction=(1, 1) slope=12 curvature=30
+coupled response at (-0.5, 1)
+  value=-0.875 gradient=(0.75, 0)
+  hessian=(3, 0; 0, 3)
+  direction=(-1, 0.5) slope=-0.75 curvature=3.75

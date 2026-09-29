@@ -1,0 +1,9 @@
+module main;
+
+fn target(s: .) -> . { s }
+
+// UFCS dispatch is type-equality on the whole receiver vs the
+// callee's first parameter. A compound product receiver is too
+// wide for an atomic first param — the typer rejects rather than
+// silently projecting a sub-conjunct.
+pub fn caller(r: . & .) -> . { r.>target }

@@ -1,0 +1,5 @@
+module rank_n_pair;
+
+fn identity[A](value: A) -> A { value }
+
+fn retain_tail() -> . { .(function, done: .) { done }((identity, ())) }

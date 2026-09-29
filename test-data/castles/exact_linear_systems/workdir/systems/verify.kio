@@ -1,0 +1,37 @@
+module systems/verify;
+
+import elab/control(if);
+import list/list as l;
+import systems/matrix as m;
+import systems/rational as q;
+import testapi(Bool, I32);
+
+pub fn residuals(original: m.Matrix, variables: I32, vector: m.Row, homogeneous: Bool) -> m.Row {
+  l.map(
+    , .(equation) {
+        let lhs = m.dot(l.take(variables, equation), vector);
+        let rhs =
+          if! homogeneous {
+            q.zero()
+          } else {
+            m.at(equation, variables)
+          };
+        q.subtract(lhs, rhs)
+      }
+    , original
+    )
+}
+
+pub fn all_directions(original: m.Matrix, variables: I32, directions: m.Matrix) -> Bool {
+  l.foldl(
+    , .(ok, vector) {
+        if! ok {
+          m.all_zero(residuals(original, variables, vector, .t))
+        } else {
+          .f
+        }
+      }
+    , .t
+    , directions
+    )
+}

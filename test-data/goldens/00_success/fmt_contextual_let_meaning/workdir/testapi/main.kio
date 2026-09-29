@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+import testapi/text as text;
+
+fn let(value: String) -> String { text.string_concat("let:", value) }
+fn append(left: String, right: String) -> String { text.string_concat(left, right) }
+
+op _ <- _ { impl append; };
+
+fn message() -> String { (let("call")) <- "!" }
+
+pub fn main() -> . {
+  io.print(message());
+  io.print("\n")
+}

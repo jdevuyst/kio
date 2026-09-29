@@ -1,0 +1,30 @@
+some(7) = some(7)
+none = none
+from_option(0, some(7)) = 7
+from_option(0, none) = 0
+is_some(some(7)) = true
+is_none(none) = true
+map(inc, some(7)) = some(8)
+map(inc, none) = none
+bind(some(7), \n. some(n*2)) = some(14)
+apply(some(inc), some(7)) = some(8)
+then(some(7), some(99)) = some(99)
+or_else(none, some(5)) = some(5)
+filter(<=3, some(2)) = some(2)
+filter(<=3, some(9)) = none
+some(7) ?? 0 = 7
+none ?? 0 = 0
+some(7) ?> \n. some(n+1) = some(8)
+none ||? some(5) = some(5)
+some(7) <?> dbl = some(14)
+some(7) <?> dbl ?? 0 = 14
+cat_options([some 1, none, some 2, none, some 3]) = 6
+map_option(small*10, [1, 2, 3, 4]) = 60
+join_options(show, [some 1, none, some 2, none, some 3]) = [1][2][3]
+some(Unit) = some(unit)
+none(Unit) = none
+some(nested number) = some(7)
+some(nested unit) = some(unit)
+none(nested) = none
+cat_options(canonical Unit list) = 1
+cat_options(canonical empty list) = 0

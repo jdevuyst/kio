@@ -1,0 +1,8 @@
+module app;
+
+import core/store(accept_even);
+import widget/store(Even, Odd, make_even);
+
+fn keep_odd(value: Odd) -> Odd { value }
+
+pub fn main() -> . { accept_even(make_even()) }

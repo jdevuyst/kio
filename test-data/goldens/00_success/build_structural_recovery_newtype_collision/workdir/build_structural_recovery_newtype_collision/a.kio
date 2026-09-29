@@ -1,0 +1,12 @@
+module build_structural_recovery_newtype_collision/a;
+
+rec {
+  pub newtype Foo : Peer { pub constructor mk_a; pub projector mk_b };
+  pub newtype Peer : Foo { pub constructor make_peer; pub projector un_peer }
+}
+
+pub newtype Hed : . { pub constructor stash_hed; pub projector peek_hed }
+
+pub newtype Tal : . { pub constructor stash_tal; pub projector peek_tal }
+
+pub newtype Box : . { pub constructor stash_box; pub projector peek_box }

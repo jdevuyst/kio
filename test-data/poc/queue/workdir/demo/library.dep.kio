@@ -1,0 +1,12 @@
+dependency library;
+
+source {
+  path "../queue.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;
+rehost library/list/elab/testapi to testapi;
+rehost library/list/list to queue_host;
+rehost library/queue to queue_host;
+
+retype library/list/core.List to list/core.List;

@@ -1,0 +1,17 @@
+module api;
+
+host type I32 role(i32);
+
+host type I64 role(i64);
+
+host type Text role(str);
+
+host type Flag role(bool);
+
+pub fn pair_a(left: I32, right: Text) -> I32 & Text { (left, right) }
+
+pub fn pair_b(left: Flag, right: I64) -> Flag & I64 { (left, right) }
+
+pub fn sum_a(value: I32 | Text) -> I32 | Text { value }
+
+pub fn sum_b(value: Flag | I64) -> Flag | I64 { value }

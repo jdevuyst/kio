@@ -1,0 +1,2 @@
+newtype `Hidden` must be at least as visible as projector `Public_box.un`
+give newtype `Hidden` visibility equal to or wider than projector `Public_box.un`

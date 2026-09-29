@@ -1,0 +1,9 @@
+package dep_retype_label_fresh_fetch;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}

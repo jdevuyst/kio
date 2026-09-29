@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// `apply` takes a `String -> String` lambda. Its callers
+// supply the lambda in three annotation shapes — concrete,
+// `_`-marked, and fully elided — to exercise both the
+// surface-level annotation paths (synthesis from concrete
+// types, inference from `_`, inference from the expected type)
+// and the surface-to-Kio' drop of those annotations.
+fn apply(f: String -> String, x: String) -> String { f(x) }
+
+pub fn main() -> . {
+  // Concrete `: T` and `-> R` annotations. Both must be erased
+  // before the AST reaches Kio', because the Kio' grammar's Fn
+  // production has no value-param annotations and no return-type
+  // annotation.
+  print(apply(.(x: String) -> String { x }, "an"));
+  // `_` placeholders — same Kio'-grammar requirement, different
+  // surface shape.
+  print(apply(.(x: _) -> _ { x }, "no"));
+  // Fully elided — the un-annotated form Kio' accepts directly.
+  print(apply(.(x) { x }, "tated\n"))
+}

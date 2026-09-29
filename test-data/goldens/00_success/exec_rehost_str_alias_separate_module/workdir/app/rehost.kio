@@ -1,0 +1,24 @@
+module app/rehost;
+
+import testapi as testapi;
+import testapi/text(string_concat);
+
+// A rehost alias: this module re-names the host `testapi.String` through
+// its own leaf `String`, the shape a dependency-materialization rehost
+// emits (`pub type String = testapi.String;`). The alias is local to
+// this module's scope. It must NOT shadow the host `testapi.String`
+// param of `print` / `string_concat` declared in `testapi/io` and
+// `testapi/text` — those modules never import this alias, so the emitted
+// host trait there must still demand the exact borrowed `testapi.String` on
+// the Rust target, not this alias as a distinct representation. Adding this
+// alias here changes nothing about another module's host-param rendering
+// (open-world — see `specs/language.md` § Open-world design).
+pub type String = testapi.String;
+
+// Exercise the alias as a real value: a `String`-typed param/return that
+// flows through the host `string_concat`. `String` here resolves to this
+// module's alias, which the typer unfolds to `testapi.String`, so the
+// host call type-checks.
+pub fn tag(label: String, body: String) -> String {
+  string_concat(label, string_concat(": ", body))
+}

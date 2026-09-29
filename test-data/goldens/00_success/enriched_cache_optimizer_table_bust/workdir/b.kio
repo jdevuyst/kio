@@ -1,0 +1,5 @@
+module b;
+
+import a(I32, Wrap);
+
+pub fn unwrap(w: Wrap) -> I32 { Wrap.un_wrap(w) }

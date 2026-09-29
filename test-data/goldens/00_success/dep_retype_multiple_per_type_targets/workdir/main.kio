@@ -1,0 +1,5 @@
+module main;
+
+import widget/relay(make_a, make_b, make_c);
+
+pub fn main() -> . { let _a = make_a(); let _b = make_b(); let _c = make_c(); () }

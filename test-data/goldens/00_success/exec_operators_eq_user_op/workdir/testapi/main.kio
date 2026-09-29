@@ -1,0 +1,30 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Operator-token quotation `(=)` admits `=` as a sole user-op
+// token, even though sole-`=` is otherwise reserved as the
+// binding separator (`let`, `type`, `literal`, `op`, `case`-block key /
+// value pairs).
+//
+// `exec_operators_quoted_token` already pins the basic
+// quotation-and-invocation shape via `int_to_string(3 = 4)`
+// (op-call as a function-call argument). This case pins the
+// let-RHS shape — `let x = a = b;` — which depends on the
+// parser disambiguating binding-position `=` from
+// expression-position `=` in the same statement: the leading
+// `let` keyword pins the first `=` as the binding separator,
+// and the second `=` is the user op.
+op _ (=) _ { impl add }
+
+pub fn main() -> . {
+  let x = 3 = 4;
+  let y = 5 = 6;
+  print(int_to_string(x));
+  print("\n");
+  print(int_to_string(y));
+  print("\n")
+}

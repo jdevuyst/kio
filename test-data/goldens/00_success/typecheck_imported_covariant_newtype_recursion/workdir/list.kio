@@ -1,0 +1,3 @@
+module list;
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }

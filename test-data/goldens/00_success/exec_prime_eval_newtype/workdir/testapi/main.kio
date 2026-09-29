@@ -1,0 +1,52 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A guest exercising the newtype shapes the surface lowers to Kio'
+// `newtype` declarations with qualified constructor / projector calls — a
+// monomorphic newtype (`Celsius`), a polymorphic newtype (`Box[A]`, whose
+// constructor / projector calls carry a leading type-arg the emit writes),
+// and a product newtype (`Point`). Under the erased runtime every wrap /
+// unwrap is the identity on the payload, so running `main` through
+// dyn_load_prime's interpreter resolves each `X.mk(...)` / `X.un(...)` to its
+// payload and the dyn-load-prime differential agrees with compile-and-run.
+/// A monomorphic newtype over a host i32.
+newtype Celsius : I32 { constructor mk; projector un }
+
+/// A polymorphic newtype — its constructor / projector calls carry a
+/// leading type-arg under erasure (`Box.mk(I32, v)`).
+newtype Box[A] : A { constructor mk; projector un }
+
+/// A product newtype over a pair payload.
+newtype Point : I32 & I32 { constructor mk; projector un }
+
+fn warmer(c: Celsius) -> Celsius { Celsius.mk(add_i32(Celsius.un(c), 1)) }
+
+fn box_i32(n: I32) -> Box(I32) { Box.mk(n) }
+
+fn unbox(b: Box(I32)) -> I32 { Box.un(b) }
+
+fn point_x(p: Point) -> I32 { __fst__(I32, I32, Point.un(p)) }
+
+fn point_y(p: Point) -> I32 { __snd__(I32, I32, Point.un(p)) }
+
+fn line(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+pub fn main() -> . {
+  let c = warmer(Celsius.mk(40));
+  line("warmer(40) = ", Celsius.un(c));
+  line("unbox(box(7)) = ", unbox(box_i32(7)));
+  let p = Point.mk((3, 4));
+  line("point_x = ", point_x(p));
+  line("point_y = ", point_y(p));
+  line(
+    , "sum = "
+    , add_i32(add_i32(Celsius.un(c), unbox(box_i32(7))), add_i32(point_x(p), point_y(p)))
+    )
+}

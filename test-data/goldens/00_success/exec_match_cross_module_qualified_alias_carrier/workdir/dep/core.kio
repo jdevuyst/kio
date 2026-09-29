@@ -1,0 +1,7 @@
+module dep/core;
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub fn make[A](value: A) -> Box(A) { Box.mk_box(value) }
+
+pub fn get[A](value: Box(A)) -> A { value.>Box.un_box }

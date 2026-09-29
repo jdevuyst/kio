@@ -1,0 +1,10 @@
+module testapi/main;
+
+// The same polymorphic export shape `exec_host_closure_type_param_leg`
+// declares, exercised here from the host side: the runner's
+// export-poly-callback-roundtrip driver hands `apply_via` a host closure
+// at two concrete instantiations, so the boundary wrapper's threading of
+// the erased closure argument and result is executed on every backend.
+fn run_fn[K][R](g: K -> R, x: K) -> R { g(x) }
+
+pub fn apply_via[K][R](f: K -> R, x: K) -> R { run_fn(f, x) }

@@ -1,0 +1,6 @@
+  pass equiv `passes` in host/m
+  fail equiv `fails` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): foo(())
+    group B (arms 2): bar(())
+
+result: 1/2 equiv block failed

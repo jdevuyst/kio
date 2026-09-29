@@ -1,0 +1,7 @@
+module units/scalar;
+
+pub type Scaled[A] = A;
+
+pub fn scale[A](x: A) -> Scaled(A) { x }
+
+pub fn unscale[A](s: Scaled(A)) -> A { s }

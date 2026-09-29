@@ -1,0 +1,9 @@
+module main;
+
+import elab/match(match);
+
+// A `match!` with no clauses gives the imported elaborator no
+// function clause to dispatch to.
+newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+
+fn handle(p: Foo) -> . { let _r = match! p {}; () }

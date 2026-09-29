@@ -1,0 +1,12 @@
+module testapi/main;
+
+import packet_checksum_classifier/report as report;
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  print("packet checksum classifier\n");
+  print(report.header());
+  print(report.body());
+  print("summary valid=1 warn=1 reject=2\n")
+}

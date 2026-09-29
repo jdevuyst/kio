@@ -1,0 +1,11 @@
+module widget/store;
+
+import __intrinsics__;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type Node = _rehost_gdgphcgfcphdhegphcgf.Node;
+
+pub type Payload = . | Node;
+
+pub fn make() -> Node { Node.mk(__left__(., Node, ())) }

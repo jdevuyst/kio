@@ -1,0 +1,25 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool);
+import testapi/io as io;
+
+pub newtype Cell[A] : A { constructor pack; projector unpack }
+
+newtype Stored[A] : Cell(A) { constructor pack; projector unpack }
+
+pub fn choose[A](condition: Bool, first: A, second: A) -> A {
+  let stored =
+    if! condition {
+      Stored.pack(Cell.pack(first))
+    } else {
+      Stored.pack(Cell.pack(second))
+    };
+  stored.>Stored.unpack.>Cell.unpack
+}
+
+pub fn main() -> . {
+  let condition = choose(.f, .f, .t);
+  io.print(choose(condition, "left ", "wrong "));
+  io.print(choose(.f, "wrong\n", "right\n"))
+}

@@ -1,0 +1,142 @@
+[package]
+name = "kio-test-runner-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Per-target test runners for the Kio golden corpus. Private test artifact."
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Each bin is feature-gated so a build without the optional features
+# pulls in nothing exotic. The `js` feature pulls in the rquickjs
+# bindings around QuickJS; the `rust` feature pulls in tempfile,
+# blake3, and fs2 for artifact I/O and the shared content-addressed
+# build cache (`crate::build_cache`, consumed via the rustc adapter
+# `crate::rlib_cache`) the rustc runner uses to avoid repeated rustc
+# invocations within a single test run. The `dyn-load-prime` feature also
+# pulls in rquickjs: its runner drives the AOT-compiled `dyn_load_prime`
+# dyn-load-prime driver (a JS module) under QuickJS, interpreting each
+# golden's Kio' image. The runner has no `kio-rs` dependency, and reads
+# no `kio build` output to reconstruct an interface — the per-backend
+# runners reconstruct the host API from the selected protocol, and the
+# dyn-load-prime runner reads the emitted image purely as data to interpret
+# (see the READMEs).
+[features]
+default = [
+  "js",
+  "ts",
+  "rust",
+  "go",
+  "python",
+  "java",
+  "swift",
+  "haskell",
+  "dyn-load-prime",
+]
+# Internal feature shared by native typed runners whose synthesized host
+# implementation uses the `CanonicalKind` rendering vocabulary.
+typed-native = []
+compiler-admission = ["dep:kio-ci-scheduler"]
+js = ["dep:rquickjs"]
+# The `ts` runner runs the JS backend's `<pkg>.js` (byte-identical under
+# `kio build ts`), so it shares the JS execution engine and the same
+# rquickjs dependency.
+ts = ["dep:rquickjs"]
+rust = ["typed-native", "dep:tempfile", "dep:blake3", "dep:fs2", "compiler-admission"]
+# The `go` runner shells out to the `go` toolchain (`go build`) against a
+# `kio build go` output directory. It uses the shared content-addressed
+# build cache (`crate::build_cache`, via the go adapter `crate::go_cache`)
+# to skip `go build` on warm runs, so it pulls in tempfile + blake3 + fs2
+# like the rust runner.
+go = ["typed-native", "dep:tempfile", "dep:blake3", "dep:fs2", "compiler-admission"]
+# The `python` runner imports the emitted `<ns>.py` module in a
+# Python subprocess with a synthesized protocol host object, deriving
+# the `create_<value-brand>` factory from the harness-supplied effective
+# artifact namespace.
+python = []
+# The `java` runner compiles the emitted typed facade (`<Handle>.java`
+# and its siblings) with a synthesized typed `Driver.java`, then runs
+# that driver under the Java VM. Its `StubHost` renders structured protocol
+# bodies through `CanonicalKind` where the typed runners share vocabulary.
+# The shared admission feature admits its direct javac invocation.
+java = ["typed-native", "compiler-admission"]
+# The `swift` runner shells out to `swiftc` (two steps: the emitted
+# package files compile as the harness-supplied artifact namespace, then
+# the synthesized driver imports that module into one statically-linked
+# binary) against a
+# `kio build swift` output directory. It uses the shared content-addressed
+# build cache (`crate::build_cache`, via the swift adapter
+# `crate::swift_cache`) to skip `swiftc` on warm runs, so it pulls in
+# tempfile + blake3 + fs2 like the rust runner.
+swift = ["typed-native", "dep:tempfile", "dep:blake3", "dep:fs2", "compiler-admission"]
+# The `haskell` runner shells out to `ghc --make` (the synthesized driver
+# imports the emitted package module, which GHC compiles as a dependency)
+# against a `kio build haskell` output directory. It uses the shared
+# content-addressed build cache (`crate::build_cache`, via the haskell
+# adapter `crate::haskell_cache`) to skip `ghc` on warm runs, so it pulls
+# in tempfile + blake3 + fs2 like the rust runner.
+haskell = ["typed-native", "dep:tempfile", "dep:blake3", "dep:fs2", "compiler-admission"]
+dyn-load-prime = ["dep:rquickjs"]
+
+[[bin]]
+name = "kio-test-runner-js"
+path = "src/bin/kio-test-runner-js.rs"
+required-features = ["js"]
+
+[[bin]]
+name = "kio-test-runner-ts"
+path = "src/bin/kio-test-runner-ts.rs"
+required-features = ["ts"]
+
+[[bin]]
+name = "kio-test-runner-rust"
+path = "src/bin/kio-test-runner-rust.rs"
+required-features = ["rust"]
+
+[[bin]]
+name = "kio-test-runner-go"
+path = "src/bin/kio-test-runner-go.rs"
+required-features = ["go"]
+
+[[bin]]
+name = "kio-test-runner-python"
+path = "src/bin/kio-test-runner-python.rs"
+required-features = ["python"]
+
+[[bin]]
+name = "kio-test-runner-java"
+path = "src/bin/kio-test-runner-java.rs"
+required-features = ["java"]
+
+[[bin]]
+name = "kio-test-runner-swift"
+path = "src/bin/kio-test-runner-swift.rs"
+required-features = ["swift"]
+
+[[bin]]
+name = "kio-test-runner-haskell"
+path = "src/bin/kio-test-runner-haskell.rs"
+required-features = ["haskell"]
+
+[[bin]]
+name = "kio-test-runner-dyn-load-prime"
+path = "src/bin/kio-test-runner-dyn-load-prime.rs"
+required-features = ["dyn-load-prime"]
+
+[dependencies]
+# QuickJS bindings used by `kio-test-runner-js`. `loader` enables the
+# ES-module loading machinery (Module::declare / eval / namespace);
+# the package module emitted by `kio build js` has no imports of its
+# own, so a loader implementation isn't needed at runtime, but the
+# Module APIs are gated behind this feature.
+rquickjs = { version = "0.11", features = ["loader"], optional = true }
+tempfile = { version = "3", optional = true }
+# blake3 keys the shared content-addressed build cache
+# (`src/shared/build_cache/`). Cryptographic-grade collision
+# resistance — a key collision would return the wrong artifact for a
+# different package, a correctness bug. Mirrors the kio-rs cache
+# rationale.
+blake3 = { version = "1", optional = true }
+# fs2 supplies the per-key advisory file locks in the shared build cache.
+fs2 = { version = "0.4", optional = true }
+# One scheduler authority is shared by the native runners and shell facade.
+kio-ci-scheduler = { path = "../kio-ci-scheduler-rs", optional = true }

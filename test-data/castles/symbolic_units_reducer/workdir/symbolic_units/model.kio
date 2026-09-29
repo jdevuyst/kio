@@ -1,0 +1,52 @@
+module symbolic_units/model;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32);
+
+pub labels Unit = { meter: . } | { second: . } | { kilogram: . };
+
+rec {
+  pub labels { expr: Meter | Second | Kilogram | Product | Quotient | Pow };
+  pub labels { product: Expr & Expr };
+  pub labels { quotient: Expr & Expr };
+  pub labels { pow: Expr & I32 }
+}
+
+pub labels Summary = { meter_exp: I32, second_exp: I32, kilogram_exp: I32 };
+
+pub newtype Score : I32 { pub constructor mk_score; pub projector un_score }
+
+pub fn unit_meter() -> Unit { {meter=}.>widen_sum!(Unit) }
+
+pub fn unit_second() -> Unit { {second=}.>widen_sum!(Unit) }
+
+pub fn unit_kilogram() -> Unit { {kilogram=}.>widen_sum!(Unit) }
+
+fn wrap(node: Meter | Second | Kilogram | Product | Quotient | Pow) -> Expr { {expr = node} }
+
+pub fn unit_expr(unit_value: Unit) -> Expr {
+  match! unit_value {
+    (
+      , .(m: Meter) { wrap(m.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+      , .(s: Second) { wrap(s.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+      , .(k: Kilogram) { wrap(k.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+      )
+  }
+}
+
+pub fn product(left: Expr, right: Expr) -> Expr {
+  wrap({product = (left, right)}.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow))
+}
+
+pub fn quotient(left: Expr, right: Expr) -> Expr {
+  wrap({quotient = (left, right)}.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow))
+}
+
+pub fn power(base: Expr, exp: I32) -> Expr {
+  wrap({pow = (base, exp)}.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow))
+}
+
+pub fn summary(meter: I32, second: I32, kilogram: I32) -> Summary {
+  {meter_exp = meter, second_exp = second, kilogram_exp = kilogram}
+}

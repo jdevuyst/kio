@@ -1,0 +1,61 @@
+module derive_memo_shared_subgoals/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+import testapi(String);
+
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+
+fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+
+fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
+  Render.mk_render(.(p) { Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p))) })
+}
+
+fn exercise() -> Render(Pair(Cell(String), Pair(Cell(String), Cell(String)))) {
+  let derived0 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let derived1 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let derived2 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let derived3 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let derived4 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  let derived5 =
+    derive!(
+      , (render_pair, render_cell_string)
+      , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+      );
+  derived5
+}
+
+fn derived_again() -> Render(Pair(Cell(String), Pair(Cell(String), Cell(String)))) {
+  derive!(
+    , (render_pair, render_cell_string)
+    , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
+    )
+}
+
+pub fn main() -> . { () }

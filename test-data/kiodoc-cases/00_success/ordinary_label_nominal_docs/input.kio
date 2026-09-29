@@ -1,0 +1,10 @@
+/// See [`Foo`], [`foo`], [`Bar`], [`Row`], and [`Explicit`].
+///
+/// The ordinary nominal: [`@signature Foo`].
+///
+/// [`@source Bar`]
+module pkg;
+
+labels { foo: . };
+pub labels Row = { bar: . };
+pub newtype Explicit : . { constructor make; projector read; };

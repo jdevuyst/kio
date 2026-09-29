@@ -1,0 +1,22 @@
+module source;
+
+fn ordinary[A](value: A, pair: A & A) {
+    let _ = value;
+    let .(typed: A) = value;
+    let .(whole: (left: A, right: A)) = pair;
+    let .({first as selected, second}) = row;
+    let .(<Hidden> packed) = hidden;
+    (.x. { (x1, x2()) }, .t. { (t1, .t, .f) }, ._arg. { _arg1 })
+}
+
+fn monadic() {
+    do! bind {
+        let _ <- action;
+        let .(item: A) <- action;
+        let .(left, right) = pair;
+        item
+    }
+}
+
+op _ <- _ { impl left; };
+fn contextual() { (let(f) <- action) }

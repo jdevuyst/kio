@@ -1,0 +1,13 @@
+module build_rec_group_cloned_label_value_binders;
+
+host type Bool role(bool);
+
+host type I32 role(i32);
+
+host type String role(str);
+
+host fn done(value: I32) -> Bool;
+
+host fn empty() -> String;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;

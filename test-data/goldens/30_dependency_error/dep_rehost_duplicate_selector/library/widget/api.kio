@@ -1,0 +1,3 @@
+module api;
+
+host fn ping() -> .;

@@ -1,0 +1,26 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into, onto);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `onto!` narrows any type to `()` via product projection (drop
+// all factors) plus, for sum sources, sum collapse over the
+// independently-narrowed arms.
+fn drop_atom(s: String) -> . { onto!(s) }
+
+fn drop_pair(p: String & I32) -> . { onto!(p) }
+
+fn drop_sum(s: String | .) -> . { onto!(s) }
+
+pub fn main() -> . {
+  // Atom → (): direct projection (drop the single factor).
+  drop_atom("hi");
+  // Product → (): projection drops all factors.
+  drop_pair(("x", 42));
+  // Sum left arm → (): the `String` arm projects to `()`.
+  drop_sum(into!("left"));
+  // Sum right arm → (): the `()` arm is identity.
+  drop_sum(into!(()));
+  print("all narrowed to unit\n")
+}

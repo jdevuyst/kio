@@ -1,0 +1,16 @@
+[
+  {"start": 0, "end": 10, "kind": "keyword.declaration"},
+  {"start": 11, "end": 17, "kind": "identifier"},
+  {"start": 17, "end": 18, "kind": "punctuation.separator"},
+  {"start": 20, "end": 26, "kind": "keyword.declaration"},
+  {"start": 27, "end": 28, "kind": "punctuation.bracket"},
+  {"start": 31, "end": 35, "kind": "keyword.declaration"},
+  {"start": 36, "end": 68, "kind": "literal.string"},
+  {"start": 68, "end": 69, "kind": "punctuation.separator"},
+  {"start": 72, "end": 75, "kind": "keyword.declaration"},
+  {"start": 76, "end": 82, "kind": "literal.string"},
+  {"start": 82, "end": 83, "kind": "punctuation.separator"},
+  {"start": 86, "end": 89, "kind": "keyword.declaration"},
+  {"start": 90, "end": 125, "kind": "literal.string"},
+  {"start": 126, "end": 127, "kind": "punctuation.bracket"}
+]

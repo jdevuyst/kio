@@ -1,0 +1,6 @@
+module store;
+
+rec {
+  pub labels { odd: Even };
+  pub newtype Even : . | Odd { pub constructor mk_even; pub projector un_even }
+}

@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+labels { combine: (String & String) -> String, text: . -> String };
+
+type Surface = Combine & Text;
+
+fn combine(_parts: String & String) -> String { "continued\n" }
+
+fn text(_unit: .) -> String { "nested" }
+
+fn surface() -> Surface { ({combine}, {text}) }
+
+fn render(value: Surface) -> String {
+  match! value.?{combine}(("argument", value.?{text}(()))) {
+    .(result: String) { result }
+  }
+}
+
+pub fn main() -> . { print(render(surface())) }

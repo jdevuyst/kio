@@ -1,0 +1,60 @@
+name: Stale Issues and PRs
+
+on:
+  schedule:
+    # Weekly run, Monday 06:00 UTC — the shared weekly-workflow slot.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639  # v9
+        with:
+          # Conservative windows for an early-stage project: an old issue
+          # is more likely to be "the maintainer hasn't gotten there yet"
+          # than "no longer relevant," so the bar for auto-close is high.
+          days-before-issue-stale: 180
+          days-before-issue-close: 30
+          days-before-pr-stale: 60
+          days-before-pr-close: 14
+
+          # Only committed work (`accepting prs`) and explicit opt-outs
+          # (`pinned`) are exempt. Bug reports, feature requests, and spec
+          # inconsistencies still get swept if they sit untouched for 180+
+          # days — at that point inactivity is the relevant signal,
+          # regardless of how the issue was originally categorized.
+          exempt-issue-labels: 'accepting prs,pinned'
+          exempt-pr-labels: 'accepting prs,pinned'
+
+          # Lowercase label names to match the rest of the project's
+          # custom-label vocabulary (e.g., `accepting prs`, `pinned`).
+          # Both labels need to be created in Settings -> Labels before
+          # the workflow's first sweep that would actually apply them.
+          stale-issue-label: stale
+          stale-pr-label: stale
+          close-issue-label: auto closed
+          close-pr-label: auto closed
+
+          stale-issue-message: |
+            This issue has had no activity for 180 days. It will be closed in 30 days unless someone comments or it gets a fresh update.
+          close-issue-message: |
+            Closed automatically after 210 days of inactivity. Reopen if it's still relevant.
+          stale-pr-message: |
+            This PR has had no activity for 60 days. It will be closed in 14 days unless someone rebases or comments.
+          close-pr-message: |
+            Closed automatically after 74 days of inactivity. Reopen and rebase if you'd still like it merged.
+
+          # Remove the `stale` label automatically at the next workflow
+          # run after any activity (comment, body edit, PR push). Resets
+          # the inactivity timer too.
+          remove-stale-when-updated: true

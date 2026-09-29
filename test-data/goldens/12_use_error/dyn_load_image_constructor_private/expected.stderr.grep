@@ -1,0 +1,5 @@
+`mk_image` is not `pub` in module `loader`
+`un_image` is not `pub` in module `loader`
+`mk_export_info` is not `pub` in module `loader`
+`export_infos_nil` is not `pub` in module `loader`
+`export_infos_cons` is not `pub` in module `loader`

@@ -1,0 +1,9 @@
+module quotation;
+
+import __comptime__;
+
+pure fn duplicate_impl(ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_pair__(ct, value, value)
+}
+
+pub elab duplicate : [A] A -> A & A { impl duplicate_impl }

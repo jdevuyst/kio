@@ -1,0 +1,30 @@
+module host/m;
+
+import host(foo);
+
+fn id_unit() -> . { () }
+
+equiv beta_zero_arity() {
+  .() { () }();
+  ()
+}
+
+equiv beta_via_call() {
+  .(x) { foo(x) }(());
+  foo(())
+}
+
+equiv fn_unfold() {
+  id_unit();
+  ()
+}
+
+equiv alpha_under_lambda() {
+  .(x: .) { foo(x) };
+  .(y: .) { foo(y) }
+}
+
+equiv stuck_residual() {
+  foo(());
+  foo(())
+}

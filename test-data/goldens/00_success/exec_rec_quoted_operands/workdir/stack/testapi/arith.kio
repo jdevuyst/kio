@@ -1,0 +1,18 @@
+module stack/testapi/arith;
+
+import stack/testapi(Bool, I32);
+import testapi/arith as _rehost_hegfhdhegbhagjcpgbhcgjhegi;
+
+pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.add_i32(p0, p1) }
+
+pub fn sub_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.sub_i32(p0, p1) }
+
+pub fn mul_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.mul_i32(p0, p1) }
+
+pub fn div_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.div_i32(p0, p1) }
+
+pub fn mod_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.mod_i32(p0, p1) }
+
+pub fn leq_i32(p0: I32, p1: I32) -> Bool { _rehost_hegfhdhegbhagjcpgbhcgjhegi.leq_i32(p0, p1) }
+
+pub fn lt_i32(p0: I32, p1: I32) -> Bool { _rehost_hegfhdhegbhagjcpgbhcgjhegi.lt_i32(p0, p1) }

@@ -1,0 +1,9 @@
+module main;
+
+// `main` is outside the `helper` subtree, so it cannot `use secret from
+// helper/submod` directly — but it reaches `secret`'s behaviour through the
+// public re-export, which is the point: a scoped item is reachable only via
+// a façade its own subtree chose to expose.
+import helper/reexport(reexport);
+
+pub fn run() -> . { reexport() }

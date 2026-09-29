@@ -1,0 +1,5 @@
+sensor alarm window summary
+records=6 line_len=29
+N1 window=08:05..08:10 state=sustained samples=2 temp=084..088 co=041..044
+S2 window=08:20..08:20 state=single-sample samples=1 temp=076 co=051
+alerts=3 all_fixed_width=true

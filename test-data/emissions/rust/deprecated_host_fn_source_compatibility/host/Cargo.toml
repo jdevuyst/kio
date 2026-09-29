@@ -1,0 +1,8 @@
+[package]
+name = "retained-host"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+app = { path = "../out/rust" }

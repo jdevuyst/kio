@@ -1,0 +1,55 @@
+module pid/pipeline;
+
+import pid/controller(memory_after, update);
+import pid/model(
+  , Calibration_cfg
+  , First
+  , Gains_cfg
+  , Initial_memory
+  , Raw_one
+  , Raw_three
+  , Raw_two
+  , Scenario
+  , Second
+  , Target
+  , Third
+  , Timeline
+  , {calibration_cfg}
+  , {first}
+  , {gains_cfg}
+  , {initial_memory}
+  , {raw_one}
+  , {raw_three}
+  , {raw_two}
+  , {second}
+  , {target}
+  , {third}
+  );
+
+pub fn run(scenario: Scenario) -> Timeline {
+  let first =
+    update(
+      , scenario.?{target}
+      , scenario.?{raw_one}
+      , scenario.?{calibration_cfg}
+      , scenario.?{gains_cfg}
+      , scenario.?{initial_memory}
+      );
+  let second =
+    update(
+      , scenario.?{target}
+      , scenario.?{raw_two}
+      , scenario.?{calibration_cfg}
+      , scenario.?{gains_cfg}
+      , memory_after(first)
+      );
+  let third =
+    update(
+      , scenario.?{target}
+      , scenario.?{raw_three}
+      , scenario.?{calibration_cfg}
+      , scenario.?{gains_cfg}
+      , memory_after(second)
+      );
+  {first, second, third}
+}

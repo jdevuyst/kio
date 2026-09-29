@@ -1,0 +1,7 @@
+module pair_body;
+
+fn identity[A](value: A) -> A { value }
+
+fn take[T](_factory: . -> T, _value: .) -> . { () }
+
+fn infer_structural_rank_n() -> . { take(.(done: .) { (identity, done) }, ()) }

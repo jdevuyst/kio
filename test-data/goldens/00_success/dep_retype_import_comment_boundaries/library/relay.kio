@@ -1,0 +1,12 @@
+module relay;
+
+// statement
+import store(
+  // selection A
+  , A
+  // selection B
+  , B
+  // selection C
+  , C
+  // closing boundary
+  );

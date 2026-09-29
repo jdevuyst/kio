@@ -1,0 +1,14 @@
+package rust_crate_name_key_renamed;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/";
+    crate_name "demo"
+  }
+}
+
+bridge {
+  main
+}

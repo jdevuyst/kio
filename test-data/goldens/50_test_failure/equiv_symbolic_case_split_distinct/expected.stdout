@@ -1,0 +1,6 @@
+  fail equiv `symbolic_cases_remain_distinct` in m: arms split into 3 normal-form groups
+    group A (arms 1): case __param_s__ { left(__case_l_n0__) -> __right__(__case_l_n0__), right(__case_r_n1__) -> __left__(__case_r_n1__) }
+    group B (arms 2): __param_s__
+    group C (arms 3): case __param_s__ { left(__case_l_n2__) -> __left__(__case_l_n2__), right(__case_r_n3__) -> __left__(__case_r_n3__) }
+
+result: 1/1 equiv block failed

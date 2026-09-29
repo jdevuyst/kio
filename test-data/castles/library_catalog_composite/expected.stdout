@@ -1,0 +1,50 @@
+branch library circulation: 6 titles, 4 members, 24 operations
+
+== transcript ==
+01 CHECKOUT m=101 call=201 -> ok:  201 out 1/3
+02 CHECKOUT m=102 call=201 -> ok:  201 out 2/3
+03 CHECKOUT m=103 call=202 -> ok:  202 out 1/1
+04 CHECKOUT m=104 call=202 -> err: no copies left of 202
+05 HOLD     m=104 call=202 -> ok:  reservation 1 for 202
+06 REPORT -> ok:  titles 6, members 4, out 3, fines 0, holds 1
+07 CHECKOUT m=101 call=203 -> ok:  203 out 1/2
+08 RETURN   m=101 call=201 late=0 -> ok:  201 out 1/3, fine 0
+09 RETURN   m=102 call=203 late=4 -> err: member 102 does not hold 203
+10 RETURN   m=103 call=202 late=3 -> ok:  202 out 0/1, fine 75
+11 CHECKOUT m=104 call=202 -> ok:  202 out 1/1
+12 HOLD     m=101 call=204 -> err: copies still on the shelf for 204
+13 CHECKOUT m=199 call=201 -> err: unknown member 199
+14 CHECKOUT m=101 call=299 -> err: unknown call-number 299
+15 CHECKOUT m=102 call=204 -> ok:  204 out 1/1
+16 HOLD     m=103 call=204 -> ok:  reservation 1 for 204
+17 RETURN   m=101 call=203 late=2 -> ok:  203 out 0/2, fine 50
+18 CHECKOUT m=103 call=205 -> ok:  205 out 1/2
+19 RETURN   m=104 call=202 late=6 -> ok:  202 out 0/1, fine 150
+20 REPORT -> ok:  titles 6, members 4, out 3, fines 275, holds 2
+21 RETURN   m=102 call=201 late=1 -> ok:  201 out 0/3, fine 25
+22 HOLD     m=102 call=206 -> err: copies still on the shelf for 206
+23 CHECKOUT m=101 call=206 -> ok:  206 out 1/1
+24 CHECKOUT m=104 call=203 -> ok:  203 out 1/2
+
+== shelf ==
+call 201  out 0/3  holds 0  shelf true   Dune
+call 202  out 0/1  holds 1  shelf true   Neuromancer
+call 203  out 1/2  holds 0  shelf true   Solaris
+call 204  out 1/1  holds 1  shelf false  Ubik
+call 205  out 1/2  holds 0  shelf true   Kindred
+call 206  out 1/1  holds 0  shelf false  Embassytown
+
+== fines ==
+member 101  fines  50  on loan 1
+member 102  fines  25  on loan 1
+member 103  fines  75  on loan 1
+member 104  fines 150  on loan 1
+total fines 300
+
+== audit ==
+unknown call-number     1
+unknown member          1
+no copies left          1
+member does not hold    1
+copies still available  2
+failed operations 6 of 24

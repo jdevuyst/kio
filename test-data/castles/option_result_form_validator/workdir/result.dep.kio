@@ -1,0 +1,7 @@
+dependency result;
+
+source {
+  path "../../../poc/result/workdir/result.pkg.kio"
+}
+
+rehost result/elab/testapi to testapi;

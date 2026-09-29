@@ -1,0 +1,105 @@
+module petri/model;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import queue/list/core as lists;
+import queue/list/list as traversal;
+import testapi(Bool, I32, String);
+import testapi/arith as arithmetic;
+import testapi/iter(loop);
+
+pub type Marking = lists.List(I32);
+
+pub labels Transition = { name: String, consumes: Marking, produces: Marking };
+
+pub labels Net = {
+  , initial: Marking
+  , terminal: Marking
+  , capacity: I32
+  , transitions: lists.List(Transition)
+  };
+
+pub rec(loop) fn equal(left: Marking, right: Marking) -> Bool {
+  match! lists.uncons(left) {
+    .(x: I32, xs: Marking) {
+      match! lists.uncons(right) {
+        .(y: I32, ys: Marking) {
+          if! arithmetic.eq_i32(x, y) {
+            rec equal(xs, ys)
+          } else {
+            .f
+          }
+        };
+        .() { .f }
+      }
+    };
+    .() { traversal.null(right) }
+  }
+}
+
+rec(loop) fn fire_places(
+  , tokens: Marking
+  , needs: Marking
+  , gives: Marking
+  , bound: I32
+  , reversed: Marking
+  ) -> Marking | . {
+  match! lists.uncons(tokens) {
+    .(token: I32, rest: Marking) {
+      match!((lists.uncons(needs), lists.uncons(gives))) {
+        .((need: I32, needs_rest: Marking), (give: I32, gives_rest: Marking)) {
+          let after = arithmetic.add_i32(arithmetic.sub_i32(token, need), give);
+          if! arithmetic.leq_i32(need, token) {
+            if! arithmetic.leq_i32(after, bound) {
+              rec fire_places(rest, needs_rest, gives_rest, bound, lists.cons(after, reversed))
+            } else {
+              ().>widen_sum!
+            }
+          } else {
+            ().>widen_sum!
+          }
+        };
+        .() { ().>widen_sum! }
+      }
+    };
+    .() {
+      if! traversal.null(needs) {
+        if! traversal.null(gives) {
+          traversal.reverse(reversed).>widen_sum!
+        } else {
+          ().>widen_sum!
+        }
+      } else {
+        ().>widen_sum!
+      }
+    }
+  }
+}
+
+pub fn fire(net: Net, transition: Transition, marking: Marking) -> Marking | . {
+  fire_places(marking, transition.?{consumes}, transition.?{produces}, net.?{capacity}, lists.nil())
+}
+
+pub fn enabled(net: Net, transition: Transition, marking: Marking) -> Bool {
+  match! fire(net, transition, marking) {
+    .(_next: Marking) { .t };
+    .() { .f }
+  }
+}
+
+pub fn completed(net: Net, marking: Marking) -> Bool { equal(marking, net.?{terminal}) }
+
+pub fn enabled_count(net: Net, marking: Marking) -> I32 {
+  traversal.foldl(
+    , .(count: I32, transition: Transition) {
+        if! enabled(net, transition, marking) {
+          arithmetic.add_i32(count, 1)
+        } else {
+          count
+        }
+      }
+    , 0
+    , net.?{transitions}
+    )
+}

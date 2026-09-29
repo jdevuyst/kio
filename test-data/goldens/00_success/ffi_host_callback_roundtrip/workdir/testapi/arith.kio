@@ -1,0 +1,9 @@
+module testapi/arith;
+
+import testapi(Bool, I32, String);
+
+host fn add_i32(a: I32, b: I32) -> I32;
+
+host fn call_step(step: (I32 & String & Bool) -> I32, seed: I32) -> I32;
+
+host fn make_pair(build: I32 -> I32 & String, seed: I32) -> I32;

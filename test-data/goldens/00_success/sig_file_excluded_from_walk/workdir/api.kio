@@ -1,0 +1,9 @@
+/// The package's host-facing module.
+module api;
+
+host type Handle role(i32);
+
+host fn open() -> Handle;
+
+/// Serve a handle.
+pub fn serve(h: Handle) -> Handle { h }

@@ -1,0 +1,33 @@
+module river_bytecode_vm/constants;
+
+import testapi(I32);
+
+pub fn west() -> I32 { 0 }
+
+pub fn east() -> I32 { 1 }
+
+pub fn item_goat() -> I32 { 1 }
+
+pub fn item_wolf() -> I32 { 2 }
+
+pub fn item_cabbage() -> I32 { 3 }
+
+pub fn op_wait() -> I32 { 0 }
+
+pub fn op_move() -> I32 { 1 }
+
+pub fn op_ferry_alone() -> I32 { 2 }
+
+pub fn op_assert_safe() -> I32 { 3 }
+
+pub fn op_jump_if_done() -> I32 { 4 }
+
+pub fn op_halt() -> I32 { 5 }
+
+pub fn halt_running() -> I32 { 0 }
+
+pub fn halt_success() -> I32 { 1 }
+
+pub fn halt_trap() -> I32 { 2 }
+
+pub fn halt_bad_pc() -> I32 { 3 }

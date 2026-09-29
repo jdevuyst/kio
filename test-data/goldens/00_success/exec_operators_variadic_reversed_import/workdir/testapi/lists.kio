@@ -1,0 +1,9 @@
+module testapi/lists;
+
+import testapi(String);
+
+pub fn nil_str() -> String { "[]" }
+
+pub fn cons_str(head: String, tail: String) -> String { head }
+
+pub varop *[ ]* { foldr cons_str nil_str }

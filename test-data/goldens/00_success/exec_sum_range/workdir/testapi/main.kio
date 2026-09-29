@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Sum of `1..=n` via `loop`. State is `(i, acc)`; each step
+// exits with `acc` when `i > n` (encoded as `not (i <= n)`),
+// else continues with `(i + 1, acc + i)`. The Gauss formula
+// `n*(n+1)/2 = 5050` for n=100 is the answer; the case exists
+// to surface the named `sum_range` combinator alongside the
+// numeric recurrences.
+fn sum_step(n: I32, (i: I32, acc: I32)) -> (I32 & I32) | I32 {
+  if! leq_i32(i, n) {
+    widen_sum!((add_i32(i, 1), add_i32(acc, i)))
+  } else {
+    widen_sum!(acc)
+  }
+}
+
+fn sum_range(n: I32) -> I32 { loop(.(state: I32 & I32) { sum_step(n, state) }, (1, 0)) }
+
+pub fn main() -> . { print(int_to_string(sum_range(100))); print("\n") }

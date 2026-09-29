@@ -1,0 +1,22 @@
+/// `repmod` declares a `Rep` newtype and an elaborator that shares the
+/// module's own name. The elaborator's declared result type is `Rep`.
+module repmod;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep }
+
+pure fn call_ctor(ct: __Comptime__, ctor: __Checked_term__, payload: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, ctor), ctor, payload)
+}
+
+pub pure fn repmod_impl(
+  , ct: __Comptime__
+  , rep_ctor: __Checked_term__
+  , _source: __Type__
+  , _value: __Checked_term__
+  ) -> __Checked_term__ { call_ctor(ct, rep_ctor, __term_unit__(ct)) }
+
+pub elab repmod : [Source] Source -> Rep { captures Rep.mk_rep; impl repmod_impl }

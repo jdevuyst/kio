@@ -1,0 +1,3 @@
+module parse_err_doc_above_use;
+
+host type String role(str);

@@ -1,0 +1,48 @@
+/// Text plumbing for the transcript. The host surface this package declares
+/// carries no string inspection at all — no length, no slicing, no equality —
+/// so every column that has to line up is built from a number whose width the
+/// program computes itself.
+module tree/text;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(a, cat3(b, c, d)) }
+
+pub fn num(n: I32) -> String { int_to_string(n) }
+
+pub fn flag(b: Bool) -> String { bool_to_string(b) }
+
+/// How many decimal digits `n` prints as. Without a division primitive the
+/// width is found by walking the powers of ten upward until one passes `n`.
+rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
+  if! lt_i32(n, bound) {
+    acc
+  } else {
+    rec digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
+  }
+}
+
+fn digits(n: I32) -> I32 { digits_from(n, 10, 1) }
+
+rec(loop) fn spaces(n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec spaces(sub_i32(n, 1), cat(acc, " "))
+  }
+}
+
+/// `n` right-aligned in a field `w` characters wide.
+pub fn pad_num(n: I32, w: I32) -> String { cat(spaces(sub_i32(w, digits(n)), ""), num(n)) }
+
+/// Two spaces per level of tree depth.
+pub fn indent(level: I32) -> String { spaces(mul_i32(level, 2), "") }

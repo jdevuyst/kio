@@ -1,0 +1,40 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// `head_or` / `tail_or` destructure the cons-cell sum via `match!`.
+// Clause order matters: the cons-cell pattern is strictly more
+// specific than the empty (`()`) pattern, so it comes first — the
+// match! dispatcher uses a per-clause coercion that admits drops,
+// and a `.(_: .)` slot is non-consuming and would absorb both
+// arms if placed first.
+fn head_or[A](fallback: A, xs: List(A)) -> A {
+  match! xs.>List.un_list {
+    (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
+  }
+}
+
+fn tail_or[A](fallback: List(A), xs: List(A)) -> List(A) {
+  match! xs.>List.un_list {
+    (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { fallback })
+  }
+}
+
+pub fn main() -> . {
+  let empty = nil(Int, ());
+  let l3 = push(3, empty);
+  let l2 = push(2, l3);
+  let l1 = push(1, l2);
+  let second = head_or(0, tail_or(empty, l1));
+  print(int_to_string(second))
+}

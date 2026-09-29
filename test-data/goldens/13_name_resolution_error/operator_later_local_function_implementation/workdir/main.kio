@@ -1,0 +1,5 @@
+module main;
+
+op + _ { impl later }
+
+fn later(value: .) -> . { value }

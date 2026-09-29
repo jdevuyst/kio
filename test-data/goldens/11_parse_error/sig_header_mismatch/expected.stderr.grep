@@ -1,0 +1,2 @@
+# The sig-file header pkg name must match the package name.
+signature-file name .wrong. does not match

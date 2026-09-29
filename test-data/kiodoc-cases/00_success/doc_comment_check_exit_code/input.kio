@@ -1,0 +1,13 @@
+/// A function whose doc-comment shows a rejected call.
+///
+/// The snippet passes a function where `()` is expected, so `kio check`
+/// rejects it with exit 14 (`TypeError`). Declaring `check_exit_code=14`
+/// makes that rejection the snippet's expected outcome. The `@` opens
+/// the attribute list, as a harness reference always does:
+///
+/// ```kio {@ check_exit_code=14}
+/// identity(identity)
+/// ```
+module doctest/expected_failure;
+
+pub fn identity(x: .) -> . { x }

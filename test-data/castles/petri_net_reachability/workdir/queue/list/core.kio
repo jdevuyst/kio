@@ -1,0 +1,186 @@
+/// Cons-list core with O(1) constructors, accessors, ordinary sum results, and fold-step helpers.
+module queue/list/core;
+
+import queue/list/elab/match(match);
+import queue/list/elab/spine_elaborators(widen_sum);
+
+// Kio' is strongly normalizing — no in-language recursion — so iteration
+// over an arbitrary-length list comes from the host `loop`. The
+// spine-walking operations live in `list.kio`, which declares the host
+// capabilities; this pure file keeps only the `List` type, its O(1)
+// constructors and destructor, partial accessors, and the per-element step
+// functions the walks fold with.
+
+// =====================================================================
+// The type
+// =====================================================================
+/// A self-referential newtype: the payload `. | (A & List(A))` is
+/// "empty, or a head paired with a tail". The newtype references itself
+/// — the `rec` marker gives `List` the explicit singleton scope needed by
+/// that self-reference. `cons_cell` builds a cell from the bare sum;
+/// `un_list` projects it back. The user-facing `cons` / `uncons` below
+/// wrap these so a reader never names the bare sum.
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor cons_cell; pub projector un_list }
+
+// =====================================================================
+// Constructors
+// =====================================================================
+/// `nil()` is the empty list; `cons(head, tail)` prepends one element;
+/// `singleton(x)` is the one-element list. All three are O(1) and
+/// pure.
+pub fn nil[A]() -> List(A) { List.cons_cell(widen_sum!((), . | (A & List(A)))) }
+
+/// Prepends one element to a cons-list spine in O(1).
+pub fn cons[A](head: A, tail: List(A)) -> List(A) {
+  List.cons_cell(widen_sum!((head, tail), . | (A & List(A))))
+}
+
+/// Builds the one-element structure while preserving the module representation invariant.
+pub fn singleton[A](x: A) -> List(A) { cons(x, nil(A, ())) }
+
+// =====================================================================
+// One-step destructor
+// =====================================================================
+/// `uncons(xs)` is the pure one-step destructor the host `loop` driver
+/// calls each iteration: `()` for the empty list, or the head-tail pair
+/// for a cons cell. `list.kio` matches on this to decide whether to
+/// continue or stop. This is the single seam every
+/// spine-walk crosses to advance one element.
+pub fn uncons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(xs) }
+
+// =====================================================================
+// O(1) shape accessors
+// =====================================================================
+/// `head(xs)` is the first element, or `()` for the empty list.
+/// `tail(xs)` drops the first element, returning `nil` for the empty
+/// list (a total tail — the common library convention). Both are O(1):
+/// they look only at the outermost cell.
+pub fn head[A](xs: List(A)) -> A | . {
+  match! uncons(xs) {
+    (
+      , .(pair: A & List(A)) {
+          match! pair {
+            .(h: A, _t: List(A)) { widen_sum!(h, A | .) }
+          }
+        }
+      , .(_empty: .) { widen_sum!((), A | .) }
+      )
+  }
+}
+
+/// Drops the first list element, returning empty when the input is empty.
+pub fn tail[A](xs: List(A)) -> List(A) {
+  match! uncons(xs) {
+    (
+      , .(pair: A & List(A)) {
+          match! pair {
+            .(_h: A, t: List(A)) { t }
+          }
+        }
+      , .(_empty: .) { nil(A, ()) }
+      )
+  }
+}
+
+// =====================================================================
+// The pure per-element step functions the loop-driven walks fold with
+// =====================================================================
+//
+// Each `*_step` is the pure per-element work of one spine-walk; the walk
+// itself (the host `loop`) lives in `list.kio`. Keeping the steps pure
+// makes them `equiv`-checkable on concrete spines.
+/// `length_step(carry, _x)` counts one more element. The increment is
+/// the caller's (it carries the host `add_i32`), so the step itself is
+/// just function application — fully pure.
+pub fn length_step[A][N](carry: N, inc: N -> N, _x: A) -> N { inc(carry) }
+
+/// `reverse_step(carry, x)` conses the current element onto the
+/// accumulator — folding this over the spine reverses the list.
+pub fn reverse_step[A](carry: List(A), x: A) -> List(A) { cons(x, carry) }
+
+/// `map_step(carry, f, x)` conses `f(x)` onto the accumulator. Folded
+/// left-to-right it builds the mapped list in reverse, so the
+/// loop-driven `map` reverses once more to restore order.
+pub fn map_step[A][B](carry: List(B), f: A -> B, x: A) -> List(B) { cons(f(x), carry) }
+
+/// `append_step(carry, x)` conses onto the accumulator — used to push a
+/// reversed prefix back onto a suffix, the two-pass `append`. Identical
+/// to `reverse_step`; named separately so each walk reads in its own
+/// vocabulary at the callsite.
+pub fn append_step[A](carry: List(A), x: A) -> List(A) { cons(x, carry) }
+
+// =====================================================================
+// Pure structural laws (`equiv`) that discharge without the host loop
+// =====================================================================
+//
+// These laws fall out *structurally* — on the O(1) constructors,
+// destructor and accessors — without walking the spine,
+// so `kio test` discharges them here. The spine-walking laws would each
+// need a loop-driven op, and the host `loop` is an opaque atom the partial
+// evaluator never unfolds, so they cannot discharge under `equiv` at all;
+// the nested demo exercises that API end-to-end against `expected.stdout`.
+
+// `uncons(nil) ≡ ()` — the empty list uncons-es to the absent arm.
+equiv uncons_nil[A]() {
+  uncons(nil(A, ()));
+  widen_sum!((), . | (A & List(A)))
+}
+
+// `uncons(cons(x, xs)) ≡ (x, xs)` — a cons cell uncons-es to its pair.
+equiv uncons_cons[A](x: A, xs: List(A)) {
+  uncons(cons(x, xs));
+  widen_sum!((x, xs), . | (A & List(A)))
+}
+
+equiv head_cons[A](x: A, xs: List(A)) {
+  head(cons(x, xs));
+  widen_sum!(x, A | .)
+}
+
+equiv head_nil[A]() {
+  head(nil(A, ()));
+  widen_sum!((), A | .)
+}
+
+// `tail(cons(x, xs)) ≡ xs`.
+equiv tail_cons[A](x: A, xs: List(A)) {
+  tail(cons(x, xs));
+  xs
+}
+
+// `tail(nil) ≡ nil`.
+equiv tail_nil[A]() {
+  tail(nil(A, ()));
+  nil(A, ())
+}
+
+// `singleton(x) ≡ cons(x, nil)`.
+equiv singleton_is_cons_nil[A](x: A) {
+  singleton(x);
+  cons(x, nil(A, ()))
+}
+
+fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present(value) }, .(_empty: .) { default })
+  }
+}
+
+equiv head_present_eliminates[A][B](default: B, present: A -> B, x: A, xs: List(A)) {
+  fold_result(default, present, head(cons(x, xs)));
+  present(x)
+}
+
+equiv head_absent_eliminates[A][B](default: B, present: A -> B) {
+  fold_result(default, present, head(nil(A, ())));
+  default
+}
+
+// ---- head / tail agreement on a cons cell ----
+
+// `head` and `tail` together recover the cell: rebuilding from them is
+// the identity on a cons. Stated O(1) on a single cons (no spine walk):
+equiv head_tail_recompose[A](d: A, x: A, xs: List(A)) {
+  cons(fold_result(d, .(value: A) { value }, head(cons(x, xs))), tail(cons(x, xs)));
+  cons(x, xs)
+}

@@ -1,0 +1,3 @@
+module core/store;
+
+pub newtype Box[A] <Y> : A & Y { pub constructor pack; pub projector open }

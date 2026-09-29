@@ -1,0 +1,78 @@
+module testapi/main;
+
+import dispatch(dispatch);
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mod_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print, read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+rec(loop) fn consume(remaining: I32, count: I32) -> I32 {
+  if! leq_i32(remaining, 0) {
+    count
+  } else if! leq_i32(mod_i32(remaining, 4), 0) {
+    dispatch!(
+      , read_ascii_line()
+      , (String -> I32) & (. -> I32)
+      , (
+          , .x. {
+              if! string_eq(x1, "skip") {
+                count
+              } else {
+                rec consume(sub_i32(remaining, 1), add_i32(count, 1))
+              }
+            }
+          , .(_eof: .) { count }
+          )
+      )
+  } else if! leq_i32(mod_i32(remaining, 4), 1) {
+    read_ascii_line()
+      .>dispatch!(
+        , (String -> I32) & (. -> I32)
+        , (
+            , .(line: _) {
+                if! string_eq(line, "skip") {
+                  count
+                } else {
+                  rec consume(sub_i32(remaining, 1), add_i32(count, 1))
+                }
+              }
+            , .(_eof: .) { count }
+            )
+        )
+  } else if! leq_i32(mod_i32(remaining, 4), 2) {
+    // Infer the clause-product type and this recursive clause's result.
+    dispatch!(
+      , read_ascii_line()
+      , (
+          , .(line: String) {
+              if! string_eq(line, "skip") {
+                count
+              } else {
+                rec consume(sub_i32(remaining, 1), add_i32(count, 1))
+              }
+            }
+          , .(_eof: .) { count }
+          )
+      )
+  } else {
+    read_ascii_line()
+      .>dispatch!(
+        , (String -> I32) & (. -> I32)
+        , (
+            , .(line: String) {
+                if! string_eq(line, "skip") {
+                  count
+                } else {
+                  rec consume(sub_i32(remaining, 1), add_i32(count, 1))
+                }
+              }
+            , .(_eof: .) { count }
+            )
+        )
+  }
+}
+
+pub fn main() -> . { print(int_to_string(consume(8, sub_i32(0, 1)))) }

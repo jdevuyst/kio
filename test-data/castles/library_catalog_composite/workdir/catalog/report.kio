@@ -1,0 +1,114 @@
+module catalog/report;
+
+import catalog/domain(
+  , Book
+  , Book_index
+  , Checkout
+  , Hold
+  , Hold_list
+  , Line_list
+  , Member
+  , Member_index
+  , Op
+  , Report
+  , Return
+  );
+import catalog/domain(cat, istr, pad2, pad3);
+import catalog/domain({checkout}, {copies_out}, {copies_total}, {fines}, {hold}, {return}, {title});
+import catalog/ledger as ledger;
+import catalog/shelf as shelf;
+import dict/dict as dict;
+import elab/control(if);
+import elab/match(match);
+import list/core as lcore;
+import list/list as list;
+import testapi(Bool, I32, String);
+import testapi/fmt(bool_to_string);
+
+fn op_text(op: Op) -> String {
+  match! op {
+    (
+      , .(step: Checkout) {
+          let .(id: I32, call: I32) = step.?{checkout};
+          "CHECKOUT m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
+        }
+      , .(step: Return) {
+          let .(id: I32, call: I32, days_late: I32) = step.?{return};
+          "RETURN   m="
+            .>cat(istr(id))
+            .>cat(" call=")
+            .>cat(istr(call))
+            .>cat(" late=")
+            .>cat(istr(days_late))
+        }
+      , .(step: Hold) {
+          let .(id: I32, call: I32) = step.?{hold};
+          "HOLD     m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
+        }
+      , .(_step: Report) { "REPORT" }
+      )
+  }
+}
+
+pub fn transcript_line(index: I32, op: Op, outcome: String) -> String {
+  pad2(index).>cat(" ").>cat(op_text(op)).>cat(" -> ").>cat(outcome)
+}
+
+/// The availability flag is padded to one cell so the title column lines
+/// up whether the flag reads `true` or `false`.
+fn avail_cell(available: Bool) -> String {
+  if! available {
+    bool_to_string(available).>cat("   ")
+  } else {
+    bool_to_string(available).>cat("  ")
+  }
+}
+
+fn shelf_row(call: I32, entry: Book, holds: Hold_list) -> String {
+  "call "
+    .>cat(istr(call))
+    .>cat("  out ")
+    .>cat(istr(entry.?{copies_out}))
+    .>cat("/")
+    .>cat(istr(entry.?{copies_total}))
+    .>cat("  holds ")
+    .>cat(istr(shelf.hold_count(holds, call)))
+    .>cat("  shelf ")
+    .>cat(avail_cell(shelf.is_available(entry)))
+    .>cat(entry.?{title})
+}
+
+pub fn shelf_lines(books: Book_index, holds: Hold_list) -> Line_list {
+  let rows =
+    dict.fold_asc(
+      , books
+      , lcore.nil(String, ())
+      , .(step: Line_list & I32 & Book) {
+          let .(rows: Line_list, call: I32, entry: Book) = step;
+          lcore.cons(shelf_row(call, entry, holds), rows)
+        }
+      );
+  list.reverse(rows)
+}
+
+fn fines_row(id: I32, who: Member) -> String {
+  "member "
+    .>cat(istr(id))
+    .>cat("  fines ")
+    .>cat(pad3(who.?{fines}))
+    .>cat("  on loan ")
+    .>cat(istr(ledger.held_count(who)))
+}
+
+pub fn fines_lines(members: Member_index) -> Line_list {
+  let rows =
+    dict.fold_asc(
+      , members
+      , lcore.nil(String, ())
+      , .(step: Line_list & I32 & Member) {
+          let .(rows: Line_list, id: I32, who: Member) = step;
+          lcore.cons(fines_row(id, who), rows)
+        }
+      );
+  list.reverse(rows)
+}

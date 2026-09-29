@@ -1,0 +1,13 @@
+package rec_unrelated_match_elaborator_lambda;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  rec_unrelated_match_elaborator_lambda/**
+}

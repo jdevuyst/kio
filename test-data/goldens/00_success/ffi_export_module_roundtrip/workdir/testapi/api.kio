@@ -1,0 +1,9 @@
+module testapi/api;
+
+import testapi(I32, String);
+
+pub fn tag() -> String { "bridge-module"(String) }
+
+pub fn value() -> I32 { 17(I32) }
+
+pub fn echo(s: String) -> String { s }

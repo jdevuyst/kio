@@ -1,0 +1,8 @@
+[package]
+name = "function-newtype-facades-host"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ffi_rust_function_newtype_facades = { path = "../workdir/out/rust" }

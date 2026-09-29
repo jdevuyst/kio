@@ -1,0 +1,23 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Wrap`'s parameter `[A]` is used only in a positive position
+// (covariant — appears as the payload type, not under any
+// arrow's LHS). So smuggling `rec` through `Wrap`'s argument
+// position is sound, and the variance-aware strict-positivity
+// check accepts the program.
+//
+// Companion negative case at `16_totality_error/loop_via_arrow_lhs`
+// exercises the same shape with a contravariant parameter — the
+// check flips the under-arrow-LHS flag for that arg and rejects.
+newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
+
+rec newtype Reclist : . | (String & Reclist) { pub constructor mk_rl; pub projector un_rl }
+
+// `Wrap(Reclist)` puts `Reclist` in `Wrap`'s `[A]` slot.
+// `[A]` is covariant in `Wrap`, so this is strictly positive.
+newtype Boxed : Wrap(Reclist) { pub constructor mk_boxed; pub projector un_boxed }
+
+pub fn main() -> . { print("variance ok\n"(String)) }

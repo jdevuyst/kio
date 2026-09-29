@@ -1,0 +1,42 @@
+/// The ink alphabet.
+///
+/// A canvas cell holds an ink code, not a character: the source has no way to
+/// name a character (this tier has no string indexing), so `mark` selects one
+/// by number and the renderer resolves it here. The pen itself never chooses
+/// — it always lays down `stroke_code`.
+module turtle/glyph;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import turtle/num as num;
+
+/// An empty cell.
+pub fn blank_code() -> I32 { 0 }
+
+/// What the pen draws with.
+pub fn stroke_code() -> I32 { 1 }
+
+/// True when the cell carries ink. `mark 0` is therefore an eraser, and an
+/// erased cell stops counting toward the ink census.
+pub fn is_inked(code: I32) -> Bool { num.not(num.int_eq(code, blank_code())) }
+
+/// The character a code prints as. A code outside the alphabet prints `?`, so
+/// a program that marks with a glyph the plotter does not know still shows up
+/// on the paper instead of vanishing.
+pub fn glyph_of(code: I32) -> String {
+  if! num.int_eq(code, blank_code()) {
+    "."
+  } else if! num.int_eq(code, stroke_code()) {
+    "*"
+  } else if! num.int_eq(code, 2) {
+    "#"
+  } else if! num.int_eq(code, 3) {
+    "+"
+  } else if! num.int_eq(code, 4) {
+    "o"
+  } else if! num.int_eq(code, 5) {
+    "@"
+  } else {
+    "?"
+  }
+}

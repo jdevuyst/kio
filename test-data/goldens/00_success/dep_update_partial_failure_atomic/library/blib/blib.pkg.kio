@@ -1,0 +1,5 @@
+package blib;
+
+bridge {
+  greet
+}

@@ -1,0 +1,10 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+op _ + __ { impl add_i32 }
+
+pub fn main() -> . { let n = 1 + 2 + 3; print(i32_to_string(n)) }

@@ -1,0 +1,9 @@
+module build_structural_recovery_newtype_collision/qualified;
+
+import __intrinsics__;
+
+import build_structural_recovery_newtype_collision/provider as p;
+
+pub fn read(r: p.Hed & p.Tal) -> . { p.Hed.get_hed(__fst__(p.Hed, p.Tal, r)) }
+
+pub fn round(value: .) -> . { p.Box.unwrap(p.Box.wrap(value)) }

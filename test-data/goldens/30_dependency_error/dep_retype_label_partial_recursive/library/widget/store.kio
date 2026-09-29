@@ -1,0 +1,3 @@
+module store;
+
+pub rec labels Pair[A] = { foo[A]: (Bar(A) -> A) -> A, bar[A]: (Foo(A) -> A) -> A };

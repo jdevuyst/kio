@@ -1,0 +1,9 @@
+module shape;
+
+import slot0 as s;
+
+pub newtype Y : . { constructor mk_y; projector un_y }
+
+pub fn selector_collision(value: (. & . & Y) & . & s.Y) -> (. & . & Y) & . & s.Y { value }
+
+pub fn pattern_collision(value: s.P | .) -> s.P | . { value }

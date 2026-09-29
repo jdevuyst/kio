@@ -1,0 +1,26 @@
+pair start
+pair residuals
+after A
+between A and B
+after B
+pair ready
+repeat start
+after A
+after B
+repeat ready
+producer start
+produce
+producer residual
+after String
+after Unit
+producer done
+combined start
+combined residual
+after B
+value argument
+combined done
+unit start
+unit residual
+unit argument
+unit value
+unit ready

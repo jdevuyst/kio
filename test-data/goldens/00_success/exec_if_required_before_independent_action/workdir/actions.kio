@@ -1,0 +1,23 @@
+module actions;
+
+import __comptime__;
+
+type Optional_type = __Type__ | .;
+
+pure fn identity_target_impl(
+  , _ct: __Comptime__
+  , _a: Optional_type
+  , _source: __Checked_term__
+  , value: __Checked_term__
+  ) -> __Checked_term__ { value }
+
+pub elab identity_target : [A] (A -> A) -> A -> A { impl identity_target_impl }
+
+pure fn finish_impl(
+  , _ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , _target: Optional_type
+  ) -> __Checked_term__ { value }
+
+pub elab finish : [Source] Source -> [Target] Target { impl finish_impl }

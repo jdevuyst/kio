@@ -1,0 +1,35 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// The canonical brand-eligible arity-1 newtype.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A `Monad[*F]` dictionary with a single polymorphic-function
+// payload: `bind` takes a branded value and a continuation, hands
+// the unwrapped value to the continuation, returns its re-branded
+// result. The Forall binders flow to the inherent projector method
+// as generic type-params; the Rust backend erases them at the
+// struct boundary and re-instantiates via up/downcast adapters per
+// `specs/backends/rust.md` § Polymorphic newtype payloads.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// The Box instance: peel via `Box.un_box`, hand the unwrapped
+// value to the continuation. Polymorphic in `[A][B]`; the body operates
+// uniformly across instantiations.
+fn box_monad() -> Monad(Box) { Monad.mk_monad(Box, .[A][B](m, k) { k(Box.un_box(A, m)) }) }
+
+// Use the dictionary: brand a literal, run a peel-and-rebrand
+// step through `bind`, peel the brand back.
+fn use_dictionary() -> String {
+  let monad = box_monad();
+  let lifted = Box.mk_box(String, "monad dictionary ok\n"(String));
+  let stepped = Monad.bind(Box, monad)(String, String, lifted, .(s) { Box.mk_box(String, s) });
+  Box.un_box(String, stepped)
+}
+
+pub fn main() -> . { print(use_dictionary()) }

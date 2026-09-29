@@ -1,0 +1,5 @@
+module testapi/main;
+
+import float_weather_index/report as report;
+
+pub fn main() -> . { report.print_report() }

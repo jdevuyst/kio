@@ -1,0 +1,9 @@
+module deep/sub;
+
+// `pub(other)` on the constructor names `other`, which is not the
+// declaring module `deep/sub` nor an ancestor of it — so the member scope
+// is invalid and name resolution must reject it (exit 12), exactly as it
+// does for an invalid scope on the declaration itself. (A `pub(P)` scope on
+// a constructor/projector is admissible; the path just has to be a prefix
+// of the declaring module.)
+pub newtype Tag : . { pub(other) constructor mk; pub projector un }

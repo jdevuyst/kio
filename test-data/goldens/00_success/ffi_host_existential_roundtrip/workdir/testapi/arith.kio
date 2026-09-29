@@ -1,0 +1,6 @@
+module testapi/arith;
+
+import testapi as t;
+import testapi/types as types;
+
+host fn observe(value: types.Packed) -> t.I32;

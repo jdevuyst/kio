@@ -1,0 +1,13 @@
+package rust_output_layout;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  main
+}

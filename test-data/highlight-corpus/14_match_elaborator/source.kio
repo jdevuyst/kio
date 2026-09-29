@@ -1,0 +1,5 @@
+module m;
+
+import match(match);
+
+fn handle(r: T) -> T { match!(r, (.(v: A) { v }, .(_e: B) { _e })) }

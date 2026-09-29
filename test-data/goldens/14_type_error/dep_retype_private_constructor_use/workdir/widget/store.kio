@@ -1,0 +1,7 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type Token = _rehost_gdgphcgfcphdhegphcgf.Token;
+
+fn make_token() -> Token { Token.make(()) }

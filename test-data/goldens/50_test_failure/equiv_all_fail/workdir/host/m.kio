@@ -1,0 +1,13 @@
+module host/m;
+
+import host(x, y);
+
+equiv first_block() {
+  x();
+  y()
+}
+
+equiv second_block() {
+  x();
+  y()
+}

@@ -1,0 +1,23 @@
+module float_weather_index/report;
+
+import float_weather_index/daily as daily;
+import testapi(F64, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn print_value(label: String, value: F64) -> . {
+  io.print(label);
+  io.print(fmt.f64_to_string(value));
+  io.print("\n")
+}
+
+pub fn print_report() -> . {
+  io.print("float_weather_index\n");
+  print_value("morning_raw=", daily.morning_raw());
+  print_value("midday_raw=", daily.midday_raw());
+  print_value("evening_raw=", daily.evening_raw());
+  print_value("night_raw=", daily.night_raw());
+  print_value("smoothed_index=", daily.smoothed_index());
+  print_value("midday_to_night_spread=", daily.midday_to_night_spread());
+  print_value("comfort_delta=", daily.comfort_delta())
+}

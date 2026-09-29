@@ -1,0 +1,13 @@
+module build_match_imported_recursive_continuation/list;
+
+import elab/spine_elaborators(widen_sum);
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
+
+pub type Copied[A] = List(A);
+
+pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, tail: List(A)) -> List(A) {
+  List.mk_list(widen_sum!((head, tail), . | (A & List(A))))
+}

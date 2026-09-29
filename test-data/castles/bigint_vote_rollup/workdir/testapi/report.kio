@@ -1,0 +1,23 @@
+module testapi/report;
+
+import testapi(I128, I64, String, U64);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn print_i64(value: I64) -> . { io.print(fmt.i64_to_string(value)) }
+
+fn print_u64(value: U64) -> . { io.print(fmt.u64_to_string(value)) }
+
+fn print_i128(value: I128) -> . { io.print(fmt.i128_to_string(value)) }
+
+pub fn row(name: String, values: I64 & U64 & I128) -> . {
+  let .(margin: I64, ballots: U64, ledger: I128) = values;
+  io.print(name);
+  io.print(" margin_i64=");
+  print_i64(margin);
+  io.print(" ballots_u64=");
+  print_u64(ballots);
+  io.print(" ledger_i128=");
+  print_i128(ledger);
+  io.print("\n")
+}

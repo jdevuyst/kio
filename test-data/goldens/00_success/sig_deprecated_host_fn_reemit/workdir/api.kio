@@ -1,0 +1,9 @@
+/// The package's host-facing module.
+module api;
+
+host type Str role(str);
+
+host fn open() -> Str;
+
+/// Echo a handle back to the host.
+pub fn echo(s: Str) -> Str { s }

@@ -1,0 +1,4 @@
+  pass equiv `main_local_differs` in main
+  pass equiv `cross_module_pick_is_a` in main
+
+result: 2/2 equiv blocks passed

@@ -1,0 +1,9 @@
+module testapi/main;
+
+pub newtype Packed <U> : [A] (U & A) -> U { constructor pack; pub projector open }
+
+pub fn make_packed() -> Packed { Packed.pack(.[A](value: . & A) -> . { () }) }
+
+pub fn accept(step: [A] A -> A) -> [A] A -> A { step }
+
+pub fn callback() -> . -> [A] A -> A { .() { .[A](value: A) { value } } }

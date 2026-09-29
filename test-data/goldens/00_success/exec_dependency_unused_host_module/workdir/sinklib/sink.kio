@@ -1,0 +1,13 @@
+module sinklib/sink;
+
+// A host-using module the consumer never imports. It declares a host fn
+// the consumer's runner protocol does not supply; because it is not
+// reachable from the consumer's bridge, the bridge-scoped emit must
+// prune it. If it were emitted, its `discard` host requirement would
+// leak into the consumer's host interface and the statically-typed
+// targets (rust / go) would fail to build.
+host type Str role(str);
+
+host fn discard(p0: Str) -> .;
+
+pub fn use_sink(s: Str) -> . { discard(s) }

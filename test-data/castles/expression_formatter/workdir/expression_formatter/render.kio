@@ -1,0 +1,189 @@
+module expression_formatter/render;
+
+import expression_formatter/parse(parse);
+import expression_formatter/scan(scan);
+import expression_formatter/types(
+  , Add_token
+  , Assignment_name
+  , Binding_count
+  , Binding_token
+  , Close_token
+  , Eq_token
+  , Factor_text
+  , Group_token
+  , Grouped_term
+  , Left_term
+  , Left_token
+  , Literal_token
+  , Max_depth
+  , Mul_token
+  , Normalized_expr
+  , Open_token
+  , Shape_name
+  , Source_text
+  , Token_count
+  , Token_depth
+  , Token_kind
+  , Token_start
+  , Token_stop
+  , Token_text
+  , Valid_shape
+  );
+import expression_formatter/types(
+  , {add_token}
+  , {binding_count}
+  , {binding_token}
+  , {close_token}
+  , {eq_token}
+  , {group_token}
+  , {left_token}
+  , {literal_token}
+  , {max_depth}
+  , {mul_token}
+  , {normalized_expr}
+  , {open_token}
+  , {shape_name}
+  , {source_text}
+  , {token_count}
+  , {token_depth}
+  , {token_kind}
+  , {token_start}
+  , {token_stop}
+  , {token_text}
+  , {valid_shape}
+  );
+import testapi(String);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
+
+fn cat4(a: String, b: String, c: String, d: String) -> String { string_concat(a, cat3(b, c, d)) }
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  string_concat(a, cat4(b, c, d, e))
+}
+
+fn span_text(token: Token_kind & Token_text & Token_start & Token_stop & Token_depth) -> String {
+  cat5("[", int_to_string(token.?{token_start}), ",", int_to_string(token.?{token_stop}), ")")
+}
+
+fn token_line(
+  , index: String
+  , token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  ) -> String {
+  string_concat(
+    , index
+    , string_concat(
+        , " "
+        , string_concat(
+            , token.?{token_kind}
+            , string_concat(
+                , " span="
+                , string_concat(
+                    , span_text(token)
+                    , string_concat(
+                        , " depth="
+                        , string_concat(
+                            , int_to_string(token.?{token_depth})
+                            , string_concat(" text=", string_concat(token.?{token_text}, "\n"))
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn header(
+  , stream: & Source_text
+    & Binding_token
+    & Eq_token
+    & Left_token
+    & Add_token
+    & Open_token
+    & Group_token
+    & Mul_token
+    & Literal_token
+    & Close_token
+  , state: & Assignment_name
+    & Left_term
+    & Grouped_term
+    & Factor_text
+    & Normalized_expr
+    & Shape_name
+    & Valid_shape
+    & Token_count
+    & Max_depth
+    & Binding_count
+  ) -> String {
+  string_concat(
+    , "expression_formatter: v1\n"
+    , string_concat(
+        , cat3("source: ", stream.?{source_text}, "\n")
+        , string_concat(
+            , cat3("normalized: ", state.?{normalized_expr}, "\n")
+            , string_concat(
+                , cat3("shape: ", state.?{shape_name}, "\n")
+                , string_concat(
+                    , cat3("valid: ", bool_to_string(state.?{valid_shape}), "\n")
+                    , string_concat(
+                        , cat3("tokens: ", int_to_string(state.?{token_count}), "\n")
+                        , string_concat(
+                            , cat3("max-depth: ", int_to_string(state.?{max_depth}), "\n")
+                            , cat3("bindings: ", int_to_string(state.?{binding_count}), "\n")
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn token_table(stream: & Source_text
+& Binding_token
+& Eq_token
+& Left_token
+& Add_token
+& Open_token
+& Group_token
+& Mul_token
+& Literal_token
+& Close_token) -> String {
+  string_concat(
+    , "token-table:\n"
+    , string_concat(
+        , token_line("  01", stream.?{binding_token})
+        , string_concat(
+            , token_line("  02", stream.?{eq_token})
+            , string_concat(
+                , token_line("  03", stream.?{left_token})
+                , string_concat(
+                    , token_line("  04", stream.?{add_token})
+                    , string_concat(
+                        , token_line("  05", stream.?{open_token})
+                        , string_concat(
+                            , token_line("  06", stream.?{group_token})
+                            , string_concat(
+                                , token_line("  07", stream.?{mul_token})
+                                , string_concat(
+                                    , token_line("  08", stream.?{literal_token})
+                                    , token_line("  09", stream.?{close_token})
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+pub fn render_report() -> String {
+  let stream = scan();
+  let state = parse(stream);
+  string_concat(header(stream, state), token_table(stream))
+}

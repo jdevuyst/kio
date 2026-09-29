@@ -1,0 +1,9 @@
+module hostapi;
+
+host type I32 role(i32);
+
+host type String role(str);
+
+host fn add_i32(p0: I32, p1: I32) -> I32;
+
+host fn print(p0: String) -> .;

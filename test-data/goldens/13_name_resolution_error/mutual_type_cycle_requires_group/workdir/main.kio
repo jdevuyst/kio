@@ -1,0 +1,5 @@
+module main;
+
+newtype Even : . | Odd { pub constructor mk_even; pub projector un_even }
+
+newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }

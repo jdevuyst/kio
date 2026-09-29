@@ -1,0 +1,11 @@
+module testapi/io;
+
+import testapi(I32, String);
+
+host fn print(p0: String) -> .;
+
+host fn eprint(p0: String) -> .;
+
+host fn exit(p0: I32) -> !;
+
+host fn read_ascii_line() -> String | .;

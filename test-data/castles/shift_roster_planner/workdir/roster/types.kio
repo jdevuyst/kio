@@ -1,0 +1,16 @@
+module roster/types;
+
+import testapi(I32, String);
+
+pub labels Shift = { day: I32, slot: I32, worker: I32, demand: I32, skill: I32, preference: I32 };
+
+pub labels Scorecard = {
+  , skill_shortfalls: I32
+  , same_day_conflicts: I32
+  , rest_conflicts: I32
+  , fairness_penalty: I32
+  , preference_penalty: I32
+  , total_score: I32
+  };
+
+pub labels Worker_load = { load: I32, worker_name: String };

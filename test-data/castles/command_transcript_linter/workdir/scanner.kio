@@ -1,0 +1,35 @@
+module scanner;
+
+import testapi(I32, String);
+import testapi/text as text;
+import transcript as source;
+
+fn span(start: I32, end: I32) -> String { text.string_slice(source.fixture(), start, end) }
+
+pub fn line_count() -> I32 { 6 }
+
+pub fn byte_count() -> I32 { text.string_len(source.fixture()) }
+
+pub fn line1() -> String { span(0, 20) }
+
+pub fn line2() -> String { span(20, 34) }
+
+pub fn line3() -> String { span(34, 54) }
+
+pub fn line4() -> String { span(54, 74) }
+
+pub fn line5() -> String { span(74, 88) }
+
+pub fn line6() -> String { span(88, 102) }
+
+pub fn opcode4(line: String) -> String { text.string_slice(line, 0, 4) }
+
+pub fn opcode5(line: String) -> String { text.string_slice(line, 0, 5) }
+
+pub fn colon4(line: String) -> String { text.string_slice(line, 4, 5) }
+
+pub fn colon5(line: String) -> String { text.string_slice(line, 5, 6) }
+
+pub fn retry_payload_start(line: String) -> String { text.string_slice(line, 7, 13) }
+
+pub fn first_byte(line: String) -> I32 | . { text.string_code_at(line, 0) }

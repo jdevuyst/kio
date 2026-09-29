@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/control(if);
+import elaborators(choose_callbacks);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+pub rec(loop) fn repeat(remaining: I32) -> . {
+  choose_callbacks!(
+    , leq_i32(remaining, 0)
+    , .(_unit: .) {
+        if! leq_i32(remaining, 0) {
+          ()
+        } else {
+          rec repeat(sub_i32(remaining, 1))
+        }
+      }
+    )
+}
+
+pub fn main() -> . { repeat(2); print("rebuilt public callback\n") }

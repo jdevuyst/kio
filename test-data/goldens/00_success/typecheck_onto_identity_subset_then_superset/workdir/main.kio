@@ -1,0 +1,11 @@
+module main;
+
+import elab/algebraic_elaborators(onto);
+
+// Identity-`onto!` where the target DNF has a branch whose
+// factor multi-set is a strict subset of a later branch —
+// `[A]` is a strict subset of `[A, B]`. The saturating-first
+// preference picks the exact target branch for `(A & B)`
+// rather than catching it in the earlier `A` branch via
+// projection.
+fn identity[A][B](v: A | (A & B)) -> A | (A & B) { onto!(v) }

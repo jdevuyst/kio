@@ -1,0 +1,40 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq);
+
+// A self-contained guest the dyn-load-prime differential runs through
+// dyn_load_prime's interpreter: every line is a first-order i32 arithmetic /
+// comparison or string op (the dyn_load_prime host-op vocabulary), so running
+// `main` through `prime_eval` agrees with compile-and-run.
+fn line(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+fn yes_no(label: String, b: Bool) -> . {
+  print(string_concat(
+    , label
+    , if! b {
+        "yes\n"
+      } else {
+        "no\n"
+      }
+    ))
+}
+
+pub fn main() -> . {
+  line("add = ", add_i32(20, 22));
+  line("sub = ", sub_i32(50, 8));
+  line("mul = ", mul_i32(6, 7));
+  line("div = ", div_i32(99, 7));
+  line("mod = ", mod_i32(99, 7));
+  yes_no("leq(3,4) = ", leq_i32(3, 4));
+  yes_no("leq(4,3) = ", leq_i32(4, 3));
+  yes_no("lt(3,3) = ", lt_i32(3, 3));
+  yes_no("streq(\"ab\",\"ab\") = ", string_eq("ab", "ab"));
+  yes_no("streq(\"ab\",\"ba\") = ", string_eq("ab", "ba"))
+}

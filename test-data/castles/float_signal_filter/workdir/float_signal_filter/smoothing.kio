@@ -1,0 +1,25 @@
+module float_signal_filter/smoothing;
+
+import testapi(F64);
+import testapi/arith(add_f64, mul_f64);
+
+fn half(value: F64) -> F64 { mul_f64(value, 0.5(F64)) }
+
+fn quarter(value: F64) -> F64 { mul_f64(value, 0.25(F64)) }
+
+fn edge_average(left: F64, right: F64) -> F64 { add_f64(half(left), half(right)) }
+
+fn center_average(left: F64, center: F64, right: F64) -> F64 {
+  add_f64(add_f64(quarter(left), half(center)), quarter(right))
+}
+
+pub fn smoothed_stream(stream: F64 & F64 & F64 & F64 & F64) -> F64 & F64 & F64 & F64 & F64 {
+  let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = stream;
+  (
+    , edge_average(s0, s1)
+    , center_average(s0, s1, s2)
+    , center_average(s1, s2, s3)
+    , center_average(s2, s3, s4)
+    , edge_average(s3, s4)
+    )
+}

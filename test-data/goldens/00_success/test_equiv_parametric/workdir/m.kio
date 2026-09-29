@@ -1,0 +1,28 @@
+module m;
+
+import elab/control(scope);
+
+fn id[X](a: X) -> X { a }
+
+equiv type_param_only[A]() {
+  ();
+  ()
+}
+
+equiv reflexive_value[A](x: A) {
+  x;
+  x
+}
+
+equiv let_through_param[A](x: A) {
+  scope! {
+    let y = x;
+    y
+  };
+  x
+}
+
+equiv id_unfolds[A](x: A) {
+  id(x);
+  x
+}

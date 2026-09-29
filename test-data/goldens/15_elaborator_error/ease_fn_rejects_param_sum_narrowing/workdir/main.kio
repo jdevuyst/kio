@@ -1,0 +1,18 @@
+module main;
+
+import elab/algebraic_elaborators(ease);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// Source: `A -> .`. Target: `(A | B) -> .` — the call site is
+// asking for a *wider* parameter type than the source accepts.
+// The variance walk swaps source/target at the contravariant leaf,
+// which sees `(A | B, A)` — a narrowing the leaf `ease!` rule
+// subset doesn't admit (sum narrowing `A | B → A` is partial; that
+// case belongs to `match!`). The symmetric of the admitted param-
+// widened case (`exec_ease_fn_param_widened`).
+fn inner(x: A) -> . { () }
+
+pub fn use_it() -> . { let _wrapped = ease!(inner, (A | B) -> .); () }

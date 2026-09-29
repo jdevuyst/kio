@@ -1,0 +1,64 @@
+module grid_firebreak_search/store;
+
+import elab/control(if);
+import grid_firebreak_search/grid as grid;
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter as iter;
+
+rec(iter.loop) fn fill_risk(i: I32, values: Array(I32)) -> Array(I32) {
+  if! arith.leq_i32(i, grid.last_cell()) {
+    array.array_push(values, grid.risk_at(i));
+    rec fill_risk(arith.add_i32(i, 1), values)
+  } else {
+    values
+  }
+}
+
+rec(iter.loop) fn fill_cost(i: I32, values: Array(I32)) -> Array(I32) {
+  if! arith.leq_i32(i, grid.last_cell()) {
+    array.array_push(values, grid.cost_at(i));
+    rec fill_cost(arith.add_i32(i, 1), values)
+  } else {
+    values
+  }
+}
+
+rec(iter.loop) fn fill_barriers(i: I32, values: Array(Bool)) -> Array(Bool) {
+  if! arith.leq_i32(i, grid.last_cell()) {
+    array.array_push(values, grid.is_barrier_cell(i));
+    rec fill_barriers(arith.add_i32(i, 1), values)
+  } else {
+    values
+  }
+}
+
+rec(iter.loop) fn fill_candidates(i: I32, values: Array(Bool)) -> Array(Bool) {
+  if! arith.leq_i32(i, grid.last_cell()) {
+    array.array_push(values, grid.is_candidate_cell(i));
+    rec fill_candidates(arith.add_i32(i, 1), values)
+  } else {
+    values
+  }
+}
+
+pub fn build_risk() -> Array(I32) {
+  let values = array.array_make_empty(I32, ());
+  fill_risk(0, values)
+}
+
+pub fn build_cost() -> Array(I32) {
+  let values = array.array_make_empty(I32, ());
+  fill_cost(0, values)
+}
+
+pub fn build_barriers() -> Array(Bool) {
+  let values = array.array_make_empty(Bool, ());
+  fill_barriers(0, values)
+}
+
+pub fn build_candidates() -> Array(Bool) {
+  let values = array.array_make_empty(Bool, ());
+  fill_candidates(0, values)
+}

@@ -1,0 +1,9 @@
+module right;
+
+host type Shared role(i64);
+
+pub fn keep(value: Shared) -> Shared { value }
+
+pub fn literal() -> Shared { 42 }
+
+pub fn duplicate(value: Shared) -> Shared & Shared { (value, value) }

@@ -1,0 +1,3 @@
+module main;
+
+newtype Foo : . { pub constructor mk_foo; pub projector foo; };

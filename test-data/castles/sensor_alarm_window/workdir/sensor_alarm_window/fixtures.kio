@@ -1,0 +1,15 @@
+module sensor_alarm_window/fixtures;
+
+import testapi(String);
+
+pub fn line0800() -> String { "08:00|N1|CLEAR|TMP=021|CO=000" }
+
+pub fn line0805() -> String { "08:05|N1|ALERT|TMP=084|CO=041" }
+
+pub fn line0810() -> String { "08:10|N1|ALERT|TMP=088|CO=044" }
+
+pub fn line0815() -> String { "08:15|N1|CLEAR|TMP=026|CO=000" }
+
+pub fn line0820() -> String { "08:20|S2|ALERT|TMP=076|CO=051" }
+
+pub fn line0825() -> String { "08:25|S2|CLEAR|TMP=024|CO=000" }

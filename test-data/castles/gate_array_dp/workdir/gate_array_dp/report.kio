@@ -1,0 +1,42 @@
+module gate_array_dp/report;
+
+import gate_array_dp/constants(days, max_age, states);
+import gate_array_dp/dp(final_score, reachable, table_index);
+import testapi(Array, I32, String);
+import testapi/array(array_get, array_len);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq);
+
+fn line2(a: String, b: String) -> . { print(string_concat(string_concat(a, b), "\n")) }
+
+fn line4(a: String, b: String, c: String, d: String) -> . {
+  print(string_concat(string_concat(string_concat(a, b), c), string_concat(d, "\n")))
+}
+
+fn show_cell(table: Array(I32), day: I32, age: I32) -> . {
+  let cost = array_get(table, table_index(day, age));
+  line4(
+    , string_concat("cell d", int_to_string(day))
+    , string_concat(" a", int_to_string(age))
+    , "="
+    , int_to_string(cost)
+    )
+}
+
+pub fn print_summary(table: Array(I32), traffic: Array(I32), service: Array(I32)) -> . {
+  line4("gate_array_dp days=", int_to_string(days()), " states=", int_to_string(states()));
+  line4(
+    , "arrays traffic="
+    , int_to_string(array_len(traffic))
+    , " service="
+    , int_to_string(array_len(service))
+    );
+  line4("max_age=", int_to_string(max_age()), " final=", int_to_string(final_score(table)));
+  show_cell(table, 3, 2);
+  show_cell(table, 5, 0);
+  show_cell(table, 8, 1);
+  let probe = array_get(table, table_index(8, 1));
+  line2("d8a1_reachable=", bool_to_string(reachable(probe)));
+  line2("tag_ok=", bool_to_string(string_eq("gate-array", "gate-array")))
+}

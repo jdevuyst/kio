@@ -1,0 +1,188 @@
+/// Backtracking search over an explicit stack.
+///
+/// There is no host recursion to lean on, so the depth-first walk is a
+/// `rec(loop)` whose state carries the stack itself. Each frame is a cell
+/// and the digit currently placed in it; the frame is therefore also the
+/// undo record, and popping one is exactly what lets `unplace` restore the
+/// constraint tables.
+///
+/// The loop alternates between two phases. *Descending* asks the heuristic
+/// for the next cell and opens a frame for it. *Advancing* works on the
+/// frame at the top: it first retracts whatever that frame last placed,
+/// then tries the next digit up. Advancing with nothing left to try pops
+/// the frame and advances into the parent, so a failure walks back up the
+/// stack one frame at a time rather than unwinding a call chain.
+module sudoku/search;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import sudoku/constraints as constraints;
+import sudoku/geometry as geo;
+import sudoku/model(
+  , Complete
+  , Outcome
+  , Pick
+  , Pick_cell
+  , Pick_count
+  , Report
+  , Work
+  , {backtracks}
+  , {board}
+  , {complete}
+  , {exhausted}
+  , {max_depth}
+  , {pick_cell}
+  , {pick_count}
+  , {placements}
+  , {solved}
+  , {stack_cell}
+  , {stack_digit}
+  , {steps}
+  , {unsolvable}
+  , {verdict}
+  );
+import sudoku/num as num;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_pop_back, array_push, array_set);
+import testapi/iter(loop);
+
+/// One more than the largest candidate count a cell can have, so the scan
+/// below can start with "nothing seen yet" without a sentinel index.
+fn no_candidate_count() -> I32 { 10 }
+
+fn depth(work: Work) -> I32 { array_len(work.?{stack_cell}) }
+
+fn top_cell(work: Work) -> I32 { array_get(work.?{stack_cell}, sub_i32(depth(work), 1)) }
+
+fn top_digit(work: Work) -> I32 { array_get(work.?{stack_digit}, sub_i32(depth(work), 1)) }
+
+fn set_top_digit(work: Work, digit: I32) -> . {
+  array_set(work.?{stack_digit}, sub_i32(depth(work), 1), digit)
+}
+
+/// Open a frame on `cell` with no digit tried yet.
+fn push_frame(work: Work, cell: I32) -> . {
+  array_push(work.?{stack_cell}, cell);
+  array_push(work.?{stack_digit}, 0)
+}
+
+/// Drop the top frame. `array_pop_back` reports the empty stack as the `.`
+/// arm; the caller has already checked the depth, so that arm cannot fire
+/// and both arms simply discard the popped value.
+fn pop_frame(work: Work) -> . {
+  let popped_cell = array_pop_back(work.?{stack_cell});
+  let _cell =
+    match! popped_cell {
+      (.(value: I32) { value }, .(_empty: .) { 0 })
+    };
+  let popped_digit = array_pop_back(work.?{stack_digit});
+  let _digit =
+    match! popped_digit {
+      (.(value: I32) { value }, .(_empty: .) { 0 })
+    };
+  ()
+}
+
+/// Minimum remaining values. Walk the cells in index order, keep the first
+/// one whose candidate count beats the best so far, and stop the moment a
+/// cell is forced (one candidate) or dead (none) — no later cell can beat
+/// that, so the rest of the scan would be wasted work.
+rec(loop) fn scan(work: Work, cell: I32, best: I32, best_count: I32) -> Pick {
+  if! leq_i32(cell, geo.last_cell()) {
+    if! num.is_zero(array_get(work.?{board}, cell)) {
+      let count = constraints.candidate_count(work, cell);
+      if! num.lt_i32(count, best_count) {
+        if! leq_i32(count, 1) {
+          widen_sum!({pick_cell = cell, pick_count = count})
+        } else {
+          rec scan(work, add_i32(cell, 1), cell, count)
+        }
+      } else {
+        rec scan(work, add_i32(cell, 1), best, best_count)
+      }
+    } else {
+      rec scan(work, add_i32(cell, 1), best, best_count)
+    }
+  } else if! leq_i32(no_candidate_count(), best_count) {
+    widen_sum!({complete=})
+  } else {
+    widen_sum!({pick_cell = best, pick_count = best_count})
+  }
+}
+
+fn select(work: Work) -> Pick { scan(work, 0, 0, no_candidate_count()) }
+
+fn report(outcome: Outcome, steps_taken: I32, placed: I32, undone: I32, deepest: I32) -> Report {
+  {
+    , verdict = outcome
+    , placements = placed
+    , backtracks = undone
+    , max_depth = deepest
+    , steps = steps_taken
+    }
+}
+
+/// The search itself. `descending` selects the phase; every other piece of
+/// loop state is either the mutable bundle or a statistic.
+rec(loop) fn drive(
+  , work: Work
+  , descending: Bool
+  , budget: I32
+  , steps_taken: I32
+  , placed: I32
+  , undone: I32
+  , deepest: I32
+  ) -> Report {
+  if! leq_i32(budget, steps_taken) {
+    report(widen_sum!({exhausted=}, Outcome), steps_taken, placed, undone, deepest)
+  } else if! descending {
+    let taken = add_i32(steps_taken, 1);
+    match! select(work) {
+      (
+        , .(_done: Complete) {
+            report(widen_sum!({solved=}, Outcome), taken, placed, undone, deepest)
+          }
+        , .(pick: Pick_cell & Pick_count) {
+            if! num.is_zero(pick.?{pick_count}) {
+              if! num.is_zero(depth(work)) {
+                report(widen_sum!({unsolvable=}, Outcome), taken, placed, undone, deepest)
+              } else {
+                rec drive(work, .f, budget, taken, placed, undone, deepest)
+              }
+            } else {
+              push_frame(work, pick.?{pick_cell});
+              rec drive(work, .f, budget, taken, placed, undone, num.max_i32(deepest, depth(work)))
+            }
+          }
+        )
+    }
+  } else if! num.is_zero(depth(work)) {
+    report(widen_sum!({unsolvable=}, Outcome), add_i32(steps_taken, 1), placed, undone, deepest)
+  } else {
+    let taken = add_i32(steps_taken, 1);
+    let cell = top_cell(work);
+    let tried = top_digit(work);
+    // Retract before probing: the digit this frame is holding has to go
+    // back into circulation, or the next candidate is judged against a
+    // table that still claims the cell.
+    let retracted = if! num.is_zero(tried) {
+      undone
+    } else {
+      constraints.unplace(work, cell, tried);
+      add_i32(undone, 1)
+    };
+    let next = constraints.first_legal_from(work, cell, add_i32(tried, 1));
+    if! num.is_zero(next) {
+      pop_frame(work);
+      rec drive(work, .f, budget, taken, placed, retracted, deepest)
+    } else {
+      constraints.place(work, cell, next);
+      set_top_digit(work, next);
+      rec drive(work, .t, budget, taken, add_i32(placed, 1), retracted, deepest)
+    }
+  }
+}
+
+pub fn solve(work: Work, budget: I32) -> Report { drive(work, .t, budget, 0, 0, 0, 0) }

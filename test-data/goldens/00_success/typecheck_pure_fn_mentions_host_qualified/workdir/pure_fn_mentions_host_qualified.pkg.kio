@@ -1,0 +1,18 @@
+package pure_fn_mentions_host_qualified;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  provider;
+  main
+}

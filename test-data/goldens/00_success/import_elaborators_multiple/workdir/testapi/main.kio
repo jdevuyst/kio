@@ -1,0 +1,12 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod, widen_prod);
+import testapi(I32, String);
+import testapi/io(print);
+
+// One comma-separated selective import pulls several elaborators.
+fn extend(p: String & I32) -> String & I32 & . { widen_prod!(p) }
+
+fn pick(p: String & I32 & .) -> String { one_prod!(p) }
+
+pub fn main() -> . { print(pick(extend(("import_elaborators_multiple: ok\n", 3)))) }

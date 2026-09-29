@@ -1,0 +1,57 @@
+2-3 tree audit
+
+transcript: <step> <op> <key>  h=<height> n=<keys>  <audit>  <outcome and rebalances>
+
+ 1 ins  50  h=1 n= 1  ok  added root-grow=1
+ 2 ins  30  h=1 n= 2  ok  added
+ 3 ins  70  h=2 n= 3  ok  added split=1 root-grow=1
+ 4 ins  20  h=2 n= 4  ok  added
+ 5 ins  40  h=2 n= 5  ok  added split=1
+ 6 ins  60  h=2 n= 6  ok  added
+ 7 ins  80  h=3 n= 7  ok  added split=2 root-grow=1
+ 8 ins  10  h=3 n= 8  ok  added
+ 9 ins  35  h=3 n= 9  ok  added
+10 ins  45  h=3 n=10  ok  added split=1
+11 ins  55  h=3 n=11  ok  added
+12 ins  65  h=3 n=12  ok  added split=1
+13 ins  25  h=3 n=13  ok  added split=2
+14 ins  40  h=3 n=13  ok  replaced
+15 del  10  h=3 n=12  ok  removed merge=2
+16 del  25  h=3 n=11  ok  removed
+17 del  20  h=3 n=10  ok  removed merge=1
+18 del  45  h=3 n= 9  ok  removed borrow-left=1
+19 del  30  h=3 n= 8  ok  removed borrow-right=1 merge=1
+20 del  50  h=3 n= 7  ok  removed borrow-left=1
+21 del  33  h=3 n= 7  ok  absent
+22 del  35  h=2 n= 6  ok  removed merge=2 root-shrink=1
+
+final tree
+  3-node  60=petrel  70=falcon
+    3-node  40=harrier  55=godwit
+      leaf
+      leaf
+      leaf
+    2-node  65=puffin
+      leaf
+      leaf
+    2-node  80=gannet
+      leaf
+      leaf
+
+inorder: 40=harrier 55=godwit 60=petrel 65=puffin 70=falcon 80=gannet
+
+invariants, recomputed from the final tree
+  every leaf at the same depth: true
+  keys ascend across an inorder walk: true
+  one more child than keys at every node: true
+  stored size equals counted size: true
+
+what the script did
+  keys held: 6
+  height: 2
+  splits: 8
+  borrows from a left sibling: 2
+  borrows from a right sibling: 1
+  merges: 6
+  root grows: 3
+  root shrinks: 1

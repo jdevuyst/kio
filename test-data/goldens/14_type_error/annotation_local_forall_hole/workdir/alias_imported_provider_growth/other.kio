@@ -1,0 +1,5 @@
+module other;
+
+pub fn noise() -> . { () }
+
+pub type Wrapped[Slot] = [Other_bound] Slot -> Other_bound;

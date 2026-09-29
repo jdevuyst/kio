@@ -1,0 +1,280 @@
+/// The three-way merge itself: from two LCS alignments to a classified
+/// list of regions.
+///
+/// A base line is an *anchor* when both alignments kept it — the base-vs-
+/// ours LCS matched it and so did the base-vs-theirs LCS. Anchors are the
+/// only lines the merge can trust, and everything between two of them is a
+/// chunk that one side, both sides, or neither side rewrote.
+///
+/// Because a chunk spans everything between two anchors, two edits with no
+/// surviving line between them land in one chunk and are judged together.
+/// That is the algorithm's decision, not an approximation of it: adjacent
+/// rewrites are one conflict, not two.
+module diff3/merge;
+
+import diff3/lcs as lcs;
+import diff3/list as list;
+import diff3/prim as prim;
+import diff3/scan as scan;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, lt_i32);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// How one region of the merged document was decided.
+pub labels Verdict =
+  { stable: . }
+  | { ours_only: . }
+  | { theirs_only: . }
+  | { both_same: . }
+  | { conflict: . };
+
+/// A region carries all three sides even when only one of them is emitted:
+/// a conflict has to print the base text it could not reconcile, and the
+/// audit reports on text that never reaches the merged document.
+pub labels Region = {
+  , mark: Verdict
+  , base_span: list.List(String)
+  , ours_span: list.List(String)
+  , theirs_span: list.List(String)
+  };
+
+/// A base line both alignments kept, with its index in each of the three
+/// documents.
+pub type Anchor = I32 & I32 & I32;
+
+/// Region counts by verdict, in the order the verdicts are declared.
+pub type Tally = I32 & I32 & I32 & I32 & I32;
+
+fn stable_mark() -> Verdict { {stable=}.>widen_sum!(Verdict) }
+
+fn ours_mark() -> Verdict { {ours_only=}.>widen_sum!(Verdict) }
+
+fn theirs_mark() -> Verdict { {theirs_only=}.>widen_sum!(Verdict) }
+
+fn both_mark() -> Verdict { {both_same=}.>widen_sum!(Verdict) }
+
+fn conflict_mark() -> Verdict { {conflict=}.>widen_sum!(Verdict) }
+
+fn region(
+  , mark: Verdict
+  , base: list.List(String)
+  , ours: list.List(String)
+  , theirs: list.List(String)
+  ) -> Region { {mark, base_span = base, ours_span = ours, theirs_span = theirs} }
+
+pub fn mark_of(reg: Region) -> Verdict { reg.?{mark} }
+
+pub fn base_of(reg: Region) -> list.List(String) { reg.?{base_span} }
+
+pub fn ours_of(reg: Region) -> list.List(String) { reg.?{ours_span} }
+
+pub fn theirs_of(reg: Region) -> list.List(String) { reg.?{theirs_span} }
+
+rec(loop) fn lines_eq(left: list.List(String), right: list.List(String)) -> Bool {
+  match! list.List.unpack(left) {
+    (
+      , .(line: String, left_rest: list.List(String)) {
+          match! list.List.unpack(right) {
+            (
+              , .(other: String, right_rest: list.List(String)) {
+                  if! string_eq(line, other) {
+                    rec lines_eq(left_rest, right_rest)
+                  } else {
+                    .f
+                  }
+                }
+              , .(_empty: .) { .f }
+              )
+          }
+        }
+      , .(_empty: .) { list.is_empty(right) }
+      )
+  }
+}
+
+/// diff3's verdict for one chunk, in the order the algorithm applies it. A
+/// side that still equals the base did not touch the chunk, so the other
+/// side's text wins outright; only two genuinely different rewrites of the
+/// same base text are a conflict.
+fn classify(base: list.List(String), ours: list.List(String), theirs: list.List(String)) -> Region {
+  if! lines_eq(ours, base) {
+    region(theirs_mark(), base, ours, theirs)
+  } else if! lines_eq(theirs, base) {
+    region(ours_mark(), base, ours, theirs)
+  } else if! lines_eq(ours, theirs) {
+    region(both_mark(), base, ours, theirs)
+  } else {
+    region(conflict_mark(), base, ours, theirs)
+  }
+}
+
+fn anchor_base(anchor: Anchor) -> I32 {
+  match! anchor {
+    .(base: I32, _ours: I32, _theirs: I32) { base }
+  }
+}
+
+fn anchor_ours(anchor: Anchor) -> I32 {
+  match! anchor {
+    .(_base: I32, ours: I32, _theirs: I32) { ours }
+  }
+}
+
+fn anchor_theirs(anchor: Anchor) -> I32 {
+  match! anchor {
+    .(_base: I32, _ours: I32, theirs: I32) { theirs }
+  }
+}
+
+/// Intersect the two matchings on the base index. Both are increasing in
+/// that index, so one merge pass over the pair finds every anchor.
+rec(loop) fn join(ours: list.List(lcs.Match), theirs: list.List(lcs.Match), acc: list.List(Anchor)) -> list.List(Anchor) {
+  match! list.List.unpack(ours) {
+    (
+      , .(our_pair: lcs.Match, ours_rest: list.List(lcs.Match)) {
+          match! list.List.unpack(theirs) {
+            (
+              , .(their_pair: lcs.Match, theirs_rest: list.List(lcs.Match)) {
+                  let ours_base = lcs.base_at(our_pair);
+                  let theirs_base = lcs.base_at(their_pair);
+                  if! prim.int_eq(ours_base, theirs_base) {
+                    let anchor = (ours_base, lcs.other_at(our_pair), lcs.other_at(their_pair));
+                    rec join(ours_rest, theirs_rest, list.cons(anchor, acc))
+                  } else if! lt_i32(ours_base, theirs_base) {
+                    rec join(ours_rest, theirs, acc)
+                  } else {
+                    rec join(ours, theirs_rest, acc)
+                  }
+                }
+              , .(_empty: .) { list.reverse(acc) }
+              )
+          }
+        }
+      , .(_empty: .) { list.reverse(acc) }
+      )
+  }
+}
+
+pub fn anchors(ours: lcs.Dp, theirs: lcs.Dp) -> list.List(Anchor) {
+  join(lcs.matches(ours), lcs.matches(theirs), list.nil(Anchor, ()))
+}
+
+fn follows(earlier: Anchor, later: Anchor) -> Bool {
+  prim.and(
+    , prim.int_eq(anchor_base(later), add_i32(anchor_base(earlier), 1))
+    , prim.and(
+        , prim.int_eq(anchor_ours(later), add_i32(anchor_ours(earlier), 1))
+        , prim.int_eq(anchor_theirs(later), add_i32(anchor_theirs(earlier), 1))
+        )
+    )
+}
+
+/// The length of the maximal run of anchors that advances all three cursors
+/// in lockstep. One run is one stable region of the merged document.
+rec(loop) fn run_from(anchors_left: list.List(Anchor), acc: I32) -> I32 {
+  match! list.List.unpack(anchors_left) {
+    (
+      , .(head: Anchor, rest: list.List(Anchor)) {
+          match! list.List.unpack(rest) {
+            (
+              , .(next: Anchor, _tail: list.List(Anchor)) {
+                  if! follows(head, next) {
+                    rec run_from(rest, add_i32(acc, 1))
+                  } else {
+                    add_i32(acc, 1)
+                  }
+                }
+              , .(_empty: .) { add_i32(acc, 1) }
+              )
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The chunk between where the last region ended and where the next anchor
+/// starts. Two adjacent anchors leave nothing between them on any side, and
+/// that empty chunk is not a region.
+fn chunk(doc: scan.Doc, from: Anchor, to: Anchor, acc: list.List(Region)) -> list.List(Region) {
+  let base_span = list.slice(scan.base_lines(doc), anchor_base(from), anchor_base(to));
+  let ours_span = list.slice(scan.our_lines(doc), anchor_ours(from), anchor_ours(to));
+  let theirs_span = list.slice(scan.their_lines(doc), anchor_theirs(from), anchor_theirs(to));
+  if! prim.and(
+    , list.is_empty(base_span)
+    , prim.and(list.is_empty(ours_span), list.is_empty(theirs_span))
+    ) {
+    acc
+  } else {
+    list.cons(classify(base_span, ours_span, theirs_span), acc)
+  }
+}
+
+/// A whole run of anchors advances all three cursors together.
+fn advance(at: Anchor, run: I32) -> Anchor {
+  (add_i32(anchor_base(at), run), add_i32(anchor_ours(at), run), add_i32(anchor_theirs(at), run))
+}
+
+fn ends(doc: scan.Doc) -> Anchor {
+  (list.len(scan.base_lines(doc)), list.len(scan.our_lines(doc)), list.len(scan.their_lines(doc)))
+}
+
+rec(loop) fn walk(
+  , doc: scan.Doc
+  , anchors_left: list.List(Anchor)
+  , at: Anchor
+  , acc: list.List(Region)
+  ) -> list.List(Region) {
+  match! list.List.unpack(anchors_left) {
+    (
+      , .(anchor: Anchor, _rest: list.List(Anchor)) {
+          let gapped = chunk(doc, at, anchor, acc);
+          let run = run_from(anchors_left, 0);
+          let base_at = anchor_base(anchor);
+          let kept = list.slice(scan.base_lines(doc), base_at, add_i32(base_at, run));
+          rec walk(
+            , doc
+            , list.drop(anchors_left, run)
+            , advance(anchor, run)
+            , list.cons(region(stable_mark(), kept, kept, kept), gapped)
+            )
+        }
+      , .(_empty: .) { list.reverse(chunk(doc, at, ends(doc), acc)) }
+      )
+  }
+}
+
+pub fn regions(doc: scan.Doc, found: list.List(Anchor)) -> list.List(Region) {
+  walk(doc, found, (0, 0, 0), list.nil(Region, ()))
+}
+
+fn bump(counts: Tally, mark: Verdict) -> Tally {
+  match! counts {
+    .(stable: I32, ours: I32, theirs: I32, both: I32, conflict: I32) {
+      match! mark {
+        (
+          , .(_v: Stable) { (add_i32(stable, 1), ours, theirs, both, conflict) }
+          , .(_v: Ours_only) { (stable, add_i32(ours, 1), theirs, both, conflict) }
+          , .(_v: Theirs_only) { (stable, ours, add_i32(theirs, 1), both, conflict) }
+          , .(_v: Both_same) { (stable, ours, theirs, add_i32(both, 1), conflict) }
+          , .(_v: Conflict) { (stable, ours, theirs, both, add_i32(conflict, 1)) }
+          )
+      }
+    }
+  }
+}
+
+rec(loop) fn tally_from(found: list.List(Region), acc: Tally) -> Tally {
+  match! list.List.unpack(found) {
+    (
+      , .(reg: Region, rest: list.List(Region)) { rec tally_from(rest, bump(acc, mark_of(reg))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn tally(found: list.List(Region)) -> Tally { tally_from(found, (0, 0, 0, 0, 0)) }

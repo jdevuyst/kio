@@ -1,0 +1,13 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn bang_identity_impl(_ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub elab bang_identity : [A] A -> A { impl bang_identity_impl }
+
+pure fn bang_unit_impl(ct: __Comptime__, _a: __Type__) -> __Checked_term__ { __term_unit__(ct) }
+
+pub elab bang_unit : [A] . -> . { impl bang_unit_impl }

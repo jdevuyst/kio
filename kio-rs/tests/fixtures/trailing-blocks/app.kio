@@ -1,0 +1,27 @@
+module app;
+
+import provider(Box, box_bind, box_pure, enter, packet, sequence, two);
+
+pub fn run() -> . {
+  enter! {
+    let local = packet! {
+      ()
+    };
+    local
+  }
+}
+
+pub fn branch() -> . {
+  two! {
+    ()
+  } fallback {
+    ()
+  }
+}
+
+pub fn action() -> Box(.) {
+  sequence! box_bind {
+    let .(value: .) <- box_pure(());
+    box_pure(value)
+  }
+}

@@ -1,0 +1,7 @@
+module store;
+
+pub newtype A : . { constructor pack; projector unpack }
+
+pub newtype B : . { constructor pack; projector unpack }
+
+pub type C = .;

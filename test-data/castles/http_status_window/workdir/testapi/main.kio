@@ -1,0 +1,6 @@
+module testapi/main;
+
+import http_status_window/report as report;
+import testapi/io as io;
+
+pub fn main() -> . { io.print(report.build()) }

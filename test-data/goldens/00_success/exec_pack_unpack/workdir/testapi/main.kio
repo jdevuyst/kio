@@ -1,0 +1,37 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// An existential-bearing newtype hides the witness type behind the
+// nominal boundary. The CPS projector `Boxed_string.un_boxed_string`
+// has the curried shape
+//
+//   ([], v: Boxed_string) -> [R](k: [U](U & String) -> R) -> R
+//
+// so opening the existential is a two-step call: the outer call
+// returns the polymorphic CPS thunk, and the inner call supplies the
+// result-type type-argument and the continuation. Inside the
+// continuation, `U` is a fresh skolem; it cannot escape into the
+// surrounding scope by ordinary System F scope rules. Existentials
+// are type-erased at codegen, so the newtype machinery and the CPS
+// thunk both drop to identity-flavored JS.
+//
+// The projector checks the continuation against its CPS function
+// type, so the unannotated `pair` parameter receives the expected
+// `U & String` type before the body is checked. The explicit
+// `__snd__` type arguments then select the string component.
+newtype Boxed_string <U> : U & String {
+  pub constructor mk_boxed_string;
+  pub projector un_boxed_string
+  }
+
+fn box_string(s: String) -> Boxed_string { Boxed_string.mk_boxed_string((s, s)) }
+
+fn extract_string(b: Boxed_string) -> String {
+  Boxed_string.un_boxed_string(b)(.[U](pair) { __snd__(U, String, pair) })
+}
+
+pub fn main() -> . { let b = box_string("packed-and-unpacked\n"); print(extract_string(b)) }

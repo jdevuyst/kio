@@ -1,0 +1,21 @@
+module equiv_partial_and_over_application;
+
+host type T;
+
+fn pair(left: T)(right: T) -> T & T { (left, right) }
+
+fn return_function(f: T -> T) -> T -> T { f }
+
+// Saturating the first value group leaves a closure that captures its
+// argument (specs/formal/equiv.md section 2.1).
+equiv partial_application_captures(value: T) {
+  pair(value);
+  .(right: T) { (value, right) }
+}
+
+// Supplying an argument beyond a known function's own value group
+// re-applies the reduced result to that leftover argument.
+equiv over_application_reapplies_returned_function(f: T -> T, value: T) {
+  return_function(f, value);
+  f(value)
+}

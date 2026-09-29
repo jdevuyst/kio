@@ -1,0 +1,41 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import rs/input as input;
+import rs/report as report;
+import testapi(Bool, I32);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+rec(loop) fn frames(recovered: I32, rejected: I32) -> . {
+  match! input.next() {
+    .(item: input.Loaded) {
+      if! report.run(item.?{input.loaded}) {
+        rec frames(a.add_i32(recovered, 1), rejected)
+      } else {
+        rec frames(recovered, a.add_i32(rejected, 1))
+      }
+    };
+    .(error: input.Error) {
+      io.print(text.string_concat("framing error: ", text.string_concat(error.?{input.error}, "\n")))
+    };
+    .(done: input.Done) {
+      io.print(text.string_concat(
+        , "complete: recovered="
+        , text.string_concat(
+            , fmt.int_to_string(recovered)
+            , text.string_concat(
+                , " rejected="
+                , text.string_concat(fmt.int_to_string(rejected), "\n")
+                )
+            )
+        ))
+    }
+  }
+}
+
+pub fn main() -> . { io.print("Reed-Solomon erasures over F17\n"); frames(0, 0) }

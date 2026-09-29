@@ -1,0 +1,11 @@
+module widget/relay;
+
+import core/a(A);
+import core/b(B);
+import widget/store(C);
+
+pub fn make_a() -> A { A.mk_a(()) }
+
+pub fn make_b() -> B { B.mk_b(()) }
+
+pub fn make_c() -> C { C.mk_c(()) }

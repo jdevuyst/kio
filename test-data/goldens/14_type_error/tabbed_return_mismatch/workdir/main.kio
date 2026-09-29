@@ -1,0 +1,7 @@
+module main;
+
+newtype W : . { constructor mk; projector get; };
+
+fn caller() -> W {
+	()
+}

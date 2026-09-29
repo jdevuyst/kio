@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype Box <A> : String & A { pub constructor mk_box; pub projector un_box }
+
+fn make_box[A](s: String, w: A) -> Box { Box.mk_box(A, (s, w)) }
+
+fn apply_proj(p: Box -> [R] ([A] (String & A) -> R) -> R, v: Box) -> String {
+  p(v)(.[A](pair: String & A) { "ok\n"(String) })
+}
+
+pub fn main() -> . { print(apply_proj(Box.un_box, make_box("seed"(String), ()))) }

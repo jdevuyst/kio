@@ -1,0 +1,9 @@
+module store;
+
+host type I32 role(i32);
+
+pub newtype Tag : I32 { pub constructor mk; pub projector un }
+
+pub fn make_tag(n: I32) -> Tag { Tag.mk(n) }
+
+pub fn tag_val(t: Tag) -> I32 { Tag.un(t) }

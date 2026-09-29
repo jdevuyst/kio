@@ -1,0 +1,199 @@
+module planner/state;
+
+import elab/control(if);
+import planner/tasks(task_effort, task_name);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32);
+import testapi/text(string_concat);
+
+pub labels Plan_state = {
+  , fetched: Bool
+  , schema_done: Bool
+  , core_done: Bool
+  , js_done: Bool
+  , rust_done: Bool
+  , bundle_done: Bool
+  , notes_done: Bool
+  , order_text: String
+  , completed_count: I32
+  , effort_score: I32
+  };
+
+fn build_state(
+  , fetched: Bool
+  , schema_done: Bool
+  , core_done: Bool
+  , js_done: Bool
+  , rust_done: Bool
+  , bundle_done: Bool
+  , notes_done: Bool
+  , order_text: String
+  , completed_count: I32
+  , effort_score: I32
+  ) -> Plan_state {
+  {
+    , fetched
+    , schema_done
+    , core_done
+    , js_done
+    , rust_done
+    , bundle_done
+    , notes_done
+    , order_text
+    , completed_count
+    , effort_score
+    }
+}
+
+pub fn empty() -> Plan_state { build_state(.f, .f, .f, .f, .f, .f, .f, "order:\n", 0, 0) }
+
+pub fn completed(plan: Plan_state) -> I32 { plan.?{completed_count} }
+
+pub fn effort(plan: Plan_state) -> I32 { plan.?{effort_score} }
+
+pub fn order(plan: Plan_state) -> String { plan.?{order_text} }
+
+fn append_order(current: String, task: I32) -> String {
+  string_concat(string_concat(current, "  -> "), string_concat(task_name(task), "\n"))
+}
+
+fn next_completed(plan: Plan_state) -> I32 { add_i32(plan.?{completed_count}, 1) }
+
+fn next_effort(plan: Plan_state, task: I32) -> I32 {
+  add_i32(plan.?{effort_score}, task_effort(task))
+}
+
+pub fn is_done(plan: Plan_state, task: I32) -> Bool {
+  if! eq_i32(task, 0) {
+    plan.?{fetched}
+  } else if! eq_i32(task, 1) {
+    plan.?{schema_done}
+  } else if! eq_i32(task, 2) {
+    plan.?{core_done}
+  } else if! eq_i32(task, 3) {
+    plan.?{js_done}
+  } else if! eq_i32(task, 4) {
+    plan.?{rust_done}
+  } else if! eq_i32(task, 5) {
+    plan.?{bundle_done}
+  } else if! eq_i32(task, 6) {
+    plan.?{notes_done}
+  } else {
+    .f
+  }
+}
+
+fn marked(
+  , plan: Plan_state
+  , task: I32
+  , fetched: Bool
+  , schema_done: Bool
+  , core_done: Bool
+  , js_done: Bool
+  , rust_done: Bool
+  , bundle_done: Bool
+  , notes_done: Bool
+  ) -> Plan_state {
+  build_state(
+    , fetched
+    , schema_done
+    , core_done
+    , js_done
+    , rust_done
+    , bundle_done
+    , notes_done
+    , append_order(plan.?{order_text}, task)
+    , next_completed(plan)
+    , next_effort(plan, task)
+    )
+}
+
+pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
+  if! eq_i32(task, 0) {
+    marked(
+      , plan
+      , task
+      , .t
+      , plan.?{schema_done}
+      , plan.?{core_done}
+      , plan.?{js_done}
+      , plan.?{rust_done}
+      , plan.?{bundle_done}
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 1) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , .t
+      , plan.?{core_done}
+      , plan.?{js_done}
+      , plan.?{rust_done}
+      , plan.?{bundle_done}
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 2) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , plan.?{schema_done}
+      , .t
+      , plan.?{js_done}
+      , plan.?{rust_done}
+      , plan.?{bundle_done}
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 3) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , plan.?{schema_done}
+      , plan.?{core_done}
+      , .t
+      , plan.?{rust_done}
+      , plan.?{bundle_done}
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 4) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , plan.?{schema_done}
+      , plan.?{core_done}
+      , plan.?{js_done}
+      , .t
+      , plan.?{bundle_done}
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 5) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , plan.?{schema_done}
+      , plan.?{core_done}
+      , plan.?{js_done}
+      , plan.?{rust_done}
+      , .t
+      , plan.?{notes_done}
+      )
+  } else if! eq_i32(task, 6) {
+    marked(
+      , plan
+      , task
+      , plan.?{fetched}
+      , plan.?{schema_done}
+      , plan.?{core_done}
+      , plan.?{js_done}
+      , plan.?{rust_done}
+      , plan.?{bundle_done}
+      , .t
+      )
+  } else {
+    plan
+  }
+}

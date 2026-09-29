@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A five-parameter function-valued newtype payload. Construction,
+// projection, and invocation must preserve the complete source grouping.
+newtype Five : (I32 & I32 & I32 & I32 & I32) -> I32 {
+  pub constructor mk_five;
+  pub projector un_five
+  }
+
+fn five_sum() -> Five {
+  Five.mk_five(.(a, b, c, d, e) { add_i32(add_i32(add_i32(add_i32(a, b), c), d), e) })
+}
+
+pub fn main() -> . {
+  let f = five_sum();
+  print(int_to_string(Five.un_five(f)(1(I32), 2(I32), 3(I32), 4(I32), 5(I32))))
+}

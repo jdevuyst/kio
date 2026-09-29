@@ -1,0 +1,5 @@
+module testapi/types;
+
+pub newtype Poly_thunk : [A] . -> . { pub constructor make; pub projector run }
+
+pub newtype Unit_slot[T] : [A] T -> T { pub constructor make; pub projector run }

@@ -1,0 +1,5 @@
+module testapi/main;
+
+import testapi(I32);
+
+pub fn answer() -> I32 { 42(I32) }

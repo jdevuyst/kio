@@ -1,0 +1,25 @@
+module testapi/main;
+
+import report as report;
+import scanner as scan;
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+pub fn main() -> . {
+  let _exec_probe = scan.first_byte(scan.line1());
+  let _retry_probe = scan.first_byte(scan.line3());
+  let _bad_probe = scan.first_byte(scan.line4());
+  io.print("command transcript linter\n");
+  io.print(report.header());
+  io.print("code-probes=");
+  fmt.print_i32(3);
+  io.print("\n");
+  io.print(report.issues());
+  io.print("accepted=");
+  fmt.print_i32(3);
+  io.print("\n");
+  io.print("rejected=");
+  fmt.print_i32(3);
+  io.print("\n")
+}

@@ -1,0 +1,7 @@
+module numlib/store;
+
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub fn relay(p: I32) -> I32 { p }

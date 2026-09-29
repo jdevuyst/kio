@@ -1,0 +1,3 @@
+module ifnobool;
+
+host type Str role(str);

@@ -1,0 +1,6 @@
+module jrpg/main;
+
+import jrpg(String);
+
+// The deliberately keyword-shaped public name remains an ordinary Kio item.
+pub fn return() -> String { "ok"(String) }

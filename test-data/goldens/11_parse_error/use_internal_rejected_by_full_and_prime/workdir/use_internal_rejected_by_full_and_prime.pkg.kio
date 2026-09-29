@@ -1,0 +1,13 @@
+package use_internal_rejected_by_full_and_prime;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

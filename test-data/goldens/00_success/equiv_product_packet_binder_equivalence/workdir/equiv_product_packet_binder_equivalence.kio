@@ -1,0 +1,50 @@
+module equiv_product_packet_binder_equivalence;
+
+host type T;
+
+host fn forward_pair(packet: T & T) -> T;
+
+host fn forward_triple(packet: T & T & T) -> T;
+
+host fn forward_curried(packet: T & T)(last: T) -> T;
+
+equiv binary_partition() {
+  .(packet: T & T) -> T & T { packet };
+  .(left: T, right: T) -> T & T { (left, right) }
+}
+
+equiv binary_partition_flat_first() {
+  .(left: T, right: T) -> T & T { (left, right) };
+  .(packet: T & T) -> T & T { packet }
+}
+
+equiv ternary_partition() {
+  .(packet: T & T & T) -> T & T & T { packet };
+  .(first: T, second: T, third: T) -> T & T & T { (first, second, third) }
+}
+
+equiv ternary_partition_flat_first() {
+  .(first: T, second: T, third: T) -> T & T & T { (first, second, third) };
+  .(packet: T & T & T) -> T & T & T { packet };
+  .(head: T, tail: T & T) -> T & T & T { (head, tail) }
+}
+
+equiv tail_partition() {
+  .(head: T, tail: T & T) -> T & T & T { (head, tail) };
+  .(first: T, second: T, third: T) -> T & T & T { (first, second, third) }
+}
+
+equiv binary_forwarding() {
+  .(packet: T & T) -> T { forward_pair(packet) };
+  .(left: T, right: T) -> T { forward_pair(left, right) }
+}
+
+equiv ternary_forwarding() {
+  .(packet: T & T & T) -> T { forward_triple(packet) };
+  .(first: T, second: T, third: T) -> T { forward_triple(first, second, third) }
+}
+
+equiv curried_partition() {
+  .(packet: T & T)(last: T) -> T { forward_curried(packet)(last) };
+  .(left: T, right: T)(last: T) -> T { forward_curried(left, right)(last) }
+}

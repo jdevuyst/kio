@@ -1,0 +1,33 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pub type Target_request = __Type__ | .;
+
+pub pure fn choose_impl(
+  , ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> __Checked_term__ {
+  __either__(
+    , __Type__
+    , .
+    , __Checked_term__
+    , target
+    , .(target_type: __Type__) -> __Checked_term__ {
+        __intrinsic_if_then_else__(
+          , ct
+          , target_type
+          , value
+          , .() -> __Checked_term__ { value }
+          , .() -> __Checked_term__ { value }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, "elaborator needs a target") }
+    )
+}
+
+pub elab bool_if : [Source] Source -> [Target] Target { impl choose_impl }

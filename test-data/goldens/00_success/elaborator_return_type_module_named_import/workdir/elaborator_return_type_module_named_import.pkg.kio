@@ -1,0 +1,18 @@
+package elaborator_return_type_module_named_import;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  repmod
+}

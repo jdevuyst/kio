@@ -1,0 +1,25 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pure fn specialize_callback_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , result_type: __Type__
+  , callback: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let unit_type = __reflect_type__(ct, .);
+  let specialized = __term_type_app__(ct, __term_type_app__(ct, callback, unit_type), unit_type);
+  let result =
+    __term_call__(
+      , ct
+      , __term_type__(ct, specialized)
+      , specialized
+      , __intrinsic_pair__(ct, __term_unit__(ct), __term_unit__(ct))
+      );
+  (result, fills)
+}
+
+pub elab specialize_callback : [Result] ([A][B] (A & B) -> Result) -> Result { impl(fills) specialize_callback_impl }

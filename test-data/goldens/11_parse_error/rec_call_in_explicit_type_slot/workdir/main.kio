@@ -1,0 +1,3 @@
+module main;
+
+rec(loop) fn go[A](value: A) -> A { rec go(rec go(A, value), value) }

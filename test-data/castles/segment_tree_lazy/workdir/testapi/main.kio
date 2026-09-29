@@ -1,0 +1,71 @@
+/// segment_tree_lazy -- a segment tree with lazy propagation, replayed against
+/// a brute-force array.
+///
+/// Both structures start from the same 64-cell fixture and see the same
+/// eighteen operations. Every query is answered twice and the transcript
+/// prints both answers side by side: their agreement is the correctness proof,
+/// and the work counters beside them are why the tree exists at all.
+///
+/// After the script the tree is *still* holding un-pushed adds. `main` says how
+/// many, then drains them to the leaves and checks the settled array cell by
+/// cell against the reference.
+module testapi/main;
+
+import seg/brute(brute_cells, build_brute, same_cells, touches);
+import seg/driver(replay);
+import seg/num(and, idiv);
+import seg/ops(drain);
+import seg/report(cat, cat3, dump, line, num, stat, yes_no);
+import seg/script(initial, leaf_count, op_count, script_table);
+import seg/tree(build, first_pending, pending_tags, tag_pushes, visits);
+import testapi(Bool, I32, String);
+import testapi/arith(sub_i32);
+import testapi/array(array_make_filled);
+
+fn verdict(name: String, held: Bool) -> . { line(cat3("  ", name, cat(": ", yes_no(held)))) }
+
+pub fn main() -> . {
+  let source = initial();
+  let t = build(source, leaf_count());
+  let base = build_brute(source);
+  line(cat3(
+    , "segment_tree_lazy -- "
+    , num(leaf_count())
+    , cat3(" cells, ", num(op_count()), " operations")
+    ));
+  line("");
+  dump("initial array", source, leaf_count());
+  line("");
+  line("replay -- each operation runs on the lazy tree and on the reference "
+       "array");
+  let all_agree = replay(t, base, script_table());
+  line("");
+  let seen = visits(t);
+  let pushed = tag_pushes(t);
+  let touched = touches(base);
+  line("work");
+  stat("tree node visits", seen);
+  stat("tree tag pushes", pushed);
+  stat("reference element touches", touched);
+  stat("reference touches per tree visit", idiv(touched, seen));
+  line("");
+  line("deferred work still parked in the tree");
+  stat("nodes holding a pending add", pending_tags(t));
+  stat("first such node, heap index", first_pending(t));
+  line("");
+  let settled = array_make_filled(leaf_count(), 0);
+  let before_drain = tag_pushes(t);
+  drain(t, settled);
+  line("after draining every pending add down to the leaves");
+  stat("tags the drain pushed", sub_i32(tag_pushes(t), before_drain));
+  stat("nodes holding a pending add", pending_tags(t));
+  line("");
+  dump("final array -- lazy tree, drained", settled, leaf_count());
+  dump("final array -- brute-force reference", brute_cells(base), leaf_count());
+  line("");
+  let arrays_match = same_cells(settled, brute_cells(base));
+  line("verdict");
+  verdict("every query answer agreed", all_agree);
+  verdict("final arrays identical", arrays_match);
+  verdict("ANSWERS AGREE", and(all_agree, arrays_match))
+}

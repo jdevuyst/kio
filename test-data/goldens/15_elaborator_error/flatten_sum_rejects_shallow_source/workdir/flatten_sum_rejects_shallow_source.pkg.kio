@@ -1,0 +1,19 @@
+package flatten_sum_rejects_shallow_source;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  elab/testapi
+}

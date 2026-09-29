@@ -1,0 +1,27 @@
+module main;
+
+import elab/match(match);
+
+// Apply a transform to a value. The transform is the final positional
+// argument, so a multi-line closure reads naturally at the call site.
+pub fn transform[A][B](x: A, f: A -> B) -> B { f(x) }
+
+// The closure body opens with a comment above a `let` whose RHS is a
+// multi-line `match!` call. This is the shape that used to duplicate
+// the comment on `kio fmt`: the closure's leading-trivia capture and
+// the inner `let`'s own leading-trivia capture both grabbed it.
+fn swap[A](pair: A & A) -> A & A {
+  transform(
+    , A & A
+    , A & A
+    , pair
+    , .(p) {
+        // rebuild the pair with its halves swapped
+        let swapped =
+          match! p {
+            .(l: A, r: A) { (r, l) }
+          };
+        swapped
+      }
+    )
+}

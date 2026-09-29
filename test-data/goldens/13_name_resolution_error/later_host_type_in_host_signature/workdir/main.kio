@@ -1,0 +1,5 @@
+module main;
+
+host fn before(value: Later) -> Later;
+
+host type Later;

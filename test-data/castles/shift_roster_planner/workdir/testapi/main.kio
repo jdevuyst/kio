@@ -1,0 +1,5 @@
+module testapi/main;
+
+import roster/render as render;
+
+pub fn main() -> . { render.print_report() }

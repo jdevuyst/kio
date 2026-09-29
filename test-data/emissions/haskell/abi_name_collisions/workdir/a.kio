@@ -1,0 +1,7 @@
+module a;
+
+pub newtype Foo : . { pub constructor bar; projector un }
+
+pub fn b_c(value: .) -> . { value }
+
+pub fn _foo_bar(value: .) -> . { value }

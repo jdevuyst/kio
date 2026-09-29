@@ -1,0 +1,5 @@
+module logger;
+
+host type Token;
+
+host fn read() -> Token;

@@ -1,0 +1,1019 @@
+module dwfs/main;
+
+import elab/derive(derive);
+
+pub newtype Atom : . { pub constructor mk_atom; pub projector un_atom }
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Render[A] : . { pub constructor mk_render; pub projector un_render }
+
+pub newtype Missing0[A] : A { pub constructor mk_missing0; pub projector un_missing0 }
+
+fn bad0[A](m: Missing0(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing1[A] : A { pub constructor mk_missing1; pub projector un_missing1 }
+
+fn bad1[A](m: Missing1(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing2[A] : A { pub constructor mk_missing2; pub projector un_missing2 }
+
+fn bad2[A](m: Missing2(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing3[A] : A { pub constructor mk_missing3; pub projector un_missing3 }
+
+fn bad3[A](m: Missing3(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing4[A] : A { pub constructor mk_missing4; pub projector un_missing4 }
+
+fn bad4[A](m: Missing4(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing5[A] : A { pub constructor mk_missing5; pub projector un_missing5 }
+
+fn bad5[A](m: Missing5(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing6[A] : A { pub constructor mk_missing6; pub projector un_missing6 }
+
+fn bad6[A](m: Missing6(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing7[A] : A { pub constructor mk_missing7; pub projector un_missing7 }
+
+fn bad7[A](m: Missing7(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing8[A] : A { pub constructor mk_missing8; pub projector un_missing8 }
+
+fn bad8[A](m: Missing8(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing9[A] : A { pub constructor mk_missing9; pub projector un_missing9 }
+
+fn bad9[A](m: Missing9(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing10[A] : A { pub constructor mk_missing10; pub projector un_missing10 }
+
+fn bad10[A](m: Missing10(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing11[A] : A { pub constructor mk_missing11; pub projector un_missing11 }
+
+fn bad11[A](m: Missing11(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing12[A] : A { pub constructor mk_missing12; pub projector un_missing12 }
+
+fn bad12[A](m: Missing12(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing13[A] : A { pub constructor mk_missing13; pub projector un_missing13 }
+
+fn bad13[A](m: Missing13(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing14[A] : A { pub constructor mk_missing14; pub projector un_missing14 }
+
+fn bad14[A](m: Missing14(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing15[A] : A { pub constructor mk_missing15; pub projector un_missing15 }
+
+fn bad15[A](m: Missing15(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing16[A] : A { pub constructor mk_missing16; pub projector un_missing16 }
+
+fn bad16[A](m: Missing16(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing17[A] : A { pub constructor mk_missing17; pub projector un_missing17 }
+
+fn bad17[A](m: Missing17(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing18[A] : A { pub constructor mk_missing18; pub projector un_missing18 }
+
+fn bad18[A](m: Missing18(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing19[A] : A { pub constructor mk_missing19; pub projector un_missing19 }
+
+fn bad19[A](m: Missing19(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing20[A] : A { pub constructor mk_missing20; pub projector un_missing20 }
+
+fn bad20[A](m: Missing20(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing21[A] : A { pub constructor mk_missing21; pub projector un_missing21 }
+
+fn bad21[A](m: Missing21(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing22[A] : A { pub constructor mk_missing22; pub projector un_missing22 }
+
+fn bad22[A](m: Missing22(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing23[A] : A { pub constructor mk_missing23; pub projector un_missing23 }
+
+fn bad23[A](m: Missing23(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing24[A] : A { pub constructor mk_missing24; pub projector un_missing24 }
+
+fn bad24[A](m: Missing24(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing25[A] : A { pub constructor mk_missing25; pub projector un_missing25 }
+
+fn bad25[A](m: Missing25(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing26[A] : A { pub constructor mk_missing26; pub projector un_missing26 }
+
+fn bad26[A](m: Missing26(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing27[A] : A { pub constructor mk_missing27; pub projector un_missing27 }
+
+fn bad27[A](m: Missing27(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing28[A] : A { pub constructor mk_missing28; pub projector un_missing28 }
+
+fn bad28[A](m: Missing28(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing29[A] : A { pub constructor mk_missing29; pub projector un_missing29 }
+
+fn bad29[A](m: Missing29(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing30[A] : A { pub constructor mk_missing30; pub projector un_missing30 }
+
+fn bad30[A](m: Missing30(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing31[A] : A { pub constructor mk_missing31; pub projector un_missing31 }
+
+fn bad31[A](m: Missing31(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing32[A] : A { pub constructor mk_missing32; pub projector un_missing32 }
+
+fn bad32[A](m: Missing32(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing33[A] : A { pub constructor mk_missing33; pub projector un_missing33 }
+
+fn bad33[A](m: Missing33(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing34[A] : A { pub constructor mk_missing34; pub projector un_missing34 }
+
+fn bad34[A](m: Missing34(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing35[A] : A { pub constructor mk_missing35; pub projector un_missing35 }
+
+fn bad35[A](m: Missing35(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing36[A] : A { pub constructor mk_missing36; pub projector un_missing36 }
+
+fn bad36[A](m: Missing36(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing37[A] : A { pub constructor mk_missing37; pub projector un_missing37 }
+
+fn bad37[A](m: Missing37(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing38[A] : A { pub constructor mk_missing38; pub projector un_missing38 }
+
+fn bad38[A](m: Missing38(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing39[A] : A { pub constructor mk_missing39; pub projector un_missing39 }
+
+fn bad39[A](m: Missing39(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing40[A] : A { pub constructor mk_missing40; pub projector un_missing40 }
+
+fn bad40[A](m: Missing40(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing41[A] : A { pub constructor mk_missing41; pub projector un_missing41 }
+
+fn bad41[A](m: Missing41(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing42[A] : A { pub constructor mk_missing42; pub projector un_missing42 }
+
+fn bad42[A](m: Missing42(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing43[A] : A { pub constructor mk_missing43; pub projector un_missing43 }
+
+fn bad43[A](m: Missing43(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing44[A] : A { pub constructor mk_missing44; pub projector un_missing44 }
+
+fn bad44[A](m: Missing44(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing45[A] : A { pub constructor mk_missing45; pub projector un_missing45 }
+
+fn bad45[A](m: Missing45(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing46[A] : A { pub constructor mk_missing46; pub projector un_missing46 }
+
+fn bad46[A](m: Missing46(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing47[A] : A { pub constructor mk_missing47; pub projector un_missing47 }
+
+fn bad47[A](m: Missing47(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing48[A] : A { pub constructor mk_missing48; pub projector un_missing48 }
+
+fn bad48[A](m: Missing48(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing49[A] : A { pub constructor mk_missing49; pub projector un_missing49 }
+
+fn bad49[A](m: Missing49(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing50[A] : A { pub constructor mk_missing50; pub projector un_missing50 }
+
+fn bad50[A](m: Missing50(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing51[A] : A { pub constructor mk_missing51; pub projector un_missing51 }
+
+fn bad51[A](m: Missing51(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing52[A] : A { pub constructor mk_missing52; pub projector un_missing52 }
+
+fn bad52[A](m: Missing52(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing53[A] : A { pub constructor mk_missing53; pub projector un_missing53 }
+
+fn bad53[A](m: Missing53(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing54[A] : A { pub constructor mk_missing54; pub projector un_missing54 }
+
+fn bad54[A](m: Missing54(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing55[A] : A { pub constructor mk_missing55; pub projector un_missing55 }
+
+fn bad55[A](m: Missing55(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing56[A] : A { pub constructor mk_missing56; pub projector un_missing56 }
+
+fn bad56[A](m: Missing56(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing57[A] : A { pub constructor mk_missing57; pub projector un_missing57 }
+
+fn bad57[A](m: Missing57(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing58[A] : A { pub constructor mk_missing58; pub projector un_missing58 }
+
+fn bad58[A](m: Missing58(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing59[A] : A { pub constructor mk_missing59; pub projector un_missing59 }
+
+fn bad59[A](m: Missing59(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing60[A] : A { pub constructor mk_missing60; pub projector un_missing60 }
+
+fn bad60[A](m: Missing60(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing61[A] : A { pub constructor mk_missing61; pub projector un_missing61 }
+
+fn bad61[A](m: Missing61(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing62[A] : A { pub constructor mk_missing62; pub projector un_missing62 }
+
+fn bad62[A](m: Missing62(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing63[A] : A { pub constructor mk_missing63; pub projector un_missing63 }
+
+fn bad63[A](m: Missing63(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing64[A] : A { pub constructor mk_missing64; pub projector un_missing64 }
+
+fn bad64[A](m: Missing64(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing65[A] : A { pub constructor mk_missing65; pub projector un_missing65 }
+
+fn bad65[A](m: Missing65(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing66[A] : A { pub constructor mk_missing66; pub projector un_missing66 }
+
+fn bad66[A](m: Missing66(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing67[A] : A { pub constructor mk_missing67; pub projector un_missing67 }
+
+fn bad67[A](m: Missing67(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing68[A] : A { pub constructor mk_missing68; pub projector un_missing68 }
+
+fn bad68[A](m: Missing68(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing69[A] : A { pub constructor mk_missing69; pub projector un_missing69 }
+
+fn bad69[A](m: Missing69(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing70[A] : A { pub constructor mk_missing70; pub projector un_missing70 }
+
+fn bad70[A](m: Missing70(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing71[A] : A { pub constructor mk_missing71; pub projector un_missing71 }
+
+fn bad71[A](m: Missing71(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing72[A] : A { pub constructor mk_missing72; pub projector un_missing72 }
+
+fn bad72[A](m: Missing72(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing73[A] : A { pub constructor mk_missing73; pub projector un_missing73 }
+
+fn bad73[A](m: Missing73(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing74[A] : A { pub constructor mk_missing74; pub projector un_missing74 }
+
+fn bad74[A](m: Missing74(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing75[A] : A { pub constructor mk_missing75; pub projector un_missing75 }
+
+fn bad75[A](m: Missing75(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing76[A] : A { pub constructor mk_missing76; pub projector un_missing76 }
+
+fn bad76[A](m: Missing76(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing77[A] : A { pub constructor mk_missing77; pub projector un_missing77 }
+
+fn bad77[A](m: Missing77(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing78[A] : A { pub constructor mk_missing78; pub projector un_missing78 }
+
+fn bad78[A](m: Missing78(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing79[A] : A { pub constructor mk_missing79; pub projector un_missing79 }
+
+fn bad79[A](m: Missing79(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing80[A] : A { pub constructor mk_missing80; pub projector un_missing80 }
+
+fn bad80[A](m: Missing80(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing81[A] : A { pub constructor mk_missing81; pub projector un_missing81 }
+
+fn bad81[A](m: Missing81(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing82[A] : A { pub constructor mk_missing82; pub projector un_missing82 }
+
+fn bad82[A](m: Missing82(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing83[A] : A { pub constructor mk_missing83; pub projector un_missing83 }
+
+fn bad83[A](m: Missing83(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing84[A] : A { pub constructor mk_missing84; pub projector un_missing84 }
+
+fn bad84[A](m: Missing84(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing85[A] : A { pub constructor mk_missing85; pub projector un_missing85 }
+
+fn bad85[A](m: Missing85(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing86[A] : A { pub constructor mk_missing86; pub projector un_missing86 }
+
+fn bad86[A](m: Missing86(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing87[A] : A { pub constructor mk_missing87; pub projector un_missing87 }
+
+fn bad87[A](m: Missing87(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing88[A] : A { pub constructor mk_missing88; pub projector un_missing88 }
+
+fn bad88[A](m: Missing88(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing89[A] : A { pub constructor mk_missing89; pub projector un_missing89 }
+
+fn bad89[A](m: Missing89(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing90[A] : A { pub constructor mk_missing90; pub projector un_missing90 }
+
+fn bad90[A](m: Missing90(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing91[A] : A { pub constructor mk_missing91; pub projector un_missing91 }
+
+fn bad91[A](m: Missing91(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing92[A] : A { pub constructor mk_missing92; pub projector un_missing92 }
+
+fn bad92[A](m: Missing92(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing93[A] : A { pub constructor mk_missing93; pub projector un_missing93 }
+
+fn bad93[A](m: Missing93(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing94[A] : A { pub constructor mk_missing94; pub projector un_missing94 }
+
+fn bad94[A](m: Missing94(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing95[A] : A { pub constructor mk_missing95; pub projector un_missing95 }
+
+fn bad95[A](m: Missing95(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing96[A] : A { pub constructor mk_missing96; pub projector un_missing96 }
+
+fn bad96[A](m: Missing96(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing97[A] : A { pub constructor mk_missing97; pub projector un_missing97 }
+
+fn bad97[A](m: Missing97(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing98[A] : A { pub constructor mk_missing98; pub projector un_missing98 }
+
+fn bad98[A](m: Missing98(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing99[A] : A { pub constructor mk_missing99; pub projector un_missing99 }
+
+fn bad99[A](m: Missing99(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing100[A] : A { pub constructor mk_missing100; pub projector un_missing100 }
+
+fn bad100[A](m: Missing100(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing101[A] : A { pub constructor mk_missing101; pub projector un_missing101 }
+
+fn bad101[A](m: Missing101(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing102[A] : A { pub constructor mk_missing102; pub projector un_missing102 }
+
+fn bad102[A](m: Missing102(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing103[A] : A { pub constructor mk_missing103; pub projector un_missing103 }
+
+fn bad103[A](m: Missing103(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing104[A] : A { pub constructor mk_missing104; pub projector un_missing104 }
+
+fn bad104[A](m: Missing104(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing105[A] : A { pub constructor mk_missing105; pub projector un_missing105 }
+
+fn bad105[A](m: Missing105(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing106[A] : A { pub constructor mk_missing106; pub projector un_missing106 }
+
+fn bad106[A](m: Missing106(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing107[A] : A { pub constructor mk_missing107; pub projector un_missing107 }
+
+fn bad107[A](m: Missing107(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing108[A] : A { pub constructor mk_missing108; pub projector un_missing108 }
+
+fn bad108[A](m: Missing108(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing109[A] : A { pub constructor mk_missing109; pub projector un_missing109 }
+
+fn bad109[A](m: Missing109(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing110[A] : A { pub constructor mk_missing110; pub projector un_missing110 }
+
+fn bad110[A](m: Missing110(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing111[A] : A { pub constructor mk_missing111; pub projector un_missing111 }
+
+fn bad111[A](m: Missing111(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing112[A] : A { pub constructor mk_missing112; pub projector un_missing112 }
+
+fn bad112[A](m: Missing112(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing113[A] : A { pub constructor mk_missing113; pub projector un_missing113 }
+
+fn bad113[A](m: Missing113(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing114[A] : A { pub constructor mk_missing114; pub projector un_missing114 }
+
+fn bad114[A](m: Missing114(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing115[A] : A { pub constructor mk_missing115; pub projector un_missing115 }
+
+fn bad115[A](m: Missing115(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing116[A] : A { pub constructor mk_missing116; pub projector un_missing116 }
+
+fn bad116[A](m: Missing116(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing117[A] : A { pub constructor mk_missing117; pub projector un_missing117 }
+
+fn bad117[A](m: Missing117(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing118[A] : A { pub constructor mk_missing118; pub projector un_missing118 }
+
+fn bad118[A](m: Missing118(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing119[A] : A { pub constructor mk_missing119; pub projector un_missing119 }
+
+fn bad119[A](m: Missing119(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing120[A] : A { pub constructor mk_missing120; pub projector un_missing120 }
+
+fn bad120[A](m: Missing120(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing121[A] : A { pub constructor mk_missing121; pub projector un_missing121 }
+
+fn bad121[A](m: Missing121(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing122[A] : A { pub constructor mk_missing122; pub projector un_missing122 }
+
+fn bad122[A](m: Missing122(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing123[A] : A { pub constructor mk_missing123; pub projector un_missing123 }
+
+fn bad123[A](m: Missing123(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing124[A] : A { pub constructor mk_missing124; pub projector un_missing124 }
+
+fn bad124[A](m: Missing124(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing125[A] : A { pub constructor mk_missing125; pub projector un_missing125 }
+
+fn bad125[A](m: Missing125(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing126[A] : A { pub constructor mk_missing126; pub projector un_missing126 }
+
+fn bad126[A](m: Missing126(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing127[A] : A { pub constructor mk_missing127; pub projector un_missing127 }
+
+fn bad127[A](m: Missing127(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing128[A] : A { pub constructor mk_missing128; pub projector un_missing128 }
+
+fn bad128[A](m: Missing128(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing129[A] : A { pub constructor mk_missing129; pub projector un_missing129 }
+
+fn bad129[A](m: Missing129(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing130[A] : A { pub constructor mk_missing130; pub projector un_missing130 }
+
+fn bad130[A](m: Missing130(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing131[A] : A { pub constructor mk_missing131; pub projector un_missing131 }
+
+fn bad131[A](m: Missing131(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing132[A] : A { pub constructor mk_missing132; pub projector un_missing132 }
+
+fn bad132[A](m: Missing132(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing133[A] : A { pub constructor mk_missing133; pub projector un_missing133 }
+
+fn bad133[A](m: Missing133(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing134[A] : A { pub constructor mk_missing134; pub projector un_missing134 }
+
+fn bad134[A](m: Missing134(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing135[A] : A { pub constructor mk_missing135; pub projector un_missing135 }
+
+fn bad135[A](m: Missing135(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing136[A] : A { pub constructor mk_missing136; pub projector un_missing136 }
+
+fn bad136[A](m: Missing136(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing137[A] : A { pub constructor mk_missing137; pub projector un_missing137 }
+
+fn bad137[A](m: Missing137(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing138[A] : A { pub constructor mk_missing138; pub projector un_missing138 }
+
+fn bad138[A](m: Missing138(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing139[A] : A { pub constructor mk_missing139; pub projector un_missing139 }
+
+fn bad139[A](m: Missing139(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing140[A] : A { pub constructor mk_missing140; pub projector un_missing140 }
+
+fn bad140[A](m: Missing140(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing141[A] : A { pub constructor mk_missing141; pub projector un_missing141 }
+
+fn bad141[A](m: Missing141(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing142[A] : A { pub constructor mk_missing142; pub projector un_missing142 }
+
+fn bad142[A](m: Missing142(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing143[A] : A { pub constructor mk_missing143; pub projector un_missing143 }
+
+fn bad143[A](m: Missing143(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing144[A] : A { pub constructor mk_missing144; pub projector un_missing144 }
+
+fn bad144[A](m: Missing144(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing145[A] : A { pub constructor mk_missing145; pub projector un_missing145 }
+
+fn bad145[A](m: Missing145(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing146[A] : A { pub constructor mk_missing146; pub projector un_missing146 }
+
+fn bad146[A](m: Missing146(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing147[A] : A { pub constructor mk_missing147; pub projector un_missing147 }
+
+fn bad147[A](m: Missing147(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing148[A] : A { pub constructor mk_missing148; pub projector un_missing148 }
+
+fn bad148[A](m: Missing148(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing149[A] : A { pub constructor mk_missing149; pub projector un_missing149 }
+
+fn bad149[A](m: Missing149(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing150[A] : A { pub constructor mk_missing150; pub projector un_missing150 }
+
+fn bad150[A](m: Missing150(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing151[A] : A { pub constructor mk_missing151; pub projector un_missing151 }
+
+fn bad151[A](m: Missing151(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing152[A] : A { pub constructor mk_missing152; pub projector un_missing152 }
+
+fn bad152[A](m: Missing152(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing153[A] : A { pub constructor mk_missing153; pub projector un_missing153 }
+
+fn bad153[A](m: Missing153(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing154[A] : A { pub constructor mk_missing154; pub projector un_missing154 }
+
+fn bad154[A](m: Missing154(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing155[A] : A { pub constructor mk_missing155; pub projector un_missing155 }
+
+fn bad155[A](m: Missing155(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing156[A] : A { pub constructor mk_missing156; pub projector un_missing156 }
+
+fn bad156[A](m: Missing156(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing157[A] : A { pub constructor mk_missing157; pub projector un_missing157 }
+
+fn bad157[A](m: Missing157(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing158[A] : A { pub constructor mk_missing158; pub projector un_missing158 }
+
+fn bad158[A](m: Missing158(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing159[A] : A { pub constructor mk_missing159; pub projector un_missing159 }
+
+fn bad159[A](m: Missing159(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing160[A] : A { pub constructor mk_missing160; pub projector un_missing160 }
+
+fn bad160[A](m: Missing160(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing161[A] : A { pub constructor mk_missing161; pub projector un_missing161 }
+
+fn bad161[A](m: Missing161(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing162[A] : A { pub constructor mk_missing162; pub projector un_missing162 }
+
+fn bad162[A](m: Missing162(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing163[A] : A { pub constructor mk_missing163; pub projector un_missing163 }
+
+fn bad163[A](m: Missing163(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing164[A] : A { pub constructor mk_missing164; pub projector un_missing164 }
+
+fn bad164[A](m: Missing164(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing165[A] : A { pub constructor mk_missing165; pub projector un_missing165 }
+
+fn bad165[A](m: Missing165(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing166[A] : A { pub constructor mk_missing166; pub projector un_missing166 }
+
+fn bad166[A](m: Missing166(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing167[A] : A { pub constructor mk_missing167; pub projector un_missing167 }
+
+fn bad167[A](m: Missing167(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing168[A] : A { pub constructor mk_missing168; pub projector un_missing168 }
+
+fn bad168[A](m: Missing168(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing169[A] : A { pub constructor mk_missing169; pub projector un_missing169 }
+
+fn bad169[A](m: Missing169(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing170[A] : A { pub constructor mk_missing170; pub projector un_missing170 }
+
+fn bad170[A](m: Missing170(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing171[A] : A { pub constructor mk_missing171; pub projector un_missing171 }
+
+fn bad171[A](m: Missing171(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing172[A] : A { pub constructor mk_missing172; pub projector un_missing172 }
+
+fn bad172[A](m: Missing172(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing173[A] : A { pub constructor mk_missing173; pub projector un_missing173 }
+
+fn bad173[A](m: Missing173(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing174[A] : A { pub constructor mk_missing174; pub projector un_missing174 }
+
+fn bad174[A](m: Missing174(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing175[A] : A { pub constructor mk_missing175; pub projector un_missing175 }
+
+fn bad175[A](m: Missing175(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing176[A] : A { pub constructor mk_missing176; pub projector un_missing176 }
+
+fn bad176[A](m: Missing176(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing177[A] : A { pub constructor mk_missing177; pub projector un_missing177 }
+
+fn bad177[A](m: Missing177(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing178[A] : A { pub constructor mk_missing178; pub projector un_missing178 }
+
+fn bad178[A](m: Missing178(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing179[A] : A { pub constructor mk_missing179; pub projector un_missing179 }
+
+fn bad179[A](m: Missing179(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing180[A] : A { pub constructor mk_missing180; pub projector un_missing180 }
+
+fn bad180[A](m: Missing180(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing181[A] : A { pub constructor mk_missing181; pub projector un_missing181 }
+
+fn bad181[A](m: Missing181(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing182[A] : A { pub constructor mk_missing182; pub projector un_missing182 }
+
+fn bad182[A](m: Missing182(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing183[A] : A { pub constructor mk_missing183; pub projector un_missing183 }
+
+fn bad183[A](m: Missing183(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing184[A] : A { pub constructor mk_missing184; pub projector un_missing184 }
+
+fn bad184[A](m: Missing184(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing185[A] : A { pub constructor mk_missing185; pub projector un_missing185 }
+
+fn bad185[A](m: Missing185(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing186[A] : A { pub constructor mk_missing186; pub projector un_missing186 }
+
+fn bad186[A](m: Missing186(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing187[A] : A { pub constructor mk_missing187; pub projector un_missing187 }
+
+fn bad187[A](m: Missing187(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing188[A] : A { pub constructor mk_missing188; pub projector un_missing188 }
+
+fn bad188[A](m: Missing188(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing189[A] : A { pub constructor mk_missing189; pub projector un_missing189 }
+
+fn bad189[A](m: Missing189(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing190[A] : A { pub constructor mk_missing190; pub projector un_missing190 }
+
+fn bad190[A](m: Missing190(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing191[A] : A { pub constructor mk_missing191; pub projector un_missing191 }
+
+fn bad191[A](m: Missing191(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing192[A] : A { pub constructor mk_missing192; pub projector un_missing192 }
+
+fn bad192[A](m: Missing192(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing193[A] : A { pub constructor mk_missing193; pub projector un_missing193 }
+
+fn bad193[A](m: Missing193(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing194[A] : A { pub constructor mk_missing194; pub projector un_missing194 }
+
+fn bad194[A](m: Missing194(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing195[A] : A { pub constructor mk_missing195; pub projector un_missing195 }
+
+fn bad195[A](m: Missing195(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing196[A] : A { pub constructor mk_missing196; pub projector un_missing196 }
+
+fn bad196[A](m: Missing196(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing197[A] : A { pub constructor mk_missing197; pub projector un_missing197 }
+
+fn bad197[A](m: Missing197(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing198[A] : A { pub constructor mk_missing198; pub projector un_missing198 }
+
+fn bad198[A](m: Missing198(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+pub newtype Missing199[A] : A { pub constructor mk_missing199; pub projector un_missing199 }
+
+fn bad199[A](m: Missing199(A)) -> Render(Box(A)) { Render.mk_render(Box(A), ()) }
+
+fn bad() -> Render(Box(Atom)) {
+  derive!(
+    , (
+        , bad0
+        , bad1
+        , bad2
+        , bad3
+        , bad4
+        , bad5
+        , bad6
+        , bad7
+        , bad8
+        , bad9
+        , bad10
+        , bad11
+        , bad12
+        , bad13
+        , bad14
+        , bad15
+        , bad16
+        , bad17
+        , bad18
+        , bad19
+        , bad20
+        , bad21
+        , bad22
+        , bad23
+        , bad24
+        , bad25
+        , bad26
+        , bad27
+        , bad28
+        , bad29
+        , bad30
+        , bad31
+        , bad32
+        , bad33
+        , bad34
+        , bad35
+        , bad36
+        , bad37
+        , bad38
+        , bad39
+        , bad40
+        , bad41
+        , bad42
+        , bad43
+        , bad44
+        , bad45
+        , bad46
+        , bad47
+        , bad48
+        , bad49
+        , bad50
+        , bad51
+        , bad52
+        , bad53
+        , bad54
+        , bad55
+        , bad56
+        , bad57
+        , bad58
+        , bad59
+        , bad60
+        , bad61
+        , bad62
+        , bad63
+        , bad64
+        , bad65
+        , bad66
+        , bad67
+        , bad68
+        , bad69
+        , bad70
+        , bad71
+        , bad72
+        , bad73
+        , bad74
+        , bad75
+        , bad76
+        , bad77
+        , bad78
+        , bad79
+        , bad80
+        , bad81
+        , bad82
+        , bad83
+        , bad84
+        , bad85
+        , bad86
+        , bad87
+        , bad88
+        , bad89
+        , bad90
+        , bad91
+        , bad92
+        , bad93
+        , bad94
+        , bad95
+        , bad96
+        , bad97
+        , bad98
+        , bad99
+        , bad100
+        , bad101
+        , bad102
+        , bad103
+        , bad104
+        , bad105
+        , bad106
+        , bad107
+        , bad108
+        , bad109
+        , bad110
+        , bad111
+        , bad112
+        , bad113
+        , bad114
+        , bad115
+        , bad116
+        , bad117
+        , bad118
+        , bad119
+        , bad120
+        , bad121
+        , bad122
+        , bad123
+        , bad124
+        , bad125
+        , bad126
+        , bad127
+        , bad128
+        , bad129
+        , bad130
+        , bad131
+        , bad132
+        , bad133
+        , bad134
+        , bad135
+        , bad136
+        , bad137
+        , bad138
+        , bad139
+        , bad140
+        , bad141
+        , bad142
+        , bad143
+        , bad144
+        , bad145
+        , bad146
+        , bad147
+        , bad148
+        , bad149
+        , bad150
+        , bad151
+        , bad152
+        , bad153
+        , bad154
+        , bad155
+        , bad156
+        , bad157
+        , bad158
+        , bad159
+        , bad160
+        , bad161
+        , bad162
+        , bad163
+        , bad164
+        , bad165
+        , bad166
+        , bad167
+        , bad168
+        , bad169
+        , bad170
+        , bad171
+        , bad172
+        , bad173
+        , bad174
+        , bad175
+        , bad176
+        , bad177
+        , bad178
+        , bad179
+        , bad180
+        , bad181
+        , bad182
+        , bad183
+        , bad184
+        , bad185
+        , bad186
+        , bad187
+        , bad188
+        , bad189
+        , bad190
+        , bad191
+        , bad192
+        , bad193
+        , bad194
+        , bad195
+        , bad196
+        , bad197
+        , bad198
+        , bad199
+        )
+    , Render(Box(Atom))
+    )
+}
+
+pub fn main() -> . { () }

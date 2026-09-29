@@ -1,0 +1,3 @@
+module main;
+
+newtype Tree : . | Tree { pub constructor mk_tree; pub projector un_tree }

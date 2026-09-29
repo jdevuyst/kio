@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/labels(Greeting);
+import testapi/labels({greeting});
+
+// Construct a labeled value using value-surface label sugar imported
+// from the declaring module, then project it back out through field
+// access. Confirms cross-module labels resolve without constructor or
+// projector value aliases.
+pub fn main() -> . {
+  let labeled = {greeting = "hello from cross-module label\n"};
+  print(labeled.?{greeting})
+}

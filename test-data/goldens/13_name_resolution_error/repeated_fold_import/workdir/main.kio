@@ -1,0 +1,6 @@
+module main;
+
+import origin(varop [* *]);
+import origin(varop [* *]);
+
+fn values() -> . { [* (), () *] }

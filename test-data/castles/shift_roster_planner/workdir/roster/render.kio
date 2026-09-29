@@ -1,0 +1,122 @@
+module roster/render;
+
+import elab/control(if);
+import roster/scenario as scenario;
+import roster/scoring as scoring;
+import roster/types(
+  , Scorecard
+  , Shift
+  , {day}
+  , {demand}
+  , {fairness_penalty}
+  , {preference_penalty}
+  , {preference}
+  , {rest_conflicts}
+  , {same_day_conflicts}
+  , {skill_shortfalls}
+  , {skill}
+  , {slot}
+  , {total_score}
+  , {worker}
+  );
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, lt_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  string_concat(a, string_concat(b, string_concat(c, string_concat(d, e))))
+}
+
+fn cat7(a: String, b: String, c: String, d: String, e: String, f: String, g: String) -> String {
+  string_concat(
+    , a
+    , string_concat(b, string_concat(c, string_concat(d, string_concat(e, string_concat(f, g)))))
+    )
+}
+
+fn bool_word(value: Bool) -> String { bool_to_string(value) }
+
+fn shift_line(index: I32, s: Shift) -> String {
+  cat7(
+    , "  #"
+    , int_to_string(index)
+    , " d"
+    , int_to_string(s.?{day})
+    , " "
+    , scenario.slot_name(s.?{slot})
+    , cat7(
+        , " -> "
+        , scenario.worker_name(s.?{worker})
+        , " skill="
+        , scenario.skill_name(s.?{skill})
+        , " demand="
+        , int_to_string(s.?{demand})
+        , cat3(" pref=", int_to_string(s.?{preference}), "\n")
+        )
+    )
+}
+
+rec(loop) fn print_shifts(index: I32) -> . {
+  if! lt_i32(index, scenario.shift_count()) {
+    print(shift_line(index, scenario.shift_at(index)));
+    rec print_shifts(add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+fn worker_load_line(worker_id: I32) -> String {
+  cat5(
+    , "  "
+    , scenario.worker_name(worker_id)
+    , ": "
+    , int_to_string(scoring.worker_load(worker_id, 0, 0))
+    , "\n"
+    )
+}
+
+rec(loop) fn print_worker_loads(worker_id: I32) -> . {
+  if! lt_i32(worker_id, scenario.worker_count()) {
+    print(worker_load_line(worker_id));
+    rec print_worker_loads(add_i32(worker_id, 1))
+  } else {
+    ()
+  }
+}
+
+fn summary_line(label: String, value: I32) -> String {
+  cat5("  ", label, ": ", int_to_string(value), "\n")
+}
+
+fn print_scorecard(card: Scorecard) -> . {
+  print(summary_line("skill shortfalls", card.?{skill_shortfalls}));
+  print(summary_line("same-day conflicts", card.?{same_day_conflicts}));
+  print(summary_line("rest conflicts", card.?{rest_conflicts}));
+  print(summary_line("fairness penalty", card.?{fairness_penalty}));
+  print(summary_line("preference penalty", card.?{preference_penalty}));
+  print(summary_line("total score", card.?{total_score}))
+}
+
+pub fn print_report() -> . {
+  let card = scoring.scorecard();
+  print("shift_roster_planner: v1\n");
+  print(cat5(
+    , "shifts: "
+    , int_to_string(scenario.shift_count())
+    , " workers: "
+    , int_to_string(scenario.worker_count())
+    , "\n"
+    ));
+  print("assignments:\n");
+  print_shifts(0);
+  print("loads:\n");
+  print_worker_loads(0);
+  print("constraints:\n");
+  print_scorecard(card);
+  print(cat3("healthy: ", bool_word(scoring.roster_is_healthy(card)), "\n"))
+}

@@ -1,0 +1,5 @@
+module main;
+
+literal max = 100;
+
+literal max = 200;

@@ -1,0 +1,58 @@
+/// The randomness source. Randomness in this package is fixture data: the
+/// seed arrives on stdin and every value below is a pure function of it, so
+/// the whole run reproduces from the fixture alone.
+///
+/// The generator is a linear congruential generator whose constants are
+/// chosen so that `multiplier * state + increment` can never overflow signed
+/// 32-bit arithmetic. The worst case is the largest state:
+/// `20077 * 32748 + 12345 = 657493941`, comfortably below the `i32` ceiling
+/// of `2147483647`. No step relies on wrap-around.
+module ballad/prng;
+
+import ballad/list(List, cons, nil, reverse);
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+/// The modulus: the largest prime below `2^15`. Every state lies in
+/// `[0, modulus)`, which is what keeps the multiply overflow-free.
+pub fn modulus() -> I32 { 32749 }
+
+pub fn multiplier() -> I32 { 20077 }
+
+pub fn increment() -> I32 { 12345 }
+
+/// Reduce the fixture's seed into the generator's state space.
+pub fn seed_state(seed: I32) -> I32 {
+  let reduced = mod_i32(seed, modulus());
+  if! lt_i32(reduced, 0) {
+    add_i32(reduced, modulus())
+  } else {
+    reduced
+  }
+}
+
+/// One step of the recurrence: `next = (multiplier * state + increment) mod modulus`.
+pub fn next(state: I32) -> I32 {
+  mod_i32(add_i32(mul_i32(multiplier(), state), increment()), modulus())
+}
+
+/// Project a state onto `[0, bound)` for a positive `bound`. Every draw in
+/// `ballad/weave` rolls against the successor list's total weight, so the
+/// bound is a weight sum rather than a fixed range.
+pub fn roll(state: I32, bound: I32) -> I32 { mod_i32(state, bound) }
+
+rec(loop) fn take_onto(state: I32, n: I32, acc: List(I32)) -> List(I32) {
+  if! leq_i32(n, 0) {
+    reverse(acc)
+  } else {
+    let stepped = next(state);
+    rec take_onto(stepped, sub_i32(n, 1), cons(stepped, acc))
+  }
+}
+
+/// The first `n` states the recurrence produces from `state`. The report
+/// prints these so a reader can re-derive the generator by hand and check
+/// the first draws of the trace against them.
+pub fn first_states(state: I32, n: I32) -> List(I32) { take_onto(state, n, nil(I32, ())) }

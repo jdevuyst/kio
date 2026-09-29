@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi as api;
+import testapi/io as io;
+import word1_names2/word3_items4 as items1_word2;
+
+pub fn main() -> . {
+  io.print(items1_word2.word1_value2());
+  io.print(items1_word2._word1_value2());
+  io.print(items1_word2.word1_value2_());
+  io.print(items1_word2._word1_value2_());
+  io.print(items1_word2.word1_value2__());
+  let _value1_part2__ = items1_word2._Item1_part2__.wrap1_value2("boxed\n"(api.String));
+  io.print(items1_word2.keep1_value2(items1_word2._Item1_part2__.read1_value2(_value1_part2__)))
+}

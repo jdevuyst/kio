@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `<->` lexes as one greedy `SymbolRun("<->")` — the `->` is no
+// longer carved out of the surrounding run, so the pattern
+// records one op-token. Declaring a single-token `<->` works
+// regardless of the surrounding-run context the lexer once
+// special-cased away.
+op _ <-> _ { impl add }
+
+pub fn main() -> . { print(int_to_string(4 <-> 5)); print("\n") }

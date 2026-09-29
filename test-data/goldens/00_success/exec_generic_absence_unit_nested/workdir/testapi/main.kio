@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn describe[A](result: A | ., show: A -> String) -> String {
+  match! result {
+    (.(value: A) { show(value) }, .(_empty: .) { "absent\n" })
+  }
+}
+
+fn show_inner(value: String | .) -> String {
+  match! value {
+    (.(text: String) { text }, .(_unit: .) { "present inner unit\n" })
+  }
+}
+
+pub fn main() -> . {
+  let show_unit = .(_unit: .) -> String { "present unit\n" };
+  print(describe(present(()), show_unit));
+  print(describe(absent(., ()), show_unit));
+  print(describe(present(widen_sum!("present inner text\n", String | .)), show_inner));
+  print(describe(present(widen_sum!((), String | .)), show_inner));
+  print(describe(absent(String | ., ()), show_inner))
+}

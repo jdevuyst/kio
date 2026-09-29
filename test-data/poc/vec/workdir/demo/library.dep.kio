@@ -1,0 +1,12 @@
+dependency library;
+
+source {
+  path "../vec.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;
+rehost library/list/elab/testapi to testapi;
+rehost library/list/list to vec_host;
+rehost library/vec to vec_host;
+
+retype library/list/core.List to list/core.List;

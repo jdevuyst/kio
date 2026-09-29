@@ -1,0 +1,15 @@
+module testapi/main;
+
+import greetlib/greet(first);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through the host-free `greetlib` dependency
+// pulled in by a git `source { git; ref }` dependency in
+// `greetlib.dep.kio`. The dependency tree is brought onto disk by
+// `kio dep fetch` (not a build) and re-rooted under the `greetlib/`
+// prefix; the build that follows consumes those materialized modules.
+// `first` is a re-rooted generic export, exercised across the git edge.
+pub fn greeting() -> String { first("git dependency fetched\n"(String), "discarded\n"(String)) }
+
+pub fn main() -> . { print(greeting()) }

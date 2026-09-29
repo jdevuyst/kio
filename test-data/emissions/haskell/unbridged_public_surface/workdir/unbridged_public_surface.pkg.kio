@@ -1,0 +1,14 @@
+package unbridged_public_surface;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "UnbridgedPublicSurface"
+  }
+}
+
+bridge {
+  api
+}

@@ -1,0 +1,33 @@
+/// String assembly. Every line the plotter prints is built here: the host
+/// gives it `string_concat` and `int_to_string` and nothing else, so even the
+/// echo's indent is a string the program grows one space at a time.
+module turtle/text;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat2(cat2(a, b), c) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(cat3(a, b, c), d) }
+
+/// Decimal rendering of `n`.
+pub fn num(n: I32) -> String { int_to_string(n) }
+
+rec(loop) {
+  /// A run of `n` spaces. The echo indents a nested block by two of these per
+  /// level, which is the whole reason the parse tree is legible on stdout.
+  pub fn spaces(n: I32) -> String { rec pad(n, "") };
+  fn pad(n: I32, acc: String) -> String {
+    if! leq_i32(n, 0) {
+      acc
+    } else {
+      rec pad(sub_i32(n, 1), cat2(acc, " "))
+    }
+  }
+}

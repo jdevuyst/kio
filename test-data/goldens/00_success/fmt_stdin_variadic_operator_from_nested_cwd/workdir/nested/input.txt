@@ -1,0 +1,5 @@
+module main;
+
+import syntax(op _ => _, varop [% %]);
+
+fn pair(k: A, v: A) -> A { [% k => v %] }

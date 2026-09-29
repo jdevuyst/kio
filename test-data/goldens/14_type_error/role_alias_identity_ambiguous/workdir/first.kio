@@ -1,0 +1,3 @@
+module first;
+
+host type Bool role(bool);

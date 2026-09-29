@@ -1,0 +1,5 @@
+module api;
+
+host type Handle role(i32);
+
+pub fn echo(value: Handle) -> Handle { value }

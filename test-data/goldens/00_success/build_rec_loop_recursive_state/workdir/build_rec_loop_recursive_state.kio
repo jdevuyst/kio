@@ -1,0 +1,11 @@
+module build_rec_loop_recursive_state;
+
+host type Bool role(bool);
+
+host type I32 role(i32);
+
+host fn leq_i32(p0: I32, p1: I32) -> Bool;
+
+host fn sub_i32(p0: I32, p1: I32) -> I32;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;

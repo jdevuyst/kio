@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A 3-label record built from `labels` declarations. Each generated
+// nominal type is produced by label lowering. The structural-
+// recovery pass detects the `__pair__` chain of `Tag.mk(...)`
+// constructor calls and promotes the IR to a record with named
+// fields — the IR-level signal that lets a target emit native
+// records / structs without re-deriving the pattern from types.
+labels { hed: Int, mid: String, tal: Int };
+
+fn show(r: Hed & Mid & Tal) -> . {
+  match! r {
+    .(h: Hed, m: Mid, t: Tal) {
+      print(int_to_string(h.?{hed}));
+      print(", ");
+      print(m.?{mid});
+      print(", ");
+      print(int_to_string(t.?{tal}));
+      print("\n")
+    }
+  }
+}
+
+pub fn main() -> . { let r = ({hed = 7}, {mid = "kio"}, {tal = 11}); show(r) }

@@ -1,0 +1,7 @@
+dependency lib;
+
+source {
+  path "/library/lib/lib.pkg.kio";
+  git "https://example.com/lib.git";
+  ref "main";
+}

@@ -1,0 +1,312 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Cons-list of `A`. Same shape as `exec_host_loop_fold` and
+// friends — `()` is empty, `(A & List(A))` is a cons cell.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// `Run` and `Runs` newtype aliases. `Run` is a single sorted run
+// of `I32`s; `Runs` is a list of runs. The shorter nominals keep
+// the intermediate sum types the kio-prime back-end emits narrow
+// enough that its pretty-printer doesn't break the chain across
+// multiple lines with a leading `|`, which the regular Kio parser
+// then rejects when round-tripping the kio-prime output back to
+// JS.
+rec newtype Run : . | (I32 & Run) { pub constructor cons; pub projector un }
+
+fn run_nil() -> Run { Run.cons(widen_sum!(())) }
+
+fn run_push(x: I32, xs: Run) -> Run { Run.cons(widen_sum!((x, xs))) }
+
+rec newtype Runs : . | (Run & Runs) { pub constructor cons; pub projector un }
+
+fn runs_nil() -> Runs { Runs.cons(widen_sum!(())) }
+
+fn runs_push(x: Run, xs: Runs) -> Runs { Runs.cons(widen_sum!((x, xs))) }
+
+// Build the nine-element input `[5, 2, 8, 1, 9, 3, 7, 4, 6]` via
+// repeated `run_push`. Chosen so neither sort algorithm hits a
+// worst-case behavior on this fixture's input.
+fn make_input() -> Run {
+  run_push(
+    , 5
+    , run_push(
+        , 2
+        , run_push(
+            , 8
+            , run_push(
+                , 1
+                , run_push(9, run_push(3, run_push(7, run_push(4, run_push(6, run_nil())))))
+                )
+            )
+        )
+    )
+}
+
+// Reverse-append over `Run`: walks `reversed` head-to-tail and
+// conses each element onto `tail`. State is `(reversed, tail)`;
+// exit is the final `tail`. Useful when an accumulator built by
+// cons-prepending needs to be flattened onto a remaining run — a
+// reverse + concat in one pass.
+fn run_reverse_append_step(reversed: Run, tail: Run) -> (Run & Run) | Run {
+  match! reversed.>Run.un {
+    (
+      , .(x: I32, rest: Run) { widen_sum!((rest, run_push(x, tail)), (Run & Run) | Run) }
+      , .(_empty: .) { widen_sum!(tail, (Run & Run) | Run) }
+      )
+  }
+}
+
+fn run_reverse_append(reversed: Run, tail: Run) -> Run {
+  loop(
+    , Run & Run
+    , Run
+    , .(state: Run & Run) -> (Run & Run) | Run {
+        match! state {
+          .(r: Run, t: Run) { run_reverse_append_step(r, t) }
+        }
+      }
+    , (reversed, tail)
+    )
+}
+
+// `Runs`-flavored reverse-append. Same shape as `run_reverse_append`
+// but specialized to a list of runs.
+fn runs_reverse_append_step(reversed: Runs, tail: Runs) -> (Runs & Runs) | Runs {
+  match! reversed.>Runs.un {
+    (
+      , .(x: Run, rest: Runs) { widen_sum!((rest, runs_push(x, tail)), (Runs & Runs) | Runs) }
+      , .(_empty: .) { widen_sum!(tail, (Runs & Runs) | Runs) }
+      )
+  }
+}
+
+fn runs_reverse_append(reversed: Runs, tail: Runs) -> Runs {
+  loop(
+    , Runs & Runs
+    , Runs
+    , .(state: Runs & Runs) -> (Runs & Runs) | Runs {
+        match! state {
+          .(r: Runs, t: Runs) { runs_reverse_append_step(r, t) }
+        }
+      }
+    , (reversed, tail)
+    )
+}
+
+// Wrap each element of `xs` in a singleton run. Walks the input
+// head-to-tail, conses `run_push(x, run_nil())` onto the
+// accumulator, then reverse-appends the accumulator at the end so
+// the runs come out in source order. State is `(remaining,
+// processed_reversed)`.
+fn singletons_step(remaining: Run, processed_reversed: Runs) -> (Run & Runs) | Runs {
+  match! remaining.>Run.un {
+    (
+      , .(x: I32, rest: Run) {
+          widen_sum!(
+            , (rest, runs_push(run_push(x, run_nil()), processed_reversed))
+            , (Run & Runs) | Runs
+            )
+        }
+      , .(_empty: .) { widen_sum!(processed_reversed, (Run & Runs) | Runs) }
+      )
+  }
+}
+
+fn singletons(xs: Run) -> Runs {
+  let reversed =
+    loop(
+      , Run & Runs
+      , Runs
+      , .(state: Run & Runs) -> (Run & Runs) | Runs {
+          match! state {
+            .(rem: Run, proc: Runs) { singletons_step(rem, proc) }
+          }
+        }
+      , (xs, runs_nil())
+      );
+  runs_reverse_append(reversed, runs_nil())
+}
+
+// Step the merge loop when `left` is non-empty. Factored out so
+// the inner `right.>Run.un` match doesn't nest under `merge_step`'s
+// outer match — keeps the kio-prime backend's intermediate sum
+// types narrow.
+fn merge_step_cons(left: Run, lx: I32, lrest: Run, right: Run, output_reversed: Run) ->
+  (Run & Run & Run) | Run
+   {
+  match! right.>Run.un {
+    (
+      , .(rx: I32, rrest: Run) {
+          if! leq_i32(lx, rx) {
+            widen_sum!((lrest, right, run_push(lx, output_reversed)), (Run & Run & Run) | Run)
+          } else {
+            widen_sum!((left, rrest, run_push(rx, output_reversed)), (Run & Run & Run) | Run)
+          }
+        }
+      , .(_empty: .) {
+          widen_sum!(run_reverse_append(output_reversed, left), (Run & Run & Run) | Run)
+        }
+      )
+  }
+}
+
+// Innermost loop: interleaves two sorted runs `left` and `right`
+// into one sorted run. State is `(left, right, output_reversed)`.
+// Compares heads, consumes the smaller, conses onto the
+// accumulator. When either side runs out, reverse-appends the
+// remaining other side to flatten.
+fn merge_step(left: Run, right: Run, output_reversed: Run) -> (Run & Run & Run) | Run {
+  match! left.>Run.un {
+    (
+      , .(lx: I32, lrest: Run) { merge_step_cons(left, lx, lrest, right, output_reversed) }
+      , .(_empty: .) {
+          widen_sum!(run_reverse_append(output_reversed, right), (Run & Run & Run) | Run)
+        }
+      )
+  }
+}
+
+fn merge(left: Run, right: Run) -> Run {
+  loop(
+    , Run & Run & Run
+    , Run
+    , .(state: Run & Run & Run) -> (Run & Run & Run) | Run {
+        match! state {
+          .(l: Run, r: Run, out: Run) { merge_step(l, r, out) }
+        }
+      }
+    , (left, right, run_nil())
+    )
+}
+
+// Step the pair-merge loop when `remaining` has at least one run
+// to pop. Factored out so the inner `tail1.>Runs.un` match
+// doesn't nest under `pair_merge_step`'s outer match.
+fn pair_merge_step_cons(first: Run, tail1: Runs, merged_reversed: Runs) -> (Runs & Runs) | Runs {
+  widen_sum!(
+    , match! tail1.>Runs.un {
+        (
+          , .(second: Run, tail2: Runs) {
+              (tail2, runs_push(merge(first, second), merged_reversed))
+            }
+          , .(_empty: .) { (runs_nil(), runs_push(first, merged_reversed)) }
+          )
+      }
+    , (Runs & Runs) | Runs
+    )
+}
+
+// Inner loop for one round: walks `remaining` two runs at a time
+// and merges each pair, accumulating into `merged_reversed`. When
+// only one run remains, passes it through unchanged. State is
+// `(remaining, merged_reversed)`; exit returns the reversed
+// accumulator (caller flattens).
+fn pair_merge_step(remaining: Runs, merged_reversed: Runs) -> (Runs & Runs) | Runs {
+  match! remaining.>Runs.un {
+    (
+      , .(first: Run, tail1: Runs) { pair_merge_step_cons(first, tail1, merged_reversed) }
+      , .(_empty: .) { widen_sum!(merged_reversed, (Runs & Runs) | Runs) }
+      )
+  }
+}
+
+fn pair_merge_round(runs: Runs) -> Runs {
+  let reversed =
+    loop(
+      , Runs & Runs
+      , Runs
+      , .(state: Runs & Runs) -> (Runs & Runs) | Runs {
+          match! state {
+            .(rem: Runs, acc: Runs) { pair_merge_step(rem, acc) }
+          }
+        }
+      , (runs, runs_nil())
+      );
+  runs_reverse_append(reversed, runs_nil())
+}
+
+// Step the outer round loop when `runs` has at least one run.
+// Factored out so the inner `rest.>Runs.un` match doesn't nest
+// under `round_step`'s outer match.
+fn round_step_cons(runs: Runs, first: Run, rest: Runs) -> Runs | Run {
+  match! rest.>Runs.un {
+    (
+      , .(_second: Run, _tail: Runs) { widen_sum!(pair_merge_round(runs), Runs | Run) }
+      , .(_empty: .) { widen_sum!(first, Runs | Run) }
+      )
+  }
+}
+
+// Outer loop: drives rounds until exactly one run remains. State
+// is the current `runs : Runs`. Exit value is the surviving
+// single run, the sorted list. The exit-detection trick: if the
+// head exists and its tail is empty, we're done; otherwise run
+// one more round.
+fn round_step(runs: Runs) -> Runs | Run {
+  match! runs.>Runs.un {
+    (
+      , .(first: Run, rest: Runs) { round_step_cons(runs, first, rest) }
+      , .(_empty: .) { widen_sum!(run_nil(), Runs | Run) }
+      )
+  }
+}
+
+fn mergesort(xs: Run) -> Run {
+  loop(Runs, Run, .(runs: Runs) -> Runs | Run { round_step(runs) }, singletons(xs))
+}
+
+// Step the join when the source has at least one element.
+// Factored out so the `if`/`else` doesn't nest under
+// `join_step`'s outer match — keeps the kio-prime backend's
+// intermediate sum types narrow.
+fn join_step_cons(x: I32, rest: Run, acc: String, is_first: I32) -> (Run & String & I32) | String {
+  widen_sum!(
+    , if! leq_i32(is_first, 0) {
+        (rest, int_to_string(x), 1)
+      } else {
+        (rest, string_concat(acc, string_concat(",", int_to_string(x))), 1)
+      }
+    , (Run & String & I32) | String
+    )
+}
+
+// Join a `Run` as comma-separated decimals. Same shape as
+// `exec_host_loop_map`'s `join_csv`: walks the list, prepends ","
+// to each rendered cell except the first.
+fn join_step(remaining: Run, acc: String, is_first: I32) -> (Run & String & I32) | String {
+  match! remaining.>Run.un {
+    (
+      , .(x: I32, rest: Run) { join_step_cons(x, rest, acc, is_first) }
+      , .(_empty: .) { widen_sum!(acc, (Run & String & I32) | String) }
+      )
+  }
+}
+
+fn join_csv(xs: Run) -> String {
+  loop(
+    , Run & String & I32
+    , String
+    , .(state: Run & String & I32) -> (Run & String & I32) | String {
+        match! state {
+          .(rem: Run, acc: String, first: I32) { join_step(rem, acc, first) }
+        }
+      }
+    , (xs, "", 0)
+    )
+}
+
+pub fn main() -> . { let sorted = mergesort(make_input()); print(join_csv(sorted)); print("\n") }

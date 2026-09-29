@@ -1,0 +1,5 @@
+module api;
+
+pub type Box[A] = A;
+
+pub fn bad(value: Box(., .)) -> . { () }

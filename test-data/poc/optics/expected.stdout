@@ -1,0 +1,32 @@
+42
+hello
+99, hello
+43, hello
+hello
+world
+Some(42)
+None
+Some(kio)
+Some(11)
+Some(43)
+Some(kio)
+Some(5)
+None
+None
+Some(99)
+hello
+7
+42, hello
+1, 2, 3
+43, hello
+7, 100
+hello
+11, hi
+42, hello
+hello
+Some(42)
+None
+Some(77)
+7, kio, 11
+100, kio, 11
+300, kio, 11

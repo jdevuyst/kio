@@ -1,0 +1,746 @@
+/// Type reflection elaborator that materializes a first-order `Type_rep` tree for a Kio type.
+module hkt/elab/type_of;
+
+import __intrinsics__;
+
+import __comptime__;
+
+/// Representation node for the unit type.
+pub newtype Rep_unit : . { pub constructor mk_rep_unit; pub projector un_rep_unit }
+
+/// Representation node for the bottom type.
+pub newtype Rep_bottom : . { pub constructor mk_rep_bottom; pub projector un_rep_bottom }
+
+/// Representation node for host, nominal, or otherwise opaque type leaves.
+pub newtype Rep_opaque : . { pub constructor mk_rep_opaque; pub projector un_rep_opaque }
+
+rec {
+  /// Representation node for a product type with left and right children.
+  pub newtype Rep_product : Type_rep & Type_rep {
+    pub constructor mk_rep_product;
+    pub projector un_rep_product
+    };
+  /// Representation node for a sum type with left and right children.
+  pub newtype Rep_sum : Type_rep & Type_rep { pub constructor mk_rep_sum; pub projector un_rep_sum };
+  /// Representation node for a function type with parameter and result children.
+  pub newtype Rep_function : Type_rep & Type_rep {
+    pub constructor mk_rep_function;
+    pub projector un_rep_function
+    };
+  /// Tail of the nested representation sum containing function and opaque nodes.
+  pub type Type_rep_tail4 = Rep_function | Rep_opaque;
+  /// Tail of the nested representation sum containing sum, function, and opaque nodes.
+  pub type Type_rep_tail3 = Rep_sum | Type_rep_tail4;
+  /// Tail of the nested representation sum containing product, sum, function, and opaque nodes.
+  pub type Type_rep_tail2 = Rep_product | Type_rep_tail3;
+  /// Tail of the nested representation sum containing bottom and compound nodes.
+  pub type Type_rep_tail1 = Rep_bottom | Type_rep_tail2;
+  /// First-order representation tree for reflected Kio types.
+  pub newtype Type_rep : Rep_unit | Type_rep_tail1 {
+    pub constructor mk_type_rep;
+    pub projector un_type_rep
+    }
+}
+
+/// Complete payload sum used inside `Type_rep`.
+pub type Type_rep_payload = Rep_unit | Type_rep_tail1;
+
+type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __fst__(__Type__, __Type_arity__ & __Type__, view)
+}
+
+pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __snd__(__Type_arity__, __Type__, __snd__(__Type__, __Type_arity__ & __Type__, view))
+}
+
+/// Builds the unit type representation.
+pub fn rep_unit() -> Type_rep {
+  Type_rep.mk_type_rep(__left__(Rep_unit, Type_rep_tail1, Rep_unit.mk_rep_unit(())))
+}
+
+/// Builds the bottom type representation.
+pub fn rep_bottom() -> Type_rep {
+  Type_rep.mk_type_rep(__right__(
+    , Rep_unit
+    , Type_rep_tail1
+    , __left__(Rep_bottom, Type_rep_tail2, Rep_bottom.mk_rep_bottom(()))
+    ))
+}
+
+/// Builds a product type representation from left and right children.
+pub fn rep_product(left: Type_rep, right: Type_rep) -> Type_rep {
+  Type_rep.mk_type_rep(__right__(
+    , Rep_unit
+    , Type_rep_tail1
+    , __right__(
+        , Rep_bottom
+        , Type_rep_tail2
+        , __left__(Rep_product, Type_rep_tail3, Rep_product.mk_rep_product((left, right)))
+        )
+    ))
+}
+
+/// Builds a sum type representation from left and right children.
+pub fn rep_sum(left: Type_rep, right: Type_rep) -> Type_rep {
+  Type_rep.mk_type_rep(__right__(
+    , Rep_unit
+    , Type_rep_tail1
+    , __right__(
+        , Rep_bottom
+        , Type_rep_tail2
+        , __right__(
+            , Rep_product
+            , Type_rep_tail3
+            , __left__(Rep_sum, Type_rep_tail4, Rep_sum.mk_rep_sum((left, right)))
+            )
+        )
+    ))
+}
+
+/// Builds a function type representation from parameter and result children.
+pub fn rep_function(param: Type_rep, result: Type_rep) -> Type_rep {
+  Type_rep.mk_type_rep(__right__(
+    , Rep_unit
+    , Type_rep_tail1
+    , __right__(
+        , Rep_bottom
+        , Type_rep_tail2
+        , __right__(
+            , Rep_product
+            , Type_rep_tail3
+            , __right__(
+                , Rep_sum
+                , Type_rep_tail4
+                , __left__(Rep_function, Rep_opaque, Rep_function.mk_rep_function((param, result)))
+                )
+            )
+        )
+    ))
+}
+
+/// Builds the opaque type representation.
+pub fn rep_opaque() -> Type_rep {
+  Type_rep.mk_type_rep(__right__(
+    , Rep_unit
+    , Type_rep_tail1
+    , __right__(
+        , Rep_bottom
+        , Type_rep_tail2
+        , __right__(
+            , Rep_product
+            , Type_rep_tail3
+            , __right__(
+                , Rep_sum
+                , Type_rep_tail4
+                , __right__(Rep_function, Rep_opaque, Rep_opaque.mk_rep_opaque(()))
+                )
+            )
+        )
+    ))
+}
+
+pure fn type_rep_tail4_type(
+  , ct: __Comptime__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  ) -> __Type__ { __type_sum__(ct, rep_function_type, rep_opaque_type) }
+
+pure fn type_rep_tail3_type(
+  , ct: __Comptime__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  ) -> __Type__ {
+  __type_sum__(ct, rep_sum_type, type_rep_tail4_type(ct, rep_function_type, rep_opaque_type))
+}
+
+pure fn type_rep_tail2_type(
+  , ct: __Comptime__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  ) -> __Type__ {
+  __type_sum__(
+    , ct
+    , rep_product_type
+    , type_rep_tail3_type(ct, rep_sum_type, rep_function_type, rep_opaque_type)
+    )
+}
+
+pure fn type_rep_tail1_type(
+  , ct: __Comptime__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  ) -> __Type__ {
+  __type_sum__(
+    , ct
+    , rep_bottom_type
+    , type_rep_tail2_type(ct, rep_product_type, rep_sum_type, rep_function_type, rep_opaque_type)
+    )
+}
+
+pure fn type_rep_payload_type(
+  , ct: __Comptime__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  ) -> __Type__ {
+  __type_sum__(
+    , ct
+    , rep_unit_type
+    , type_rep_tail1_type(
+        , ct
+        , rep_bottom_type
+        , rep_product_type
+        , rep_sum_type
+        , rep_function_type
+        , rep_opaque_type
+        )
+    )
+}
+
+pure fn call_ctor(ct: __Comptime__, ctor: __Checked_term__, payload: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, ctor), ctor, payload)
+}
+
+pure fn type_rep_from_payload(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , payload: __Checked_term__
+  ) -> __Checked_term__ { call_ctor(ct, type_rep_ctor, payload) }
+
+pure fn checked_rep_unit(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_unit_ctor: __Checked_term__
+  ) -> __Checked_term__ {
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_left__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , call_ctor(ct, rep_unit_ctor, __term_unit__(ct))
+        )
+    )
+}
+
+pure fn checked_rep_bottom(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_bottom_ctor: __Checked_term__
+  ) -> __Checked_term__ {
+  let tail1_type =
+    type_rep_tail1_type(
+      , ct
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      );
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_right__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , __intrinsic_left__(ct, tail1_type, call_ctor(ct, rep_bottom_ctor, __term_unit__(ct)))
+        )
+    )
+}
+
+pure fn checked_rep_product(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_product_ctor: __Checked_term__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ {
+  let tail1_type =
+    type_rep_tail1_type(
+      , ct
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      );
+  let tail2_type =
+    type_rep_tail2_type(ct, rep_product_type, rep_sum_type, rep_function_type, rep_opaque_type);
+  let product_rep = call_ctor(ct, rep_product_ctor, __intrinsic_pair__(ct, left, right));
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_right__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , __intrinsic_right__(ct, tail1_type, __intrinsic_left__(ct, tail2_type, product_rep))
+        )
+    )
+}
+
+pure fn checked_rep_sum(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_sum_ctor: __Checked_term__
+  , left: __Checked_term__
+  , right: __Checked_term__
+  ) -> __Checked_term__ {
+  let tail1_type =
+    type_rep_tail1_type(
+      , ct
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      );
+  let tail2_type =
+    type_rep_tail2_type(ct, rep_product_type, rep_sum_type, rep_function_type, rep_opaque_type);
+  let tail3_type = type_rep_tail3_type(ct, rep_sum_type, rep_function_type, rep_opaque_type);
+  let sum_rep = call_ctor(ct, rep_sum_ctor, __intrinsic_pair__(ct, left, right));
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_right__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , __intrinsic_right__(
+            , ct
+            , tail1_type
+            , __intrinsic_right__(ct, tail2_type, __intrinsic_left__(ct, tail3_type, sum_rep))
+            )
+        )
+    )
+}
+
+pure fn checked_rep_function(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_function_ctor: __Checked_term__
+  , param: __Checked_term__
+  , result: __Checked_term__
+  ) -> __Checked_term__ {
+  let tail1_type =
+    type_rep_tail1_type(
+      , ct
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      );
+  let tail2_type =
+    type_rep_tail2_type(ct, rep_product_type, rep_sum_type, rep_function_type, rep_opaque_type);
+  let tail3_type = type_rep_tail3_type(ct, rep_sum_type, rep_function_type, rep_opaque_type);
+  let tail4_type = type_rep_tail4_type(ct, rep_function_type, rep_opaque_type);
+  let function_rep = call_ctor(ct, rep_function_ctor, __intrinsic_pair__(ct, param, result));
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_right__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , __intrinsic_right__(
+            , ct
+            , tail1_type
+            , __intrinsic_right__(
+                , ct
+                , tail2_type
+                , __intrinsic_right__(
+                    , ct
+                    , tail3_type
+                    , __intrinsic_left__(ct, tail4_type, function_rep)
+                    )
+                )
+            )
+        )
+    )
+}
+
+pure fn checked_rep_opaque(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_opaque_ctor: __Checked_term__
+  ) -> __Checked_term__ {
+  let tail1_type =
+    type_rep_tail1_type(
+      , ct
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      );
+  let tail2_type =
+    type_rep_tail2_type(ct, rep_product_type, rep_sum_type, rep_function_type, rep_opaque_type);
+  let tail3_type = type_rep_tail3_type(ct, rep_sum_type, rep_function_type, rep_opaque_type);
+  let tail4_type = type_rep_tail4_type(ct, rep_function_type, rep_opaque_type);
+  type_rep_from_payload(
+    , ct
+    , type_rep_ctor
+    , __intrinsic_right__(
+        , ct
+        , type_rep_payload_type(
+            , ct
+            , rep_unit_type
+            , rep_bottom_type
+            , rep_product_type
+            , rep_sum_type
+            , rep_function_type
+            , rep_opaque_type
+            )
+        , __intrinsic_right__(
+            , ct
+            , tail1_type
+            , __intrinsic_right__(
+                , ct
+                , tail2_type
+                , __intrinsic_right__(
+                    , ct
+                    , tail3_type
+                    , __intrinsic_right__(
+                        , ct
+                        , tail4_type
+                        , call_ctor(ct, rep_opaque_ctor, __term_unit__(ct))
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+pure fn build_type_rep_step(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_unit_ctor: __Checked_term__
+  , rep_bottom_ctor: __Checked_term__
+  , rep_product_ctor: __Checked_term__
+  , rep_sum_ctor: __Checked_term__
+  , rep_function_ctor: __Checked_term__
+  , rep_opaque_ctor: __Checked_term__
+  , recur: (__Type__ & .) -> __Checked_term__
+  , source: __Type__
+  ) -> __Checked_term__ {
+  __either__(
+    , .
+    , Type_view_tail1
+    , __Checked_term__
+    , __type_view__(ct, source)
+    , .(_unit: .) -> __Checked_term__ {
+        checked_rep_unit(
+          , ct
+          , type_rep_ctor
+          , rep_unit_type
+          , rep_bottom_type
+          , rep_product_type
+          , rep_sum_type
+          , rep_function_type
+          , rep_opaque_type
+          , rep_unit_ctor
+          )
+      }
+    , .(tail1: Type_view_tail1) -> __Checked_term__ {
+        __either__(
+          , .
+          , Type_view_tail2
+          , __Checked_term__
+          , tail1
+          , .(_bottom: .) -> __Checked_term__ {
+              checked_rep_bottom(
+                , ct
+                , type_rep_ctor
+                , rep_unit_type
+                , rep_bottom_type
+                , rep_product_type
+                , rep_sum_type
+                , rep_function_type
+                , rep_opaque_type
+                , rep_bottom_ctor
+                )
+            }
+          , .(tail2: Type_view_tail2) -> __Checked_term__ {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , __Checked_term__
+                , tail2
+                , .(pair: Type_pair) -> __Checked_term__ {
+                    checked_rep_product(
+                      , ct
+                      , type_rep_ctor
+                      , rep_unit_type
+                      , rep_bottom_type
+                      , rep_product_type
+                      , rep_sum_type
+                      , rep_function_type
+                      , rep_opaque_type
+                      , rep_product_ctor
+                      , recur(__fst__(__Type__, __Type__, pair), ())
+                      , recur(__snd__(__Type__, __Type__, pair), ())
+                      )
+                  }
+                , .(tail3: Type_view_tail3) -> __Checked_term__ {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , __Checked_term__
+                      , tail3
+                      , .(pair: Type_pair) -> __Checked_term__ {
+                          checked_rep_sum(
+                            , ct
+                            , type_rep_ctor
+                            , rep_unit_type
+                            , rep_bottom_type
+                            , rep_product_type
+                            , rep_sum_type
+                            , rep_function_type
+                            , rep_opaque_type
+                            , rep_sum_ctor
+                            , recur(__fst__(__Type__, __Type__, pair), ())
+                            , recur(__snd__(__Type__, __Type__, pair), ())
+                            )
+                        }
+                      , .(tail4: Type_view_tail4) -> __Checked_term__ {
+                          __either__(
+                            , Function_view
+                            , Type_view_tail5
+                            , __Checked_term__
+                            , tail4
+                            , .(view: Function_view) -> __Checked_term__ {
+                                checked_rep_function(
+                                  , ct
+                                  , type_rep_ctor
+                                  , rep_unit_type
+                                  , rep_bottom_type
+                                  , rep_product_type
+                                  , rep_sum_type
+                                  , rep_function_type
+                                  , rep_opaque_type
+                                  , rep_function_ctor
+                                  , recur(function_param(ct, view), ())
+                                  , recur(function_result(ct, view), ())
+                                  )
+                              }
+                            , .(_tail5: Type_view_tail5) -> __Checked_term__ {
+                                checked_rep_opaque(
+                                  , ct
+                                  , type_rep_ctor
+                                  , rep_unit_type
+                                  , rep_bottom_type
+                                  , rep_product_type
+                                  , rep_sum_type
+                                  , rep_function_type
+                                  , rep_opaque_type
+                                  , rep_opaque_ctor
+                                  )
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn build_type_rep(
+  , ct: __Comptime__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_bottom_type: __Type__
+  , rep_product_type: __Type__
+  , rep_sum_type: __Type__
+  , rep_function_type: __Type__
+  , rep_opaque_type: __Type__
+  , rep_unit_ctor: __Checked_term__
+  , rep_bottom_ctor: __Checked_term__
+  , rep_product_ctor: __Checked_term__
+  , rep_sum_ctor: __Checked_term__
+  , rep_function_ctor: __Checked_term__
+  , rep_opaque_ctor: __Checked_term__
+  , source: __Type__
+  ) -> __Checked_term__ {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , .
+    , __Checked_term__
+    , source
+    , ()
+    , .(loop_recur: (__Type__ & .) -> __Checked_term__, loop_fuel: __Type__, _loop_state: .) -> __Checked_term__ {
+        build_type_rep_step(
+          , ct
+          , type_rep_ctor
+          , rep_unit_type
+          , rep_bottom_type
+          , rep_product_type
+          , rep_sum_type
+          , rep_function_type
+          , rep_opaque_type
+          , rep_unit_ctor
+          , rep_bottom_ctor
+          , rep_product_ctor
+          , rep_sum_ctor
+          , rep_function_ctor
+          , rep_opaque_ctor
+          , loop_recur
+          , loop_fuel
+          )
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn type_of_checked(
+  , ct: __Comptime__
+  , _type_rep_type: __Type__
+  , type_rep_ctor: __Checked_term__
+  , rep_unit_type: __Type__
+  , rep_unit_ctor: __Checked_term__
+  , rep_bottom_type: __Type__
+  , rep_bottom_ctor: __Checked_term__
+  , rep_product_type: __Type__
+  , rep_product_ctor: __Checked_term__
+  , rep_sum_type: __Type__
+  , rep_sum_ctor: __Checked_term__
+  , rep_function_type: __Type__
+  , rep_function_ctor: __Checked_term__
+  , rep_opaque_type: __Type__
+  , rep_opaque_ctor: __Checked_term__
+  , source: __Type__
+  ) -> __Checked_term__ {
+  build_type_rep(
+    , ct
+    , type_rep_ctor
+    , rep_unit_type
+    , rep_bottom_type
+    , rep_product_type
+    , rep_sum_type
+    , rep_function_type
+    , rep_opaque_type
+    , rep_unit_ctor
+    , rep_bottom_ctor
+    , rep_product_ctor
+    , rep_sum_ctor
+    , rep_function_ctor
+    , rep_opaque_ctor
+    , source
+    )
+}
+
+/// Builds a first-order reflected representation of the type argument.
+pub elab type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, Rep_unit, Rep_unit.mk_rep_unit, Rep_bottom, Rep_bottom.mk_rep_bottom, Rep_product, Rep_product.mk_rep_product, Rep_sum, Rep_sum.mk_rep_sum, Rep_function, Rep_function.mk_rep_function, Rep_opaque, Rep_opaque.mk_rep_opaque); impl type_of_checked }

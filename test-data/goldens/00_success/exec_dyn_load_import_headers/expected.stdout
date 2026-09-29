@@ -1,0 +1,16 @@
+emitted: 7, 11
+comma list: 7, 11
+selective control: loaded
+alias control: loaded
+intrinsics control: loaded
+missing provider: dyn_load_prime: malformed image — expected a provider after import at line 8, column 8
+missing opener: dyn_load_prime: malformed image — expected `(` or `as` after import provider at line 8, column 23
+empty list: dyn_load_prime: malformed image — expected at least one imported identifier at line 8, column 25
+missing separator: dyn_load_prime: malformed image — expected comma or closing parenthesis in import list at line 8, column 28
+missing closer: dyn_load_prime: malformed image — expected comma or closing parenthesis in import list at line 8, column 31
+missing semicolon: dyn_load_prime: malformed image — expected semicolon after import list at line 9, column 1
+missing alias: dyn_load_prime: malformed image — expected a value-shaped alias after `as` at line 8, column 26
+selective intrinsics: dyn_load_prime: malformed image — expected semicolon after import __intrinsics__ at line 8, column 22
+label entry: dyn_load_prime: malformed image — braced label imports are not in Kio' at line 8, column 23
+operator entry: dyn_load_prime: malformed image — operator imports are not in Kio' at line 8, column 23
+comptime import: dyn_load_prime: malformed image — import __comptime__ is not in Kio' at line 8, column 8

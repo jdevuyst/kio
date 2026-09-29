@@ -1,0 +1,74 @@
+module scanner;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/text(string_concat, string_eq, string_len, string_slice);
+
+pub fn script() -> String { "OPEN gate\nSET mode=A\nPING 007\nBAD ??\nLOCK gate\nSET mode=B" }
+
+fn is_script_len(n: I32) -> Bool { string_eq(string_slice(script(), 0, n), script()) }
+
+pub fn script_len_tag() -> String {
+  if! is_script_len(string_len(script())) {
+    "script-58"
+  } else {
+    "script-mismatch"
+  }
+}
+
+pub fn token(start: I32, end: I32) -> String { string_slice(script(), start, end) }
+
+fn eq_slice(start: I32, end: I32, expected: String) -> Bool {
+  string_eq(token(start, end), expected)
+}
+
+pub fn command_tag(start: I32, end: I32) -> String {
+  let raw = token(start, end);
+  if! string_eq(raw, "OPEN") {
+    "open"
+  } else if! string_eq(raw, "SET") {
+    "set"
+  } else if! string_eq(raw, "PING") {
+    "ping"
+  } else if! string_eq(raw, "LOCK") {
+    "lock"
+  } else {
+    "bad"
+  }
+}
+
+pub fn gate_target(start: I32, end: I32) -> String {
+  if! eq_slice(start, end, "gate") {
+    "gate"
+  } else {
+    token(start, end)
+  }
+}
+
+pub fn class_for(mark: String) -> String {
+  if! string_eq(mark, "X") {
+    "reject"
+  } else if! string_eq(mark, "P") {
+    "probe"
+  } else if! string_eq(mark, "A") {
+    "config"
+  } else if! string_eq(mark, "B") {
+    "config"
+  } else {
+    "entry"
+  }
+}
+
+pub fn set_mark(start: I32, end: I32) -> String {
+  if! eq_slice(start, end, "mode=A") {
+    "A"
+  } else if! eq_slice(start, end, "mode=B") {
+    "B"
+  } else {
+    "S"
+  }
+}
+
+pub fn checksum(a: String, b: String, c: String, d: String, e: String, f: String) -> String {
+  string_concat(a, string_concat(b, string_concat(c, string_concat(d, string_concat(e, f)))))
+}

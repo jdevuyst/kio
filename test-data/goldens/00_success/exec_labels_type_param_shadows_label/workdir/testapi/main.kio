@@ -1,0 +1,44 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// `a` is a label — its generated newtype is `A`. Each declaration
+// below binds a type-parameter `[A]` whose name coincides with the
+// generated type. The `[A]` must shadow that type in type position, exactly as
+// a value binder shadows the projector in value position. Before
+// the fix, the label-to-newtype rewrite ignored type-parameter
+// shadowing, so each bare `A` in type position resolved to the
+// generated newtype `A` and the call sites in `main` failed to
+// typecheck.
+labels { a: String };
+
+// `fn` signature `[A]` shadows label `a` in the param and return types.
+fn id_fn[A](x: A) -> A { x }
+
+// `type` header `[A]` shadows label `a` in the body.
+type Id[A] = A;
+
+fn use_id(x: Id(String)) -> Id(String) { x }
+
+// `newtype` header `[A]` shadows label `a` in the payload.
+newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
+
+fn make_wrap(s: String) -> Wrap(String) { Wrap.mk_wrap(s) }
+
+fn open_wrap(w: Wrap(String)) -> String { Wrap.un_wrap(w) }
+
+// A function-type `[A] A -> A` mid-type binder shadows label `a`
+// inside the annotation. Defined but not called: a higher-rank
+// function-typed parameter has no runtime codegen yet (a separate
+// concern), but the declaration is still elaborated and
+// typechecked — under the bug the `a` inside the function-type
+// binder rewrites to the newtype `A`, so `g(String, s)` no longer
+// typechecks and the build fails.
+fn via_forall(g: [A] A -> A, s: String) -> String { g(s) }
+
+pub fn main() -> . {
+  print(id_fn("via-fn-param\n"));
+  print(use_id("via-alias\n"));
+  print(open_wrap(make_wrap("via-newtype\n")))
+}

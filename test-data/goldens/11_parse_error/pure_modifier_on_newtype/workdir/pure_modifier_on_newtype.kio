@@ -1,0 +1,3 @@
+module pure_modifier_on_newtype;
+
+host type String role(str);

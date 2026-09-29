@@ -1,0 +1,24 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+fn fold_two[A](seed: A, first_element: A, second_element: A, step: (A & A) -> A) -> A {
+  step(step(seed, first_element), second_element)
+}
+
+pub fn keep_matching[A](keep: A -> Bool, seed: A, first_element: A, second_element: A) -> A {
+  fold_two(
+    , seed
+    , first_element
+    , second_element
+    , .(carry: A, element: A) -> A {
+        if! keep(element) {
+          element
+        } else {
+          carry
+        }
+      }
+    )
+}

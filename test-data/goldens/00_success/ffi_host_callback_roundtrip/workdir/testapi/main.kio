@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, call_step, make_pair);
+import testapi/fmt(bool_to_string, i32_to_string);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let stepped =
+    call_step(
+      , .(n: I32, label: String, ok: Bool) -> I32 {
+          print(label);
+          print("\n"(String));
+          print(bool_to_string(ok));
+          print("\n"(String));
+          add_i32(n, 1)
+        }
+      , 40
+      );
+  print(i32_to_string(stepped));
+  print("\n"(String));
+  let first = make_pair(.(n: I32) -> I32 & String { (add_i32(n, 2), "callback-pair"(String)) }, 5);
+  print(i32_to_string(first));
+  print("\n"(String))
+}

@@ -1,0 +1,26 @@
+/// Direct regression for a numeric literal whose type is fixed by a
+/// *cross-module* host fn's parameter. `add_i32` lives in
+/// `testapi/arith` and takes `I32`; calling it here with bare literals
+/// (`add_i32(40, 2)`) makes the typer resolve each literal against that
+/// imported signature and bake its annotation as the host type in its
+/// declaring module — `testapi.I32`, a two-segment path.
+///
+/// Because this module imports the same host type bare (`use I32 from
+/// testapi`), the kio-prime requalifier de-qualifies that annotation to
+/// the bound spelling, so the emitted Kio' carries the **bare** form
+/// `add_i32(40(I32), 2(I32))`. The Go and Swift emitters resolve a
+/// literal's role from the annotation's *leaf* segment (`I32` →
+/// `role(i32)`); dropping the role fails the build with "numeric literal
+/// without a role annotation".
+///
+/// The two-segment branch of that leaf resolver — a *qualified* annotation
+/// that survives requalification — is covered by the sibling golden
+/// `exec_cross_module_host_fn_literal_role_qualified`.
+module testapi/main;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+pub fn main() -> . { print(int_to_string(add_i32(40, 2))) }

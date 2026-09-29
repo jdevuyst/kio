@@ -1,0 +1,24 @@
+Option/result form validation
+
+Submission invite-102
+accepted: true
+passed: 5
+failed: 0
+details:
+  OK email - present: ada@kio.dev
+  OK age - accepted: 29
+  OK country - present: NL
+  OK terms - accepted
+  OK nickname - omitted
+
+Submission invite-204
+accepted: false
+passed: 1
+failed: 4
+details:
+  ERR email - missing required email
+  ERR age - too young: 15
+  ERR country - missing required country
+  ERR terms - terms not accepted
+  OK nickname - present: q
+

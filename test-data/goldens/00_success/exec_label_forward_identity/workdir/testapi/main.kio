@@ -1,0 +1,22 @@
+module testapi/main;
+
+import middle as words;
+import origin(Item);
+import testapi(String);
+import testapi/forward as view;
+import testapi/forward({display}, {local});
+import testapi/io(print);
+
+fn build_selected(value: String) -> Item { {display = value} }
+
+fn read_original(value: Item) -> String { Item.get(value) }
+
+fn read_forwarded(value: Item) -> String { value.?{view.display} }
+
+pub fn main() -> . {
+  print(read_original(build_selected("selected\n")));
+  print(read_forwarded(Item.mk("original\n")));
+  print(read_original({view.display = "qualified\n"}));
+  print(read_original({local = "scoped\n"}));
+  print(words.caption())
+}

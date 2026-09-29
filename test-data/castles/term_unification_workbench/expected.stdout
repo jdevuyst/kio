@@ -1,0 +1,30 @@
+case: nested composition
+  left: f10(v1,f20(v2),v3,v2)
+  right: f10(f30(v3),f20(f40()),f50(),f40())
+  substitution: [v3=f50(), v2=f40(), v1=f30(f50())]
+  left after: f10(f30(f50()),f20(f40()),f50(),f40())
+  right after: f10(f30(f50()),f20(f40()),f50(),f40())
+  verified equal: true
+case: variable chain
+  left: f10(v1,v2)
+  right: f10(v2,f60())
+  substitution: [v2=f60(), v1=f60()]
+  left after: f10(f60(),f60())
+  right after: f10(f60(),f60())
+  verified equal: true
+case: repeated variable conflict
+  left: f10(v1,v1)
+  right: f10(f40(),f50())
+  symbol clash: 40 vs 50
+case: direct occurs failure
+  left: v1
+  right: f20(v1)
+  occurs check: v1
+case: indirect occurs failure
+  left: f10(v1,v2)
+  right: f10(v2,f20(v1))
+  occurs check: v2
+case: arity conflict
+  left: f10(v1)
+  right: f10(f40(),f50())
+  arity mismatch: 1 vs 2

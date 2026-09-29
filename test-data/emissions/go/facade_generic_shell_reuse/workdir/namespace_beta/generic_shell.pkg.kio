@@ -1,0 +1,14 @@
+package generic_shell;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/";
+    namespace "shell_beta"
+  }
+}
+
+bridge {
+  api
+}

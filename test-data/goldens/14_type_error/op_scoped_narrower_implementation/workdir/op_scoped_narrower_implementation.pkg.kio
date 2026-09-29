@@ -1,0 +1,13 @@
+package op_scoped_narrower_implementation;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  app/**
+}

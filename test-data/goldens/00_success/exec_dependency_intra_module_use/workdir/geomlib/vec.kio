@@ -1,0 +1,9 @@
+module geomlib/vec;
+
+pub type Vec2[A] = A & A;
+
+pub fn mk[A](a: A, b: A) -> Vec2(A) { (a, b) }
+
+pub fn fst[A]((a: A, _b: A)) -> A { a }
+
+pub fn snd[A]((_a: A, b: A)) -> A { b }

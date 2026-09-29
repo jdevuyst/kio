@@ -1,0 +1,13 @@
+package deferred_application_type_mismatch;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

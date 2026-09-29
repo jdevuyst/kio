@@ -1,0 +1,102 @@
+module gate_array_dp/dp;
+
+import elab/control(if);
+import gate_array_dp/constants(days, inf, max_age, states, table_size);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+import testapi/iter(loop);
+
+pub fn table_index(day: I32, age: I32) -> I32 { add_i32(mul_i32(day, states()), age) }
+
+pub fn reachable(cost: I32) -> Bool { leq_i32(cost, sub_i32(inf(), 1)) }
+
+fn age_weight(age: I32) -> I32 {
+  if! leq_i32(age, 0) {
+    1
+  } else if! leq_i32(age, 1) {
+    2
+  } else if! leq_i32(age, 2) {
+    4
+  } else {
+    7
+  }
+}
+
+fn bump_age(age: I32) -> I32 {
+  if! leq_i32(age, sub_i32(max_age(), 1)) {
+    add_i32(age, 1)
+  } else {
+    max_age()
+  }
+}
+
+fn min_set(table: Array(I32), index: I32, candidate: I32) -> . {
+  let current = array_get(table, index);
+  if! leq_i32(candidate, current) {
+    array_set(table, index, candidate)
+  } else {
+    ()
+  }
+}
+
+fn process_cell(day: I32, age: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) -> . {
+  let current = array_get(table, table_index(day, age));
+  if! reachable(current) {
+    let next_day = add_i32(day, 1);
+    let next_age = bump_age(age);
+    let traffic_cost = mul_i32(array_get(traffic, day), age_weight(next_age));
+    let defer_cost = add_i32(current, traffic_cost);
+    let service_now_cost = add_i32(current, array_get(service, day));
+    min_set(table, table_index(next_day, next_age), defer_cost);
+    min_set(table, table_index(next_day, 0), service_now_cost)
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn fill_ages(
+  , age: I32
+  , day: I32
+  , table: Array(I32)
+  , traffic: Array(I32)
+  , service: Array(I32)
+  ) -> . {
+  if! leq_i32(age, max_age()) {
+    process_cell(day, age, table, traffic, service);
+    rec fill_ages(add_i32(age, 1), day, table, traffic, service)
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn fill_days(day: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) -> Array(I32) {
+  if! leq_i32(day, sub_i32(days(), 1)) {
+    fill_ages(0, day, table, traffic, service);
+    rec fill_days(add_i32(day, 1), table, traffic, service)
+  } else {
+    table
+  }
+}
+
+rec(loop) fn best_final_from(age: I32, best: I32, table: Array(I32)) -> I32 {
+  if! leq_i32(age, max_age()) {
+    let cost = array_get(table, table_index(days(), age));
+    let next_best = if! leq_i32(cost, best) {
+      cost
+    } else {
+      best
+    };
+    rec best_final_from(add_i32(age, 1), next_best, table)
+  } else {
+    best
+  }
+}
+
+pub fn solve(traffic: Array(I32), service: Array(I32)) -> Array(I32) {
+  let table = array_make_filled(table_size(), inf());
+  array_set(table, table_index(0, 0), 0);
+  fill_days(0, table, traffic, service)
+}
+
+pub fn final_score(table: Array(I32)) -> I32 { best_final_from(0, inf(), table) }

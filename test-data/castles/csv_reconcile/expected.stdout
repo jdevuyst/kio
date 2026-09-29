@@ -1,0 +1,9 @@
+csv reconcile
+begin balance=0 credits=0 debits=0 checks=0 errors=0
+credit +12 balance=12
+debit -5 balance=7
+check 1 balance=7 status=ok
+credit +4 balance=11
+reject debit 40 balance=11
+check 2 balance=11 status=needs-review
+end balance=11 credits=16 debits=5 checks=2 errors=1

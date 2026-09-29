@@ -1,0 +1,18 @@
+module main;
+
+// Value-param reference: `x` is bound by the fn header at type
+// `()`; the body is the bare `x`, which E-Var synthesizes as `()`.
+fn id_unit(x: .) -> . { x }
+
+// Polymorphic value-param reference: `t` ranges over monotypes;
+// the body is the bare `t`, synthesized as `t` from Γ.
+fn id_poly[T](x: T) -> T { x }
+
+// `let`-bound reference: `y` is bound in the local Γ by E-Let
+// (RHS synthesized from `x`), and the body is the bare `y`,
+// E-Var-synthesized as `()`.
+fn through_let(x: .) -> . { let y = x; y }
+
+// Re-binding chain: each `let` adds a new entry to Γ; the final
+// expression is a single E-Var lookup of the last-bound name.
+fn chain(x: .) -> . { let a = x; let b = a; let c = b; c }

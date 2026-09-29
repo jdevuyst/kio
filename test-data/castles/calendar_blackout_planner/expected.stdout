@@ -1,0 +1,6 @@
+calendar blackout planner
+alpha score=37 status=release
+beta score=0 status=frozen
+gamma score=47 status=release
+winner=gamma score=47 support-load=8
+summary release=2 frozen=1

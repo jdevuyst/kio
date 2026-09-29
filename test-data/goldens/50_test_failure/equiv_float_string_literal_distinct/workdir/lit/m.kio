@@ -1,0 +1,13 @@
+module lit/m;
+
+import lit(F64, Str);
+
+equiv float_lit() {
+  1.5;
+  2.5
+}
+
+equiv string_lit() {
+  "first";
+  "second"
+}

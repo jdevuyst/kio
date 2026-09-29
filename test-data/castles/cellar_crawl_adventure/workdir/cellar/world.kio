@@ -1,0 +1,130 @@
+/// The map: a directed graph over seven rooms, whose edges carry the gate that
+/// guards them. An exit is open, locked behind an item, or simply absent.
+///
+/// The graph is a total function of `(room, direction)` rather than a stored
+/// table. Each hand-authored edge is one branch, and the fallback represents
+/// an absent edge.
+module cellar/world;
+
+import cellar/ids as ids;
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+
+pub labels Exit =
+  { open_to: ids.Room_id }
+  | { locked_to: ids.Room_id, locked_by: ids.Item_id }
+  | { no_way: . };
+
+fn opens(to: ids.Room_id) -> Exit { {open_to = to}.>widen_sum!(Exit) }
+
+fn locked(to: ids.Room_id, key: ids.Item_id) -> Exit {
+  {locked_to = to, locked_by = key}.>widen_sum!(Exit)
+}
+
+fn walled() -> Exit { {no_way=}.>widen_sum!(Exit) }
+
+fn edge(from: ids.Room_id, d: ids.Dir_id, room: ids.Room_id, dir: ids.Dir_id) -> Bool {
+  ids.and(ids.room_eq(from, room), ids.dir_eq(d, dir))
+}
+
+/// The whole cellar, edge by edge. Both locked doors answer to the brass key:
+/// a cellar master carries one key, not two.
+pub fn exit_of(from: ids.Room_id, d: ids.Dir_id) -> Exit {
+  if! edge(from, d, ids.stair_foot(), ids.north()) {
+    opens(ids.barrel_hall())
+  } else if! edge(from, d, ids.barrel_hall(), ids.south()) {
+    opens(ids.stair_foot())
+  } else if! edge(from, d, ids.barrel_hall(), ids.west()) {
+    opens(ids.cooperage())
+  } else if! edge(from, d, ids.barrel_hall(), ids.east()) {
+    opens(ids.tasting_nook())
+  } else if! edge(from, d, ids.barrel_hall(), ids.down()) {
+    locked(ids.racking_floor(), ids.brass_key())
+  } else if! edge(from, d, ids.cooperage(), ids.east()) {
+    opens(ids.barrel_hall())
+  } else if! edge(from, d, ids.tasting_nook(), ids.west()) {
+    opens(ids.barrel_hall())
+  } else if! edge(from, d, ids.racking_floor(), ids.up()) {
+    opens(ids.barrel_hall())
+  } else if! edge(from, d, ids.racking_floor(), ids.north()) {
+    opens(ids.unlit_cellar())
+  } else if! edge(from, d, ids.unlit_cellar(), ids.south()) {
+    opens(ids.racking_floor())
+  } else if! edge(from, d, ids.unlit_cellar(), ids.east()) {
+    locked(ids.reserve_vault(), ids.brass_key())
+  } else if! edge(from, d, ids.reserve_vault(), ids.west()) {
+    opens(ids.unlit_cellar())
+  } else {
+    walled()
+  }
+}
+
+/// The map has exactly two lockable edges and the state carries one flag per
+/// door, so each door is identified by its directed edge.
+pub fn is_hatch(from: ids.Room_id, d: ids.Dir_id) -> Bool {
+  edge(from, d, ids.barrel_hall(), ids.down())
+}
+
+pub fn is_vault_door(from: ids.Room_id, d: ids.Dir_id) -> Bool {
+  edge(from, d, ids.unlit_cellar(), ids.east())
+}
+
+pub fn is_dark(r: ids.Room_id) -> Bool { ids.room_eq(r, ids.unlit_cellar()) }
+
+pub fn start_room() -> ids.Room_id { ids.stair_foot() }
+
+/// Where each item lies before anyone touches it.
+pub fn item_origin(i: ids.Item_id) -> ids.Room_id {
+  if! ids.item_eq(i, ids.lantern()) {
+    ids.racking_floor()
+  } else if! ids.item_eq(i, ids.brass_key()) {
+    ids.cooperage()
+  } else if! ids.item_eq(i, ids.cork()) {
+    ids.tasting_nook()
+  } else {
+    ids.reserve_vault()
+  }
+}
+
+pub fn room_title(r: ids.Room_id) -> String {
+  if! ids.room_eq(r, ids.stair_foot()) {
+    "Foot of the Cellar Stairs"
+  } else if! ids.room_eq(r, ids.barrel_hall()) {
+    "The Barrel Hall"
+  } else if! ids.room_eq(r, ids.cooperage()) {
+    "The Cooperage"
+  } else if! ids.room_eq(r, ids.tasting_nook()) {
+    "The Tasting Nook"
+  } else if! ids.room_eq(r, ids.racking_floor()) {
+    "The Racking Floor"
+  } else if! ids.room_eq(r, ids.unlit_cellar()) {
+    "The Unlit Cellar"
+  } else {
+    "The Reserve Vault"
+  }
+}
+
+pub fn room_blurb(r: ids.Room_id) -> String {
+  if! ids.room_eq(r, ids.stair_foot()) {
+    "Worn steps climb back up toward the daylight. The air is cold and smells "
+    "of oak."
+  } else if! ids.room_eq(r, ids.barrel_hall()) {
+    "Fat oak barrels sweat in the gloom. A trapdoor is set into the "
+    "flagstones."
+  } else if! ids.room_eq(r, ids.cooperage()) {
+    "Staves, iron hoops, and a half-built barrel. A cooper's bench runs along "
+    "the wall."
+  } else if! ids.room_eq(r, ids.tasting_nook()) {
+    "A scarred table, six glasses, and a hundred overlapping rings of old "
+    "wine."
+  } else if! ids.room_eq(r, ids.racking_floor()) {
+    "Bottles lie racked neck-down in the shadows. A low arch opens to the "
+    "north."
+  } else if! ids.room_eq(r, ids.unlit_cellar()) {
+    "Your light throws long shapes across a vault no flame has entered in "
+    "thirty years."
+  } else {
+    "A cold stone chamber. One bottle rests alone in a cradle of straw."
+  }
+}

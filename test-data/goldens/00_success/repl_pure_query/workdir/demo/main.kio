@@ -1,0 +1,14 @@
+module demo/main;
+
+import demo/provider as provider;
+import demo/provider(imported_pure);
+
+host type Text role(str);
+
+host fn emit(value: Text) -> .;
+
+pure fn local_pure(x: .) -> . { x }
+
+fn unrestricted(x: .) -> . { x }
+
+type Alias = .;

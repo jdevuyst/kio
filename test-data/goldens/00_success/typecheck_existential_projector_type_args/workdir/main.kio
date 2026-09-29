@@ -1,0 +1,25 @@
+module main;
+
+import __intrinsics__;
+
+// Subject: type-args on the CPS projector apply
+// (specs/formal/elaboration.md § 7.5 + § 9 IR-preservation
+// contract for projector type-args).
+// When the projector's receiver is built from in-scope universals,
+// the outer call's type-args must survive the projector application
+// so later phase consumers retain the receiver-frame universals
+// rather than the newtype's declaration-level binders.
+newtype Pair[A][B] <U> : A & B & U { pub constructor mk_pair; pub projector un_pair }
+
+// Two universals at the outer frame. The projector apply must
+// carry `[A][B]` (the outer-frame universals) on its type-args
+// per specs/formal/elaboration.md § 7.5 + § 9 — without it, the
+// continuation closure references the newtype's declaration-level
+// binders.
+fn extract_first[A][B](p: Pair(A, B)) -> A {
+  Pair.un_pair(A, B, p)(A, .[U](trip) { __fst__(A, B & U, trip) })
+}
+
+fn extract_second[A][B](p: Pair(A, B)) -> B {
+  Pair.un_pair(A, B, p)(B, .[U](trip) { __fst__(B, U, __snd__(A, B & U, trip)) })
+}

@@ -1,0 +1,7 @@
+dependency helper;
+
+source {
+  path "packages/helper/helper.pkg.kio";
+  ref "main";
+  git "https://example.com/libraries.git"
+}

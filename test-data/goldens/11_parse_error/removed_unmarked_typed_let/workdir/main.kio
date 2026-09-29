@@ -1,0 +1,3 @@
+module main;
+
+fn subject() -> . { let value: . = (); value }

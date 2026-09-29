@@ -1,0 +1,24 @@
+Opposite-lock Petri net (capacity 1)
+places: left-wait left-hold left-done right-wait right-hold right-done lock-a lock-b
+reachable markings: 9
+enabled edges: 10
+duplicate discoveries: 2
+peak FIFO frontier: 3
+completed terminals: 1
+unfinished deadlocks: 1
+shortest deadlock depth: 2
+witness transitions: 2
+  0: initial -> [1, 0, 0, 1, 0, 0, 1, 1]
+  1: acquire-left -> [0, 1, 0, 1, 0, 0, 0, 1]
+  2: acquire-right -> [0, 1, 0, 0, 1, 0, 0, 0]
+replay reaches unfinished deadlock: true
+finish before acquisition rejected: true
+capacity overflow rejected: true
+initially completed: terminals=1
+initially completed: deadlocks=0
+initially stuck: terminals=0
+initially stuck: deadlocks=1
+shortest deadlock depth: 0
+witness transitions: 0
+  0: initial -> [0, 1, 0, 0, 1, 0, 0, 0]
+replay reaches unfinished deadlock: true

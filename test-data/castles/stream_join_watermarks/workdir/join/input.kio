@@ -1,0 +1,72 @@
+module join/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import join/model as m;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+pub labels Command =
+  { begin: String }
+  | { left_event: m.Event }
+  | { right_event: m.Event }
+  | { left_watermark: I32 }
+  | { right_watermark: I32 }
+  | { checkpoint: String }
+  | { end: . };
+
+fn number() -> I32 | . {
+  match! io.read_ascii_line() {
+    .(line: String) { fmt.string_to_int(line) };
+    .() { ().>widen_sum! }
+  }
+}
+
+fn event() -> m.Event | . {
+  let id = number();
+  let key = io.read_ascii_line();
+  let time = number();
+  match!((id, key, time)) {
+    .(id: I32, key: String, time: I32) { {m.id, m.key, m.time}.>widen_sum!(m.Event | .) };
+    .() { ().>widen_sum! }
+  }
+}
+
+fn field[A](value: A | ., wrap: A -> Command) -> . | Command {
+  match! value {
+    .(present: A) { wrap(present).>widen_sum! };
+    .() { io.print("input error: missing or invalid field\n"); ().>widen_sum! }
+  }
+}
+
+pub fn next() -> . | Command {
+  match! io.read_ascii_line() {
+    .(command: String) {
+      if! text.string_eq(command, "begin") {
+        field(io.read_ascii_line(), .(name: String) { {begin = name}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "left") {
+        field(event(), .(value: m.Event) { {left_event = value}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "right") {
+        field(event(), .(value: m.Event) { {right_event = value}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "watermark-left") {
+        field(number(), .(value: I32) { {left_watermark = value}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "watermark-right") {
+        field(number(), .(value: I32) { {right_watermark = value}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "checkpoint") {
+        field(io.read_ascii_line(), .(name: String) { {checkpoint = name}.>widen_sum!(Command) })
+      } else if! text.string_eq(command, "end") {
+        {end=}.>widen_sum!
+      } else {
+        io.print(text.string_concat(
+          , "input error: unknown command "
+          , text.string_concat(command, "\n")
+          ));
+        ().>widen_sum!
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}

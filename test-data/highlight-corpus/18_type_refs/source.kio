@@ -1,0 +1,7 @@
+module m;
+
+pub type Pair[A][B] = A & B;
+
+pub newtype Wrap[A] : A & Int { pub constructor mk_wrap; pub projector un_wrap; };
+
+fn build(x: Int, y: String) -> Pair(Int, String) { (x, y) }

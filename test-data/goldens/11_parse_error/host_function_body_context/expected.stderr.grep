@@ -1,0 +1,2 @@
+a `host fn` declares a function supplied by the host, not a Kio function body
+help:.*end the host function signature with `;`

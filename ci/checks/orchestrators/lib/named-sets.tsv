@@ -1,0 +1,2 @@
+scope	policy	manifest	classification	minimum_non_known_failing_success	known_failing_overlap
+dyn-load-prime	smoke	ci/checks/orchestrators/case-coverage/dyn-load-prime/smoke.cases	success-smoke	1	reject

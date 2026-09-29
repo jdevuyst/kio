@@ -1,0 +1,5 @@
+module api;
+
+fn apply[A][R](callback: A -> R, value: A) -> R { callback(value) }
+
+pub fn map[A][B](callback: A -> B, value: A) -> B { apply(.(item: _) { callback(item) }, value) }

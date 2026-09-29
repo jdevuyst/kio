@@ -1,0 +1,89 @@
+# Publishes the Kio VS Code extension (tools/vscode-kio) to the VS Code
+# Marketplace and the Open VSX Registry on each release tag. The binary
+# release is handled by release.yml. Extension publishing uses `releases/v*`;
+# the generated binary release uses `**[0-9]+.[0-9]+.[0-9]+*`.
+# A `releases/v<major>.<minor>.<patch>` tag matches both at the repo-wide version.
+#
+# Uses two repo secrets: VSCE_PAT (Marketplace, publisher `kio-lang`) and
+# OVSX_PAT (Open VSX, namespace `kio-lang`). The job runs only on tags of
+# the canonical repo. Each registry is independent, and a registry whose
+# token is absent is skipped with a warning rather than failing the run;
+# the built .vsix is uploaded either way, so a skipped registry can be
+# released by hand.
+#
+# The .vsix build mirrors devcontainer-publish.yml: `tree-sitter build
+# --wasm` (run by `npm run build:wasm`) falls back to docker when
+# emcc/wasi-sdk aren't on PATH, and GitHub runners ship docker.
+name: Publish VS Code extension
+
+on:
+  push:
+    tags:
+      - 'releases/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish extension to Marketplace and Open VSX
+    if: github.repository == 'jdevuyst/kio'
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: node tree-sitter
+          cache: false
+
+      - name: Build the .vsix
+        working-directory: tools/vscode-kio
+        run: |
+          npm ci --no-fund --no-audit
+          npm run package
+
+      # A publish arm can legitimately skip (see below), so the release still
+      # has to hand over something to upload by hand. Keep the .vsix the run
+      # built rather than leaving a manual upload to reproduce the build.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: kio-vsix
+          path: tools/vscode-kio/kio.vsix
+          if-no-files-found: error
+
+      # Each registry publishes only if its token is configured. A missing
+      # token means that registry is being released by hand, which is not a
+      # failure; a token that is present and does not publish still is. The
+      # two are independent — Open VSX issues its own token, so it can stay
+      # automated while the Marketplace is done manually. `secrets` is not
+      # available to `if:`, so the check reads the mapped env var instead.
+      - name: Publish to the VS Code Marketplace
+        working-directory: tools/vscode-kio
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "::warning title=Marketplace publish skipped::VSCE_PAT is not set. Upload the .vsix at https://marketplace.visualstudio.com/manage"
+            exit 0
+          fi
+          npx vsce publish --packagePath kio.vsix
+
+      - name: Publish to Open VSX
+        working-directory: tools/vscode-kio
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::warning title=Open VSX publish skipped::OVSX_PAT is not set. Upload the .vsix at https://open-vsx.org"
+            exit 0
+          fi
+          npx ovsx publish kio.vsix

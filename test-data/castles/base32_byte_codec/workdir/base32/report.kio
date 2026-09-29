@@ -1,0 +1,173 @@
+/// Rendering. Every line the program prints is assembled here, so `main`
+/// stays a two-line driver.
+///
+/// Each fixture contributes one block and one row of counters — packets
+/// accepted, packets refused, bytes recovered — and the walk over the
+/// fixtures threads those counters into the closing summary.
+module base32/report;
+
+import base32/alphabet as alphabet;
+import base32/decode(Decoded, Ok, Reject, bytes_eq, decode, {ok}, {reject});
+import base32/encode(encode);
+import base32/list as list;
+import base32/packets(Fixture, Payload, Received, {payload}, {received});
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+fn num(value: I32) -> String { int_to_string(value) }
+
+fn field(name: String, value: String) -> String { cat3("  ", name, cat3(": ", value, "\n")) }
+
+rec(loop) fn spaced(payload: alphabet.Bytes, gap: String, done: String) -> String {
+  match! payload.>list.List.un_list {
+    (
+      , .(byte: I32, rest: alphabet.Bytes) { rec spaced(rest, " ", cat3(done, gap, num(byte))) }
+      , .(_empty: .) { done }
+      )
+  }
+}
+
+/// The payload as space-separated decimals.
+fn show_bytes(payload: alphabet.Bytes) -> String { spaced(payload, "", "") }
+
+rec(loop) fn fused(glyphs: alphabet.Glyphs, done: String) -> String {
+  match! glyphs.>list.List.un_list {
+    (
+      , .(glyph: String, rest: alphabet.Glyphs) { rec fused(rest, cat(done, glyph)) }
+      , .(_empty: .) { done }
+      )
+  }
+}
+
+/// The transmission as one run of glyphs — they carry no separator.
+fn show_glyphs(glyphs: alphabet.Glyphs) -> String { fused(glyphs, "") }
+
+fn heading(index: I32, kind: String, size: I32, unit: String) -> String {
+  cat3("packet ", num(index), cat3(": ", kind, cat3(", ", num(size), cat3(" ", unit, "\n"))))
+}
+
+fn accepted(recovered: alphabet.Bytes) -> String {
+  field(
+    , "verdict"
+    , cat3("OK, round trip verified, ", num(list.length(recovered)), " bytes recovered")
+    )
+}
+
+fn decoded_received(recovered: alphabet.Bytes) -> String {
+  field(
+    , "verdict"
+    , cat3("OK, received transmission decoded, ", num(list.length(recovered)), " bytes recovered")
+    )
+}
+
+fn refused(position: I32) -> String {
+  field("verdict", cat3("REJECT, glyph ", num(position), " is outside the alphabet"))
+}
+
+/// One fixture's block, followed by its contribution to the running
+/// counters: `(block, accepted, refused, bytes recovered)`.
+type Entry = String & I32 & I32 & I32;
+
+/// Encode a payload, decode the glyphs straight back, and check the
+/// recovered bytes against the ones we started with.
+fn round_trip(index: I32, payload: alphabet.Bytes) -> Entry {
+  let glyphs = encode(payload);
+  let shown =
+    cat3(
+      , heading(index, "payload", list.length(payload), "bytes")
+      , field("bytes", show_bytes(payload))
+      , field("encoded", show_glyphs(glyphs))
+      );
+  match! decode(glyphs) {
+    (
+      , .(good: Ok) {
+          let recovered = good.?{ok};
+          if! bytes_eq(recovered, payload) {
+            (cat3(shown, accepted(recovered), "\n"), 1, 0, list.length(recovered))
+          } else {
+            (
+              , cat3(shown, field("verdict", "MISMATCH, the round trip lost the payload"), "\n")
+              , 0
+              , 1
+              , 0
+              )
+          }
+        }
+      , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+      )
+  }
+}
+
+/// Decode a transmission that arrived off the wire. There is no payload to
+/// check it against — whether it decodes at all is the whole question.
+fn as_received(index: I32, glyphs: alphabet.Glyphs) -> Entry {
+  let shown =
+    cat(
+      , heading(index, "received transmission", list.length(glyphs), "glyphs")
+      , field("received", show_glyphs(glyphs))
+      );
+  match! decode(glyphs) {
+    (
+      , .(good: Ok) {
+          (cat3(shown, decoded_received(good.?{ok}), "\n"), 1, 0, list.length(good.?{ok}))
+        }
+      , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+      )
+  }
+}
+
+fn entry_for(index: I32, fixture: Fixture) -> Entry {
+  match! fixture {
+    (
+      , .(source: Payload) { round_trip(index, source.?{payload}) }
+      , .(wire: Received) { as_received(index, wire.?{received}) }
+      )
+  }
+}
+
+fn summary(ok: I32, refusals: I32, bytes: I32) -> String {
+  cat3(
+    , cat3("summary: packets ok ", num(ok), ", packets rejected ")
+    , num(refusals)
+    , cat3(", bytes recovered ", num(bytes), "\n")
+    )
+}
+
+rec(loop) {
+  /// Render every fixture in order, then the closing tally.
+  pub fn render(fixtures: list.List(Fixture)) -> String { rec walk(fixtures, 1, "", 0, 0, 0) };
+  fn walk(
+    , fixtures: list.List(Fixture)
+    , index: I32
+    , done: String
+    , ok: I32
+    , refusals: I32
+    , bytes: I32
+    ) -> String {
+    match! fixtures.>list.List.un_list {
+      (
+        , .(fixture: Fixture, rest: list.List(Fixture)) {
+            let .(block: String, hit: I32, miss: I32, recovered: I32) = entry_for(index, fixture);
+            rec walk(
+              , rest
+              , add_i32(index, 1)
+              , cat(done, block)
+              , add_i32(ok, hit)
+              , add_i32(refusals, miss)
+              , add_i32(bytes, recovered)
+              )
+          }
+        , .(_empty: .) { cat(done, summary(ok, refusals, bytes)) }
+        )
+    }
+  }
+}

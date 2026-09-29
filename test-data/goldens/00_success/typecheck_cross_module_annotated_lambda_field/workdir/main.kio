@@ -1,0 +1,30 @@
+module main;
+
+import domain(I32, Wrap);
+import domain({wrap});
+
+type Identity[A] = A;
+
+type Wrapped[A] = Wrap(A);
+
+fn apply[A](read: A -> I32, value: A) -> I32 { read(value) }
+
+fn apply_identity[A](read: Identity(A) -> I32, value: A) -> I32 { read(value) }
+
+fn apply_wrapped[A](read: Wrapped(A) -> I32, value: Wrapped(A)) -> I32 { read(value) }
+
+pub fn held_call(value: Wrap(I32)) -> I32 { apply(.(booked: Wrap(I32)) { booked.?{wrap} }, value) }
+
+pub fn partial_annotation(value: Wrap(I32)) -> I32 {
+  apply(.(booked: Wrap(_)) { booked.?{wrap} }, value)
+}
+
+pub fn absent_annotation(value: Wrap(I32)) -> I32 { apply(.(booked) { booked.?{wrap} }, value) }
+
+pub fn alias_hidden_goal(value: Wrap(I32)) -> I32 {
+  apply_identity(.(booked) { booked.?{wrap} }, value)
+}
+
+pub fn alias_preserved_shape(value: Wrap(I32)) -> I32 {
+  apply_wrapped(.(booked) { booked.?{wrap} }, value)
+}

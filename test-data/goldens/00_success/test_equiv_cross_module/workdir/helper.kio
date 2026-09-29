@@ -1,0 +1,3 @@
+module helper;
+
+pub fn unit_a() -> . { () }

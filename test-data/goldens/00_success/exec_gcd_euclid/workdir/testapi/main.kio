@@ -1,0 +1,28 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(reorder_sum, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, mod_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Euclidean GCD via `loop`. State is `(a, b)`; each step exits
+// with `a` when `b == 0`, else continues with `(b, a mod b)`.
+// The classical recursive definition `gcd(a, 0) = a; gcd(a, b)
+// = gcd(b, a mod b)` rephrased as a step-state walk.
+//
+// `b == 0` is encoded as `leq_i32(b, 0)`: GCD inputs are non-
+// negative so `b <= 0` and `b == 0` coincide in the domain.
+fn gcd_step((a: I32, b: I32)) -> (I32 & I32) | I32 {
+  reorder_sum!(if! leq_i32(b, 0) {
+    widen_sum!(a, I32 | (I32 & I32))
+  } else {
+    widen_sum!((b, mod_i32(a, b)), I32 | (I32 & I32))
+  })
+}
+
+fn gcd(a: I32, b: I32) -> I32 { loop(.(state: I32 & I32) { gcd_step(state) }, (a, b)) }
+
+pub fn main() -> . { print(int_to_string(gcd(252, 105))); print("\n") }

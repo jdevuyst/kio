@@ -1,0 +1,6 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(eprint, print);
+
+pub fn main() -> . { eprint("warming up\n"(String)); print("hello from the host\n"(String)) }

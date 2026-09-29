@@ -1,0 +1,16 @@
+module guest;
+
+import __intrinsics__;
+
+import hostapi(I32, add_i32);
+
+pub labels { boxed <U> : I32 & U };
+
+pub fn make(n: I32) -> Boxed { Boxed.mk((n, add_i32(n, 1))) }
+
+pub fn openx(b: Boxed) -> I32 { Boxed.get(b)(I32, .[U](p: I32 & U) { __fst__(I32, U, p) }) }
+
+pub fn openx_let(b: Boxed) -> I32 {
+  let g = Boxed.get(b);
+  g(I32, .[U](p: I32 & U) { __fst__(I32, U, p) })
+}

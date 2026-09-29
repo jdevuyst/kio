@@ -1,0 +1,6 @@
+module word_api/other_nodes;
+
+pub newtype _Word_box__[Item_type] : Item_type {
+  pub constructor wrap_word;
+  pub projector unwrap_word
+  }

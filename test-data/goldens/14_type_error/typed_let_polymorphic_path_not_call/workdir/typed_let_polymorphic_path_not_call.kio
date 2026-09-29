@@ -1,0 +1,3 @@
+module typed_let_polymorphic_path_not_call;
+
+host type I32 role(i32);

@@ -1,0 +1,5 @@
+module core;
+
+// A root module file at the package root with just its header and a
+// single pure item.
+pub fn identity[A](x: A) -> A { x }

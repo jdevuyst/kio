@@ -1,0 +1,5 @@
+module origin;
+
+pub fn identity(value: .) -> . { value }
+
+pub op + _ { impl identity }

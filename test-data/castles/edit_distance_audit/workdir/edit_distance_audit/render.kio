@@ -1,0 +1,67 @@
+module edit_distance_audit/render;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub fn print_i32(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+pub fn print_line(line: String) -> . { io.print(line); io.print("\n") }
+
+pub fn print_string_metric(name: String, value: String) -> . {
+  io.print(text.string_concat(name, value));
+  io.print("\n")
+}
+
+pub fn print_i32_metric(name: String, value: I32) -> . {
+  print_string_metric(name, fmt.int_to_string(value))
+}
+
+pub fn print_bool_metric(name: String, value: Bool) -> . {
+  print_string_metric(name, fmt.bool_to_string(value))
+}
+
+pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I32) -> I32 {
+  if! arith.leq_i32(index, last) {
+    let value = array.array_get(row, index);
+    let weight = arith.add_i32(index, 1);
+    let term = arith.mul_i32(value, weight);
+    rec row_checksum_at(arith.add_i32(index, 1), last, row, arith.add_i32(acc, term))
+  } else {
+    acc
+  }
+}
+
+pub fn row_checksum(row: Array(I32), last: I32) -> I32 { row_checksum_at(0, last, row, 0) }
+
+pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) -> . {
+  if! arith.leq_i32(index, last) {
+    print_i32(array.array_get(row, index));
+    io.print(" ");
+    rec print_row_cells(arith.add_i32(index, 1), last, row)
+  } else {
+    ()
+  }
+}
+
+pub fn print_row(row_index: I32, row: Array(I32), last: I32) -> I32 {
+  let checksum = row_checksum(row, last);
+  io.print("row ");
+  print_i32(row_index);
+  io.print(" values=");
+  print_row_cells(0, last, row);
+  io.print("checksum=");
+  print_i32(checksum);
+  io.print("\n");
+  checksum
+}
+
+pub fn print_lengths(left_len: I32, right_len: I32) -> . {
+  print_i32_metric("left_len=", left_len);
+  print_i32_metric("right_len=", right_len)
+}

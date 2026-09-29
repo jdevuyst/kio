@@ -1,0 +1,131 @@
+/// The incremental constraint bookkeeping, and the place / undo pair that
+/// keeps it honest.
+///
+/// A digit is legal in a cell when none of the cell's three units already
+/// holds it. Rather than rescan the row, the column, and the box on every
+/// probe, the solver keeps three "digit used" tables and touches exactly
+/// three slots per placement. The undo touches the same three. That
+/// symmetry is the whole discipline: `unplace` is `place` with the value
+/// flipped back, so the tables can never drift away from the board.
+module sudoku/constraints;
+
+import elab/control(if);
+import sudoku/geometry as geo;
+import sudoku/model(
+  , Work
+  , {board}
+  , {box_of}
+  , {col_of}
+  , {row_of}
+  , {stack_cell}
+  , {stack_digit}
+  , {used_box}
+  , {used_col}
+  , {used_row}
+  );
+import sudoku/num as num;
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_make_empty, array_make_filled, array_set);
+import testapi/iter(loop);
+
+fn mark(work: Work, cell: I32, digit: I32, value: I32) -> . {
+  let row = array_get(work.?{row_of}, cell);
+  let col = array_get(work.?{col_of}, cell);
+  let region = array_get(work.?{box_of}, cell);
+  array_set(work.?{used_row}, geo.flag_at(row, digit), value);
+  array_set(work.?{used_col}, geo.flag_at(col, digit), value);
+  array_set(work.?{used_box}, geo.flag_at(region, digit), value)
+}
+
+pub fn place(work: Work, cell: I32, digit: I32) -> . {
+  array_set(work.?{board}, cell, digit);
+  mark(work, cell, digit, 1)
+}
+
+/// The undo half of the trail: clear the board slot and the three table
+/// slots `place` set, and nothing else.
+pub fn unplace(work: Work, cell: I32, digit: I32) -> . {
+  array_set(work.?{board}, cell, 0);
+  mark(work, cell, digit, 0)
+}
+
+fn is_legal(work: Work, cell: I32, digit: I32) -> Bool {
+  let row = array_get(work.?{row_of}, cell);
+  let col = array_get(work.?{col_of}, cell);
+  let region = array_get(work.?{box_of}, cell);
+  if! num.is_zero(array_get(work.?{used_row}, geo.flag_at(row, digit))) {
+    if! num.is_zero(array_get(work.?{used_col}, geo.flag_at(col, digit))) {
+      num.is_zero(array_get(work.?{used_box}, geo.flag_at(region, digit)))
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn count_from(work: Work, cell: I32, digit: I32, found: I32) -> I32 {
+  if! leq_i32(digit, geo.last_digit()) {
+    if! is_legal(work, cell, digit) {
+      rec count_from(work, cell, add_i32(digit, 1), add_i32(found, 1))
+    } else {
+      rec count_from(work, cell, add_i32(digit, 1), found)
+    }
+  } else {
+    found
+  }
+}
+
+/// How many digits the cell still admits. Three table reads per digit, no
+/// rescan of the board.
+pub fn candidate_count(work: Work, cell: I32) -> I32 { count_from(work, cell, 1, 0) }
+
+/// The lowest legal digit at or above `from`, or `0` when the cell admits
+/// none — which is how the search learns a frame is exhausted.
+pub rec(loop) fn first_legal_from(work: Work, cell: I32, from: I32) -> I32 {
+  if! leq_i32(from, geo.last_digit()) {
+    if! is_legal(work, cell, from) {
+      from
+    } else {
+      rec first_legal_from(work, cell, add_i32(from, 1))
+    }
+  } else {
+    0
+  }
+}
+
+rec(loop) fn seed(work: Work, cell: I32) -> Work {
+  if! leq_i32(cell, geo.last_cell()) {
+    let digit = array_get(work.?{board}, cell);
+    if! num.is_zero(digit) {
+      rec seed(work, add_i32(cell, 1))
+    } else {
+      mark(work, cell, digit, 1);
+      rec seed(work, add_i32(cell, 1))
+    }
+  } else {
+    work
+  }
+}
+
+/// Build one solve's state around a puzzle. The board *is* the caller's
+/// array — the search mutates it in place — and the tables start seeded
+/// from its givens, which is the only time they are built from the board
+/// rather than maintained against it.
+pub fn new_work(puzzle: Array(I32)) -> Work {
+  let .(rows: Array(I32), cols: Array(I32), boxes: Array(I32)) = geo.build_coords();
+  let work =
+    {
+      , board = puzzle
+      , row_of = rows
+      , col_of = cols
+      , box_of = boxes
+      , used_row = array_make_filled(geo.flag_count(), 0)
+      , used_col = array_make_filled(geo.flag_count(), 0)
+      , used_box = array_make_filled(geo.flag_count(), 0)
+      , stack_cell = array_make_empty(I32, ())
+      , stack_digit = array_make_empty(I32, ())
+      };
+  seed(work, 0)
+}

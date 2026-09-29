@@ -1,0 +1,8 @@
+module consumer;
+
+import hostapi(I32);
+import provider/names(from, op);
+
+pub fn first() -> I32 { from() }
+
+pub fn second() -> I32 { op() }

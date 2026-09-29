@@ -1,0 +1,13 @@
+package recursive_labels_negative_without_marker;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

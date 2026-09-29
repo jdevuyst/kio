@@ -1,0 +1,19 @@
+package typecheck_user_elaborator_intrinsic_if_then_else;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  typecheck_user_elaborator_intrinsic_if_then_else;
+  typecheck_user_elaborator_intrinsic_if_then_else/**;
+  elaborators
+}

@@ -1,0 +1,40 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A `Functor_endo` dictionary plus a `chain` combinator that
+// composes two endo steps through the brand boundary. The chain
+// stays brand-generic (its kind-`*→*` binder `[*F]` is applied as
+// `F(A)`), demonstrating that abstract brands flow through generic
+// code as long as the `Brand<H>` bound is in scope.
+pub newtype Functor_endo[*F][A] : F(A) -> F(A) {
+  pub constructor mk_functor_endo;
+  pub projector endo
+  }
+
+// Functor-generic chain: take two `Functor_endo` dictionaries
+// over the same `(F, A)` and run them in sequence. The body's `F`
+// is applied as `F(A)`, so the Rust generic header picks up the
+// `Brand<H>` bound.
+fn chain[*F][A](d1: Functor_endo(F, A), d2: Functor_endo(F, A), x: F(A)) -> F(A) {
+  Functor_endo.endo(F, A, d2)(Functor_endo.endo(F, A, d1)(x))
+}
+
+fn box_endo_string(x: Box(String)) -> Box(String) { Box.mk_box(String, Box.un_box(String, x)) }
+
+fn box_functor_endo_string() -> Functor_endo(Box, String) {
+  Functor_endo.mk_functor_endo(Box, String, .(x) { box_endo_string(x) })
+}
+
+fn use_chain() -> String {
+  let d1 = box_functor_endo_string();
+  let d2 = box_functor_endo_string();
+  let branded = Box.mk_box(String, "functor generic chain ok\n"(String));
+  let chained = chain(Box, String, d1, d2, branded);
+  Box.un_box(String, chained)
+}
+
+pub fn main() -> . { print(use_chain()) }

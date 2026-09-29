@@ -1,0 +1,2 @@
+The source omits consume's universal type argument. Full Kio infers it;
+the emitted Prime package supplies it explicitly and is freshly checked.

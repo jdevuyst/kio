@@ -1,0 +1,16 @@
+package scoped_role_constraints;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "ScopedConstraints"
+  }
+}
+
+bridge {
+  api;
+  decoy;
+  producer
+}

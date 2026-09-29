@@ -1,0 +1,74 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/sequence(do);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// `Either[E][A]` as `E | A`: the canonical "one of two shapes"
+// sum, error-arm `E` and value-arm `A`. It is an arity-2 newtype, so
+// its kind is `*→*→*`. Partially applying it to one argument yields a
+// kind-`*→*` brand: `Either(String) : *→*`, "Either with the error
+// type fixed to `String`, the success type left to vary" — exactly
+// the kind a `Monad[*F]` instance slot expects.
+pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_either }
+
+// A `Monad[*F]` dictionary with a polymorphic-function payload:
+// `bind` takes a branded value and a continuation, hands the
+// unwrapped value to the continuation, returns its re-branded
+// result. The Forall binders flow to the inherent projector method
+// as generic type-params; the dictionary instance below is the
+// `Either(String)` interpretation.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// `Either(String)`'s monad instance. The partial application
+// `Either(String)` fills the brand slot; the body unwraps via
+// `Either.un_either`, case-splits on the `String | A` payload (a
+// `left` error short-circuits, a `right` value is handed to the
+// continuation `k`), and re-wraps the continuation's result via
+// `Either.mk_either`.
+fn either_string_monad() -> Monad(Either(String)) {
+  Monad.mk_monad(
+    , Either(String)
+    , .[A][B](m, k) {
+        match! Either.un_either(String, A, m) {
+          (
+            , .(e: String) { Either.mk_either(String, B, widen_sum!(e, String | B)) }
+            , .(av: A) { k(av) }
+            )
+        }
+      }
+    )
+}
+
+// The success payload is wrapped in a distinct `Ok` newtype, so an
+// `Either(String)` success branch is typed `Ok`, not `String`. That keeps
+// the sum `String | Ok` heterogeneous even though `Ok` wraps a `String` —
+// the error and value arms have distinct types, so `widen_sum!` injects
+// the value arm and `match!` selects it without a source-order escape
+// hatch.
+newtype Ok : String { constructor mk_ok; projector un_ok }
+
+// A `right` (success) value run through `do`-bind: pull the wrapped value
+// out and re-brand it. The `do` block desugars to a `Monad.bind(monad)`
+// call; the brand-crossing happens via `Either.mk_either` /
+// `Either.un_either` inside the instance's `bind` body.
+fn use_dictionary() -> String {
+  let monad = either_string_monad();
+  let just_hello =
+    Either.mk_either(String, Ok, widen_sum!(Ok.mk_ok("monad on either ok\n"), String | Ok));
+  let result =
+    do! Monad.bind(monad) {
+      let x <- just_hello;
+      Either.mk_either(String, Ok, widen_sum!(x, String | Ok))
+    };
+  match! Either.un_either(String, Ok, result) {
+    (.(err: String) { err }, .(s: Ok) { Ok.un_ok(s) })
+  }
+}
+
+pub fn main() -> . { print(use_dictionary()) }

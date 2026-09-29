@@ -1,0 +1,7 @@
+dependency vec;
+
+source {
+  path "../../../poc/vec/workdir/vec.pkg.kio"
+}
+
+rehost vec/elab/testapi to testapi;

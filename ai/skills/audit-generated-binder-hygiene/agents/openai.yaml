@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit Generated Binding Hygiene"
+  short_description: "Audit generated value, type, and import bindings"
+  default_prompt: "Use $audit-generated-binder-hygiene to audit compiler and backend-generated value, type, and import bindings for capture safety."

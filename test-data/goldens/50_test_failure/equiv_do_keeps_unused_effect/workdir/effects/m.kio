@@ -1,0 +1,14 @@
+module effects/m;
+
+import effects(String, print);
+import elab/control(scope);
+
+equiv print_twice_is_not_print_once() {
+  scope! {
+    print("x");
+    print("x")
+  };
+  scope! {
+    print("x")
+  }
+}

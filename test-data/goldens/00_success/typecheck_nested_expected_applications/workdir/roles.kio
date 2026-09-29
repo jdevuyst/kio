@@ -1,0 +1,3 @@
+module roles;
+
+host type Remote role(i32);

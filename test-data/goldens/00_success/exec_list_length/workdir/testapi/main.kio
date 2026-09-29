@@ -1,0 +1,43 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Length of a list via the host `loop` step-state primitive.
+// State is `(acc, remaining)`; each step adds 1 to `acc` and
+// advances to the tail. Empty list exits with `acc`. The
+// clause order matters: the cons cell pattern is more specific
+// than the unit pattern, so it goes first (the match! dispatcher's
+// per-clause coercion permits drops, and a `.(_: .)` slot would
+// otherwise absorb both arms).
+fn length_step[A](state: I32 & List(A)) -> (I32 & List(A)) | I32 {
+  match! state {
+    .(acc: I32, xs: List(A)) {
+      match! xs.>List.un_list {
+        (
+          , .(_x: A, rest: List(A)) { widen_sum!((add_i32(acc, 1), rest), (I32 & List(A)) | I32) }
+          , .(_empty: .) { widen_sum!(acc, (I32 & List(A)) | I32) }
+          )
+      }
+    }
+  }
+}
+
+fn length[A](xs: List(A)) -> I32 { loop(.(state: I32 & List(A)) { length_step(state) }, (0, xs)) }
+
+pub fn main() -> . {
+  let xs = push(10, push(20, push(30, push(40, push(50, nil(I32, ()))))));
+  print(int_to_string(length(xs)));
+  print("\n")
+}

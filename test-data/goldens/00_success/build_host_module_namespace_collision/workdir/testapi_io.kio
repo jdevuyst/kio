@@ -1,0 +1,5 @@
+module testapi_io;
+
+import testapi(String);
+
+pub fn greet(s: String) -> String { s }

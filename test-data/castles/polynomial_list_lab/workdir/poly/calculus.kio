@@ -1,0 +1,40 @@
+/// Evaluation at a point and the formal derivative.
+module poly/calculus;
+
+import elab/control(if);
+import list/core as lc;
+import list/list as ll;
+import list/list(varop [* *]);
+import poly/core as core;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, mul_i32);
+import testapi/iter(loop);
+
+type Coeffs = core.Coeffs;
+
+/// Horner's rule. Folding `c + x * acc` from the highest coefficient down to the
+/// constant term evaluates the polynomial with one multiply per degree and never
+/// forms a power of `x` explicitly. The library's `foldr` walks the coefficient
+/// vector from its far end, which is exactly the order Horner wants.
+pub fn eval(p: core.Poly, x: I32) -> I32 {
+  ll.foldr(.(c: I32, acc: I32) -> I32 { add_i32(c, mul_i32(x, acc)) }, 0, core.coeffs(p))
+}
+
+// The derivative of `sum c_i x^i` is `sum i*c_i x^(i-1)`: drop the constant
+// coefficient, then multiply what is left by its *original* degree, which is the
+// running counter starting at 1.
+rec(loop) fn scale_by_degree(acc: Coeffs, i: I32, cs: Coeffs) -> Coeffs {
+  if! ll.null(cs) {
+    acc
+  } else {
+    let term = mul_i32(i, core.head_or_zero(cs));
+    rec scale_by_degree(lc.cons(term, acc), add_i32(i, 1), lc.tail(cs))
+  }
+}
+
+/// The formal derivative. A constant differentiates to the zero polynomial, and so
+/// does the zero polynomial itself: the library's total `tail` returns the empty
+/// vector for both.
+pub fn derivative(p: core.Poly) -> core.Poly {
+  core.of_coeffs(ll.reverse(scale_by_degree([* *], 1, lc.tail(core.coeffs(p)))))
+}

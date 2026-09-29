@@ -1,0 +1,17 @@
+module litdemo;
+
+host type S role(str);
+
+host type B role(bool);
+
+host type I8 role(i8);
+
+host type I32 role(i32);
+
+host type U64 role(u64);
+
+host type I128 role(i128);
+
+host type F32 role(f32);
+
+host type F64 role(f64);

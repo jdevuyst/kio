@@ -1,0 +1,46 @@
+/// The higher-order `loop` host op's domain destructuring.
+module marshal;
+
+import __intrinsics__;
+
+import result(Call_result, call_fold, call_stuck);
+import testapi(String);
+import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
+
+/// `loop` is a regular host fn with signature
+/// `loop[S][R](S -> S | R, S) -> R`. For a loaded guest, the `step` argument is
+/// an interpreted `V_closure`, so the standard `call` capability cannot invoke
+/// it directly. This applier only recovers the `(step, init)` product domain
+/// and returns `Ev_fold(step, init)`. The evaluator's CEK machine owns the
+/// actual fold, so nested guest loops are just nested continuation frames.
+///
+/// This module stays `match!`-free: the direct intrinsic form keeps recursive
+/// `Value` destructuring local to this runtime-call boundary.
+pub fn loop_op(dom: Value) -> Call_result {
+  __either__(
+    , V_closure
+    , V_product | V_sum | V_unit | V_host | V_hostfn
+    , Call_result
+    , Value.get(dom)
+    , .(_c: V_closure) -> Call_result {
+        call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
+      }
+    , .(rest: V_product | V_sum | V_unit | V_host | V_hostfn) -> Call_result {
+        __either__(
+          , V_product
+          , V_sum | V_unit | V_host | V_hostfn
+          , Call_result
+          , rest
+          , .(p: V_product) -> Call_result {
+              call_fold(
+                , __fst__(Value, Value, V_product.get(p))
+                , __snd__(Value, Value, V_product.get(p))
+                )
+            }
+          , .(_rest2: V_sum | V_unit | V_host | V_hostfn) -> Call_result {
+              call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
+            }
+          )
+      }
+    )
+}

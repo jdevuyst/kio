@@ -1,0 +1,23 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `__snd__` of a right-leaning 3-spine product `(Int & (Int & Int))`
+// yields the *sub-product* `(Int & Int)` — a value, not a single
+// component. Structural recovery rebuilds the sub-product explicitly
+// as an `EnrichedTuple` of direct `EnrichedProject`s, so no raw
+// `__snd__` call survives to codegen.
+fn tail_of[A][B][C](p: A & B & C) -> B & C { __snd__(A, B & C, p) }
+
+pub fn main() -> . {
+  let triple = __pair__(Int, Int & Int, 1(Int), __pair__(Int, Int, 2(Int), 3(Int)));
+  let rest = tail_of(Int, Int, Int, triple);
+  print(int_to_string(__fst__(Int, Int, rest)));
+  print(", "(String));
+  print(int_to_string(__snd__(Int, Int, rest)));
+  print("\n"(String))
+}

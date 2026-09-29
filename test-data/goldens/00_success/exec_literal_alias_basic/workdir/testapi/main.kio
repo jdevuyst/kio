@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Each `literal` declares a named literal alias. Alias resolution
+// substitutes references inline; the emitted JS is identical to
+// writing the literal at each use site.
+literal max_size = 100;
+
+literal greeting = "hello alias\n";
+
+fn print_int(n: Int) -> . { let s = int_to_string(n); let l = print(s); print("\n") }
+
+pub fn main() -> . { let g = print(greeting); print_int(max_size) }

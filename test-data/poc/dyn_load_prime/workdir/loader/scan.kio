@@ -1,0 +1,3565 @@
+/// The module-header scanner: an image's raw emitted Kio' text → the loader's module records, then `resolve_package`.
+module loader/scan;
+
+import chars(c_colon, c_comma, c_eq, c_gt, c_lbrace, c_lbrack, c_lparen, c_lt, c_rbrace, c_rbrack);
+import chars(c_rparen, c_semi, c_slash, c_star, c_under, is_digit, is_lower, is_upper);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import lex(Lex_err, lex, lex_err_message, lex_err_pos);
+import list/core(List, cons, nil);
+import list/list(append, reverse);
+import loader(
+  , Alias_decl
+  , Binder_info
+  , Binders
+  , Tyaliases
+  , binders_cons
+  , binders_nil
+  , binders_reverse
+  , mk_alias_decl
+  , tyaliases_cons
+  , tyaliases_nil
+  , tyaliases_reverse
+  , {binder_info}
+  );
+import loader(
+  , Member_decl
+  , Members
+  , member_info
+  , member_name
+  , mk_member_decl
+  , module_members
+  , module_tyaliases
+  );
+import loader(Aliases, Bridge, Decl, Decls, Diag, Import, Imports, Load_outcome, Mod_alias);
+import loader(Host_header, Host_headers, host_headers_cons, host_headers_nil, host_headers_reverse);
+import loader(Lr_diag, Lr_image);
+import loader(Module, Modules, Pgroups, Pnames);
+import loader(Recursive_type_scope, no_recursive_type_scope, recursive_type_scope);
+import loader(Visibility, private_visibility, public_visibility, scoped_visibility);
+import loader(aliases_cons, aliases_nil, mk_alias);
+import loader(decl_name, decls_cons, decls_nil, mk_decl, mk_diag);
+import loader(diag_bare_message, diag_pos);
+import loader(imports_cons, imports_nil, mk_import, mk_module, modules_cons, modules_nil);
+import loader(lr_diag, resolve_package, un_load_outcome);
+import loader(members_cons, members_nil, members_reverse);
+import loader(mk_diag_at);
+import loader(mk_host_header);
+import loader(module_aliases, module_decls, module_imports, module_name, module_newtypes);
+import loader(pgroups_cons, pgroups_nil);
+import loader(pnames_cons, pnames_has, pnames_nil, {pnames});
+import loader(pnames_len, un_pgroups, un_pnames);
+import loader(un_decls, un_imports, un_modules);
+import loader(visibility_is_scoped, visibility_valid_for_owner);
+import parse(Nt_info, Ntab);
+import parse(mk_nt_info, ntab_cons, ntab_nil);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_code_at, string_concat, string_eq, string_slice);
+import token(Tk_num, Tk_punct, Tk_str, Tk_word);
+import token(Token, Token_shape, Toks);
+import token(toks_cons, toks_nil, un_token, un_toks);
+
+// `scan.kio` — the bridge from an image's raw emitted Kio' **text** to the
+// loader's module records.
+//
+// The loader consumes `Module` records. Per module, they retain its name,
+// imports, and module aliases; each newtype's erasure facts, header tokens,
+// and complete declaration/member visibilities; each type alias's binders,
+// body tokens, visibility, and name offset; each top-level fn's name,
+// structural runtime stages (empty for each unary `forall`, named for each
+// value group), header and body tokens, visibility, and name offset; and each
+// host declaration's kind, name, header tokens, and
+// name offset, alongside the host-fn and type-introducing name sets. This
+// module produces those records from the **source text the Prime emit
+// writes** (`kio build`'s `kio-prime` target), so a host feeds the emitted
+// tree — every module plus the `.pkg.kio` manifest — and gets a loaded
+// image. The image is human-readable Kio' source, not an opaque blob; this
+// scanner reads its module-level grammar.
+//
+// **What it scans.** The emitted module grammar
+// (`specs/grammar.md` § Productions (Kio')):
+//
+//   /// doc                        (line comments — the lexer skips these)
+//   module a/b/c;
+//   import m(a, b);               (selective imports)
+//   import path/to/m as p;        (module aliases)
+//   import __intrinsics__;
+//   [pub[(a/b)]] [pure] fn NAME [A]… ( p: T, … )… [-> R] { body }
+//                              (`pub` and `pure` may appear in either order)
+//   [pub[(a/b)]] type NAME … = …;
+//   [pub[(a/b)]] newtype NAME [A]… <U>… : T { constructor c; projector p }
+//   [pub[(a/b)]] rec newtype NAME [A]… <U>… : T { constructor c; projector p }
+//   rec { type/newtype MEMBER; type/newtype MEMBER; … }
+//   [pub] host [pub] type NAME … ;
+//   [pub] host [pub] fn NAME (…) -> R;
+//
+// and, for a whole-package image, the emitted `.pkg.kio` manifest —
+// recognized by its `package NAME;` header — whose `build { … }` block is
+// skipped and whose `bridge { … }` block is parsed into the image's
+// contract surface.
+//
+// **Stack-bounded, like the lexer and parser.** Explicit recursive-data
+// markers change type-name scope but do not require recursive scanner
+// control flow. A scan of a module or recursive group of arbitrary length is
+// iteration, driven by the host `loop` — the same shape `lex.kio` /
+// `parse.kio` use.
+//
+// **Malformed text is a diagnostic.** Every malformed shape — a lexical
+// error, a truncated declaration, a declaration before the first `module`
+// header, a malformed `import` header, a newtype body without its two members,
+// or a malformed recursive type group — yields a `Diag` naming the construct,
+// carrying the byte offset it points at where one exists. The source-text
+// entry point at the bottom localizes a carried offset to a line and column.
+//
+// **Open-world.** The scan of one module's text is a pure function of that
+// text: it consults no other module, no package-wide table, and no ambient
+// state. Name resolution happens later, in the loader, against the image's
+// own records — so a declaration added to a different module's text can
+// change neither how this module's text scans nor how its bodies resolve.
+
+// =====================================================================
+// Token helpers — peek / advance over the token list
+// =====================================================================
+/// The head token of a list, or `()` at end-of-input.
+fn peek(ts: Toks) -> . | Token {
+  match! un_toks(ts) {
+    (
+      , .(h: Token, _p: I32, _t: Toks) { widen_sum!(h, . | Token) }
+      , .(_e: .) { widen_sum!((), . | Token) }
+      )
+  }
+}
+
+/// The head token's source byte offset, or `()` at end-of-input.
+fn head_pos(ts: Toks) -> . | I32 {
+  match! un_toks(ts) {
+    (
+      , .(_h: Token, p: I32, _t: Toks) { widen_sum!(p, . | I32) }
+      , .(_e: .) { widen_sum!((), . | I32) }
+      )
+  }
+}
+
+/// The tail of a token list, or the empty list at end-of-input.
+fn rest(ts: Toks) -> Toks {
+  match! un_toks(ts) {
+    (.(_h: Token, _p: I32, t: Toks) { t }, .(_e: .) { ts })
+  }
+}
+
+// The head word's spelling, or `()` when the head is not a word.
+fn head_word(ts: Toks) -> . | String {
+  match! peek(ts) {
+    (
+      , .(t: Token) {
+          match! un_token(t) {
+            (
+              , .(w: Tk_word) { widen_sum!(Tk_word.get(w), . | String) }
+              , .(_i: Tk_num) { widen_sum!((), . | String) }
+              , .(_s: Tk_str) { widen_sum!((), . | String) }
+              , .(_p: Tk_punct) { widen_sum!((), . | String) }
+              )
+          }
+        }
+      , .(_e: .) { widen_sum!((), . | String) }
+      )
+  }
+}
+
+// Whether the head token is the punctuation mark `code`.
+fn head_is(ts: Toks, code: I32) -> Bool {
+  match! peek(ts) {
+    (
+      , .(t: Token) {
+          match! un_token(t) {
+            (
+              , .(_w: Tk_word) { .f(Bool) }
+              , .(_i: Tk_num) { .f(Bool) }
+              , .(_s: Tk_str) { .f(Bool) }
+              , .(p: Tk_punct) { eq_i32(Tk_punct.get(p), code) }
+              )
+          }
+        }
+      , .(_e: .) { .f(Bool) }
+      )
+  }
+}
+
+// Whether the head word equals `kw` (false when the head is not a word).
+fn head_word_is(ts: Toks, kw: String) -> Bool {
+  match! head_word(ts) {
+    (.(w: String) { string_eq(w, kw) }, .(_e: .) { .f(Bool) })
+  }
+}
+
+// A module path — `word (/ word)*` — read as a single slash-joined string
+// plus the tokens after it, or `()` when the head is not a word. A module
+// name (`module testapi/main;`), an import source module
+// (`import testapi/fmt(…);`), and an alias target (`import testapi/fmt as
+// f;`) are slash-separated paths the lexer splits into `word / word` runs;
+// reading the whole path keeps the recorded name intact, so cross-module
+// dependency matching and per-module visibility see the real module
+// identity.
+/// Wraps a module-path read's `(path, remaining-tokens)`.
+labels { mod_path: String & Toks };
+
+// Read a `word (/ word)*` module path, the head at the first word.
+fn read_module_path(ts: Toks) -> . | Mod_path {
+  match! head_word(ts) {
+    (
+      , .(first: String) {
+          widen_sum!(
+            , loop(
+                , .(st: Toks & String) {
+                    match! st {
+                      .(cur: Toks, acc: String) {
+                        let after_word = rest(cur);
+                        if! head_is(after_word, c_slash()) {
+                          let after_slash = rest(after_word);
+                          match! head_word(after_slash) {
+                            (
+                              , .(seg: String) {
+                                  widen_sum!(
+                                    , (
+                                        , after_slash
+                                        , string_concat(acc, string_concat("/"(String), seg))
+                                        )
+                                    , (Toks & String) | Mod_path
+                                    )
+                                }
+                              , .(_noseg: .) {
+                                  widen_sum!(
+                                    , {mod_path = (acc, after_word)}
+                                    , (Toks & String) | Mod_path
+                                    )
+                                }
+                              )
+                          }
+                        } else {
+                          widen_sum!({mod_path = (acc, after_word)}, (Toks & String) | Mod_path)
+                        }
+                      }
+                    }
+                  }
+                , (ts, first)
+                )
+            , . | Mod_path
+            )
+        }
+      , .(_e: .) { widen_sum!((), . | Mod_path) }
+      )
+  }
+}
+
+fn un_mod_path(m: . | Mod_path) -> . | Mod_path { m }
+
+/// A declaration visibility and the tokens following its optional scope.
+labels { visibility_read: Visibility & Toks };
+
+// Read the visibility after an optional leading `pub` has already been
+// consumed. A scoped path is retained verbatim for the loader's import gate.
+fn read_visibility(ts0: Toks, exported: Bool) -> Visibility_read | Diag {
+  if! exported {
+    if! head_is(ts0, c_lparen()) {
+      match! un_mod_path(read_module_path(rest(ts0))) {
+        (
+          , .(path: Mod_path) {
+              match! Mod_path.get(path) {
+                .(root: String, after_path: Toks) {
+                  if! head_is(after_path, c_rparen()) {
+                    widen_sum!(
+                      , {visibility_read = (scoped_visibility(root), rest(after_path))}
+                      , Visibility_read | Diag
+                      )
+                  } else {
+                    widen_sum!(
+                      , mk_diag_at(
+                          , "dyn_load_prime: malformed image — unterminated `pub(path)` visibility"(String)
+                          , head_pos(ts0)
+                          )
+                      , Visibility_read | Diag
+                      )
+                  }
+                }
+              }
+            }
+          , .(_missing_path: .) {
+              widen_sum!(
+                , mk_diag_at(
+                    , "dyn_load_prime: malformed image — `pub()` visibility names no module "
+                      "path"(String)
+                    , head_pos(ts0)
+                    )
+                , Visibility_read | Diag
+                )
+            }
+          )
+      }
+    } else {
+      widen_sum!({visibility_read = (public_visibility(), ts0)}, Visibility_read | Diag)
+    }
+  } else {
+    widen_sum!({visibility_read = (private_visibility(), ts0)}, Visibility_read | Diag)
+  }
+}
+
+// Drop the head token when it is the punctuation `code`; otherwise leave the
+// tokens unchanged.
+fn drop(ts: Toks, code: I32) -> Toks {
+  if! head_is(ts, code) {
+    rest(ts)
+  } else {
+    ts
+  }
+}
+
+// Drop a leading comma if the head is one.
+fn drop_comma(ts: Toks) -> Toks { drop(ts, c_comma()) }
+
+labels { after_semis: Toks };
+
+fn skip_semis(ts: Toks) -> Toks {
+  After_semis.get(loop(
+    , .(cur: Toks) {
+        if! head_is(cur, c_semi()) {
+          widen_sum!(rest(cur), Toks | After_semis)
+        } else {
+          widen_sum!({after_semis = cur}, Toks | After_semis)
+        }
+      }
+    , ts
+    ))
+}
+
+// =====================================================================
+// Bracket depth — opener / closer codes and the per-token delta
+// =====================================================================
+//
+// The skips below are all bracket-aware: a `(` `[` `{` raises depth, a `)`
+// `]` `}` lowers it. Naming the codes once keeps every skip's depth logic
+// uniform.
+
+// Whether a punctuation code opens a bracket nesting.
+fn open_code(code: I32) -> Bool {
+  if! eq_i32(code, c_lparen()) {
+    .t(Bool)
+  } else if! eq_i32(code, c_lbrack()) {
+    .t(Bool)
+  } else {
+    eq_i32(code, c_lbrace())
+  }
+}
+
+// Whether a punctuation code closes a bracket nesting.
+fn close_code(code: I32) -> Bool {
+  if! eq_i32(code, c_rparen()) {
+    .t(Bool)
+  } else if! eq_i32(code, c_rbrack()) {
+    .t(Bool)
+  } else {
+    eq_i32(code, c_rbrace())
+  }
+}
+
+// The bracket-depth change consuming `t`: an opener raises depth, a closer
+// lowers it, anything else leaves it.
+fn depth_delta(t: Token, depth: I32) -> I32 {
+  match! un_token(t) {
+    (
+      , .(_w: Tk_word) { depth }
+      , .(_i: Tk_num) { depth }
+      , .(_s: Tk_str) { depth }
+      , .(p: Tk_punct) {
+          let code = Tk_punct.get(p);
+          if! open_code(code) {
+            add_i32(depth, 1(I32))
+          } else if! close_code(code) {
+            sub_i32(depth, 1(I32))
+          } else {
+            depth
+          }
+        }
+      )
+  }
+}
+
+// =====================================================================
+// Balanced skips — over a header, a bracketed run, or up to a delimiter
+// =====================================================================
+
+// Advance past tokens through the first depth-0 `;`, returning the tokens
+// after it. A header (`module …;`, `import …;`) and a host declaration
+// (`host type …;`, `host fn …;`) carry no depth-0 `;` before their
+// terminator, so a depth-aware walk to the first `;` covers them. At
+// end-of-input the run ends (a malformed, unterminated header).
+fn skip_to_semi(ts: Toks) -> Toks {
+  loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, depth: I32) {
+            match! peek(cur) {
+              (
+                , .(t: Token) {
+                    if! eq_i32(depth, 0(I32)) {
+                      if! head_is(cur, c_semi()) {
+                        widen_sum!(rest(cur), (Toks & I32) | Toks)
+                      } else {
+                        widen_sum!((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                      }
+                    } else {
+                      widen_sum!((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                    }
+                  }
+                , .(_e: .) { widen_sum!(cur, (Toks & I32) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts, 0(I32))
+    )
+}
+
+// Whether `t` is a depth-0 parameter / type delimiter — `,`, `)`, or `{`.
+fn is_type_delim(t: Token) -> Bool {
+  match! un_token(t) {
+    (
+      , .(_w: Tk_word) { .f(Bool) }
+      , .(_i: Tk_num) { .f(Bool) }
+      , .(_s: Tk_str) { .f(Bool) }
+      , .(p: Tk_punct) {
+          let code = Tk_punct.get(p);
+          if! eq_i32(code, c_comma()) {
+            .t(Bool)
+          } else if! eq_i32(code, c_rparen()) {
+            .t(Bool)
+          } else {
+            eq_i32(code, c_lbrace())
+          }
+        }
+      )
+  }
+}
+
+// Skip one balanced type run, stopping at — without consuming — the first
+// depth-0 `,`, `)`, or `{`. Used for a value parameter's type, both
+// bracket-balanced and free of top-level commas (products use `&`,
+// function types use `->`).
+fn skip_to_delim(ts: Toks) -> Toks {
+  loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, depth: I32) {
+            match! peek(cur) {
+              (
+                , .(t: Token) {
+                    if! eq_i32(depth, 0(I32)) {
+                      if! is_type_delim(t) {
+                        widen_sum!(cur, (Toks & I32) | Toks)
+                      } else {
+                        widen_sum!((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                      }
+                    } else {
+                      widen_sum!((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                    }
+                  }
+                , .(_e: .) { widen_sum!(cur, (Toks & I32) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts, 0(I32))
+    )
+}
+
+// Skip one balanced bracketed run — `[ … ]`, `( … )`, or `{ … }`, the head
+// at the opener — returning the tokens after the matching closer. The
+// depth starts at 0 and the leading opener raises it; the run ends when a
+// closer drops it back to 0.
+fn skip_group(ts: Toks) -> Toks {
+  loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, depth: I32) {
+            match! peek(cur) {
+              (
+                , .(t: Token) {
+                    let d1 = depth_delta(t, depth);
+                    if! leq_i32(d1, 0(I32)) {
+                      widen_sum!(rest(cur), (Toks & I32) | Toks)
+                    } else {
+                      widen_sum!((rest(cur), d1), (Toks & I32) | Toks)
+                    }
+                  }
+                , .(_e: .) { widen_sum!(cur, (Toks & I32) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts, 0(I32))
+    )
+}
+
+// =====================================================================
+// Counting type binders
+// =====================================================================
+//
+// A binder group may contain several unary `forall` binders (`[A, B]`).
+// The erased evaluator keeps one Unit stage per binder, so counting bracket
+// groups would collapse observable application boundaries. The scanner
+// therefore counts the binders inside each balanced group and returns the
+// cursor after that group.
+/// Wraps one binder-group scan's `(arity, remaining-tokens)`.
+labels { binder_group_scan: I32 & Toks };
+
+fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
+  let pos = head_pos(ts);
+  loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, n: I32) {
+            match! peek(cur) {
+              (
+                , .(_token: Token) {
+                    if! head_is(cur, c_rbrack()) {
+                      widen_sum!(
+                        , {binder_group_scan = (n, rest(cur))}
+                        , (Toks & I32) | Binder_group_scan | Diag
+                        )
+                    } else if! head_is(cur, c_comma()) {
+                      widen_sum!(
+                        , (rest(cur), add_i32(n, 1(I32)))
+                        , (Toks & I32) | Binder_group_scan | Diag
+                        )
+                    } else {
+                      widen_sum!((rest(cur), n), (Toks & I32) | Binder_group_scan | Diag)
+                    }
+                  }
+                , .(_eof: .) {
+                    widen_sum!(
+                      , mk_diag_at(
+                          , "dyn_load_prime: malformed image — unterminated type-binder group"(String)
+                          , pos
+                          )
+                      , (Toks & I32) | Binder_group_scan | Diag
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (rest(ts), 1(I32))
+    )
+}
+
+/// Wraps a type-binder scan's `(count, remaining-tokens)` so the loop's exit
+/// arm differs structurally from its `(toks, count)` continue arm.
+labels { tyargs: I32 & Toks };
+
+// Count and skip the leading type binders `[A][B]…` / `[A, B]…`, returning
+// `(count, tokens-after-the-last-group)`.
+fn scan_tyarity(ts: Toks) -> (I32 & Toks) | Diag {
+  let loop_result =
+    loop(
+      , .(st: Toks & I32) {
+          match! st {
+            .(cur: Toks, n: I32) {
+              if! head_is(cur, c_lbrack()) {
+                match! scan_binder_group(cur) {
+                  (
+                    , .(group: Binder_group_scan) {
+                        match! Binder_group_scan.get(group) {
+                          .(group_arity: I32, after: Toks) {
+                            widen_sum!(
+                              , (after, add_i32(n, group_arity))
+                              , (Toks & I32) | Tyargs | Diag
+                              )
+                          }
+                        }
+                      }
+                    , .(diag: Diag) { widen_sum!(diag, (Toks & I32) | Tyargs | Diag) }
+                    )
+                }
+              } else {
+                widen_sum!({tyargs = (n, cur)}, (Toks & I32) | Tyargs | Diag)
+              }
+            }
+          }
+        }
+      , (ts, 0(I32))
+      );
+  match! loop_result {
+    (
+      , .(done: Tyargs) { widen_sum!(Tyargs.get(done), (I32 & Toks) | Diag) }
+      , .(diag: Diag) { widen_sum!(diag, (I32 & Toks) | Diag) }
+      )
+  }
+}
+
+// =====================================================================
+// Existential binder runs `<U> <V>`
+// =====================================================================
+//
+// A `newtype` header may carry whitespace-separated `<X>` atoms trailing
+// the universal-parameter list (`specs/prime.md` § Existential binders).
+// The count determines how many erased type stages the CPS projector applies
+// to its continuation before supplying the payload.
+/// Wraps a token cursor for a loop whose continue arm is also `Toks`.
+labels { toks_done: Toks };
+
+// Advance past the first `>`, returning the tokens after it (the binder
+// atom's `<` already consumed; a binder holds one word, so no nesting).
+fn skip_to_gt(ts: Toks) -> Toks {
+  Toks_done.get(loop(
+    , .(cur: Toks) {
+        match! peek(cur) {
+          (
+            , .(_t: Token) {
+                if! head_is(cur, c_gt()) {
+                  widen_sum!({toks_done = rest(cur)}, Toks | Toks_done)
+                } else {
+                  widen_sum!(rest(cur), Toks | Toks_done)
+                }
+              }
+            , .(_e: .) { widen_sum!({toks_done = cur}, Toks | Toks_done) }
+            )
+        }
+      }
+    , ts
+    ))
+}
+
+/// Wraps the existential scan's `(count, remaining-tokens)`.
+labels { exi_scan: I32 & Toks };
+
+fn scan_existentials(ts: Toks) -> I32 & Toks {
+  match! Exi_scan.get(loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, count: I32) {
+            if! head_is(cur, c_lt()) {
+              let after = skip_to_gt(rest(cur));
+              widen_sum!((after, add_i32(count, 1(I32))), (Toks & I32) | Exi_scan)
+            } else {
+              widen_sum!({exi_scan = (count, cur)}, (Toks & I32) | Exi_scan)
+            }
+          }
+        }
+      }
+    , (ts, 0(I32))
+    )) {
+    .(count: I32, after: Toks) { (count, after) }
+  }
+}
+
+// =====================================================================
+// Scanning a value-parameter group
+// =====================================================================
+//
+// After the `(`, the parameters are `NAME : TYPE` items separated by `,`,
+// ending at the `)`. Each name is collected (declaration order); each type
+// is skipped (the retained header token-run carries them for the typed
+// contract). The names accumulate most-recent-first and are reversed once
+// at the end.
+// Reverse a most-recent-first name accumulator onto `acc`, yielding
+// declaration order.
+fn pnames_reverse(ps: Pnames, acc: Pnames) -> Pnames {
+  {pnames = append(reverse(Pnames.get(ps)), Pnames.get(acc))}
+}
+
+/// Wraps a parameter-group scan's `(names, remaining-tokens)` so the loop's
+/// exit arm differs structurally from its `(toks, rev-names)` continue arm.
+labels { plist: Pnames & Toks };
+
+// Scan one value-parameter group, the head positioned just after the `(`.
+// Read `NAME : TYPE` items until the `)`; collect the names (reversed) and
+// return them in declaration order plus the tokens after the `)`. A
+// zero-parameter group `()` returns the empty names immediately.
+fn scan_params(ts: Toks) -> Pnames & Toks {
+  match! Plist.get(loop(
+    , .(st: Toks & Pnames) {
+        match! st {
+          .(cur0: Toks, acc: Pnames) {
+            // A wrapped header puts the list comma-first (the emitter's
+            // leading-comma style), so a comma may precede any param.
+            let cur = drop_comma(cur0);
+            if! head_is(cur, c_rparen()) {
+              widen_sum!(
+                , {plist = (pnames_reverse(acc, pnames_nil()), rest(cur))}
+                , (Toks & Pnames) | Plist
+                )
+            } else match! head_word(cur) {
+              (
+                , .(name: String) {
+                    let after_name = rest(cur);
+                    let after_colon = drop(after_name, c_colon());
+                    let after_type = skip_to_delim(after_colon);
+                    let after_comma = drop_comma(after_type);
+                    widen_sum!((after_comma, pnames_cons(name, acc)), (Toks & Pnames) | Plist)
+                  }
+                , .(_notword: .) {
+                    widen_sum!(
+                      , {plist = (pnames_reverse(acc, pnames_nil()), cur)}
+                      , (Toks & Pnames) | Plist
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts, pnames_nil())
+    )) {
+    .(names: Pnames, after: Toks) { (names, after) }
+  }
+}
+
+// =====================================================================
+// Collecting a fn's header and body token-runs
+// =====================================================================
+
+// Reverse a token list (most-recent-first into source order), keeping the
+// per-token source offsets.
+fn toks_rev(ts: Toks) -> Toks {
+  loop(
+    , .(st: Toks & Toks) {
+        match! st {
+          .(rem: Toks, acc: Toks) {
+            match! un_toks(rem) {
+              (
+                , .(h: Token, p: I32, t: Toks) {
+                    widen_sum!((t, toks_cons(h, p, acc)), (Toks & Toks) | Toks)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Toks & Toks) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts, toks_nil())
+    )
+}
+
+/// Wraps a header collection's `(header-tokens, remaining-tokens)`.
+labels { header_run: Toks & Toks };
+
+// Collect the signature token-run from just after the fn's name up to —
+// without consuming — the body's depth-0 `{`. The collected run (source
+// order, offsets kept) is the declaration's retained header, which the
+// typed contract renders; the group structure is re-read from it.
+fn collect_header(ts: Toks) -> Toks & Toks {
+  match! Header_run.get(loop(
+    , .(st: Toks & I32 & Toks) {
+        match! st {
+          .(cur: Toks, depth: I32, acc: Toks) {
+            match! un_toks(cur) {
+              (
+                , .(t: Token, p: I32, after: Toks) {
+                    if! eq_i32(depth, 0(I32)) {
+                      if! head_is(cur, c_lbrace()) {
+                        widen_sum!(
+                          , {header_run = (toks_rev(acc), cur)}
+                          , (Toks & I32 & Toks) | Header_run
+                          )
+                      } else {
+                        widen_sum!(
+                          , (after, (depth_delta(t, depth), toks_cons(t, p, acc)))
+                          , (Toks & I32 & Toks) | Header_run
+                          )
+                      }
+                    } else {
+                      widen_sum!(
+                        , (after, (depth_delta(t, depth), toks_cons(t, p, acc)))
+                        , (Toks & I32 & Toks) | Header_run
+                        )
+                    }
+                  }
+                , .(_e: .) {
+                    widen_sum!(
+                      , {header_run = (toks_rev(acc), cur)}
+                      , (Toks & I32 & Toks) | Header_run
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts, (0(I32), toks_nil()))
+    )) {
+    .(header: Toks, after: Toks) { (header, after) }
+  }
+}
+
+/// Wraps a body scan's `(body-tokens, remaining-tokens)` so the loop's exit
+/// arm differs structurally from its `(toks, depth, rev-body)` continue arm.
+labels { bodytoks: Toks & Toks };
+
+// Collect the brace-balanced body run, the head positioned at the opening
+// `{`. Returns the body tokens (braces excluded) in source order plus the
+// tokens after the matching `}`. The loop threads `(remaining, depth,
+// rev-body)`; it consumes the opening `{` first (depth 1), accumulates each
+// token while depth > 0, and exits when the matching `}` drops depth to 0
+// (that `}` is consumed, not collected).
+fn scan_body(ts0: Toks) -> Toks & Toks {
+  let ts = drop(ts0, c_lbrace());
+  match! Bodytoks.get(loop(
+    , .(st: Toks & I32 & Toks) {
+        match! st {
+          .(cur: Toks, depth: I32, acc: Toks) {
+            match! un_toks(cur) {
+              (
+                , .(t: Token, p: I32, after: Toks) {
+                    let d1 = depth_delta(t, depth);
+                    if! leq_i32(d1, 0(I32)) {
+                      widen_sum!(
+                        , {bodytoks = (toks_rev(acc), after)}
+                        , (Toks & I32 & Toks) | Bodytoks
+                        )
+                    } else {
+                      widen_sum!(
+                        , (after, (d1, toks_cons(t, p, acc)))
+                        , (Toks & I32 & Toks) | Bodytoks
+                        )
+                    }
+                  }
+                , .(_e: .) {
+                    widen_sum!({bodytoks = (toks_rev(acc), cur)}, (Toks & I32 & Toks) | Bodytoks)
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts, (1(I32), toks_nil()))
+    )) {
+    .(body: Toks, after: Toks) { (body, after) }
+  }
+}
+
+// =====================================================================
+// Reading a fn header's group structure
+// =====================================================================
+//
+// The retained header run holds `[A]… ( … ) ( … )… [-> R]` — leading
+// type-binder groups, then one or more value-parameter groups possibly
+// interleaved with further binder groups (`Signature ::= SignatureGroup+`),
+// then an optional return type. The loader records one empty runtime stage
+// per unary binder and one named stage per value-parameter group. Calls
+// reconstruct the corresponding Unit applications from their own written
+// type arguments; no declaration shape is consulted at a call site.
+fn pgroups_reverse_scan(gs: Pgroups) -> Pgroups {
+  loop(
+    , .(st: Pgroups & Pgroups) {
+        match! st {
+          .(rem: Pgroups, acc: Pgroups) {
+            match! un_pgroups(rem) {
+              (
+                , .(g: Pnames, rest_g: Pgroups) {
+                    widen_sum!((rest_g, pgroups_cons(g, acc)), (Pgroups & Pgroups) | Pgroups)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Pgroups & Pgroups) | Pgroups) }
+                )
+            }
+          }
+        }
+      }
+    , (gs, pgroups_nil())
+    )
+}
+
+/// Wraps the group scan's collected `(reversed-groups, remaining-tokens)`.
+labels { groups_run: Pgroups & Toks };
+
+// Prepend `count` empty runtime groups. Each empty group represents one
+// erased unary `forall` stage; under the evaluator it is a Unit closure.
+fn pgroups_prepend_empty(count: I32, groups: Pgroups) -> Pgroups {
+  loop(
+    , .(st: I32 & Pgroups) {
+        match! st {
+          .(remaining: I32, acc: Pgroups) {
+            if! leq_i32(remaining, 0(I32)) {
+              widen_sum!(acc, (I32 & Pgroups) | Pgroups)
+            } else {
+              widen_sum!(
+                , (sub_i32(remaining, 1(I32)), pgroups_cons(pnames_nil(), acc))
+                , (I32 & Pgroups) | Pgroups
+                )
+            }
+          }
+        }
+      }
+    , (count, groups)
+    )
+}
+
+fn scan_groups(ts: Toks) -> Pgroups | Diag {
+  let loop_result =
+    loop(
+      , .(st: Toks & Pgroups) {
+          match! st {
+            .(cur: Toks, acc: Pgroups) {
+              if! head_is(cur, c_lparen()) {
+                match! scan_params(rest(cur)) {
+                  .(names: Pnames, after: Toks) {
+                    widen_sum!(
+                      , (after, pgroups_cons(names, acc))
+                      , (Toks & Pgroups) | Groups_run | Diag
+                      )
+                  }
+                }
+              } else if! head_is(cur, c_lbrack()) {
+                match! scan_binder_group(cur) {
+                  (
+                    , .(group: Binder_group_scan) {
+                        match! Binder_group_scan.get(group) {
+                          .(arity: I32, after: Toks) {
+                            widen_sum!(
+                              , (after, pgroups_prepend_empty(arity, acc))
+                              , (Toks & Pgroups) | Groups_run | Diag
+                              )
+                          }
+                        }
+                      }
+                    , .(diag: Diag) { widen_sum!(diag, (Toks & Pgroups) | Groups_run | Diag) }
+                    )
+                }
+              } else {
+                widen_sum!({groups_run = (acc, cur)}, (Toks & Pgroups) | Groups_run | Diag)
+              }
+            }
+          }
+        }
+      , (ts, pgroups_nil())
+      );
+  match! loop_result {
+    (
+      , .(done: Groups_run) {
+          match! Groups_run.get(done) {
+            .(revgroups: Pgroups, _after: Toks) {
+              widen_sum!(pgroups_reverse_scan(revgroups), Pgroups | Diag)
+            }
+          }
+        }
+      , .(diag: Diag) { widen_sum!(diag, Pgroups | Diag) }
+      )
+  }
+}
+
+// =====================================================================
+// Scanning one fn declaration
+// =====================================================================
+//
+// The head is positioned at the `fn` keyword. Read the name, collect the
+// header run up to the body's `{`, read the header's group structure, and
+// collect the body. Yields the `Decl` plus the tokens after the body.
+/// Wraps a fn scan's `(decl, remaining-tokens)` for the outer scan's `match!`.
+labels { fn_decl: Decl & Toks };
+
+/// Defines the fn-scan success arm.
+labels { fs_ok: Fn_decl };
+
+/// Defines the fn-scan failure arm (a diagnostic).
+labels { fs_err: Diag };
+
+/// The outcome of scanning one fn declaration.
+type Fn_scan = Fs_ok | Fs_err;
+
+fn fs_ok(d: Decl, after: Toks) -> Fn_scan {
+  widen_sum!({fs_ok = {fn_decl = (d, after)}}, Fs_ok | Fs_err)
+}
+
+fn fs_err(d: Diag) -> Fn_scan { widen_sum!({fs_err = d}, Fs_ok | Fs_err) }
+
+fn un_fn_scan(r: Fn_scan) -> Fs_ok | Fs_err { r }
+
+// Scan one fn declaration. The head `ts0` is at the `fn` keyword; consume
+// it, read the name, collect and structure the header, and collect the
+// body. A missing name or body yields a diagnostic naming the position.
+fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
+  let after_fn = rest(ts0);
+  match! head_word(after_fn) {
+    (
+      , .(name: String) {
+          let after_name = rest(after_fn);
+          match! collect_header(after_name) {
+            .(header: Toks, at_brace: Toks) {
+              if! head_is(at_brace, c_lbrace()) {
+                match! scan_body(at_brace) {
+                  .(body_toks: Toks, after_body: Toks) {
+                    match! scan_groups(header) {
+                      (
+                        , .(groups: Pgroups) {
+                            fs_ok(
+                              , mk_decl(
+                                  , name
+                                  , groups
+                                  , header
+                                  , body_toks
+                                  , visibility
+                                  , match! head_pos(after_fn) {
+                                      (.(pos: I32) { pos }, .(_impossible: .) { 0(I32) })
+                                    }
+                                  )
+                              , drop(after_body, c_semi())
+                              )
+                          }
+                        , .(diag: Diag) { fs_err(diag) }
+                        )
+                    }
+                  }
+                }
+              } else {
+                fs_err(mk_diag_at(
+                  , string_concat(
+                      , "dyn_load_prime: malformed image — fn `"(String)
+                      , string_concat(name, "` has no body"(String))
+                      )
+                  , head_pos(after_fn)
+                  ))
+              }
+            }
+          }
+        }
+      , .(_noname: .) {
+          fs_err(mk_diag_at(
+            , "dyn_load_prime: malformed image — `fn` is not followed by a name"(String)
+            , head_pos(ts0)
+            ))
+        }
+      )
+  }
+}
+
+// =====================================================================
+// Scanning a `newtype` declaration
+// =====================================================================
+//
+// The header grammar is `[pub] newtype NAME [A]… <U>… : TYPE { member;
+// member }` where each member is `[pub[(a/b)]] ('constructor' |
+// 'projector') NAME` in either order (`specs/grammar.md` § Productions
+// (Kio'); the emit writes visibility before the member keyword). The
+// loader records the name, the universal type-arity, the existential-binder
+// count, the two member names, the retained header tokens, and
+// the complete visibility of the declaration and each member. The erasure
+// facts drive term-parser dispatch; the visibility fields gate imports and
+// member use independently.
+/// Wraps a newtype-header scan's `(name, entry, remaining-tokens)`.
+labels { nt_decl: Member_decl & Toks };
+
+/// Defines the newtype-scan success arm.
+labels { ns_ok: Nt_decl };
+
+/// Defines the newtype-scan failure arm (a diagnostic).
+labels { ns_err: Diag };
+
+/// The outcome of scanning one newtype declaration.
+type Nt_scan = Ns_ok | Ns_err;
+
+fn ns_ok(md: Member_decl, after: Toks) -> Nt_scan {
+  widen_sum!({ns_ok = {nt_decl = (md, after)}}, Ns_ok | Ns_err)
+}
+
+fn ns_err(d: Diag) -> Nt_scan { widen_sum!({ns_err = d}, Ns_ok | Ns_err) }
+
+fn un_nt_scan(r: Nt_scan) -> Ns_ok | Ns_err { r }
+
+// One scanned newtype member: which member keyword it carried, its complete
+// visibility, and its name.
+/// Wraps a member read's `(is-projector, visibility, member-name, remaining-tokens)`.
+labels { nt_member: Bool & Visibility & String & Toks };
+
+fn read_nt_member_name(is_proj: Bool, visibility: Visibility, ts: Toks) -> . | Nt_member | Diag {
+  match! head_word(ts) {
+    (
+      , .(name: String) {
+          widen_sum!({nt_member = (is_proj, (visibility, (name, rest(ts))))}, . | Nt_member | Diag)
+        }
+      , .(_noname: .) { widen_sum!((), . | Nt_member | Diag) }
+      )
+  }
+}
+
+// Read one newtype body member: `[pub[(a/b)]] ('constructor' | 'projector')
+// NAME`. Returns `()` when the head is not a member keyword.
+fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
+  let exported = head_word_is(ts0, "pub"(String));
+  let after_pub =
+    if! exported {
+      rest(ts0)
+    } else {
+      ts0
+    };
+  match! read_visibility(after_pub, exported) {
+    (
+      , .(read: Visibility_read) {
+          match! Visibility_read.get(read) {
+            .(visibility: Visibility, ts: Toks) {
+              if! visibility_valid_for_owner(visibility, owner) {
+                let is_ctor = head_word_is(ts, "constructor"(String));
+                let is_proj = head_word_is(ts, "projector"(String));
+                if! is_ctor {
+                  read_nt_member_name(.f(Bool), visibility, rest(ts))
+                } else if! is_proj {
+                  read_nt_member_name(.t(Bool), visibility, rest(ts))
+                } else {
+                  widen_sum!((), . | Nt_member | Diag)
+                }
+              } else {
+                widen_sum!(
+                  , mk_diag_at(
+                      , string_concat(
+                          , "dyn_load_prime: malformed image — a `pub(path)` member scope is not an "
+                            "ancestor of module `"(String)
+                          , string_concat(owner, "`"(String))
+                          )
+                      , head_pos(ts0)
+                      )
+                  , . | Nt_member | Diag
+                  )
+              }
+            }
+          }
+        }
+      , .(d: Diag) { widen_sum!(d, . | Nt_member | Diag) }
+      )
+  }
+}
+
+// Exactly one of the two members is the projector.
+fn xor_members(a: Bool, b: Bool) -> Bool {
+  if! a {
+    if! b {
+      .f(Bool)
+    } else {
+      .t(Bool)
+    }
+  } else {
+    b
+  }
+}
+
+fn nt_body_diag(name: String, ts0: Toks) -> Nt_scan {
+  ns_err(mk_diag_at(
+    , string_concat(
+        , "dyn_load_prime: malformed image — newtype `"(String)
+        , string_concat(name, "`'s body must declare a constructor and a projector"(String))
+        )
+    , head_pos(ts0)
+    ))
+}
+
+// The newtype owns member separator runs; the enclosing sequence owns any
+// semicolon after its closing brace.
+fn scan_newtype_body(
+  , name: String
+  , arity: I32
+  , existential_arity: I32
+  , owner: String
+  , visibility: Visibility
+  , recursive_scope: . | Recursive_type_scope
+  , header: Toks
+  , ts: Toks
+  , ts0: Toks
+  ) -> Nt_scan {
+  match! read_nt_member(skip_semis(ts), owner) {
+    (
+      , .(m1: Nt_member) {
+          match! Nt_member.get(m1) {
+            .(proj1: Bool, visibility1: Visibility, name1: String, after1: Toks) {
+              if! head_is(after1, c_semi()) {
+                match! read_nt_member(skip_semis(after1), owner) {
+                  (
+                    , .(m2: Nt_member) {
+                        match! Nt_member.get(m2) {
+                          .(proj2: Bool, visibility2: Visibility, name2: String, after2: Toks) {
+                            let at_close = skip_semis(after2);
+                            if! head_is(at_close, c_rbrace()) {
+                              let after_rbrace = rest(at_close);
+                              if! xor_members(proj1, proj2) {
+                                let ctor = if! proj1 {
+                                  name2
+                                } else {
+                                  name1
+                                };
+                                let proj = if! proj1 {
+                                  name1
+                                } else {
+                                  name2
+                                };
+                                let ctor_visibility = if! proj1 {
+                                  visibility2
+                                } else {
+                                  visibility1
+                                };
+                                let proj_visibility = if! proj1 {
+                                  visibility1
+                                } else {
+                                  visibility2
+                                };
+                                ns_ok(
+                                  , mk_member_decl(
+                                      , name
+                                      , match! head_pos(rest(ts0)) {
+                                          (.(pos: I32) { pos }, .(_impossible: .) { 0(I32) })
+                                        }
+                                      , mk_nt_info(arity, existential_arity, ctor, proj)
+                                      , visibility
+                                      , ctor_visibility
+                                      , proj_visibility
+                                      , header
+                                      , recursive_scope
+                                      )
+                                  , after_rbrace
+                                  )
+                              } else {
+                                ns_err(mk_diag_at(
+                                  , string_concat(
+                                      , "dyn_load_prime: malformed image — newtype `"(String)
+                                      , string_concat(
+                                          , name
+                                          , "` must declare exactly one constructor and one projector"(String)
+                                          )
+                                      )
+                                  , head_pos(ts0)
+                                  ))
+                              }
+                            } else {
+                              ns_err(mk_diag_at(
+                                , string_concat(
+                                    , "dyn_load_prime: malformed image — newtype `"(String)
+                                    , string_concat(
+                                        , name
+                                        , "` has no closing `}` after its members"(String)
+                                        )
+                                    )
+                                , head_pos(at_close)
+                                ))
+                            }
+                          }
+                        }
+                      }
+                    , .(d: Diag) { ns_err(d) }
+                    , .(_nom2: .) { nt_body_diag(name, ts0) }
+                    )
+                }
+              } else {
+                ns_err(mk_diag_at(
+                  , "dyn_load_prime: malformed image — expected `;` between newtype members"(String)
+                  , head_pos(after1)
+                  ))
+              }
+            }
+          }
+        }
+      , .(d: Diag) { ns_err(d) }
+      , .(_nom1: .) { nt_body_diag(name, ts0) }
+      )
+  }
+}
+
+// Scan one newtype declaration. `ts0` is at the `newtype` keyword: consume
+// it, read the name, count the universal binder groups, note the
+// existential binders, skip the `: TYPE` payload to the body's `{`, and
+// read the two members (either order). Yields the name and its erasure
+// entry, or a diagnostic.
+fn scan_newtype(
+  , ts0: Toks
+  , owner: String
+  , visibility: Visibility
+  , recursive_scope: . | Recursive_type_scope
+  ) -> Nt_scan {
+  let after_kw = rest(ts0);
+  match! head_word(after_kw) {
+    (
+      , .(name: String) {
+          let after_name = rest(after_kw);
+          match! collect_header(after_name) {
+            .(header: Toks, at_brace: Toks) {
+              match! scan_tyarity(header) {
+                (
+                  , .(arity: I32, after_ty: Toks) {
+                      match! scan_existentials(after_ty) {
+                        .(existential_arity: I32, after_exi: Toks) {
+                          if! head_is(after_exi, c_colon()) {
+                            let payload = rest(after_exi);
+                            if! head_is(payload, c_lbrace()) {
+                              ns_err(mk_diag_at(
+                                , string_concat(
+                                    , "dyn_load_prime: malformed image — newtype `"(String)
+                                    , string_concat(name, "` has no payload type"(String))
+                                    )
+                                , head_pos(after_exi)
+                                ))
+                            } else if! head_is(at_brace, c_lbrace()) {
+                              scan_newtype_body(
+                                , name
+                                , arity
+                                , existential_arity
+                                , owner
+                                , visibility
+                                , recursive_scope
+                                , header
+                                , rest(at_brace)
+                                , ts0
+                                )
+                            } else {
+                              ns_err(mk_diag_at(
+                                , string_concat(
+                                    , "dyn_load_prime: malformed image — newtype `"(String)
+                                    , string_concat(name, "` has no member body"(String))
+                                    )
+                                , head_pos(after_kw)
+                                ))
+                            }
+                          } else {
+                            ns_err(mk_diag_at(
+                              , string_concat(
+                                  , "dyn_load_prime: malformed image — newtype `"(String)
+                                  , string_concat(name, "` has no `:` before its payload"(String))
+                                  )
+                              , head_pos(after_exi)
+                              ))
+                          }
+                        }
+                      }
+                    }
+                  , .(diag: Diag) { ns_err(diag) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_noname: .) {
+          ns_err(mk_diag_at(
+            , "dyn_load_prime: malformed image — `newtype` is not followed by a name"(String)
+            , head_pos(ts0)
+            ))
+        }
+      )
+  }
+}
+
+// =====================================================================
+// Scanning import headers
+// =====================================================================
+/// Wraps an import-header scan's imports, aliases, and remaining tokens.
+labels { import_scan: Imports & Aliases & Toks };
+
+/// A malformed import header.
+labels { import_err: Diag };
+
+type Import_outcome = Import_scan | Import_err;
+
+/// Reversed imported names and the tokens after the closing parenthesis.
+labels { names_scan: Pnames & Toks };
+
+fn import_diag(ts: Toks, message: String) -> Diag {
+  mk_diag_at(string_concat("dyn_load_prime: malformed image — "(String), message), head_pos(ts))
+}
+
+fn import_error(ts: Toks, message: String) -> Import_outcome {
+  widen_sum!({import_err = import_diag(ts, message)}, Import_scan | Import_err)
+}
+
+fn import_name_tail(name: String, start: I32, has_lower: Bool) -> Bool {
+  loop(
+    , .(state: I32 & Bool) {
+        match! state {
+          .(index: I32, lower: Bool) {
+            match! string_code_at(name, index) {
+              (
+                , .(code: I32) {
+                    if! is_lower(code) {
+                      widen_sum!((add_i32(index, 1(I32)), .t(Bool)), (I32 & Bool) | Bool)
+                    } else if! is_digit(code) {
+                      widen_sum!((add_i32(index, 1(I32)), lower), (I32 & Bool) | Bool)
+                    } else if! eq_i32(code, c_under()) {
+                      widen_sum!((add_i32(index, 1(I32)), lower), (I32 & Bool) | Bool)
+                    } else {
+                      widen_sum!(.f(Bool), (I32 & Bool) | Bool)
+                    }
+                  }
+                , .(_end: .) { widen_sum!(lower, (I32 & Bool) | Bool) }
+                )
+            }
+          }
+        }
+      }
+    , (start, has_lower)
+    )
+}
+
+fn import_value_name(name: String) -> Bool {
+  match! string_code_at(name, 0(I32)) {
+    (
+      , .(first: I32) {
+          if! is_lower(first) {
+            import_name_tail(name, 1(I32), .t(Bool))
+          } else if! eq_i32(first, c_under()) {
+            match! string_code_at(name, 1(I32)) {
+              (
+                , .(second: I32) {
+                    if! is_lower(second) {
+                      import_name_tail(name, 2(I32), .t(Bool))
+                    } else if! is_digit(second) {
+                      import_name_tail(name, 2(I32), .f(Bool))
+                    } else {
+                      .f(Bool)
+                    }
+                  }
+                , .(_end: .) { .f(Bool) }
+                )
+            }
+          } else {
+            .f(Bool)
+          }
+        }
+      , .(_end: .) { .f(Bool) }
+      )
+  }
+}
+
+fn import_type_name_at(name: String, start: I32) -> Bool {
+  match! string_code_at(name, start) {
+    (
+      , .(first: I32) {
+          if! is_upper(first) {
+            import_name_tail(name, add_i32(start, 1(I32)), .t(Bool))
+          } else {
+            .f(Bool)
+          }
+        }
+      , .(_end: .) { .f(Bool) }
+      )
+  }
+}
+
+fn import_item_name(name: String) -> Bool {
+  if! import_value_name(name) {
+    .t(Bool)
+  } else match! string_code_at(name, 0(I32)) {
+    (
+      , .(first: I32) {
+          if! eq_i32(first, c_under()) {
+            import_type_name_at(name, 1(I32))
+          } else {
+            import_type_name_at(name, 0(I32))
+          }
+        }
+      , .(_end: .) { .f(Bool) }
+      )
+  }
+}
+
+fn import_provider_name(name: String) -> Bool {
+  loop(
+    , .(state: I32 & I32) {
+        match! state {
+          .(index: I32, start: I32) {
+            match! string_code_at(name, index) {
+              (
+                , .(code: I32) {
+                    if! eq_i32(code, c_slash()) {
+                      if! import_value_name(string_slice(name, start, index)) {
+                        let next = add_i32(index, 1(I32));
+                        widen_sum!((next, next), (I32 & I32) | Bool)
+                      } else {
+                        widen_sum!(.f(Bool), (I32 & I32) | Bool)
+                      }
+                    } else {
+                      widen_sum!((add_i32(index, 1(I32)), start), (I32 & I32) | Bool)
+                    }
+                  }
+                , .(_end: .) {
+                    widen_sum!(
+                      , import_value_name(string_slice(name, start, index))
+                      , (I32 & I32) | Bool
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (0(I32), 0(I32))
+    )
+}
+
+fn skip_import_commas(ts: Toks) -> Toks {
+  Toks_done.get(loop(
+    , .(cur: Toks) {
+        if! head_is(cur, c_comma()) {
+          widen_sum!(rest(cur), Toks | Toks_done)
+        } else {
+          widen_sum!({toks_done = cur}, Toks | Toks_done)
+        }
+      }
+    , ts
+    ))
+}
+
+fn scan_import_names(ts: Toks) -> Names_scan | Diag {
+  loop(
+    , .(state: Toks & Pnames) {
+        match! state {
+          .(remaining: Toks, names: Pnames) {
+            let cur = skip_import_commas(remaining);
+            if! head_is(cur, c_rparen()) {
+              if! eq_i32(pnames_len(names), 0(I32)) {
+                widen_sum!(
+                  , import_diag(cur, "expected at least one imported identifier"(String))
+                  , (Toks & Pnames) | Names_scan | Diag
+                  )
+              } else {
+                widen_sum!({names_scan = (names, rest(cur))}, (Toks & Pnames) | Names_scan | Diag)
+              }
+            } else if! head_is(cur, c_lbrace()) {
+              widen_sum!(
+                , import_diag(cur, "braced label imports are not in Kio'"(String))
+                , (Toks & Pnames) | Names_scan | Diag
+                )
+            } else match! head_word(cur) {
+              (
+                , .(name: String) {
+                    let after = rest(cur);
+                    if! import_item_name(name) {
+                      if! head_is(after, c_rparen()) {
+                        widen_sum!(
+                          , {names_scan = (pnames_cons(name, names), rest(after))}
+                          , (Toks & Pnames) | Names_scan | Diag
+                          )
+                      } else if! head_is(after, c_comma()) {
+                        widen_sum!(
+                          , (after, pnames_cons(name, names))
+                          , (Toks & Pnames) | Names_scan | Diag
+                          )
+                      } else if! string_eq(name, "op"(String)) {
+                        widen_sum!(
+                          , import_diag(cur, "operator imports are not in Kio'"(String))
+                          , (Toks & Pnames) | Names_scan | Diag
+                          )
+                      } else {
+                        widen_sum!(
+                          , import_diag(
+                              , after
+                              , "expected comma or closing parenthesis in import list"(String)
+                              )
+                          , (Toks & Pnames) | Names_scan | Diag
+                          )
+                      }
+                    } else {
+                      widen_sum!(
+                        , import_diag(cur, "expected an ordinary imported identifier"(String))
+                        , (Toks & Pnames) | Names_scan | Diag
+                        )
+                    }
+                  }
+                , .(_not_word: .) {
+                    widen_sum!(
+                      , import_diag(
+                          , cur
+                          , "expected an imported identifier or closing parenthesis"(String)
+                          )
+                      , (Toks & Pnames) | Names_scan | Diag
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts, pnames_nil())
+    )
+}
+
+// Build import entries (name, module), retaining their introduction order.
+fn imports_from_names(names: Pnames, from_module: String, acc: Imports) -> Imports {
+  loop(
+    , .(st: Pnames & Imports) {
+        match! st {
+          .(rem: Pnames, out: Imports) {
+            match! un_pnames(rem) {
+              (
+                , .(name: String, rest_n: Pnames) {
+                    widen_sum!(
+                      , (rest_n, imports_cons(mk_import(name, from_module), out))
+                      , (Pnames & Imports) | Imports
+                      )
+                  }
+                , .(_e: .) { widen_sum!(out, (Pnames & Imports) | Imports) }
+                )
+            }
+          }
+        }
+      }
+    , (names, acc)
+    )
+}
+
+fn scan_import_alias(ts: Toks, target: String, imports: Imports, aliases: Aliases) -> Import_outcome {
+  match! head_word(ts) {
+    (
+      , .(alias: String) {
+          if! import_value_name(alias) {
+            let after = rest(ts);
+            if! head_is(after, c_semi()) {
+              widen_sum!(
+                , {import_scan = (
+                    , imports
+                    , (aliases_cons(mk_alias(alias, target), aliases), rest(after))
+                    )}
+                , Import_scan | Import_err
+                )
+            } else {
+              import_error(after, "expected semicolon after import alias"(String))
+            }
+          } else {
+            import_error(ts, "expected a value-shaped import alias"(String))
+          }
+        }
+      , .(_missing: .) { import_error(ts, "expected a value-shaped alias after `as`"(String)) }
+      )
+  }
+}
+
+fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
+  let after_import = rest(ts);
+  if! head_word_is(after_import, "__intrinsics__"(String)) {
+    let after = rest(after_import);
+    if! head_is(after, c_semi()) {
+      widen_sum!({import_scan = (imports, (aliases, rest(after)))}, Import_scan | Import_err)
+    } else {
+      import_error(after, "expected semicolon after import __intrinsics__"(String))
+    }
+  } else if! head_word_is(after_import, "__comptime__"(String)) {
+    import_error(after_import, "import __comptime__ is not in Kio'"(String))
+  } else match! un_mod_path(read_module_path(after_import)) {
+    (
+      , .(path: Mod_path) {
+          match! Mod_path.get(path) {
+            .(provider: String, after_path: Toks) {
+              if! import_provider_name(provider) {
+                if! head_word_is(after_path, "as"(String)) {
+                  scan_import_alias(rest(after_path), provider, imports, aliases)
+                } else if! head_is(after_path, c_lparen()) {
+                  match! scan_import_names(rest(after_path)) {
+                    (
+                      , .(selected: Names_scan) {
+                          match! Names_scan.get(selected) {
+                            .(names: Pnames, after: Toks) {
+                              if! head_is(after, c_semi()) {
+                                widen_sum!(
+                                  , {import_scan = (
+                                      , imports_from_names(names, provider, imports)
+                                      , (aliases, rest(after))
+                                      )}
+                                  , Import_scan | Import_err
+                                  )
+                              } else {
+                                import_error(after, "expected semicolon after import list"(String))
+                              }
+                            }
+                          }
+                        }
+                      , .(diagnostic: Diag) {
+                          widen_sum!({import_err = diagnostic}, Import_scan | Import_err)
+                        }
+                      )
+                  }
+                } else {
+                  import_error(after_path, "expected `(` or `as` after import provider"(String))
+                }
+              } else {
+                import_error(after_import, "expected a value-shaped import provider path"(String))
+              }
+            }
+          }
+        }
+      , .(_missing: .) { import_error(after_import, "expected a provider after import"(String)) }
+      )
+  }
+}
+
+fn un_import_outcome(result: Import_outcome) -> Import_scan | Import_err { result }
+
+fn toks_rev_scan(ts0: Toks) -> Toks {
+  loop(
+    , .(st: Toks & Toks) {
+        match! st {
+          .(rem: Toks, acc: Toks) {
+            match! un_toks(rem) {
+              (
+                , .(t: Token, pos: I32, tail: Toks) {
+                    widen_sum!((tail, toks_cons(t, pos, acc)), (Toks & Toks) | Toks)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Toks & Toks) | Toks) }
+                )
+            }
+          }
+        }
+      }
+    , (ts0, toks_nil())
+    )
+}
+
+/// Wraps a declaration body and the tokens at its enclosing boundary.
+labels { semi_run: Toks & Toks };
+
+fn read_decl_body(ts0: Toks, in_group: Bool) -> . | Semi_run {
+  loop(
+    , .(st: Toks & Toks) {
+        match! st {
+          .(cur: Toks, acc: Toks) {
+            match! un_toks(cur) {
+              (
+                , .(t: Token, pos: I32, tail: Toks) {
+                    if! head_is(cur, c_semi()) {
+                      widen_sum!(
+                        , widen_sum!(
+                            , {semi_run = (
+                                , toks_rev_scan(acc)
+                                , if! in_group {
+                                    cur
+                                  } else {
+                                    tail
+                                  }
+                                )}
+                            , . | Semi_run
+                            )
+                        , (Toks & Toks) | . | Semi_run
+                        )
+                    } else if! in_group {
+                      if! head_is(cur, c_rbrace()) {
+                        widen_sum!(
+                          , widen_sum!({semi_run = (toks_rev_scan(acc), cur)}, . | Semi_run)
+                          , (Toks & Toks) | . | Semi_run
+                          )
+                      } else {
+                        widen_sum!((tail, toks_cons(t, pos, acc)), (Toks & Toks) | . | Semi_run)
+                      }
+                    } else {
+                      widen_sum!((tail, toks_cons(t, pos, acc)), (Toks & Toks) | . | Semi_run)
+                    }
+                  }
+                , .(_e: .) {
+                    widen_sum!(widen_sum!((), . | Semi_run), (Toks & Toks) | . | Semi_run)
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts0, toks_nil())
+    )
+}
+
+fn read_to_semi(ts0: Toks) -> . | Semi_run { read_decl_body(ts0, .f(Bool)) }
+
+// =====================================================================
+// Scanning `host` declarations
+// =====================================================================
+//
+// `[pub] host [pub] fn NAME sig -> R;` and
+// `[pub] host [pub] type NAME …;` retain the item kind, name, header tokens,
+// and name byte offset. Their terminating `;` is consumed but excluded from
+// the retained header; host items carry no body.
+/// Wraps a host scan's `(is-fn, name, header-tokens, name-offset,
+/// remaining-tokens)`.
+labels { host_decl: Bool & String & Toks & I32 & Toks };
+
+/// Defines the host-scan failure arm.
+labels { hs_err: Diag };
+
+/// The outcome of scanning one host declaration.
+type Host_scan = Host_decl | Hs_err;
+
+fn scan_host_name(is_fn: Bool, ts: Toks, ts0: Toks) -> Host_scan {
+  match! head_word(ts) {
+    (
+      , .(name: String) {
+          match! head_pos(ts) {
+            (
+              , .(decl_pos: I32) {
+                  match! read_to_semi(rest(ts)) {
+                    (
+                      , .(body: Semi_run) {
+                          match! Semi_run.get(body) {
+                            .(header: Toks, after: Toks) {
+                              widen_sum!(
+                                , {host_decl = (is_fn, name, header, decl_pos, after)}
+                                , Host_decl | Hs_err
+                                )
+                            }
+                          }
+                        }
+                      , .(_unterminated: .) {
+                          widen_sum!(
+                            , {hs_err = mk_diag_at(
+                                , "dyn_load_prime: malformed image — unterminated `host` declaration"(String)
+                                , head_pos(ts0)
+                                )}
+                            , Host_decl | Hs_err
+                            )
+                        }
+                      )
+                  }
+                }
+              , .(_missing_pos: .) {
+                  widen_sum!(
+                    , {hs_err = mk_diag_at(
+                        , "dyn_load_prime: malformed image — a `host` declaration names no item"(String)
+                        , head_pos(ts0)
+                        )}
+                    , Host_decl | Hs_err
+                    )
+                }
+              )
+          }
+        }
+      , .(_noname: .) {
+          widen_sum!(
+            , {hs_err = mk_diag_at(
+                , "dyn_load_prime: malformed image — a `host` declaration names no item"(String)
+                , head_pos(ts0)
+                )}
+            , Host_decl | Hs_err
+            )
+        }
+      )
+  }
+}
+
+// The head `ts0` is at the `host` keyword.
+fn scan_host(ts0: Toks) -> Host_scan {
+  let after_host = rest(ts0);
+  let after_vis =
+    if! head_word_is(after_host, "pub"(String)) {
+      rest(after_host)
+    } else {
+      after_host
+    };
+  let is_fn = head_word_is(after_vis, "fn"(String));
+  let is_type = head_word_is(after_vis, "type"(String));
+  if! is_fn {
+    scan_host_name(.t(Bool), rest(after_vis), ts0)
+  } else if! is_type {
+    scan_host_name(.f(Bool), rest(after_vis), ts0)
+  } else {
+    widen_sum!(
+      , {hs_err = mk_diag_at(
+          , "dyn_load_prime: malformed image — `host` is not followed by `fn` or "
+            "`type`"(String)
+          , head_pos(ts0)
+          )}
+      , Host_decl | Hs_err
+      )
+  }
+}
+
+fn un_host_scan(r: Host_scan) -> Host_decl | Hs_err { r }
+
+// =====================================================================
+// The in-progress module record
+// =====================================================================
+//
+// The scanners thread the module being assembled as one record, flushed
+// into a `Module` at the next `module` header (or end-of-input).
+/// The in-progress module: name, reversed imports, reversed aliases, its
+/// newtype table, reversed decls, reversed host-fn names, reversed type
+/// names, and reversed retained host declaration headers.
+labels { wip: & String
+& Imports
+& Aliases
+& Ntab
+& Decls
+& Pnames
+& Pnames
+& Members
+& Tyaliases
+& Host_headers };
+
+fn fresh_wip(name: String) -> Wip {
+  {wip = (
+    , name
+    , (
+        , imports_nil()
+        , (
+            , aliases_nil()
+            , (
+                , ntab_nil()
+                , (
+                    , decls_nil()
+                    , (
+                        , pnames_nil()
+                        , (pnames_nil(), (members_nil(), (tyaliases_nil(), host_headers_nil())))
+                        )
+                    )
+                )
+            )
+        )
+    )}
+}
+
+fn wip_name(w: Wip) -> String {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , _i: Imports
+      , _a: Aliases
+      , _nt: Ntab
+      , _d: Decls
+      , _h: Pnames
+      , _t: Pnames
+      , _mm: Members
+      , _ta: Tyaliases
+      , _hh: Host_headers
+      ) { n }
+  }
+}
+
+// Rebuild the record with one field replaced. Each `with_*` keeps the
+// other fields.
+fn with_imports(w: Wip, i2: Imports) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , _i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i2, (a, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+  }
+}
+
+fn with_aliases(w: Wip, a2: Aliases) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , _a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+  }
+}
+
+fn with_imports_and_aliases(w: Wip, i2: Imports, a2: Aliases) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , _i: Imports
+      , _a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i2, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+  }
+}
+
+fn with_newtype(w: Wip, md: Member_decl) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) {
+      {wip = (
+        , n
+        , (
+            , i
+            , (
+                , a
+                , (
+                    , ntab_cons(member_name(md), member_info(md), nt)
+                    , (d, (h, (t, (members_cons(md, mm), (ta, hh)))))
+                    )
+                )
+            )
+        )}
+    }
+  }
+}
+
+fn with_decl(w: Wip, d2: Decl) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i, (a, (nt, (decls_cons(d2, d), (h, (t, (mm, (ta, hh)))))))))} }
+  }
+}
+
+fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) {
+      let hostfns =
+        if! is_fn {
+          pnames_cons(name, h)
+        } else {
+          h
+        };
+      let typenames =
+        if! is_fn {
+          t
+        } else {
+          pnames_cons(name, t)
+        };
+      {wip = (
+        , n
+        , (
+            , i
+            , (
+                , a
+                , (
+                    , nt
+                    , (
+                        , d
+                        , (
+                            , hostfns
+                            , (
+                                , typenames
+                                , (
+                                    , mm
+                                    , (
+                                        , ta
+                                        , host_headers_cons(
+                                            , mk_host_header(is_fn, name, header, decl_pos)
+                                            , hh
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )}
+    }
+  }
+}
+
+fn wip_has_host_decl(w: Wip, name: String) -> Bool {
+  match! Wip.get(w) {
+    .(
+      , _n: String
+      , _i: Imports
+      , _a: Aliases
+      , _nt: Ntab
+      , _d: Decls
+      , hostfns: Pnames
+      , typenames: Pnames
+      , _mm: Members
+      , _ta: Tyaliases
+      , _hh: Host_headers
+      ) {
+      if! pnames_has(hostfns, name) {
+        .t(Bool)
+      } else {
+        pnames_has(typenames, name)
+      }
+    }
+  }
+}
+
+fn with_typename(w: Wip, name: String) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i, (a, (nt, (d, (h, (pnames_cons(name, t), (mm, (ta, hh)))))))))} }
+  }
+}
+
+fn with_tyalias(w: Wip, a2: Alias_decl) -> Wip {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) { {wip = (n, (i, (a, (nt, (d, (h, (t, (mm, (tyaliases_cons(a2, ta), hh)))))))))} }
+  }
+}
+
+// Reverse a most-recent-first imports accumulator into source order.
+fn imports_reverse(im: Imports) -> Imports {
+  loop(
+    , .(st: Imports & Imports) {
+        match! st {
+          .(rem: Imports, acc: Imports) {
+            match! un_imports(rem) {
+              (
+                , .(h: Import, t: Imports) {
+                    widen_sum!((t, imports_cons(h, acc)), (Imports & Imports) | Imports)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Imports & Imports) | Imports) }
+                )
+            }
+          }
+        }
+      }
+    , (im, imports_nil())
+    )
+}
+
+// Reverse a most-recent-first decl accumulator into declaration order.
+fn decls_reverse(ds: Decls) -> Decls {
+  loop(
+    , .(st: Decls & Decls) {
+        match! st {
+          .(rem: Decls, acc: Decls) {
+            match! un_decls(rem) {
+              (
+                , .(h: Decl, t: Decls) {
+                    widen_sum!((t, decls_cons(h, acc)), (Decls & Decls) | Decls)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Decls & Decls) | Decls) }
+                )
+            }
+          }
+        }
+      }
+    , (ds, decls_nil())
+    )
+}
+
+// Finish the in-progress module into a `Module` record (imports and decls
+// restored to source order; the alias / host / type name lists are
+// order-insensitive sets).
+fn finish_wip(w: Wip) -> Module {
+  match! Wip.get(w) {
+    .(
+      , n: String
+      , i: Imports
+      , a: Aliases
+      , nt: Ntab
+      , d: Decls
+      , h: Pnames
+      , t: Pnames
+      , mm: Members
+      , ta: Tyaliases
+      , hh: Host_headers
+      ) {
+      mk_module(
+        , n
+        , imports_reverse(i)
+        , a
+        , nt
+        , decls_reverse(d)
+        , h
+        , t
+        , members_reverse(mm)
+        , tyaliases_reverse(ta)
+        , host_headers_reverse(hh)
+        )
+    }
+  }
+}
+
+// Scan one `[pub[(a/b)]] fn / newtype / type / host …` declaration after an
+// optional `pub` (already consumed). A following `(scope)` is consumed here:
+// fn, newtype, and type declarations retain it for declaration and import-path
+// gates, while host declarations reject scoped visibility.
+/// Wraps a declaration scan's `(updated-module, remaining-tokens)`.
+labels { wip_and_toks: Wip & Toks };
+
+type Decl_scan = Wip_and_toks | Diag;
+
+// =====================================================================
+// Retaining `type` alias declarations
+// =====================================================================
+//
+// A `type NAME [A]… = BODY ;` in the image is retained whole — name,
+// positional binder names, body token-run, complete `Visibility`, and the
+// declaration-name byte offset — so member signature rendering can
+// substitute the alias's structural form.
+
+// Whether the token is the given punctuation code.
+fn is_punct_code(t: Token, code: I32) -> Bool {
+  match! un_token(t) {
+    (
+      , .(_w: Tk_word) { .f(Bool) }
+      , .(_i: Tk_num) { .f(Bool) }
+      , .(_s: Tk_str) { .f(Bool) }
+      , .(p: Tk_punct) { eq_i32(Tk_punct.get(p), code) }
+      )
+  }
+}
+
+labels { star_read: I32 & Toks };
+
+fn read_stars(ts0: Toks) -> Star_read {
+  loop(
+    , .(st: Toks & I32) {
+        match! st {
+          .(cur: Toks, stars: I32) {
+            if! head_is(cur, c_star()) {
+              widen_sum!((rest(cur), add_i32(stars, 1(I32))), (Toks & I32) | Star_read)
+            } else {
+              widen_sum!({star_read = (stars, cur)}, (Toks & I32) | Star_read)
+            }
+          }
+        }
+      }
+    , (ts0, 0(I32))
+    )
+}
+
+/// Wraps one binder group's read: the reversed binder accumulator, tokens
+/// after the closing bracket, and whether the group was valid.
+labels { tab_one: Binders & Toks & Bool };
+
+// Reads one comma-framed binder group after its opening `[`, retaining every
+// binder name. Alias kinds are checked by offline Prime validation.
+fn read_binder_group(ts0: Toks, binders0: Binders) -> Tab_one {
+  loop(
+    , .(st: Toks & Binders & Bool & Bool) {
+        match! st {
+          .(cur: Toks, binders: Binders, seen: Bool, after_binder: Bool) {
+            if! head_is(cur, c_rbrack()) {
+              widen_sum!(
+                , {tab_one = (binders, (rest(cur), seen))}
+                , (Toks & Binders & Bool & Bool) | Tab_one
+                )
+            } else if! head_is(cur, c_comma()) {
+              widen_sum!(
+                , (rest(cur), (binders, (seen, .f(Bool))))
+                , (Toks & Binders & Bool & Bool) | Tab_one
+                )
+            } else if! after_binder {
+              widen_sum!(
+                , {tab_one = (binders, (cur, .f(Bool)))}
+                , (Toks & Binders & Bool & Bool) | Tab_one
+                )
+            } else match! Star_read.get(read_stars(cur)) {
+              .(stars: I32, after_stars: Toks) {
+                match! head_word(after_stars) {
+                  (
+                    , .(name: String) {
+                        widen_sum!(
+                          , (
+                              , rest(after_stars)
+                              , (
+                                  , binders_cons({binder_info = (name, stars)}, binders)
+                                  , (.t(Bool), .t(Bool))
+                                  )
+                              )
+                          , (Toks & Binders & Bool & Bool) | Tab_one
+                          )
+                      }
+                    , .(_missing: .) {
+                        widen_sum!(
+                          , {tab_one = (binders, (after_stars, .f(Bool)))}
+                          , (Toks & Binders & Bool & Bool) | Tab_one
+                          )
+                      }
+                    )
+                }
+              }
+            }
+          }
+        }
+      }
+    , (ts0, (binders0, (.f(Bool), .f(Bool))))
+    )
+}
+
+/// Wraps the binder-run read: binders in declaration order, tokens after the
+/// last group, and whether every group was valid.
+labels { tab_binders: Binders & Toks & Bool };
+
+// The leading `[A][B]…` binders after the alias's name.
+fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
+  loop(
+    , .(st: Toks & Binders) {
+        match! st {
+          .(cur: Toks, binders: Binders) {
+            if! head_is(cur, c_lbrack()) {
+              match! Tab_one.get(read_binder_group(rest(cur), binders)) {
+                .(next: Binders, after: Toks, valid: Bool) {
+                  if! valid {
+                    widen_sum!((after, next), (Toks & Binders) | Tab_binders)
+                  } else {
+                    widen_sum!(
+                      , {tab_binders = (binders_reverse(next), (after, .f(Bool)))}
+                      , (Toks & Binders) | Tab_binders
+                      )
+                  }
+                }
+              }
+            } else {
+              widen_sum!(
+                , {tab_binders = (binders_reverse(binders), (cur, .t(Bool)))}
+                , (Toks & Binders) | Tab_binders
+                )
+            }
+          }
+        }
+      }
+    , (ts0, binders_nil())
+    )
+}
+
+fn ds_ok(w: Wip, after: Toks) -> Decl_scan {
+  widen_sum!({wip_and_toks = (w, after)}, Wip_and_toks | Diag)
+}
+
+fn ds_err(d: Diag) -> Decl_scan { widen_sum!(d, Wip_and_toks | Diag) }
+
+fn un_decl_scan(r: Decl_scan) -> Wip_and_toks | Diag { r }
+
+fn scan_visible_fn(ts: Toks, visibility: Visibility, w: Wip) -> Decl_scan {
+  match! un_fn_scan(scan_fn(ts, visibility)) {
+    (
+      , .(ok: Fs_ok) {
+          match! Fn_decl.get(Fs_ok.get(ok)) {
+            .(d: Decl, after: Toks) { ds_ok(with_decl(w, d), after) }
+          }
+        }
+      , .(e: Fs_err) { ds_err(Fs_err.get(e)) }
+      )
+  }
+}
+
+fn scan_visible_newtype(
+  , ts: Toks
+  , visibility: Visibility
+  , recursive_scope: . | Recursive_type_scope
+  , in_group: Bool
+  , w: Wip
+  ) -> Decl_scan {
+  match! un_nt_scan(scan_newtype(ts, wip_name(w), visibility, recursive_scope)) {
+    (
+      , .(ok: Ns_ok) {
+          match! Nt_decl.get(Ns_ok.get(ok)) {
+            .(md: Member_decl, after: Toks) {
+              ds_ok(
+                , with_newtype(w, md)
+                , if! in_group {
+                    after
+                  } else {
+                    drop(after, c_semi())
+                  }
+                )
+            }
+          }
+        }
+      , .(e: Ns_err) { ds_err(Ns_err.get(e)) }
+      )
+  }
+}
+
+fn scan_visible_decl(
+  , ts: Toks
+  , visibility: Visibility
+  , pure: Bool
+  , recursive_scope: . | Recursive_type_scope
+  , in_group: Bool
+  , w: Wip
+  ) -> Decl_scan {
+  if! pure {
+    if! head_word_is(ts, "fn"(String)) {
+      scan_visible_fn(ts, visibility, w)
+    } else {
+      ds_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` "
+          "declarations"(String)
+        , head_pos(ts)
+        ))
+    }
+  } else if! head_word_is(ts, "fn"(String)) {
+    scan_visible_fn(ts, visibility, w)
+  } else if! head_word_is(ts, "newtype"(String)) {
+    scan_visible_newtype(ts, visibility, recursive_scope, in_group, w)
+  } else if! head_word_is(ts, "rec"(String)) {
+    let after_rec = rest(ts);
+    if! head_word_is(after_rec, "newtype"(String)) {
+      scan_visible_newtype(
+        , after_rec
+        , visibility
+        , match! head_pos(ts) {
+            (
+              , .(pos: I32) { recursive_type_scope(pos) }
+              , .(_missing: .) { no_recursive_type_scope() }
+              )
+          }
+        , in_group
+        , w
+        )
+    } else if! head_word_is(after_rec, "type"(String)) {
+      ds_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — `rec type` is not a Kio' declaration"(String)
+        , head_pos(ts)
+        ))
+    } else if! head_is(after_rec, c_lbrace()) {
+      ds_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — a recursive type group has no "
+          "group-level visibility"(String)
+        , head_pos(ts)
+        ))
+    } else {
+      ds_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
+          "a type group"(String)
+        , head_pos(ts)
+        ))
+    }
+  } else if! head_word_is(ts, "type"(String)) {
+    match! head_word(rest(ts)) {
+      (
+        , .(name: String) {
+            match! head_pos(rest(ts)) {
+              (
+                , .(decl_pos: I32) {
+                    match! Tab_binders.get(read_tyalias_binders(rest(rest(ts)))) {
+                      .(binders: Binders, at_eq: Toks, valid: Bool) {
+                        if! valid {
+                          if! head_is(at_eq, c_eq()) {
+                            match! read_decl_body(rest(at_eq), in_group) {
+                              (
+                                , .(tb: Semi_run) {
+                                    match! Semi_run.get(tb) {
+                                      .(body: Toks, after: Toks) {
+                                        match! peek(body) {
+                                          (
+                                            , .(_body_token: Token) {
+                                                ds_ok(
+                                                  , with_tyalias(
+                                                      , with_typename(w, name)
+                                                      , mk_alias_decl(
+                                                          , name
+                                                          , binders
+                                                          , body
+                                                          , visibility
+                                                          , decl_pos
+                                                          , recursive_scope
+                                                          )
+                                                      )
+                                                  , after
+                                                  )
+                                              }
+                                            , .(_empty_body: .) {
+                                                ds_err(mk_diag_at(
+                                                  , string_concat(
+                                                      , "dyn_load_prime: malformed image — type alias `"(String)
+                                                      , string_concat(name, "` has no body"(String))
+                                                      )
+                                                  , head_pos(at_eq)
+                                                  ))
+                                              }
+                                            )
+                                        }
+                                      }
+                                    }
+                                  }
+                                , .(_eof: .) {
+                                    ds_err(mk_diag_at(
+                                      , string_concat(
+                                          , "dyn_load_prime: malformed image — type alias `"(String)
+                                          , string_concat(name, "` has no terminating `;`"(String))
+                                          )
+                                      , head_pos(at_eq)
+                                      ))
+                                  }
+                                )
+                            }
+                          } else {
+                            ds_err(mk_diag_at(
+                              , string_concat(
+                                  , "dyn_load_prime: malformed image — type alias `"(String)
+                                  , string_concat(name, "` has no `=`"(String))
+                                  )
+                              , head_pos(at_eq)
+                              ))
+                          }
+                        } else {
+                          ds_err(mk_diag_at(
+                            , "dyn_load_prime: malformed image — malformed type-parameter list"(String)
+                            , head_pos(rest(ts))
+                            ))
+                        }
+                      }
+                    }
+                  }
+                , .(_missing_pos: .) {
+                    ds_err(mk_diag_at(
+                      , "dyn_load_prime: malformed image — `type` is not followed by a name"(String)
+                      , head_pos(ts)
+                      ))
+                  }
+                )
+            }
+          }
+        , .(_noname: .) {
+            ds_err(mk_diag_at(
+              , "dyn_load_prime: malformed image — `type` is not followed by a name"(String)
+              , head_pos(ts)
+              ))
+          }
+        )
+    }
+  } else if! head_word_is(ts, "host"(String)) {
+    if! visibility_is_scoped(visibility) {
+      ds_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — host declarations cannot use "
+          "`pub(path)` visibility"(String)
+        , head_pos(ts)
+        ))
+    } else match! un_host_scan(scan_host(ts)) {
+      (
+        , .(hd: Host_decl) {
+            match! Host_decl.get(hd) {
+              .(is_fn: Bool, name: String, header: Toks, decl_pos: I32, after: Toks) {
+                if! wip_has_host_decl(w, name) {
+                  ds_err(mk_diag_at(
+                    , string_concat(
+                        , "dyn_load_prime: malformed image — duplicate host declaration `"(String)
+                        , string_concat(name, "` in one module"(String))
+                        )
+                    , head_pos(ts)
+                    ))
+                } else {
+                  ds_ok(with_host_decl(w, is_fn, name, header, decl_pos), after)
+                }
+              }
+            }
+          }
+        , .(e: Hs_err) { ds_err(Hs_err.get(e)) }
+        )
+    }
+  } else {
+    ds_err(mk_diag_at(
+      , "dyn_load_prime: malformed image — `pub` is not followed by `fn`, `rec "
+        "newtype`, `newtype`, `type`, or `host`"(String)
+      , head_pos(ts)
+      ))
+  }
+}
+
+fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
+  match! read_visibility(ts0, exported) {
+    (
+      , .(read: Visibility_read) {
+          match! Visibility_read.get(read) {
+            .(visibility: Visibility, ts: Toks) {
+              if! visibility_valid_for_owner(visibility, wip_name(w)) {
+                if! pure {
+                  if! head_word_is(ts, "pure"(String)) {
+                    ds_err(mk_diag_at(
+                      , "dyn_load_prime: malformed image — duplicate `pure` declaration modifier"(String)
+                      , head_pos(ts)
+                      ))
+                  } else {
+                    scan_visible_decl(
+                      , ts
+                      , visibility
+                      , .t(Bool)
+                      , no_recursive_type_scope()
+                      , .f(Bool)
+                      , w
+                      )
+                  }
+                } else if! head_word_is(ts, "pure"(String)) {
+                  scan_visible_decl(
+                    , rest(ts)
+                    , visibility
+                    , .t(Bool)
+                    , no_recursive_type_scope()
+                    , .f(Bool)
+                    , w
+                    )
+                } else {
+                  scan_visible_decl(
+                    , ts
+                    , visibility
+                    , .f(Bool)
+                    , no_recursive_type_scope()
+                    , .f(Bool)
+                    , w
+                    )
+                }
+              } else {
+                ds_err(mk_diag_at(
+                  , string_concat(
+                      , "dyn_load_prime: malformed image — a `pub(path)` declaration scope is not "
+                        "an ancestor of module `"(String)
+                      , string_concat(wip_name(w), "`"(String))
+                      )
+                  , head_pos(ts0)
+                  ))
+              }
+            }
+          }
+        }
+      , .(d: Diag) { ds_err(d) }
+      )
+  }
+}
+
+// =====================================================================
+// Scanning a recursive type group
+// =====================================================================
+/// Wraps a completed recursive type group's updated module and remaining tokens.
+labels { type_group_read: Wip & Toks };
+
+type Type_group_scan = Type_group_read | Diag;
+
+fn type_group_diag(message: String, ts: Toks) -> Type_group_scan {
+  widen_sum!(mk_diag_at(message, head_pos(ts)), Type_group_read | Diag)
+}
+
+// A group member carries its own ordinary visibility and must be either a
+// transparent alias or a newtype. The marker's closed head scope is a
+// compile-time property; the runtime loader retains the same alias/newtype
+// records as it does for ordinary declarations.
+fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, w: Wip) -> Decl_scan {
+  let exported = head_word_is(ts0, "pub"(String));
+  let after_pub =
+    if! exported {
+      rest(ts0)
+    } else {
+      ts0
+    };
+  match! read_visibility(after_pub, exported) {
+    (
+      , .(read: Visibility_read) {
+          match! Visibility_read.get(read) {
+            .(visibility: Visibility, ts: Toks) {
+              if! visibility_valid_for_owner(visibility, wip_name(w)) {
+                if! head_word_is(ts, "type"(String)) {
+                  scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
+                } else if! head_word_is(ts, "newtype"(String)) {
+                  scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
+                } else {
+                  ds_err(mk_diag_at(
+                    , "dyn_load_prime: malformed image — a recursive type group member must be "
+                      "`type` or `newtype`"(String)
+                    , head_pos(ts)
+                    ))
+                }
+              } else {
+                ds_err(mk_diag_at(
+                  , string_concat(
+                      , "dyn_load_prime: malformed image — a `pub(path)` declaration scope is not "
+                        "an ancestor of module `"(String)
+                      , string_concat(wip_name(w), "`"(String))
+                      )
+                  , head_pos(ts0)
+                  ))
+              }
+            }
+          }
+        }
+      , .(d: Diag) { ds_err(d) }
+      )
+  }
+}
+
+// The head is at `rec`. Both the module and the group scanner remain iterative:
+// each accepted member advances the token cursor and updates the existing Wip
+// tables, and the first `}` at item depth closes the group.
+fn scan_type_group(ts0: Toks, w0: Wip) -> Type_group_scan {
+  let after_rec = rest(ts0);
+  if! head_is(after_rec, c_lbrace()) {
+    let recursive_scope = match! head_pos(ts0) {
+      (.(pos: I32) { recursive_type_scope(pos) }, .(_missing: .) { no_recursive_type_scope() })
+    };
+    loop(
+      , .(st: Toks & Wip & I32) {
+          match! st {
+            .(cur: Toks, w: Wip, member_count: I32) {
+              match! peek(cur) {
+                (
+                  , .(_token: Token) {
+                      if! head_is(cur, c_rbrace()) {
+                        if! eq_i32(member_count, 0(I32)) {
+                          widen_sum!(
+                            , type_group_diag(
+                                , "dyn_load_prime: malformed image — a recursive type group is empty"(String)
+                                , cur
+                                )
+                            , (Toks & Wip & I32) | Type_group_read | Diag
+                            )
+                        } else if! eq_i32(member_count, 1(I32)) {
+                          widen_sum!(
+                            , type_group_diag(
+                                , "dyn_load_prime: malformed image — a recursive type group must contain at "
+                                  "least two declarations"(String)
+                                , cur
+                                )
+                            , (Toks & Wip & I32) | Type_group_read | Diag
+                            )
+                        } else {
+                          widen_sum!(
+                            , widen_sum!(
+                                , {type_group_read = (w, drop(rest(cur), c_semi()))}
+                                , Type_group_read | Diag
+                                )
+                            , (Toks & Wip & I32) | Type_group_read | Diag
+                            )
+                        }
+                      } else match! un_decl_scan(scan_type_group_member(cur, recursive_scope, w)) {
+                        (
+                          , .(done: Wip_and_toks) {
+                              match! Wip_and_toks.get(done) {
+                                .(w1: Wip, after: Toks) {
+                                  if! head_is(after, c_semi()) {
+                                    widen_sum!(
+                                      , (rest(after), (w1, add_i32(member_count, 1(I32))))
+                                      , (Toks & Wip & I32) | Type_group_read | Diag
+                                      )
+                                  } else if! head_is(after, c_rbrace()) {
+                                    widen_sum!(
+                                      , (after, (w1, add_i32(member_count, 1(I32))))
+                                      , (Toks & Wip & I32) | Type_group_read | Diag
+                                      )
+                                  } else {
+                                    widen_sum!(
+                                      , type_group_diag(
+                                          , "dyn_load_prime: malformed image — expected `;` between recursive type "
+                                            "group members"(String)
+                                          , after
+                                          )
+                                      , (Toks & Wip & I32) | Type_group_read | Diag
+                                      )
+                                  }
+                                }
+                              }
+                            }
+                          , .(d: Diag) {
+                              widen_sum!(
+                                , widen_sum!(d, Type_group_read | Diag)
+                                , (Toks & Wip & I32) | Type_group_read | Diag
+                                )
+                            }
+                          )
+                      }
+                    }
+                  , .(_end: .) {
+                      widen_sum!(
+                        , type_group_diag(
+                            , "dyn_load_prime: malformed image — an unterminated recursive type group"(String)
+                            , cur
+                            )
+                        , (Toks & Wip & I32) | Type_group_read | Diag
+                        )
+                    }
+                  )
+              }
+            }
+          }
+        }
+      , (drop(rest(after_rec), c_semi()), (w0, 0(I32)))
+      )
+  } else {
+    type_group_diag(
+      , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
+        "a type group"(String)
+      , ts0
+      )
+  }
+}
+
+// The in-progress module's recorded imports / aliases (read back for the
+// `import` arm).
+fn wip_imports(w: Wip) -> Imports {
+  match! Wip.get(w) {
+    .(
+      , _n: String
+      , i: Imports
+      , _a: Aliases
+      , _nt: Ntab
+      , _d: Decls
+      , _h: Pnames
+      , _t: Pnames
+      , _mm: Members
+      , _ta: Tyaliases
+      , _hh: Host_headers
+      ) { i }
+  }
+}
+
+fn wip_aliases(w: Wip) -> Aliases {
+  match! Wip.get(w) {
+    .(
+      , _n: String
+      , _i: Imports
+      , a: Aliases
+      , _nt: Ntab
+      , _d: Decls
+      , _h: Pnames
+      , _t: Pnames
+      , _mm: Members
+      , _ta: Tyaliases
+      , _hh: Host_headers
+      ) { a }
+  }
+}
+
+// Whether the head word opens a declaration (`fn` / `newtype` / `type` /
+// `host`).
+fn is_decl_head(ts: Toks) -> Bool {
+  if! head_word_is(ts, "fn"(String)) {
+    .t(Bool)
+  } else if! head_word_is(ts, "newtype"(String)) {
+    .t(Bool)
+  } else if! head_word_is(ts, "type"(String)) {
+    .t(Bool)
+  } else {
+    head_word_is(ts, "host"(String))
+  }
+}
+
+// =====================================================================
+// The package scanner machine — several modules' text plus the manifest
+// =====================================================================
+//
+// `module NAME;` flushes the in-progress module and starts a new one;
+// declarations before the
+// first `module` header are malformed (the emitted tree always opens each
+// file with its header); and the manifest's `package NAME;` header,
+// `build { … }` block (skipped), and `bridge { … }` block (parsed into the
+// contract surface) are recognized at the top level.
+/// Defines the package-scan-success arm: the modules and the bridge
+/// surface (`()` only when the input carried no manifest).
+labels { pscan_ok: Modules & Bridge };
+
+/// Defines the package-scan-failure arm (a diagnostic).
+labels { pscan_err: Diag };
+
+/// The outcome of scanning a whole-package image.
+type Pscan_outcome = Pscan_ok | Pscan_err;
+
+fn pscan_ok(ms: Modules, bridge: Bridge) -> Pscan_outcome {
+  widen_sum!({pscan_ok = (ms, bridge)}, Pscan_ok | Pscan_err)
+}
+
+fn pscan_err(d: Diag) -> Pscan_outcome { widen_sum!({pscan_err = d}, Pscan_ok | Pscan_err) }
+
+/// One-step destructor on a package-scan outcome.
+fn un_pscan_outcome(o: Pscan_outcome) -> Pscan_ok | Pscan_err { o }
+
+// The scanner must distinguish a truly manifest-less image from a present
+// manifest whose bridge surface is empty, while also remembering whether an
+// explicit bridge block has already appeared so a second block is rejected.
+labels { scan_no_manifest: . };
+
+labels { scan_manifest_without_bridge: . };
+
+labels { scan_bridge_globs: Pnames };
+
+type Bridge_scan = Scan_no_manifest | Scan_manifest_without_bridge | Scan_bridge_globs;
+
+fn bridge_scan_no_manifest() -> Bridge_scan { widen_sum!({scan_no_manifest=}, Bridge_scan) }
+
+fn bridge_scan_note_manifest(bridge: Bridge_scan) -> Bridge_scan {
+  match! bridge {
+    (
+      , .(_none: Scan_no_manifest) { widen_sum!({scan_manifest_without_bridge=}, Bridge_scan) }
+      , .(_manifest: Scan_manifest_without_bridge) { bridge }
+      , .(_globs: Scan_bridge_globs) { bridge }
+      )
+  }
+}
+
+fn bridge_scan_has_block(bridge: Bridge_scan) -> Bool {
+  match! bridge {
+    (
+      , .(_none: Scan_no_manifest) { .f(Bool) }
+      , .(_manifest: Scan_manifest_without_bridge) { .f(Bool) }
+      , .(_globs: Scan_bridge_globs) { .t(Bool) }
+      )
+  }
+}
+
+fn bridge_scan_with_globs(globs: Pnames) -> Bridge_scan {
+  widen_sum!({scan_bridge_globs = globs}, Bridge_scan)
+}
+
+fn bridge_scan_finish(bridge: Bridge_scan) -> Bridge {
+  match! bridge {
+    (
+      , .(_none: Scan_no_manifest) { widen_sum!((), . | Pnames) }
+      , .(_manifest: Scan_manifest_without_bridge) { widen_sum!(pnames_nil(), . | Pnames) }
+      , .(globs: Scan_bridge_globs) { widen_sum!(Scan_bridge_globs.get(globs), . | Pnames) }
+      )
+  }
+}
+
+// Reverse a most-recent-first modules accumulator into source order.
+fn modules_reverse(ms: Modules) -> Modules {
+  loop(
+    , .(st: Modules & Modules) {
+        match! st {
+          .(rem: Modules, acc: Modules) {
+            match! un_modules(rem) {
+              (
+                , .(m: Module, rest_m: Modules) {
+                    widen_sum!((rest_m, modules_cons(m, acc)), (Modules & Modules) | Modules)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Modules & Modules) | Modules) }
+                )
+            }
+          }
+        }
+      }
+    , (ms, modules_nil())
+    )
+}
+
+// Flush the in-progress module onto the reversed modules list, when it has
+// a name. An unnamed record is contentless by construction (every
+// content-adding arm requires a named module first).
+fn flush_wip(w: Wip, ms_rev: Modules) -> Modules {
+  if! string_eq(wip_name(w), ""(String)) {
+    ms_rev
+  } else {
+    modules_cons(finish_wip(w), ms_rev)
+  }
+}
+
+fn modules_have_name(modules: Modules, name: String) -> Bool {
+  loop(
+    , .(remaining: Modules) {
+        match! un_modules(remaining) {
+          (
+            , .(module_: Module, rest: Modules) {
+                if! string_eq(module_name(module_), name) {
+                  widen_sum!(.t(Bool), Modules | Bool)
+                } else {
+                  widen_sum!(rest, Modules | Bool)
+                }
+              }
+            , .(_empty: .) { widen_sum!(.f(Bool), Modules | Bool) }
+            )
+        }
+      }
+    , modules
+    )
+}
+
+fn module_name_seen(w: Wip, modules: Modules, name: String) -> Bool {
+  if! string_eq(wip_name(w), name) {
+    .t(Bool)
+  } else {
+    modules_have_name(modules, name)
+  }
+}
+
+// The package scanner's loop state: the remaining tokens, the in-progress
+// module, the reversed completed modules, and the bridge scan state.
+type Pscan_state = Toks & Wip & Modules & Bridge_scan;
+
+type Pscan_step = Pscan_state | Pscan_outcome;
+
+// The declaration-before-header diagnostic (a whole-package image opens
+// every module file with its `module` header).
+fn pre_module_diag(ts: Toks) -> Pscan_step {
+  widen_sum!(
+    , pscan_err(mk_diag_at(
+        , "dyn_load_prime: malformed image — a declaration appears before the first "
+          "`module` header"(String)
+        , head_pos(ts)
+        ))
+    , Pscan_state | Pscan_outcome
+    )
+}
+
+fn pscan_decl_step(
+  , ts: Toks
+  , exported: Bool
+  , pure: Bool
+  , w: Wip
+  , ms_rev: Modules
+  , bridge: Bridge_scan
+  ) -> Pscan_step {
+  match! un_decl_scan(scan_decl(ts, exported, pure, w)) {
+    (
+      , .(ok: Wip_and_toks) {
+          match! Wip_and_toks.get(ok) {
+            .(w1: Wip, after: Toks) {
+              widen_sum!((after, (w1, (ms_rev, bridge))), Pscan_state | Pscan_outcome)
+            }
+          }
+        }
+      , .(d: Diag) { widen_sum!(pscan_err(d), Pscan_state | Pscan_outcome) }
+      )
+  }
+}
+
+fn pscan_type_group(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> Pscan_step {
+  match! scan_type_group(ts, w) {
+    (
+      , .(done: Type_group_read) {
+          match! Type_group_read.get(done) {
+            .(w1: Wip, after: Toks) {
+              widen_sum!((after, (w1, (ms_rev, bridge))), Pscan_state | Pscan_outcome)
+            }
+          }
+        }
+      , .(d: Diag) { widen_sum!(pscan_err(d), Pscan_state | Pscan_outcome) }
+      )
+  }
+}
+
+// =====================================================================
+// Bridge-block parsing
+// =====================================================================
+//
+// `bridge { glob; glob; … } [;]` — each glob a `/`-separated run of
+// literal segments, `*` (one segment), or `**` (a subtree)
+// (`specs/grammar.md` § Package files). The globs are recorded as their
+// canonical strings; the loader's `bridge_admits` matches module paths
+// against them.
+/// Wraps a glob read's `(glob-text, remaining-tokens)`.
+labels { glob_read: String & Toks };
+
+// Read one glob segment: a word, `**`, or `*`. Two adjacent `*` marks fold
+// into `**`.
+fn read_glob_segment(ts: Toks) -> . | Glob_read {
+  match! head_word(ts) {
+    (
+      , .(seg: String) { widen_sum!({glob_read = (seg, rest(ts))}, . | Glob_read) }
+      , .(_notword: .) {
+          if! head_is(ts, c_star()) {
+            let after1 = rest(ts);
+            if! head_is(after1, c_star()) {
+              widen_sum!({glob_read = ("**"(String), rest(after1))}, . | Glob_read)
+            } else {
+              widen_sum!({glob_read = ("*"(String), after1)}, . | Glob_read)
+            }
+          } else {
+            widen_sum!((), . | Glob_read)
+          }
+        }
+      )
+  }
+}
+
+// Read one `/`-joined glob.
+fn read_glob(ts: Toks) -> . | Glob_read {
+  match! read_glob_segment(ts) {
+    (
+      , .(first: Glob_read) {
+          match! Glob_read.get(first) {
+            .(seg0: String, after0: Toks) {
+              widen_sum!(
+                , loop(
+                    , .(st: String & Toks) {
+                        match! st {
+                          .(acc: String, cur: Toks) {
+                            if! head_is(cur, c_slash()) {
+                              match! read_glob_segment(rest(cur)) {
+                                (
+                                  , .(nxt: Glob_read) {
+                                      match! Glob_read.get(nxt) {
+                                        .(seg: String, after: Toks) {
+                                          widen_sum!(
+                                            , (
+                                                , string_concat(
+                                                    , acc
+                                                    , string_concat("/"(String), seg)
+                                                    )
+                                                , after
+                                                )
+                                            , (String & Toks) | Glob_read
+                                            )
+                                        }
+                                      }
+                                    }
+                                  , .(_bad: .) {
+                                      widen_sum!(
+                                        , {glob_read = (acc, cur)}
+                                        , (String & Toks) | Glob_read
+                                        )
+                                    }
+                                  )
+                              }
+                            } else {
+                              widen_sum!({glob_read = (acc, cur)}, (String & Toks) | Glob_read)
+                            }
+                          }
+                        }
+                      }
+                    , (seg0, after0)
+                    )
+                , . | Glob_read
+                )
+            }
+          }
+        }
+      , .(_bad: .) { widen_sum!((), . | Glob_read) }
+      )
+  }
+}
+
+/// Wraps the bridge-block read's `(globs, remaining-tokens)`.
+labels { bridge_read: Pnames & Toks };
+
+// Read `glob; glob; … }`, the head just past the `{`. Returns the globs
+// and the tokens after the `}`.
+fn read_bridge_entries(ts0: Toks) -> Bridge_read | Diag {
+  loop(
+    , .(st: Toks & Pnames) {
+        match! st {
+          .(cur: Toks, acc: Pnames) {
+            if! head_is(cur, c_rbrace()) {
+              widen_sum!(
+                , widen_sum!({bridge_read = (acc, rest(cur))}, Bridge_read | Diag)
+                , (Toks & Pnames) | Bridge_read | Diag
+                )
+            } else match! read_glob(cur) {
+              (
+                , .(g: Glob_read) {
+                    match! Glob_read.get(g) {
+                      .(glob: String, after: Toks) {
+                        let at_boundary =
+                          if! head_is(after, c_semi()) {
+                            .t(Bool)
+                          } else {
+                            head_is(after, c_rbrace())
+                          };
+                        if! at_boundary {
+                          widen_sum!(
+                            , (drop(after, c_semi()), pnames_cons(glob, acc))
+                            , (Toks & Pnames) | Bridge_read | Diag
+                            )
+                        } else {
+                          widen_sum!(
+                            , widen_sum!(
+                                , mk_diag_at(
+                                    , "dyn_load_prime: malformed image — expected `;` between bridge entries"(String)
+                                    , head_pos(after)
+                                    )
+                                , Bridge_read | Diag
+                                )
+                            , (Toks & Pnames) | Bridge_read | Diag
+                            )
+                        }
+                      }
+                    }
+                  }
+                , .(_bad: .) {
+                    widen_sum!(
+                      , widen_sum!(
+                          , mk_diag_at(
+                              , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"(String)
+                              , head_pos(cur)
+                              )
+                          , Bridge_read | Diag
+                          )
+                      , (Toks & Pnames) | Bridge_read | Diag
+                      )
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (ts0, pnames_nil())
+    )
+}
+
+fn read_bridge_globs(ts: Toks) -> Bridge_read | Diag {
+  if! head_is(ts, c_semi()) {
+    let after = rest(ts);
+    if! head_is(after, c_rbrace()) {
+      widen_sum!(
+        , mk_diag_at(
+            , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"(String)
+            , head_pos(ts)
+            )
+        , Bridge_read | Diag
+        )
+    } else {
+      read_bridge_entries(after)
+    }
+  } else {
+    read_bridge_entries(ts)
+  }
+}
+
+// Parse the bridge block's glob list, the head at the `bridge` keyword.
+fn pscan_bridge(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> Pscan_step {
+  if! bridge_scan_has_block(bridge) {
+    widen_sum!(
+      , pscan_err(mk_diag_at(
+          , "dyn_load_prime: malformed image — a second `bridge` block"(String)
+          , head_pos(ts)
+          ))
+      , Pscan_state | Pscan_outcome
+      )
+  } else {
+    let after_kw = rest(ts);
+    if! head_is(after_kw, c_lbrace()) {
+      match! read_bridge_globs(rest(after_kw)) {
+        (
+          , .(done: Bridge_read) {
+              match! Bridge_read.get(done) {
+                .(globs: Pnames, after: Toks) {
+                  widen_sum!(
+                    , (drop(after, c_semi()), (w, (ms_rev, bridge_scan_with_globs(globs))))
+                    , Pscan_state | Pscan_outcome
+                    )
+                }
+              }
+            }
+          , .(d: Diag) { widen_sum!(pscan_err(d), Pscan_state | Pscan_outcome) }
+          )
+      }
+    } else {
+      widen_sum!(
+        , pscan_err(mk_diag_at(
+            , "dyn_load_prime: malformed image — `bridge` is not followed by a block"(String)
+            , head_pos(ts)
+            ))
+        , Pscan_state | Pscan_outcome
+        )
+    }
+  }
+}
+
+fn pscan_step(st: Pscan_state) -> Pscan_step {
+  match! st {
+    .(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) {
+      match! peek(ts) {
+        (
+          , .(_t: Token) {
+              if! head_word_is(ts, "module"(String)) {
+                match! un_mod_path(read_module_path(rest(ts))) {
+                  (
+                    , .(p: Mod_path) {
+                        match! Mod_path.get(p) {
+                          .(modname: String, _after: Toks) {
+                            if! module_name_seen(w, ms_rev, modname) {
+                              widen_sum!(
+                                , pscan_err(mk_diag_at(
+                                    , string_concat(
+                                        , "dyn_load_prime: malformed image — duplicate module `"(String)
+                                        , string_concat(modname, "`"(String))
+                                        )
+                                    , head_pos(ts)
+                                    ))
+                                , Pscan_state | Pscan_outcome
+                                )
+                            } else {
+                              widen_sum!(
+                                , (
+                                    , skip_to_semi(ts)
+                                    , (fresh_wip(modname), (flush_wip(w, ms_rev), bridge))
+                                    )
+                                , Pscan_state | Pscan_outcome
+                                )
+                            }
+                          }
+                        }
+                      }
+                    , .(_noname: .) {
+                        widen_sum!(
+                          , pscan_err(mk_diag_at(
+                              , "dyn_load_prime: malformed image — `module` names no module"(String)
+                              , head_pos(ts)
+                              ))
+                          , Pscan_state | Pscan_outcome
+                          )
+                      }
+                    )
+                }
+              } else if! head_word_is(ts, "package"(String)) {
+                match! head_word(rest(ts)) {
+                  (
+                    , .(_pkgname: String) {
+                        widen_sum!(
+                          , (skip_to_semi(ts), (w, (ms_rev, bridge_scan_note_manifest(bridge))))
+                          , Pscan_state | Pscan_outcome
+                          )
+                      }
+                    , .(_noname: .) {
+                        widen_sum!(
+                          , pscan_err(mk_diag_at(
+                              , "dyn_load_prime: malformed image — `package` names no package"(String)
+                              , head_pos(ts)
+                              ))
+                          , Pscan_state | Pscan_outcome
+                          )
+                      }
+                    )
+                }
+              } else if! head_word_is(ts, "build"(String)) {
+                let after_kw = rest(ts);
+                if! head_is(after_kw, c_lbrace()) {
+                  widen_sum!(
+                    , (drop(skip_group(after_kw), c_semi()), (w, (ms_rev, bridge)))
+                    , Pscan_state | Pscan_outcome
+                    )
+                } else {
+                  widen_sum!(
+                    , pscan_err(mk_diag_at(
+                        , "dyn_load_prime: malformed image — `build` is not followed by a block"(String)
+                        , head_pos(ts)
+                        ))
+                    , Pscan_state | Pscan_outcome
+                    )
+                }
+              } else if! head_word_is(ts, "bridge"(String)) {
+                pscan_bridge(ts, w, ms_rev, bridge)
+              } else if! head_word_is(ts, "import"(String)) {
+                if! string_eq(wip_name(w), ""(String)) {
+                  pre_module_diag(ts)
+                } else match! un_import_outcome(scan_import(ts, wip_imports(w), wip_aliases(w))) {
+                  (
+                    , .(u: Import_scan) {
+                        match! Import_scan.get(u) {
+                          .(i2: Imports, a2: Aliases, after: Toks) {
+                            widen_sum!(
+                              , (after, (with_imports_and_aliases(w, i2, a2), (ms_rev, bridge)))
+                              , Pscan_state | Pscan_outcome
+                              )
+                          }
+                        }
+                      }
+                    , .(e: Import_err) {
+                        widen_sum!(pscan_err(Import_err.get(e)), Pscan_state | Pscan_outcome)
+                      }
+                    )
+                }
+              } else if! head_word_is(ts, "rec"(String)) {
+                if! string_eq(wip_name(w), ""(String)) {
+                  pre_module_diag(ts)
+                } else if! head_is(rest(ts), c_lbrace()) {
+                  pscan_type_group(ts, w, ms_rev, bridge)
+                } else {
+                  pscan_decl_step(ts, .f(Bool), .f(Bool), w, ms_rev, bridge)
+                }
+              } else if! head_word_is(ts, "pub"(String)) {
+                if! string_eq(wip_name(w), ""(String)) {
+                  pre_module_diag(ts)
+                } else {
+                  pscan_decl_step(rest(ts), .t(Bool), .f(Bool), w, ms_rev, bridge)
+                }
+              } else if! head_word_is(ts, "pure"(String)) {
+                if! string_eq(wip_name(w), ""(String)) {
+                  pre_module_diag(ts)
+                } else {
+                  let after_pure = rest(ts);
+                  if! head_word_is(after_pure, "pub"(String)) {
+                    pscan_decl_step(rest(after_pure), .t(Bool), .t(Bool), w, ms_rev, bridge)
+                  } else {
+                    pscan_decl_step(after_pure, .f(Bool), .t(Bool), w, ms_rev, bridge)
+                  }
+                }
+              } else if! is_decl_head(ts) {
+                if! string_eq(wip_name(w), ""(String)) {
+                  pre_module_diag(ts)
+                } else {
+                  pscan_decl_step(ts, .f(Bool), .f(Bool), w, ms_rev, bridge)
+                }
+              } else {
+                widen_sum!(
+                  , pscan_err(mk_diag_at(
+                      , "dyn_load_prime: malformed image — unexpected top-level token"(String)
+                      , head_pos(ts)
+                      ))
+                  , Pscan_state | Pscan_outcome
+                  )
+              }
+            }
+          , .(_e: .) {
+              widen_sum!(
+                , pscan_ok(modules_reverse(flush_wip(w, ms_rev)), bridge_scan_finish(bridge))
+                , Pscan_state | Pscan_outcome
+                )
+            }
+          )
+      }
+    }
+  }
+}
+
+/// Scans a whole-package image (several modules' emitted Kio' text, plus
+/// the emitted `.pkg.kio` manifest when present) into its module records
+/// and bridge surface, or a diagnostic when malformed.
+fn scan_package(source: String) -> Pscan_outcome {
+  match! lex(source) {
+    (
+      , .(ts: Toks) {
+          loop(
+            , .(st: Pscan_state) { pscan_step(st) }
+            , (ts, (fresh_wip(""(String)), (modules_nil(), bridge_scan_no_manifest())))
+            )
+        }
+      , .(e: Lex_err) {
+          pscan_err(mk_diag_at(
+            , string_concat("dyn_load_prime: malformed image — "(String), lex_err_message(e))
+            , widen_sum!(lex_err_pos(e), . | I32)
+            ))
+        }
+      )
+  }
+}
+
+// =====================================================================
+// Offset localization — byte offsets to line and column
+// =====================================================================
+//
+// The loader's diagnostics carry byte offsets into the image text; the
+// source-text entry point holds that text, so it rewrites a carried offset
+// into a 1-based line and column before handing the diagnostic to the host.
+
+// The 1-based `(line, column)` of a byte offset.
+fn line_col(source: String, off: I32) -> I32 & I32 {
+  let loop_result =
+    loop(
+      , .(st: I32 & I32 & I32) {
+          match! st {
+            .(pos: I32, line: I32, col: I32) {
+              if! lt_i32(pos, off) {
+                match! string_code_at(source, pos) {
+                  (
+                    , .(c: I32) {
+                        if! eq_i32(c, 10(I32)) {
+                          widen_sum!(
+                            , (add_i32(pos, 1(I32)), (add_i32(line, 1(I32)), 1(I32)))
+                            , (I32 & I32 & I32) | (I32 & I32)
+                            )
+                        } else {
+                          widen_sum!(
+                            , (add_i32(pos, 1(I32)), (line, add_i32(col, 1(I32))))
+                            , (I32 & I32 & I32) | (I32 & I32)
+                            )
+                        }
+                      }
+                    , .(_end: .) { widen_sum!((line, col), (I32 & I32 & I32) | (I32 & I32)) }
+                    )
+                }
+              } else {
+                widen_sum!((line, col), (I32 & I32 & I32) | (I32 & I32))
+              }
+            }
+          }
+        }
+      , (0(I32), (1(I32), 1(I32)))
+      );
+  match! loop_result {
+    .(line: I32, col: I32) { (line, col) }
+  }
+}
+
+// Rewrite a diagnostic's carried byte offset into `at line L, column C`.
+fn localize_diag(source: String, d: Diag) -> Diag {
+  match! diag_pos(d) {
+    (
+      , .(off: I32) {
+          match! line_col(source, off) {
+            .(line: I32, col: I32) {
+              mk_diag(string_concat(
+                , diag_bare_message(d)
+                , string_concat(
+                    , " at line "(String)
+                    , string_concat(
+                        , int_to_string(line)
+                        , string_concat(", column "(String), int_to_string(col))
+                        )
+                    )
+                ))
+            }
+          }
+        }
+      , .(_none: .) { d }
+      )
+  }
+}
+
+// Localize a load outcome's diagnostic arm.
+fn localize(source: String, out: Load_outcome) -> Load_outcome {
+  match! un_load_outcome(out) {
+    (
+      , .(im: Lr_image) { widen_sum!(im, Load_outcome) }
+      , .(d: Lr_diag) { lr_diag(localize_diag(source, Lr_diag.get(d))) }
+      )
+  }
+}
+
+// =====================================================================
+// The source-text entry point
+// =====================================================================
+/// Loads a whole-package image — the emitted tree as-is: every module's
+/// text (host modules included) plus the `.pkg.kio` manifest — scanning
+/// its module records and bridge surface, then resolving them
+/// (topo-sorted, per-module-scoped, host fns derived from the image's own
+/// declarations) into an image, or a localized diagnostic.
+pub fn load_package(source: String) -> Load_outcome {
+  match! un_pscan_outcome(scan_package(source)) {
+    (
+      , .(ok: Pscan_ok) {
+          match! Pscan_ok.get(ok) {
+            .(ms: Modules, bridge: Bridge) { localize(source, resolve_package(ms, bridge)) }
+          }
+        }
+      , .(d: Pscan_err) { lr_diag(localize_diag(source, Pscan_err.get(d))) }
+      )
+  }
+}

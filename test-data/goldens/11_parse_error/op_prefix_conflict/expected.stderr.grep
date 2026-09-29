@@ -1,0 +1,1 @@
+operator `op _ && \+\+ _` conflicts with the existing `op _ && _` \(op-token sequences must not have a prefix relationship\)

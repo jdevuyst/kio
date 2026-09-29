@@ -1,0 +1,6 @@
+module user_elaborator_owner_context/main;
+
+import elaborators(imported_owner);
+import user_elaborator_owner_context(String);
+
+fn keep(s: String) -> String { imported_owner!(s, String) }

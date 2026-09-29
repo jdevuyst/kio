@@ -1,0 +1,8 @@
+module testapi/arith;
+
+import testapi/types(Box, Functor);
+
+// The host receives a fully-built `Functor(Box)` dictionary as an
+// ordinary value and hands one back. The dictionary crosses the
+// boundary in both directions: as a parameter and as a return.
+host fn round_functor(d: Functor(Box)) -> Functor(Box);

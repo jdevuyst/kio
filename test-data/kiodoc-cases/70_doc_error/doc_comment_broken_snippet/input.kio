@@ -1,0 +1,10 @@
+/// A function whose doc-comment has a snippet with a type error.
+///
+/// The snippet passes `identity` (a function) where `()` is expected.
+///
+/// ```kio {@}
+/// identity(identity)
+/// ```
+module doctest/broken;
+
+pub fn identity(x: .) -> . { x }

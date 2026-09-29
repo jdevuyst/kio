@@ -1,0 +1,14 @@
+package bottom_boundary;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "BottomAbi"
+  }
+}
+
+bridge {
+  api
+}

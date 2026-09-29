@@ -1,0 +1,181 @@
+/// The tree itself: storage, node arithmetic, and the two moves that make it
+/// *lazy* -- `apply_tag` and `push_down`.
+///
+/// Layout is a flat heap: node `i`'s children are `2i + 1` and `2i + 2`, which
+/// the host env computes with `mul_i32` and `add_i32` alone. A node is not
+/// told its own range; `(lo, hi)` is threaded down the descent.
+///
+/// Three parallel arrays hold it -- `sums` and `mins` are the aggregates,
+/// `tags` is the deferred work -- under one invariant every function here
+/// preserves:
+///
+///   node `i`'s aggregate is already correct for its whole range, but
+///   `tags[i]` is an add that has *not* reached its children yet.
+///
+/// So a reader of node `i` never looks down, and a descent *through* node `i`
+/// must first hand `tags[i]` to both children.
+module seg/tree;
+
+import elab/control(if);
+import seg/agg(Agg, agg, agg_min, agg_sum, combine, leaf_agg, shift);
+import seg/meter(Meter, bump_push, bump_work, new_meter, pushes, work);
+import seg/num(half, int_eq, int_lt, not);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+import testapi/iter(loop);
+
+/// A recursive segment tree over `n` leaves never indexes past `4n` in a
+/// heap layout, so that is the allocation.
+literal heap_factor = 4;
+
+pub labels Tree = {
+  , sums: Array(I32)
+  , mins: Array(I32)
+  , tags: Array(I32)
+  , leaves: I32
+  , gauge: Meter
+  };
+
+pub fn left(node: I32) -> I32 { add_i32(mul_i32(2, node), 1) }
+
+pub fn right(node: I32) -> I32 { add_i32(mul_i32(2, node), 2) }
+
+/// The split point of `[lo, hi]`: the left child takes `[lo, mid]`, the
+/// right child `[mid + 1, hi]`.
+pub fn mid_of(lo: I32, hi: I32) -> I32 { add_i32(lo, half(sub_i32(hi, lo))) }
+
+/// How many cells `[lo, hi]` covers.
+fn span(lo: I32, hi: I32) -> I32 { add_i32(sub_i32(hi, lo), 1) }
+
+pub fn is_leaf(lo: I32, hi: I32) -> Bool { int_eq(lo, hi) }
+
+pub fn leaf_count(t: Tree) -> I32 { t.?{leaves} }
+
+fn gauge(t: Tree) -> Meter { t.?{gauge} }
+
+pub fn visits(t: Tree) -> I32 { work(gauge(t)) }
+
+pub fn tag_pushes(t: Tree) -> I32 { pushes(gauge(t)) }
+
+/// One unit of measured work: the descent has entered a node.
+pub fn visit(t: Tree) -> . { bump_work(gauge(t)) }
+
+pub fn node_agg(t: Tree, node: I32) -> Agg {
+  agg(array_get(t.?{sums}, node), array_get(t.?{mins}, node))
+}
+
+pub fn set_agg(t: Tree, node: I32, a: Agg) -> . {
+  array_set(t.?{sums}, node, agg_sum(a));
+  array_set(t.?{mins}, node, agg_min(a))
+}
+
+fn tag_at(t: Tree, node: I32) -> I32 { array_get(t.?{tags}, node) }
+
+fn set_tag(t: Tree, node: I32, value: I32) -> . { array_set(t.?{tags}, node, value) }
+
+/// Record "add `x` to every cell of `[lo, hi]`" at `node` without descending:
+/// the node's own aggregate is fixed arithmetically and the add is left
+/// *pending* for the children. A leaf has no children, so it stores no tag --
+/// which is also what keeps `point_set` from having to clear one.
+pub fn apply_tag(t: Tree, node: I32, lo: I32, hi: I32, x: I32) -> . {
+  set_agg(t, node, shift(node_agg(t, node), span(lo, hi), x));
+  if! is_leaf(lo, hi) {
+    ()
+  } else {
+    set_tag(t, node, add_i32(tag_at(t, node), x))
+  }
+}
+
+/// Hand `node`'s pending add to both children and clear it. The *only* place
+/// a tag ever moves, called exactly when a descent is about to look below
+/// `node` and never otherwise. A zero tag is not a push: nothing to hand down.
+pub fn push_down(t: Tree, node: I32, lo: I32, hi: I32, mid: I32) -> . {
+  let pending = tag_at(t, node);
+  if! int_eq(pending, 0) {
+    ()
+  } else {
+    apply_tag(t, left(node), lo, mid, pending);
+    apply_tag(t, right(node), add_i32(mid, 1), hi, pending);
+    set_tag(t, node, 0);
+    bump_push(gauge(t))
+  }
+}
+
+/// Build the aggregates bottom-up. Nothing here bumps the gauge: the build is
+/// setup, not scripted work.
+rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array(I32)) -> Agg {
+  if! is_leaf(lo, hi) {
+    let cell = leaf_agg(array_get(src, lo));
+    set_agg(t, node, cell);
+    cell
+  } else {
+    let mid = mid_of(lo, hi);
+    let from_left = rec(cont) build_at(t, left(node), lo, mid, src);
+    let from_right = rec(cont) build_at(t, right(node), add_i32(mid, 1), hi, src);
+    let pulled = combine(from_left, from_right);
+    set_agg(t, node, pulled);
+    pulled
+  }
+}
+
+pub fn build(src: Array(I32), n: I32) -> Tree {
+  let cells = mul_i32(heap_factor, n);
+  let t =
+    {
+      , sums = array_make_filled(cells, 0)
+      , mins = array_make_filled(cells, 0)
+      , tags = array_make_filled(cells, 0)
+      , leaves = n
+      , gauge = new_meter()
+      };
+  let _root = build_at(t, 0, 0, sub_i32(n, 1), src);
+  t
+}
+
+/// How many nodes are still holding an un-pushed add: the deferred work the
+/// script left sitting in the tree.
+rec(loop) fn count_pending(t: Tree, i: I32, limit: I32, found: I32) -> I32 {
+  if! leq_i32(limit, i) {
+    found
+  } else {
+    let seen = if! int_eq(tag_at(t, i), 0) {
+      found
+    } else {
+      add_i32(found, 1)
+    };
+    rec count_pending(t, add_i32(i, 1), limit, seen)
+  }
+}
+
+pub fn pending_tags(t: Tree) -> I32 { count_pending(t, 0, mul_i32(heap_factor, leaf_count(t)), 0) }
+
+/// The first node in heap order still holding a pending add; `-1` when the
+/// tree is fully settled. Reported as evidence that the tags are real.
+rec(loop) fn scan_pending(t: Tree, i: I32, limit: I32) -> I32 {
+  if! leq_i32(limit, i) {
+    -1
+  } else if! not(int_eq(tag_at(t, i), 0)) {
+    i
+  } else {
+    rec scan_pending(t, add_i32(i, 1), limit)
+  }
+}
+
+pub fn first_pending(t: Tree) -> I32 { scan_pending(t, 0, mul_i32(heap_factor, leaf_count(t))) }
+
+pub fn covers(lo: I32, hi: I32, l: I32, r: I32) -> Bool {
+  if! leq_i32(l, lo) {
+    leq_i32(hi, r)
+  } else {
+    .f
+  }
+}
+
+pub fn disjoint(lo: I32, hi: I32, l: I32, r: I32) -> Bool {
+  if! int_lt(hi, l) {
+    .t
+  } else {
+    int_lt(r, lo)
+  }
+}

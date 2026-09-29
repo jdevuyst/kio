@@ -1,0 +1,2 @@
+# A git source without a ref is rejected at the parse tier.
+`git` source requires a `ref

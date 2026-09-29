@@ -1,0 +1,83 @@
+module continuations/testapi/main;
+
+import continuations/elab/control(if);
+import continuations/testapi(Bool, I32, String);
+import continuations/testapi/arith as arith;
+import continuations/testapi/io as io;
+import continuations/testapi/iter(loop);
+
+rec(loop) fn deep(n: I32) -> Bool {
+  if! arith.leq_i32(n, 0) {
+    .t
+  } else {
+    let answer = rec(cont) deep(arith.sub_i32(n, 1));
+    if! answer {
+      .t
+    } else {
+      .f
+    }
+  }
+}
+
+rec(loop) {
+  fn first[A](n: I32, value: A) -> A {
+    if! arith.leq_i32(n, 0) {
+      value
+    } else {
+      let ignored = rec(poly, cont) second(Bool, arith.sub_i32(n, 1), .t);
+      value
+    }
+  };
+  fn second[A](n: I32, value: A) -> A {
+    if! arith.leq_i32(n, 0) {
+      value
+    } else {
+      let ignored = rec(poly, cont) first(String, arith.sub_i32(n, 1), "hidden");
+      value
+    }
+  }
+}
+
+rec(loop) {
+  fn nested(n: I32, value: Bool) -> Bool {
+    if! arith.leq_i32(n, 0) {
+      value
+    } else {
+      let answer = rec(cont) nested(arith.sub_i32(n, 1), rec(cont) leaf(value));
+      answer
+    }
+  };
+  fn leaf(value: Bool) -> Bool { value }
+}
+
+rec(loop) {
+  fn tail(n: I32) -> Bool {
+    if! arith.leq_i32(n, 0) {
+      .t
+    } else {
+      rec tail(arith.sub_i32(n, 1))
+    }
+  };
+  fn seed(n: I32) -> Bool { let value = rec(cont) tail(n); value }
+}
+
+pub fn exercise(depth: I32, tail_depth: I32) -> . {
+  if! deep(depth) {
+    io.print("ordinary unwind\n")
+  } else {
+    io.print("bad\n")
+  };
+  io.print(first(depth, "mutual generic\n"));
+  if! nested(depth, .t) {
+    io.print("nested arguments\n")
+  } else {
+    io.print("bad\n")
+  };
+  if! seed(tail_depth) {
+    io.print("tail hops\n")
+  } else {
+    io.print("bad\n")
+  }
+}
+
+pub fn main() -> . { exercise(100000, 1000000) }

@@ -1,0 +1,13 @@
+package carrier_controls;
+
+build {
+  cache ();
+
+  target swift {
+    out "out/swift/"
+  }
+}
+
+bridge {
+  api
+}

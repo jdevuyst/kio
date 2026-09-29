@@ -1,0 +1,3 @@
+module pkg/provider;
+
+pub labels { foo: . };

@@ -1,0 +1,6 @@
+module widget/relay;
+
+import core/store(Tag);
+import widget/store(I32, make_tag);
+
+pub fn relay_tag(n: I32) -> Tag { make_tag(n) }

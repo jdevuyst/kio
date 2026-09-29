@@ -1,0 +1,117 @@
+module report/render;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as cells;
+import list/list as lists;
+import report/model as model;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn count_text(c: model.Counts) -> String {
+  text.string_concat(
+    , "pass="
+    , text.string_concat(
+        , fmt.int_to_string(c.?{model.passed})
+        , text.string_concat(
+            , " fail="
+            , text.string_concat(
+                , fmt.int_to_string(c.?{model.failed})
+                , text.string_concat(" skip=", fmt.int_to_string(c.?{model.skipped}))
+                )
+            )
+        )
+    )
+}
+
+fn failure_lines(path: String, failures: cells.List(model.Case)) -> . {
+  lists.foldl(
+    , .(_unit: ., test: model.Case) {
+        io.print(text.string_concat(
+          , "FAIL "
+          , text.string_concat(
+              , path
+              , text.string_concat(
+                  , "/"
+                  , text.string_concat(
+                      , test.?{model.name}
+                      , text.string_concat(
+                          , " x"
+                          , text.string_concat(
+                              , fmt.int_to_string(test.?{model.count})
+                              , text.string_concat(
+                                  , ": "
+                                  , text.string_concat(test.?{model.message}, "\n")
+                                  )
+                              )
+                          )
+                      )
+                  )
+              )
+          ))
+      }
+    , ()
+    , lists.reverse(failures)
+    )
+}
+
+rec(loop) fn walk(pending: cells.List(model.Suite & String)) -> . {
+  match! cells.uncons(pending) {
+    .(entry: model.Suite & String, rest: cells.List(model.Suite & String)) {
+      let .(suite, prefix) = entry;
+      let .(name, counts, children, failures) = suite.>model.Suite.unpack;
+      let path =
+        if! text.string_eq(prefix, "") {
+          name
+        } else {
+          text.string_concat(prefix, text.string_concat("/", name))
+        };
+      io.print(text.string_concat(
+        , "SUITE "
+        , text.string_concat(
+            , path
+            , text.string_concat(" ", text.string_concat(count_text(counts), "\n"))
+            )
+        ));
+      failure_lines(path, failures);
+      let next =
+        lists.foldl(
+          , .(tail: cells.List(model.Suite & String), child: model.Suite) {
+              cells.cons((child, path), tail)
+            }
+          , rest
+          , children
+          );
+      rec walk(next)
+    };
+    .(_empty: .) { () }
+  }
+}
+
+pub fn document(state: model.State) -> . {
+  io.print("Hierarchical test report\n");
+  let roots = lists.reverse(state.?{model.roots});
+  walk(lists.map(.(suite: model.Suite) { (suite, "") }, roots));
+  let totals =
+    lists.foldl(
+      , .(acc: model.Counts, suite: model.Suite) { model.combine(acc, model.suite_counts(suite)) }
+      , model.zero()
+      , roots
+      );
+  io.print(text.string_concat("TOTAL ", text.string_concat(count_text(totals), "\n")));
+  let errors = lists.reverse(state.?{model.errors});
+  io.print(text.string_concat(
+    , "DIAGNOSTICS "
+    , text.string_concat(fmt.int_to_string(lists.length(errors)), "\n")
+    ));
+  lists.foldl(
+    , .(_unit: ., error: String) {
+        io.print(text.string_concat("ERROR ", text.string_concat(error, "\n")))
+      }
+    , ()
+    , errors
+    )
+}

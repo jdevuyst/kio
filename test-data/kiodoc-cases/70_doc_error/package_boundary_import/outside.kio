@@ -1,0 +1,3 @@
+module outside;
+
+pub fn borrowed() -> . { () }

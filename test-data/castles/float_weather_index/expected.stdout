@@ -1,0 +1,8 @@
+float_weather_index
+morning_raw=72
+midday_raw=81.375
+evening_raw=78.25
+night_raw=67.625
+smoothed_index=73.197509765625
+midday_to_night_spread=13.75
+comfort_delta=0.802490234375

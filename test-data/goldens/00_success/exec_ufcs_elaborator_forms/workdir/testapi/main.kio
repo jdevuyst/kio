@@ -1,0 +1,53 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(atom);
+import elab/match(match);
+import elab/spine_elaborators(narrow_prod, narrow_sum, widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Exercise multiple elaborator dot-splice forms in one program. The
+// standalone spellings `widen_sum!(v, T)`, `narrow_prod!(v, T)`,
+// `narrow_sum!(v, T)`, `atom!(v)` and dot-splice spellings such as
+// `v.>widen_sum!(T)`, `v.>narrow_prod!(T)`, `v.>narrow_sum!(T)`,
+// `v.>atom!`, and `narrow_prod!(T).<<v` produce identical elaborator
+// calls after desugar.
+
+// `widen_sum!` widening via UFCS: `String → (String | I32)`.
+fn widen(s: String) -> String | I32 { s.>widen_sum!(String | I32) }
+
+// `narrow_prod!` projecting a product via UFCS: pick the String conjunct.
+fn pick_string(p: String & I32) -> String { p.>narrow_prod!(String) }
+
+// `atom!` picking a single value from a product via UFCS.
+fn atom_string(p: String & I32) -> String { p.>atom!(String) }
+
+// `narrow_prod!` dropping the unit conjunct via UFCS: `(String & .) → String`.
+fn drop_unit(p: String & .) -> String { p.>narrow_prod!(String) }
+
+// Same `narrow_prod!` shape with the source value spliced in from the right.
+fn drop_unit_left(p: String & .) -> String { narrow_prod!(String).<<p }
+
+// `narrow_sum!` deduplicating a sum produced by both arms via UFCS:
+// `String | String → String`.
+fn dedup_sum(s: String | String) -> String { s.>narrow_sum!(String) }
+
+pub fn main() -> . {
+  let widened = widen("hello\n");
+  let s =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  let picked = pick_string(("dropped\n", 0));
+  let atomed = atom_string(("atom\n", 0));
+  let dropped = drop_unit(("kept\n", ()));
+  let dropped_left = drop_unit_left(("left\n", ()));
+  let deduped = dedup_sum(widen_sum!("done\n"));
+  print(s);
+  print(picked);
+  print(atomed);
+  print(dropped);
+  print(dropped_left);
+  print(deduped)
+}

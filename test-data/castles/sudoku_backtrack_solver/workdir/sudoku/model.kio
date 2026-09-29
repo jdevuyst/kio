@@ -1,0 +1,46 @@
+/// The shapes the solver threads: one bundle of mutable state, the search
+/// verdict, the statistics, and the heuristic's answer.
+module sudoku/model;
+
+import testapi(Array, I32);
+
+/// Everything one solve mutates, in one value.
+///
+/// `board` holds the 81 cells row-major, `0` for empty. `row_of` /
+/// `col_of` / `box_of` map a cell index to the three units it belongs to
+/// (the host has no division, so they are tables, not arithmetic).
+/// `used_row` / `used_col` / `used_box` are the incremental bookkeeping:
+/// nine units by nine digits, `1` where that unit already holds that
+/// digit. `stack_cell` / `stack_digit` are the search stack — the cell
+/// chosen at each depth and the digit currently placed there, which is
+/// also the undo trail, since undoing a frame needs exactly that pair.
+pub labels Work = {
+  , board: Array(I32)
+  , row_of: Array(I32)
+  , col_of: Array(I32)
+  , box_of: Array(I32)
+  , used_row: Array(I32)
+  , used_col: Array(I32)
+  , used_box: Array(I32)
+  , stack_cell: Array(I32)
+  , stack_digit: Array(I32)
+  };
+
+/// What the search proved. `Exhausted` means the step budget ran out
+/// before the search could either complete the grid or refute it.
+pub labels Outcome = { solved: . } | { unsolvable: . } | { exhausted: . };
+
+pub labels Report = {
+  , verdict: Outcome
+  , placements: I32
+  , backtracks: I32
+  , max_depth: I32
+  , steps: I32
+  };
+
+/// What the minimum-remaining-values scan found: the chosen empty cell
+/// paired with the number of digits it still admits, or `Complete` when no
+/// cell is empty. A choice carrying zero candidates is a dead end — the
+/// scan reports it rather than hiding it, because that is precisely the
+/// signal the search backtracks on.
+pub labels Pick = { pick_cell: I32, pick_count: I32 } | { complete: . };

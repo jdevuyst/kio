@@ -1,0 +1,15 @@
+/// The consumer selectively imports both the `Rep` type and the
+/// same-named `repmod` elaborator from module `repmod`. The
+/// elaborator's reflected result type canonicalizes to the qualified
+/// `(repmod, Rep)`; re-qualifying that already-qualified path must not
+/// re-expand its `repmod` head through the selective import of the
+/// elaborator named `repmod` (which would double it to
+/// `repmod.repmod.Rep`). Identity-exact nominal canonicalization is
+/// idempotent on an already-qualified path, so this type-checks.
+module main;
+
+import __intrinsics__;
+
+import repmod(Rep, repmod);
+
+pub fn use_rep() -> Rep { Rep.un_rep(repmod!(())); Rep.mk_rep(()) }

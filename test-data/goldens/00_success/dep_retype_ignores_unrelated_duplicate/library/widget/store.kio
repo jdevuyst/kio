@@ -1,0 +1,3 @@
+module store;
+
+pub newtype Node : . { pub constructor mk_node; pub projector get_node }

@@ -1,0 +1,1 @@
+pure function cannot reference host fn `effect`

@@ -1,0 +1,8 @@
+module adapter;
+
+import origin as source;
+import origin(Item, Wrap);
+
+pub type Item = source.Item;
+
+pub type Wrap[A] = source.Wrap(A);

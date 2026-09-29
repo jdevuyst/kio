@@ -1,0 +1,33 @@
+module main;
+
+import elab/spine_elaborators(one_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// Uniform-arm collapse. Source `[A, A]` — every arm has type A,
+// target is the single atomic arm `A`. R-Collapse-Sum forwards
+// whichever arm is inhabited.
+fn pair_collapse(x: A | A) -> A { one_sum!(x) }
+
+// Triple-arm uniform collapse. Source `[A, A, A]`, target `A`.
+// All arms route to the single target slot.
+fn triple_collapse(x: A | A | A) -> A { one_sum!(x) }
+
+// `!`-arm carve-out (R-Identity-Sum-elim). Source `[A, !]`, target
+// `A`: the inhabited `A` arm forwards its value; the `!` arm is
+// uninhabited and drops freely.
+fn bottom_arm_drops(x: A | !) -> A { one_sum!(x) }
+
+// Non-atomic target. one_sum!'s "single" constraint is on the
+// target's sum-spine length, not on leaf atomicity — the target
+// may itself be a product (or any non-sum spine). Source `[A & B,
+// A & B]`, target `A & B`. This is the spec's departure from
+// algebraic-palette `atom!`, which DNF-flattens to a single arm
+// and requires an atomic/nominal/product leaf.
+fn non_atomic_target(x: (A & B) | (A & B)) -> A & B { one_sum!(x) }
+
+// UFCS spelling — same rule, postfix form. No trailing parens
+// when no explicit target type-arg is supplied.
+fn ufcs(x: A | A) -> A { x.>one_sum! }

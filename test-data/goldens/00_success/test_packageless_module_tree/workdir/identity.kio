@@ -1,0 +1,8 @@
+module identity;
+
+pub fn k(x: .) -> . { x }
+
+equiv ke() {
+  k(());
+  ()
+}

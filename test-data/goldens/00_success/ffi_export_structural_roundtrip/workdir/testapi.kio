@@ -1,0 +1,21 @@
+module testapi;
+
+host type Bool role(bool);
+
+host type I8 role(i8);
+
+host type I16 role(i16);
+
+host type I32 role(i32);
+
+host type I64 role(i64);
+
+host type String role(str);
+
+host type U8 role(u8);
+
+host type U16 role(u16);
+
+host type U32 role(u32);
+
+host type U64 role(u64);

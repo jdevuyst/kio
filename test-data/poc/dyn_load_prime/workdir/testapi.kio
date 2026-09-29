@@ -1,0 +1,18 @@
+module testapi;
+
+host type I32 role(i32);
+
+host type String role(str);
+
+host type Bool role(bool);
+
+host type F64 role(f64);
+
+// The opaque host-scalar box: a guest's host scalar (i32 / string / bool /
+// float / …) flows through `dyn_load_prime`'s interpreter as an opaque `Scalar`
+// the host owns and the interpreter never introspects (`value.kio`
+// § `V_host`, `testapi/scalar.kio`). It is `role`-less — an opaque
+// host-owned type, not a primitive — so the host alone decides its
+// representation and supplies the construction / projection / bool-test
+// vocabulary.
+host type Scalar;

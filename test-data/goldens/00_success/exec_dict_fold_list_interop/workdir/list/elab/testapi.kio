@@ -1,0 +1,11 @@
+module list/elab/testapi;
+
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type String = _rehost_hegfhdhegbhagj.String;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub type Int = _rehost_hegfhdhegbhagj.Int;
+
+pub type Bool = _rehost_hegfhdhegbhagj.Bool;

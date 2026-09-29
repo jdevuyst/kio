@@ -1,0 +1,7 @@
+dependency library;
+
+source {
+  path "../optics.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;

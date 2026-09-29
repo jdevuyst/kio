@@ -1,0 +1,19 @@
+module host/m;
+
+import elab/control(scope);
+import host(foo);
+
+equiv do_single_expression_reduces() {
+  scope! {
+    foo()
+  };
+  foo()
+}
+
+equiv do_pure_let_reduces() {
+  scope! {
+    let f = foo;
+    f()
+  };
+  foo()
+}

@@ -1,0 +1,7 @@
+module host;
+
+host type String role(str);
+
+host fn foo() -> .;
+
+host fn bar() -> .;

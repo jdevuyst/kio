@@ -1,0 +1,7 @@
+module float_signal_filter/sensors;
+
+import testapi(F64);
+
+pub fn raw_stream() -> F64 & F64 & F64 & F64 & F64 {
+  (2.0(F64), 2.5(F64), 2.75(F64), 3.25(F64), 3.5(F64))
+}

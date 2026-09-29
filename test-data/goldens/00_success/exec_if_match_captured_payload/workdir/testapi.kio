@@ -1,0 +1,5 @@
+module testapi;
+
+host type Bool role(bool);
+
+host type String role(str);

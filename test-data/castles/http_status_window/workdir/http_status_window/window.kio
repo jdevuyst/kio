@@ -1,0 +1,84 @@
+module http_status_window/window;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/text as text;
+
+pub labels Entry = {
+  , ordinal: String
+  , method: String
+  , path: String
+  , status: String
+  , bytes: String
+  , family: String
+  };
+
+pub fn raw_window() -> String {
+  "00|GET |/alpha |200|0532\n01|POST|/order |503|0000\n02|GET |/cache "
+  "|304|0128\n03|HEAD|/login |404|0042\n"
+}
+
+fn field(start: I32, end: I32) -> String { text.string_slice(raw_window(), start, end) }
+
+fn status_family_digit(status: String, digit: String) -> Bool {
+  text.string_eq(text.string_slice(status, 0, 1), digit)
+}
+
+pub fn family_label(status: String) -> String {
+  if! status_family_digit(status, "2") {
+    "success"
+  } else if! status_family_digit(status, "3") {
+    "redirect"
+  } else if! status_family_digit(status, "4") {
+    "client_error"
+  } else if! status_family_digit(status, "5") {
+    "server_error"
+  } else {
+    "other"
+  }
+}
+
+fn make_entry(
+  , ordinal_start: I32
+  , ordinal_end: I32
+  , method_start: I32
+  , method_end: I32
+  , path_start: I32
+  , path_end: I32
+  , status_start: I32
+  , status_end: I32
+  , bytes_start: I32
+  , bytes_end: I32
+  ) -> Entry {
+  let code = field(status_start, status_end);
+  {
+    , ordinal = field(ordinal_start, ordinal_end)
+    , method = field(method_start, method_end)
+    , path = field(path_start, path_end)
+    , status = code
+    , bytes = field(bytes_start, bytes_end)
+    , family = family_label(code)
+    }
+}
+
+pub fn entry00() -> Entry { make_entry(0, 2, 3, 6, 8, 14, 16, 19, 20, 24) }
+
+pub fn entry01() -> Entry { make_entry(25, 27, 28, 32, 33, 39, 41, 44, 45, 49) }
+
+pub fn entry02() -> Entry { make_entry(50, 52, 53, 56, 58, 64, 66, 69, 70, 74) }
+
+pub fn entry03() -> Entry { make_entry(75, 77, 78, 82, 83, 89, 91, 94, 95, 99) }
+
+pub fn status00() -> String { field(16, 19) }
+
+pub fn status01() -> String { field(41, 44) }
+
+pub fn status02() -> String { field(66, 69) }
+
+pub fn status03() -> String { field(91, 94) }
+
+pub fn raw_length() -> I32 { text.string_len(raw_window()) }
+
+pub fn row_count() -> I32 { 4 }
+
+pub fn first_status_ok() -> Bool { text.string_eq(status00(), "200") }

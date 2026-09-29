@@ -1,0 +1,14 @@
+package match_result_does_not_determine_clause_parameter;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main;
+  elab/testapi
+}

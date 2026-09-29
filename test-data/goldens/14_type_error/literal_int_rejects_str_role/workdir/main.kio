@@ -1,0 +1,5 @@
+module main;
+
+host type Str role(str);
+
+fn bad() -> Str { 42(Str) }

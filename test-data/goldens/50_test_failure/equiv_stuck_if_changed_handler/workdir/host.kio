@@ -1,0 +1,13 @@
+module host;
+
+host type Bool role(bool);
+
+host type Input;
+
+host fn condition(x: Input) -> Bool;
+
+host fn foo() -> .;
+
+host fn bar() -> .;
+
+host fn baz() -> .;

@@ -1,0 +1,18 @@
+package parse_err_doc_above_use;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  parse_err_doc_above_use;
+  parse_err_doc_above_use/**
+}

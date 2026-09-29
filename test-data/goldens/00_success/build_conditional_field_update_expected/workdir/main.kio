@@ -1,0 +1,27 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+host type First_payload;
+
+host type Second_payload;
+
+pub labels State = { first: First_payload, second: Second_payload };
+
+pub fn update_first(condition: Bool, state: State, replacement: Second_payload) -> State {
+  if! condition {
+    state.!{second = replacement}
+  } else {
+    state
+  }
+}
+
+pub fn update_last(condition: Bool, state: State, replacement: Second_payload) -> State {
+  if! condition {
+    state
+  } else {
+    state.!{second = replacement}
+  }
+}

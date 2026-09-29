@@ -1,0 +1,150 @@
+/// Character-code constants and ASCII classifiers the lexer uses to scan Kio' source text.
+module chars;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32, leq_i32);
+
+// `chars.kio` — the lexer's character vocabulary.
+//
+// The host string primitive `string_code_at` yields a character's code
+// as a host `I32`. The lexer classifies and compares those codes, so
+// this module names the codes it needs and the ASCII class predicates it
+// dispatches on. Naming the codes here (rather than threading bare
+// integer literals through `lex.kio`) keeps the scanner readable and the
+// punctuation set in one place.
+//
+// `or2` is a short-circuit-free boolean disjunction over two host bools,
+// expressed with `if`/`else` because Kio has no built-in `||`. The lexer
+// never needs the un-evaluated-operand semantics of a real short circuit
+// — both operands are already-computed comparisons — so the plain
+// branch is exactly right.
+/// Boolean disjunction of two host bools (both operands already evaluated).
+pub fn or2(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t(Bool)
+  } else {
+    b
+  }
+}
+
+/// Boolean conjunction of two host bools (both operands already evaluated).
+pub fn and2(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f(Bool)
+  }
+}
+
+// --- punctuation and structural character codes ---
+/// `(` 40.
+pub fn c_lparen() -> I32 { 40(I32) }
+
+/// `)` 41.
+pub fn c_rparen() -> I32 { 41(I32) }
+
+/// `{` 123.
+pub fn c_lbrace() -> I32 { 123(I32) }
+
+/// `}` 125.
+pub fn c_rbrace() -> I32 { 125(I32) }
+
+/// `[` 91.
+pub fn c_lbrack() -> I32 { 91(I32) }
+
+/// `]` 93.
+pub fn c_rbrack() -> I32 { 93(I32) }
+
+/// `,` 44.
+pub fn c_comma() -> I32 { 44(I32) }
+
+/// `;` 59.
+pub fn c_semi() -> I32 { 59(I32) }
+
+/// `:` 58.
+pub fn c_colon() -> I32 { 58(I32) }
+
+/// `=` 61.
+pub fn c_eq() -> I32 { 61(I32) }
+
+/// `.` 46.
+pub fn c_dot() -> I32 { 46(I32) }
+
+/// `&` 38.
+pub fn c_amp() -> I32 { 38(I32) }
+
+/// `|` 124.
+pub fn c_bar() -> I32 { 124(I32) }
+
+/// `-` 45.
+pub fn c_minus() -> I32 { 45(I32) }
+
+/// `>` 62.
+pub fn c_gt() -> I32 { 62(I32) }
+
+/// `<` 60.
+pub fn c_lt() -> I32 { 60(I32) }
+
+/// `*` 42.
+pub fn c_star() -> I32 { 42(I32) }
+
+/// `!` 33.
+pub fn c_bang() -> I32 { 33(I32) }
+
+/// `_` 95.
+pub fn c_under() -> I32 { 95(I32) }
+
+/// `"` 34.
+pub fn c_quote() -> I32 { 34(I32) }
+
+/// `\` 92.
+pub fn c_backslash() -> I32 { 92(I32) }
+
+/// `/` 47.
+pub fn c_slash() -> I32 { 47(I32) }
+
+/// `n` 110.
+pub fn c_n() -> I32 { 110(I32) }
+
+/// `0` 48.
+pub fn c_zero() -> I32 { 48(I32) }
+
+/// `9` 57.
+pub fn c_nine() -> I32 { 57(I32) }
+
+/// space 32.
+pub fn c_space() -> I32 { 32(I32) }
+
+/// newline 10.
+pub fn c_nl() -> I32 { 10(I32) }
+
+/// tab 9.
+pub fn c_tab() -> I32 { 9(I32) }
+
+/// carriage return 13.
+pub fn c_cr() -> I32 { 13(I32) }
+
+// --- ASCII class predicates ---
+/// Whether `c` is an ASCII space, tab, newline, or carriage return.
+pub fn is_space(c: I32) -> Bool {
+  or2(or2(eq_i32(c, c_space()), eq_i32(c, c_nl())), or2(eq_i32(c, c_tab()), eq_i32(c, c_cr())))
+}
+
+/// Whether `c` is an ASCII decimal digit `0`–`9`.
+pub fn is_digit(c: I32) -> Bool { and2(leq_i32(c_zero(), c), leq_i32(c, c_nine())) }
+
+/// Whether `c` is an ASCII lowercase letter `a`–`z`.
+pub fn is_lower(c: I32) -> Bool { and2(leq_i32(97(I32), c), leq_i32(c, 122(I32))) }
+
+/// Whether `c` is an ASCII uppercase letter `A`–`Z`.
+pub fn is_upper(c: I32) -> Bool { and2(leq_i32(65(I32), c), leq_i32(c, 90(I32))) }
+
+/// Whether `c` is an ASCII letter.
+pub fn is_alpha(c: I32) -> Bool { or2(is_lower(c), is_upper(c)) }
+
+/// Whether `c` may start a Kio' word token: a letter or an underscore.
+pub fn is_word_start(c: I32) -> Bool { or2(is_alpha(c), eq_i32(c, c_under())) }
+
+/// Whether `c` may continue a Kio' word token: a letter, a digit, or an underscore.
+pub fn is_word_cont(c: I32) -> Bool { or2(is_word_start(c), is_digit(c)) }

@@ -1,0 +1,72 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Upper bound for the sieve. The classical Eratosthenes' sieve
+// walks composites up to N and prints the survivors. N = 30 picks
+// `[2, 3, 5, 7, 11, 13, 17, 19, 23, 29]` — ten primes, one per
+// line in the golden output.
+fn n() -> I32 { 30 }
+
+// Inner mark-loop: walks `j` from `i*i` up to `N` in steps of `i`,
+// flagging each `is_composite[j] = true`. State is `j`; `is_composite`
+// and `i` are captured from the outer closure. Exit value is `()`.
+fn mark_step(is_composite: Array(Bool), i: I32, j: I32) -> I32 | . {
+  if! leq_i32(j, n()) {
+    array_set(is_composite, j, .t);
+    widen_sum!(add_i32(j, i))
+  } else {
+    widen_sum!(())
+  }
+}
+
+// Outer sieve-loop: walks `i` from `2` upward; runs the inner mark
+// loop on each `i` whose `i*i <= N` and which is itself prime
+// (i.e., `is_composite[i]` is still false). State is `i`. Exit when
+// `i*i > N` — every composite ≤ N is marked at that point.
+fn sieve_step(is_composite: Array(Bool), i: I32) -> I32 | . {
+  if! leq_i32(mul_i32(i, i), n()) {
+    widen_sum!(if! array_get(is_composite, i) {
+      add_i32(i, 1)
+    } else {
+      // Prime — sieve out its multiples, starting at i*i.
+      loop(.(j: I32) { mark_step(is_composite, i, j) }, mul_i32(i, i));
+      add_i32(i, 1)
+    })
+  } else {
+    widen_sum!(())
+  }
+}
+
+// Print-loop step: walks `i` from `2` up to `N`, emitting one
+// decimal per line for each `i` where `is_composite[i]` is false.
+// State is `i`. Exit value is `()`.
+fn print_step(is_composite: Array(Bool), i: I32) -> I32 | . {
+  if! leq_i32(i, n()) {
+    widen_sum!(if! array_get(is_composite, i) {
+      add_i32(i, 1)
+    } else {
+      // Prime — emit "<i>\n".
+      print(string_concat(int_to_string(i), "\n"));
+      add_i32(i, 1)
+    })
+  } else {
+    widen_sum!(())
+  }
+}
+
+pub fn main() -> . {
+  // Composite-flag table indexed 0..=N; cells 0 and 1 are unused
+  // (the print loop starts at 2). All false initially.
+  let is_composite = array_make_filled(add_i32(n(), 1), .f);
+  loop(.(i: I32) { sieve_step(is_composite, i) }, 2);
+  loop(.(i: I32) { print_step(is_composite, i) }, 2)
+}

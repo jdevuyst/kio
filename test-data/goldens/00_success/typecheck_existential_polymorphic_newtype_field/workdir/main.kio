@@ -1,0 +1,34 @@
+module main;
+
+import __intrinsics__;
+
+// Subject: existential newtype with a polymorphic-arrow payload
+// (specs/language.md § Existential type binders; specs/formal/
+// elaboration.md § 7.5 + § 2 polytypes inside payload positions).
+// The payload is `[R](S -> R) -> R` — a rank-2 polymorphic
+// arrow whose universal `[R]` is bound at the payload's outer
+// arrow. The synthesized constructor scheme is `[S] ([R](S ->
+// R) -> R) -> Wrapped`; the existential `S` is inferred from the
+// payload's `S -> R` slot, and the inner `[R]` stays inside the
+// payload's polytype.
+newtype Wrapped <S> : [R] (S -> R) -> R { pub constructor mk_wrapped; pub projector un_wrapped }
+
+// Universal-closure construction: the constructor takes the
+// polymorphic CPS function directly; the existential is inferred
+// from the function's `S -> R` parameter type.
+fn wrap[S](v: S) -> Wrapped { Wrapped.mk_wrapped(S, .[R](k: S -> R) -> R { k(v) }) }
+
+// Continuation receives the polymorphic CPS function under the
+// continuation's skolem `[S]`. The continuation applies the inner
+// polytype at its own `[R]` (here picked as `.`) and discards.
+fn discard(w: Wrapped) -> . {
+  Wrapped.un_wrapped(w)(., .[S](cps: [R] (S -> R) -> R) { cps(., .(_x) { () }) })
+}
+
+// Force the polymorphic payload to its `. -> .` instantiation
+// inside the continuation. The inner `[R]` is filled with the
+// continuation's expected outer-frame return type, exercising the
+// rank-2 instantiation under the skolem.
+fn force_unit(w: Wrapped) -> . {
+  Wrapped.un_wrapped(w)(., .[S](cps: [R] (S -> R) -> R) { cps(., .(_x: S) -> . { () }) })
+}

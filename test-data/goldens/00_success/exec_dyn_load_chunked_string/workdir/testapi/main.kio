@@ -1,0 +1,180 @@
+/// This case's loading host: read the freshly-emitted guest image from stdin, load it, and call its exports.
+module testapi/main;
+
+import defaults(apply_default, eval_default);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import imageio(read_image_stdin);
+import loader(Image, Lr_diag, Lr_image);
+import loader(diag_message, export_term, un_load_outcome);
+import loader/scan(load_package);
+import prime(Term);
+import result(Ev_done, Ev_stuck);
+import testapi(Bool, F64, I32, Scalar, String);
+import testapi/fmt(f64_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/scalar(scalar_as_f64, scalar_as_i32, scalar_as_str);
+import testapi/scalar(scalar_of_i32);
+import testapi/text(string_concat);
+import value(Value);
+import value(value_to_scalar, vhost, vunit);
+
+/// The argument list one call applies, in order.
+rec labels { vargs: . | (Value & Vargs) };
+
+fn vargs_nil() -> Vargs { {vargs = widen_sum!((), . | (Value & Vargs))} }
+
+fn vargs_one(a: Value) -> Vargs { {vargs = widen_sum!((a, vargs_nil()), . | (Value & Vargs))} }
+
+fn vargs_two(a: Value, b: Value) -> Vargs {
+  {vargs = widen_sum!((a, vargs_one(b)), . | (Value & Vargs))}
+}
+
+fn un_vargs(v: Vargs) -> . | (Value & Vargs) { Vargs.get(v) }
+
+fn vi32(n: I32) -> Value { vhost(scalar_of_i32(n)) }
+
+// Apply `f` to each argument in turn (a curried export takes several
+// applications), or `()` on a stuck application.
+fn apply_chain(f: Value, args: Vargs) -> . | Value {
+  loop(
+    , .(st: Value & Vargs) {
+        match! st {
+          .(cur: Value, rem: Vargs) {
+            match! un_vargs(rem) {
+              (
+                , .(a: Value, rest: Vargs) {
+                    match! apply_default(cur, a) {
+                      (
+                        , .(v: Ev_done) {
+                            widen_sum!((Ev_done.get(v), rest), (Value & Vargs) | . | Value)
+                          }
+                        , .(_s: Ev_stuck) {
+                            widen_sum!(widen_sum!((), . | Value), (Value & Vargs) | . | Value)
+                          }
+                        )
+                    }
+                  }
+                , .(_done: .) {
+                    widen_sum!(widen_sum!(cur, . | Value), (Value & Vargs) | . | Value)
+                  }
+                )
+            }
+          }
+        }
+      }
+    , (f, args)
+    )
+}
+
+// Evaluate the named export in the loaded image and apply it to the
+// arguments, or `()` on any failure.
+fn call_export(im: Image, name: String, args: Vargs) -> . | Value {
+  match! export_term(im, name) {
+    (
+      , .(t: Term) {
+          match! eval_default(t) {
+            (
+              , .(v: Ev_done) { apply_chain(Ev_done.get(v), args) }
+              , .(_s: Ev_stuck) { widen_sum!((), . | Value) }
+              )
+          }
+        }
+      , .(_absent: .) { widen_sum!((), . | Value) }
+      )
+  }
+}
+
+// Render an optional call result through a scalar projection.
+fn show_i32(label: String, r: . | Value) -> String {
+  match! r {
+    (
+      , .(v: Value) {
+          match! value_to_scalar(v) {
+            (
+              , .(s: Scalar) {
+                  match! scalar_as_i32(s) {
+                    (
+                      , .(n: I32) {
+                          string_concat(label, string_concat(int_to_string(n), "\n"(String)))
+                        }
+                      , .(_no: .) { string_concat(label, "<not an i32>\n"(String)) }
+                      )
+                  }
+                }
+              , .(_no: .) { string_concat(label, "<not a scalar>\n"(String)) }
+              )
+          }
+        }
+      , .(_e: .) { string_concat(label, "<error>\n"(String)) }
+      )
+  }
+}
+
+fn show_str(label: String, r: . | Value) -> String {
+  match! r {
+    (
+      , .(v: Value) {
+          match! value_to_scalar(v) {
+            (
+              , .(s: Scalar) {
+                  match! scalar_as_str(s) {
+                    (
+                      , .(t: String) { string_concat(label, string_concat(t, "\n"(String))) }
+                      , .(_no: .) { string_concat(label, "<not a string>\n"(String)) }
+                      )
+                  }
+                }
+              , .(_no: .) { string_concat(label, "<not a scalar>\n"(String)) }
+              )
+          }
+        }
+      , .(_e: .) { string_concat(label, "<error>\n"(String)) }
+      )
+  }
+}
+
+fn show_f64(label: String, r: . | Value) -> String {
+  match! r {
+    (
+      , .(v: Value) {
+          match! value_to_scalar(v) {
+            (
+              , .(s: Scalar) {
+                  match! scalar_as_f64(s) {
+                    (
+                      , .(n: F64) {
+                          string_concat(label, string_concat(f64_to_string(n), "\n"(String)))
+                        }
+                      , .(_no: .) { string_concat(label, "<not an f64>\n"(String)) }
+                      )
+                  }
+                }
+              , .(_no: .) { string_concat(label, "<not a scalar>\n"(String)) }
+              )
+          }
+        }
+      , .(_e: .) { string_concat(label, "<error>\n"(String)) }
+      )
+  }
+}
+
+/// Loads the piped-in image and prints each probed export's result; a
+/// load failure prints the diagnostic instead.
+pub fn main() -> . {
+  match! un_load_outcome(load_package(read_image_stdin())) {
+    (
+      , .(im0: Lr_image) {
+          let im = Lr_image.get(im0);
+          print(show_str("banner = "(String), call_export(im, "banner"(String), vargs_one(vunit()))))
+        }
+      , .(d: Lr_diag) {
+          print(string_concat(
+            , "load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+            ))
+        }
+      )
+  }
+}

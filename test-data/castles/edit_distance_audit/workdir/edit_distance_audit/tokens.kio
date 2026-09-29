@@ -1,0 +1,31 @@
+module edit_distance_audit/tokens;
+
+import testapi(Array, I32);
+import testapi/array as array;
+
+pub fn left_len() -> I32 { 6 }
+
+pub fn right_len() -> I32 { 7 }
+
+pub fn left_tokens() -> Array(I32) {
+  let tokens = array.array_make_empty(I32, ());
+  array.array_push(tokens, 11);
+  array.array_push(tokens, 9);
+  array.array_push(tokens, 20);
+  array.array_push(tokens, 20);
+  array.array_push(tokens, 5);
+  array.array_push(tokens, 14);
+  tokens
+}
+
+pub fn right_tokens() -> Array(I32) {
+  let tokens = array.array_make_empty(I32, ());
+  array.array_push(tokens, 19);
+  array.array_push(tokens, 9);
+  array.array_push(tokens, 20);
+  array.array_push(tokens, 20);
+  array.array_push(tokens, 9);
+  array.array_push(tokens, 14);
+  array.array_push(tokens, 7);
+  tokens
+}

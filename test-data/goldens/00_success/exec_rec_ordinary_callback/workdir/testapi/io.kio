@@ -1,0 +1,7 @@
+module testapi/io;
+
+import testapi(String);
+
+host fn print(p0: String) -> .;
+
+host fn read_ascii_line() -> String | .;

@@ -1,0 +1,13 @@
+module testapi/main;
+
+import helper as h;
+import testapi(String);
+import testapi/io(print);
+
+// Call a polymorphic `pub fn` through a qualified-import alias.
+// `h.id<String>(s)` mixes a type argument with a value argument at
+// the call site; codegen must drop the type slot at JS level. A
+// monomorphic-only treatment of qualified callees would either
+// over-emit the type-arg or crash with "type-arg passed to Mono
+// callee" — this case pins the polymorphic path through.
+pub fn main() -> . { print(h.id(String, "qualified poly call\n"(String))) }

@@ -1,0 +1,30 @@
+/// The integer and boolean vocabulary this host tier leaves to the package.
+///
+/// The env supplies `leq_i32` and `lt_i32` but no equality, so `int_eq` is
+/// derived from the antisymmetry of `<=`. `Bool` arrives with no combinators
+/// at all, so conjunction, disjunction, and negation are written against
+/// `if` / `else`.
+module turtle/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn not(a: Bool) -> Bool {
+  if! a {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// Integer equality: `a <= b` and `b <= a`.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }

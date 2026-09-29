@@ -1,0 +1,9 @@
+module main;
+
+newtype W : . { pub constructor mk_w; pub projector un_w }
+
+fn ident(u: .) -> . { u }
+
+fn takes(f: . -> W) -> . { let _ = f; () }
+
+fn caller() -> . { takes(ident) }

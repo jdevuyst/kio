@@ -1,0 +1,16 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+labels { label: String };
+
+// Direct `__snd__` keeps the label projector applied to an immediate
+// positional product access.
+fn projected() -> String {
+  Label.get(__snd__(Label, Label, ({label = "left\n"}, {label = "right\n"})))
+}
+
+pub fn main() -> . { print(projected()) }

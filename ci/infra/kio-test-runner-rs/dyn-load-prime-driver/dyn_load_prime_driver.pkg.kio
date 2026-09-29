@@ -1,0 +1,33 @@
+package dyn_load_prime_driver;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**;
+  prime;
+  host_descriptor;
+  value;
+  result;
+  marshal;
+  eval;
+  hostrec;
+  token;
+  chars;
+  lex;
+  parse;
+  loader;
+  defaults;
+  loader/scan;
+  elab/elaborator_util;
+  elab/match;
+  elab/spine_elaborators;
+  list/core;
+  driver
+}

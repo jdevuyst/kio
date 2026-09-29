@@ -1,0 +1,5 @@
+module feature/qualified;
+
+import feature/store as source;
+
+pub(feature) fn keep(value: source.Token) -> source.Token { value }

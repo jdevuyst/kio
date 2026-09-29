@@ -1,0 +1,6 @@
+module testapi/main;
+
+import logger(log_line);
+import testapi(String);
+
+pub fn main() -> . { log_line("kio"(String)) }

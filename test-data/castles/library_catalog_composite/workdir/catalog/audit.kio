@@ -1,0 +1,86 @@
+module catalog/audit;
+
+import catalog/domain(
+  , Audit_list
+  , Copies_available
+  , Failure
+  , Line_list
+  , No_copies
+  , Not_held
+  , Unknown_call
+  , Unknown_member
+  );
+import catalog/domain(cat, istr);
+import catalog/domain({copies_available}, {no_copies}, {not_held}, {unknown_call}, {unknown_member});
+import elab/match(match);
+import list/core as lcore;
+import list/list as list;
+import testapi(I32, String);
+import testapi/arith(add_i32);
+
+labels Tally = { e_call: I32, e_member: I32, e_copies: I32, e_held: I32, e_hold: I32 };
+
+pub fn failure_text(reason: Failure) -> String {
+  match! reason {
+    (
+      , .(bad: Unknown_call) { "unknown call-number ".>cat(istr(bad.?{unknown_call})) }
+      , .(bad: Unknown_member) { "unknown member ".>cat(istr(bad.?{unknown_member})) }
+      , .(bad: No_copies) { "no copies left of ".>cat(istr(bad.?{no_copies})) }
+      , .(bad: Not_held) {
+          let .(id: I32, call: I32) = bad.?{not_held};
+          "member ".>cat(istr(id)).>cat(" does not hold ").>cat(istr(call))
+        }
+      , .(bad: Copies_available) {
+          "copies still on the shelf for ".>cat(istr(bad.?{copies_available}))
+        }
+      )
+  }
+}
+
+fn one_more_call(counts: Tally) -> Tally { counts.!{e_call = add_i32(counts.?{e_call}, 1)} }
+
+fn one_more_member(counts: Tally) -> Tally { counts.!{e_member = add_i32(counts.?{e_member}, 1)} }
+
+fn one_more_copies(counts: Tally) -> Tally { counts.!{e_copies = add_i32(counts.?{e_copies}, 1)} }
+
+fn one_more_held(counts: Tally) -> Tally { counts.!{e_held = add_i32(counts.?{e_held}, 1)} }
+
+fn one_more_hold(counts: Tally) -> Tally { counts.!{e_hold = add_i32(counts.?{e_hold}, 1)} }
+
+fn bump(counts: Tally, reason: Failure) -> Tally {
+  match! reason {
+    (
+      , .(_bad: Unknown_call) { one_more_call(counts) }
+      , .(_bad: Unknown_member) { one_more_member(counts) }
+      , .(_bad: No_copies) { one_more_copies(counts) }
+      , .(_bad: Not_held) { one_more_held(counts) }
+      , .(_bad: Copies_available) { one_more_hold(counts) }
+      )
+  }
+}
+
+fn tally(reasons: Audit_list) -> Tally {
+  list.foldl(
+    , .(step: Tally & Failure) {
+        let .(counts: Tally, reason: Failure) = step;
+        bump(counts, reason)
+      }
+    , {e_call = 0, e_member = 0, e_copies = 0, e_held = 0, e_hold = 0}
+    , reasons
+    )
+}
+
+fn row(label: String, count: I32) -> String { label.>cat(istr(count)) }
+
+/// Fixed-width labels keep the count column aligned without a
+/// string-length capability in the host tier.
+pub fn tally_lines(reasons: Audit_list) -> Line_list {
+  let .(counts: Tally) = tally(reasons);
+  let rows = lcore.nil(String, ());
+  let rows = lcore.cons(row("copies still available  ", counts.?{e_hold}), rows);
+  let rows = lcore.cons(row("member does not hold    ", counts.?{e_held}), rows);
+  let rows = lcore.cons(row("no copies left          ", counts.?{e_copies}), rows);
+  let rows = lcore.cons(row("unknown member          ", counts.?{e_member}), rows);
+  let rows = lcore.cons(row("unknown call-number     ", counts.?{e_call}), rows);
+  rows
+}

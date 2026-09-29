@@ -1,0 +1,9 @@
+module app;
+
+import helpers as hl;
+import hostapi as h;
+import hostapi(I32);
+
+pub fn quad(x: I32) -> I32 { hl.twice(hl.twice(x)) }
+
+pub fn quad_plus(x: I32) -> I32 { h.add_i32(quad(x), 1) }

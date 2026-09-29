@@ -1,0 +1,5 @@
+module testapi/main;
+
+import grid_firebreak_search/report as report;
+
+pub fn main() -> . { report.run() }

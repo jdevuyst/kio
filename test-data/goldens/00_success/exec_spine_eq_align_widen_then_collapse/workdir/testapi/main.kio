@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(fit, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/io(print);
+
+// Spine equivalent of `exec_align_widen_then_collapse`. Source
+// `String | String` (constructed explicitly in each branch) widens
+// into `String | I32` while collapsing the two like-typed arms.
+// `fit!` composes `narrow_sum!` then `widen_sum!` in a single call;
+// the algebraic version used `align!`'s combined rule set. The
+// outward behavior is identical.
+fn convert(b: Bool) -> String | I32 {
+  fit!(if! b {
+    widen_sum!("widened-collapsed\n", String | String)
+  } else {
+    widen_sum!("widened-collapsed\n", String | String)
+  })
+}
+
+pub fn main() -> . {
+  let s =
+    match! convert(.t) {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(s)
+}

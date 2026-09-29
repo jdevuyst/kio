@@ -1,0 +1,6 @@
+module a/main;
+
+import a/util(bump);
+import hostapi(I32);
+
+pub fn run(x: I32) -> I32 { bump(bump(x)) }

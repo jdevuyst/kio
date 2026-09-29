@@ -1,0 +1,48 @@
+module robot/model;
+
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import testapi(Bool, I32, String);
+
+pub labels Status = { running: . } | { success: . } | { failure: . };
+
+pub labels World = { hazard: Bool, blocked: Bool };
+
+pub labels Job = { task_id: I32, task_name: String, duration: I32 };
+
+pub rec labels Tree =
+  { action: Job }
+  | { sequence: I32 & lists.List(Tree) }
+  | { selector: lists.List(Tree) }
+  | { invert: Tree }
+  | { blocked_test: . }
+  | { hazard_guard: Tree }
+  | { once: I32 & Tree };
+
+pub fn running_status() -> Status { {running=}.>widen_sum! }
+
+pub fn success_status() -> Status { {success=}.>widen_sum! }
+
+pub fn failure_status() -> Status { {failure=}.>widen_sum! }
+
+fn task(id: I32, name: String, ticks: I32) -> Tree {
+  {action = {task_id = id, task_name = name, duration = ticks}}.>widen_sum!
+}
+
+fn seq(id: I32, children: lists.List(Tree)) -> Tree { {sequence = (id, children)}.>widen_sum! }
+
+fn select(children: lists.List(Tree)) -> Tree { {selector = children}.>widen_sum! }
+
+pub fn delivery_tree() -> Tree {
+  let .(clear_door: Tree) = {invert = {blocked_test=}.>widen_sum!(Tree)}.>widen_sum!;
+  let shortcut = seq(10, lists.cons(clear_door, lists.singleton(task(1, "short-route", 3))));
+  let route = select(lists.cons(shortcut, lists.singleton(task(2, "detour", 2))));
+  let delivery =
+    seq(
+      , 11
+      , lists.cons(route, lists.cons(task(3, "collect", 2), lists.singleton(task(4, "deliver", 2))))
+      );
+  let .(mission: Tree) = {once = (12, delivery)}.>widen_sum!;
+  let .(safety: Tree) = {hazard_guard = task(5, "brake", 2)}.>widen_sum!;
+  select(lists.cons(safety, lists.singleton(mission)))
+}

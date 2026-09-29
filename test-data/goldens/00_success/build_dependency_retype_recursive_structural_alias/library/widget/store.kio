@@ -1,0 +1,10 @@
+module store;
+
+import __intrinsics__;
+
+rec {
+  pub type Payload = . | Node;
+  pub newtype Node : Payload { pub constructor mk; pub projector get }
+}
+
+pub fn make() -> Node { Node.mk(__left__(., Node, ())) }

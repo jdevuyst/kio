@@ -1,0 +1,44 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Regression: a `let x = e;` statement lowered to a JS IIFE
+// `(() => { const x = e; return rest; })()`. When the inner `let`
+// shadowed an outer same-named binding, the inner-IIFE's `const x`
+// captured every textual reference inside the IIFE — including the
+// RHS `e` itself — so a reference to the outer `x` in `e` fell in
+// the TDZ of the inner `const x` and JS threw
+// `ReferenceError: access of uninitialized binding`.
+
+// (1) Same-name shadow, RHS reads the outer binding.
+fn double(n: I32) -> I32 { let x = n; let x = x; x }
+
+// (2) Three nested shadows, each reads the previous binding.
+fn triple(n: I32) -> I32 { let x = n; let x = x; let x = x; x }
+
+// (3) Interleaved different names: the inner `let x` shadows
+// while a between-let `y` is unaffected. Exercises that the
+// hoist only triggers on shadows.
+fn interleaved(n: I32) -> I32 { let x = n; let y = x; let x = y; x }
+
+// (4) Shadow inside a `fn` body — the fn's parameter `x` is in
+// scope when the let opens, so the let shadows the param. We feed
+// the lambda directly to `apply` so its `x` parameter type flows
+// from `apply`'s signature (an un-annotated `.(x)` is Kio' but
+// needs call-site context to synthesize its parameter type).
+fn apply_i32(f: I32 -> I32, x: I32) -> I32 { f(x) }
+
+fn via_fn(n: I32) -> I32 { apply_i32(.(x) { let x = x; x }, n) }
+
+pub fn main() -> . {
+  print(int_to_string(double(7(I32))));
+  print("\n"(String));
+  print(int_to_string(triple(11(I32))));
+  print("\n"(String));
+  print(int_to_string(interleaved(13(I32))));
+  print("\n"(String));
+  print(int_to_string(via_fn(17(I32))));
+  print("\n"(String))
+}

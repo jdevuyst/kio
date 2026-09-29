@@ -1,0 +1,35 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io as io;
+
+newtype Box[A] : A { pub constructor make; pub projector unpack }
+
+newtype Other[A] : A { pub constructor make; pub projector unpack }
+
+fn extract[A](slot: Box(A) | Other(A)) -> A {
+  match! slot {
+    .(boxed: Box(A)) { boxed.>Box.unpack };
+    .(other: Other(A)) { other.>Other.unpack }
+  }
+}
+
+fn named(input: Box(String)) -> String {
+  match! input {
+    extract
+  }
+}
+
+fn inline(input: Box(String) | Other(String)) -> String {
+  match! input {
+    .[A](slot: Box(A) | Other(A)) -> A { extract(A, slot) }
+  }
+}
+
+pub fn main() -> . {
+  io.print(named(Box.make("named-box\n")));
+  io.print(inline(widen_sum!(Box.make("inline-box\n"), Box(String) | Other(String))));
+  io.print(inline(widen_sum!(Other.make("inline-other\n"), Box(String) | Other(String))))
+}

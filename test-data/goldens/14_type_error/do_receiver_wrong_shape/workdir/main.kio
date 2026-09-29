@@ -1,0 +1,19 @@
+module main;
+
+import elab/sequence(do);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+// Wrong-shape receiver: a single-arg function, not the
+// `[A] [B] (Box(A) & (A -> Box(B))) -> Box(B)` bind shape the
+// do-block requires.
+fn not_bind[A](m: Box(A)) -> Box(A) { m }
+
+fn bad() -> Box(.) {
+  do! not_bind {
+    let _x <- box_pure(());
+    box_pure(())
+  }
+}

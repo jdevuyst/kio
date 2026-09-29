@@ -1,0 +1,21 @@
+module parse_existential_no_space/main;
+
+import parse_existential_no_space(A);
+
+// Single existential binder followed flush against `:` — the
+// fused `>:` SymbolRun has its leading `>` peeled by
+// `expect_existential_close`, leaving `:` as the residual that
+// the surrounding production reads as the binder-list-to-payload
+// separator. No space between `>` and `:`.
+newtype Single[A] <U> : A & U { pub constructor mk_single; pub projector un_single; };
+
+// Two existential binders with no whitespace between them — the
+// fused `><` SymbolRun is peeled, leaving `<` as the next
+// binder's opener. Then the second binder's `>:` is peeled at
+// the same site for the same reason.
+newtype Pair[A] <U> <V> : A & U & V { pub constructor mk_pair; pub projector un_pair; };
+
+// `labels` entries: same lex-fusion site, same peel.
+labels { tag_single[A] <U> : A & U, tag_pair[A] <U> <V> : A & U & V };
+
+pub fn main() -> . { () }

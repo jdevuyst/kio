@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 777dc5d5dfb9ce386ba04d4244d26d5afdec9740e171d039c8c79448f668283a # shrinks to kind = NarrowSum, source_ty = Sum { left: Unit { meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, right: Sum { left: Sum { left: Unit { meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, right: Unit { meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, right: Unit { meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }, meta: Meta { span: Span { start: 0, end: 0 }, leading_trivia: () } }

@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target haskell {
+    out "out/haskell/"
+  }
+}
+
+bridge {
+  api
+}

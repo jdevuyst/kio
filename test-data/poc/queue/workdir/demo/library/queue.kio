@@ -1,0 +1,268 @@
+/// FIFO queue library with host-backed amortized normalization, bulk operations, operators, and canonical List interop.
+module library/queue;
+
+import library/core(
+  , Bool
+  , Queue
+  , back
+  , count_step
+  , empty
+  , front
+  , no
+  , peek
+  , pop_front
+  , singleton
+  , snoc_into_back
+  , swap_spines
+  , well_formed
+  , yes
+  );
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/list/core(cons, head, nil, uncons);
+import list/core(List);
+import queue_host as _rehost_hbhfgfhfgffpgigphdhe;
+
+pub type I32 = _rehost_hbhfgfhfgffpgigphdhe.I32;
+
+pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hbhfgfhfgffpgigphdhe.add_i32(p0, p1) }
+
+pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loop(S, R, p0, p1) }
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn has_value[A](result: A | .) -> Bool { fold_result(no(), .(_value: A) -> Bool { yes() }, result) }
+
+// =====================================================================
+// Loop-driven list walks
+// =====================================================================
+fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
+  loop(
+    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+        match! state {
+          .(carry: Acc, rest: List(A)) {
+            match! uncons(rest) {
+              (
+                , .(pair: A & List(A)) {
+                    match! pair {
+                      .(head: A, tail: List(A)) {
+                        widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
+                      }
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+                )
+            }
+          }
+        }
+      }
+    , (seed, xs)
+    )
+}
+
+fn reverse_list[A](xs: List(A)) -> List(A) {
+  fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { cons(x, carry) })
+}
+
+// =====================================================================
+// Smart constructor
+// =====================================================================
+fn mkq[A](f: List(A), b: List(A)) -> Queue(A) {
+  match! uncons(f) {
+    (
+      , .(_pair: A & List(A)) { Queue.mk_unchecked((f, b)) }
+      , .(_empty: .) {
+          match! uncons(b) {
+            (
+              , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A, ()))) }
+              , .(_bempty: .) { empty(A, ()) }
+              )
+          }
+        }
+      )
+  }
+}
+
+// =====================================================================
+// FIFO primitives
+// =====================================================================
+/// Add one element to the back of a queue.
+pub fn enqueue[A](x: A, q: Queue(A)) -> Queue(A) {
+  let snocced = snoc_into_back(x, q);
+  mkq(front(snocced), back(snocced))
+}
+
+/// Remove the oldest element from a queue, returning it with the residual queue.
+pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
+  fold_result(
+    , absent(A & Queue(A), ())
+    , .(pair: A & Queue(A)) {
+        match! pair {
+          .(h: A, rest: Queue(A)) { present((h, mkq(front(rest), back(rest)))) }
+        }
+      }
+    , pop_front(q)
+    )
+}
+
+/// Reverse the FIFO order of a queue.
+pub fn reverse[A](q: Queue(A)) -> Queue(A) {
+  let swapped = swap_spines(q);
+  mkq(front(swapped), back(swapped))
+}
+
+// =====================================================================
+// Bulk operations
+// =====================================================================
+/// Enqueue every element of a list, in order.
+pub fn enqueue_all[A](xs: List(A), q: Queue(A)) -> Queue(A) {
+  fold_list(xs, q, .(acc: Queue(A), x: A) -> Queue(A) { enqueue(x, acc) })
+}
+
+fn append_list[A](xs: List(A), ys: List(A)) -> List(A) {
+  fold_list(reverse_list(xs), ys, .(carry: List(A), x: A) -> List(A) { cons(x, carry) })
+}
+
+/// Render the queue as a front-to-back list.
+pub fn to_list[A](q: Queue(A)) -> List(A) { append_list(front(q), reverse_list(back(q))) }
+
+fn list_length[A](xs: List(A)) -> I32 {
+  fold_list(
+    , xs
+    , 0
+    , .(carry: I32, x: A) -> I32 { count_step(.(n: I32) -> I32 { add_i32(n, 1) }, carry, x) }
+    )
+}
+
+/// Count the elements in a queue.
+pub fn length[A](q: Queue(A)) -> I32 { add_i32(list_length(front(q)), list_length(back(q))) }
+
+/// Append `q2` after `q1`.
+pub fn concat[A](q1: Queue(A), q2: Queue(A)) -> Queue(A) { enqueue_all(to_list(q2), q1) }
+
+/// Apply `f` to every element, preserving order.
+pub fn map[A][B](f: A -> B, q: Queue(A)) -> Queue(B) {
+  fold_list(to_list(q), empty(B, ()), .(acc: Queue(B), x: A) -> Queue(B) { enqueue(f(x), acc) })
+}
+
+/// Build a queue from a list, oldest element first.
+pub fn from_list[A](xs: List(A)) -> Queue(A) { enqueue_all(xs, empty(A, ())) }
+
+// =====================================================================
+// Operator DSL
+// =====================================================================
+/// Receiver-first enqueue wrapper used by the `>>` operator.
+pub fn snoc[A](q: Queue(A), x: A) -> Queue(A) { enqueue(x, q) }
+
+/// Dequeue wrapper used by the postfix `<<` operator.
+pub fn unsnoc[A](q: Queue(A)) -> (A & Queue(A)) | . { dequeue(q) }
+
+/// Peek wrapper used by the postfix `^?` operator.
+pub fn peek_op[A](q: Queue(A)) -> A | . { peek(q) }
+
+/// Concatenation wrapper used by the `++` operator.
+pub fn concat_op[A](q1: Queue(A), q2: Queue(A)) -> Queue(A) { concat(q1, q2) }
+
+/// Appends one element to the back of a queue.
+pub op _ >> _ { impl snoc }
+
+/// Peeks at the front element.
+pub op _ ^? { impl peek_op }
+
+/// Removes the front element.
+pub op _ << { impl unsnoc }
+
+/// Concatenates two queues.
+pub op _ ++ _ { impl concat_op }
+
+// =====================================================================
+// Equiv laws
+// =====================================================================
+equiv enqueue_well_formed[A](f0: A, x: A) {
+  well_formed(enqueue(x, singleton(f0)));
+  yes()
+}
+
+equiv peek_after_enqueue[A](f0: A, x: A) {
+  peek(enqueue(x, singleton(f0)));
+  present(f0)
+}
+
+equiv dequeue_singleton[A](x: A) {
+  dequeue(singleton(x));
+  present((x, empty(A, ())))
+}
+
+equiv dequeue_empty_is_none[A]() {
+  has_value(dequeue(empty(A, ())));
+  no()
+}
+
+equiv fifo_first_out[A](a0: A, a1: A) {
+  peek(enqueue(a1, singleton(a0)));
+  present(a0)
+}
+
+equiv fifo_second_out[A](a0: A, a1: A) {
+  fold_result(
+    , absent(A, ())
+    , .(pair: A & Queue(A)) {
+        match! pair {
+          .(_h: A, rest: Queue(A)) { peek(rest) }
+        }
+      }
+    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A, ()))), nil(A, ()))))
+    );
+  present(a1)
+}
+
+equiv dequeue_head_is_oldest[A](a0: A, a1: A) {
+  fold_result(
+    , absent(A, ())
+    , .(pair: A & Queue(A)) {
+        match! pair {
+          .(h: A, _rest: Queue(A)) { present(h) }
+        }
+      }
+    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A, ()))), nil(A, ()))))
+    );
+  present(a0)
+}
+
+equiv front_head_stable_under_enqueue[A](f0: A, f1: A, x: A) {
+  head(front(enqueue(x, Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), nil(A, ()))))));
+  present(f0)
+}
+
+equiv reverse_exposes_newest[A](a0: A, a1: A) {
+  peek(reverse(Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))));
+  present(a1)
+}
+
+equiv reverse_involution[A](a0: A, a1: A) {
+  reverse(reverse(Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))));
+  Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))
+}
+
+equiv op_snoc_is_enqueue[A](f0: A, x: A) {
+  peek(singleton(f0) >> x);
+  peek(enqueue(x, singleton(f0)))
+}
+
+equiv op_peek_is_peek[A](x: A) {
+  singleton(x) ^?;
+  peek(singleton(x))
+}
+
+equiv op_unsnoc_is_dequeue[A](x: A) {
+  has_value(singleton(x) <<);
+  has_value(dequeue(singleton(x)))
+}

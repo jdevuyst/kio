@@ -1,0 +1,4 @@
+module sig;
+
+/// Returns its argument unchanged.
+pub fn identity[A](value: A) -> A { value }

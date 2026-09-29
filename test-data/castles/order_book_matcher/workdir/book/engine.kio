@@ -1,0 +1,236 @@
+/// The matching engine: one arriving event at a time, against the book.
+module book/engine;
+
+import book/book(
+  , Book
+  , asks_of
+  , at
+  , bids_of
+  , facing_queue
+  , index_of_id
+  , insert_ranked
+  , is_empty
+  , is_found
+  , new_book
+  , note_cancelled
+  , note_entered
+  , note_reduced
+  , note_unfilled
+  , own_queue
+  , record_trade
+  , remove_at
+  , set_at
+  , take_id
+  , tape_len
+  );
+import book/event(
+  , Amend
+  , Amend_req
+  , Cancel
+  , Event
+  , Limit
+  , Limit_req
+  , Market
+  , Market_req
+  , amend_id
+  , amend_of
+  , amend_qty
+  , arrivals
+  , cancel_of
+  , event_at
+  , event_count
+  , limit_of
+  , limit_price
+  , limit_qty
+  , limit_side
+  , market_of
+  , market_qty
+  , market_side
+  );
+import book/num(int_lt, is_positive, min_int, not);
+import book/order(
+  , Cap
+  , Order
+  , Side
+  , crosses
+  , id_of
+  , no_cap
+  , order
+  , price_cap
+  , price_of
+  , remaining_of
+  , trade
+  , with_remaining
+  );
+import book/report as report;
+import elab/control(if);
+import elab/match(match);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+/// Cross an aggressive order against the facing queue while the prices
+/// still overlap, and hand back whatever is left of it.
+///
+/// The front of the queue is the best resting order by construction, so
+/// the aggressor always meets the maker with the best price and, at that
+/// price, the longest wait. Every trade prints at the maker's price: the
+/// resting order named it when it joined the queue, and crossing is the
+/// aggressor accepting it.
+///
+/// A maker that is used up leaves the book and the walk goes on to the
+/// next one; a maker with more than the aggressor needs stays where it is
+/// with the rest, and the walk is over -- there is nothing left to trade.
+rec(loop) fn cross(taker: I32, side: Side, cap: Cap, remaining: I32, makers: Array(Order), b: Book) -> I32 {
+  if! not(is_positive(remaining)) {
+    remaining
+  } else if! is_empty(makers) {
+    remaining
+  } else {
+    let maker = at(makers, 0);
+    let price = price_of(maker);
+    if! crosses(side, cap, price) {
+      let available = remaining_of(maker);
+      let qty = min_int(remaining, available);
+      record_trade(b, trade(taker, id_of(maker), price, qty));
+      if! leq_i32(available, qty) {
+        remove_at(makers, 0);
+        rec cross(taker, side, cap, sub_i32(remaining, qty), makers, b)
+      } else {
+        set_at(makers, 0, with_remaining(maker, sub_i32(available, qty)));
+        sub_i32(remaining, qty)
+      }
+    } else {
+      remaining
+    }
+  }
+}
+
+/// A limit order crosses first and rests with whatever survives.
+fn take_limit(step: I32, b: Book, r: Limit_req) -> . {
+  let side = limit_side(r);
+  let price = limit_price(r);
+  let qty = limit_qty(r);
+  let id = take_id(b);
+  let tape_mark = tape_len(b);
+  print(report.limit_header(step, side, price, qty, id));
+  let left = cross(id, side, price_cap(price), qty, facing_queue(b, side), b);
+  report.print_trades(tape_mark, b);
+  if! int_lt(left, qty) {
+    print(report.fill_line(sub_i32(qty, left), qty))
+  } else {
+    ()
+  };
+  if! is_positive(left) {
+    note_entered(b, left);
+    insert_ranked(own_queue(b, side), order(id, side, price, qty, left, step));
+    print(report.rest_line(left, price))
+  } else {
+    ()
+  };
+  print(report.book_line(b))
+}
+
+/// A market order names no price, so it crosses until it is filled or the
+/// book runs out. It never rests: what the book could not fill is gone.
+fn take_market(step: I32, b: Book, r: Market_req) -> . {
+  let side = market_side(r);
+  let qty = market_qty(r);
+  let id = take_id(b);
+  let tape_mark = tape_len(b);
+  print(report.market_header(step, side, qty, id));
+  let left = cross(id, side, no_cap(), qty, facing_queue(b, side), b);
+  report.print_trades(tape_mark, b);
+  print(report.fill_line(sub_i32(qty, left), qty));
+  if! is_positive(left) {
+    note_unfilled(b, left);
+    print(report.unfilled_line(left))
+  } else {
+    ()
+  };
+  print(report.book_line(b))
+}
+
+/// Where an order rests: its queue and its place in it. An id is unique
+/// across the book, so searching both sides settles it. When the id rests
+/// nowhere, the index says so and the queue handed back beside it is never
+/// touched.
+fn locate(b: Book, id: I32) -> Array(Order) & I32 {
+  let in_bids = index_of_id(bids_of(b), id);
+  if! is_found(in_bids) {
+    (bids_of(b), in_bids)
+  } else {
+    (asks_of(b), index_of_id(asks_of(b), id))
+  }
+}
+
+fn take_cancel(step: I32, b: Book, id: I32) -> . {
+  print(report.cancel_header(step, id));
+  let .(queue: Array(Order), index: I32) = locate(b, id);
+  if! is_found(index) {
+    let victim = at(queue, index);
+    note_cancelled(b, remaining_of(victim));
+    remove_at(queue, index);
+    print(report.cancel_line(victim))
+  } else {
+    print(report.reject_line(report.no_order_reason(id)))
+  };
+  print(report.book_line(b))
+}
+
+/// An amend may only shrink an order. See `report.no_growth_reason`.
+fn take_amend(step: I32, b: Book, r: Amend_req) -> . {
+  let id = amend_id(r);
+  let target = amend_qty(r);
+  print(report.amend_header(step, id, target));
+  let .(queue: Array(Order), index: I32) = locate(b, id);
+  if! not(is_found(index)) {
+    print(report.reject_line(report.no_order_reason(id)))
+  } else {
+    let resting = at(queue, index);
+    let left = remaining_of(resting);
+    if! int_lt(target, left) {
+      note_reduced(b, sub_i32(left, target));
+      set_at(queue, index, with_remaining(resting, target));
+      print(report.reduce_line(id, left, target))
+    } else {
+      print(report.reject_line(report.no_growth_reason(id, left, target)))
+    }
+  };
+  print(report.book_line(b))
+}
+
+fn apply_event(step: I32, b: Book, e: Event) -> . {
+  match! e {
+    (
+      , .(l: Limit) { take_limit(step, b, limit_of(l)) }
+      , .(m: Market) { take_market(step, b, market_of(m)) }
+      , .(c: Cancel) { take_cancel(step, b, cancel_of(c)) }
+      , .(a: Amend) { take_amend(step, b, amend_of(a)) }
+      )
+  }
+}
+
+/// The event's position in the flow is also the arrival sequence a
+/// resting order keeps, which is why it is passed down rather than
+/// counted again in the book.
+rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) -> . {
+  if! leq_i32(event_count(events), i) {
+    ()
+  } else {
+    let step = add_i32(i, 1);
+    apply_event(step, b, event_at(events, i));
+    print("\n");
+    rec replay(step, b, events)
+  }
+}
+
+pub fn run() -> . {
+  let b = new_book();
+  print("== transcript ==\n\n");
+  replay(0, b, arrivals());
+  report.print_book(b);
+  report.print_summary(b);
+  report.print_invariant(b)
+}

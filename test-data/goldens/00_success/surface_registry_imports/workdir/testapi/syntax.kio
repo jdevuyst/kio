@@ -1,0 +1,17 @@
+module testapi/syntax;
+
+import testapi(String);
+
+pub literal word = "ok\n";
+
+pub labels { message: String };
+
+pub fn id(value: String) -> String { value }
+
+pub op + _ { impl id }
+
+pub fn empty() -> String { "" }
+
+pub fn take(value: String, rest: String) -> String { value }
+
+pub varop [* *] { foldr take empty }

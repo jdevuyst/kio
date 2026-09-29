@@ -1,0 +1,18 @@
+package op_conflicts_with_use_op_import;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  op_conflicts_with_use_op_import;
+  op_conflicts_with_use_op_import/**
+}

@@ -1,0 +1,64 @@
+/// What a cell holds (what the user typed) and what it is worth (what
+/// recalculation produced). `#CYCLE` is an ordinary arm of the value sum, so
+/// a cell reading a cycling cell just computes with it.
+///
+/// The two `fold_*` eliminators are the whole interface for taking a content
+/// or a value apart: callers get the payloads without importing the label
+/// vocabulary, and every dispatch stays exhaustive.
+module sheet/cells;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import sheet/addr(Addr);
+import sheet/formula(Expr);
+import sheet/table(Table, empty, get_or, put);
+import testapi(I32);
+
+pub labels Content = { blank: . } | { number: I32 } | { formula: Expr };
+
+pub labels Value = { num: I32 } | { void: . } | { cycle: . };
+
+pub type Sheet = Table(Content);
+
+pub type Values = Table(Value);
+
+pub fn blank_content() -> Content { {blank=}.>widen_sum!(Content) }
+
+pub fn number_content(n: I32) -> Content { {number = n}.>widen_sum!(Content) }
+
+pub fn formula_content(e: Expr) -> Content { {formula = e}.>widen_sum!(Content) }
+
+pub fn num_value(n: I32) -> Value { {num = n}.>widen_sum!(Value) }
+
+pub fn void_value() -> Value { {void=}.>widen_sum!(Value) }
+
+pub fn cycle_value() -> Value { {cycle=}.>widen_sum!(Value) }
+
+pub fn fold_content[R](c: Content, on_blank: R, on_number: I32 -> R, on_formula: Expr -> R) -> R {
+  match! c {
+    (
+      , .(_b: Blank) { on_blank }
+      , .(n: Number) { on_number(n.?{number}) }
+      , .(f: Formula) { on_formula(f.?{formula}) }
+      )
+  }
+}
+
+pub fn fold_value[R](v: Value, on_num: I32 -> R, on_void: R, on_cycle: R) -> R {
+  match! v {
+    (.(n: Num) { on_num(n.?{num}) }, .(_v: Void) { on_void }, .(_c: Cycle) { on_cycle })
+  }
+}
+
+pub fn empty_sheet() -> Sheet { empty(Content, ()) }
+
+/// A cell nobody wrote to is empty, not missing.
+pub fn content_at(s: Sheet, a: Addr) -> Content { get_or(s, a, blank_content()) }
+
+pub fn set_content(s: Sheet, a: Addr, c: Content) -> Sheet { put(s, a, c) }
+
+pub fn empty_values() -> Values { empty(Value, ()) }
+
+pub fn value_at(vals: Values, a: Addr) -> Value { get_or(vals, a, void_value()) }
+
+pub fn set_value(vals: Values, a: Addr, v: Value) -> Values { put(vals, a, v) }

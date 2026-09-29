@@ -1,0 +1,20 @@
+module word1_names2/word3_items4;
+
+import testapi as api;
+
+pub newtype _Item1_part2__[Value1_type2] : Value1_type2 {
+  pub constructor wrap1_value2;
+  pub projector read1_value2
+  }
+
+pub fn keep1_value2[Value1_type2](_value1_part2__: Value1_type2) -> Value1_type2 { _value1_part2__ }
+
+pub fn word1_value2() -> api.String { "plain\n" }
+
+pub fn _word1_value2() -> api.String { "leading\n" }
+
+pub fn word1_value2_() -> api.String { "trailing\n" }
+
+pub fn _word1_value2_() -> api.String { "both\n" }
+
+pub fn word1_value2__() -> api.String { "long\n" }

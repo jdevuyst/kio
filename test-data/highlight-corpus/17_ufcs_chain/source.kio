@@ -1,0 +1,18 @@
+module m;
+
+fn chain(p: P, q: Q) -> R { p.>foo.>bar.>baz; q.>atom!; q.>iso!(R); f(x).>method(arg) }
+
+fn tails(r: R) -> R {
+  r.>f;
+  r.>>T.member;
+  f.<r;
+  T.member.<<r;
+  r.>transform!;
+  r.>>transform!;
+  transform!.<r;
+  transform!.<<r;
+  _transform!.<r;
+  r.>f(());
+  f(()).<r;
+  r
+}

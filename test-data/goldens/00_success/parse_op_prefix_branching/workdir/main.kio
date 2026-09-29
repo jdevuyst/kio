@@ -1,0 +1,17 @@
+module main;
+
+pub newtype A : . { pub constructor mk_a; pub projector un_a; };
+
+fn cat(a: A, b: A) -> A { a }
+
+// Prefix-forbidden rule, success case: two operators may share a
+// leading op-token run as long as neither's full op-token sequence
+// is a strict prefix of the other's. `_ && ++ _` (op-token
+// sequence `[&&, ++]`) and `_ && -- _` (sequence `[&&, --]`)
+// share `&&` and branch at the second token, so they coexist in
+// one module.
+op _ && ++ _ { impl cat; };
+
+op _ && -- _ { impl cat; };
+
+pub fn main(x: A, y: A) -> A { x && ++ y }

@@ -1,0 +1,9 @@
+module producer;
+
+host type Count role(i32);
+
+host fn consume(value: Count) -> .;
+
+pub fn literal() -> Count { 1(Count) }
+
+pub fn staged(seed: .)(later: .) -> Count { 2(Count) }

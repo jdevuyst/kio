@@ -1,0 +1,11 @@
+module core/store;
+
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub newtype Dict : [A] A -> A { pub constructor mk; pub projector un }
+
+pub fn poly_id[A](x: A) -> A { x }
+
+pub fn apply_dict(d: Dict, n: I32) -> I32 { Dict.un(d)(I32, n) }

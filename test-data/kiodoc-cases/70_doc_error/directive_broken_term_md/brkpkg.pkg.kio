@@ -1,0 +1,13 @@
+package brkpkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}
+
+bridge {
+  brkpkg
+}

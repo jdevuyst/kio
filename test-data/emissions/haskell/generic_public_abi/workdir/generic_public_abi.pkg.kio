@@ -1,0 +1,20 @@
+package generic_public_abi;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "PublicAbi"
+  }
+}
+
+bridge {
+  api;
+  caller;
+  other_tree;
+  origin;
+  private_pack;
+  private_tree;
+  tree
+}

@@ -1,0 +1,6 @@
+module m;
+
+equiv mismatched_arity() {
+  .(x: .) { x };
+  .(x: ., y: .) { x }
+}

@@ -1,0 +1,18 @@
+package pure_elaborator_emits_host_call;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  pure_elaborator_emits_host_call;
+  pure_elaborator_emits_host_call/**
+}

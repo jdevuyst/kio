@@ -1,0 +1,7 @@
+module rec_unrelated_match_elaborator_lambda/main;
+
+import rec_unrelated_match_elaborator_lambda/elaborators(match);
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+rec(loop) fn spin(value: .) -> . { match!(value, . -> ., .x. { rec spin(x1) }) }

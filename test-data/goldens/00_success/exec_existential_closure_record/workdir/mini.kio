@@ -1,0 +1,41 @@
+/// A minimal record-of-closures-over-`P` existential: the same shape the
+/// dynamic-loading loader's `Surface(P)` / `Loaded` pack uses, reduced to
+/// the two witness directions that exercise the Rust backend's
+/// existential pack-site coercion — a covariant `String -> P` (the
+/// witness in a function *result*, erased through `as_any`) and a
+/// contravariant `P -> String` (the witness in a function *parameter*,
+/// recovered through `from_any`).
+module mini;
+
+import __intrinsics__;
+
+import testapi(String);
+
+/// A record of operations over a hidden representation `P`: wrap a string
+/// into `P`, and read a `P` back out as a string.
+pub type Surface[P] = (String -> P) & (P -> String);
+
+/// The existential boundary — hides the representation `P` behind the
+/// surface record.
+pub labels { boxed <P> : Surface(P) };
+
+/// The concrete surface over `String`: `P` is `String`, so wrap / unwrap
+/// are the identity. Packing this as `Surface(P)` is the no-op
+/// existential pack.
+fn string_surface() -> Surface(String) {
+  (.(s: String) -> String { s }, .(p: String) -> String { p })
+}
+
+/// Packs the concrete string surface behind the existential, hiding
+/// `String` as the witness `P`.
+pub fn pack() -> Boxed { Boxed.mk(string_surface()) }
+
+/// Opens the existential and round-trips a string through it: applies the
+/// hidden `wrap` then `unwrap`. The host never learns `P` is `String`.
+pub fn round_trip(b: Boxed, s: String) -> String {
+  Boxed.get(b)(.[P](surf: Surface(P)) {
+    let wrap = __fst__(String -> P, P -> String, surf);
+    let unwrap = __snd__(String -> P, P -> String, surf);
+    unwrap(wrap(s))
+  })
+}

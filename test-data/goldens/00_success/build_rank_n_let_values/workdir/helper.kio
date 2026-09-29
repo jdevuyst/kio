@@ -1,0 +1,5 @@
+module helper;
+
+pub fn identity[A](value: A) -> A { value }
+
+pub newtype Box[A] : A { pub constructor box; pub projector unbox }

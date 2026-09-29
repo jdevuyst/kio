@@ -1,0 +1,35 @@
+module interpreter/report;
+
+import elab/match(match);
+import interpreter/evaluator as evaluator;
+import interpreter/input as input;
+import interpreter/parser as parser;
+import interpreter/syntax as ast;
+import interpreter/values as values;
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn result(expr: ast.Expr, fuel: I32) -> . {
+  match! evaluator.evaluate(expr, fuel) {
+    .(value: values.Value) { io.print(values.render(value)) };
+    .(error: String) { io.print("evaluation error: "); io.print(error) }
+  }
+}
+
+fn program(tokens: input.Tokens, fuel: I32) -> . {
+  match! parser.parse(tokens) {
+    .(expr: ast.Expr) { result(expr, fuel) };
+    .(error: String) { io.print("parse error: "); io.print(error) }
+  }
+}
+
+pub fn case_result(title: String, budget: String, tokens: input.Tokens) -> . {
+  io.print(title);
+  io.print(": ");
+  match! fmt.string_to_int(budget) {
+    .(fuel: I32) { program(tokens, fuel) };
+    .() { io.print("input error: invalid fuel budget") }
+  };
+  io.print("\n")
+}

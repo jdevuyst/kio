@@ -1,0 +1,5 @@
+  fail equiv `bool_lit` in lit/m: arms split into 2 normal-form groups
+    group A (arms 1): .t
+    group B (arms 2): .f
+
+result: 1/1 equiv block failed

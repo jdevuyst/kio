@@ -1,0 +1,5 @@
+module a;
+
+host type Shared role(bool);
+
+pub fn keep(value: Shared) -> Shared { value }

@@ -1,0 +1,3 @@
+module u;
+
+host type String role(str);

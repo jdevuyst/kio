@@ -1,0 +1,168 @@
+module testapi/main;
+
+import library/elab/control(if);
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/vec(
+  , Vec
+  , at
+  , concat
+  , empty
+  , fold
+  , fold_range
+  , from_list
+  , is_empty
+  , length
+  , map
+  , op _ <@> _
+  , op _ <| __ |>
+  , op _ ~~ _
+  , op __ +> _
+  , pop_back
+  , push_back
+  , slice
+  , to_list
+  , update
+  );
+import list/core(List);
+import list/list as lists;
+import list/list(varop [* *]);
+import testapi(Bool, I32, String);
+import testapi/arith(add, mul);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq);
+
+fn show(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+}
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+fn show_result[A](label: String, result: A | ., render: A -> String) -> . {
+  show(
+    , label
+    , fold_result(
+        , "none"
+        , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
+        , result
+        )
+    )
+}
+
+fn value_or[A](default: A, result: A | .) -> A {
+  fold_result(default, .(value: A) { value }, result)
+}
+
+fn show_result_i32(label: String, result: I32 | .) -> . {
+  show_result(label, result, int_to_string)
+}
+
+fn render_sum(value: I32 | .) -> String {
+  match! value {
+    (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
+  }
+}
+
+fn string_is_empty(s: String) -> Bool { string_eq(s, "") }
+
+fn vec_to_string(v: Vec(I32)) -> String {
+  let body =
+    fold(
+      , .(acc: String, n: I32) -> String {
+          let piece = int_to_string(n);
+          if! string_is_empty(acc) {
+            piece
+          } else {
+            string_concat(acc, string_concat(", ", piece))
+          }
+        }
+      , ""
+      , v
+      );
+  string_concat("[", string_concat(body, "]"))
+}
+
+fn demo_vec() -> Vec(I32) {
+  fold_range(
+    , 0
+    , 20
+    , .(acc: Vec(I32), i: I32) -> Vec(I32) { push_back(acc, mul(i, 10)) }
+    , empty(I32, ())
+    )
+}
+
+pub fn main() -> . {
+  let v = demo_vec();
+  show("length(v)", int_to_string(length(v)));
+  show("is_empty(empty)", bool_to_string(is_empty(empty(I32, ()))));
+  show("is_empty(v)", bool_to_string(is_empty(v)));
+  show_result_i32("at(v, 0)", at(v, 0));
+  show_result_i32("at(v, 7)", at(v, 7));
+  show_result_i32("at(v, 19)", at(v, 19));
+  show_result_i32("at(v, 99) (out of bounds)", at(v, 99));
+  show_result_i32("v[13]", v <| 13 |>);
+  let v2 = value_or(v, update(v, 7, 777));
+  let v3 = value_or(v2, update(v2, 13, 1313));
+  show_result_i32("at(v3, 7) after update", at(v3, 7));
+  show_result_i32("at(v3, 13) after update", at(v3, 13));
+  show_result_i32("at(v, 7) original still", at(v, 7));
+  show_result_i32("at(v, 13) original still", at(v, 13));
+  let v4 = v +> 200;
+  show("length(v +> 200)", int_to_string(length(v4)));
+  show_result_i32("at(v +> 200, 20)", at(v4, 20));
+  show(
+    , "pop_back(v4) drops 200"
+    , fold_result(
+        , "none"
+        , .(p: I32 & Vec(I32)) -> String {
+            match! p {
+              .(x: I32, rest: Vec(I32)) {
+                string_concat(
+                  , "popped "
+                  , string_concat(
+                      , int_to_string(x)
+                      , string_concat(", len ", int_to_string(length(rest)))
+                      )
+                  )
+              }
+            }
+          }
+        , pop_back(v4)
+        )
+    );
+  show("to_list(slice(v, 0, 5))", vec_to_string(from_list(to_list(slice(v, 0, 5)))));
+  show(
+    , "map(+1, slice(v, 0, 5))"
+    , vec_to_string(map(.(n: I32) -> I32 { add(n, 1) }, slice(v, 0, 5)))
+    );
+  let double = .(n: I32) -> I32 { mul(n, 2) };
+  show("v <@> *2 (first 5)", vec_to_string(slice(v <@> double, 0, 5)));
+  show("fold(+, 0, slice(v, 0, 5))", int_to_string(fold(add, 0, slice(v, 0, 5))));
+  let a = slice(v, 0, 3);
+  let b = slice(v, 17, 20);
+  show("concat(slice(0,3), slice(17,20))", vec_to_string(concat(a, b)));
+  show("a ~~ b", vec_to_string(a ~~ b));
+  show("slice(v, 5, 9)", vec_to_string(slice(v, 5, 9)));
+  let .(source_list: List(I32)) = [* 1, 2, 3 *];
+  let .(roundtrip: List(I32)) = to_list(from_list(source_list));
+  show("canonical List roundtrip", lists.to_string(int_to_string, roundtrip));
+  let .(empty_source: List(I32)) = [* *];
+  show("canonical empty List", int_to_string(length(from_list(empty_source))));
+  let unit_vec = from_list([* () *]);
+  let render_unit = .(_unit: .) -> String { "unit" };
+  show_result("at(Unit, 0)", at(unit_vec, 0), render_unit);
+  show_result("at(Unit, 1)", at(unit_vec, 1), render_unit);
+  let render_unit_pair = .(_pair: . & Vec(.)) -> String { "unit pair" };
+  show_result("pop_back(Unit)", pop_back(unit_vec), render_unit_pair);
+  show_result("pop_back(empty Unit)", pop_back(empty(., ())), render_unit_pair);
+  let nested = from_list([* widen_sum!(7, I32 | .), widen_sum!((), I32 | .) *]);
+  show_result("at(nested number)", at(nested, 0), render_sum);
+  show_result("at(nested unit)", at(nested, 1), render_sum);
+  show_result("at(nested missing)", at(nested, 2), render_sum);
+  show_result("update(v, 99) (out of bounds)", update(v, 99, 999), vec_to_string)
+}

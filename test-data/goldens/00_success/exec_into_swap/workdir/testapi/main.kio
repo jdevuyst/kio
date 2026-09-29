@@ -1,0 +1,20 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `into!` swaps the components of a 2-tuple. Source type
+// `(I32 & String)`, target type `(String & I32)`. Same factor types
+// in both, so the like-typed-group rule pins the rearrangement
+// uniquely (kth source-T component → kth target-T slot).
+fn swap_pair(p: I32 & String) -> String & I32 { into!(p) }
+
+fn first_string((s: String, _i: I32)) -> String { s }
+
+pub fn main() -> . {
+  let original = (42, "hello\n");
+  let swapped = swap_pair(original);
+  // After the swap, the String sits in the first slot.
+  print(first_string(swapped))
+}

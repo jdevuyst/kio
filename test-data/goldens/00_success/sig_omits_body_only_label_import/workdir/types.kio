@@ -1,0 +1,5 @@
+module types;
+
+pub type A = .;
+
+pub type Kept = .;

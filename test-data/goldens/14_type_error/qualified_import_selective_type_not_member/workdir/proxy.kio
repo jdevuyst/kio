@@ -1,0 +1,3 @@
+module proxy;
+
+import provider(Tag);

@@ -1,0 +1,5 @@
+module fmtlib/types;
+
+import testapi/adapter as _rehost_hegfhdhegbhagjcpgbgegbhahegfhc;
+
+pub type I32 = _rehost_hegfhdhegbhagjcpgbgegbhahegfhc.I32;

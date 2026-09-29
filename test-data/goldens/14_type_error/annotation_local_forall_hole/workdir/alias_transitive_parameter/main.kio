@@ -1,0 +1,9 @@
+module main;
+
+type Wrap[Slot] = [Transitive_bound] Slot -> Transitive_bound;
+
+type Outer[Slot] = Wrap(Slot);
+
+fn consume(wrapper: Outer(.) -> .) -> . { () }
+
+fn partial() -> . { consume(.(function: Outer(_)) { () }) }

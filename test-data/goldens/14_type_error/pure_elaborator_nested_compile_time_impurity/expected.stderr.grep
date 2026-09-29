@@ -1,0 +1,5 @@
+outer\.kio:7:17: error: pure function cannot reference host fn `effect`
+let ignored = effect_call!\(\);
+--> main\.kio:5:18
+fn main\(\) -> \. \{ outer!\(\) \}
+the expanded compile-time implementation of elaborator `outer` is validated at this call

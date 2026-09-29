@@ -1,0 +1,9 @@
+module store;
+
+pub newtype A : . { pub constructor mk_a; pub projector un_a }
+
+pub newtype B : . { pub constructor mk_b; pub projector un_b }
+
+pub fn make_a() -> A { A.mk_a(()) }
+
+pub fn make_b() -> B { B.mk_b(()) }

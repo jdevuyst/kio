@@ -1,0 +1,60 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/sequence(do);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// A non-canonical brand: payload `. | A` is not the bare type-
+// parameter `a`, so the brand-crossing is not a runtime identity.
+// `Maybe` is a kind-`*→*` brand, so a `Monad[*F]` instance can be
+// instantiated for it; the `Monad(Maybe)` instance below mediates
+// every brand crossing through `Maybe.mk_maybe` / `Maybe.un_maybe`.
+pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe }
+
+// A `Monad[*F]` dictionary with a polymorphic-function payload:
+// `bind` takes a branded value and a continuation, hands the
+// unwrapped value to the continuation, returns its re-branded
+// result. The Forall binders flow to the inherent projector
+// method as generic type-params; the dictionary instance below
+// is the `Maybe` interpretation.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// `Maybe`'s monad instance. The body unwraps via `Maybe.un_maybe`,
+// case-splits on the `. | A` payload (`nothing` short-circuits to
+// `nothing`, `just(v)` hands `v` to the continuation `k`), and
+// re-wraps the continuation's result via `Maybe.mk_maybe`.
+fn maybe_monad() -> Monad(Maybe) {
+  Monad.mk_monad(
+    , Maybe
+    , .[A][B](m, k) {
+        match! Maybe.un_maybe(m) {
+          (.(av: A) { k(av) }, .(_unit: .) { Maybe.mk_maybe(widen_sum!((), . | B)) })
+        }
+      }
+    )
+}
+
+// Two `just` values composed through `do`-bind: pull each value
+// out, concatenate, brand the result. The `do` block desugars to
+// `Monad.bind(Maybe, monad)` calls; the brand-crossing happens via
+// `Maybe.mk_maybe` / `Maybe.un_maybe` inside the instance's `bind`
+// body.
+fn use_dictionary() -> String {
+  let monad = maybe_monad();
+  let just_hello = Maybe.mk_maybe(widen_sum!("monad on maybe ok\n"(String), . | String));
+  let result =
+    do! Monad.bind(monad) {
+      let x <- just_hello;
+      Maybe.mk_maybe(widen_sum!(x, . | String))
+    };
+  match! Maybe.un_maybe(result) {
+    (.(s: String) { s }, .(_unit: .) { "absent\n"(String) })
+  }
+}
+
+pub fn main() -> . { print(use_dictionary()) }

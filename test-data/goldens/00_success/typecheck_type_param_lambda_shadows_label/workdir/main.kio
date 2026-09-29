@@ -1,0 +1,9 @@
+module main;
+
+labels { a: . };
+
+fn use_id(f: [U] U -> U) -> . { f(()) }
+
+fn shadows_in_lambda() -> . { use_id(.[A](x: A) -> A { x }) }
+
+pub fn main() -> . { shadows_in_lambda() }

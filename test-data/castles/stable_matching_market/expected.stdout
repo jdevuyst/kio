@@ -1,0 +1,45 @@
+Stable matching market: four participants per side
+Ranks start at zero; lower totals indicate preferred partners.
+left proposes; queue 0,1,2,3
+proposals: 7
+recipient switches: 2
+rejected proposals: 1
+  L0-R1
+  L1-R0
+  L2-R3
+  L3-R2
+valid matching: yes
+blocking pairs: 0
+left rank total: 3
+right rank total: 6
+left proposes; queue 3,2,1,0
+proposals: 7
+recipient switches: 1
+rejected proposals: 2
+  L0-R1
+  L1-R0
+  L2-R3
+  L3-R2
+valid matching: yes
+blocking pairs: 0
+left rank total: 3
+right rank total: 6
+right proposes; queue 0,1,2,3
+proposals: 5
+recipient switches: 0
+rejected proposals: 1
+  L0-R1
+  L1-R2
+  L2-R0
+  L3-R3
+valid matching: yes
+blocking pairs: 0
+left rank total: 8
+right rank total: 1
+certificate control: identity matching
+valid matching: yes
+blocking pairs: 6
+left rank total: 8
+right rank total: 9
+certificate control: duplicate recipient
+valid matching: no

@@ -1,0 +1,5 @@
+module a/b/c;
+
+import a/d/e(op _ => _, varop [% %]);
+
+fn pair(k: A, v: A) -> A { [% k => v %] }

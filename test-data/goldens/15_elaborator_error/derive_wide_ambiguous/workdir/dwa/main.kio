@@ -1,0 +1,53 @@
+module dwa/main;
+
+import elab/derive(derive);
+
+pub newtype Atom0 : . { pub constructor mk_atom0; pub projector un_atom0 }
+
+pub newtype Atom1 : . { pub constructor mk_atom1; pub projector un_atom1 }
+
+pub newtype Atom2 : . { pub constructor mk_atom2; pub projector un_atom2 }
+
+pub newtype Atom3 : . { pub constructor mk_atom3; pub projector un_atom3 }
+
+pub newtype Atom4 : . { pub constructor mk_atom4; pub projector un_atom4 }
+
+pub newtype Atom5 : . { pub constructor mk_atom5; pub projector un_atom5 }
+
+pub newtype Wanted : . { pub constructor mk_wanted; pub projector un_wanted }
+
+pub newtype Render[A] : . { pub constructor mk_render; pub projector un_render }
+
+fn render_atom0() -> Render(Atom0) { Render.mk_render(Atom0, ()) }
+
+fn render_atom1() -> Render(Atom1) { Render.mk_render(Atom1, ()) }
+
+fn render_atom2() -> Render(Atom2) { Render.mk_render(Atom2, ()) }
+
+fn render_atom3() -> Render(Atom3) { Render.mk_render(Atom3, ()) }
+
+fn render_atom4() -> Render(Atom4) { Render.mk_render(Atom4, ()) }
+
+fn render_atom5() -> Render(Atom5) { Render.mk_render(Atom5, ()) }
+
+fn render_wanted_a() -> Render(Wanted) { Render.mk_render(Wanted, ()) }
+
+fn render_wanted_b() -> Render(Wanted) { Render.mk_render(Wanted, ()) }
+
+fn bad() -> Render(Wanted) {
+  derive!(
+    , (
+        , render_atom0
+        , render_atom1
+        , render_wanted_a
+        , render_atom2
+        , render_atom3
+        , render_wanted_b
+        , render_atom4
+        , render_atom5
+        )
+    , Render(Wanted)
+    )
+}
+
+pub fn main() -> . { () }

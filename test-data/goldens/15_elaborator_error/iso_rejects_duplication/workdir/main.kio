@@ -1,0 +1,7 @@
+module main;
+
+import elab/algebraic_elaborators(iso);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn diagonal(a: A) -> A & A { iso!(a) }

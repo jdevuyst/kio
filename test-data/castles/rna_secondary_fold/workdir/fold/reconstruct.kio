@@ -1,0 +1,65 @@
+module fold/reconstruct;
+
+import elab/control(if);
+import elab/match(match);
+import fold/numbers as numbers;
+import fold/plan as plan;
+import fold/plan({decisions}, {hi}, {length}, {lo}, {paired});
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn enqueue(stack: Array(plan.Interval), i: I32, j: I32) -> . {
+  if! numbers.less(i, j) {
+    array.array_push(stack, {lo = i, hi = j})
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn trace(program: plan.Program, stack: Array(plan.Interval), partners: Array(I32)) -> Array(I32) {
+  match! array.array_pop_back(stack) {
+    .(interval: plan.Interval) {
+      let i = interval.?{lo};
+      let j = interval.?{hi};
+      match! array.array_get(program.?{decisions}, numbers.index(program.?{length}, i, j)) {
+        .(_skip: plan.Unpaired) { enqueue(stack, arith.add_i32(i, 1), j) };
+        .(pair: plan.Paired) {
+          let k = pair.?{paired};
+          array.array_set(partners, i, k);
+          array.array_set(partners, k, i);
+          enqueue(stack, arith.add_i32(k, 1), j);
+          enqueue(stack, arith.add_i32(i, 1), arith.sub_i32(k, 1))
+        }
+      };
+      rec trace(program, stack, partners)
+    };
+    .(_empty: .) { partners }
+  }
+}
+
+pub fn partners(program: plan.Program) -> Array(I32) {
+  let stack = array.array_make_empty(plan.Interval, ());
+  enqueue(stack, 0, arith.sub_i32(program.?{length}, 1));
+  trace(program, stack, array.array_make_filled(program.?{length}, -1))
+}
+
+rec(loop) fn render(partners: Array(I32), i: I32, out: String) -> String {
+  if! numbers.less(i, array.array_len(partners)) {
+    let k = array.array_get(partners, i);
+    let symbol = if! numbers.less(k, 0) {
+      "."
+    } else if! numbers.less(i, k) {
+      "("
+    } else {
+      ")"
+    };
+    rec render(partners, arith.add_i32(i, 1), text.string_concat(out, symbol))
+  } else {
+    out
+  }
+}
+
+pub fn dot_bracket(partners: Array(I32)) -> String { render(partners, 0, "") }

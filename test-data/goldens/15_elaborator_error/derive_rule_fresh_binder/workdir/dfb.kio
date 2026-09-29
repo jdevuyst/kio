@@ -1,0 +1,5 @@
+module dfb;
+
+host type I32 role(i32);
+
+host fn zero() -> I32;

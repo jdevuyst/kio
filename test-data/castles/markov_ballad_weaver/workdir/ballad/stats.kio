@@ -1,0 +1,137 @@
+/// Summary numbers over the woven lines. Generated text is opaque on its own,
+/// so the report closes with figures a reader can check against the verses
+/// above them without re-running the generator in their head.
+module ballad/stats;
+
+import ballad/list(List, cons, len, nil);
+import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, {line_stop}, {line_words});
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, lt_i32);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+rec(loop) fn words_onto(lines: List(Line), acc: I32) -> I32 {
+  match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) { rec words_onto(more, add_i32(acc, len(l.?{line_words}))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn words_generated(lines: List(Line)) -> I32 { words_onto(lines, 0) }
+
+rec(loop) fn longest_onto(lines: List(Line), acc: I32) -> I32 {
+  match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) {
+          let n = len(l.?{line_words});
+          let best =
+            if! lt_i32(acc, n) {
+              n
+            } else {
+              acc
+            };
+          rec longest_onto(more, best)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn longest_line(lines: List(Line)) -> I32 { longest_onto(lines, 0) }
+
+rec(loop) fn seen(ws: List(String), w: String) -> Bool {
+  match! ws.>List.un_list {
+    (
+      , .(x: String, more: List(String)) {
+          if! string_eq(x, w) {
+            .t
+          } else {
+            rec seen(more, w)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+rec(loop) fn collect_words(ws: List(String), acc: List(String)) -> List(String) {
+  match! ws.>List.un_list {
+    (
+      , .(w: String, more: List(String)) {
+          if! seen(acc, w) {
+            rec collect_words(more, acc)
+          } else {
+            rec collect_words(more, cons(w, acc))
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn collect_lines(lines: List(Line), acc: List(String)) -> List(String) {
+  match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) {
+          rec collect_lines(more, collect_words(l.?{line_words}, acc))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// How much of the vocabulary the run actually reached.
+pub fn distinct_words(lines: List(Line)) -> I32 { len(collect_lines(lines, nil(String, ()))) }
+
+fn ended_on_word(l: Line) -> Bool {
+  let stop = l.?{line_stop};
+  match! stop {
+    (.(_e: By_end_word) { .t }, .(_c: By_word_cap) { .f }, .(_d: By_no_successor) { .f })
+  }
+}
+
+fn hit_the_cap(l: Line) -> Bool {
+  let stop = l.?{line_stop};
+  match! stop {
+    (.(_e: By_end_word) { .f }, .(_c: By_word_cap) { .t }, .(_d: By_no_successor) { .f })
+  }
+}
+
+fn ran_dry(l: Line) -> Bool {
+  let stop = l.?{line_stop};
+  match! stop {
+    (.(_e: By_end_word) { .f }, .(_c: By_word_cap) { .f }, .(_d: By_no_successor) { .t })
+  }
+}
+
+rec(loop) fn count_onto(lines: List(Line), pick: Line -> Bool, acc: I32) -> I32 {
+  match! lines.>List.un_list {
+    (
+      , .(l: Line, more: List(Line)) {
+          let hit =
+            if! pick(l) {
+              1
+            } else {
+              0
+            };
+          rec count_onto(more, pick, add_i32(acc, hit))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// Lines the model closed itself, by drawing a word the corpus ends on.
+pub fn lines_by_end_word(lines: List(Line)) -> I32 { count_onto(lines, ended_on_word, 0) }
+
+/// Lines the leash closed, counted directly rather than as the remainder — a
+/// subtraction would quietly fold in any line that stopped for a third reason.
+pub fn lines_by_word_cap(lines: List(Line)) -> I32 { count_onto(lines, hit_the_cap, 0) }
+
+/// Lines that reached a word with no learned successor without that word being
+/// recorded as a phrase end.
+pub fn lines_by_no_successor(lines: List(Line)) -> I32 { count_onto(lines, ran_dry, 0) }

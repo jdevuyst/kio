@@ -1,0 +1,4 @@
+module main;
+
+import first(op + _);
+import second(op + _);

@@ -1,0 +1,10 @@
+module calc;
+
+import iter(loop);
+
+// `spin` is a `pub(calc)`-scoped recursive member: importable only within
+// the `calc` module subtree, sealed everywhere else. When this dependency
+// is materialized under a consumer the scope must re-root to
+// `pub(<local>/calc)`, and the restriction must survive the `rec` group's
+// desugar — otherwise a consumer outside the subtree could import it.
+pub(calc) rec(loop) fn spin[A](x: A) -> A { rec spin(x) }

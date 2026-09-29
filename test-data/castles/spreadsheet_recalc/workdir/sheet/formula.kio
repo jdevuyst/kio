@@ -1,0 +1,149 @@
+/// The formula language: the expression tree, the precedent walk that turns a
+/// formula into graph edges, and its concrete syntax. Nothing here evaluates —
+/// `sheet/eval` interprets the tree.
+module sheet/formula;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import sheet/addr(Addr, add_all, add_unique, addr_name, col_of, make_addr, row_of);
+import sheet/list(List, cons, nil);
+import testapi(Bool, I32, String);
+import testapi/arith(lt_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec {
+  pub labels Expr_node =
+    { ref_at: Addr }
+    | { lit: I32 }
+    | { add_l: Expr, add_r: Expr }
+    | { sub_l: Expr, sub_r: Expr }
+    | { mul_l: Expr, mul_r: Expr }
+    | { sum_lo: Addr, sum_hi: Addr }
+    | { max_lo: Addr, max_hi: Addr }
+    | { if_c: Expr, if_t: Expr, if_e: Expr };
+  pub newtype Expr : Expr_node { pub constructor expr; pub projector un_expr }
+}
+
+pub fn cell_ref(a: Addr) -> Expr { Expr.expr({ref_at = a}.>widen_sum!(Expr_node)) }
+
+pub fn lit_num(n: I32) -> Expr { Expr.expr({lit = n}.>widen_sum!(Expr_node)) }
+
+pub fn add(left: Expr, right: Expr) -> Expr {
+  Expr.expr({add_l = left, add_r = right}.>widen_sum!(Expr_node))
+}
+
+pub fn sub(left: Expr, right: Expr) -> Expr {
+  Expr.expr({sub_l = left, sub_r = right}.>widen_sum!(Expr_node))
+}
+
+pub fn mul(left: Expr, right: Expr) -> Expr {
+  Expr.expr({mul_l = left, mul_r = right}.>widen_sum!(Expr_node))
+}
+
+pub fn sum_range(lo: Addr, hi: Addr) -> Expr {
+  Expr.expr({sum_lo = lo, sum_hi = hi}.>widen_sum!(Expr_node))
+}
+
+pub fn max_range(lo: Addr, hi: Addr) -> Expr {
+  Expr.expr({max_lo = lo, max_hi = hi}.>widen_sum!(Expr_node))
+}
+
+pub fn if_else(cond: Expr, then_arm: Expr, else_arm: Expr) -> Expr {
+  Expr.expr({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum!(Expr_node))
+}
+
+rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
+  if! lt_i32(row, row_of(lo)) {
+    acc
+  } else if! lt_i32(col, col_of(lo)) {
+    rec block_onto(lo, hi, sub_i32(row, 1), col_of(hi), acc)
+  } else {
+    rec block_onto(lo, hi, row, sub_i32(col, 1), cons(make_addr(row, col), acc))
+  }
+}
+
+/// Every address in the rectangle `lo`..`hi`, row-major.
+pub fn range_cells(lo: Addr, hi: Addr) -> List(Addr) {
+  block_onto(lo, hi, row_of(hi), col_of(hi), nil(Addr, ()))
+}
+
+/// The cells this formula reads, in first-mention order. Each address lands
+/// once, so an aggregate overlapping an explicit reference is still one edge.
+pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
+  match! e.>Expr.un_expr {
+    (
+      , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
+      , .(_n: Lit) { acc }
+      , .(left: Add_l, right: Add_r) {
+          let seen = rec(cont) precedents_onto(left.?{add_l}, acc);
+          rec precedents_onto(right.?{add_r}, seen)
+        }
+      , .(left: Sub_l, right: Sub_r) {
+          let seen = rec(cont) precedents_onto(left.?{sub_l}, acc);
+          rec precedents_onto(right.?{sub_r}, seen)
+        }
+      , .(left: Mul_l, right: Mul_r) {
+          let seen = rec(cont) precedents_onto(left.?{mul_l}, acc);
+          rec precedents_onto(right.?{mul_r}, seen)
+        }
+      , .(lo: Sum_lo, hi: Sum_hi) { add_all(acc, range_cells(lo.?{sum_lo}, hi.?{sum_hi})) }
+      , .(lo: Max_lo, hi: Max_hi) { add_all(acc, range_cells(lo.?{max_lo}, hi.?{max_hi})) }
+      , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
+          let after_cond = rec(cont) precedents_onto(cond.?{if_c}, acc);
+          let after_then = rec(cont) precedents_onto(then_arm.?{if_t}, after_cond);
+          rec precedents_onto(else_arm.?{if_e}, after_then)
+        }
+      )
+  }
+}
+
+pub fn precedents(e: Expr) -> List(Addr) { precedents_onto(e, nil(Addr, ())) }
+
+fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
+
+fn infix(left: String, op: String, right: String) -> String {
+  cat3("(", cat3(left, op, right), ")")
+}
+
+fn aggregate(name: String, lo: Addr, hi: Addr) -> String {
+  cat3(name, cat3("(", cat3(addr_name(lo), ":", addr_name(hi)), ")"), "")
+}
+
+/// The formula as a user would write it.
+pub rec(loop) fn render_expr(e: Expr) -> String {
+  match! e.>Expr.un_expr {
+    (
+      , .(r: Ref_at) { addr_name(r.?{ref_at}) }
+      , .(n: Lit) { int_to_string(n.?{lit}) }
+      , .(left: Add_l, right: Add_r) {
+          infix(rec(cont) render_expr(left.?{add_l}), " + ", rec(cont) render_expr(right.?{add_r}))
+        }
+      , .(left: Sub_l, right: Sub_r) {
+          infix(rec(cont) render_expr(left.?{sub_l}), " - ", rec(cont) render_expr(right.?{sub_r}))
+        }
+      , .(left: Mul_l, right: Mul_r) {
+          infix(rec(cont) render_expr(left.?{mul_l}), " * ", rec(cont) render_expr(right.?{mul_r}))
+        }
+      , .(lo: Sum_lo, hi: Sum_hi) { aggregate("SUM", lo.?{sum_lo}, hi.?{sum_hi}) }
+      , .(lo: Max_lo, hi: Max_hi) { aggregate("MAX", lo.?{max_lo}, hi.?{max_hi}) }
+      , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
+          cat3(
+            , "IF("
+            , cat3(
+                , rec(cont) render_expr(cond.?{if_c})
+                , ", "
+                , cat3(
+                    , rec(cont) render_expr(then_arm.?{if_t})
+                    , ", "
+                    , rec(cont) render_expr(else_arm.?{if_e})
+                    )
+                )
+            , ")"
+            )
+        }
+      )
+  }
+}

@@ -1,0 +1,53 @@
+/// sudoku_backtrack_solver — a 9x9 sudoku solver built as a backtracking
+/// search with an explicit stack and an undo trail.
+///
+/// Legality is decided against three incremental "digit used" tables — one
+/// for rows, one for columns, one for boxes — that a placement marks and a
+/// retraction clears, so no probe ever rescans the board. The next cell to
+/// fill is the one with the fewest digits still open to it (minimum
+/// remaining values), which makes the gentle grid a straight walk and lets
+/// the hard grid fail fast where it must fail.
+///
+/// Three grids ship in `sudoku/puzzles`: a gentle one the heuristic never
+/// has to guess on, a hard one that only falls to real backtracking, and a
+/// contradictory one — the hard grid plus a single extra clue that is legal
+/// in its row, column, and box and yet rules out every completion. `main`
+/// prints each grid, the verdict, an independent re-check of the result,
+/// and the search statistics.
+module testapi/main;
+
+import sudoku/constraints as constraints;
+import sudoku/puzzles as puzzles;
+import sudoku/report as report;
+import sudoku/search as search;
+import testapi(Array, I32, String);
+import testapi/array(array_clone);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+/// Loop iterations one puzzle may spend. A grid that somehow defeated the
+/// heuristic would stop here with a verdict rather than run forever; the
+/// three shipped grids settle in well under a thousand.
+fn budget() -> I32 { 200000 }
+
+fn run_puzzle(index: I32, name: String, puzzle: Array(I32)) -> . {
+  let givens = array_clone(puzzle);
+  let work = constraints.new_work(puzzle);
+  let summary = search.solve(work, budget());
+  report.print_puzzle(index, name, givens, work, summary)
+}
+
+pub fn main() -> . {
+  print("sudoku_backtrack_solver\n");
+  print(string_concat(
+    , "9x9, digits 1-9, minimum-remaining-values search, step budget "
+    , string_concat(int_to_string(budget()), "\n")
+    ));
+  print("\n");
+  run_puzzle(1, "gentle", puzzles.gentle());
+  print("\n");
+  run_puzzle(2, "hard", puzzles.hard());
+  print("\n");
+  run_puzzle(3, "contradictory", puzzles.contradictory())
+}

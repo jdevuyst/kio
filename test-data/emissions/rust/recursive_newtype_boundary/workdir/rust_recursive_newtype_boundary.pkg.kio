@@ -1,0 +1,13 @@
+package rust_recursive_newtype_boundary;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  recursive_boundary
+}

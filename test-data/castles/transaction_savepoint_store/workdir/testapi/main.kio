@@ -1,0 +1,5 @@
+module testapi/main;
+
+import store/session as session;
+
+pub fn main() -> . { session.run() }

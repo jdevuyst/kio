@@ -1,0 +1,79 @@
+/// The three shipped grids, row-major, `0` for an empty cell.
+module sudoku/puzzles;
+
+import testapi(Array, I32);
+import testapi/array(array_make_empty, array_push);
+
+fn push_row(
+  , cells: Array(I32)
+  , c0: I32
+  , c1: I32
+  , c2: I32
+  , c3: I32
+  , c4: I32
+  , c5: I32
+  , c6: I32
+  , c7: I32
+  , c8: I32
+  ) -> . {
+  array_push(cells, c0);
+  array_push(cells, c1);
+  array_push(cells, c2);
+  array_push(cells, c3);
+  array_push(cells, c4);
+  array_push(cells, c5);
+  array_push(cells, c6);
+  array_push(cells, c7);
+  array_push(cells, c8)
+}
+
+/// Thirty givens. Every cell the heuristic reaches is forced, so the
+/// search never has to retract a digit.
+pub fn gentle() -> Array(I32) {
+  let cells = array_make_empty(I32, ());
+  push_row(cells, 5, 3, 0, 0, 7, 0, 0, 0, 0);
+  push_row(cells, 6, 0, 0, 1, 9, 5, 0, 0, 0);
+  push_row(cells, 0, 9, 8, 0, 0, 0, 0, 6, 0);
+  push_row(cells, 8, 0, 0, 0, 6, 0, 0, 0, 3);
+  push_row(cells, 4, 0, 0, 8, 0, 3, 0, 0, 1);
+  push_row(cells, 7, 0, 0, 0, 2, 0, 0, 0, 6);
+  push_row(cells, 0, 6, 0, 0, 0, 0, 2, 8, 0);
+  push_row(cells, 0, 0, 0, 4, 1, 9, 0, 0, 5);
+  push_row(cells, 0, 0, 0, 0, 8, 0, 0, 7, 9);
+  cells
+}
+
+/// Twenty-three givens, one solution, and no way to reach it without
+/// guessing: the heuristic runs out of forced cells early and the search
+/// has to try digits, fail, and unwind.
+pub fn hard() -> Array(I32) {
+  let cells = array_make_empty(I32, ());
+  push_row(cells, 1, 0, 0, 0, 0, 7, 0, 9, 0);
+  push_row(cells, 0, 3, 0, 0, 2, 0, 0, 0, 8);
+  push_row(cells, 0, 0, 9, 6, 0, 0, 5, 0, 0);
+  push_row(cells, 0, 0, 5, 3, 0, 0, 9, 0, 0);
+  push_row(cells, 0, 1, 0, 0, 8, 0, 0, 0, 2);
+  push_row(cells, 6, 0, 0, 0, 0, 4, 0, 0, 0);
+  push_row(cells, 3, 0, 0, 0, 0, 0, 0, 1, 0);
+  push_row(cells, 0, 4, 0, 0, 0, 0, 0, 0, 7);
+  push_row(cells, 0, 0, 7, 0, 0, 0, 3, 0, 0);
+  cells
+}
+
+/// The hard grid with one extra given: an `8` in the seventh row, second
+/// column. It duplicates no digit in its row, its column, or its box, so
+/// nothing local rejects it — and yet the grid now has no completion at
+/// all. Only the search can say so.
+pub fn contradictory() -> Array(I32) {
+  let cells = array_make_empty(I32, ());
+  push_row(cells, 1, 0, 0, 0, 0, 7, 0, 9, 0);
+  push_row(cells, 0, 3, 0, 0, 2, 0, 0, 0, 8);
+  push_row(cells, 0, 0, 9, 6, 0, 0, 5, 0, 0);
+  push_row(cells, 0, 0, 5, 3, 0, 0, 9, 0, 0);
+  push_row(cells, 0, 1, 0, 0, 8, 0, 0, 0, 2);
+  push_row(cells, 6, 0, 0, 0, 0, 4, 0, 0, 0);
+  push_row(cells, 3, 8, 0, 0, 0, 0, 0, 1, 0);
+  push_row(cells, 0, 4, 0, 0, 0, 0, 0, 0, 7);
+  push_row(cells, 0, 0, 7, 0, 0, 0, 3, 0, 0);
+  cells
+}

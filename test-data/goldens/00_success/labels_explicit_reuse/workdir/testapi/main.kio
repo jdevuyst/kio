@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+labels { f: String, item[A]: A };
+
+labels Reused = { f: _ };
+
+labels Choice = { branch_value: String, left: . } | { branch_value: _, right: . };
+
+labels Generic[A] = { item[A]: _ };
+
+pub fn main() -> . { let a = {f = "agree\n"}; print(F.get(a)) }

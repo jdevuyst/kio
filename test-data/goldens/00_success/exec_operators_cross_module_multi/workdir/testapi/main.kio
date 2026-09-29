@@ -1,0 +1,18 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+// Two operators imported from the same source module via the
+// same use clause. Neither `add` nor `mul` is co-imported — the
+// operator-fold pass routes both use-sites through a synthetic
+// qualified alias for the source module.
+import testapi/numeric(op _ * _, op _ + _);
+
+pub fn main() -> . {
+  let sum = 1 + 2;
+  let prod = 3 * 4;
+  print(i32_to_string(sum));
+  print("\n");
+  print(i32_to_string(prod))
+}

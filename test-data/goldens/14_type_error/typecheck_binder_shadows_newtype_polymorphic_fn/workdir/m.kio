@@ -1,0 +1,13 @@
+module m;
+
+newtype A : . { constructor mk; projector un }
+
+// `[A]` is a scheme binder. `A.mk(())` is a value-level newtype-member
+// call that builds the *concrete* newtype `A` (whose type is `m.A`), not
+// a value of the binder `A`. The declared return `-> A` (the binder) is a
+// lie: `bad(x)` could be instantiated at any type, so returning an `m.A`
+// is unsound. `kio check` must reject this (exit 14). Before the
+// binder-aware alias context reached the fn-body comparison, the binder
+// `A` was qualified to `m.A` and the body type-checked, accepting an
+// ill-typed program (the non-shadowing `bad[B]` already rejects it).
+pub fn bad[A](x: A) -> A { A.mk(()) }

@@ -1,0 +1,31 @@
+module list_host;
+
+import elab/control(if);
+import testapi as host;
+import testapi/arith as a;
+import testapi/iter as iter;
+import testapi/text as text;
+
+pub type Bool = host.Bool;
+
+pub type I32 = host.I32;
+
+pub type String = host.String;
+
+pub fn add_i32(x: I32, y: I32) -> I32 { a.add_i32(x, y) }
+
+pub fn sub_i32(x: I32, y: I32) -> I32 { a.sub_i32(x, y) }
+
+pub fn lt_i32(x: I32, y: I32) -> Bool { a.lt_i32(x, y) }
+
+pub fn eq_i32(x: I32, y: I32) -> Bool {
+  if! a.leq_i32(x, y) {
+    a.leq_i32(y, x)
+  } else {
+    .f
+  }
+}
+
+pub fn loop[S][R](step: S -> S | R, state: S) -> R { iter.loop(step, state) }
+
+pub fn string_concat(x: String, y: String) -> String { text.string_concat(x, y) }

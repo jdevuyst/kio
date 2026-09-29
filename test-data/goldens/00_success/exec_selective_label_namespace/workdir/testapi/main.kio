@@ -1,0 +1,10 @@
+module testapi/main;
+
+import labels(item, {item});
+import testapi(String);
+import testapi/io(print);
+import types(Item);
+
+pub fn keep(value: Item) -> Item { value }
+
+pub fn main() -> . { print(item()); print({item = "label\n"(String)}.?{item}) }

@@ -1,0 +1,2901 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "version": "0.1.0",
+  "name": "Kio",
+  "scopeName": "source.kio",
+  "fileTypes": ["kio"],
+  "patterns": [
+    { "include": "#file-root" }
+  ],
+  "repository": {
+    "file-root": {
+      "begin": "\\A",
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-document" },
+        { "include": "#signature-document" },
+        {
+          "begin": "\\bdependency\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#dependency-name" },
+            { "begin": "(?=[A-Za-z_])", "end": "(?!)", "patterns": [{ "include": "#lexical-tokens" }] },
+            { "include": "#expression-document" }
+          ]
+        },
+        { "include": "#dependency-document" },
+        {
+          "begin": "\\block\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#lock-name" },
+            { "begin": "(?=\\S)", "end": "(?!)", "patterns": [{ "include": "#lexical-tokens" }] }
+          ]
+        },
+        { "include": "#lock-document" },
+        {
+          "begin": "\\bvarop\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
+          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#varop-head" },
+            { "include": "#expression-document" },
+            { "include": "#lexical-tokens" }
+          ]
+        },
+        { "include": "#ambiguous-root-rec" },
+        { "include": "#expression-document" },
+        {
+          "begin": "(?=\\S)",
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#source-tokens" }
+          ]
+        }
+      ]
+    },
+    "expression-document": {
+      "comment": "A raw expression root cannot acquire item ownership when recovery reaches a declaration-shaped line; its remaining tail keeps lexical roles.",
+      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:newtype\\b|labels\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!(?:module|import|fn|newtype|host|type|literal|labels|equiv|elab|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
+      "end": "(?!)",
+      "patterns": [
+        {
+          "begin": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#lexical-tokens" }
+          ]
+        },
+        { "include": "#expression-tokens" }
+      ]
+    },
+    "lock-document": {
+      "begin": "\\block\\b(?=[ \\t]+[A-Za-z_])",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": "(?!)",
+      "patterns": [
+        {
+          "include": "#lock-name"
+        },
+        {
+          "begin": "(?=\\S)",
+          "end": "(?!)",
+          "patterns": [
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
+        }
+      ]
+    },
+    "lock-name": {
+      "begin": "_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?![A-Za-z0-9_])",
+      "beginCaptures": {
+        "0": {
+          "name": "variable.other.kio"
+        }
+      },
+      "end": "(?!)",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "begin": ";",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.separator.kio"
+            }
+          },
+          "end": "(?!)",
+          "patterns": [
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            },
+            {
+              "include": "#lock-resolved"
+            },
+            {
+              "include": "#punctuation-separator"
+            },
+            {
+              "begin": "(?=\\S)",
+              "end": "(?!)",
+              "patterns": [
+                {
+                  "include": "#lexical-tokens"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "begin": "(?=\\S)",
+          "end": "(?!)",
+          "patterns": [
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
+        }
+      ]
+    },
+    "lock-resolved": {
+      "begin": "\\bresolved\\b",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": "(?<=\\})|(?=;)",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            },
+            {
+              "begin": "\\b(git|ref|path|commit|sig)\\b",
+              "beginCaptures": {
+                "0": {
+                  "name": "keyword.declaration.kio"
+                }
+              },
+              "end": ";|(?=\\})",
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.separator.kio"
+                }
+              },
+              "patterns": [
+                {
+                  "include": "#lexical-tokens"
+                }
+              ]
+            },
+            {
+              "include": "#punctuation-separator"
+            },
+            {
+              "begin": "(?=\\S)",
+              "end": "(?=\\})",
+              "patterns": [
+                {
+                  "include": "#lexical-tokens"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "begin": "(?=\\S)",
+          "end": "(?=;)",
+          "patterns": [
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
+        }
+      ]
+    },
+    "package-docs-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+[a-z][a-z0-9_-]*[ \\t]*\\{))",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "begin": "\\b(md|support|md_out|html)\\b",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.declaration.kio"
+            }
+          },
+          "end": ";|(?=\\})",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.separator.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#type-group"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ],
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      }
+    },
+    "dependency-document": {
+      "begin": "\\bdependency\\b(?=[ \\t]+[A-Za-z_])",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#dependency-name" },
+        { "begin": "(?=\\S)", "end": "(?!)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-name": {
+      "begin": "_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?![A-Za-z0-9_])",
+      "beginCaptures": { "0": { "name": "variable.other.kio" } },
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": ";",
+          "beginCaptures": { "0": { "name": "punctuation.separator.kio" } },
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#dependency-source" },
+            { "include": "#dependency-rehost" },
+            { "include": "#dependency-retype" },
+            { "include": "#punctuation-separator" },
+            { "begin": "(?=\\S)", "end": "(?!)", "patterns": [{ "include": "#lexical-tokens" }] }
+          ]
+        },
+        { "begin": "(?=\\S)", "end": "(?!)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-source": {
+      "begin": "\\bsource\\b",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?<=\\})|(?=;)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\{",
+          "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "begin": "\\b(path|git|ref)\\b",
+              "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+              "end": ";|(?=\\})",
+              "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
+              "patterns": [{ "include": "#lexical-tokens" }]
+            },
+            { "include": "#punctuation-separator" },
+            { "begin": "(?=\\S)", "end": "(?=\\})", "patterns": [{ "include": "#lexical-tokens" }] }
+          ]
+        },
+        { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-rehost": {
+      "begin": "\\brehost\\b",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": ";",
+      "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
+      "patterns": [
+        { "include": "#dependency-first-module" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#dependency-module-tail" },
+        { "include": "#dependency-mapping-to" },
+        { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-retype": {
+      "begin": "\\bretype\\b",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": ";",
+      "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
+      "patterns": [
+        { "include": "#dependency-first-module" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#dependency-module-tail" },
+        {
+          "begin": "\\.(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.\\[\\]])",
+          "beginCaptures": { "0": { "name": "punctuation.separator.kio" } },
+          "end": "(?=;)",
+          "patterns": [
+            {
+              "begin": "\\G",
+              "end": "(_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)(?![A-Za-z0-9_])|(?=;)",
+              "endCaptures": { "1": { "name": "variable.other.kio" } },
+              "patterns": [
+                { "include": "#comment-doc" },
+                { "include": "#comment" },
+                { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+              ]
+            },
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#dependency-mapping-to" },
+            { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+          ]
+        },
+        { "include": "#dependency-mapping-to" },
+        { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-first-module": {
+      "begin": "\\G",
+      "end": "(_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?![A-Za-z0-9_])|(?=;)",
+      "endCaptures": { "1": { "name": "variable.other.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-module-tail": {
+      "begin": "/(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.\\[\\]])",
+      "beginCaptures": { "0": { "name": "keyword.operator.user.kio" } },
+      "end": "(_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?![A-Za-z0-9_])|(?=;)",
+      "endCaptures": { "1": { "name": "variable.other.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "begin": "(?=\\S)", "end": "(?=;)", "patterns": [{ "include": "#lexical-tokens" }] }
+      ]
+    },
+    "dependency-mapping-to": {
+      "begin": "\\bto\\b",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?=;)",
+      "patterns": [{ "include": "#lexical-tokens" }]
+    },
+    "signature-document": {
+      "begin": "(?=\\bsignature\\b)",
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\b(signature)\\b",
+          "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+          "end": ";",
+          "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
+          "patterns": [
+            {
+              "begin": "\\G",
+              "end": "[A-Za-z_][A-Za-z0-9_]*|(?=;)",
+              "endCaptures": { "0": { "name": "variable.other.kio" } },
+              "patterns": [
+                { "include": "#comment-doc" },
+                { "include": "#comment" }
+              ]
+            },
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "begin": "/(?!/)",
+              "beginCaptures": { "0": { "name": "keyword.operator.user.kio" } },
+              "end": "[A-Za-z_][A-Za-z0-9_]*|(?=;)",
+              "endCaptures": { "0": { "name": "variable.other.kio" } },
+              "patterns": [
+                { "include": "#comment-doc" },
+                { "include": "#comment" }
+              ]
+            },
+            {
+              "begin": "\\bv\\b",
+              "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+              "end": "(?=;)",
+              "patterns": [
+                { "include": "#lexical-tokens" }
+              ]
+            },
+            {
+              "begin": "(?=\\S)",
+              "end": "(?=;)",
+              "patterns": [
+                { "include": "#lexical-tokens" }
+              ]
+            }
+          ]
+        },
+        { "include": "#signature-version" },
+        {
+          "begin": "(?=\\S)",
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#lexical-tokens" }
+          ]
+        }
+      ]
+    },
+    "signature-version": {
+      "begin": "\\b(v)\\b",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#number" },
+        { "include": "#punctuation-bracket" },
+        {
+          "begin": "\\b(with)\\b",
+          "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#signature-with-module" },
+            { "include": "#punctuation-bracket" }
+          ]
+        },
+        {
+          "begin": "\\b(breaking|nonbreaking)\\b",
+          "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#signature-declaration-operation" },
+            { "include": "#signature-remove-operation" },
+            { "include": "#punctuation-bracket" }
+          ]
+        }
+      ]
+    },
+    "signature-declaration-operation": {
+      "begin": "\\b(add|modify)\\b",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#signature-ambiguous-declaration-module" },
+        { "include": "#signature-declaration-module" },
+        { "include": "#signature-item-reference" },
+        { "include": "#punctuation-bracket" }
+      ]
+    },
+    "signature-remove-operation": {
+      "begin": "\\b(remove)\\b",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#signature-ambiguous-remove-module" },
+        { "include": "#signature-remove-module" },
+        { "include": "#signature-item-reference" },
+        { "include": "#punctuation-bracket" }
+      ]
+    },
+    "signature-declaration-module": {
+      "begin": "\\b(module)\\b(?=[ \\t]+[A-Za-z_])",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "(?<=\\})",
+      "patterns": [
+        { "include": "#signature-declaration-body" },
+        { "include": "#signature-module-path" }
+      ]
+    },
+    "signature-with-module": {
+      "begin": "\\b(module)\\b",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "(?<=\\})",
+      "patterns": [
+        { "include": "#signature-declaration-body" },
+        { "include": "#signature-module-path" }
+      ]
+    },
+    "signature-remove-module": {
+      "begin": "\\b(module)\\b(?=[ \\t]+[A-Za-z_])",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "(?<=\\})",
+      "patterns": [
+        { "include": "#signature-removed-names" },
+        { "include": "#signature-module-path" }
+      ]
+    },
+    "signature-ambiguous-declaration-module": {
+      "begin": "\\b(module)\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+      "beginCaptures": { "1": { "name": "meta.ambiguous-signature-module.kio" } },
+      "end": "(?<=[;}])",
+      "patterns": [
+        { "include": "#signature-declaration-body" },
+        { "include": "#signature-reference-name" },
+        { "include": "#signature-module-path" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "signature-ambiguous-remove-module": {
+      "begin": "\\b(module)\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+      "beginCaptures": { "1": { "name": "meta.ambiguous-signature-module.kio" } },
+      "end": "(?<=[;}])",
+      "patterns": [
+        { "include": "#signature-removed-names" },
+        { "include": "#signature-reference-name" },
+        { "include": "#signature-module-path" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "signature-declaration-body": {
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#signature-declaration-body" },
+        { "include": "#source-tokens" }
+      ]
+    },
+    "signature-removed-names": {
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#identifier" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "signature-item-reference": {
+      "begin": "(?=\\b[A-Za-z_][A-Za-z0-9_]*\\b)",
+      "end": "(?=\\})|;",
+      "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
+      "patterns": [
+        { "include": "#signature-reference-name" },
+        { "include": "#signature-module-path" }
+      ]
+    },
+    "signature-reference-name": {
+      "begin": "\\.",
+      "beginCaptures": { "0": { "name": "punctuation.separator.kio" } },
+      "end": "(?=\\})|(?=;)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#identifier" }
+      ]
+    },
+    "signature-module-path": {
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "match": "[A-Za-z_][A-Za-z0-9_]*", "name": "entity.name.module.kio" },
+        { "match": "/", "name": "keyword.operator.user.kio" }
+      ]
+    },
+    "type-group": {
+      "begin": "\\(",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "type-binders": {
+      "begin": "\\[",
+      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "visibility": {
+      "begin": "\\bpub\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\))|(?=[^ \\t/(])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\(",
+          "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#identifier" },
+            { "include": "#operator-user" },
+            { "include": "#punctuation-separator" }
+          ],
+          "beginCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          }
+        }
+      ]
+    },
+    "newtype-decl": {
+      "begin": "\\bnewtype\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#newtype-name" }
+      ]
+    },
+    "newtype-name": {
+      "begin": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "beginCaptures": {
+        "0": { "name": "entity.name.type.kio" }
+      },
+      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#type-binders" },
+        { "include": "#newtype-payload" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
+    },
+    "newtype-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#visibility" },
+        { "include": "#newtype-member" },
+        { "include": "#punctuation-separator" },
+        { "include": "#invalid-newtype-member" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "newtype-member": {
+      "begin": "\\b(?:constructor|projector)\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?=;|\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "[A-Za-z_][A-Za-z0-9_]*",
+          "beginCaptures": {
+            "0": { "name": "entity.name.function.kio" }
+          },
+          "end": "(?=;|\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#identifier" }
+          ]
+        }
+      ]
+    },
+    "invalid-newtype-member": {
+      "begin": "(?=\\S)",
+      "end": "(?=;|\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "host-type-decl": {
+      "begin": "\\b(host)\\b[ \\t]+(?:(pub)[ \\t]+)?(type)\\b",
+      "end": "(?=\\})|(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#host-type-name" }
+      ],
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.kio" },
+        "2": { "name": "keyword.declaration.kio" },
+        "3": { "name": "keyword.declaration.kio" }
+      }
+    },
+    "host-type-name": {
+      "begin": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "beginCaptures": {
+        "0": { "name": "entity.name.type.kio" }
+      },
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#type-binders" },
+        { "include": "#host-owned" },
+        { "include": "#host-role" },
+        { "include": "#type-group" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#identifier" }
+      ]
+    },
+    "host-role": {
+      "begin": "\\brole\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\))|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#type-group" },
+        { "include": "#identifier" }
+      ]
+    },
+    "package-document": {
+      "begin": "\\bpackage\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-name" }
+      ]
+    },
+    "package-name": {
+      "begin": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "beginCaptures": {
+        "0": { "name": "variable.other.kio" }
+      },
+      "end": "(?!)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": ";",
+          "end": "(?!)",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#package-build" },
+            { "include": "#package-bridge" },
+            { "include": "#identifier" },
+            { "include": "#punctuation-separator" }
+          ],
+          "beginCaptures": {
+            "0": { "name": "punctuation.separator.kio" }
+          }
+        }
+      ]
+    },
+    "package-build": {
+      "begin": "\\bbuild\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})|(?=\\bbridge\\b)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-build-body" }
+      ]
+    },
+    "package-build-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*bridge\\b)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-cache" },
+        { "include": "#package-docs" },
+        { "include": "#package-target" },
+        { "include": "#punctuation-separator" },
+        { "include": "#invalid-package-field" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "package-cache": {
+      "begin": "\\bcache\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?=\\}|\\b(?:docs|target)\\b)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#type-group" }
+      ]
+    },
+    "package-docs": {
+      "begin": "\\bdocs\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})|(?=;|\\btarget\\b)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-docs-body" }
+      ]
+    },
+    "package-target": {
+      "begin": "\\btarget\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*target\\b)",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#package-field-body" },
+        { "include": "#identifier" },
+        { "include": "#operator-user" }
+      ]
+    },
+    "package-field-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+[a-z][a-z0-9_-]*[ \\t]*\\{))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#type-group" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "invalid-package-field": {
+      "begin": "(?=\\S)",
+      "end": "(?=;|\\})",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "package-bridge": {
+      "begin": "\\bbridge\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#identifier" },
+            { "include": "#operator-user" },
+            { "include": "#punctuation-separator" }
+          ],
+          "beginCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          }
+        }
+      ]
+    },
+    "expression-block": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#block-tokens" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "expression-group": {
+      "begin": "\\(",
+      "end": "\\)|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#ambiguous-star-argument" },
+        { "include": "#expression-type-binders" },
+        { "include": "#expression-tokens" }
+      ],
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "recursive-call": {
+      "patterns": [
+        { "include": "#proved-recursive-call" },
+        { "include": "#ambiguous-recursive-call" }
+      ]
+    },
+    "proved-recursive-call": {
+      "begin": "\\brec\\b(?=[ \\t]*(?:(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*)?[A-Za-z_][A-Za-z0-9_]*)",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[;,){}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "1": { "name": "entity.name.function.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#recursive-call-annotations" }
+      ]
+    },
+    "ambiguous-recursive-call": {
+      "comment": "Only an identifier after the marker or its complete annotation group proves recursion. A later line can instead complete an ordinary reference or call.",
+      "begin": "\\brec\\b(?=[ \\t]*(?:(?://[^\\r\\n]*)?$|(?=\\()(?!(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*(?:[^ \\t\\r\\n/]|/(?!/)))))",
+      "beginCaptures": {
+        "0": { "name": "meta.ambiguous-recursive-head.kio" }
+      },
+      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[^\\sA-Za-z_/]|/(?!/))|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "applyEndPatternLast": true,
+      "endCaptures": {
+        "1": { "name": "entity.name.function.kio" }
+      },
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(?<=\\))|(?=[^\\s(/]|/(?!/))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#ambiguous-recursive-annotations" }
+          ]
+        },
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "ambiguous-recursive-annotations": {
+      "begin": "\\(",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#proved-ordinary-recursive-arguments" },
+        {
+          "begin": "(?=[^, \\t\\r\\n)])",
+          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "patterns": [
+            {
+              "match": "\\G(?:poly|cont|escape)\\b(?=(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*[A-Za-z_])",
+              "name": "keyword.control.kio"
+            },
+            { "match": "\\G(?:poly|cont|escape)\\b", "name": "meta.ambiguous-recursive-mode.kio" },
+            { "include": "#recursive-annotation-item-tokens" }
+          ]
+        },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "ambiguous-root-rec": {
+      "comment": "A raw rec prefix can become an expression or a recursive declaration on a later line. Return to file-root dispatch only after its group/callee boundary is known.",
+      "begin": "\\brec\\b(?=[ \\t]*(?:(?://[^\\r\\n]*)?$|(?=\\()(?!(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*(?:[^ \\t\\r\\n/]|/(?!/)))))",
+      "beginCaptures": { "0": { "name": "meta.ambiguous-recursive-head.kio" } },
+      "end": "(?!\\G)(?<=[A-Za-z0-9_}])|(?=\\b(?:fn|pub)\\b)|([A-Za-z_][A-Za-z0-9_]*)|(?=[^\\sA-Za-z_/]|/(?!/))",
+      "applyEndPatternLast": true,
+      "endCaptures": { "1": { "name": "entity.name.function.kio" } },
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(?<=[)}])|([A-Za-z_][A-Za-z0-9_]*)|(?=[^\\s({/]|/(?!/))",
+          "applyEndPatternLast": true,
+          "endCaptures": { "1": { "name": "entity.name.function.kio" } },
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "begin": "(?=\\b(?:newtype|labels)\\b)",
+              "end": "(?!)",
+              "patterns": [{ "include": "#source-tokens" }]
+            },
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+              "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+              "patterns": [{ "include": "#source-tokens" }]
+            },
+            {
+              "begin": "\\(",
+              "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+              "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+              "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+              "patterns": [
+                { "include": "#comment-doc" },
+                { "include": "#comment" },
+                { "include": "#proved-ordinary-recursive-arguments" },
+                {
+                  "begin": "(?=[^, \\t\\r\\n)])",
+                  "end": "(?=[,);}]|^[ \\t]*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+                  "patterns": [
+                    {
+                      "match": "\\G(?:poly|cont|escape)\\b(?=(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*(?!(?:fn|pub)\\b)[A-Za-z_])",
+                      "name": "keyword.control.kio"
+                    },
+                    {
+                      "match": "\\G(?:poly|cont|escape)\\b(?!(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*(?:fn|pub)\\b)",
+                      "name": "meta.ambiguous-recursive-mode.kio"
+                    },
+                    { "include": "#recursive-annotation-item-tokens" }
+                  ]
+                },
+                { "include": "#punctuation-separator" }
+              ]
+            }
+          ]
+        },
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "expression-tokens": {
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#ambiguous-minus-before-number"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#bool"
+        },
+        {
+          "include": "#block-call"
+        },
+        {
+          "include": "#elaborator-bang-call"
+        },
+        {
+          "include": "#dot-lambda"
+        },
+        {
+          "include": "#placeholder-lambda"
+        },
+        {
+          "include": "#expression-member"
+        },
+        {
+          "include": "#recursive-call"
+        },
+        {
+          "include": "#label-expression"
+        },
+        {
+          "include": "#expression-group"
+        },
+        {
+          "include": "#call-head"
+        },
+        {
+          "include": "#slot"
+        },
+        {
+          "include": "#operator-arrow"
+        },
+        {
+          "include": "#operator-row-suffix"
+        },
+        {
+          "include": "#expression-varop"
+        },
+        {
+          "include": "#varop-delimiter"
+        },
+        {
+          "include": "#lexical-bracket-run"
+        },
+        {
+          "include": "#operator-builtin"
+        },
+        {
+          "include": "#operator-user"
+        },
+        {
+          "include": "#punctuation-bracket"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ]
+    },
+    "varop-decl": {
+      "begin": "\\bvarop\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "patterns": [
+        { "include": "#varop-head" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\S",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "name": "meta.invalid-varop-head.kio",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "meta.invalid-varop-name.kio"
+            }
+          ]
+        }
+      ]
+    },
+    "import-varop-tag": {
+      "match": "\\bvarop\\b(?=[ \\t]+(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
+      "name": "keyword.declaration.kio"
+    },
+    "varop-delimiter": {
+      "match": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?:(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?|(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?)(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.]|[\\[\\]])",
+      "name": "keyword.operator.user.kio"
+    },
+    "source-tokens": {
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#ambiguous-minus-before-number"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#bool"
+        },
+        {
+          "include": "#block-call"
+        },
+        {
+          "include": "#elaborator-bang-call"
+        },
+        {
+          "include": "#placeholder-lambda"
+        },
+        {
+          "include": "#module-decl"
+        },
+        {
+          "include": "#import-decl"
+        },
+        {
+          "include": "#newtype-decl"
+        },
+        {
+          "include": "#host-multiline"
+        },
+        {
+          "include": "#host-type-decl"
+        },
+        {
+          "include": "#varop-decl"
+        },
+        {
+          "include": "#op-decl-head"
+        },
+        {
+          "include": "#keyword-rec"
+        },
+        {
+          "include": "#fn-decl-head"
+        },
+        {
+          "include": "#label-forward-decl"
+        },
+        {
+          "include": "#literal-decl"
+        },
+        {
+          "include": "#type-decl"
+        },
+        {
+          "include": "#labels-decl"
+        },
+        {
+          "include": "#equiv-decl"
+        },
+        {
+          "include": "#elab-decl"
+        },
+        {
+          "include": "#visibility"
+        },
+        {
+          "include": "#ambiguous-import-head"
+        },
+        {
+          "include": "#ambiguous-op-head"
+        },
+        {
+          "include": "#call-head"
+        },
+        {
+          "include": "#keyword-declaration"
+        },
+        {
+          "include": "#slot"
+        },
+        {
+          "include": "#operator-arrow"
+        },
+        {
+          "include": "#operator-row-suffix"
+        },
+        {
+          "include": "#varop-delimiter"
+        },
+        {
+          "include": "#operator-builtin"
+        },
+        {
+          "include": "#operator-user"
+        },
+        {
+          "include": "#label-value-shorthand"
+        },
+        {
+          "include": "#punctuation-bracket"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ]
+    },
+    "comment-doc": {
+      "match": "///([^/][^\\n]*)?$",
+      "name": "comment.line.documentation.kio"
+    },
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.kio"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.kio",
+      "patterns": [
+        {
+          "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9A-Fa-f]{4})",
+          "name": "constant.character.escape.kio"
+        }
+      ]
+    },
+    "ambiguous-minus-before-number": {
+      "comment": "Whether a flush `-` belongs to the following number depends on the preceding significant token, including across comments and newlines. TextMate cannot reconstruct that lexer state, so it deliberately leaves only the minus byte unscoped; the digits still receive the numeric scope below.",
+      "match": "-(?=[0-9])",
+      "name": "meta.ambiguous-leading-minus.kio"
+    },
+    "number": {
+      "match": "\\b(?:[0-9][0-9_]*\\.[0-9_]+(?:[eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+|[0-9][0-9_]*)\\b",
+      "name": "constant.numeric.kio"
+    },
+    "bool": {
+      "match": "\\.(?:t|f)\\b(?!\\.)",
+      "name": "constant.language.boolean.kio"
+    },
+    "elaborator-bang-call": {
+      "comment": "A contiguous value-reference-plus-bang token is an elaborator call for highlighting. The head follows the canonical word shape, including reserved references; a reserved prefix alone supplies no special role. A space before `!` keeps the identifier and operator tokens separate.",
+      "match": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!",
+      "name": "entity.name.function.macro.elaborator.kio"
+    },
+    "keyword-rec": {
+      "begin": "\\brec\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?=\\b(?:fn|newtype|labels)\\b|[;{])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\(",
+          "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "beginCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.bracket.kio" }
+          },
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#identifier" }
+          ]
+        }
+      ]
+    },
+    "module-decl": {
+      "comment": "Match a `module <path>;` declaration so path segments — including keyword-spelled ones like `op` or `let` — paint as entity.name.module instead of inheriting the keyword.declaration scope from the catch-all rule.",
+      "begin": "\\b(module)\\b",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";",
+      "endCaptures": {
+        "0": { "name": "punctuation.separator.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+          "name": "entity.name.module.kio"
+        },
+        {
+          "match": "/",
+          "name": "operator.user.kio"
+        }
+      ]
+    },
+    "import-decl": {
+      "comment": "Positive head scopes require a same-line provider path and selection/as/builtin tail. Slash-led segments shield contextual names; nested selections and groups protect their delimiters.",
+      "begin": "(?:^|(?<=[;{}]))[ \\t]*(import)\\s+(?=(?:[A-Za-z_][A-Za-z0-9_]*(?:[ \\t]*/[ \\t]*[A-Za-z_][A-Za-z0-9_]*)*)(?:[ \\t]*\\(|[ \\t]+as\\b)|(?:__intrinsics__|__comptime__)[ \\t]*;)([A-Za-z_][A-Za-z0-9_]*)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.kio"
+        },
+        "2": {
+          "name": "entity.name.module.kio"
+        }
+      },
+      "end": "(?=\\})|;",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.separator.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#import-path-segment"
+        },
+        {
+          "include": "#import-selection"
+        },
+        {
+          "include": "#import-alias"
+        }
+      ]
+    },
+    "import-path-segment": {
+      "begin": "/",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.operator.user.kio"
+        }
+      },
+      "end": "[A-Za-z_][A-Za-z0-9_]*",
+      "endCaptures": {
+        "0": {
+          "name": "entity.name.module.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "import-alias": {
+      "begin": "\\b(as)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": "[A-Za-z_][A-Za-z0-9_]*",
+      "endCaptures": {
+        "0": {
+          "name": "entity.name.module.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "import-selection": {
+      "begin": "\\(",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#import-label" },
+        { "include": "#import-pattern-group" },
+        { "include": "#import-varop-tag" },
+        { "include": "#import-fixed-tag" },
+        { "include": "#slot" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-row-suffix" },
+        { "include": "#varop-delimiter" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-separator" },
+        { "include": "#import-identifier" },
+        { "include": "#import-ambiguous-tag-name" }
+      ]
+    },
+    "import-identifier": {
+      "match": "\\b(?:(?:op|varop)(?=\\s*[,)])|(?!op\\b|varop\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",
+      "name": "variable.other.kio"
+    },
+    "import-ambiguous-tag-name": {
+      "match": "\\b(?:op|varop)\\b",
+      "name": "meta.ambiguous-import-tag.kio"
+    },
+    "label-forward-decl": {
+      "comment": "Refine a complete same-line braced type-forward declaration. Interstitial comments or incomplete and multiline heads retain ordinary neutral token coverage.",
+      "begin": "\\b(type)\\b(?=[ \\t]*\\{[ \\t]*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*\\}[ \\t]*=[ \\t]*\\{[ \\t]*(?:_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*\\.[ \\t]*)*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*\\}[ \\t]*;)",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";",
+      "endCaptures": {
+        "0": { "name": "punctuation.separator.kio" }
+      },
+      "patterns": [
+        {
+          "match": "\\b[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b(?=[ \\t]*\\})",
+          "name": "entity.name.label.kio"
+        },
+        { "include": "#identifier" },
+        { "include": "#operator-builtin" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "import-label": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "match": "\\b[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b",
+          "name": "entity.name.label.kio"
+        }
+      ]
+    },
+    "import-pattern-group": {
+      "begin": "\\(",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#import-pattern-group" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#slot" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-row-suffix" },
+        { "include": "#varop-delimiter" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
+    },
+    "import-fixed-tag": {
+      "match": "\\bop\\b(?=\\s*(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
+      "name": "keyword.declaration.kio"
+    },
+    "row-let": {
+      "comment": "Keep contextual `as` recognition across multiline row-let entries; the entry state consumes the label before the alias state can classify the separator, including duplicate spellings and intervening comments.",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#row-let-entry"
+        },
+        {
+          "include": "#punctuation-separator"
+        }
+      ]
+    },
+    "row-let-entry": {
+      "comment": "Start only at an entry boundary and consume the label path, so a label spelled `as` cannot be mistaken for the separator.",
+      "begin": "(?:(?<=\\{)|(?<=,)|^)\\s*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b",
+      "end": "(?=,|\\})",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#row-let-label-segment" },
+        { "include": "#row-let-alias" }
+      ]
+    },
+    "row-let-label-segment": {
+      "comment": "Consume each dotted label segment across trivia before alias recognition resumes; the segment stays neutral in this regex-only layer.",
+      "begin": "\\.",
+      "beginCaptures": {
+        "0": { "name": "punctuation.separator.kio" }
+      },
+      "end": "\\b[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "row-let-alias": {
+      "comment": "The first `as` after a consumed label path is the separator; remain in this state across trivia until the binder arrives.",
+      "begin": "\\b(as)\\b",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.kio" }
+      },
+      "end": "\\b_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b",
+      "endCaptures": {
+        "0": { "name": "variable.other.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "fn-decl-head": {
+      "begin": "\\bfn\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?=\\})|(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#function-name" }
+      ]
+    },
+    "variadic-callables": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#variadic-primary"
+        },
+        {
+          "include": "#variadic-finalizer"
+        }
+      ]
+    },
+    "variadic-primary": {
+      "begin": "\\b(foldl1?|foldr1?)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.separator.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ]
+    },
+    "variadic-finalizer": {
+      "begin": "\\b(finalize)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.separator.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ]
+    },
+    "op-decl-head": {
+      "begin": "(?:^|(?<=[;{}]))[ \\t]*(?:(pub)(?:\\([^\\n)]*\\))?\\s+)?(op)\\b(?![^\\r\\n{]*//)(?=[^\\r\\n{]*(?:[+\\-*/%^~?@#$\\\\'`<>=!&|:.]|\"))(?=(?:\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|[+\\-*/%^~?@#$\\\\'`<>=!&|:.]+|_{1,3}(?!_)|[() \\t])+\\{)",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.kio" },
+        "2": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#fixed-op-body" },
+        { "include": "#string" },
+        { "include": "#slot" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" }
+      ]
+    },
+    "ambiguous-import-head": {
+      "comment": "Unproven line-split or incomplete import heads remain neutral. Recovery stops at the terminator or a following independently recognizable declaration.",
+      "begin": "^\\s*(import)\\b(?=\\s*(?:$|//|[A-Za-z_]))",
+      "beginCaptures": {
+        "1": { "name": "meta.ambiguous-declaration-head.kio" }
+      },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "name": "meta.ambiguous-declaration.kio",
+      "patterns": [
+        { "include": "#ambiguous-declaration-group" },
+        { "include": "#ambiguous-declaration-tokens" }
+      ]
+    },
+    "ambiguous-op-head": {
+      "comment": "Without complete same-line pattern evidence, do not guess keyword roles for the head or a later callable body. Empty ordinary op calls stay outside this state.",
+      "begin": "^[ \\t]*(?:pub(?:\\([^\\n)]*\\))?[ \\t]+)?(op)\\b(?=[ \\t]*(?:$|//|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.]|_|\"|\\((?![ \\t]*\\))))",
+      "beginCaptures": {
+        "1": { "name": "meta.ambiguous-declaration-head.kio" }
+      },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "name": "meta.ambiguous-declaration.kio",
+      "patterns": [
+        { "include": "#ambiguous-declaration-group" },
+        { "include": "#ambiguous-declaration-body" },
+        { "include": "#ambiguous-declaration-tokens" }
+      ]
+    },
+    "ambiguous-declaration-group": {
+      "begin": "\\(",
+      "end": "\\)|(?=^\\s*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)\\s+)*(?:fn|equiv)\\s+[A-Za-z_][A-Za-z0-9_]*\\s*[\\[(])",
+      "name": "meta.ambiguous-declaration.kio",
+      "patterns": [
+        {
+          "include": "#ambiguous-declaration-group"
+        },
+        {
+          "include": "#ambiguous-declaration-body"
+        },
+        {
+          "include": "#ambiguous-declaration-tokens"
+        }
+      ]
+    },
+    "ambiguous-declaration-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^\\s*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)\\s+)*(?:fn|equiv)\\s+[A-Za-z_][A-Za-z0-9_]*\\s*[\\[(])",
+      "name": "meta.ambiguous-declaration.kio",
+      "patterns": [
+        {
+          "include": "#ambiguous-declaration-group"
+        },
+        {
+          "include": "#ambiguous-declaration-body"
+        },
+        {
+          "include": "#ambiguous-declaration-tokens"
+        }
+      ]
+    },
+    "ambiguous-declaration-tokens": {
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#ambiguous-minus-before-number" },
+        { "include": "#number" },
+        { "include": "#bool" },
+        { "include": "#slot" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-row-suffix" },
+        { "include": "#varop-delimiter" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "call-head": {
+      "comment": "Shield keyword-shaped call names such as `add(...)` from the catch-all keyword rule; TextMate normalization treats function names as identifiers for agreement.",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()",
+      "name": "entity.name.function.kio"
+    },
+    "keyword-declaration": {
+      "comment": "Item-leading and binding-leading keywords.",
+      "match": "\\b(?:fn|newtype|type|literal|labels|equiv|elab|module|pub|pure|let|package|build|host|bridge|dependency|source|lock|resolved|signature|with|breaking|nonbreaking|add|modify|remove)\\b",
+      "name": "keyword.declaration.kio"
+    },
+    "slot": {
+      "comment": "`_`, `__`, `___` slot tokens in `op` patterns. Four or more underscores are reserved and not matched here.",
+      "match": "(?<![A-Za-z0-9_])(?:___|__|_)(?![A-Za-z0-9_])",
+      "name": "variable.parameter.slot.kio"
+    },
+    "operator-arrow": {
+      "comment": "Function-type arrow and fixed-role dot-splice operators. These are exact spellings, not prefixes of larger symbol-runs. A dot-splice may immediately follow an identifier-plus-bang elaborator token, as in the bare `transform!.<value` form consumed by the earlier elaborator rule.",
+      "match": "(?:(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])(?:->|\\.>>|\\.<<|\\.>|\\.<)|(?<=[A-Za-z0-9_]!)(?:\\.>>|\\.<<|\\.>|\\.<))(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "name": "keyword.operator.arrow.kio"
+    },
+    "operator-row-suffix": {
+      "comment": "Row access/update suffix tokens. Classified as user operators to match the reference token dump.",
+      "match": "(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])(?:\\.\\?|\\.\\!)(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "name": "keyword.operator.user.kio"
+    },
+    "placeholder-lambda": {
+      "begin": "(?<![A-Za-z0-9_+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])(\\.)(_?[a-z]+(?:[0-9]*_[a-z]+)*)(\\.)(?=[ \\t]*(?:\\{|//|$))",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.separator.kio"
+        },
+        "2": {
+          "name": "variable.parameter.kio"
+        },
+        "3": {
+          "name": "punctuation.separator.kio"
+        }
+      },
+      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#expression-block"
+        }
+      ]
+    },
+    "lexical-bracket-run": {
+      "match": "(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]/]*[\\[\\]])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]]*)?",
+      "name": "keyword.operator.user.kio"
+    },
+    "lexical-tokens": {
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#ambiguous-minus-before-number" },
+        { "include": "#number" },
+        { "include": "#bool" },
+        { "include": "#elaborator-bang-call" },
+        { "include": "#slot" },
+        { "include": "#lexical-bracket-run" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
+    },
+    "operator-builtin": {
+      "comment": "Standalone built-in operators. Multi-char runs containing these chars are user-declared operators and fall through to `operator-user`.",
+      "match": "(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])[&|=:!](?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "name": "keyword.operator.kio"
+    },
+    "operator-user": {
+      "comment": "A symbol run stops before a comment or second slash; a standalone dot is a separator.",
+      "match": "(?:\\.[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]+|[+\\-*%^~?@#$\\\\'`<>][+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*|[=!&|:][+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]+)(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*)?|\\.?/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*",
+      "name": "keyword.operator.user.kio"
+    },
+    "label-value-shorthand": {
+      "comment": "TextMate refines the unambiguous adjacent shorthand (`{item}`); it leaves whitespace-bearing braces unrefined because a stateless grammar cannot distinguish label shorthand from an ordinary block.",
+      "match": "(\\{)([a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(\\})",
+      "captures": {
+        "1": { "name": "punctuation.bracket.kio" },
+        "2": { "name": "entity.name.label.kio" },
+        "3": { "name": "punctuation.bracket.kio" }
+      }
+    },
+    "punctuation-bracket": {
+      "match": "[(){}\\[\\]]",
+      "name": "punctuation.bracket.kio"
+    },
+    "punctuation-separator": {
+      "match": "[,;.]",
+      "name": "punctuation.separator.kio"
+    },
+    "identifier": {
+      "match": "[A-Za-z_][A-Za-z0-9_]*",
+      "name": "variable.other.kio"
+    },
+    "host-owned": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "match": "\\bowned\\b", "name": "keyword.declaration.kio" },
+        { "include": "#identifier" }
+      ]
+    },
+    "expression-let": {
+      "begin": "\\blet\\b(?=[ \\t]*(?:[A-Za-z_][A-Za-z0-9_]*|\\.[ \\t]*\\())",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        {
+          "include": "#binding-head"
+        },
+        {
+          "include": "#expression-tokens"
+        }
+      ]
+    },
+    "function-name": {
+      "begin": "[A-Za-z_][A-Za-z0-9_]*",
+      "beginCaptures": {
+        "0": { "name": "entity.name.function.kio" }
+      },
+      "end": "(?=\\})|(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#expression-block" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "host-multiline": {
+      "begin": "\\bhost\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+      "beginCaptures": {
+        "0": { "name": "meta.ambiguous-host-head.kio" }
+      },
+      "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\btype\\b",
+          "beginCaptures": {
+            "0": { "name": "keyword.declaration.kio" }
+          },
+          "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#host-type-name" }
+          ]
+        },
+        { "include": "#fn-decl-head" },
+        { "include": "#visibility" }
+      ]
+    },
+    "expression-member": {
+      "begin": "\\.(?=[ \\t]*(?:[A-Za-z_]|$|//))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.separator.kio" }
+      },
+      "end": "[A-Za-z_][A-Za-z0-9_]*|(?=[;{}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "0": { "name": "variable.other.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "type-tokens": {
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#type-group" },
+        { "include": "#type-binders" },
+        { "include": "#slot" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
+    },
+    "expression-type-binders": {
+      "begin": "\\[(?=[ \\t]*(?:[,A-Za-z_]|//|$)|[ \\t]+\\*|\\*+[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*(?:[ \\t]*(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)*[ \\t,]*\\])",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "ambiguous-star-argument": {
+      "begin": "\\[\\*+(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$)",
+      "beginCaptures": { "0": { "name": "meta.ambiguous-argument-binder.kio" } },
+      "end": "(\\*+\\])|(\\])|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "1": { "name": "keyword.operator.user.kio" },
+        "2": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#expression-tokens" }
+      ]
+    },
+    "newtype-payload": {
+      "begin": ":",
+      "beginCaptures": {
+        "0": { "name": "keyword.operator.kio" }
+      },
+      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "patterns": [
+        { "include": "#newtype-type-operand" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "(->)|([&|])",
+          "beginCaptures": {
+            "1": { "name": "keyword.operator.arrow.kio" },
+            "2": { "name": "keyword.operator.kio" }
+          },
+          "end": "(?<=[A-Za-z0-9_.)}])|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "patterns": [
+            { "include": "#newtype-type-operand" }
+          ]
+        },
+        { "include": "#newtype-body" },
+        { "include": "#newtype-type-group" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "block-call": {
+      "begin": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!",
+      "beginCaptures": {
+        "0": {
+          "name": "entity.name.function.macro.elaborator.kio"
+        }
+      },
+      "end": "(?=[;,)\\}])|(?=\\S)(?![A-Za-z_]|//|\\{)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "applyEndPatternLast": true,
+      "patterns": [
+        {
+          "include": "#block-call-prefix"
+        },
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#block-call-body"
+        },
+        {
+          "include": "#block-call-label"
+        }
+      ]
+    },
+    "block-call-prefix": {
+      "begin": "\\G",
+      "end": "\\{|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#block-prefix-tokens"
+        }
+      ]
+    },
+    "block-call-body": {
+      "begin": "(?<=\\{)",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#block-tokens"
+        }
+      ]
+    },
+    "block-call-label": {
+      "begin": "\\b_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:\\{|//|$|_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!))",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.control.kio"
+        }
+      },
+      "end": "(?<=\\})|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#expression-block"
+        },
+        {
+          "include": "#block-call"
+        }
+      ]
+    },
+    "expression-varop": {
+      "begin": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])",
+      "beginCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "end": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "patterns": [
+        { "include": "#expression-tokens" }
+      ]
+    },
+    "dot-lambda": {
+      "begin": "\\.(?=[ \\t]*(?:\\(|\\[(?=[ \\t]*(?:[,A-Za-z_*]|//|$))))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.separator.kio" }
+      },
+      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#expression-block" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "block-prefix-tokens": {
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#ambiguous-minus-before-number"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#bool"
+        },
+        {
+          "include": "#elaborator-bang-call"
+        },
+        {
+          "include": "#dot-lambda"
+        },
+        {
+          "include": "#placeholder-lambda"
+        },
+        {
+          "include": "#expression-member"
+        },
+        {
+          "include": "#recursive-call"
+        },
+        {
+          "include": "#expression-group"
+        },
+        {
+          "include": "#call-head"
+        },
+        {
+          "include": "#slot"
+        },
+        {
+          "include": "#operator-arrow"
+        },
+        {
+          "include": "#operator-row-suffix"
+        },
+        {
+          "include": "#expression-varop"
+        },
+        {
+          "include": "#varop-delimiter"
+        },
+        {
+          "include": "#operator-builtin"
+        },
+        {
+          "include": "#operator-user"
+        },
+        {
+          "include": "#punctuation-bracket"
+        },
+        {
+          "include": "#punctuation-separator"
+        },
+        {
+          "include": "#identifier"
+        }
+      ]
+    },
+    "ambiguous-let": {
+      "begin": "\\blet\\b(?=[ \\t]*(?:\\.[ \\t]*)?(?://[^\\r\\n]*)?$)",
+      "beginCaptures": {
+        "0": {
+          "name": "meta.ambiguous-binding-head.kio"
+        }
+      },
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        {
+          "include": "#binding-head"
+        },
+        {
+          "include": "#expression-tokens"
+        }
+      ]
+    },
+    "binding-head": {
+      "begin": "\\G",
+      "end": "(?:(=)|(<-))(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "1": {
+          "name": "keyword.operator.kio"
+        },
+        "2": {
+          "name": "keyword.operator.user.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#binding-pattern-group"
+        },
+        {
+          "include": "#type-tokens"
+        }
+      ]
+    },
+    "binding-pattern-group": {
+      "begin": "\\(",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#row-let"
+        },
+        {
+          "include": "#type-tokens"
+        }
+      ]
+    },
+    "block-tokens": {
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.separator.kio"
+        },
+        {
+          "include": "#expression-let"
+        },
+        {
+          "include": "#ambiguous-let"
+        },
+        {
+          "begin": "(?=\\S)",
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "patterns": [
+            {
+              "include": "#expression-tokens"
+            }
+          ]
+        }
+      ]
+    },
+    "label-expression": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#label-value-entry" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "label-value-entry": {
+      "begin": "[A-Za-z_][A-Za-z0-9_]*",
+      "beginCaptures": {
+        "0": { "name": "entity.name.label.kio" }
+      },
+      "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "=(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])",
+          "beginCaptures": {
+            "0": { "name": "keyword.operator.kio" }
+          },
+          "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "patterns": [
+            { "include": "#expression-tokens" }
+          ]
+        },
+        {
+          "match": "[A-Za-z_][A-Za-z0-9_]*",
+          "name": "entity.name.label.kio"
+        },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "literal-decl": {
+      "begin": "\\bliteral\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "type-decl": {
+      "begin": "\\btype\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "labels-decl": {
+      "begin": "\\blabels\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#labels-body" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "labels-body": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "equiv-decl": {
+      "begin": "\\bequiv\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": "(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#function-name" }
+      ]
+    },
+    "elab-decl": {
+      "begin": "\\belab\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#elab-body" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "elab-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#elab-captures"
+        },
+        {
+          "include": "#elab-trailing"
+        },
+        {
+          "include": "#elab-impl"
+        },
+        {
+          "include": "#identifier"
+        },
+        {
+          "include": "#punctuation-separator"
+        }
+      ]
+    },
+    "elab-trailing": {
+      "begin": "\\btrailing\\b",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.declaration.kio"
+        }
+      },
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "begin": "\\G",
+          "end": "\\b(?:product|thunk|sequence)\\b|(?=;|\\})",
+          "endCaptures": {
+            "0": {
+              "name": "keyword.declaration.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            }
+          ]
+        },
+        {
+          "match": "\\b_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*\\b",
+          "name": "keyword.control.kio"
+        },
+        {
+          "include": "#punctuation-separator"
+        }
+      ]
+    },
+    "elab-captures": {
+      "begin": "\\bcaptures\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#type-tokens" }
+      ]
+    },
+    "elab-impl": {
+      "begin": "\\bimpl\\b",
+      "beginCaptures": {
+        "0": { "name": "keyword.declaration.kio" }
+      },
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\G",
+          "end": "(?<=\\))|(?=[A-Za-z_])",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "begin": "\\(",
+              "end": "\\)",
+              "beginCaptures": {
+                "0": { "name": "punctuation.bracket.kio" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.bracket.kio" }
+              },
+              "patterns": [
+                { "include": "#comment-doc" },
+                { "include": "#comment" },
+                {
+                  "match": "\\bfills\\b",
+                  "name": "keyword.declaration.kio"
+                },
+                { "include": "#identifier" }
+              ]
+            }
+          ]
+        },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "fixed-op-body": {
+      "begin": "\\{",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\bimpl\\b",
+          "beginCaptures": {
+            "0": { "name": "keyword.declaration.kio" }
+          },
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "patterns": [
+            { "include": "#type-tokens" }
+          ]
+        },
+        { "include": "#identifier" },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "varop-mirror-bracket": {
+      "begin": "\\G\\[",
+      "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "beginCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "patterns": [
+        { "include": "#varop-mirror-bracket" },
+        { "include": "#varop-mirror-symbol" },
+        { "include": "#varop-mirror-gap" },
+        {
+          "begin": "(?!\\G)[\\s\\S]",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "name": "meta.invalid-varop-head.kio",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "meta.invalid-varop-name.kio"
+            }
+          ]
+        }
+      ],
+      "comment": "Each adjacent OPEN character pushes its mirrored CLOSE onto the rule stack. Only the innermost frame admits split whitespace; outer frames require adjacent closing characters."
+    },
+    "varop-mirror-symbol": {
+      "begin": "\\G([+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])",
+      "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "beginCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "keyword.operator.user.kio" }
+      },
+      "patterns": [
+        { "include": "#varop-mirror-bracket" },
+        { "include": "#varop-mirror-symbol" },
+        { "include": "#varop-mirror-gap" },
+        {
+          "begin": "(?!\\G)[\\s\\S]",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "name": "meta.invalid-varop-head.kio",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "meta.invalid-varop-name.kio"
+            }
+          ]
+        }
+      ]
+    },
+    "varop-head": {
+      "begin": "[ \\t]*(?=(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
+      "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "patterns": [
+        { "include": "#varop-mirror-bracket" },
+        { "include": "#varop-mirror-symbol" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#variadic-callables" },
+        {
+          "begin": "\\S",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "name": "meta.invalid-varop-head.kio",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "match": "[A-Za-z_][A-Za-z0-9_]*", "name": "meta.invalid-varop-name.kio" }
+          ]
+        }
+      ]
+    },
+    "varop-mirror-gap": {
+      "begin": "\\G(?=\\s)",
+      "end": "(?=\\S)",
+      "applyEndPatternLast": true,
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" }
+      ]
+    },
+    "invalid-newtype-payload": {
+      "begin": "\\{",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
+    },
+    "newtype-type-group": {
+      "begin": "\\(",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#invalid-newtype-payload" },
+        { "include": "#newtype-type-group" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "newtype-type-operand": {
+      "begin": "\\G",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))|([A-Za-z_][A-Za-z0-9_]*)|(\\.)|(!)|(?<=\\))|(?=;)",
+      "endCaptures": {
+        "1": { "name": "variable.other.kio" },
+        "2": { "name": "punctuation.separator.kio" },
+        "3": { "name": "keyword.operator.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#invalid-newtype-payload" },
+        { "include": "#newtype-type-group" },
+        { "include": "#type-binders" },
+        { "include": "#operator-builtin" }
+      ]
+    },
+    "recursive-call-annotations": {
+      "begin": "\\(",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "(?=[^, \\t\\r\\n)])",
+          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "patterns": [
+            { "match": "\\G(?:poly|cont|escape)\\b", "name": "keyword.control.kio" },
+            { "include": "#recursive-annotation-item-tokens" }
+          ]
+        },
+        { "include": "#punctuation-separator" }
+      ]
+    },
+    "recursive-annotation-item-tokens": {
+      "comment": "Only an item's first identifier is an annotation slot; its lexical tail ends at the outer comma or close, and nested groups cannot create slots.",
+      "patterns": [
+        { "include": "#recursive-annotation-lexical-groups" },
+        { "include": "#lexical-tokens" }
+      ]
+    },
+    "recursive-annotation-lexical-groups": {
+      "patterns": [
+        {
+          "begin": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])",
+          "end": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])|(?=[)};])",
+          "beginCaptures": { "0": { "name": "keyword.operator.user.kio" } },
+          "endCaptures": { "0": { "name": "keyword.operator.user.kio" } },
+          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+        },
+        {
+          "begin": "\\(", "end": "\\)",
+          "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+        },
+        {
+          "begin": "\\{", "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+        }
+      ]
+    },
+    "proved-ordinary-recursive-arguments": {
+      "comment": "A locally closed ordinary call retains expression roles inside nested argument groups.",
+      "begin": "(?=(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<ordinary_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<ordinary_parens>)*\\)))*\\)[ \\t]*(?:[^ \\tA-Za-z_/\\r\\n]|/(?!/)))",
+      "end": "(?=\\))",
+      "patterns": [{ "include": "#expression-tokens" }]
+    }
+  }
+}

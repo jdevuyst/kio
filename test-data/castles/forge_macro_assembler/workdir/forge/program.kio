@@ -1,0 +1,134 @@
+/// What an assembler moves between its phases.
+///
+/// A program starts as a list of `Item`s - instructions, label marks, and
+/// macro calls. Macro expansion turns it into a list of `Flat`s, which by
+/// construction hold no calls. Pass one turns those into an address-indexed
+/// `Srcs` plus a symbol table, and pass two into a runnable `Prog`.
+module forge/program;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import forge/isa(Ins, Src);
+import forge/list as l;
+import testapi(Bool, I32, String);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// A straight-line instruction sequence, before jump resolution.
+pub type Srcs = l.List(Src);
+
+/// A runnable image's code: every jump carries an address.
+pub type Prog = l.List(Ins);
+
+/// One item of a source program. A `mark` names the address the *next*
+/// instruction will occupy; it emits no code of its own.
+pub labels Item = { instr: Src } | { mark: String } | { call: String };
+
+/// What survives macro expansion: `Flat` reuses `Item`'s `Instr` and
+/// `Mark` nominals and drops `Call`, so the type itself witnesses that
+/// expansion left no call behind.
+pub labels Flat = { instr: _ } | { mark: _ };
+
+pub type Items = l.List(Item);
+
+pub type Flats = l.List(Flat);
+
+pub fn instr(i: Src) -> Item { {instr = i}.>widen_sum!(Item) }
+
+pub fn mark(name: String) -> Item { {mark = name}.>widen_sum!(Item) }
+
+pub fn call(name: String) -> Item { {call = name}.>widen_sum!(Item) }
+
+pub fn flat_instr(i: Src) -> Flat { {instr = i}.>widen_sum!(Flat) }
+
+pub fn flat_mark(name: String) -> Flat { {mark = name}.>widen_sum!(Flat) }
+
+/// A macro: a name and the instructions it stands for. A body is plain
+/// straight-line code - no label marks, no nested macro calls - which is
+/// what makes expansion one terminating pass rather than a fixpoint.
+pub labels Macro = { macro_name: String, macro_body: Srcs };
+
+pub type Macros = l.List(Macro);
+
+pub fn macro_def(name: String, body: Srcs) -> Macro { {macro_name = name, macro_body = body} }
+
+/// A placed label: the address pass one gave a mark.
+pub labels Symbol = { sym_name: String, sym_addr: I32 };
+
+pub type Symbols = l.List(Symbol);
+
+pub fn symbol(name: String, at: I32) -> Symbol { {sym_name = name, sym_addr = at} }
+
+/// A finished image: resolved code, the symbol table that named it, and
+/// how many flat items macro expansion produced - the one number that
+/// says whether the macro pass did any work.
+pub labels Image = { code: Prog, syms: Symbols, expanded: I32 };
+
+pub fn image(c: Prog, s: Symbols, n: I32) -> Image { {code = c, syms = s, expanded = n} }
+
+/// One resolved instruction, boxed. `Ins` is itself a thirteen-arm sum,
+/// and `|` composes one flat spine - so an `Ins | Undefined_label` return
+/// would splice the instruction's arms into the error's spine and leave
+/// no single clause that means "an instruction". The box gives pass two's
+/// fallible result exactly two arms.
+pub labels { fixed: Ins };
+
+pub fn fixed(i: Ins) -> Fixed { {fixed = i} }
+
+/// The three ways assembly rejects a program. Each is its own nominal, so
+/// a caller's `match!` has to name every rejection it can receive, and a
+/// pass that can only fail one way says so in its own return type.
+pub labels { unknown_macro: String };
+
+pub labels { undefined_label: String };
+
+pub labels { duplicate_label: String };
+
+pub fn unknown_macro(name: String) -> Unknown_macro { {unknown_macro = name} }
+
+pub fn undefined_label(name: String) -> Undefined_label { {undefined_label = name} }
+
+pub fn duplicate_label(name: String) -> Duplicate_label { {duplicate_label = name} }
+
+pub type Reject = Unknown_macro | Undefined_label | Duplicate_label;
+
+/// The result of assembling: an image, or one of the three rejections.
+pub type Built = Image | Reject;
+
+pub rec(loop) fn find_macro(ms: Macros, name: String) -> Srcs | . {
+  match! l.un_cons(ms) {
+    (
+      , .(m: Macro, rest: Macros) {
+          if! string_eq(m.?{macro_name}, name) {
+            widen_sum!(m.?{macro_body})
+          } else {
+            rec find_macro(rest, name)
+          }
+        }
+      , .(_empty: .) { widen_sum!(()) }
+      )
+  }
+}
+
+pub rec(loop) fn find_symbol(ss: Symbols, name: String) -> I32 | . {
+  match! l.un_cons(ss) {
+    (
+      , .(s: Symbol, rest: Symbols) {
+          if! string_eq(s.?{sym_name}, name) {
+            widen_sum!(s.?{sym_addr})
+          } else {
+            rec find_symbol(rest, name)
+          }
+        }
+      , .(_empty: .) { widen_sum!(()) }
+      )
+  }
+}
+
+/// Whether `name` is already placed - pass one's duplicate-label check.
+pub fn is_placed(ss: Symbols, name: String) -> Bool {
+  match! find_symbol(ss, name) {
+    (.(_at: I32) { .t }, .(_none: .) { .f })
+  }
+}

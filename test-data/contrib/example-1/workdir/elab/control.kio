@@ -1,0 +1,18 @@
+/// Immediate scoped expressions for this self-contained library case.
+module elab/control;
+
+import __comptime__;
+
+pure fn invoke(ct: __Comptime__, thunk: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn scope_checked(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _result_type: __Type__
+  , body: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (invoke(ct, body), fills) }
+
+/// Evaluates a scoped body once and returns its final expression.
+pub elab scope : [Result] (. -> Result) -> Result { trailing thunk; impl(fills) scope_checked }

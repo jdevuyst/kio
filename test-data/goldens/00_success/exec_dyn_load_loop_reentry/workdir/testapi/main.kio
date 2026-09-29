@@ -1,0 +1,124 @@
+/// A dyn_load_prime host that loads a guest whose interpreted code calls `loop`.
+module testapi/main;
+
+import defaults(instantiate_default);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import loader(Diag, Loaded, Surface);
+import loader(Lr_diag, Lr_image, un_load_outcome);
+import loader({apply}, {i32_in}, {i32_out}, {lookup}, {str_in}, {str_out});
+import loader/scan(load_package);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq);
+
+fn guest_image() -> String {
+  "module hostapi;\n\nhost type Bool role(bool);\nhost type I32 role(i32);\n\n"
+  "module hostapi/arith;\n\nimport hostapi(Bool, I32);\nhost fn add_i32(p0: "
+  "I32, p1: I32) -> I32;\nhost fn leq_i32(p0: I32, p1: I32) -> Bool;\nhost fn "
+  "mul_i32(p0: I32, p1: I32) -> I32;\nhost fn sub_i32(p0: I32, p1: I32) -> "
+  "I32;\n\nmodule hostapi/iter;\n\nhost fn loop[S][R](step: S -> S | R, state: "
+  "S) -> R;\n\nmodule g;\n\nimport __intrinsics__;\n\nimport hostapi(Bool, I32);\n"
+  "import hostapi/arith(add_i32, leq_i32, mul_i32, sub_i32);\nimport "
+  "hostapi/iter(loop);\n\npub fn sum_to(n: I32) -> I32 {\n  loop(\n    , I32 & "
+  "I32\n    , I32\n    , .(st: I32 & I32) {\n      .(i: I32, acc: I32) {\n        "
+  "__if_then_else__(\n          , (I32 & I32) | I32\n          , leq_i32(i, "
+  "0(I32))\n          , .() { __right__(I32 & I32, I32, acc) }\n          , "
+  ".() {\n            __left__(I32 & I32, I32, __pair__(I32, I32, sub_i32(i, "
+  "1(I32)), add_i32(acc, i)))\n          }\n          )\n      }(\n        , "
+  "__fst__(I32, I32, __pair__(I32, I32, __fst__(I32, I32, st), __snd__(I32, "
+  "I32, st)))\n        , __snd__(I32, I32, __pair__(I32, I32, __fst__(I32, "
+  "I32, st), __snd__(I32, I32, st)))\n        )\n    }\n    , __pair__(I32, "
+  "I32, n, 0(I32))\n    )\n}\n\nfn row_sum(row: I32) -> I32 {\n  loop(\n    , I32 "
+  "& I32\n    , I32\n    , .(st: I32 & I32) {\n      .(col: I32, acc: I32) {\n        "
+  "__if_then_else__(\n          , (I32 & I32) | I32\n          , leq_i32(col, "
+  "0(I32))\n          , .() { __right__(I32 & I32, I32, acc) }\n          , "
+  ".() {\n            __left__(\n              , I32 & I32\n              , "
+  "I32\n              , __pair__(I32, I32, sub_i32(col, 1(I32)), "
+  "add_i32(acc, mul_i32(row, col)))\n              )\n          }\n          )\n      "
+  "}(\n        , __fst__(I32, I32, __pair__(I32, I32, __fst__(I32, I32, st), "
+  "__snd__(I32, I32, st)))\n        , __snd__(I32, I32, __pair__(I32, I32, "
+  "__fst__(I32, I32, st), __snd__(I32, I32, st)))\n        )\n    }\n    , "
+  "__pair__(I32, I32, row, 0(I32))\n    )\n}\n\npub fn grid_sum(n: I32) -> I32 "
+  "{\n  loop(\n    , I32 & I32\n    , I32\n    , .(st: I32 & I32) {\n      "
+  ".(row: I32, acc: I32) {\n        __if_then_else__(\n          , (I32 & "
+  "I32) | I32\n          , leq_i32(row, 0(I32))\n          , .() { "
+  "__right__(I32 & I32, I32, acc) }\n          , .() {\n            __left__(\n              "
+  ", I32 & I32\n              , I32\n              , __pair__(I32, I32, "
+  "sub_i32(row, 1(I32)), add_i32(acc, row_sum(row)))\n              )\n          "
+  "}\n          )\n      }(\n        , __fst__(I32, I32, __pair__(I32, I32, "
+  "__fst__(I32, I32, st), __snd__(I32, I32, st)))\n        , __snd__(I32, "
+  "I32, __pair__(I32, I32, __fst__(I32, I32, st), __snd__(I32, I32, st)))\n        "
+  ")\n    }\n    , __pair__(I32, I32, n, 0(I32))\n    )\n}\n\npackage guest;\n\n"
+  "bridge { hostapi; hostapi/**; g; }\n"
+}
+
+// Apply an `I32 -> I32` export named `name` to `arg` through the record
+// surface, reading just the operations it needs by field name; `()` on
+// any failure.
+fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> . | I32 {
+  match! surf.?{lookup}(name) {
+    (
+      , .(g: P) {
+          match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+            (
+              , .(r: P) {
+                  match! surf.?{i32_out}(r) {
+                    (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
+                  }
+                }
+              , .(_d: Diag) { widen_sum!((), . | I32) }
+              )
+          }
+        }
+      , .(_d: Diag) { widen_sum!((), . | I32) }
+      )
+  }
+}
+
+fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
+
+fn call_i32(handle: Loaded, name: String, arg: I32) -> . | I32 {
+  Loaded.get(handle)(.[P](surf: Surface(P)) { run_i32(surf, name, arg) })
+}
+
+fn loaded_i32(name: String, arg: I32) -> . | I32 {
+  match! un_load_outcome(load_package(guest_image())) {
+    (
+      , .(im: Lr_image) {
+          match! un_inst(instantiate_default(Lr_image.get(im))) {
+            (
+              , .(handle: Loaded) { call_i32(handle, name, arg) }
+              , .(_d: Diag) { widen_sum!((), . | I32) }
+              )
+          }
+        }
+      , .(_d: Lr_diag) { widen_sum!((), . | I32) }
+      )
+  }
+}
+
+fn assert_i32(label: String, expected: I32, actual: . | I32) -> String {
+  match! actual {
+    (
+      , .(n: I32) {
+          if! string_eq(int_to_string(n), int_to_string(expected)) {
+            string_concat(label, "PASS\n"(String))
+          } else {
+            string_concat(
+              , label
+              , string_concat("FAIL (got "(String), string_concat(int_to_string(n), ")\n"(String)))
+              )
+          }
+        }
+      , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
+      )
+  }
+}
+
+pub fn main() -> . {
+  print(assert_i32("sum_to(5) == 15: "(String), 15(I32), loaded_i32("sum_to"(String), 5(I32))));
+  print(assert_i32("grid_sum(4) == 65: "(String), 65(I32), loaded_i32("grid_sum"(String), 4(I32))))
+}

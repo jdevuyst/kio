@@ -1,0 +1,31 @@
+module inventory_cycle_counter/report;
+
+import inventory_cycle_counter/audit as audit;
+import inventory_cycle_counter/model(Bin, {code}, {expected}, {observed});
+import testapi(String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+fn cat2(a: String, b: String) -> String { text.string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+pub fn bin_line(bin: Bin) -> String {
+  cat3(
+    , "bin "
+    , bin.?{code}
+    , cat3(
+        , " expected="
+        , fmt.int_to_string(bin.?{expected})
+        , cat3(
+            , " observed="
+            , fmt.int_to_string(bin.?{observed})
+            , cat3(
+                , " delta="
+                , fmt.int_to_string(audit.delta(bin))
+                , cat3(" status=", audit.status(bin), "\n")
+                )
+            )
+        )
+    )
+}

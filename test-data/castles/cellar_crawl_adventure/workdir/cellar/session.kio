@@ -1,0 +1,63 @@
+/// The stdin loop: read a verb, read its object if that verb takes one, apply
+/// the command, print what happened. `quit` ends the loop, and so does EOF.
+module cellar/session;
+
+import cellar/command as command;
+import cellar/engine(apply);
+import cellar/outcome as outcome;
+import cellar/report as report;
+import cellar/state as state;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, String);
+import testapi/io(print, read_ascii_line);
+import testapi/iter(loop);
+
+/// The object line of a two-line command. A fixture that ends between a verb
+/// and its object leaves an empty object, which the engine refuses like any
+/// other word it does not know.
+fn read_object() -> String {
+  match! read_ascii_line() {
+    (.(word: String) { word }, .(_eof: .) { "" })
+  }
+}
+
+fn read_rest(word: String) -> command.Command {
+  let v = command.verb_of(word);
+  if! command.verb_takes_object(v) {
+    command.command_of(v, read_object())
+  } else {
+    command.command_of(v, "")
+  }
+}
+
+fn play_turn(g: state.Game, c: command.Command) -> state.Game {
+  print(report.echo_line(c));
+  let .(next: state.Game, out: outcome.Outcome) = apply(g, c);
+  print(report.reply_text(next, out));
+  next
+}
+
+rec(loop) fn play(g: state.Game) -> state.Game {
+  match! read_ascii_line() {
+    (
+      , .(word: String) {
+          let next = play_turn(g, read_rest(word));
+          if! state.is_over(next) {
+            next
+          } else {
+            rec play(next)
+          }
+        }
+      , .(_eof: .) { g }
+      )
+  }
+}
+
+pub fn run() -> . {
+  print("The Cellar Crawl\n");
+  print("Seven rooms under an old vineyard. Find the bottle; keep hold of the "
+        "light.\n");
+  let ending = play(state.new_game());
+  print(report.summary(ending))
+}

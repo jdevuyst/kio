@@ -1,0 +1,25 @@
+module main;
+
+// Block reduced to a single final expression. The chain is
+// empty; the block's type is the final expr's synthesis.
+fn just_final(x: .) -> . { x }
+
+// Single `let`-then-final: one E-Let layer, then E-Var on `y`.
+fn one_let(x: .) -> . { let y = x; y }
+
+// Expression statement: `id(., x)` synthesizes `.`, the
+// statement is checked equal to `.`, and the block continues.
+// The final expression is the bare variable.
+fn id[T](v: T) -> T { v }
+
+fn expr_stmt_then_final(x: .) -> . { id(., x); x }
+
+// Mixed `let` and expression statement. Threads a `let`, then
+// an expression statement, then a final expression. Each
+// intermediate has type `.`.
+fn mixed(x: .) -> . { let a = x; id(., a); a }
+
+// Multiple expression statements interleaved with `let`s. Every
+// statement step keeps the chain at the synthesizing position
+// the rule expects; the final expression is the synthesis.
+fn long_chain(x: .) -> . { let a = x; id(., a); let b = a; id(., b); b }

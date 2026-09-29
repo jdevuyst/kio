@@ -1,0 +1,9 @@
+gate_text_scanner
+len: script-58
+01 OPEN gate => cmd:open target:gate class:entry mark:O
+02 SET mode=A => cmd:set target:mode flag:A class:config mark:A
+03 PING 007 => cmd:ping target:007 class:probe mark:P
+04 BAD ?? => cmd:bad target:?? class:reject mark:X
+05 LOCK gate => cmd:lock target:gate class:entry mark:L
+06 SET mode=B => cmd:set target:mode flag:B class:config mark:B
+summary: ok=5 reject=1 checksum=OAPXLB

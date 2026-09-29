@@ -1,0 +1,13 @@
+module main;
+
+// Abstract higher-kinded application: a function generic over a
+// kind-`*→*` brand binder `[*F]` and a kind-`*` carrier `[A]`,
+// using the applied brand `F(A)` in type position. The typer
+// admits `F(A)` for a kind-`*→*` `F` — the kind discipline (no
+// inference, structural kind equality) is the sole gate. No brand
+// crossing happens here; the value flows through unchanged, which
+// is admissible for any abstract brand without a threaded instance.
+fn id_app[*F][A](x: F(A)) -> F(A) { x }
+
+// Two applied-brand arguments compose: `pair` keeps the first.
+fn first_app[*F][A][B](x: F(A), y: F(B)) -> F(A) { x }

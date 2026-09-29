@@ -1,0 +1,11 @@
+module dict_host;
+
+import testapi as host;
+import testapi/arith as arith;
+import testapi/iter as iter;
+
+pub type I32 = host.I32;
+
+pub fn add(a: I32, b: I32) -> I32 { arith.add_i32(a, b) }
+
+pub fn loop[S][R](step: S -> S | R, seed: S) -> R { iter.loop(step, seed) }

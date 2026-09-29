@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// `2^10` via repeated multiplication. State is `(exponent, acc)`;
+// each step multiplies `acc` by the base and decrements
+// `exponent`. Exit fires when `exponent == 0` and returns `acc`.
+// The case's subject is the named `power` combinator —
+// distinct from `exec_operators_arithmetic_logic`'s embedded
+// `pow_i32` (which exists to back the `**` operator).
+fn power_step(base: I32, state: I32 & I32) -> (I32 & I32) | I32 {
+  match! state {
+    .(n: I32, acc: I32) {
+      if! leq_i32(n, 0) {
+        widen_sum!(acc)
+      } else {
+        widen_sum!((sub_i32(n, 1), mul_i32(acc, base)), (I32 & I32) | I32)
+      }
+    }
+  }
+}
+
+fn power(base: I32, exponent: I32) -> I32 {
+  loop(.(state: I32 & I32) { power_step(base, state) }, (exponent, 1))
+}
+
+pub fn main() -> . { print(int_to_string(power(2, 10))); print("\n") }

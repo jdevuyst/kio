@@ -1,0 +1,65 @@
+/// two_three_tree_audit — a 2-3 tree that checks its own balance after every
+/// operation it performs.
+///
+/// A 2-3 tree keeps every leaf at exactly the same depth: it can only ever grow
+/// or shrink at the root, and it does so everywhere at once. That is the claim,
+/// and the audit is what checks it — after each of the twenty-two scripted
+/// operations, `tree/audit` recomputes four invariants from the tree alone and
+/// the transcript prints the verdict beside the resulting height and size.
+///
+/// `main` prints the transcript, the final tree as an indented structure, its
+/// keys in order, the four invariants once more, and a count of every split,
+/// borrow, merge, root grow and root shrink the script caused.
+module testapi/main;
+
+import testapi(Bool, I32, String);
+import testapi/io(print);
+import tree/audit(Verdict, arity_ok, audit, depth_ok, keys_ok, size_ok);
+import tree/node(Tree, height, root_of, size_of);
+import tree/render(draw_tree, inorder_line);
+import tree/script(run_script, run_tally, run_tree);
+import tree/tally(Tally, borrow_lefts, borrow_rights, merges, root_grows, root_shrinks, splits);
+import tree/text(cat, cat3, flag, num);
+
+fn line(s: String) -> . { print(cat(s, "\n")) }
+
+fn field(label: String, value: String) -> . { line(cat3(label, ": ", value)) }
+
+fn invariants(v: Verdict) -> . {
+  field("  every leaf at the same depth", flag(depth_ok(v)));
+  field("  keys ascend across an inorder walk", flag(keys_ok(v)));
+  field("  one more child than keys at every node", flag(arity_ok(v)));
+  field("  stored size equals counted size", flag(size_ok(v)))
+}
+
+fn summary(t: Tree, total: Tally) -> . {
+  field("  keys held", num(size_of(t)));
+  field("  height", num(height(root_of(t))));
+  field("  splits", num(splits(total)));
+  field("  borrows from a left sibling", num(borrow_lefts(total)));
+  field("  borrows from a right sibling", num(borrow_rights(total)));
+  field("  merges", num(merges(total)));
+  field("  root grows", num(root_grows(total)));
+  field("  root shrinks", num(root_shrinks(total)))
+}
+
+pub fn main() -> . {
+  line("2-3 tree audit");
+  line("");
+  line("transcript: <step> <op> <key>  h=<height> n=<keys>  <audit>  <outcome "
+       "and rebalances>");
+  line("");
+  let run = run_script();
+  let tree = run_tree(run);
+  line("");
+  line("final tree");
+  draw_tree(tree);
+  line("");
+  line(cat("inorder:", inorder_line(tree)));
+  line("");
+  line("invariants, recomputed from the final tree");
+  invariants(audit(tree));
+  line("");
+  line("what the script did");
+  summary(tree, run_tally(run))
+}

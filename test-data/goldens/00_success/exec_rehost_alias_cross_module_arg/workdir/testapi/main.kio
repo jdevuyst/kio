@@ -1,0 +1,20 @@
+/// Direct regression for cross-module unfolding of a `rehost`-created
+/// transparent alias in a foreign scope. The dependency
+/// `numlib`'s module `store` declares `host type I32`; `numlib.dep.kio`'s
+/// `rehost numlib/store to testapi` rewrites it in place to the alias
+/// `pub type I32 = testapi.I32`, so `store`'s `relay(p: I32)` now takes
+/// that alias. This module imports `relay` but NOT `I32` from
+/// `numlib/store`, and calls it with `7(I32)` — the host `I32` it imports
+/// from `testapi`. `relay`'s signature qualifies in its declaring module
+/// to `numlib.store.I32` (the alias); for the call to typecheck, that
+/// qualified alias must unfold — through `store`'s own definition, reached
+/// via the package, since this scope never imports it — back to
+/// `testapi.I32`. Without that unfold the two are spuriously distinct and
+/// the call is a type error; with it, the value flows and `main` prints 7.
+module testapi/main;
+
+import numlib/store(relay);
+import testapi(I32);
+import testapi/fmt(print_i32);
+
+pub fn main() -> . { let .(v: I32) = relay(7(I32)); print_i32(v) }

@@ -1,0 +1,13 @@
+module elab;
+
+import __comptime__;
+
+pure fn infer_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ { (value, __fill__(ct, fills, target, source)) }
+
+pub elab infer : [Source] Source -> [Target] Target { impl(fills) infer_impl }

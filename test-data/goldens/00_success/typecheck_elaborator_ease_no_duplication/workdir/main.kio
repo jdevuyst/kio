@@ -1,0 +1,35 @@
+module main;
+
+import elab/algebraic_elaborators(ease);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// The "ease! gap": R-Project-Prod and R-Widen-Sum in a single
+// coercion. Source `A & B` projects to `A`, then widens into the
+// target sum's `A` arm. `align!` rejects this (no R-Project-Prod);
+// `onto!` rejects this (no R-Widen-Sum). Only `ease!` admits both.
+fn project_then_widen(p: A & B) -> A | C { ease!(p) }
+
+// R-Project-Prod alone: `A & B & C → A`. Inherited from `onto!`'s
+// rule subset.
+fn project_only(p: A & B & C) -> A { ease!(p) }
+
+// R-Widen-Sum alone: `A → A | B`. Inherited from `into!`'s and
+// `align!`'s rule subsets.
+fn widen_only(a: A) -> A | B { ease!(a) }
+
+// R-Collapse-Sum alone: `A | A → A`. Inherited from `onto!`'s and
+// `align!`'s rule subsets.
+fn collapse_only(s: A | A) -> A { ease!(s) }
+
+// All three length-changing rules ease! admits, composed via DNF:
+// source `(A & B) | (A & B & C) | A` distributes through the
+// product, projects each branch to its `A` factor, then collapses
+// the three like-typed arms onto the target's single `A`. The
+// no-duplication identity holds: each source factor `a` is named
+// once on its arm — never copied into two target slots.
+fn widen_project_collapse(s: (A & B) | (A & B & C) | A) -> A { ease!(s) }

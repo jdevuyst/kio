@@ -1,0 +1,2 @@
+newtype `Hidden` must be at least as visible as host function `expose`
+give newtype `Hidden` visibility equal to or wider than host function `expose`

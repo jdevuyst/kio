@@ -1,0 +1,22 @@
+module build_rec_loop_recursive_state/main;
+
+import build_rec_loop_recursive_state(Bool, I32, leq_i32, loop, sub_i32);
+import elab/control(if);
+
+rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
+
+labels State_fields = { items: List(I32), tick: I32 };
+
+type State = Items & Tick;
+
+fn state(items: List(I32), tick: I32) -> State { {items, tick} }
+
+rec(loop) fn run_from(current: State) -> State {
+  if! leq_i32(current.?{tick}, 0) {
+    current
+  } else {
+    rec run_from(state(current.?{items}, sub_i32(current.?{tick}, 1)))
+  }
+}
+
+pub fn main() -> . { () }

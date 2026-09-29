@@ -1,0 +1,7 @@
+module show;
+
+import types(I32);
+
+host fn print_i32(p0: I32) -> .;
+
+pub fn show() -> . { print_i32(42) }

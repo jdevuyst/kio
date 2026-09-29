@@ -1,0 +1,5 @@
+module testapi/main;
+
+import testapi/rec_funcs(call_local, scoped);
+
+pub fn main() -> . { call_local(); scoped(()) }

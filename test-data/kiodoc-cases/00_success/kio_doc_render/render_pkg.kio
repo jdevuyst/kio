@@ -1,0 +1,9 @@
+module render_pkg;
+
+host type S role(str);
+
+/// Prints a line to the host.
+host fn emit(value: S) -> .;
+
+/// The package's public entry point.
+pub fn run() -> . { () }

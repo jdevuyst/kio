@@ -1,0 +1,10 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype Box <A> : String & A { pub constructor mk_box; pub projector un_box }
+
+fn boxer[A](mk: [B] (String & B) -> Box, s: String, w: A) -> Box { mk((s, w)) }
+
+pub fn main() -> . { let _b = boxer(Box.mk_box, "seed"(String), ()); print("ok\n"(String)) }

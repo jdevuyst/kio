@@ -1,0 +1,8 @@
+dependency queue;
+
+source {
+  path "../../../poc/queue/workdir/queue.pkg.kio"
+}
+
+rehost queue/list/list to queue_host;
+rehost queue/queue to queue_host;

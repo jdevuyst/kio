@@ -1,0 +1,46 @@
+/// The fixture program. Seventeen instructions, chosen so that every
+/// hazard class the pipeline knows about actually fires:
+///
+///   i2  reads r2 one instruction after i1 wrote it, and r1 two after i0
+///       -- the two forwarding paths, EX/MEM and MEM/WB, in one line.
+///   i4  spills r4 to memory and i5 reloads it, so i6 consumes a value
+///       that is still in the memory port when it is asked for: the
+///       load-use hazard, the one RAW no bypass can cover.
+///   i7  is a branch that falls through; i10 is a branch that is taken,
+///       squashing i11 and i12 behind it.
+///   i11 depends on i9, which is still in MEM when i10 resolves, so with
+///       forwarding off i11 is stalling in ID on the very cycle the
+///       branch kills it -- the flush has to win over the stall.
+///   i16 sits behind the HALT and must never be fetched.
+///
+/// The wrong-path pair i11/i12 would write r6 and mem[5] if they ever
+/// escaped the flush, and i16 would clobber r7, so a mis-timed pipeline
+/// shows up in the architectural dump rather than only in the cycle
+/// count.
+module cpu/program;
+
+import cpu/isa(Instr, i_add, i_beq, i_halt, i_load, i_loadi, i_mul, i_nop, i_store, i_sub);
+import testapi(Array, I32);
+import testapi/array(array_make_empty, array_push);
+
+pub fn build() -> Array(Instr) {
+  let code = array_make_empty(Instr, ());
+  array_push(code, i_loadi(1, 6));
+  array_push(code, i_loadi(2, 7));
+  array_push(code, i_add(3, 1, 2));
+  array_push(code, i_mul(4, 3, 2));
+  array_push(code, i_store(4, 2));
+  array_push(code, i_load(5, 2));
+  array_push(code, i_sub(6, 5, 1));
+  array_push(code, i_beq(6, 4, 14));
+  array_push(code, i_add(7, 6, 1));
+  array_push(code, i_mul(3, 7, 2));
+  array_push(code, i_beq(7, 4, 13));
+  array_push(code, i_sub(6, 3, 1));
+  array_push(code, i_store(6, 5));
+  array_push(code, i_nop());
+  array_push(code, i_store(7, 4));
+  array_push(code, i_halt());
+  array_push(code, i_loadi(7, -1));
+  code
+}

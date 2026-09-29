@@ -1,0 +1,42 @@
+module graph_routes/render;
+
+import graph_routes/model(Search_state, inf, {blocked}, {df}, {dg}, {relaxed}, {visited});
+import testapi(Bool, String);
+import testapi/arith(eq_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn unreachable_g(s: Search_state) -> Bool { eq_i32(s.?{dg}, inf()) }
+
+pub fn summary(s: Search_state) -> String {
+  cat(
+    , "gate_graph_routes route=A>C>E>D>F cost="
+    , cat(
+        , int_to_string(s.?{df})
+        , cat(
+            , " visited="
+            , cat(
+                , int_to_string(s.?{visited})
+                , cat(
+                    , " relaxed="
+                    , cat(
+                        , int_to_string(s.?{relaxed})
+                        , cat(
+                            , " blocked_C_D_seen="
+                            , cat(
+                                , int_to_string(s.?{blocked})
+                                , cat(
+                                    , " unreachable_G="
+                                    , cat(bool_to_string(unreachable_g(s)), "\n")
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}

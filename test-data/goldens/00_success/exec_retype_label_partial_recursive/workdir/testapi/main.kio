@@ -1,0 +1,15 @@
+module testapi/main;
+
+import core/store as target;
+import testapi(String);
+import testapi/io(print);
+import widget/store as source;
+
+pub fn main() -> . {
+  let selected = {source.foo = .(_next: source.Foo(String) -> String) { "selected-recursive\n" }};
+  print(target.read_foo(selected, .(_value: target.Foo(String)) { "unused" }));
+  let retained = {source.peer = .(_next: source.Peer(String) -> String) { "retained-recursive\n" }};
+  print(source.mixed_peer((selected, retained), .(_value: source.Peer(String)) { "unused" }));
+  let original = target.Foo.mk(.(_next: target.Foo(String) -> String) { "reverse-recursive\n" });
+  print(source.read_foo(original, .(_value: source.Foo(String)) { "unused" }))
+}

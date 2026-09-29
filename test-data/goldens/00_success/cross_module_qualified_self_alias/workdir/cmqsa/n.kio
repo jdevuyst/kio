@@ -1,0 +1,9 @@
+module cmqsa/n;
+
+import cmqsa as m;
+
+// A transparent alias whose body is the qualified, same-named type
+// `m.A`. The alias `A` shadows the leaf name `A`, so unfolding it must
+// resolve to the root's `A` (reached via `m`), not loop back onto this
+// alias by its bare leaf name.
+pub type A = m.A;

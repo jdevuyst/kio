@@ -1,0 +1,14 @@
+module main;
+
+import __intrinsics__;
+
+newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack }
+
+// The CPS continuation `.[U](pair) { __snd__(A, U, pair) }` is
+// checked against `[U](pair: A & U) -> A`. E-FnCheck (specs/formal/
+// elaboration.md § 4.1) skolemizes the inner `[U]` binder; the body
+// synthesizes `__snd__(A, U, pair) : U`, but the rule's escape check
+// rejects any body whose synthesized type names a skolem outside
+// the continuation's binder list. The skolem `U` leaks into the
+// projector's result type `A`, so the typer must reject.
+fn leak[A](p: Pack(A)) -> A { Pack.un_pack(A, p)(A, .[U](pair) { __snd__(A, U, pair) }) }

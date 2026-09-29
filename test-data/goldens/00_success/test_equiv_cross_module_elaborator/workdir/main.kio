@@ -1,0 +1,18 @@
+module main;
+
+import elab/control(if);
+import helper(Bool, a, b, pick);
+
+equiv main_local_differs() {
+  if! .t {
+    b()
+  } else {
+    a()
+  };
+  b()
+}
+
+equiv cross_module_pick_is_a() {
+  pick();
+  a()
+}

@@ -1,0 +1,13 @@
+package facade_substituted_unit_callback;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

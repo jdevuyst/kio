@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add, mul);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Multi-char op-tokens containing `.` are admissible. If an op-token
+// starts with `.`, it must contain at least two dots: `..` and `.+.`
+// are allowed, while `.+` is reserved for dot-led syntax.
+op _ .. _ { impl add }
+
+op _ .+. _ { impl mul }
+
+pub fn main() -> . {
+  print(int_to_string(3 .. 4));
+  // add(3, 4) = 7
+  print("\n");
+  print(int_to_string(3 .+. 4));
+  // mul(3, 4) = 12
+  print("\n")
+}

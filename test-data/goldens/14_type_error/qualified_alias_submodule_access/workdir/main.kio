@@ -1,0 +1,14 @@
+module main;
+
+import sub as s;
+
+host type String role(str);
+
+// Sub-module access through a qualified-import alias is rejected
+// by design: `use m as m;` binds one module's surface, not a tree
+// of sub-modules. Writing `s.sub.hidden()` to reach a fn
+// through a non-existent intermediate scope is a type error.
+// (Type-member access — `<alias>.<TypeName>.<member>` — is the
+// only three-segment shape that resolves; see
+// `exec_qualified_newtype_member`.)
+pub fn main() -> . { s.sub.hidden() }

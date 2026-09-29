@@ -1,0 +1,27 @@
+module flag;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+
+// A pure two-state truth value named `Bool` — the same shape the
+// `result` POC's root module core mints. The point of this golden is
+// that the *name* `Bool` collides with a `type Bool role(bool)`
+// the consumer's package file declares: the root module's
+// `Bool` must keep meaning this structural sum no matter what host the
+// consumer wires up (the root module contract), so the two `Bool`s
+// coexist in the consumer with distinct meanings.
+pub labels { btrue: ., bfalse: . };
+
+pub type Bool = Btrue | Bfalse;
+
+pub fn yes() -> Bool { widen_sum!({btrue=}) }
+
+pub fn no() -> Bool { widen_sum!({bfalse=}) }
+
+// Eliminate the root module `Bool` to a caller-chosen value, keeping the
+// underlying labels on this module's side of the import.
+pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
+  match! b {
+    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
+  }
+}

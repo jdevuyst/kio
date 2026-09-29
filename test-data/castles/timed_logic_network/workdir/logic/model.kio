@@ -1,0 +1,147 @@
+module logic/model;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import list_host as numbers;
+import testapi(Bool, I32, String);
+
+pub labels Signal = { wire: I32, level: Bool };
+
+pub labels Event = { at: I32, serial: I32, target: I32, value: Bool, source: Bool };
+
+pub labels Primitive = { buffer: I32 } | { xor: I32 & I32 };
+
+pub labels Gate = { output: I32, operation: Primitive, delay: I32, inertial: Bool };
+
+pub labels State = {
+  , wires: lists.List(Signal)
+  , ideals: lists.List(Signal)
+  , agenda: lists.List(Event)
+  , next_serial: I32
+  , edges: I32
+  , canceled: I32
+  , last_time: I32
+  };
+
+pub fn same_bit(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else if! b {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn initial_wires() -> lists.List(Signal) {
+  lists.cons(
+    , {wire = 0, level = .f}
+    , lists.cons(
+        , {wire = 1, level = .f}
+        , lists.cons(
+            , {wire = 2, level = .f}
+            , lists.cons({wire = 3, level = .f}, lists.singleton({wire = 4, level = .f}))
+            )
+        )
+    )
+}
+
+pub fn read_wire(id: I32, wires: lists.List(Signal)) -> Bool {
+  match! traversal.find(.(signal: Signal) { numbers.eq_i32(signal.?{wire}, id) }, wires) {
+    .(signal: Signal) { signal.?{level} };
+    .() { .f }
+  }
+}
+
+pub fn write_wire(id: I32, bit: Bool, wires: lists.List(Signal)) -> lists.List(Signal) {
+  traversal.map(
+    , .(signal: Signal) {
+        if! numbers.eq_i32(signal.?{wire}, id) {
+          {wire = id, level = bit}
+        } else {
+          signal
+        }
+      }
+    , wires
+    )
+}
+
+pub fn name(id: I32) -> String {
+  if! numbers.eq_i32(id, 0) {
+    "A"
+  } else if! numbers.eq_i32(id, 1) {
+    "slow"
+  } else if! numbers.eq_i32(id, 2) {
+    "H"
+  } else if! numbers.eq_i32(id, 3) {
+    "T"
+  } else {
+    "I"
+  }
+}
+
+pub fn affected(op: Primitive, id: I32) -> Bool {
+  match! op {
+    .(input: Buffer) { numbers.eq_i32(input.?{buffer}, id) };
+    .(inputs: Xor) {
+      let .(a, b) = inputs.?{xor};
+      if! numbers.eq_i32(a, id) {
+        .t
+      } else {
+        numbers.eq_i32(b, id)
+      }
+    }
+  }
+}
+
+pub fn evaluate(op: Primitive, wires: lists.List(Signal)) -> Bool {
+  match! op {
+    .(input: Buffer) { read_wire(input.?{buffer}, wires) };
+    .(inputs: Xor) {
+      let .(a, b) = inputs.?{xor};
+      if! same_bit(read_wire(a, wires), read_wire(b, wires)) {
+        .f
+      } else {
+        .t
+      }
+    }
+  }
+}
+
+pub fn circuit() -> lists.List(Gate) {
+  lists.cons(
+    , {output = 1, operation = {buffer = 0}.>widen_sum!(Primitive), delay = 3, inertial = .f}
+    , lists.cons(
+        , {output = 2, operation = {xor = (0, 1)}.>widen_sum!(Primitive), delay = 1, inertial = .f}
+        , lists.cons(
+            , {
+                , output = 3
+                , operation = {buffer = 2}.>widen_sum!(Primitive)
+                , delay = 2
+                , inertial = .f
+                }
+            , lists.singleton({
+                , output = 4
+                , operation = {buffer = 2}.>widen_sum!(Primitive)
+                , delay = 2
+                , inertial = .t
+                })
+            )
+        )
+    )
+}
+
+pub fn initial_state(events: lists.List(Event)) -> State {
+  {
+    , wires = initial_wires()
+    , ideals = initial_wires()
+    , agenda = events
+    , next_serial = traversal.length(events)
+    , edges = 0
+    , canceled = 0
+    , last_time = 0
+    }
+}

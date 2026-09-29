@@ -1,0 +1,53 @@
+polynomial lab -- integer polynomials held as coefficient lists
+===============================================================
+
+fixtures  (coefficient index = degree, vector head = constant term)
+  p = 3x^2 - 2x + 5  (deg 2, coeffs [5, -2, 3])
+  q = x^2 - 4  (deg 2, coeffs [-4, 0, 1])
+  d = x - 2  (deg 1, coeffs [-2, 1])
+  e = 2x + 1  (deg 1, coeffs [1, 2])
+  s = 6x^2 + 7x + 2  (deg 2, coeffs [2, 7, 6])
+
+normal form  (trailing zero coefficients are trimmed away)
+  of_coeffs [5, -2, 3, 0, 0] = 3x^2 - 2x + 5  (deg 2, coeffs [5, -2, 3])
+  p - p = 0  (deg -1, coeffs [])
+  scale(q, 0) = 0  (deg -1, coeffs [])
+
+operations
+  p + q = 4x^2 - 2x + 1
+  p - q = 2x^2 - 2x + 9
+  q - d = x^2 - x - 2
+  scale(p, -2) = -6x^2 + 4x - 10
+  scale(q, -1) = -x^2 + 4
+  p * q = 3x^4 - 2x^3 - 7x^2 + 8x - 20
+  d * e = 2x^2 - 3x - 2
+  d * s = 6x^3 - 5x^2 - 12x - 4
+  p' = 6x - 2
+  q' = 2x
+  (p * q)' = 12x^3 - 6x^2 - 14x + 8
+  (d * s)' = 18x^2 - 10x - 12
+
+evaluation  (Horner's rule)
+  x = -1  ->  p(x) = 10, q(x) = -3, (p*q)(x) = -30
+  x = 2  ->  p(x) = 13, q(x) = 0, (p*q)(x) = 0
+  x = 3  ->  p(x) = 26, q(x) = 5, (p*q)(x) = 130
+
+long division  (p = quotient * divisor + remainder)
+  p / d  ->  quotient 3x + 4, remainder 13
+  s / e  ->  quotient 3x + 2, remainder 0
+  p / e  ->  not divisible: leading coefficient 3 is not an exact multiple of 2
+
+algebraic laws
+  [pass] additive inverse:  (p + q) - q == p  ==>  3x^2 - 2x + 5
+  [pass] additive inverse:  (s + e) - e == s  ==>  6x^2 + 7x + 2
+  [pass] degree of product:  deg(p * q) == deg p + deg q  ==>  4 == 4
+  [pass] degree of product:  deg(d * e) == deg d + deg e  ==>  2 == 2
+  [pass] division identity:  quotient * d + remainder == p  ==>  3x^2 - 2x + 5
+  [pass] division identity:  quotient * e + remainder == s  ==>  6x^2 + 7x + 2
+  [pass] product rule:  (p * q)' == p' * q + p * q'  ==>  12x^3 - 6x^2 - 14x + 8
+  [pass] product rule:  (d * s)' == d' * s + d * s'  ==>  18x^2 - 10x - 12
+  [pass] eval homomorphism:  (p * q)(-1) == p(-1) * q(-1)  ==>  -30 == -30
+  [pass] eval homomorphism:  (p * q)(2) == p(2) * q(2)  ==>  0 == 0
+  [pass] eval homomorphism:  (p * q)(3) == p(3) * q(3)  ==>  130 == 130
+
+  5 laws, 11 checks, 11 pass, 0 fail

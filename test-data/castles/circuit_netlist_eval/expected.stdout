@@ -1,0 +1,19 @@
+circuit_netlist_eval
+pins: A=true B=false C=true EN=true
+stage0 gates:
+  g_and = AND(A,B) -> false
+  g_or = OR(B,C) -> true
+  g_en = AND(EN,A) -> true
+stage1 gates:
+  g_xor = XOR(g_or,g_en) -> false
+  g_mask = OR(g_and,C) -> true
+fanout:
+  g_or -> xor.left=true probe.bus=true
+probes:
+  carry=true
+  alarm=false
+  checksum=877
+diagnostics:
+  fanout_consistent=true
+  truth_tables_consistent=true
+  warning_count=0

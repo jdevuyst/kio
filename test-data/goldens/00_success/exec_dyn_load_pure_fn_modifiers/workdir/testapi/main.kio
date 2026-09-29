@@ -1,0 +1,69 @@
+/// Loads Kio' image text covering legal `pure fn` modifiers, the trusted-body boundary, and malformed placements.
+module testapi/main;
+
+import elab/match(match);
+import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show(label: String, outcome: Load_outcome) -> String {
+  match! un_load_outcome(outcome) {
+    (
+      , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
+      , .(diag: Lr_diag) {
+          string_concat(label, string_concat(diag_message(Lr_diag.get(diag)), "\n"(String)))
+        }
+      )
+  }
+}
+
+pub fn main() -> . {
+  print(show(
+    , "pub pure fn: "(String)
+    , load_package("module a;\n\npub pure fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"(String))
+    ));
+  print(show(
+    , "pure pub fn: "(String)
+    , load_package("module a;\n\npure pub fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"(String))
+    ));
+  print(show(
+    , "pub(scope) pure fn: "(String)
+    , load_package("module a/b;\n\npub(a) pure fn id(x: .) -> . { x }\n\npackage p;\nbridge { "
+                   "a/b; }\n"(String))
+    ));
+  print(show(
+    , "pure pub(scope) fn: "(String)
+    , load_package("module a/b;\n\npure pub(a) fn id(x: .) -> . { x }\n\npackage p;\nbridge { "
+                   "a/b; }\n"(String))
+    ));
+  print(show(
+    , "pure fn: "(String)
+    , load_package("module a;\n\npure fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"(String))
+    ));
+  // Loading trusts precompiled bodies; standalone validation rejects this host call from a pure fn.
+  print(show(
+    , "trusted pure body: "(String)
+    , load_package("module a;\n\nhost fn effect(x: .) -> .;\n\npure fn claimed(x: .) -> . { "
+                   "effect(x) }\n\npackage p;\nbridge { a; }\n"(String))
+    ));
+  print(show(
+    , "duplicate pure: "(String)
+    , load_package("module a;\n\npure pure fn id(x: .) -> . { x }\n"(String))
+    ));
+  print(show(
+    , "pure host fn: "(String)
+    , load_package("module a;\n\npure host fn effect(x: .) -> .;\n"(String))
+    ));
+  print(show(
+    , "pure rec: "(String)
+    , load_package("module a;\n\npure rec(loop) { fn again(x: .) -> . { x } }\n"(String))
+    ));
+  print(show("pure type: "(String), load_package("module a;\n\npure type Nope = .;\n"(String))));
+  print(show(
+    , "pure newtype: "(String)
+    , load_package("module a;\n\npure newtype Nope : . { constructor make; projector unmake; "
+                   "};\n"(String))
+    ))
+}

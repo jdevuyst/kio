@@ -1,0 +1,9 @@
+module main;
+
+// A kind-`*` binder is not applicable to a type argument. `[A]`
+// has the default kind `*` (no leading stars), so writing `A(B)`
+// in type position is a kind error: `A` has kind `*` and cannot
+// consume an argument. Higher-kinded application `F(B)` is admitted
+// only when the head's binder is annotated kind-`*→*` (`[*F]`).
+// The diagnostic must point at `specs/grammar.md` § Kind grammar.
+fn misapply[A][B](x: A(B)) -> A(B) { x }

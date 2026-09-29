@@ -1,0 +1,74 @@
+/// A word and the width its glyphs occupy.
+///
+/// The paragraph carries measured metrics because a typesetter reads glyph
+/// widths from the font's metric table instead of counting characters at every
+/// candidate break. Each width here is the character count of its own text, so
+/// a rendered line is exactly as wide as the model claims and the drawn right
+/// margin can be trusted.
+module justify/word;
+
+import elab/control(if);
+import elab/match(match);
+import justify/list(List);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32);
+import testapi/iter(loop);
+
+pub labels Word = { text: String, width: I32 };
+
+pub type Words = List(Word);
+
+pub fn make_word(text: String, width: I32) -> Word { {text, width} }
+
+pub fn word_text(w: Word) -> String { w.?{text} }
+
+pub fn word_width(w: Word) -> I32 { w.?{width} }
+
+rec(loop) fn span_onto(xs: Words, cursor: I32, from: I32, to: I32, used: I32) -> I32 {
+  if! leq_i32(to, cursor) {
+    used
+  } else match! xs.>List.unpack {
+    (
+      , .(w: Word, rest: Words) {
+          if! lt_i32(cursor, from) {
+            rec span_onto(rest, add_i32(cursor, 1), from, to, used)
+          } else {
+            rec span_onto(
+              , rest
+              , add_i32(cursor, 1)
+              , from
+              , to
+              , add_i32(add_i32(used, 1), word_width(w))
+              )
+          }
+        }
+      , .(_empty: .) { used }
+      )
+  }
+}
+
+/// The printed width of the line holding words `from .. to - 1`: their widths
+/// plus one gap between each adjacent pair. The walk starts one gap in debt, so
+/// the first word pays for a gap that is not there and every later word pays
+/// for the one that is.
+pub fn span_used(xs: Words, from: I32, to: I32) -> I32 { span_onto(xs, 0, from, to, -1) }
+
+rec(loop) fn widest_onto(xs: Words, acc: I32) -> I32 {
+  match! xs.>List.unpack {
+    (
+      , .(w: Word, rest: Words) {
+          if! lt_i32(acc, word_width(w)) {
+            rec widest_onto(rest, word_width(w))
+          } else {
+            rec widest_onto(rest, acc)
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The widest word in the paragraph. The metrics table's text column is cut to
+/// it, which is the only measurement the renderer needs and one the model
+/// already holds.
+pub fn widest(xs: Words) -> I32 { widest_onto(xs, 0) }

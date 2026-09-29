@@ -1,0 +1,72 @@
+/// Long division with remainder, guarded by an explicit failure arm.
+module poly/division;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import poly/arith as arith;
+import poly/core as core;
+import poly/integers as integers;
+import testapi(Bool, I32, String);
+import testapi/arith(lt_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+/// The outcome of one of the workbench's fixed division cases: either a quotient
+/// with its remainder, or the reason the division was refused.
+pub labels Divmod = { divided: core.Poly & core.Poly } | { not_divisible: String };
+
+fn inexact_step(lead_remainder: I32, lead_divisor: I32) -> String {
+  string_concat(
+    , "leading coefficient "
+    , string_concat(
+        , int_to_string(lead_remainder)
+        , string_concat(" is not an exact multiple of ", int_to_string(lead_divisor))
+        )
+    )
+}
+
+// One school-book step per turn: cancel the running remainder's leading term by
+// the divisor's, and move that term into the quotient. For the small checked
+// values, cancellation stays in range and strictly lowers the remainder's degree,
+// so the walk reaches `deg(remainder) < deg(divisor)`. The divisor is non-zero here,
+// which is what makes that stopping test reachable at all.
+rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: core.Poly) -> Divmod {
+  if! lt_i32(core.deg(remainder), core.deg(divisor)) {
+    widen_sum!({divided = (quotient, remainder)})
+  } else {
+    let factor = integers.exact_div(core.leading(remainder), core.leading(divisor));
+    match! factor {
+      (
+        , .(k: I32) {
+            let term = core.monomial(k, sub_i32(core.deg(remainder), core.deg(divisor)));
+            rec long_divide(
+              , arith.add(quotient, term)
+              , arith.sub(remainder, arith.mul(term, divisor))
+              , divisor
+              )
+          }
+        , .(_inexact: .) {
+            let reason = inexact_step(core.leading(remainder), core.leading(divisor));
+            widen_sum!({not_divisible = reason})
+          }
+        )
+    }
+  }
+}
+
+/// `divmod(p, divisor)` seeks `p = quotient * divisor + remainder` with
+/// `deg(remainder) < deg(divisor)`.
+///
+/// In the checked fixture domain that identity is not always reachable. Each step
+/// must divide the running remainder's leading coefficient by the divisor's. The
+/// monic fixture divides by 1; the successful non-monic fixture divides evenly;
+/// otherwise the workbench refuses the division rather than rounding.
+pub fn divmod(p: core.Poly, divisor: core.Poly) -> Divmod {
+  if! core.is_zero(divisor) {
+    widen_sum!({not_divisible = "divisor is the zero polynomial"})
+  } else {
+    long_divide(core.zero(), p, divisor)
+  }
+}

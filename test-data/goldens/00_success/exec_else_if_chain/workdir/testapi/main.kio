@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// The `else if` chain parses to the same right-spined
+// `Expr::IfElse` AST as the nested `} else { if … }`. With
+// `a = false` and `b = true` the middle arm fires; the output is
+// `B\n`. The chain's nested `Expr::IfElse` nodes all return `()`.
+pub fn main() -> . {
+  let a = .f;
+  let b = .t;
+  if! a {
+    print("A\n")
+  } else if! b {
+    print("B\n")
+  } else {
+    print("C\n")
+  }
+}

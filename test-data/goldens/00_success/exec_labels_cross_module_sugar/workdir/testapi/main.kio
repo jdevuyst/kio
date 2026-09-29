@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/labels(Greeting);
+import testapi/labels({greeting});
+
+// Cross-module label with sugar:
+//   - `Greeting` names the generated nominal type.
+//   - `{greeting = "…"}` in value position resolves to the
+//     constructor member call.
+// The user imports the label `greeting`, leaving the ordinary value
+// name free for unrelated bindings.
+pub fn make() -> Greeting { {greeting = "via sugar\n"} }
+
+pub fn main() -> . { print(make().?{greeting}) }

@@ -1,0 +1,23 @@
+module testapi/main;
+
+import core/mutual as target_mutual;
+import core/self as target_self;
+import testapi(String);
+import testapi/io(print);
+import widget/mutual as source_mutual;
+import widget/self as source_self;
+
+pub fn main() -> . {
+  let chain =
+    {source_self.link = .(_next: source_self.Chain(String) -> String) { "self-recursive\n" }};
+  print(target_self.read_chain(chain, .(_node: target_self.Chain(String)) { "unused" }));
+  let left =
+    {source_mutual.left = .(_next: source_mutual.Right(String) -> String) { "mutual-left\n" }};
+  let right =
+    {source_mutual.right = .(_next: source_mutual.Left(String) -> String) { "mutual-right\n" }};
+  print(target_mutual.read_left(left, .(_node: target_mutual.Right(String)) { "unused" }));
+  print(target_mutual.read_right(right, .(_node: target_mutual.Left(String)) { "unused" }));
+  let original =
+    target_self.Link.mk(.(_next: target_self.Chain(String) -> String) { "reverse-self\n" });
+  print(source_self.read_chain(original, .(_node: source_self.Chain(String)) { "unused" }))
+}

@@ -1,0 +1,12 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn implicit_unit_impl(
+  , _ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _packet_type: __Type__
+  , packet: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (packet, fills) }
+
+pub elab implicit_unit : [Packet] Packet -> Packet { impl(fills) implicit_unit_impl }

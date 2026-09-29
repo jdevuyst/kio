@@ -1,0 +1,167 @@
+/// The recalculation engine. A full pass evaluates every cell; an edit only
+/// the cells that can observe it. The plan is rebuilt after each edit because
+/// an edit can change the graph itself: replacing a formula can break a
+/// cycle, or close one.
+module sheet/recalc;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import sheet/addr(Addr, all_addrs, cell_count, mem);
+import sheet/cells(Sheet, Values, blank_content, cycle_value, empty_values);
+import sheet/cells(formula_content, number_content, set_content, set_value);
+import sheet/eval(eval_cell);
+import sheet/formula(Expr);
+import sheet/graph(Deps, build_deps, cycle_cells, deps_of, topo_order);
+import sheet/list(List, append, cons, filter, len, nil, one);
+import testapi(Bool, I32);
+import testapi/arith(sub_i32);
+import testapi/iter(loop);
+
+pub labels Change = { put_number: I32 } | { put_formula: Expr } | { clear: . };
+
+pub labels Edit = { edit_at: Addr, edit_kind: Change };
+
+pub fn number_edit(a: Addr, n: I32) -> Edit {
+  {edit_at = a, edit_kind = {put_number = n}.>widen_sum!(Change)}
+}
+
+pub fn formula_edit(a: Addr, e: Expr) -> Edit {
+  {edit_at = a, edit_kind = {put_formula = e}.>widen_sum!(Change)}
+}
+
+pub fn clear_edit(a: Addr) -> Edit { {edit_at = a, edit_kind = {clear=}.>widen_sum!(Change)} }
+
+pub fn edit_addr(e: Edit) -> Addr { e.?{edit_at} }
+
+pub fn fold_edit[R](e: Edit, on_number: I32 -> R, on_formula: Expr -> R, on_clear: R) -> R {
+  let change = e.?{edit_kind};
+  match! change {
+    (
+      , .(n: Put_number) { on_number(n.?{put_number}) }
+      , .(f: Put_formula) { on_formula(f.?{put_formula}) }
+      , .(_c: Clear) { on_clear }
+      )
+  }
+}
+
+fn apply_edit(s: Sheet, e: Edit) -> Sheet {
+  set_content(
+    , s
+    , edit_addr(e)
+    , fold_edit(
+        , e
+        , .(n: I32) { number_content(n) }
+        , .(x: Expr) { formula_content(x) }
+        , blank_content()
+        )
+    )
+}
+
+/// The current sheet's shape: inverted edges, cycle, evaluation order.
+pub labels Plan = { plan_deps: Deps, plan_cycle: List(Addr), plan_order: List(Addr) };
+
+pub fn build_plan(s: Sheet) -> Plan {
+  let edges = build_deps(s);
+  let cyc = cycle_cells(s);
+  {plan_deps = edges, plan_cycle = cyc, plan_order = topo_order(s, edges, cyc)}
+}
+
+pub fn plan_cycle(p: Plan) -> List(Addr) { p.?{plan_cycle} }
+
+pub fn plan_order(p: Plan) -> List(Addr) { p.?{plan_order} }
+
+/// Evaluate `todo` in order, threading each result into the store the next
+/// cell reads. A cell on a cycle has no well-founded value to compute, so it
+/// is settled as `#CYCLE` instead.
+rec(loop) fn eval_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), vals: Values) -> Values {
+  match! todo.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          if! mem(cyc, a) {
+            rec eval_onto(s, cyc, rest, set_value(vals, a, cycle_value()))
+          } else {
+            rec eval_onto(s, cyc, rest, set_value(vals, a, eval_cell(s, vals, a)))
+          }
+        }
+      , .(_empty: .) { vals }
+      )
+  }
+}
+
+/// The opening pass: settle the cycling cells, then evaluate the rest once.
+pub fn full_eval(s: Sheet, p: Plan) -> Values {
+  eval_onto(s, plan_cycle(p), append(plan_cycle(p), plan_order(p)), empty_values())
+}
+
+rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(Addr) {
+  match! frontier.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          if! mem(seen, a) {
+            rec close(deps, rest, seen)
+          } else {
+            rec close(deps, append(rest, deps_of(deps, a)), cons(a, seen))
+          }
+        }
+      , .(_empty: .) { seen }
+      )
+  }
+}
+
+/// The cells an edit at `a` can change: `a` itself, plus everything that
+/// reads it, transitively. Nothing else can observe the edit, so nothing else
+/// is recomputed. Skipping seen cells is what lets the walk close over a
+/// graph that cycles.
+pub fn dirty_set(deps: Deps, a: Addr) -> List(Addr) {
+  let seen = close(deps, one(a), nil(Addr, ()));
+  filter(all_addrs(), .(c: Addr) { mem(seen, c) })
+}
+
+pub labels Step = {
+  , step_sheet: Sheet
+  , step_values: Values
+  , step_plan: Plan
+  , step_dirty: List(Addr)
+  , step_order: List(Addr)
+  , step_recomputed: I32
+  , step_skipped: I32
+  };
+
+pub fn step_sheet(st: Step) -> Sheet { st.?{step_sheet} }
+
+pub fn step_values(st: Step) -> Values { st.?{step_values} }
+
+pub fn step_plan(st: Step) -> Plan { st.?{step_plan} }
+
+pub fn step_dirty(st: Step) -> List(Addr) { st.?{step_dirty} }
+
+pub fn step_order(st: Step) -> List(Addr) { st.?{step_order} }
+
+pub fn step_recomputed(st: Step) -> I32 { st.?{step_recomputed} }
+
+pub fn step_skipped(st: Step) -> I32 { st.?{step_skipped} }
+
+/// Apply one edit and recompute the minimum: the dirty cells on a cycle
+/// first (settled, not computed), then the dirty cells in the new topological
+/// order, so each reads precedents that are already up to date. The two lists
+/// partition the dirty set, so the recomputed count is exactly its size.
+pub fn recalc(s: Sheet, vals: Values, e: Edit) -> Step {
+  let next = apply_edit(s, e);
+  let p = build_plan(next);
+  let dirty = dirty_set(p.?{plan_deps}, edit_addr(e));
+  let settled = filter(plan_cycle(p), .(a: Addr) { mem(dirty, a) });
+  let computed = filter(plan_order(p), .(a: Addr) { mem(dirty, a) });
+  let order = append(settled, computed);
+  let vals2 = eval_onto(next, plan_cycle(p), order, vals);
+  let count = len(order);
+  {
+    , step_sheet = next
+    , step_values = vals2
+    , step_plan = p
+    , step_dirty = dirty
+    , step_order = order
+    , step_recomputed = count
+    , step_skipped = sub_i32(cell_count(), count)
+    }
+}

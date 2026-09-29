@@ -1,0 +1,5 @@
+#!/bin/sh
+set -u
+"$KIO_BIN" fmt - <<'KIO'
+module fmt_label_forms; labels { ready: . }; fn make() -> Ready { {ready = ()} } fn echo(ready: .) -> Ready { {ready = ready} } fn empty() -> . { {} } fn read(r: Ready) -> . { r.?{ready}; () } fn write(r: Ready) -> Ready { r.!{ready = ()} } fn write_echo(r: Ready, ready: .) -> Ready { r.!{ready = ready} }
+KIO

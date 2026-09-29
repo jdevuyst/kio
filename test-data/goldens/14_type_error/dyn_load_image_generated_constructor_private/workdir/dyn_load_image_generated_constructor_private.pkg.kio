@@ -1,0 +1,18 @@
+package dyn_load_image_generated_constructor_private;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

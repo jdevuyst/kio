@@ -1,0 +1,11 @@
+module main;
+
+import testapi(I32);
+
+newtype Boxed : I32 { constructor wrap; projector unwrap }
+
+literal wrap = 1;
+
+literal unwrap = 2;
+
+fn exercise() -> I32 & I32 { (Boxed.unwrap(Boxed.wrap(wrap)), unwrap) }

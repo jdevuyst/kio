@@ -1,0 +1,7 @@
+module provider/names;
+
+import hostapi(I32);
+
+pub fn from() -> I32 { 7(I32) }
+
+pub fn op() -> I32 { 11(I32) }

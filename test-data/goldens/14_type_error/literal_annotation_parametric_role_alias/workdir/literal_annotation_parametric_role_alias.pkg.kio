@@ -1,0 +1,18 @@
+package literal_annotation_parametric_role_alias;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  provider
+}

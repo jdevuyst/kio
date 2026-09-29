@@ -1,0 +1,9 @@
+module core/store;
+
+import testapi as testapi;
+
+pub type I32 = testapi.I32;
+
+pub newtype Tag : I32 { pub constructor mk; pub projector un }
+
+pub fn tag_val(t: Tag) -> I32 { Tag.un(t) }

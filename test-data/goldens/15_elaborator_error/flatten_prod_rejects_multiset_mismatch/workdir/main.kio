@@ -1,0 +1,11 @@
+module main;
+
+import elab/spine_elaborators(flatten_prod);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+fn drop_via_flatten(p: (A & B) & C) -> A & C { flatten_prod!(p) }

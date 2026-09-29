@@ -1,0 +1,14 @@
+# yamllint config; see https://yamllint.readthedocs.io/en/stable/configuration.html
+extends: default
+
+rules:
+  # Long lines are fine (matches the README/spec posture and
+  # .markdownlint.json's MD013 stance).
+  line-length: disable
+  # Workflow files don't start with `---`; not worth churning every
+  # YAML in the repo over.
+  document-start: disable
+  # `on:` in GitHub Actions workflows is a YAML key, not a boolean
+  # value, but yamllint's `truthy` rule flags it. Skip key checks.
+  truthy:
+    check-keys: false

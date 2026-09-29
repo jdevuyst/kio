@@ -1,0 +1,5 @@
+module pure_elaborator_emits_host_call;
+
+host type I32;
+
+host fn id_i32(value: I32) -> I32;

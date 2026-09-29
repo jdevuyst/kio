@@ -1,0 +1,3 @@
+module details/core;
+
+pub fn id[A](value: A) -> A { value }

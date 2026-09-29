@@ -1,0 +1,92 @@
+================================================================================
+block declarations preserve descriptor order around implementation
+================================================================================
+elab choose: . -> . { trailing thunk; impl implementation; trailing thunk else }
+--------------------------------------------------------------------------------
+
+(source_file
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (trailing_block_clause (keyword_declaration) (keyword_declaration))
+      (separator_semicolon)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (callable_path (entity_name_function)))
+      (separator_semicolon)
+      (trailing_block_clause
+        (keyword_declaration)
+        (keyword_declaration)
+        label: (block_label))
+      (bracket_rbrace))))
+
+================================================================================
+block calls preserve blockless prefix ownership
+================================================================================
+fn subject() { outer! convert!(value) { body } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group (bracket_lparen) (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        prefix: (block_prefix_call
+          (elaborator_name)
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path (identifier))
+            (bracket_rparen)))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+block calls own neutral bind and continuation label
+================================================================================
+fn subject() { outer! { let value <- source; value } next { later } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group (bracket_lparen) (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        first: (neutral_block
+          (bracket_lbrace)
+          (neutral_bind
+            (keyword_let)
+            (identifier)
+            (operator_run)
+            (expression_path (identifier)))
+          (separator_semicolon)
+          (expression_path (identifier))
+          (bracket_rbrace))
+        labelled: (labelled_block
+          label: (block_label)
+          body: (neutral_block
+            (bracket_lbrace)
+            (expression_path (identifier))
+            (bracket_rbrace))))
+      (bracket_rbrace))))

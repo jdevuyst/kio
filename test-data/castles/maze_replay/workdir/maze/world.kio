@@ -1,0 +1,108 @@
+/// The procedurally generated world: a grid of cells whose kind is a
+/// pure function of the fixture seed and the cell's coordinates. Nothing
+/// is stored — every query recomputes the cell from the seed, so the
+/// world is fully deterministic and needs no mutable backing array.
+module maze/world;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import maze/prng(mix, modulus, seed_state);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+/// A cell is one of three kinds. The labels generate the nominal `Wall`
+/// / `Item` / `Open` types and the `Cell` sum over them.
+pub labels Cell = { wall: . } | { item: . } | { open: . };
+
+pub fn wall_cell() -> Cell { {wall=}.>widen_sum!(Cell) }
+
+pub fn item_cell() -> Cell { {item=}.>widen_sum!(Cell) }
+
+pub fn open_cell() -> Cell { {open=}.>widen_sum!(Cell) }
+
+/// Logical conjunction over `Bool`.
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+/// Logical disjunction over `Bool`.
+pub fn or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+/// Integer equality, derived from the antisymmetry of `<=`.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// True when `(x, y)` is inside a `w` by `h` grid.
+pub fn in_bounds(w: I32, h: I32, x: I32, y: I32) -> Bool {
+  and(and(leq_i32(0, x), lt_i32(x, w)), and(leq_i32(0, y), lt_i32(y, h)))
+}
+
+/// The goal cell is the far corner.
+pub fn goal_x(w: I32) -> I32 { sub_i32(w, 1) }
+
+pub fn goal_y(h: I32) -> I32 { sub_i32(h, 1) }
+
+fn is_start(x: I32, y: I32) -> Bool { and(int_eq(x, 0), int_eq(y, 0)) }
+
+fn is_goal(w: I32, h: I32, x: I32, y: I32) -> Bool {
+  and(int_eq(x, goal_x(w)), int_eq(y, goal_y(h)))
+}
+
+/// Classify the cell at `(x, y)` for the given seed and grid. The start
+/// and goal corners are always open so a replay always has a free
+/// entrance and a reachable exit; every other cell derives its kind
+/// from the seeded mix — one fifth are walls, and of the rest one
+/// seventh carry an item.
+pub fn cell_at(seed: I32, w: I32, h: I32, x: I32, y: I32) -> Cell {
+  if! or(is_start(x, y), is_goal(w, h, x, y)) {
+    open_cell()
+  } else {
+    let v = mix(seed_state(seed), x, y);
+    if! int_eq(mod_i32(v, 5), 0) {
+      wall_cell()
+    } else if! int_eq(mod_i32(v, 7), 0) {
+      item_cell()
+    } else {
+      open_cell()
+    }
+  }
+}
+
+/// True when `(x, y)` is a wall.
+pub fn is_wall(seed: I32, w: I32, h: I32, x: I32, y: I32) -> Bool {
+  match! cell_at(seed, w, h, x, y) {
+    (.(_wall: Wall) { .t }, .(_item: Item) { .f }, .(_open: Open) { .f })
+  }
+}
+
+/// True when `(x, y)` carries an item.
+pub fn is_item(seed: I32, w: I32, h: I32, x: I32, y: I32) -> Bool {
+  match! cell_at(seed, w, h, x, y) {
+    (.(_wall: Wall) { .f }, .(_item: Item) { .t }, .(_open: Open) { .f })
+  }
+}
+
+rec(loop) {
+  pub fn checksum(seed: I32, w: I32, h: I32) -> I32 { rec scan(seed, w, h, 0, 0) };
+  fn scan(seed: I32, w: I32, h: I32, i: I32, acc: I32) -> I32 {
+    if! leq_i32(mul_i32(w, h), i) {
+      acc
+    } else {
+      let x = mod_i32(i, w);
+      let y = div_i32(i, w);
+      let v = mix(seed_state(seed), x, y);
+      rec scan(seed, w, h, add_i32(i, 1), mod_i32(add_i32(acc, v), modulus()))
+    }
+  }
+}

@@ -1,0 +1,26 @@
+shift_roster_planner: v1
+shifts: 10 workers: 4
+assignments:
+  #0 d0 morning -> Ari skill=front demand=2 pref=0
+  #1 d0 evening -> Bea skill=meds demand=1 pref=1
+  #2 d0 night -> Ari skill=lead demand=1 pref=2
+  #3 d1 morning -> Cal skill=meds demand=2 pref=0
+  #4 d1 evening -> Dee skill=front demand=1 pref=1
+  #5 d2 morning -> Bea skill=lead demand=2 pref=0
+  #6 d2 evening -> Cal skill=front demand=1 pref=2
+  #7 d2 night -> Dee skill=lead demand=1 pref=1
+  #8 d3 morning -> Ari skill=meds demand=2 pref=0
+  #9 d3 evening -> Dee skill=front demand=1 pref=0
+loads:
+  Ari: 3
+  Bea: 2
+  Cal: 2
+  Dee: 3
+constraints:
+  skill shortfalls: 5
+  same-day conflicts: 1
+  rest conflicts: 0
+  fairness penalty: 0
+  preference penalty: 9
+  total score: 59
+healthy: false

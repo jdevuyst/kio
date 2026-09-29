@@ -1,0 +1,41 @@
+/// Bit plumbing assembled from integer arithmetic. This host supplies no
+/// shift and no mask, so a left shift is a multiply by a power of two, a
+/// right shift is a divide, and a mask is a remainder — which is all a
+/// shift and a mask ever were.
+module base32/bits;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(div_i32, leq_i32, mod_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+/// Integer equality. The host offers `<=` but no `==`, so equality is the
+/// antisymmetry of `<=` taken in both directions.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// `2^n` by repeated doubling. The codec never asks for more than one
+/// byte's worth of bits, so the result stays small.
+rec(loop) fn pow2(n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    1
+  } else {
+    mul_i32(2, rec(cont) pow2(sub_i32(n, 1)))
+  }
+}
+
+/// Shift `value` up by `n` bits, making room for `n` fresh low bits.
+pub fn shift_up(value: I32, n: I32) -> I32 { mul_i32(value, pow2(n)) }
+
+/// Shift `value` down by `n` bits, discarding the low `n`.
+pub fn shift_down(value: I32, n: I32) -> I32 { div_i32(value, pow2(n)) }
+
+/// Keep the low `n` bits of `value` and drop everything above them.
+pub fn low_bits(value: I32, n: I32) -> I32 { mod_i32(value, pow2(n)) }

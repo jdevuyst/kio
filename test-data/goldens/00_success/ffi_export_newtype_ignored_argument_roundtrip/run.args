@@ -1,0 +1,2 @@
+--protocol
+export-newtype-ignored-argument-roundtrip

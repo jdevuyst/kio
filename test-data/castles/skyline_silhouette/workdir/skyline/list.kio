@@ -1,0 +1,40 @@
+/// A generic cons list.
+///
+/// Four different element types ride this one spine — buildings, edge events,
+/// active heights, and the emitted key points — so the list is polymorphic
+/// rather than specialised to any of them.
+module skyline/list;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// A list is empty, or a head paired with the rest. The nominal `newtype` ties
+/// the recursive knot: an anonymous sum cannot mention itself.
+pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; pub projector un_list }
+
+pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, rest: List(A)) -> List(A) {
+  List.mk_list(widen_sum!((head, rest), . | (A & List(A))))
+}
+
+rec(loop) {
+  pub fn length[A](xs: List(A)) -> I32 { rec count(xs, 0) };
+  fn count[A](xs: List(A), seen: I32) -> I32 {
+    match! xs.>List.un_list {
+      (.(_head: A, rest: List(A)) { rec count(rest, add_i32(seen, 1)) }, .(_empty: .) { seen })
+    }
+  }
+}
+
+rec(loop) {
+  pub fn reverse[A](xs: List(A)) -> List(A) { rec flip(xs, nil(A, ())) };
+  fn flip[A](xs: List(A), done: List(A)) -> List(A) {
+    match! xs.>List.un_list {
+      (.(head: A, rest: List(A)) { rec flip(rest, cons(head, done)) }, .(_empty: .) { done })
+    }
+  }
+}

@@ -1,0 +1,10 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(I32, String);
+import testapi/io(eprint, exit);
+
+fn panic[A](msg: String) -> A { let warned = eprint(msg); __absurd__(A, exit(90(I32))) }
+
+pub fn main() -> . { panic(., "kio panic: boom\n"(String)) }

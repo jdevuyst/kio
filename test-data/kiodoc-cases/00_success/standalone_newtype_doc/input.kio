@@ -1,0 +1,12 @@
+module pkg;
+
+fn identity(x: .) -> . { x }
+
+/// Validated ordinary newtype docs.
+///
+/// See [`Wrapped`] and [`@signature identity`].
+///
+/// ```kio {@}
+/// identity(())
+/// ```
+pub newtype Wrapped : . { constructor make; projector read; };

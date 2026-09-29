@@ -1,0 +1,17 @@
+module rec_unrelated_match_elaborator_lambda/elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pure fn ignore_clause(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , _value: __Checked_term__
+  , _ignored: __Type__
+  , _ignored_value: __Checked_term__
+  , _target: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+
+pub elab match : [Source] Source -> [Ignored] Ignored -> [Target] Target { impl(fills) ignore_clause }

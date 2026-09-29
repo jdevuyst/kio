@@ -1,0 +1,5 @@
+module unrelated;
+
+type Duplicate = .;
+
+type Duplicate = .;

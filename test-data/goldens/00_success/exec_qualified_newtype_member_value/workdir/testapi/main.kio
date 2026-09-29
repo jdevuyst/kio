@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/types as t;
+
+fn build(make: I32 -> t.Celsius, n: I32) -> t.Celsius { make(n) }
+
+fn unwrap(read: t.Celsius -> I32, c: t.Celsius) -> I32 { read(c) }
+
+pub fn main() -> . {
+  let temp = build(t.Celsius.mk_celsius, 25(I32));
+  print(int_to_string(unwrap(t.Celsius.to_int, temp)))
+}

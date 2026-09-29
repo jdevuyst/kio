@@ -1,0 +1,15 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+labels { foo: I32 };
+
+pub fn main() -> . {
+  let both = {foo = 7}.?{foo, foo};
+  print(int_to_string(__fst__(I32, I32, both)));
+  print(int_to_string(__snd__(I32, I32, both)))
+}

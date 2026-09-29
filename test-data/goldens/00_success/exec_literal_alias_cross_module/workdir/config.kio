@@ -1,0 +1,7 @@
+module config;
+
+import testapi(String);
+
+// `pub literal` exports the literal for use in any other module of
+// the same package via `use greeting from config;`.
+pub literal greeting = "hello cross-module alias\n";

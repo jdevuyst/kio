@@ -1,0 +1,5 @@
+module main;
+
+import provider as p;
+
+pure fn keep(value: p.String) -> p.String { value }

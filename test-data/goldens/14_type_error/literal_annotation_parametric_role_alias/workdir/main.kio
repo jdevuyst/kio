@@ -1,0 +1,5 @@
+module main;
+
+import dep as d;
+
+fn main() -> . { let value = 42(d.Phantom); () }

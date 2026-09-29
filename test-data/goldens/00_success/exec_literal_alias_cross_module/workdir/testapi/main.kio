@@ -1,0 +1,7 @@
+module testapi/main;
+
+import config(greeting);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . { let prefix = print("greeting from config: "(String)); print(greeting) }

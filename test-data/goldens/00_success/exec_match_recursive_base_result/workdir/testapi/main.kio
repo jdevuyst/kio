@@ -1,0 +1,44 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/iter(loop);
+
+labels Step = { more: . } | { done: . };
+
+fn done_step() -> Step { {done=}.>widen_sum!(Step) }
+
+rec(loop) fn optional(step: Step) -> I32 | . {
+  match! step {
+    (.(_more: More) { rec optional(done_step()) }, .(_done: Done) { widen_sum!(()) })
+  }
+}
+
+labels Found = { value: I32 } | { absent: . };
+
+fn not_found() -> Found { {absent=}.>widen_sum!(Found) }
+
+rec(loop) fn find(step: Step) -> Found {
+  match! step {
+    (.(_done: Done) -> _ { not_found() }, .(_more: More) { rec find(done_step()) })
+  }
+}
+
+fn report_optional(value: I32 | .) -> . {
+  match! value {
+    (.(_number: I32) { print("unexpected optional\n") }, .(_empty: .) { print("widen base\n") })
+  }
+}
+
+fn report_found(value: Found) -> . {
+  match! value {
+    (
+      , .(_value: Value) { print("unexpected found\n") }
+      , .(_absent: Absent) { print("ordinary base\n") }
+      )
+  }
+}
+
+pub fn main() -> . { report_optional(optional(done_step())); report_found(find(done_step())) }

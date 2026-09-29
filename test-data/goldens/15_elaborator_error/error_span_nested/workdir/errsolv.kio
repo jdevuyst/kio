@@ -1,0 +1,7 @@
+module errsolv;
+
+host type A role(i32);
+
+host type B role(i64);
+
+host type C role(str);

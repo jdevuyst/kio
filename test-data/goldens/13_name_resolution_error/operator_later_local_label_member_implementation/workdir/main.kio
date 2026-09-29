@@ -1,0 +1,5 @@
+module main;
+
+op + _ { impl Box.mk }
+
+labels { box: . };

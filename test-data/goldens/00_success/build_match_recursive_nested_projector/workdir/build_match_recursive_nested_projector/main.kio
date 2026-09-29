@@ -1,0 +1,23 @@
+module build_match_recursive_nested_projector/main;
+
+import build_match_recursive_nested_projector(Bool, loop);
+import elab/match(match);
+
+pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
+
+pub rec(loop) fn same_length[A](left: List(A), right: List(A)) -> Bool {
+  match! left.>List.un_list {
+    (
+      , .(_head: A, rest: List(A)) {
+          match! right.>List.un_list {
+            (.(_other: A, others: List(A)) { rec same_length(rest, others) }, .(_empty: .) { .f })
+          }
+        }
+      , .(_empty: .) {
+          match! right.>List.un_list {
+            (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+          }
+        }
+      )
+  }
+}

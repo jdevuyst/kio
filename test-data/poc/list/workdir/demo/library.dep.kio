@@ -1,0 +1,8 @@
+dependency library;
+
+source {
+  path "../list.pkg.kio"
+}
+
+rehost library/elab/testapi to testapi;
+rehost library/list to list_host;

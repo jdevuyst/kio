@@ -1,0 +1,19 @@
+module priority_dispatch/text;
+
+import testapi(Bool, I32, String);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(cat3(a, b, c), d) }
+
+pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  cat(cat4(a, b, c, d), e)
+}
+
+pub fn show_i32(value: I32) -> String { int_to_string(value) }
+
+pub fn show_bool(value: Bool) -> String { bool_to_string(value) }

@@ -1,0 +1,26 @@
+signature app v(2);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        pub fn serve() -> .
+      }
+    }
+  }
+}
+
+v(2) {
+  breaking {
+    remove {
+      api.serve
+    }
+  };
+  nonbreaking {
+    add {
+      module api {
+        pub fn other() -> .
+      }
+    }
+  }
+}

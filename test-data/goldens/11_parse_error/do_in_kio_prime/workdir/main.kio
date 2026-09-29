@@ -1,0 +1,12 @@
+module do_in_kio_prime/main;
+
+// A source-level trailing-block elaborator call. The Kio' compiler rejects
+// this surface syntax before resolving its ordinary elaborator name.
+fn bind[A][B](m: A, k: A -> B) -> B { k(m) }
+
+fn run() -> . {
+  do! bind {
+    let _x <- ();
+    ()
+  }
+}

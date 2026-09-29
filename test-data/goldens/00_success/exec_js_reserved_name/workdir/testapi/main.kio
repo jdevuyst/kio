@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Bug fix from the open-questions list: a Kio binder whose surface
+// spelling collides with a JS reserved word (`default`, `class`,
+// `return`, …) used to lower to malformed JS like `(default) => …`,
+// tripping the Oxc pre-flight audit. The fix mangles colliding
+// identifiers to the compiler-reserved `__kio_<name>__` shape at
+// every declaration and reference site.
+//
+// This case exercises three reserved-word collisions at once:
+//   - `default` as a fn name (top-level function declaration);
+//   - `class` as a fn value parameter (arrow-function parameter);
+//   - `return` as a let binding (block-scoped `const`).
+// All three positions previously emitted invalid JS; after the fix
+// the program compiles and runs.
+fn default(class: String) -> String { let return = class; return }
+
+pub fn main() -> . { print(default("mangled\n"(String))) }

@@ -1,0 +1,135 @@
+/// The records a matching engine turns over: a side, a resting order, a
+/// trade, and the price an aggressive order is willing to pay.
+///
+/// Two decisions live here because both are pure price arithmetic and
+/// neither needs the book: which of two orders ranks ahead of the other,
+/// and whether an aggressor is willing to trade against a resting order.
+module book/order;
+
+import book/num(int_lt);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+
+pub labels Side = { buy: . } | { sell: . };
+
+pub fn buy_side() -> Side { {buy=}.>widen_sum!(Side) }
+
+pub fn sell_side() -> Side { {sell=}.>widen_sum!(Side) }
+
+pub fn is_buy(side: Side) -> Bool {
+  match! side {
+    (.(_b: Buy) { .t }, .(_s: Sell) { .f })
+  }
+}
+
+pub fn side_text(side: Side) -> String {
+  match! side {
+    (.(_b: Buy) { "buy" }, .(_s: Sell) { "sell" })
+  }
+}
+
+/// A resting order.
+///
+/// `ord_qty` is what arrived and never moves; `ord_remaining` is what is
+/// still on offer. Printing both is how a partially filled maker that is
+/// still resting shows up in the final book.
+///
+/// `ord_seq` is the arrival sequence of the event that created the
+/// order. It breaks ties inside a price level, so the earlier arrival
+/// keeps the front of the queue. A reduce-only amend leaves it alone --
+/// which is precisely why reducing an order keeps its queue position.
+pub labels Order = {
+  , ord_id: I32
+  , ord_side: Side
+  , ord_price: I32
+  , ord_qty: I32
+  , ord_remaining: I32
+  , ord_seq: I32
+  };
+
+pub fn order(id: I32, side: Side, price: I32, qty: I32, remaining: I32, seq: I32) -> Order {
+  {
+    , ord_id = id
+    , ord_side = side
+    , ord_price = price
+    , ord_qty = qty
+    , ord_remaining = remaining
+    , ord_seq = seq
+    }
+}
+
+pub fn id_of(o: Order) -> I32 { o.?{ord_id} }
+
+pub fn side_of(o: Order) -> Side { o.?{ord_side} }
+
+pub fn price_of(o: Order) -> I32 { o.?{ord_price} }
+
+pub fn qty_of(o: Order) -> I32 { o.?{ord_qty} }
+
+pub fn remaining_of(o: Order) -> I32 { o.?{ord_remaining} }
+
+pub fn seq_of(o: Order) -> I32 { o.?{ord_seq} }
+
+/// A row update prepends the field it replaced, so the declared return
+/// type is what puts the product back into the record's own order.
+pub fn with_remaining(o: Order, remaining: I32) -> Order { o.!{ord_remaining = remaining} }
+
+/// A trade prints as taker against maker: the aggressive order that took
+/// the liquidity, the resting order that supplied it, and the price --
+/// which is the maker's, always. The resting order named the price when
+/// it joined the queue and the aggressor accepted it by crossing.
+pub labels Trade = { tr_taker: I32, tr_maker: I32, tr_price: I32, tr_qty: I32 };
+
+pub fn trade(taker: I32, maker: I32, price: I32, qty: I32) -> Trade {
+  {tr_taker = taker, tr_maker = maker, tr_price = price, tr_qty = qty}
+}
+
+pub fn trade_taker(t: Trade) -> I32 { t.?{tr_taker} }
+
+pub fn trade_maker(t: Trade) -> I32 { t.?{tr_maker} }
+
+pub fn trade_price(t: Trade) -> I32 { t.?{tr_price} }
+
+pub fn trade_qty(t: Trade) -> I32 { t.?{tr_qty} }
+
+/// What an aggressive order is willing to pay: a limit order caps it, a
+/// market order does not.
+pub labels Cap = { capped: I32 } | { uncapped: . };
+
+pub fn price_cap(limit: I32) -> Cap { {capped = limit}.>widen_sum!(Cap) }
+
+pub fn no_cap() -> Cap { {uncapped=}.>widen_sum!(Cap) }
+
+/// A buying aggressor crosses a resting ask when it will pay at least
+/// the asking price; a selling aggressor crosses a resting bid when it
+/// will take at most the bid. An uncapped order crosses anything the
+/// book still offers.
+pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
+  match! cap {
+    (
+      , .(c: Capped) {
+          let limit = c.?{capped};
+          if! is_buy(taker) {
+            leq_i32(maker_price, limit)
+          } else {
+            leq_i32(limit, maker_price)
+          }
+        }
+      , .(_u: Uncapped) { .t }
+      )
+  }
+}
+
+/// The strict half of price priority: bids rank by descending price,
+/// asks by ascending price. Equal prices tie here on purpose -- the tie
+/// is broken by arrival sequence, and a newcomer always loses it.
+pub fn ranks_ahead(side: Side, price: I32, resting_price: I32) -> Bool {
+  if! is_buy(side) {
+    int_lt(resting_price, price)
+  } else {
+    int_lt(price, resting_price)
+  }
+}

@@ -1,0 +1,16 @@
+module main;
+
+import elab/algebraic_elaborators(onto);
+
+// Two polymorphic identity-shaped types that differ only in the
+// name of their bound type variable. Per `equiv`'s alpha-equivalence
+// rule under quantifiers, they are the same type.
+type Id_a = [A] A -> A;
+
+type Id_b = [B] B -> B;
+
+// `onto!`'s sum-collapse rule (`A | A → A`) compares the two arms
+// under `equiv`. With alpha-equivalence in `equiv`, `Id_a` and
+// `Id_b` match — so `(Id_a | Id_b)` collapses to `Id_a`. The
+// function below is well-typed iff that collapse fires.
+fn collapse(x: Id_a | Id_b) -> Id_a { onto!(x) }

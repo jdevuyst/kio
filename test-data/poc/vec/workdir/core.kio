@@ -1,0 +1,372 @@
+/// Root module vector-tree core with bounds, path, frame, and spine helpers used by loop-driven vector operations.
+module core;
+
+import elab/control(scope);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+
+// `Vec(A)` is a persistent vector — an indexed sequence with O(log n)
+// random access, update, and append — backed by a fanout-2 digit trie: a
+// perfect binary tree whose leaves carry an `A | .` (the first `count`
+// present, the rest absent padding). Indexing reads the bits of `i` as a
+// root-to-leaf path; update and append rebuild only the O(log n) nodes on
+// one path, sharing the untouched subtrees — that sharing is what makes it
+// persistent.
+//
+// Kio' is strongly normalizing (no in-language recursion), so descent and
+// rebuild are pure per-level step functions here; the host `loop` that folds
+// them over the levels lives in `vec.kio`. This pure file keeps only the
+// trie types, their O(1) constructors/projectors, and the steps.
+
+// =====================================================================
+// The trie type
+// =====================================================================
+//
+// The leaf payload is wrapped in its own `leafopt` label so the trie's leaf
+// and branch arms stay distinct singletons — an unwrapped `A | .` would
+// flatten its arms into the trie sum and lose the leaf / branch boundary.
+/// Defines the labeled leaf payload for vector tree leaves.
+pub labels { leafopt[A]: A | . };
+
+/// Defines the recursive vector tree payload as a leaf or branch pair.
+pub rec labels { tree[A]: Leafopt(A) | (Tree(A) & Tree(A)) };
+
+/// `leaf(m)` builds a leaf carrying the result `m`; `branch(l, r)` pairs
+/// two subtrees. Both are O(1) and pure.
+pub fn leaf[A](m: A | .) -> Tree(A) {
+  {tree = widen_sum!({leafopt = m}, Leafopt(A) | (Tree(A) & Tree(A)))}
+}
+
+/// Builds an internal vector tree branch from two subtrees.
+pub fn branch[A](l: Tree(A), r: Tree(A)) -> Tree(A) {
+  {tree = widen_sum!((l, r), Leafopt(A) | (Tree(A) & Tree(A)))}
+}
+
+/// `untree(t)` is the pure one-step destructor: the labeled leaf, or the
+/// branch's child pair. Every descent/rebuild step matches on this.
+pub fn untree[A](t: Tree(A)) -> Leafopt(A) | (Tree(A) & Tree(A)) { Tree.get(t) }
+
+/// `leaf_value(t)` reads a leaf's result, treating a branch as absent
+/// (a branch is never the terminal of an in-bounds path, so this is the
+/// out-of-bounds fallback rather than a reachable case).
+pub fn leaf_value[A](t: Tree(A)) -> A | . {
+  match! untree(t) {
+    (.(_pair: Tree(A) & Tree(A)) { widen_sum!((), A | .) }, .(lo: Leafopt(A)) { Leafopt.get(lo) })
+  }
+}
+
+// The `Vec(A)` bundle (`count` / `depth` / `root`, with host-`I32` fields)
+// lives in `vec.kio`; this file owns only the host-free trie machinery.
+
+// =====================================================================
+// Direction + per-level descent step (random access)
+// =====================================================================
+/// `Dir` is the structural left/right the driver computes from a bit. The
+/// two arms carry *distinct* unit labels (`goleft` / `goright`) rather than
+/// a bare `. | .` - a bare two-unit sum has indistinguishable arms, so
+/// `match!` cannot tell them apart; labeling makes the direction
+/// discriminable. The driver in `vec.kio` computes the bit with host
+/// arithmetic and builds the matching `Dir` via `go_left` / `go_right`.
+pub labels { goleft: . };
+
+/// Defines the right descent direction label.
+pub labels { goright: . };
+
+/// Path direction for descending left or right through a vector tree.
+pub type Dir = Goleft | Goright;
+
+/// A discriminable two-arm verdict for "is this index in range?". Like
+/// `Dir`, the arms are distinct unit labels so a host-`Bool`-driven
+/// `if`/`else` whose branches return `in_bnd` / `out_bnd` forms the clean
+/// two-arm `Bounds` sum directly - no `Dir | Dir`-style collapse. The
+/// `Bool` to structural bridge lives in `vec.kio` (it owns the host
+/// comparison); this file owns the labels the bridge targets and the
+/// `match!` consumes.
+pub labels { in_bnd: . };
+
+/// Defines the out-of-bounds marker label.
+pub labels { out_bnd: . };
+
+/// Bounds-check result used by index traversal.
+pub type Bounds = In_bnd | Out_bnd;
+
+/// `yes_bnd` / `no_bnd` mint the two verdict labels. (The `labels`
+/// declarations also mint `In_bnd.mk` / `Out_bnd.mk`; these named wrappers
+/// read better at the `if`/`else` bridge in `vec.kio`.)
+pub fn yes_bnd() -> In_bnd { {in_bnd=} }
+
+/// Builds the out-of-bounds marker.
+pub fn no_bnd() -> Out_bnd { {out_bnd=} }
+
+/// `bnd_in` / `bnd_out` are the `Bounds`-typed verdicts (the unit labels
+/// widened) - for callers holding a `Bounds`-typed slot rather than the
+/// `if`/`else` bridge's distinct-typed arms.
+pub fn bnd_in() -> Bounds { widen_sum!({in_bnd=}, In_bnd | Out_bnd) }
+
+/// Injects the out-of-bounds marker into the `Bounds` sum.
+pub fn bnd_out() -> Bounds { widen_sum!({out_bnd=}, In_bnd | Out_bnd) }
+
+/// `select(b, in_val, out_val)` is the `Bounds` eliminator: `in_val` when
+/// the verdict is in-range, `out_val` otherwise. Both arguments are
+/// evaluated eagerly - fine because the trie operations are total (a
+/// descent of any index reads *some* leaf without diverging), so passing
+/// the unconditional `at_tree` / `set_tree` result as `in_val` is safe;
+/// the eliminator just discards it on the out-of-range branch. Keeping
+/// this `match!` in the root module is also what lets callers
+/// consume `Bounds` without matching its imported unit labels themselves.
+pub fn select[R](b: Bounds, in_val: R, out_val: R) -> R {
+  match! b {
+    (.(_i: In_bnd) { in_val }, .(_o: Out_bnd) { out_val })
+  }
+}
+
+/// `go_left` / `go_right` return the raw singleton labels, not a widened
+/// `Dir`. Returning distinct types lets a caller's `if`/`else` form a
+/// `Goleft | Goright` (which *is* `Dir`) with no sum-collapse: the two
+/// branches have different types, so the conditional's sum is already the
+/// two-arm `Dir`, never a `Dir | Dir` that needs narrowing.
+pub fn go_left() -> Goleft { {goleft=} }
+
+/// Builds the raw right-direction label value.
+pub fn go_right() -> Goright { {goright=} }
+
+/// `dir_left` / `dir_right` are the `Dir`-typed directions - `go_left` /
+/// `go_right` widened into the full two-arm `Dir`. The singleton forms are
+/// for the `if`/`else` bridge (where two distinct-typed arms *form* the
+/// `Dir`); these are for callers that already hold a `Dir`-typed slot.
+pub fn dir_left() -> Dir { widen_sum!({goleft=}, Goleft | Goright) }
+
+/// Injects the right direction into the `Dir` sum.
+pub fn dir_right() -> Dir { widen_sum!({goright=}, Goleft | Goright) }
+
+/// `flip_dir(dir)` is the opposite direction - the path's sibling side.
+pub fn flip_dir(dir: Dir) -> Dir {
+  match! dir {
+    (.(_l: Goleft) { widen_sum!(go_right(), Dir) }, .(_r: Goright) { widen_sum!(go_left(), Dir) })
+  }
+}
+
+/// `descend_step(dir, t)` follows one level of the path. On a branch it
+/// selects the `dir`-side child; on a leaf the path is already at bottom,
+/// so it returns the leaf untouched (the driver matches `untree` itself to
+/// detect the leaf and stops, so this leaf arm is the safe fallback).
+pub fn descend_step[A](dir: Dir, t: Tree(A)) -> Tree(A) {
+  match! untree(t) {
+    (
+      , .(pair: Tree(A) & Tree(A)) {
+          match! pair {
+            .(l: Tree(A), r: Tree(A)) {
+              match! dir {
+                (.(_lft: Goleft) { l }, .(_rgt: Goright) { r })
+              }
+            }
+          }
+        }
+      , .(_lo: Leafopt(A)) { t }
+      )
+  }
+}
+
+/// `split_branch(dir, t)` returns `(chosen, sibling)` for a branch: the
+/// `dir`-side child paired with the other one. On a leaf (never reached
+/// mid-path) it returns the leaf as both - `descend_step` is the identity
+/// on a leaf, so both projections coincide there.
+pub fn split_branch[A](dir: Dir, t: Tree(A)) -> Tree(A) & Tree(A) {
+  (descend_step(dir, t), descend_step(flip_dir(dir), t))
+}
+
+// =====================================================================
+// Path-frame stack + rebuild step (update / append)
+// =====================================================================
+//
+// A persistent update rebuilds only the O(log n) nodes on the touched path,
+// sharing every off-path subtree. The frame type and per-frame rebuild step
+// are pure and live here; the two loops that produce and consume the frame
+// stack live in `vec.kio`.
+/// A frame records the off-path sibling and the `Dir` the path took at
+/// this level. The sibling is the child the path did *not* descend into,
+/// preserved untouched so the rebuild can share it.
+pub labels { frame[A]: Dir & Tree(A) };
+
+/// Builds a zipper frame from a direction and sibling subtree.
+pub fn build_frame[A](dir: Dir, sibling: Tree(A)) -> Frame(A) { {frame = (dir, sibling)} }
+
+/// `rebuild_step(built, fr)` reattaches one level: the `built` subtree (the
+/// already-rebuilt lower portion of the path) becomes the path-side child,
+/// and the frame's preserved sibling becomes the other child, in the order
+/// the frame's `Dir` recorded (left means built is the left child).
+pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
+  match! Frame.get(fr) {
+    .(dir: Dir, sibling: Tree(A)) {
+      match! dir {
+        (.(_l: Goleft) { branch(built, sibling) }, .(_r: Goright) { branch(sibling, built) })
+      }
+    }
+  }
+}
+
+/// A cons-list of frames is the descent stack: pushing a frame as the
+/// driver descends, the head is the *deepest* frame, so a head-first fold
+/// rebuilds bottom-up - exactly the order `rebuild_step` wants.
+pub rec labels { frames[A]: . | (Frame(A) & Frames(A)) };
+
+/// Builds the empty frame stack.
+pub fn frames_nil[A]() -> Frames(A) { {frames = widen_sum!((), . | (Frame(A) & Frames(A)))} }
+
+/// Pushes one zipper frame onto a frame stack.
+pub fn frames_push[A](fr: Frame(A), rest: Frames(A)) -> Frames(A) {
+  {frames = widen_sum!((fr, rest), . | (Frame(A) & Frames(A)))}
+}
+
+/// Projects one frame-stack step as empty or head-tail.
+pub fn unframes[A](fs: Frames(A)) -> . | (Frame(A) & Frames(A)) { Frames.get(fs) }
+
+// =====================================================================
+// equiv-law battery - the pure trie algebra
+// =====================================================================
+//
+// Every function in this file is pure, so the partial evaluator reduces
+// these laws all the way to a normal form — no opaque host call blocks a
+// reduction. They pin the structural identities the loop-driven `Vec`
+// operations in `vec.kio` are assembled from, independently of any host's
+// `loop` / arithmetic.
+fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present(value) }, .(_empty: .) { default })
+  }
+}
+
+equiv leaf_present_eliminates[A][B](default: B, present: A -> B, value: A) {
+  fold_result(default, present, leaf_value(leaf(widen_sum!(value, A | .))));
+  present(value)
+}
+
+equiv leaf_absent_eliminates[A][B](default: B, present: A -> B) {
+  fold_result(default, present, leaf_value(leaf(widen_sum!((), A | .))));
+  default
+}
+
+// ---- direction + descent ----
+//
+// `flip_dir` is an involution (`flip_dir after flip_dir ≡ id`), but that law
+// is *not* stated as an `equiv`: on an opaque `d : Dir` it reduces to a
+// symbolic case-split `case d { left → mk_left(goleft), right →
+// mk_right(goright) }`, which is η-equal to `d` but not *syntactically*
+// identical - the residual-NF equality of `specs/formal/equiv.md` section 4
+// does no sum-η, so the block would (correctly) report two NF groups.
+// The two concrete cases below pin the same behavior without the η gap.
+
+// `flip_dir(go_left) ≡ go_right` and vice versa.
+equiv flip_left() {
+  flip_dir(dir_left());
+  dir_right()
+}
+
+equiv flip_right() {
+  flip_dir(dir_right());
+  dir_left()
+}
+
+// `descend_step(go_left, branch(l, r)) ≡ l` - going left selects the left
+// child.
+equiv descend_left[A](l: Tree(A), r: Tree(A)) {
+  descend_step(dir_left(), branch(l, r));
+  l
+}
+
+// `descend_step(go_right, branch(l, r)) ≡ r`.
+equiv descend_right[A](l: Tree(A), r: Tree(A)) {
+  descend_step(dir_right(), branch(l, r));
+  r
+}
+
+// `descend_step(d, leaf(m)) ≡ leaf(m)` - a leaf is the path's bottom; the
+// step is the identity there, for either direction (symbolic over `d`).
+equiv descend_leaf[A](d: Dir, m: A | .) {
+  descend_step(d, leaf(m));
+  leaf(m)
+}
+
+// `split_branch(go_left, branch(l, r)) ≡ (l, r)` - chosen-then-sibling.
+equiv split_left[A](l: Tree(A), r: Tree(A)) {
+  split_branch(dir_left(), branch(l, r));
+  (l, r)
+}
+
+// `split_branch(go_right, branch(l, r)) ≡ (r, l)`.
+equiv split_right[A](l: Tree(A), r: Tree(A)) {
+  split_branch(dir_right(), branch(l, r));
+  (r, l)
+}
+
+// ---- rebuild ----
+
+// `rebuild_step(t, Frame.get(s)) ≡ branch(t, s)` - a left frame
+// re-attaches the rebuilt subtree as the left child.
+equiv rebuild_left[A](t: Tree(A), s: Tree(A)) {
+  rebuild_step(t, build_frame(dir_left(), s));
+  branch(t, s)
+}
+
+// `rebuild_step(t, Frame.get(s)) ≡ branch(s, t)`.
+equiv rebuild_right[A](t: Tree(A), s: Tree(A)) {
+  rebuild_step(t, build_frame(dir_right(), s));
+  branch(s, t)
+}
+
+// `rebuild_step` undoes one `split_branch` level: re-attaching the chosen
+// child against its preserved sibling rebuilds the original branch. This
+// is the round-trip the persistent update relies on - descend (split),
+// then rebuild - proven one level deep on opaque subtrees.
+equiv split_rebuild_left[A](l: Tree(A), r: Tree(A)) {
+  scope! {
+    let split_result = split_branch(dir_left(), branch(l, r));
+    match! split_result {
+      .(chosen: Tree(A), sibling: Tree(A)) {
+        rebuild_step(chosen, build_frame(dir_left(), sibling))
+      }
+    }
+  };
+  branch(l, r)
+}
+
+equiv split_rebuild_right[A](l: Tree(A), r: Tree(A)) {
+  scope! {
+    let split_result = split_branch(dir_right(), branch(l, r));
+    match! split_result {
+      .(chosen: Tree(A), sibling: Tree(A)) {
+        rebuild_step(chosen, build_frame(dir_right(), sibling))
+      }
+    }
+  };
+  branch(l, r)
+}
+
+// ---- leaf access ----
+
+// `leaf_value(leaf(m)) ≡ m` - reading a leaf returns exactly its payload.
+equiv leaf_value_leaf[A](m: A | .) {
+  leaf_value(leaf(m));
+  m
+}
+
+// `leaf_value(branch(l, r)) ≡ ()` - a branch is never an in-bounds
+// terminal, so it reads as absent.
+equiv leaf_value_branch[A](l: Tree(A), r: Tree(A)) {
+  leaf_value(branch(l, r));
+  widen_sum!((), A | .)
+}
+
+// ---- bounds verdict ----
+
+// `select(yes_bnd, x, y) ≡ x` and `select(no_bnd, x, y) ≡ y` - the
+// `Bounds` eliminator picks the matching branch.
+equiv select_yes[A](x: A, y: A) {
+  select(bnd_in(), x, y);
+  x
+}
+
+equiv select_no[A](x: A, y: A) {
+  select(bnd_out(), x, y);
+  y
+}

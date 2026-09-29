@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Heterogeneous branches construct their sum explicitly.
+pub fn main() -> . {
+  let v =
+    if! .t {
+      widen_sum!("string arm\n", String | Int)
+    } else {
+      widen_sum!(42, String | Int)
+    };
+  print(match! v {
+    (.(s: String) { s }, .(n: Int) { int_to_string(n) })
+  })
+}

@@ -1,0 +1,3 @@
+module main;
+
+pub rec(loop) fn count[A](n: A) -> A { rec(poly) count(n) }

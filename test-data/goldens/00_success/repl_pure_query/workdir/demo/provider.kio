@@ -1,0 +1,3 @@
+module demo/provider;
+
+pub pure fn imported_pure(x: .) -> . { x }

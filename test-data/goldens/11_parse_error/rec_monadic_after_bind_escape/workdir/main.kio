@@ -1,0 +1,16 @@
+module main;
+
+import elab/sequence(do);
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+fn chain[A][B](value: A, next: A -> B) -> B { next(value) }
+
+fn identity[A](value: A) -> A { value }
+
+rec(loop) fn step(value: .) -> . {
+  do! chain {
+    let next <- value;
+    identity(rec(cont) step(next))
+  }
+}

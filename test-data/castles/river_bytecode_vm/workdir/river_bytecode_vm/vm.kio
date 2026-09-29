@@ -1,0 +1,365 @@
+module river_bytecode_vm/vm;
+
+import elab/control(if);
+import river_bytecode_vm/constants as c;
+import river_bytecode_vm/model as model;
+import river_bytecode_vm/model(
+  , Alerts
+  , Cabbage
+  , Checksum
+  , Farmer
+  , Goat
+  , Halt_code
+  , Moves
+  , Pc
+  , Snapshot
+  , Ticks
+  , Waits
+  , Wolf
+  , {alerts}
+  , {cabbage}
+  , {checksum}
+  , {farmer}
+  , {goat}
+  , {halt_code}
+  , {moves}
+  , {pc}
+  , {ticks}
+  , {waits}
+  , {wolf}
+  );
+import river_bytecode_vm/program as program;
+import river_bytecode_vm/util as util;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32);
+import testapi/iter(loop);
+
+fn next_side(side: I32) -> I32 {
+  if! eq_i32(side, c.east()) {
+    c.west()
+  } else {
+    c.east()
+  }
+}
+
+fn same_side(left: I32, right: I32) -> Bool { eq_i32(left, right) }
+
+pub fn done(state: Snapshot) -> Bool {
+  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
+    state;
+  util.and(
+    , same_side(farmer_side, c.east())
+    , util.and(
+        , same_side(wolf_side, c.east())
+        , util.and(same_side(goat_side, c.east()), same_side(cabbage_side, c.east()))
+        )
+    )
+}
+
+pub fn safe(state: Snapshot) -> Bool {
+  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
+    state;
+  if! same_side(farmer_side, goat_side) {
+    .t
+  } else {
+    util.not(util.or(same_side(goat_side, wolf_side), same_side(goat_side, cabbage_side)))
+  }
+}
+
+fn stamp(state: Snapshot, op: I32) -> I32 {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    , checksum as checksum_value
+    }) = state;
+  add_i32(
+    , add_i32(
+        , add_i32(mul_i32(checksum_value, 31), mul_i32(pc_value, 7))
+        , add_i32(mul_i32(op, 3), farmer_side)
+        )
+    , add_i32(add_i32(mul_i32(wolf_side, 2), mul_i32(goat_side, 5)), mul_i32(cabbage_side, 11))
+    )
+}
+
+fn with_common(
+  , state: Snapshot
+  , next_pc: I32
+  , next_farmer: I32
+  , next_wolf: I32
+  , next_goat: I32
+  , next_cabbage: I32
+  , move_delta: I32
+  , wait_delta: I32
+  , alert_delta: I32
+  , next_halt: I32
+  , op: I32
+  ) -> Snapshot {
+  let .({moves as move_count, waits as wait_count, alerts as alert_count, ticks as tick_count}) =
+    state;
+  model.state(
+    , next_pc
+    , next_farmer
+    , next_wolf
+    , next_goat
+    , next_cabbage
+    , add_i32(move_count, move_delta)
+    , add_i32(wait_count, wait_delta)
+    , add_i32(alert_count, alert_delta)
+    , add_i32(tick_count, 1)
+    , stamp(state, op)
+    , next_halt
+    )
+}
+
+fn wait_step(state: Snapshot, op: I32) -> Snapshot {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    }) = state;
+  with_common(
+    , state
+    , add_i32(pc_value, 1)
+    , farmer_side
+    , wolf_side
+    , goat_side
+    , cabbage_side
+    , 0
+    , 1
+    , 0
+    , c.halt_running()
+    , op
+    )
+}
+
+fn ferry_alone_step(state: Snapshot, op: I32) -> Snapshot {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    }) = state;
+  with_common(
+    , state
+    , add_i32(pc_value, 1)
+    , next_side(farmer_side)
+    , wolf_side
+    , goat_side
+    , cabbage_side
+    , 1
+    , 0
+    , 0
+    , c.halt_running()
+    , op
+    )
+}
+
+fn move_step(state: Snapshot, item: I32, op: I32) -> Snapshot {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    }) = state;
+  let cargo_side =
+    if! eq_i32(item, c.item_goat()) {
+      goat_side
+    } else if! eq_i32(item, c.item_wolf()) {
+      wolf_side
+    } else {
+      cabbage_side
+    };
+  if! same_side(cargo_side, farmer_side) {
+    let moved_side = next_side(farmer_side);
+    let next_wolf = if! eq_i32(item, c.item_wolf()) {
+      moved_side
+    } else {
+      wolf_side
+    };
+    let next_goat = if! eq_i32(item, c.item_goat()) {
+      moved_side
+    } else {
+      goat_side
+    };
+    let next_cabbage = if! eq_i32(item, c.item_cabbage()) {
+      moved_side
+    } else {
+      cabbage_side
+    };
+    with_common(
+      , state
+      , add_i32(pc_value, 1)
+      , moved_side
+      , next_wolf
+      , next_goat
+      , next_cabbage
+      , 1
+      , 0
+      , 0
+      , c.halt_running()
+      , op
+      )
+  } else {
+    with_common(
+      , state
+      , add_i32(pc_value, 1)
+      , farmer_side
+      , wolf_side
+      , goat_side
+      , cabbage_side
+      , 0
+      , 0
+      , 1
+      , c.halt_trap()
+      , op
+      )
+  }
+}
+
+fn assert_safe_step(state: Snapshot, op: I32) -> Snapshot {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    }) = state;
+  if! safe(state) {
+    with_common(
+      , state
+      , add_i32(pc_value, 1)
+      , farmer_side
+      , wolf_side
+      , goat_side
+      , cabbage_side
+      , 0
+      , 0
+      , 0
+      , c.halt_running()
+      , op
+      )
+  } else {
+    with_common(
+      , state
+      , add_i32(pc_value, 1)
+      , farmer_side
+      , wolf_side
+      , goat_side
+      , cabbage_side
+      , 0
+      , 0
+      , 1
+      , c.halt_trap()
+      , op
+      )
+  }
+}
+
+fn jump_if_done_step(state: Snapshot, target: I32, op: I32) -> Snapshot {
+  let .({
+    , pc as pc_value
+    , farmer as farmer_side
+    , wolf as wolf_side
+    , goat as goat_side
+    , cabbage as cabbage_side
+    }) = state;
+  let next_pc =
+    if! done(state) {
+      target
+    } else {
+      add_i32(pc_value, 1)
+    };
+  with_common(
+    , state
+    , next_pc
+    , farmer_side
+    , wolf_side
+    , goat_side
+    , cabbage_side
+    , 0
+    , 0
+    , 0
+    , c.halt_running()
+    , op
+    )
+}
+
+fn halt_step(state: Snapshot, code: I32, op: I32) -> Snapshot {
+  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
+    state;
+  with_common(
+    , state
+    , program.program_len()
+    , farmer_side
+    , wolf_side
+    , goat_side
+    , cabbage_side
+    , 0
+    , 0
+    , 0
+    , code
+    , op
+    )
+}
+
+fn bad_pc_step(state: Snapshot) -> Snapshot {
+  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
+    state;
+  with_common(
+    , state
+    , program.program_len()
+    , farmer_side
+    , wolf_side
+    , goat_side
+    , cabbage_side
+    , 0
+    , 0
+    , 1
+    , c.halt_bad_pc()
+    , c.op_halt()
+    )
+}
+
+fn running(state: Snapshot) -> Bool {
+  let .({pc as pc_value, halt_code as halt_value}) = state;
+  util.and(eq_i32(halt_value, c.halt_running()), lt_i32(pc_value, program.program_len()))
+}
+
+fn step(state: Snapshot) -> Snapshot {
+  let .({pc as pc_value}) = state;
+  if! lt_i32(pc_value, program.program_len()) {
+    let op = program.opcode(pc_value);
+    if! eq_i32(op, c.op_wait()) {
+      wait_step(state, op)
+    } else if! eq_i32(op, c.op_move()) {
+      move_step(state, program.arg0(pc_value), op)
+    } else if! eq_i32(op, c.op_ferry_alone()) {
+      ferry_alone_step(state, op)
+    } else if! eq_i32(op, c.op_assert_safe()) {
+      assert_safe_step(state, op)
+    } else if! eq_i32(op, c.op_jump_if_done()) {
+      jump_if_done_step(state, program.arg0(pc_value), op)
+    } else {
+      halt_step(state, program.arg0(pc_value), op)
+    }
+  } else {
+    bad_pc_step(state)
+  }
+}
+
+rec(loop) fn execute(state: Snapshot) -> Snapshot {
+  if! running(state) {
+    rec execute(step(state))
+  } else {
+    state
+  }
+}
+
+pub fn run() -> Snapshot { execute(model.initial()) }

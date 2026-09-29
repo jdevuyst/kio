@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/definitions as definitions;
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/syntax(op _ %* _, op _ %+ _, varop [* *], varop [+ +]);
+
+pub fn main() -> . {
+  let .(combined: I32) = 2 %+ 3;
+  let .(folded: definitions.Box(I32)) = [* 4, 5 *];
+  print(i32_to_string(combined));
+  print("\n");
+  print(i32_to_string(definitions.finish(definitions.Box.unbox(folded))));
+  print("\n");
+  let .(paired: I32 & I32) = 6 %* 7;
+  print(i32_to_string(definitions.sum_pair(paired)));
+  print("\n");
+  let .(folded_builtin: I32) = [+ 9, 8 +];
+  print(i32_to_string(folded_builtin));
+  print("\n")
+}

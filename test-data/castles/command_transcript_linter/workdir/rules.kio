@@ -1,0 +1,64 @@
+module rules;
+
+import elab/control(if);
+import scanner as scan;
+import testapi(Bool, String);
+import testapi/text as text;
+
+fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn is_exec(line: String) -> Bool { text.string_eq(scan.opcode4(line), "EXEC") }
+
+fn is_save(line: String) -> Bool { text.string_eq(scan.opcode4(line), "SAVE") }
+
+fn is_wait(line: String) -> Bool { text.string_eq(scan.opcode4(line), "WAIT") }
+
+fn is_retry(line: String) -> Bool { text.string_eq(scan.opcode5(line), "RETRY") }
+
+fn has_colon4(line: String) -> Bool { text.string_eq(scan.colon4(line), ":") }
+
+fn has_colon5(line: String) -> Bool { text.string_eq(scan.colon5(line), ":") }
+
+fn known_four_opcode(line: String) -> Bool {
+  if! is_exec(line) {
+    .t
+  } else if! is_save(line) {
+    .t
+  } else {
+    is_wait(line)
+  }
+}
+
+pub fn missing_colon(line: String) -> Bool {
+  if! known_four_opcode(line) {
+    not(has_colon4(line))
+  } else if! is_retry(line) {
+    not(has_colon5(line))
+  } else {
+    .f
+  }
+}
+
+pub fn malformed_opcode(line: String) -> Bool {
+  if! known_four_opcode(line) {
+    .f
+  } else {
+    not(is_retry(line))
+  }
+}
+
+pub fn unsafe_retry(line: String) -> Bool {
+  if! is_retry(line) {
+    text.string_eq(scan.retry_payload_start(line), "rm -rf")
+  } else {
+    .f
+  }
+}
+
+pub fn retry_safe(line: String) -> Bool { not(unsafe_retry(line)) }

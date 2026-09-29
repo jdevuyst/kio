@@ -1,0 +1,36 @@
+signature app v(1);
+
+v(1) {
+  with {
+    module api {
+      rec {
+        pub type A = B;
+        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.A;
+      api.B;
+      module api {
+        pub fn run() -> .;
+      }
+    }
+  }
+}
+
+dependency lib;
+
+source {
+  path "../lib/lib.pkg.kio";
+}
+
+lock lib;
+
+resolved {
+  git "https://example.com/lib.git";
+  ref "main";
+  commit "abc123";
+  sig "digest";
+}

@@ -1,0 +1,33 @@
+module robot_vacuum_replay/command;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+
+pub labels Command =
+  { start_cmd: . }
+  | { pause_cmd: . }
+  | { left_cmd: . }
+  | { right_cmd: . }
+  | { step_cmd: . }
+  | { clean_cmd: . }
+  | { dock_cmd: . }
+  | { charge_cmd: I32 }
+  | { unknown_cmd: String };
+
+pub fn start_command() -> Command { {start_cmd=}.>widen_sum!(Command) }
+
+pub fn pause_command() -> Command { {pause_cmd=}.>widen_sum!(Command) }
+
+pub fn left_command() -> Command { {left_cmd=}.>widen_sum!(Command) }
+
+pub fn right_command() -> Command { {right_cmd=}.>widen_sum!(Command) }
+
+pub fn step_command() -> Command { {step_cmd=}.>widen_sum!(Command) }
+
+pub fn clean_command() -> Command { {clean_cmd=}.>widen_sum!(Command) }
+
+pub fn dock_command() -> Command { {dock_cmd=}.>widen_sum!(Command) }
+
+pub fn charge_command(amount: I32) -> Command { {charge_cmd = amount}.>widen_sum!(Command) }
+
+pub fn unknown_command(line: String) -> Command { {unknown_cmd = line}.>widen_sum!(Command) }

@@ -1,0 +1,7 @@
+module main;
+
+host fn polymorphic(_token: .) -> [Poly] Poly -> Poly;
+
+fn consume(wrapper: . -> [Expected] Expected -> Expected) -> . { () }
+
+fn partial() -> . { consume(.(token: .) -> [Returned] _ { polymorphic(()) }) }

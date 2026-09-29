@@ -1,0 +1,118 @@
+/// The algebraic laws, checked at runtime against the fixtures.
+///
+/// These are the point of the workbench. The fixed instances exercise selected
+/// faults in the operations on every run, and their verdicts are printed.
+module poly/laws;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lc;
+import list/list as ll;
+import list/list(varop [* *]);
+import poly/arith as arith;
+import poly/calculus as calculus;
+import poly/core as core;
+import poly/division as division;
+import poly/division(Divided, Not_divisible, {divided}, {not_divisible});
+import poly/fixtures as fx;
+import poly/render as render;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+/// One finite runtime check: its law name, fixture claim, observed value, and verdict.
+pub labels Check = { law: String, claim: String, witness: String, holds: Bool };
+
+fn check(law: String, claim: String, witness: String, holds: Bool) -> Check {
+  {law, claim, witness, holds}
+}
+
+fn same(left: I32, right: I32) -> String {
+  string_concat(int_to_string(left), string_concat(" == ", int_to_string(right)))
+}
+
+// Catches a coefficient walk that mis-pads the shorter vector: add and subtract
+// must agree about where the implicit zeros are, or the round trip loses one.
+fn additive_inverse(claim: String, a: core.Poly, b: core.Poly) -> Check {
+  let recovered = arith.sub(arith.add(a, b), b);
+  check("additive inverse", claim, render.show(recovered), core.equal(recovered, a))
+}
+
+// The fixture coefficients keep the leading product in range and non-zero, so a
+// convolution that drops its last partial product, or a normalizer that trims one
+// zero too many, shortens the vector and is caught.
+fn degree_of_product(claim: String, a: core.Poly, b: core.Poly) -> Check {
+  let product = arith.mul(a, b);
+  let expected = add_i32(core.deg(a), core.deg(b));
+  let holds = eq_i32(core.deg(product), expected);
+  check("degree of product", claim, same(core.deg(product), expected), holds)
+}
+
+// The division is re-multiplied and compared against what went in, so it is judged
+// against multiplication rather than against itself. A `not_divisible` answer is a
+// failure here: these are the instances that were supposed to succeed.
+fn division_identity(claim: String, p: core.Poly, divisor: core.Poly) -> Check {
+  match! division.divmod(p, divisor) {
+    (
+      , .(result: Divided) {
+          let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
+          let rebuilt = arith.add(arith.mul(quotient, divisor), remainder);
+          check("division identity", claim, render.show(rebuilt), core.equal(rebuilt, p))
+        }
+      , .(refused: Not_divisible) {
+          check("division identity", claim, refused.?{not_divisible}, .f)
+        }
+      )
+  }
+}
+
+// The one law tying the derivative to multiplication: an off-by-one in the degree
+// counter survives the fixture checks that look at the derivative on its own.
+fn product_rule(claim: String, a: core.Poly, b: core.Poly) -> Check {
+  let joint = calculus.derivative(arith.mul(a, b));
+  let left = arith.mul(calculus.derivative(a), b);
+  let right = arith.mul(a, calculus.derivative(b));
+  let apart = arith.add(left, right);
+  check("product rule", claim, render.show(joint), core.equal(joint, apart))
+}
+
+// Horner folds the coefficient vector from one end and convolution builds it from
+// the other, so a transposed index in either surfaces as a numeric mismatch.
+fn eval_homomorphism(claim: String, a: core.Poly, b: core.Poly, x: I32) -> Check {
+  let joint = calculus.eval(arith.mul(a, b), x);
+  let apart = mul_i32(calculus.eval(a, x), calculus.eval(b, x));
+  check("eval homomorphism", claim, same(joint, apart), eq_i32(joint, apart))
+}
+
+/// Every fixed law instance the workbench checks, in report order.
+pub fn all_checks() -> lc.List(Check) {
+  [*
+    , additive_inverse("(p + q) - q == p", fx.p(), fx.q())
+    , additive_inverse("(s + e) - e == s", fx.s(), fx.e())
+    , degree_of_product("deg(p * q) == deg p + deg q", fx.p(), fx.q())
+    , degree_of_product("deg(d * e) == deg d + deg e", fx.d(), fx.e())
+    , division_identity("quotient * d + remainder == p", fx.p(), fx.d())
+    , division_identity("quotient * e + remainder == s", fx.s(), fx.e())
+    , product_rule("(p * q)' == p' * q + p * q'", fx.p(), fx.q())
+    , product_rule("(d * s)' == d' * s + d * s'", fx.d(), fx.s())
+    , eval_homomorphism("(p * q)(-1) == p(-1) * q(-1)", fx.p(), fx.q(), -1)
+    , eval_homomorphism("(p * q)(2) == p(2) * q(2)", fx.p(), fx.q(), 2)
+    , eval_homomorphism("(p * q)(3) == p(3) * q(3)", fx.p(), fx.q(), 3)
+    *]
+}
+
+pub fn passes(checks: lc.List(Check)) -> I32 {
+  ll.foldl(
+    , .(count: I32, c: Check) -> I32 {
+        if! c.?{holds} {
+          add_i32(count, 1)
+        } else {
+          count
+        }
+      }
+    , 0
+    , checks
+    )
+}

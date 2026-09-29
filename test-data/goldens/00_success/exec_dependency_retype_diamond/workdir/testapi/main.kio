@@ -1,0 +1,18 @@
+/// Diamond dependency collapsed by `retype`. The app depends
+/// on two packages that each declare a same-named `newtype Tag` over the
+/// host `I32`: `core/store` (the `idlib` package) and `widget/store` (the
+/// `widget` package, which also relays through its own copy). Identity-
+/// exact nominal typing keeps the two `Tag`s distinct — `core.store.Tag`
+/// vs `widget.store.Tag` — so threading `widget`'s `relay_tag` result into
+/// `core`'s `tag_val` would be a type error. The `widget.dep.kio`'s
+/// `retype widget/store to core/store;` collapses `widget`'s copy onto
+/// `core`'s, so the one shared `Tag` flows end to end and `main` prints
+/// the value.
+module testapi/main;
+
+import core/store(make_tag, tag_val);
+import testapi(I32);
+import testapi/fmt(print_i32);
+import widget/relay(relay_tag);
+
+pub fn main() -> . { let .(via_widget: I32) = tag_val(relay_tag(7(I32))); print_i32(via_widget) }

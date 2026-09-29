@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(fit);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `fit!` chains narrow then widen in a single coercion. Source
+// `(String & I32)` projects to `String` (narrow_prod! drops I32),
+// then widens into the target sum `(String | I32 | Bool)` (widen_sum!
+// injects the String into the matching arm). Composition order is
+// fit!'s narrow-before-widen discipline.
+fn coerce(p: String & I32) -> String | I32 | Bool { fit!(p) }
+
+pub fn main() -> . {
+  let widened = coerce(("fit chain: narrowed then widened\n", 0));
+  let out =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) }, .(_b: Bool) { "unreachable\n" })
+    };
+  print(out)
+}

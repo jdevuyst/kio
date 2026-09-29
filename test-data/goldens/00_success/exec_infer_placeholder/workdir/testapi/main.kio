@@ -1,0 +1,31 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// One-binder polymorphic helper.
+fn id[A](x: A) -> A { x }
+
+// Two-binder polymorphic helper. Type-argument inference solves
+// `[A]` and `[B]` from the value-arg types via direct unification,
+// even when the call drops both type-args entirely.
+fn const_fst[A][B](x: A, _y: B) -> A { x }
+
+// Pass-through that takes a `String -> String` and applies it.
+// The .-body's bidirectional flow uses the second parameter's
+// declared type to fill in the lambda's `_` slot.
+fn apply(f: String -> String, x: String) -> String { f(x) }
+
+pub fn main() -> . {
+  // Three call shapes for `id` exercising explicit, `_`-marked,
+  // and fully-elided forms.
+  print(id(String, "in"));
+  print(id(_, "fer"));
+  // Multi-binder full elision: the unifier pins `[A]` and `[B]`
+  // from the value-arg types.
+  print(const_fst("re", ()));
+  // `apply` with a `.(x: _) { x }` whose parameter type the
+  // call's `String -> String` slot pins via bidirectional
+  // flow. The inner `id("d\n")` exercises full elision again.
+  print(apply(.(x: _) { x }, id("d\n")))
+}

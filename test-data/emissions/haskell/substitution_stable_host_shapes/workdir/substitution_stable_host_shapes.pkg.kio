@@ -1,0 +1,14 @@
+package substitution_stable_host_shapes;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "SubstitutionStableHostShapes"
+  }
+}
+
+bridge {
+  api
+}

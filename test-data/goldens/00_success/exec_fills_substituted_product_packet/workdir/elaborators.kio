@@ -1,0 +1,12 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn packet_identity_impl(
+  , _ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _packet_type: __Type__
+  , packet: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (packet, fills) }
+
+pub elab packet_identity : [Packet] Packet -> Packet { impl(fills) packet_identity_impl }

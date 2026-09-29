@@ -1,0 +1,11 @@
+module main;
+
+import elab/spine_elaborators(flatten_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+fn re_nest_via_flatten(s: A | B | C) -> (A | B) | C { flatten_sum!(s) }

@@ -1,0 +1,19 @@
+/// Module demonstrating that label entries and op functions are valid intra-doc targets.
+///
+/// Labels like [`some`] and [`none`] are collected from the `labels` block entries.
+/// The underlying function for the `+` operator is [`add`], which is also in scope.
+module docref/labelsops;
+
+/// Option type — labels become valid intra-doc ref targets.
+///
+/// Variants are [`some`] (a value is present) and [`none`] (absent).
+labels Option = { some: ., none: . };
+
+/// Adds two units together.
+///
+/// Used by the [`+`] operator below.
+pub fn add(x: ., y: .) -> . { () }
+
+/// The plus operator. Spell the operator token as [`+`] in doc refs.
+/// Its underlying function [`add`] is also directly reachable.
+op _ + _ { impl add; };

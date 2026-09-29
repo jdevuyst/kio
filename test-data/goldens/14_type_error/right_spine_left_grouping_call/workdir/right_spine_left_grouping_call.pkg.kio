@@ -1,0 +1,18 @@
+package right_spine_left_grouping_call;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  right_spine_left_grouping_call;
+  right_spine_left_grouping_call/**
+}

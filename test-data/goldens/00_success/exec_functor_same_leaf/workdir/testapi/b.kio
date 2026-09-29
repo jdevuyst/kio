@@ -1,0 +1,17 @@
+module testapi/b;
+
+import testapi(String);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+pub fn run_b() -> String {
+  let dict = Functor.mk_functor(Box, .[A][B](step, m) { Box.mk_box(B, step(Box.un_box(A, m))) });
+  let branded = Box.mk_box(String, "right ok\n"(String));
+  let mapped = Functor.fmap(Box, dict)(String, String, .(s) { s }, branded);
+  Box.un_box(String, mapped)
+}

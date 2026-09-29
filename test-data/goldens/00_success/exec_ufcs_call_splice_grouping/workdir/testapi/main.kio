@@ -1,0 +1,26 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn pair(a: String, b: String) -> String {
+  string_concat("(", string_concat(a, string_concat(",", string_concat(b, ")"))))
+}
+
+fn wrap(s: String) -> String { string_concat("[", string_concat(s, "]")) }
+
+fn line(s: String) -> . { print(string_concat(s, "\n")) }
+
+pub fn main() -> . {
+  line("z".>wrap);
+  line("z".>>wrap);
+  line(wrap.<"z");
+  line(wrap.<<"z");
+  line("a".>pair("b").>wrap);
+  line("a".>>pair("b").>>wrap);
+  line(wrap.<("a".>pair("b")));
+  line(wrap.<<("a".>>pair("b")));
+  line(wrap.<"a".>pair("b"));
+  line(wrap.<<"a".>>pair("b"))
+}

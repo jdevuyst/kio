@@ -1,0 +1,15 @@
+module testapi/main;
+
+import greetlib/greet(first);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through the host-free `greetlib` dependency,
+// pulled in by a git `source { git; ref }` dependency in
+// `greetlib.dep.kio` and re-rooted under the `greetlib/` prefix.
+// `first` is a re-rooted generic export from the git package; it drops a
+// second argument, exercising a generic export across the git package
+// edge.
+pub fn greeting() -> String { first("git dependency works\n"(String), "discarded\n"(String)) }
+
+pub fn main() -> . { print(greeting()) }

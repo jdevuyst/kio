@@ -1,0 +1,21 @@
+module pipeline/domain;
+
+import testapi(Bool, I32, String);
+
+pub labels Form_event = { form_name: String, field_name: String, delta: I32, urgent: Bool };
+
+pub labels Telemetry_sample = {
+  , sample_name: String
+  , stage_score: I32
+  , route: String
+  , approved: Bool
+  };
+
+pub labels Pipeline_summary = {
+  , report_name: String
+  , first_sample: String
+  , second_sample: String
+  , third_sample: String
+  , score_total: I32
+  , approvals: I32
+  };

@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/left as left;
+import testapi/model as model;
+import testapi/model({value});
+
+pub fn main() -> . {
+  let .({value as result}) = left.reduce(model.pair(model.number(2), model.number(3)));
+  print(int_to_string(result))
+}

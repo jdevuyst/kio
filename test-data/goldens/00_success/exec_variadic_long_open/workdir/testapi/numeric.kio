@@ -1,0 +1,14 @@
+module testapi/numeric;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+
+pub fn add(a: I32, b: I32) -> I32 { add_i32(a, b) }
+
+pub fn zero() -> I32 { 0 }
+
+pub varop [%? ?%] { foldl add zero }
+
+pub varop [%?:+-*=!@$^& &^$@!=*-+:?%] { foldl add zero }
+
+pub fn local_result() -> I32 { [%?:+-*=!@$^& 6, 7 &^$@!=*-+:?%] }

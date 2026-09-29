@@ -1,0 +1,10 @@
+command transcript linter
+lines=6
+bytes=102
+code-probes=3
+line 2: missing colon after SAVE
+line 3: unsafe retry payload rm -rf
+line 4: malformed opcode RTRY
+retry-safe=false
+accepted=3
+rejected=3

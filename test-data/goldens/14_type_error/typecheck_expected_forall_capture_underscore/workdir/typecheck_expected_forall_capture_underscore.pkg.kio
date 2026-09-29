@@ -1,0 +1,13 @@
+package typecheck_expected_forall_capture_underscore;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

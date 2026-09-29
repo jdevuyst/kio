@@ -1,0 +1,40 @@
+module testapi/main;
+
+import elab/derive(derive);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
+
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+fn box_functor() -> Functor(Box) {
+  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+}
+
+fn identity_functor() -> Functor(Identity) {
+  Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
+}
+
+fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
+
+fn use_derived() -> String {
+  let functor = derived_identity_functor();
+  let branded = Identity.mk_id("derive! functor"(String));
+  let mapped =
+    Functor.fmap(functor)(
+      , String
+      , String
+      , .(value) { string_concat(value, ": ok\n"(String)) }
+      , branded
+      );
+  Identity.un_id(mapped)
+}
+
+pub fn main() -> . { print(use_derived()) }

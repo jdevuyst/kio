@@ -1,0 +1,27 @@
+module main;
+
+host type I32 role(i32);
+
+host type Str role(str);
+
+host type Bool role(bool);
+
+pub labels { left: I32, right: Str };
+
+host fn pair(number: I32, text: Str) -> I32 & Str;
+
+host fn either() -> I32 | Str;
+
+host fn flat3(number: I32, text: Str, flag: Bool) -> I32 & Str & Bool;
+
+host fn either3() -> I32 | Str | Bool;
+
+pub fn make_pair(number: I32, text: Str) -> I32 & Str { pair(number, text) }
+
+pub fn make_either() -> I32 | Str { either() }
+
+pub fn make_flat3(number: I32, text: Str, flag: Bool) -> I32 & Str & Bool {
+  flat3(number, text, flag)
+}
+
+pub fn make_either3() -> I32 | Str | Bool { either3() }

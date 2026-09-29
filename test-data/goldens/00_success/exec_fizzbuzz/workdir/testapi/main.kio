@@ -1,0 +1,52 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mod_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// `x == 0` via the antisymmetric leq idiom: `x <= 0 && 0 <= x`.
+// `leq_i32` is the only ordering primitive in this case's host
+// vocabulary, so equality is built from it.
+fn is_zero(x: I32) -> Bool {
+  if! leq_i32(x, 0) {
+    leq_i32(0, x)
+  } else {
+    .f
+  }
+}
+
+// One element's FizzBuzz line. Cascades through divisibility
+// tests in descending specificity: 15 first, then 3, then 5,
+// then bare number. The `if`/`else` chain's arms all return
+// plain `String`.
+fn render(n: I32) -> String {
+  if! is_zero(mod_i32(n, 15)) {
+    "FizzBuzz"
+  } else if! is_zero(mod_i32(n, 3)) {
+    "Fizz"
+  } else if! is_zero(mod_i32(n, 5)) {
+    "Buzz"
+  } else {
+    int_to_string(n)
+  }
+}
+
+// Iteration walks `1..=stop`; state is the current `n`. Exit
+// fires when `n > stop`. The side-effect (print) fires per step.
+fn step(stop: I32, n: I32) -> I32 | . {
+  if! leq_i32(n, stop) {
+    print(string_concat(render(n), "\n"));
+    widen_sum!(add_i32(n, 1))
+  } else {
+    widen_sum!(())
+  }
+}
+
+fn fizzbuzz(stop: I32) -> . { loop(.(n: I32) { step(stop, n) }, 1) }
+
+pub fn main() -> . { fizzbuzz(15) }

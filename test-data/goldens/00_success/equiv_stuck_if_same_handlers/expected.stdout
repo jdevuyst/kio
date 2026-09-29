@@ -1,0 +1,3 @@
+  pass equiv `stuck_if_eq` in host/m
+
+result: 1/1 equiv block passed

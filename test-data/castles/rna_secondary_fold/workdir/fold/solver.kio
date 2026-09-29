@@ -1,0 +1,101 @@
+module fold/solver;
+
+import elab/control(if);
+import fold/bases as bases;
+import fold/numbers as numbers;
+import fold/plan as plan;
+import fold/plan({decisions}, {length}, {scores});
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+fn score(scores: Array(I32), n: I32, i: I32, j: I32) -> I32 {
+  if! arith.leq_i32(j, i) {
+    0
+  } else {
+    array.array_get(scores, numbers.index(n, i, j))
+  }
+}
+
+// Each candidate partitions the interval into the paired interior and its right suffix.
+rec(loop) fn choose_partner(
+  , sequence: Array(String)
+  , min_loop: I32
+  , program: plan.Program
+  , i: I32
+  , j: I32
+  , k: I32
+  ) -> . {
+  if! arith.leq_i32(k, j) {
+    if! bases.pair_allowed(sequence, i, k, min_loop) {
+      let inside = score(
+        , program.?{scores}
+        , program.?{length}
+        , arith.add_i32(i, 1)
+        , arith.sub_i32(k, 1)
+        );
+      let suffix = score(program.?{scores}, program.?{length}, arith.add_i32(k, 1), j);
+      let candidate = arith.add_i32(1, arith.add_i32(inside, suffix));
+      let cell = numbers.index(program.?{length}, i, j);
+      if! numbers.less(array.array_get(program.?{scores}, cell), candidate) {
+        array.array_set(program.?{scores}, cell, candidate);
+        array.array_set(program.?{decisions}, cell, plan.pair(k))
+      } else {
+        ()
+      }
+    } else {
+      ()
+    };
+    rec choose_partner(sequence, min_loop, program, i, j, arith.add_i32(k, 1))
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn fill_diagonal(
+  , sequence: Array(String)
+  , min_loop: I32
+  , program: plan.Program
+  , span: I32
+  , i: I32
+  ) -> . {
+  let j = arith.sub_i32(arith.add_i32(i, span), 1);
+  if! numbers.less(j, program.?{length}) {
+    let cell = numbers.index(program.?{length}, i, j);
+    array.array_set(
+      , program.?{scores}
+      , cell
+      , score(program.?{scores}, program.?{length}, arith.add_i32(i, 1), j)
+      );
+    choose_partner(sequence, min_loop, program, i, j, arith.add_i32(i, arith.add_i32(min_loop, 1)));
+    rec fill_diagonal(sequence, min_loop, program, span, arith.add_i32(i, 1))
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn fill_spans(sequence: Array(String), min_loop: I32, program: plan.Program, span: I32) -> . {
+  if! arith.leq_i32(span, program.?{length}) {
+    fill_diagonal(sequence, min_loop, program, span, 0);
+    rec fill_spans(sequence, min_loop, program, arith.add_i32(span, 1))
+  } else {
+    ()
+  }
+}
+
+pub fn solve(sequence: Array(String), min_loop: I32) -> plan.Program {
+  let n = array.array_len(sequence);
+  let program =
+    {
+      , length = n
+      , scores = array.array_make_filled(arith.mul_i32(n, n), 0)
+      , decisions = array.array_make_filled(arith.mul_i32(n, n), plan.skip())
+      };
+  fill_spans(sequence, min_loop, program, 2);
+  program
+}
+
+pub fn optimum(program: plan.Program) -> I32 {
+  score(program.?{scores}, program.?{length}, 0, arith.sub_i32(program.?{length}, 1))
+}

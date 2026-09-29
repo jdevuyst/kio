@@ -1,0 +1,2 @@
+elaborator capture `Later` is not in scope before elaborator `demo`
+move the declaration of `Later` above elaborator `demo`

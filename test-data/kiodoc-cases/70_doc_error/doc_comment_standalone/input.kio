@@ -1,0 +1,11 @@
+/// A function with a doc-comment using {} standalone inside ///.
+///
+/// {} standalone is not supported inside /// doc-comments.
+/// Use {@} to wrap the snippet in the surrounding module.
+///
+/// ```kio {}
+/// ()
+/// ```
+module doctest/standalone;
+
+pub fn greet() -> . { () }

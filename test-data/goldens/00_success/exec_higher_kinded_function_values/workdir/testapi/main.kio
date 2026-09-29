@@ -1,0 +1,31 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+type Apply[*F] = F(String) -> F(String);
+
+type Scheme = [*F] Apply(F);
+
+rec newtype Recursive : . | (([*F] F(String) -> F(String)) & Recursive) {
+  constructor mk_recursive;
+  projector un_recursive
+  }
+
+newtype Existential <U> : U & ([*F] F(U) -> F(U)) {
+  constructor mk_existential;
+  projector un_existential
+  }
+
+fn through_anonymous_scheme(value: Box(String)) -> String {
+  let keep = .(function: Scheme) -> Scheme { function };
+  let same = keep(.[*F](item: F(String)) -> F(String) { item });
+  let applied = same(Box, value);
+  Box.un_box(String, applied)
+}
+
+pub fn main() -> . {
+  print(through_anonymous_scheme(Box.mk_box(String, "structural hkt\n"(String))))
+}

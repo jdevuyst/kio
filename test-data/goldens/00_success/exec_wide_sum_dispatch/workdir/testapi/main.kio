@@ -1,0 +1,145 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+pub newtype A : I32 { pub constructor mk_a; pub projector un_a }
+
+pub newtype B : I32 { pub constructor mk_b; pub projector un_b }
+
+pub newtype C : I32 { pub constructor mk_c; pub projector un_c }
+
+pub newtype D : I32 { pub constructor mk_d; pub projector un_d }
+
+pub newtype E : I32 { pub constructor mk_e; pub projector un_e }
+
+pub newtype F : I32 { pub constructor mk_f; pub projector un_f }
+
+pub newtype G : I32 { pub constructor mk_g; pub projector un_g }
+
+pub newtype H : I32 { pub constructor mk_h; pub projector un_h }
+
+type Tail7 = G | H;
+
+type Tail6 = F | Tail7;
+
+type Tail5 = E | Tail6;
+
+type Tail4 = D | Tail5;
+
+type Tail3 = C | Tail4;
+
+type Tail1 = B | Tail3;
+
+type Wide = A | Tail1;
+
+fn inject_a() -> Wide { __left__(A, Tail1, A.mk_a(1(I32))) }
+
+fn inject_d() -> Wide {
+  __right__(A, Tail1, __right__(B, Tail3, __right__(C, Tail4, __left__(D, Tail5, D.mk_d(4(I32))))))
+}
+
+fn inject_h() -> Wide {
+  __right__(
+    , A
+    , Tail1
+    , __right__(
+        , B
+        , Tail3
+        , __right__(
+            , C
+            , Tail4
+            , __right__(
+                , D
+                , Tail5
+                , __right__(E, Tail6, __right__(F, Tail7, __right__(G, H, H.mk_h(8(I32)))))
+                )
+            )
+        )
+    )
+}
+
+fn describe_tail7(value: Tail7) -> I32 {
+  __either__(G, H, I32, value, .(g: G) -> I32 { G.un_g(g) }, .(h: H) -> I32 { H.un_h(h) })
+}
+
+fn describe_tail6(value: Tail6) -> I32 {
+  __either__(
+    , F
+    , Tail7
+    , I32
+    , value
+    , .(f: F) -> I32 { F.un_f(f) }
+    , .(tail: Tail7) -> I32 { describe_tail7(tail) }
+    )
+}
+
+fn describe_tail5(value: Tail5) -> I32 {
+  __either__(
+    , E
+    , Tail6
+    , I32
+    , value
+    , .(e: E) -> I32 { E.un_e(e) }
+    , .(tail: Tail6) -> I32 { describe_tail6(tail) }
+    )
+}
+
+fn describe_tail4(value: Tail4) -> I32 {
+  __either__(
+    , D
+    , Tail5
+    , I32
+    , value
+    , .(d: D) -> I32 { D.un_d(d) }
+    , .(tail: Tail5) -> I32 { describe_tail5(tail) }
+    )
+}
+
+fn describe_tail3(value: Tail3) -> I32 {
+  __either__(
+    , C
+    , Tail4
+    , I32
+    , value
+    , .(c: C) -> I32 { C.un_c(c) }
+    , .(tail: Tail4) -> I32 { describe_tail4(tail) }
+    )
+}
+
+fn describe_tail1(value: Tail1) -> I32 {
+  __either__(
+    , B
+    , Tail3
+    , I32
+    , value
+    , .(b: B) -> I32 { B.un_b(b) }
+    , .(tail: Tail3) -> I32 { describe_tail3(tail) }
+    )
+}
+
+fn describe(value: Wide) -> I32 {
+  __either__(
+    , A
+    , Tail1
+    , I32
+    , value
+    , .(a: A) -> I32 { A.un_a(a) }
+    , .(tail: Tail1) -> I32 { describe_tail1(tail) }
+    )
+}
+
+pub fn main() -> . {
+  print("a:"(String));
+  print(int_to_string(describe(inject_a())));
+  print("\n"(String));
+  print("d:"(String));
+  print(int_to_string(describe(inject_d())));
+  print("\n"(String));
+  print("h:"(String));
+  print(int_to_string(describe(inject_h())));
+  print("\n"(String))
+}

@@ -1,0 +1,9 @@
+module main;
+
+type Bad = .;
+
+type Good = .;
+
+pure fn apply(f: Good -> .) -> . { f(()) }
+
+pure fn test() -> . { apply(.(x: Bad) -> . { () }) }

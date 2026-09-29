@@ -1,0 +1,103 @@
+module lab/scenario;
+
+import elab/spine_elaborators(widen_sum);
+import lab/clock as clock;
+import lab/replica as replica;
+import lab/report as report;
+import list/core as core;
+import list/list as lists;
+import list/list(varop [* *]);
+import result/result as result;
+import testapi(String);
+
+fn after_resolution(
+  , first: replica.Replica
+  , second: replica.Replica
+  , third: replica.Replica
+  , delayed: core.List(replica.Message)
+  , change: replica.Change
+  ) -> . {
+  let .(resolved, resolution) = change;
+  let second = replica.deliver(second, resolution);
+  let third = replica.deliver(third, resolution);
+  report.snapshot("resolved A", resolved);
+  report.flag("resolution reaches B=", replica.converged(resolved, second));
+  report.flag("resolution reaches C=", replica.converged(resolved, third));
+  let late = replica.replay(resolved, delayed);
+  let duplicate = replica.deliver(late, resolution);
+  report.flag("delayed messages cannot resurrect=", replica.converged(resolved, late));
+  report.flag("duplicate resolution is idempotent=", replica.converged(resolved, duplicate));
+  report.read("read key 10: ", duplicate, 10);
+  report.snapshot("retained pre-resolution snapshot", first);
+  let .(second, next) = replica.write(second, 20, 201);
+  let resolved = replica.deliver(resolved, next);
+  let third = replica.deliver(third, next);
+  report.snapshot("after B updates key 20", second);
+  report.flag("final A=B=", replica.converged(resolved, second));
+  report.flag("final B=C=", replica.converged(second, third));
+  report.read("read key 20: ", third, 20)
+}
+
+pub fn run() -> . {
+  let alpha = {clock.alpha=}.>widen_sum!(clock.Node);
+  let beta = {clock.beta=}.>widen_sum!(clock.Node);
+  let gamma = {clock.gamma=}.>widen_sum!(clock.Node);
+  let .(a, a1) = replica.write(replica.empty(alpha), 10, 10);
+  let .(_a, a2) = replica.write(a, 10, 11);
+  let .(b, b1) = replica.write(replica.empty(beta), 10, 20);
+  let .(_b, b2) = replica.write(b, 20, 200);
+  let .(_c, c1) = replica.write(replica.empty(gamma), 10, 30);
+  report.line(
+    , "a1 / a2: "
+    , clock.describe(clock.compare(
+        , a1.?{replica.payload}.?{replica.stamp}
+        , a2.?{replica.payload}.?{replica.stamp}
+        ))
+    );
+  report.line(
+    , "a2 / a1: "
+    , clock.describe(clock.compare(
+        , a2.?{replica.payload}.?{replica.stamp}
+        , a1.?{replica.payload}.?{replica.stamp}
+        ))
+    );
+  report.line(
+    , "a2 / b1: "
+    , clock.describe(clock.compare(
+        , a2.?{replica.payload}.?{replica.stamp}
+        , b1.?{replica.payload}.?{replica.stamp}
+        ))
+    );
+  report.line(
+    , "b1 / b1: "
+    , clock.describe(clock.compare(
+        , b1.?{replica.payload}.?{replica.stamp}
+        , b1.?{replica.payload}.?{replica.stamp}
+        ))
+    );
+  let forward = [* a1, b1, a2, b2, c1, a2, b1 *];
+  let shuffled = [* b2, a2, c1, b1, a1, b2, c1 *];
+  let first = replica.replay(replica.empty(alpha), forward);
+  let second = replica.replay(replica.empty(beta), lists.reverse(forward));
+  let third = replica.replay(replica.empty(gamma), shuffled);
+  report.snapshot("forward A", first);
+  report.snapshot("reverse B", second);
+  report.snapshot("shuffled C", third);
+  report.flag("delivery order A=B=", replica.converged(first, second));
+  report.flag("delivery order B=C=", replica.converged(second, third));
+  report.flag(
+    , "whole replay is idempotent="
+    , replica.converged(first, replica.replay(first, forward))
+    );
+  report.read("read key 10: ", first, 10);
+  report.read("read key 20: ", first, 20);
+  report.read("read key 99: ", first, 99);
+  report.rejection("resolve unknown choice: ", replica.resolve(first, 10, 999));
+  report.rejection("resolve singleton: ", replica.resolve(first, 20, 200));
+  report.rejection("resolve absent key: ", replica.resolve(first, 99, 0));
+  result.fold(
+    , .(change: replica.Change) { after_resolution(first, second, third, forward, change) }
+    , .(error: replica.Fault) { report.line("resolution failed: ", report.fault(error)) }
+    , replica.resolve(first, 10, 20)
+    )
+}

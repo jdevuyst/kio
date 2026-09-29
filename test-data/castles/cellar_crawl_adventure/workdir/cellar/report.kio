@@ -1,0 +1,243 @@
+/// The transcript. Everything the player reads is built here, and nothing else
+/// in the package prints or spells a sentence.
+///
+/// The exits line and the two item lines enumerate their fixed, small
+/// vocabularies in a stable domain order.
+module cellar/report;
+
+import cellar/command as command;
+import cellar/ids as ids;
+import cellar/outcome as outcome;
+import cellar/state as state;
+import cellar/world as world;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(div);
+import testapi/fmt(int_to_string);
+import testapi/text(string_concat, string_eq);
+
+fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(cat2(a, b), c) }
+
+fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(cat3(a, b, c), d) }
+
+fn line(s: String) -> String { cat2(s, "\n") }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+fn an_item(i: ids.Item_id) -> String { cat2("a ", ids.item_name(i)) }
+
+fn the_item(i: ids.Item_id) -> String { cat2("the ", ids.item_name(i)) }
+
+fn is_blank(s: String) -> Bool { string_eq(s, "") }
+
+/// Comma-join, treating an empty accumulator as "nothing listed yet".
+fn join(acc: String, word: String) -> String {
+  if! is_blank(acc) {
+    word
+  } else {
+    cat3(acc, ", ", word)
+  }
+}
+
+/// A locked door is announced on the exits line, so a player who is refused is
+/// refused for a reason that was already on the page.
+fn exit_word(g: state.Game, d: ids.Dir_id) -> String {
+  if! state.door_open(g, state.room_of(g), d) {
+    ids.direction_name(d)
+  } else {
+    cat2(ids.direction_name(d), " (locked)")
+  }
+}
+
+fn add_exit(g: state.Game, acc: String, d: ids.Dir_id) -> String {
+  match! world.exit_of(state.room_of(g), d) {
+    (
+      , .(_o: world.Open_to) { join(acc, ids.direction_name(d)) }
+      , .(_t: world.Locked_to, _k: world.Locked_by) { join(acc, exit_word(g, d)) }
+      , .(_w: world.No_way) { acc }
+      )
+  }
+}
+
+fn exits_text(g: state.Game) -> String {
+  let a = add_exit(g, "", ids.north());
+  let b = add_exit(g, a, ids.south());
+  let c = add_exit(g, b, ids.east());
+  let d = add_exit(g, c, ids.west());
+  let e = add_exit(g, d, ids.up());
+  let f = add_exit(g, e, ids.down());
+  if! is_blank(f) {
+    "none"
+  } else {
+    f
+  }
+}
+
+fn add_loose(g: state.Game, acc: String, i: ids.Item_id) -> String {
+  if! state.item_lies_in(g, i, state.room_of(g)) {
+    join(acc, an_item(i))
+  } else {
+    acc
+  }
+}
+
+fn loose_text(g: state.Game) -> String {
+  let a = add_loose(g, "", ids.lantern());
+  let b = add_loose(g, a, ids.brass_key());
+  let c = add_loose(g, b, ids.cork());
+  add_loose(g, c, ids.bottle())
+}
+
+fn add_carried(g: state.Game, acc: String, i: ids.Item_id) -> String {
+  if! state.carrying(g, i) {
+    join(acc, an_item(i))
+  } else {
+    acc
+  }
+}
+
+fn carried_text(g: state.Game) -> String {
+  let a = add_carried(g, "", ids.lantern());
+  let b = add_carried(g, a, ids.brass_key());
+  let c = add_carried(g, b, ids.cork());
+  let d = add_carried(g, c, ids.bottle());
+  if! is_blank(d) {
+    "nothing"
+  } else {
+    d
+  }
+}
+
+fn carrying_line(g: state.Game) -> String { line(cat2("Carrying: ", carried_text(g))) }
+
+/// Only ever reached for a room the player can actually see: the engine answers
+/// a look into the dark with `too_dark_to_see` long before it gets here.
+fn describe_room(g: state.Game) -> String {
+  let r = state.room_of(g);
+  let head = cat2(line(world.room_title(r)), line(world.room_blurb(r)));
+  let loose = loose_text(g);
+  let seen =
+    if! is_blank(loose) {
+      head
+    } else {
+      cat2(head, line(cat2("Here: ", loose)))
+    };
+  cat2(seen, line(cat2("Exits: ", exits_text(g))))
+}
+
+fn dark_text() -> String {
+  cat2(
+    , line("Pitch Dark")
+    , line("You cannot see a thing. Only cold air, and the smell of very old wine.")
+    )
+}
+
+/// The echoed command. The runner echoes nothing, so the transcript has to
+/// carry the player's own words.
+pub fn echo_line(c: command.Command) -> String {
+  let words =
+    match! c {
+      (
+        , .(x: command.Go_cmd) { cat2("go ", x.?{command.go_cmd}) }
+        , .(x: command.Take_cmd) { cat2("take ", x.?{command.take_cmd}) }
+        , .(x: command.Drop_cmd) { cat2("drop ", x.?{command.drop_cmd}) }
+        , .(x: command.Unlock_cmd) { cat2("unlock ", x.?{command.unlock_cmd}) }
+        , .(_l: command.Look_cmd) { "look" }
+        , .(_b: command.Bag_cmd) { "inventory" }
+        , .(_q: command.Quit_cmd) { "quit" }
+        , .(x: command.Unknown_cmd) { x.?{command.unknown_cmd} }
+        )
+    };
+  cat3("\n> ", words, "\n")
+}
+
+pub fn reply_text(g: state.Game, o: outcome.Outcome) -> String {
+  match! o {
+    (
+      , .(_a: outcome.Saw_room) { describe_room(g) }
+      , .(_b: outcome.Too_dark_to_see) { dark_text() }
+      , .(_c: outcome.Dark_ahead) {
+          line("It is pitch dark that way. You will not go in without a light.")
+        }
+      , .(x: outcome.Way_locked) {
+          line(cat3("That way is locked. You need ", the_item(x.?{outcome.way_locked}), "."))
+        }
+      , .(_d: outcome.No_exit) { line("You cannot go that way.") }
+      , .(x: outcome.Not_a_direction) {
+          line(cat3("\"", x.?{outcome.not_a_direction}, "\" is not a direction."))
+        }
+      , .(x: outcome.Took) { line(cat2("Taken: ", an_item(x.?{outcome.took}))) }
+      , .(x: outcome.Already_held) {
+          line(cat3("You are already carrying ", the_item(x.?{outcome.already_held}), "."))
+        }
+      , .(x: outcome.Nothing_named) {
+          line(cat3("There is no ", x.?{outcome.nothing_named}, " here."))
+        }
+      , .(x: outcome.Dropped) { line(cat2("Dropped: ", an_item(x.?{outcome.dropped}))) }
+      , .(x: outcome.Not_held) { line(cat3("You are not carrying a ", x.?{outcome.not_held}, ".")) }
+      , .(_e: outcome.Lock_opened) { line("The lock turns. The way is open.") }
+      , .(_f: outcome.Nothing_to_unlock) { line("There is nothing to unlock that way.") }
+      , .(x: outcome.Lock_needs) {
+          line(cat3("The lock will not turn without ", the_item(x.?{outcome.lock_needs}), "."))
+        }
+      , .(_g: outcome.Held_items) { carrying_line(g) }
+      , .(x: outcome.Unknown_verb) {
+          line(cat3("You do not know how to \"", x.?{outcome.unknown_verb}, "\"."))
+        }
+      , .(_h: outcome.Left_cellar) { line("You climb the stairs and step out into the daylight.") }
+      )
+  }
+}
+
+/// Twenty-five points to a rank. The chain reads downward so a badly fumbled
+/// run, whose score can go negative, still lands on the bottom rung.
+fn rank_of(points: I32) -> String {
+  let step = div(points, 25);
+  if! ids.int_eq(step, 3) {
+    "Cellar Master"
+  } else if! ids.int_eq(step, 2) {
+    "Bottle Hunter"
+  } else if! ids.int_eq(step, 1) {
+    "Cork Sniffer"
+  } else {
+    "Cellar Rat"
+  }
+}
+
+fn prize_word(g: state.Game) -> String {
+  if! state.won(g) {
+    "won"
+  } else {
+    "left behind"
+  }
+}
+
+fn score_line(g: state.Game) -> String {
+  line(cat4(
+    , cat3("score: ", num(state.score(g)), " = ")
+    , cat2(num(state.door_credit(g)), " doors")
+    , cat3(" + ", num(state.haul(g)), " haul")
+    , cat3(" - ", num(state.fumbles_of(g)), " fumbles")
+    ))
+}
+
+pub fn summary(g: state.Game) -> String {
+  let counts =
+    cat4(
+      , line("\n--- final tally ---")
+      , line(cat2("turns: ", num(state.turns_of(g))))
+      , line(cat2("moves: ", num(state.moves_of(g))))
+      , line(cat2("fumbles: ", num(state.fumbles_of(g))))
+      );
+  let doors = line(cat2("doors opened: ", num(state.doors_opened(g))));
+  let tail =
+    cat3(
+      , score_line(g)
+      , line(cat2("rank: ", rank_of(state.score(g))))
+      , line(cat2("prize: ", prize_word(g)))
+      );
+  cat4(counts, doors, carrying_line(g), tail)
+}

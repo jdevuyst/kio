@@ -1,0 +1,5 @@
+module right;
+
+host type Shared role(i32);
+
+pub fn right_value() -> Shared { 2 }

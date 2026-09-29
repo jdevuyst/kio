@@ -1,0 +1,3 @@
+module parse_existential_no_space;
+
+host type A role(i32);

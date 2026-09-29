@@ -1,0 +1,3 @@
+module widget/feature/target;
+
+pub(widget/feature) newtype Token : . { pub constructor mk; pub projector get }

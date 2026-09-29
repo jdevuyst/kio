@@ -1,0 +1,113 @@
+/// The report writer: a relation drawn as a column table.
+///
+/// The column list a relation carries is the header, and every line is
+/// laid out from the widths the catalog declares. The last column of a
+/// line is never right-padded, so no line goes out with trailing blanks.
+module query/render;
+
+import elab/control(if);
+import elab/match(match);
+import query/list as list;
+import query/row as rel;
+import query/schema as schema;
+import query/text as text;
+import query/value as value;
+import testapi(Bool, I32, String);
+import testapi/arith(sub_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn margin() -> String { "  " }
+
+fn gap() -> String { "  " }
+
+/// A heading sits over the data it names: to the left of a text column,
+/// and out at the right edge of a numeric one, where the digits arrive.
+fn title_text(c: schema.Col, last: Bool) -> String {
+  let name = schema.col_name(c);
+  let pad = sub_i32(schema.col_width(c), value.value_width(schema.col_title(c)));
+  if! schema.col_numeric(c) {
+    text.pad_left(name, pad)
+  } else if! last {
+    name
+  } else {
+    text.pad_right(name, pad)
+  }
+}
+
+rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
+  match! cols.>list.List.un_list {
+    (
+      , .(c: schema.Col, rest: schema.Col_list) {
+          let last = list.is_empty(rest);
+          let piece =
+            if! last {
+              title_text(c, .t)
+            } else {
+              text.cat2(title_text(c, .f), gap())
+            };
+          rec header_onto(rest, text.cat2(acc, piece))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
+  match! cols.>list.List.un_list {
+    (
+      , .(c: schema.Col, rest: schema.Col_list) {
+          let piece =
+            if! list.is_empty(rest) {
+              text.rule(schema.col_width(c))
+            } else {
+              text.cat2(text.rule(schema.col_width(c)), gap())
+            };
+          rec rule_onto(rest, text.cat2(acc, piece))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> String {
+  match! cols.>list.List.un_list {
+    (
+      , .(c: schema.Col, rest: schema.Col_list) {
+          let v = rel.row_cell(row, c);
+          let piece =
+            if! list.is_empty(rest) {
+              value.value_tail(v, schema.col_width(c))
+            } else {
+              text.cat2(value.value_cell(v, schema.col_width(c)), gap())
+            };
+          rec row_onto(rest, row, text.cat2(acc, piece))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) -> . {
+  match! rows.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          print(text.cat3(margin(), row_onto(cols, r, ""), "\n"));
+          rec print_rows(cols, rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn render_relation(r: rel.Relation) -> . {
+  let cols = rel.rel_cols_of(r);
+  let rows = rel.rel_rows_of(r);
+  print(text.cat3(margin(), header_onto(cols, ""), "\n"));
+  print(text.cat3(margin(), rule_onto(cols, ""), "\n"));
+  if! list.is_empty(rows) {
+    print(text.cat2(margin(), "(no rows)\n"))
+  } else {
+    print_rows(cols, rows)
+  }
+}

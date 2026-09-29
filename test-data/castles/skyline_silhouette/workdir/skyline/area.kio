@@ -1,0 +1,119 @@
+/// The silhouette's area, computed twice, two ways that share nothing.
+///
+/// `from_points` reads the area off the key points the sweep emitted.
+/// `raster` / `from_raster` ignore the sweep entirely and paint every building
+/// onto a column array, then add the columns up. The two numbers must agree.
+/// They catch a sweep that buries the wrong building or forgets that two roofs
+/// of the same height are two roofs. A same-position down/up pair at a shared
+/// edge has zero width and is invisible to area; `advances` checks it below.
+module skyline/area;
+
+import elab/control(if);
+import elab/match(match);
+import skyline/city as city;
+import skyline/list as lst;
+import skyline/logic as logic;
+import skyline/sweep as sweep;
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_filled, array_set);
+import testapi/iter(loop);
+
+rec(loop) {
+  /// The area under the key points.
+  ///
+  /// Between two consecutive key points the silhouette is flat at the left
+  /// point's height, so each pair contributes `height * width`. The walk
+  /// carries the span still open — where it started and how tall it is — and
+  /// closes it when the next point arrives. The first span opens at ground
+  /// level, so whatever lies left of the first key point contributes nothing;
+  /// the last key point drops the silhouette back to ground level, so nothing
+  /// is left open when the points run out.
+  pub fn from_points(ps: lst.List(sweep.Point)) -> I32 { rec close(ps, 0, 0, 0) };
+  fn close(ps: lst.List(sweep.Point), from: I32, height: I32, total: I32) -> I32 {
+    match! ps.>lst.List.un_list {
+      (
+        , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+            let width = sub_i32(sweep.x_of(p), from);
+            let closed = add_i32(total, mul_i32(height, width));
+            rec close(rest, sweep.x_of(p), sweep.y_of(p), closed)
+          }
+        , .(_empty: .) { total }
+        )
+    }
+  }
+}
+
+/// Raise one building's roof over every column it stands on. A building
+/// `[left, right)` stands on column `col` exactly when `left <= col` and
+/// `col < right`, so the walk stops at `right` rather than on it — which is why
+/// two buildings sharing an edge never fight over a column.
+rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array(I32)) -> . {
+  if! leq_i32(stop, col) {
+    ()
+  } else {
+    array_set(grid, col, logic.max(array_get(grid, col), h));
+    rec paint(add_i32(col, 1), stop, h, grid)
+  }
+}
+
+rec(loop) fn paint_all(bs: lst.List(city.Building), grid: Array(I32)) -> . {
+  match! bs.>lst.List.un_list {
+    (
+      , .(b: city.Building, rest: lst.List(city.Building)) {
+          paint(city.left_of(b), city.right_of(b), city.height_of(b), grid);
+          rec paint_all(rest, grid)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+/// The city rasterized: one column per unit interval `[c, c + 1)`, each holding
+/// the tallest building standing on it. The array is a host handle, so the walk
+/// paints into the one grid and hands the same grid back.
+pub fn raster(bs: lst.List(city.Building)) -> Array(I32) {
+  let grid = array_make_filled(city.max_right(bs), 0);
+  paint_all(bs, grid);
+  grid
+}
+
+rec(loop) {
+  /// The rasterized area: every column's height, added up.
+  pub fn from_raster(grid: Array(I32)) -> I32 { rec sum(grid, 0, 0) };
+  fn sum(grid: Array(I32), col: I32, total: I32) -> I32 {
+    if! leq_i32(array_len(grid), col) {
+      total
+    } else {
+      rec sum(grid, add_i32(col, 1), add_i32(total, array_get(grid, col)))
+    }
+  }
+}
+
+pub fn agree(from_sweep: I32, from_grid: I32) -> Bool { logic.eq(from_sweep, from_grid) }
+
+rec(loop) {
+  /// Key points must advance strictly left to right.
+  ///
+  /// Two key points at one position mean the silhouette dipped and bounced
+  /// back inside a single column — exactly what an edge shared by two equally
+  /// tall buildings provokes when the events either side of it are visited in
+  /// the wrong order. The area check is blind to that mistake, because a
+  /// spurious pair at one position spans no width and so adds nothing to
+  /// either total. This one is not.
+  pub fn advances(ps: lst.List(sweep.Point)) -> Bool { rec forward(ps, -1) };
+  fn forward(ps: lst.List(sweep.Point), from: I32) -> Bool {
+    match! ps.>lst.List.un_list {
+      (
+        , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+            if! logic.lt(from, sweep.x_of(p)) {
+              rec forward(rest, sweep.x_of(p))
+            } else {
+              .f
+            }
+          }
+        , .(_empty: .) { .t }
+        )
+    }
+  }
+}

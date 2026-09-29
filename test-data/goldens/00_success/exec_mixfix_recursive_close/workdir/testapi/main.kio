@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi as host;
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/pipe(op _ |> _);
+
+fn index(left: host.I32, right: host.I32) -> host.I32 {
+  arith.add_i32(arith.mul_i32(left, 10), right)
+}
+
+op _ <| __ |> { impl index }
+
+pub fn main() -> . {
+  io.print(fmt.i32_to_string(1 <| 2 |>));
+  io.print("\n");
+  io.print(fmt.i32_to_string(1 <| 2 <| 3 |> |>));
+  io.print("\n");
+  io.print(fmt.i32_to_string(4 |> 5));
+  io.print("\n")
+}

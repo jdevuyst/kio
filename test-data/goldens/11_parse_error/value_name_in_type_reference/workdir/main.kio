@@ -1,0 +1,4 @@
+module main;
+
+fn value() -> . { () }
+type Result = value;

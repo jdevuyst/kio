@@ -1,0 +1,19 @@
+/// Diamond `retype` over a **polymorphic** `newtype` payload.
+/// `core/store` (the `idlib` package) and `widget/store` (the
+/// `widget` package) each declare `newtype Dict : [A] A -> A` — the
+/// dictionary / identity-function pattern, a `Forall` payload. Identity-
+/// exact nominal typing keeps the two `Dict`s distinct, so threading
+/// `widget`'s relayed `Dict` into `core`'s `apply_dict` would be a type
+/// error. The `widget.dep.kio`'s `retype widget/store to core/store;`
+/// collapses `widget`'s copy onto `core`'s; the congruence check aligns
+/// the two `[A] A -> A` payloads' `Forall` binder (rather than comparing
+/// spans), so the diamond fetches clean and the one shared `Dict` flows
+/// end to end.
+module testapi/main;
+
+import core/store(apply_dict);
+import testapi(I32);
+import testapi/fmt(print_i32);
+import widget/relay(relay_via);
+
+pub fn main() -> . { let .(n: I32) = apply_dict(relay_via(), 7(I32)); print_i32(n) }

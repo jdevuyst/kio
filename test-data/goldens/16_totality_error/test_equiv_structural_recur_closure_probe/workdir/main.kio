@@ -1,0 +1,24 @@
+module main;
+
+import __comptime__;
+
+pure fn run(ct: __Comptime__, k: . -> .) -> . {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , .
+    , .
+    , __type_unit__(ct)
+    , ()
+    , .(_recur: (__Type__ & .) -> ., _fuel: __Type__, _input: .) -> . { k(()) }
+    )
+}
+
+pure fn fault_when_called(ct: __Comptime__, _probe: .) -> . {
+  run(ct, .(_outer: .) -> . { run(ct, .(_inner: .) -> . { () }) })
+}
+
+equiv closure_probe_totality(ct: __Comptime__) {
+  .(probe: .) -> . { fault_when_called(ct, probe) };
+  .(probe: .) -> . { fault_when_called(ct, probe) }
+}

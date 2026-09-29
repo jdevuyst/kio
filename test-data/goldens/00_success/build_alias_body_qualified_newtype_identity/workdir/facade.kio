@@ -1,0 +1,17 @@
+module facade;
+
+import list/core as list;
+import model as model;
+
+newtype List : . { constructor mk_local_list; projector un_local_list }
+
+pub fn keep(row: model.Row) -> model.Row { model.keep(row) }
+
+pub fn keep_box(value: model.Unit_box) -> model.Unit_box { model.keep_box(value) }
+
+pub fn keep_identity_box(value: list.Box(.)) -> list.Box(.) { model.keep_identity_box(value) }
+
+pub fn unwrap[A](value: list.List(A)) -> . | (A & list.List(A)) {
+  let projector = list.List.un_list;
+  projector(A, value)
+}

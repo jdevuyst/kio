@@ -1,0 +1,7 @@
+module typed_let_partial_pattern_no_unification/main;
+
+import typed_let_partial_pattern_no_unification(I32);
+
+fn make_id[A]() -> A -> A { .(x: A) { x } }
+
+fn bad(n: I32) -> I32 { let .(f: I32 -> I32, _) = (make_id(), ()); f(n) }

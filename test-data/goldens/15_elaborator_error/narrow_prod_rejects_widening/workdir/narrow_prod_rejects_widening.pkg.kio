@@ -1,0 +1,19 @@
+package narrow_prod_rejects_widening;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  elab/testapi
+}

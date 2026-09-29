@@ -1,0 +1,103 @@
+/// A cons list and the traversals the merge needs. This tier has no host
+/// array type, so every sequence in the program — document sections, the
+/// dynamic-programming rows, the derived regions — is one of these.
+///
+/// The accessors are total: an out-of-range index or an empty list yields
+/// the caller's fallback instead of failing, which keeps the dynamic
+/// program's border conditions (`L(i, m)` and `L(n, j)`) free of special
+/// cases.
+module diff3/list;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
+
+pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, rest: List(A)) -> List(A) {
+  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+}
+
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+
+pub fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.unpack {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+pub fn head_or[A](xs: List(A), fallback: A) -> A {
+  match! xs.>List.unpack {
+    (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
+  }
+}
+
+pub fn tail[A](xs: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { nil(A, ()) })
+  }
+}
+
+/// Push the elements of `xs` onto `acc` in reverse. Every other traversal
+/// here is written as an application of this one, so the module holds a
+/// single accumulator loop rather than one per operation.
+pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
+
+rec(loop) fn len_from[A](xs: List(A), acc: I32) -> I32 {
+  match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rec len_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn len[A](xs: List(A)) -> I32 { len_from(xs, 0) }
+
+pub rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
+  if! leq_i32(count, 0) {
+    xs
+  } else match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rec drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
+  }
+}
+
+rec(loop) fn take_onto[A](xs: List(A), count: I32, acc: List(A)) -> List(A) {
+  if! leq_i32(count, 0) {
+    reverse(acc)
+  } else match! xs.>List.unpack {
+    (
+      , .(head: A, rest: List(A)) { rec take_onto(rest, sub_i32(count, 1), cons(head, acc)) }
+      , .(_empty: .) { reverse(acc) }
+      )
+  }
+}
+
+fn take[A](xs: List(A), count: I32) -> List(A) { take_onto(xs, count, nil(A, ())) }
+
+/// The half-open span `[lo, hi)`. A reversed or out-of-range span is
+/// empty, which is what the region walk wants for a gap that exists on
+/// only some of the three sides.
+pub fn slice[A](xs: List(A), lo: I32, hi: I32) -> List(A) { take(drop(xs, lo), sub_i32(hi, lo)) }
+
+pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
+
+rec(loop) fn zeros_onto(count: I32, acc: List(I32)) -> List(I32) {
+  if! leq_i32(count, 0) {
+    acc
+  } else {
+    rec zeros_onto(sub_i32(count, 1), cons(0, acc))
+  }
+}
+
+pub fn zeros(count: I32) -> List(I32) { zeros_onto(count, nil()) }

@@ -1,0 +1,14 @@
+elevator_bank_sim
+tick 0 arrivals L2 M0 H0 | A f0->0 up=false | B f4->0 up=false | served 1 waiting 1 wait_total 2
+tick 1 arrivals L0 M0 H1 | A f1->5 up=true | B f3->0 up=false | served 0 waiting 2 wait_total 4
+tick 2 arrivals L0 M1 H0 | A f2->5 up=true | B f2->0 up=false | served 1 waiting 2 wait_total 7
+tick 3 arrivals L1 M0 H0 | A f3->5 up=true | B f1->0 up=false | served 0 waiting 3 wait_total 10
+tick 4 arrivals L0 M0 H2 | A f4->5 up=true | B f0->0 up=false | served 1 waiting 4 wait_total 15
+tick 5 arrivals L0 M0 H0 | A f5->5 up=true | B f0->0 up=false | served 2 waiting 2 wait_total 19
+tick 6 arrivals L0 M1 H0 | A f5->5 up=false | B f1->2 up=true | served 1 waiting 2 wait_total 22
+tick 7 arrivals L0 M0 H0 | A f5->5 up=false | B f2->2 up=true | served 2 waiting 0 wait_total 24
+tick 8 arrivals L1 M0 H0 | A f4->0 up=false | B f1->0 up=false | served 0 waiting 1 wait_total 25
+tick 9 arrivals L0 M0 H1 | A f5->5 up=true | B f0->0 up=false | served 2 waiting 0 wait_total 27
+tick 10 arrivals L0 M0 H0 | A f5->5 up=false | B f0->0 up=false | served 0 waiting 0 wait_total 27
+tick 11 arrivals L0 M0 H0 | A f5->5 up=false | B f0->0 up=false | served 0 waiting 0 wait_total 27
+summary served=10 wait=27 pending=0 score=919

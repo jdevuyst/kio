@@ -1,0 +1,1 @@
+gate_graph_routes route=A>C>E>D>F cost=10 visited=30 relaxed=7 blocked_C_D_seen=3 unreachable_G=true

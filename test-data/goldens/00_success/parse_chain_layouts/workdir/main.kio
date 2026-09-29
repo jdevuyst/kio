@@ -1,0 +1,33 @@
+module main;
+
+// Type-operator chains accept any number of operators in any
+// position when the chain is parenthesized — leading runs (before
+// the first item), interior runs (between items), and trailing
+// runs (before the closing paren) all collapse to the same AST as
+// the canonical one-operator-per-separator layout. This applies to
+// `&` (product) and `|` (sum) chains, which the formatter wraps in
+// parens when it splits them across lines. Arrow `.>` is
+// deliberately *not* extended: it stays single-line, and its
+// chain shape is strict (`A -> B -> C` only, no leading or
+// repeated arrows).
+
+// Leading-operator multi-line layout (the formatter's canonical
+// shape for chains too long to fit on one line).
+type Big_prod = . & . & .;
+
+type Big_sum = . | .;
+
+// Repeated and trailing operators collapse to the same chain.
+type Ugly_prod = . & .;
+
+type Ugly_sum = . | .;
+
+// Single-line forms still parse as before — adding leading or
+// trailing operators while staying inline is also accepted.
+type Inline1 = . & .;
+
+type Inline2 = . & .;
+
+type Inline3 = . & .;
+
+fn use_them(p: Big_prod, q: Ugly_prod, r: Inline1) -> . { () }

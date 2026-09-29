@@ -1,0 +1,86 @@
+/// rational_arithmetic_grader — exact rational arithmetic, used to mark
+/// homework.
+///
+/// Nine exercises (`rational/fixture`) each pair a question — a tree of
+/// literals and the four operators (`rational/expr`) — with the fraction one
+/// student handed in. Every question is evaluated in exact rational arithmetic
+/// (`rational/core`, `rational/arith`), which keeps each intermediate value in
+/// lowest terms with a positive denominator and reports a division by zero as a
+/// value rather than a crash. The marker (`rational/grader`) then compares the
+/// submission against the answer, accepting it outright when it is already
+/// reduced and accepting it with a note when it is merely equivalent. `main`
+/// prints one block per exercise and then the class summary.
+module testapi/main;
+
+import elab/match(match);
+import rational/expr as expr;
+import rational/fixture as fixture;
+import rational/grader as grader;
+import rational/grader(
+  , Exercise
+  , Roster
+  , Tally
+  , Verdict
+  , {equivalent_count}
+  , {exact_count}
+  , {note}
+  , {outcome}
+  , {question}
+  , {submitted}
+  , {undefined_count}
+  , {wrong_count}
+  );
+import rational/render as render;
+import rational/text as text;
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+fn line(body: String) -> . { io.print(text.cat2(body, "\n")) }
+
+fn field(name: String, value: String) -> . { line(text.cat3(name, ": ", value)) }
+
+fn num(value: I32) -> String { fmt.int_to_string(value) }
+
+/// Print one exercise's block and hand the verdict back for the tally.
+fn report(index: I32, item: Exercise) -> Verdict {
+  let .({question, submitted}) = item;
+  let correct = expr.eval(question);
+  let .({outcome, note}) = grader.assess(correct, submitted);
+  field(text.cat2("exercise ", num(index)), render.expr(question));
+  field("  correct", render.outcome(correct));
+  field("  submitted", render.fraction(submitted));
+  field("  verdict", text.cat3(grader.verdict_text(outcome), " - ", note));
+  line("");
+  outcome
+}
+
+rec(loop) fn walk(index: I32, remaining: Roster, marks: Tally) -> Tally {
+  match! Roster.body(remaining) {
+    (
+      , .(item: Exercise, rest: Roster) {
+          let verdict = report(index, item);
+          rec walk(arith.add(index, 1), rest, grader.record(marks, verdict))
+        }
+      , .(_end: .) { marks }
+      )
+  }
+}
+
+pub fn main() -> . {
+  line("rational_arithmetic_grader");
+  line("");
+  let marks = walk(1, fixture.exercises(), grader.no_marks());
+  let .({exact_count, equivalent_count, wrong_count, undefined_count}) = marks;
+  line("summary");
+  field("  exact", num(exact_count));
+  field("  equivalent", num(equivalent_count));
+  field("  wrong", num(wrong_count));
+  field("  undefined", num(undefined_count));
+  field(
+    , "class total"
+    , text.cat4(num(grader.earned(marks)), " of ", num(grader.possible(marks)), " points")
+    )
+}

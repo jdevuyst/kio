@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/boxlib(Box);
+import testapi/io(print);
+
+// Build a `Box` value, then unbox and print. The companion
+// `type Box = …;` in the package file makes `Box` reachable
+// from outside the package as
+// `globalThis.__pkg_exec_export_type__.Box`; this `main`
+// just exercises the in-package path.
+pub fn main() -> . { print(Box.mk_box("exported-type export\n").>Box.un_box) }

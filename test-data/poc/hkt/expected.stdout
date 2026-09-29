@@ -1,0 +1,5 @@
+higher-kinded box ok
+higher-kinded identity ok
+brand-generic pipeline over box ok
+brand-generic pipeline over identity ok
+derived functor over identity ok

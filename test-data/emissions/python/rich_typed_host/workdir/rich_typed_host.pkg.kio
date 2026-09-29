@@ -1,0 +1,13 @@
+package rich_typed_host;
+
+build {
+  cache ();
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api
+}

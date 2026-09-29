@@ -1,0 +1,3 @@
+module naming_term_letterless/main;
+
+fn _1() -> . { () }

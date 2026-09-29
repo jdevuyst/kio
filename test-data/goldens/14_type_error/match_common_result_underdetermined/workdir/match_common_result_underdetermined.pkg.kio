@@ -1,0 +1,14 @@
+package match_common_result_underdetermined;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main;
+  elab/testapi
+}

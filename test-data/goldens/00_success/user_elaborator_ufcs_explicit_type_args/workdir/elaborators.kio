@@ -1,0 +1,26 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi(String);
+
+pub type Target_request = __Type__ | .;
+
+pub pure fn id_impl(
+  , ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> __Checked_term__ {
+  __either__(
+    , __Type__
+    , .
+    , __Checked_term__
+    , target
+    , .(_target: __Type__) -> __Checked_term__ { value }
+    , .() -> __Checked_term__ { __elab_error__(ct, "elaborator needs a target") }
+    )
+}
+
+pub elab id_user : [Source] Source -> [Target] Target { impl id_impl }

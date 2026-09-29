@@ -1,0 +1,184 @@
+/// Sequences, and the sorted-list representation of a set of states.
+///
+/// This tier hands the package no array, so every collection the pipeline
+/// builds is a cons list. A DFA state *is* a set of NFA states, so the
+/// subset construction asks "have I built this set already?" on every move;
+/// keeping each set strictly ascending makes that a plain elementwise
+/// comparison, because two walks that reach the same states then build
+/// identical lists. Moore's refinement reuses the same comparison on
+/// signature rows, which are ordinary unsorted integer lists.
+module automata/seq;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+pub rec newtype List[A] : . | (A & List(A)) { constructor pack; pub projector unpack }
+
+pub type Ints = List(I32);
+
+pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, rest: List(A)) -> List(A) {
+  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+}
+
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+
+pub fn empty() -> Ints { nil(I32, ()) }
+
+fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.unpack {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+fn head_or[A](xs: List(A), fallback: A) -> A {
+  match! xs.>List.unpack {
+    (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
+  }
+}
+
+/// The shared higher-order traversal for accumulator walks that need to visit
+/// every element. Operations that need early exit or pairwise state recurse
+/// directly instead.
+pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
+  match! xs.>List.unpack {
+    (.(head: A, rest: List(A)) { rec fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) {
+  fold(xs, .(acc: List(A), x: A) { cons(x, acc) }, nil(A, ()))
+}
+
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
+  fold(reverse(xs), .(acc: List(A), x: A) { cons(x, acc) }, ys)
+}
+
+fn snoc[A](xs: List(A), value: A) -> List(A) { append(xs, one(value)) }
+
+pub fn len[A](xs: List(A)) -> I32 { fold(xs, .(n: I32, _x: A) { add_i32(n, 1) }, 0) }
+
+rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
+  if! leq_i32(count, 0) {
+    xs
+  } else match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rec drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
+  }
+}
+
+/// Total indexing: an out-of-range index yields the caller's fallback,
+/// which keeps the transition-table reads free of bounds special cases.
+pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
+
+pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
+  match! xs.>List.unpack {
+    (
+      , .(head: I32, rest: Ints) {
+          if! eq_i32(head, value) {
+            .t
+          } else {
+            rec member(value, rest)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+/// Insert into a strictly ascending list, ignoring a value already there.
+pub rec(loop) fn insert(value: I32, xs: Ints) -> Ints {
+  match! xs.>List.unpack {
+    (
+      , .(head: I32, rest: Ints) {
+          if! lt_i32(value, head) {
+            cons(value, xs)
+          } else if! eq_i32(value, head) {
+            xs
+          } else {
+            cons(head, rec(cont) insert(value, rest))
+          }
+        }
+      , .(_empty: .) { cons(value, empty()) }
+      )
+  }
+}
+
+pub fn singleton(value: I32) -> Ints { insert(value, empty()) }
+
+/// The positions of the elements satisfying `keep`, as a set. Both automata
+/// record their accepting states this way: a DFA state accepts when its NFA
+/// set holds the accept state, a block accepts when its representative does.
+pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
+  let .(_count: I32, found: Ints) =
+    fold(
+      , xs
+      , .(acc: I32 & Ints, x: A) {
+          let .(at: I32, hits: Ints) = acc;
+          let next =
+            if! keep(x) {
+              insert(at, hits)
+            } else {
+              hits
+            };
+          (add_i32(at, 1), next)
+        }
+      , (0, empty())
+      );
+  found
+}
+
+/// Elementwise equality. On canonical sets this is set equality; on
+/// signature rows it is row equality.
+rec(loop) fn ints_eq(xs: Ints, ys: Ints) -> Bool {
+  match! xs.>List.unpack {
+    (
+      , .(x: I32, xr: Ints) {
+          match! ys.>List.unpack {
+            (
+              , .(y: I32, yr: Ints) {
+                  if! eq_i32(x, y) {
+                    rec ints_eq(xr, yr)
+                  } else {
+                    .f
+                  }
+                }
+              , .(_empty: .) { .f }
+              )
+          }
+        }
+      , .(_empty: .) { is_empty(ys) }
+      )
+  }
+}
+
+rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
+  match! rows.>List.unpack {
+    (
+      , .(row: Ints, rest: List(Ints)) {
+          if! ints_eq(row, needle) {
+            at
+          } else {
+            rec scan_for(rest, needle, add_i32(at, 1))
+          }
+        }
+      , .(_empty: .) { at }
+      )
+  }
+}
+
+/// Give `needle` a stable id, appending it when it is new. A needle that is
+/// absent scans off the end and lands on `len(rows)` — exactly the id it
+/// then takes — so there is no not-found sentinel to thread.
+pub fn intern(rows: List(Ints), needle: Ints) -> List(Ints) & I32 {
+  let at = scan_for(rows, needle, 0);
+  if! lt_i32(at, len(rows)) {
+    (rows, at)
+  } else {
+    (snoc(rows, needle), at)
+  }
+}

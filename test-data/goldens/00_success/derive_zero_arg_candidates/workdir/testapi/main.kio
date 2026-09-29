@@ -1,0 +1,50 @@
+module testapi/main;
+
+import elab/derive(derive);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int, String);
+import testapi/io(print);
+
+type Unit_sum = . | !;
+
+newtype Wrapped : . { constructor make_wrapped; projector read_wrapped }
+
+newtype Unique : . { constructor make_unique; projector read_unique }
+
+fn unit_fact() -> . { print("unit\n") }
+
+fn int_fact() -> Int { print("int\n"); 1 }
+
+fn string_from_unit(_unit: .) -> String { print("unit parameter\n"); "" }
+
+fn product_fact() -> . & . { print("product\n"); ((), ()) }
+
+fn sum_fact() -> Unit_sum { print("sum\n"); widen_sum!((), Unit_sum) }
+
+fn wrapped_fact() -> Wrapped { print("wrapped\n"); Wrapped.make_wrapped(()) }
+
+fn unique_base() -> Unique { print("unique base\n"); Unique.make_unique(()) }
+
+fn unreachable_rival(_precondition: Unit_sum) -> Unique { print("rival\n"); Unique.make_unique(()) }
+
+fn discard_int(_value: Int) -> . { () }
+
+fn discard_string(_value: String) -> . { () }
+
+fn discard_product(_value: . & .) -> . { () }
+
+fn discard_sum(_value: Unit_sum) -> . { () }
+
+fn discard_wrapped(_value: Wrapped) -> . { () }
+
+fn discard_unique(_value: Unique) -> . { () }
+
+pub fn main() -> . {
+  derive!(unit_fact, .);
+  discard_int(derive!(int_fact, Int));
+  discard_string(derive!(string_from_unit, String));
+  discard_product(derive!(product_fact, . & .));
+  discard_sum(derive!(sum_fact, Unit_sum));
+  discard_wrapped(derive!(wrapped_fact, Wrapped));
+  discard_unique(derive!((unique_base, unreachable_rival), Unique))
+}

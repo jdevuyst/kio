@@ -1,0 +1,105 @@
+module elab;
+
+import __intrinsics__;
+
+import __comptime__;
+
+rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
+
+type Fuel_recur = (Fuel & .) -> __Checked_term__;
+
+type Fuel_step = (Fuel_recur & Fuel & .) -> __Checked_term__;
+
+type Fuel_structural = (Fuel & . & Fuel_step) -> __Checked_term__;
+
+type Structural_recur = __Comptime__ -> [F][I][R] (F & I & ((((F & I) -> R) & F & I) -> R)) -> R;
+
+pure fn stop() -> Fuel { Fuel.mk_fuel(__left__(., Fuel, ())) }
+
+pure fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__(., Fuel, rest)) }
+
+pure fn retain_structural(_ct: __Comptime__, structural: Fuel_structural) -> Fuel_structural {
+  structural
+}
+
+pure fn retain_bare(_ct: __Comptime__, structural: Structural_recur) -> Structural_recur {
+  structural
+}
+
+pure fn direct_flattened(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
+  __structural_recur__(
+    , ct
+    , Fuel
+    , .
+    , __Checked_term__
+    , fuel
+    , ()
+    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+        __either__(
+          , .
+          , Fuel
+          , __Checked_term__
+          , Fuel.un_fuel(current)
+          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+          )
+      }
+    )
+}
+
+pure fn indirect_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
+  let structural = retain_structural(ct, __structural_recur__(ct)(Fuel, ., __Checked_term__));
+  structural((
+    , fuel
+    , ()
+    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+        __either__(
+          , .
+          , Fuel
+          , __Checked_term__
+          , Fuel.un_fuel(current)
+          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+          )
+      }
+    ))
+}
+
+pure fn bare_hof_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
+  let bare = __structural_recur__;
+  let structural = retain_bare(ct, bare);
+  let proofed = structural(ct);
+  let typed = proofed(Fuel, ., __Checked_term__);
+  typed((
+    , fuel
+    , ()
+    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+        __either__(
+          , .
+          , Fuel
+          , __Checked_term__
+          , Fuel.un_fuel(current)
+          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+          )
+      }
+    ))
+}
+
+pure fn flattened_direct_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  direct_flattened(ct, tick(stop()))
+}
+
+pub elab flattened_direct : [Source] Source -> . { impl flattened_direct_impl }
+
+pure fn packed_indirect_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  indirect_packed(ct, tick(stop()))
+}
+
+pub elab packed_indirect : [Source] Source -> . { impl packed_indirect_impl }
+
+pure fn packed_bare_hof_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  bare_hof_packed(ct, tick(stop()))
+}
+
+pub elab packed_bare_hof : [Source] Source -> . { impl packed_bare_hof_impl }

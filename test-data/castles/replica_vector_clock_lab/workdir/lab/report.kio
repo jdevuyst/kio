@@ -1,0 +1,68 @@
+module lab/report;
+
+import dict/dict as dict;
+import elab/match(match);
+import lab/clock as clock;
+import lab/replica as replica;
+import list/core as core;
+import list/list as lists;
+import result/result as result;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn line(name: String, value: String) -> . {
+  name.>string_concat(value).>string_concat("\n").>print
+}
+
+pub fn flag(name: String, value: Bool) -> . { line(name, fmt.bool_to_string(value)) }
+
+fn show_version(version: replica.Version) -> String {
+  fmt.int_to_string(version.?{replica.value})
+    .>string_concat("@")
+    .>string_concat(clock.show(version.?{replica.stamp}))
+}
+
+pub fn snapshot(name: String, state: replica.Replica) -> . {
+  line(name.>string_concat(" clock="), clock.show(state.?{replica.observed}));
+  dict.fold_asc(
+    , state.?{replica.records}
+    , ()
+    , .(_done: ., key: I32, versions: core.List(replica.Version)) {
+        line(
+          , "  key ".>string_concat(fmt.int_to_string(key)).>string_concat(" ")
+          , lists.to_string(show_version, versions)
+          )
+      }
+    )
+}
+
+pub fn fault(error: replica.Fault) -> String {
+  match! error {
+    .(f: replica.Missing) { "missing key ".>string_concat(fmt.int_to_string(f.?{replica.missing})) };
+    .(f: replica.Conflict) {
+      "conflict versions=".>string_concat(fmt.int_to_string(f.?{replica.conflict}))
+    };
+    .(f: replica.Not_conflicted) {
+      "not conflicted key ".>string_concat(fmt.int_to_string(f.?{replica.not_conflicted}))
+    };
+    .(f: replica.Choice_absent) {
+      "choice absent ".>string_concat(fmt.int_to_string(f.?{replica.choice_absent}))
+    }
+  }
+}
+
+pub fn read(name: String, state: replica.Replica, key: I32) -> . {
+  let text =
+    result.fold(
+      , .(value: I32) { "value ".>string_concat(fmt.int_to_string(value)) }
+      , fault
+      , replica.read(state, key)
+      );
+  line(name, text)
+}
+
+pub fn rejection(name: String, attempted: result.Result(replica.Change, replica.Fault)) -> . {
+  line(name, result.fold(.(_change: replica.Change) { "unexpected success" }, fault, attempted))
+}

@@ -1,0 +1,24 @@
+{
+  "name": "kio-website",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run prepare:docs && vitepress dev --host 127.0.0.1",
+    "build:wasm": "wasm-pack build ../kio-repl-wasm --target web --out-dir ../website/.vitepress/public/wasm",
+    "postbuild:wasm": "node scripts/check-repl-wasm.mjs",
+    "check:examples": "sh scripts/check-examples.sh",
+    "prepare:docs": "node scripts/prepare-docs.mjs",
+    "build": "npm run build:wasm && npm run prepare:docs && vitepress build",
+    "preview": "vitepress preview --host 127.0.0.1",
+    "smoke": "node scripts/smoke-built-site.mjs",
+    "audit": "node scripts/audit-website.mjs"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "vitepress": "1.6.4",
+    "vue": "3.5.39"
+  }
+}

@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/io(print);
+
+// Multi-branch source: `into!` distributes inner sums through
+// products. Source `(String & (I32 | String))` has an inner sum
+// factor; `into!` produces the corresponding `((String & I32) |
+// (String & String))` distribution.
+fn distrib(p: String & (I32 | String)) -> (String & I32) | (String & String) { into!(p) }
+
+pub fn main() -> . {
+  // Pick the right-arm branch (String) so the printed text confirms
+  // the distribution carried the leading String through.
+  let pair = ("label: ", into!("right-branch\n", I32 | String));
+  let lifted = distrib(pair);
+  // lifted: (String & I32) | (String & String). Project to a
+  // single String via `match!`: each clause destructures one
+  // product branch and yields a String.
+  let label_only =
+    match! lifted {
+      (.(s: String, _i: I32) { s }, .(_s1: String, s2: String) { s2 })
+    };
+  print(label_only)
+}

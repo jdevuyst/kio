@@ -1,0 +1,10 @@
+inventory reconciliation
+known items:
+- bolt expected=36 actual=36 delta=0 status=OK
+- gear expected=20 actual=18 delta=-2 status=SKEW
+- seal expected=25 actual=0 delta=-25 status=MISSING
+- panel expected=8 actual=11 delta=3 status=SKEW
+- valve expected=9 actual=9 delta=0 status=OK
+unknown actuals:
+- sku 106 expected=0 actual=4 delta=4 status=UNKNOWN
+summary ok=2 missing=1 skew=2 unknown=1

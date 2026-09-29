@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(i32_to_string);
+import testapi/helper(op _ & _);
+import testapi/io(print);
+
+// Imported operator lookup is independent of the local placeholder family.
+fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
+
+pub fn main() -> . {
+  let .(f: I32 -> I32) = .x. { x1 & 100 };
+  print(i32_to_string(apply(f, 10)));
+  print("\n");
+  print(i32_to_string(7 & 20))
+}

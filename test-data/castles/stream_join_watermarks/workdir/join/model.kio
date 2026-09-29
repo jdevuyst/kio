@@ -1,0 +1,22 @@
+module join/model;
+
+import list/core(List);
+import testapi(I32, String);
+
+pub labels Event = { id: I32, key: String, time: I32 };
+
+pub labels Pair = { left_id: I32, right_id: I32 };
+
+pub labels State = {
+  , left: List(Event)
+  , right: List(Event)
+  , pairs: List(Pair)
+  , left_watermark: I32
+  , right_watermark: I32
+  , accepted_left: I32
+  , accepted_right: I32
+  , evicted_left: I32
+  , evicted_right: I32
+  , late: I32
+  , regressed: I32
+  };

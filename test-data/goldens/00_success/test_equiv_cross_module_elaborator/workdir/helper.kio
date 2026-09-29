@@ -1,0 +1,17 @@
+module helper;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+host fn a() -> .;
+
+host fn b() -> .;
+
+pub fn pick() -> . {
+  if! .t {
+    a()
+  } else {
+    b()
+  }
+}

@@ -1,0 +1,3 @@
+module main;
+
+fn witness(seed: [A] A -> A) -> . { let .(wrong: [B] B -> B) = (); () }

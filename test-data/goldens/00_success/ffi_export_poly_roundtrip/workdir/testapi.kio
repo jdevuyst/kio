@@ -1,0 +1,5 @@
+module testapi;
+
+pub fn poly_echo[T](x: T) -> T { x }
+
+pub fn keep_left[A][B](left: A, _right: B) -> A { left }

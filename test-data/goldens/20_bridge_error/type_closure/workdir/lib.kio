@@ -1,0 +1,3 @@
+module lib;
+
+pub newtype Widget : . { pub constructor mk_widget; pub projector un_widget }

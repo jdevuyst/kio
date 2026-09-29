@@ -1,0 +1,16 @@
+module derive_specialization_diagnostic_nested_term/main;
+
+import elab/derive(derive);
+import testapi(Int);
+
+host fn zero_int() -> Int;
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+fn root(value: Int) -> Box(Int) { Box.mk_box(value) }
+
+fn unused[Unused]() -> Int { zero_int() }
+
+fn bad() -> Box(Int) { derive!((root, unused), Box(Int)) }
+
+pub fn main() -> . { () }

@@ -1,0 +1,1 @@
+type application argument `A` has kind `\*`, but a kind-`\*→\*` argument is required here

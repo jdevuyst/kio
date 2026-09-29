@@ -1,0 +1,113 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push, array_set);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Build the input array `[5, 2, 4, 6, 1, 3]` by pushing each
+// value in source order. The textbook insertion-sort fixture is
+// small enough to read at a glance and large enough that the
+// shift-and-insert inner loop fires on every element.
+fn make_input() -> Array(I32) {
+  let a = array_make_empty(I32, ());
+  array_push(a, 5);
+  array_push(a, 2);
+  array_push(a, 4);
+  array_push(a, 6);
+  array_push(a, 1);
+  array_push(a, 3);
+  a
+}
+
+// Inner-loop step: walks `j` from `i - 1` down to `0`, shifting
+// each `arr[j]` one slot right when it's strictly greater than
+// `key`, then writing `key` into the gap. State is `j`; `arr`
+// and `key` are captured from the outer closure. The exit value
+// is `()` — the side-effect (the array's mutated cells) carries
+// the work.
+fn shift_step(arr: Array(I32), key: I32, j: I32) -> I32 | . {
+  if! leq_i32(0, j) {
+    // j >= 0: compare arr[j] against key. If arr[j] > key,
+    // shift arr[j] right and continue at j - 1; else write
+    // key at arr[j+1] and exit.
+    let aj = array_get(arr, j);
+    if! leq_i32(aj, key) {
+      // arr[j] <= key — insertion point found, write key
+      // at arr[j+1] and exit.
+      array_set(arr, add_i32(j, 1), key);
+      widen_sum!(())
+    } else {
+      // arr[j] > key — shift arr[j] into arr[j+1] and
+      // continue at j - 1.
+      array_set(arr, add_i32(j, 1), aj);
+      widen_sum!(sub_i32(j, 1))
+    }
+  } else {
+    // j < 0: ran off the left end. Write key at arr[0] and
+    // exit.
+    array_set(arr, 0, key);
+    widen_sum!(())
+  }
+}
+
+// Outer-loop step: walks the unsorted suffix from `i = 1`
+// upward. For each `i`, snapshot `key = arr[i]` and drive the
+// inner shift loop starting at `j = i - 1`. State is `i`. The
+// exit value is `()`.
+fn sort_step(arr: Array(I32), i: I32) -> I32 | . {
+  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+    let key = array_get(arr, i);
+    loop(.(j: I32) { shift_step(arr, key, j) }, sub_i32(i, 1));
+    widen_sum!(add_i32(i, 1))
+  } else {
+    widen_sum!(())
+  }
+}
+
+// In-place insertion sort over `arr`. Outer loop walks `i` from
+// `1` to `len(arr) - 1`; inner loop shifts and inserts. Returns
+// the (now-sorted) array handle for `main` to render.
+fn insertion_sort(arr: Array(I32)) -> Array(I32) { loop(.(i: I32) { sort_step(arr, i) }, 1); arr }
+
+// Inner step of `render_csv`: emits one element per turn,
+// prepending "," to every cell but the first. State is `(acc, i)`.
+fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
+  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+    widen_sum!(if! leq_i32(i, 0) {
+      (int_to_string(array_get(arr, i)), add_i32(i, 1))
+    } else {
+      (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
+    })
+  } else {
+    widen_sum!(acc)
+  }
+}
+
+// Render `arr` as a comma-separated string of decimal `I32`
+// values, walking via array_get.
+fn render_csv(arr: Array(I32)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) { render_step(arr, acc, i) }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+pub fn main() -> . {
+  let arr = make_input();
+  let sorted = insertion_sort(arr);
+  print(render_csv(sorted));
+  print("\n")
+}

@@ -1,0 +1,14 @@
+module elaborator_util;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pub pure fn choose_checked_term(
+  , ct: __Comptime__
+  , cond: Comptime_bool
+  , on_true: __Checked_term__
+  , on_false: __Checked_term__
+  ) -> __Checked_term__ {
+  __if_then_else__(cond, .() -> __Checked_term__ { on_true }, .() -> __Checked_term__ { on_false })
+}

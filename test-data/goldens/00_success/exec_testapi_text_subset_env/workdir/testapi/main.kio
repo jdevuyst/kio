@@ -1,0 +1,9 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn main() -> . {
+  print(string_concat("subset declares only "(String), "string_concat\n"(String)))
+}

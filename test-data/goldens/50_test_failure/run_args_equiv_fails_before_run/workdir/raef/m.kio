@@ -1,0 +1,10 @@
+module raef/m;
+
+import raef(I32, String, print);
+
+equiv standard_path_failure() {
+  1(I32);
+  2(I32)
+}
+
+pub fn main() -> . { print("should not run\n"(String)) }

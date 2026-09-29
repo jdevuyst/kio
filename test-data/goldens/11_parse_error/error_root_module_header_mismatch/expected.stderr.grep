@@ -1,0 +1,2 @@
+module declaration `wrong_name` does not match the file path
+expected `module lib;` for `lib\.kio`

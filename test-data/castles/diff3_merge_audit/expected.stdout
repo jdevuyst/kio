@@ -1,0 +1,35 @@
+diff3_merge_audit: v1
+base lines: 12
+ours lines: 11
+theirs lines: 12
+--- merged ---
+# service config
+name = api-gateway
+workers = 8
+timeout = 30
+cache = off
+log_level = debug
+region = us-east
+  <<<<<<< ours
+tls = required
+  ||||||| base
+tls = disabled
+  >>>>>>> theirs
+tls = optional
+metrics = basic
+queue_depth = 64
+# end
+--- audit ---
+lcs base/ours: 8
+lcs base/theirs: 9
+anchors: 7
+regions: 11
+stable: 6
+ours-changed: 2
+theirs-changed: 1
+both-same: 1
+conflict: 1
+lines in: 35
+lines out: 16
+marker lines: 3
+status: conflicted

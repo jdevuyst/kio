@@ -1,0 +1,14 @@
+module testapi/main;
+
+import elaborators(apply_pair);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `apply_pair!(())` elaborates to a fn whose packet is
+// `((String & String) -> String) & String & String`. Supplying the
+// positional host `string_concat` (ABI arity 2) for the
+// product-domain concat slot (ABI arity 1) exercises the host-fn →
+// product-arrow adaptation: the pair the elaborator calls the slot
+// with must be spread back into `string_concat`'s two positional args.
+pub fn main() -> . { print(apply_pair!(())(string_concat, ("ab", "cd"))) }

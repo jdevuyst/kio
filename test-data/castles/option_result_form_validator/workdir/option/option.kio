@@ -1,0 +1,300 @@
+/// Option helpers with host-backed folds over canonical lists, Bool predicates, filters, and operators.
+module option/option;
+
+import option/core(
+  , Option
+  , and_then
+  , apply
+  , bind
+  , cat_step
+  , from_option
+  , from_sum
+  , join_step
+  , map
+  , map_step
+  , none
+  , option
+  , or_else
+  , some
+  , then
+  , to_sum
+  );
+import option/elab/control(if);
+import option/elab/match(match);
+import option/elab/spine_elaborators(flatten_sum, narrow_sum, widen_sum);
+import option/list/core(List, uncons);
+
+host type Bool role(bool);
+
+host type String role(str);
+
+host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
+
+host fn string_concat(p0: String, p1: String) -> String;
+
+// =====================================================================
+// Host loop-driven collection layer
+// =====================================================================
+//
+// Kio' forbids self-recursive `fn`s, so the collection folds are driven by
+// the host `loop` rather than direct recursion; the pure per-element steps
+// live in `core.kio`. `fold_list` is the shared walk they route through.
+fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
+  loop(
+    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+        match! state {
+          .(carry: Acc, rest: List(A)) {
+            match! uncons(rest) {
+              (
+                , .(pair: A & List(A)) {
+                    match! pair {
+                      .(head: A, tail: List(A)) {
+                        widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
+                      }
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+                )
+            }
+          }
+        }
+      }
+    , (seed, xs)
+    )
+}
+
+/// Folds present option payloads and skips absent entries.
+pub fn cat_options[A][Acc](xs: List(Option(A)), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
+  fold_list(xs, seed, .(carry: Acc, m: Option(A)) -> Acc { cat_step(carry, step, m) })
+}
+
+/// Maps with a partial function, folds present results, and skips absent entries.
+pub fn map_option[A][B][Acc](f: A -> Option(B), xs: List(A), seed: Acc, step: (Acc & B) -> Acc) -> Acc {
+  fold_list(xs, seed, .(carry: Acc, x: A) -> Acc { map_step(carry, f, step, x) })
+}
+
+/// Renders present option payloads and concatenates them into a string.
+pub fn join_options[A](show: A -> String, empty: String, xs: List(Option(A))) -> String {
+  fold_list(
+    , xs
+    , empty
+    , .(carry: String, m: Option(A)) -> String { join_step(carry, show, string_concat, m) }
+    )
+}
+
+// =====================================================================
+// Host-Bool helpers
+// =====================================================================
+//
+// These speak the host's `Bool`, so they live here rather than in the
+// pure core.
+/// Reports whether an option carries a value.
+pub fn is_some[A](m: Option(A)) -> Bool { option(.f, .(_x: A) -> Bool { .t }, m) }
+
+/// Reports whether an option is absent.
+pub fn is_none[A](m: Option(A)) -> Bool { option(.t, .(_x: A) -> Bool { .f }, m) }
+
+// Bridges a host `Bool` verdict to an `Option` via the bare sum `A | .`,
+// keeping the `some` label internal to the core.
+fn one_or_none[A](b: Bool, x: A) -> Option(A) {
+  from_sum(if! b {
+    widen_sum!(x, A | .)
+  } else {
+    widen_sum!((), A | .)
+  })
+}
+
+/// Keeps a present value only when `pred` accepts it.
+pub fn filter[A](pred: A -> Bool, m: Option(A)) -> Option(A) {
+  bind(m, .(x: A) -> Option(A) { one_or_none(pred(x), x) })
+}
+
+// =====================================================================
+// Operator DSL
+// =====================================================================
+/// Unwraps an option with a default.
+pub fn unwrap_or[A](m: Option(A), default: A) -> A { from_option(default, m) }
+
+/// Chains an option with a receiver-first function slot.
+pub fn bind_with[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) { bind(m, f) }
+
+/// Falls back to another option.
+pub fn or_else_with[A](m: Option(A), alt: Option(A)) -> Option(A) { or_else(m, alt) }
+
+/// Maps over an option in receiver-first order.
+pub fn flip_map[A][B](m: Option(A), f: A -> B) -> Option(B) { map(f, m) }
+
+/// Unwraps an option with a default.
+pub op _ ?? _ { impl unwrap_or }
+
+/// Chains an option through a partial function.
+pub op __ ?> _ { impl bind_with }
+
+/// Falls back to another option.
+pub op _ ||? _ { impl or_else_with }
+
+/// Maps over an option.
+pub op _ <?> _ { impl flip_map }
+
+// =====================================================================
+// equiv-law battery
+// =====================================================================
+//
+// The laws below pin the module's algebra. A law that reduces a combinator
+// over an *opaque* option (`map`/`bind`'s `flatten_sum!`+`narrow_sum!` retype
+// walks an opaque sum and can't reduce) is stated on concrete spines — the
+// admissible restatement called out in `test-data/poc/README.md`.
+
+// ---- Functor laws ----
+
+// Identity on the present spine: `map(id, some(x)) ≡ some(x)`.
+equiv functor_id_present[A](x: A) {
+  map(.(y: A) -> A { y }, some(x));
+  some(x)
+}
+
+// Identity on the absent spine: `map(id, none) ≡ none`.
+equiv functor_id_none[A]() {
+  map(.(y: A) -> A { y }, none(A, ()));
+  none(A, ())
+}
+
+// Composition on the present spine:
+// `map(f . g, some(x)) ≡ map(f, map(g, some(x)))`.
+equiv functor_compose_present[A][B][C](g: A -> B, f: B -> C, x: A) {
+  map(.(y: A) -> C { f(g(y)) }, some(x));
+  map(f, map(g, some(x)))
+}
+
+// Composition on the absent spine.
+equiv functor_compose_none[A][B][C](g: A -> B, f: B -> C) {
+  map(.(y: A) -> C { f(g(y)) }, none(A, ()));
+  map(f, map(g, none(A, ())))
+}
+
+// ---- Monad laws ----
+
+// Left identity, concrete continuation into `some`:
+// `bind(some(x), \y. some(h(y))) ≡ some(h(x))`.
+equiv monad_left_id_some[A][B](x: A, h: A -> B) {
+  bind(some(x), .(y: A) -> Option(B) { some(h(y)) });
+  some(h(x))
+}
+
+// Left identity, concrete continuation into `none`.
+equiv monad_left_id_none[A][B](x: A) {
+  bind(some(x), .(_y: A) -> Option(B) { none() });
+  none(B, ())
+}
+
+// Right identity on the present spine: `bind(some(x), some) ≡ some(x)`.
+equiv monad_right_id_present[A](x: A) {
+  bind(some(x), .(y: A) -> Option(A) { some(y) });
+  some(x)
+}
+
+// Right identity on the absent spine: `bind(none, some) ≡ none`.
+equiv monad_right_id_none[A]() {
+  bind(none(A, ()), .(y: A) -> Option(A) { some(y) });
+  none(A, ())
+}
+
+// Associativity, present spine through concrete continuations:
+// `bind(bind(some(x), f), g) ≡ bind(some(x), \y. bind(f(y), g))`.
+equiv monad_assoc_present[A][B][C](x: A, f: A -> B, g: B -> C) {
+  bind(bind(some(x), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
+  bind(some(x), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
+}
+
+// Associativity on the absent spine.
+equiv monad_assoc_none[A][B][C](f: A -> B, g: B -> C) {
+  bind(bind(none(A, ()), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
+  bind(none(A, ()), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
+}
+
+// ---- Eliminator laws ----
+
+// `from_option(d, some(x)) ≡ x`.
+equiv from_option_present[A](d: A, x: A) {
+  from_option(d, some(x));
+  x
+}
+
+// `from_option(d, none) ≡ d`.
+equiv from_option_absent[A](d: A) {
+  from_option(d, none(A, ()));
+  d
+}
+
+// `option(d, f, some(x)) ≡ f(x)`.
+equiv option_present[A][B](d: B, f: A -> B, x: A) {
+  option(d, f, some(x));
+  f(x)
+}
+
+// `option(d, f, none) ≡ d`.
+equiv option_absent[A][B](d: B, f: A -> B) {
+  option(d, f, none(A, ()));
+  d
+}
+
+// ---- Combinator laws ----
+
+// `or_else(some(x), alt) ≡ some(x)`.
+equiv or_else_present[A](x: A, alt: Option(A)) {
+  or_else(some(x), alt);
+  some(x)
+}
+
+// `or_else(none, alt) ≡ alt` — for a concrete `alt` (the codiagonal
+// collapse needs a concrete arm).
+equiv or_else_absent_some[A](y: A) {
+  or_else(none(A, ()), some(y));
+  some(y)
+}
+
+equiv or_else_absent_none[A]() {
+  or_else(none(A, ()), none(A, ()));
+  none(A, ())
+}
+
+// `and_then` is `bind`: same left-identity on a concrete continuation.
+equiv and_then_present[A][B](x: A, h: A -> B) {
+  and_then(some(x), .(y: A) -> Option(B) { some(h(y)) });
+  some(h(x))
+}
+
+// `then(some(x), n) ≡ n` for a concrete second option.
+equiv then_present[A][B](x: A, w: B) {
+  then(some(x), some(w));
+  some(w)
+}
+
+equiv then_absent[A][B](n: Option(B)) {
+  then(none(A, ()), n);
+  none(B, ())
+}
+
+// ---- Bridge round-trips ----
+
+// `to_sum . from_sum ≡ id` on both arms of `A | .`.
+equiv to_from_present[A](x: A) {
+  to_sum(from_sum(widen_sum!(x, A | .)));
+  widen_sum!(x, A | .)
+}
+
+equiv to_from_absent[A]() {
+  to_sum(from_sum(widen_sum!((), A | .)));
+  widen_sum!((), A | .)
+}
+
+// `from_sum . to_sum ≡ id` on both arms of `Option(A)`.
+equiv from_to_present[A](x: A) {
+  from_sum(to_sum(some(x)));
+  some(x)
+}
+
+equiv from_to_absent[A]() {
+  from_sum(to_sum(none(A, ())));
+  none(A, ())
+}

@@ -1,0 +1,6 @@
+  pass equiv `fst_picks_first` in host/m
+  pass equiv `snd_picks_second` in host/m
+  pass equiv `product_eta` in host/m
+  pass equiv `newtype_unwrap_of_wrap` in host/m
+
+result: 4/4 equiv blocks passed

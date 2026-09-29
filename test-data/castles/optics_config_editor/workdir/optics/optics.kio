@@ -1,0 +1,362 @@
+/// Root module optics library defining lenses, prisms, isomorphisms, and their composition helpers.
+module optics/optics;
+
+import optics/elab/match(match);
+// optics — a ready-to-use lens / prism / iso library.
+//
+// Drop this root module file into your own Kio package and the optic API
+// works as-is: every optic is a pure product of two functions,
+// host-capability-free, so the whole vocabulary lives here with no
+// dependency beyond the spine elaborators. The data-structure laws are
+// proven in the `equiv` blocks at the bottom of this file; the
+// demonstrative `main` and host-backed display live in the nested
+// `demo/testapi/main.kio` package.
+//
+//   Lens(s, a)   view / set / over / compose       — focus a part always present
+//   Prism(s, a)  preview / review / over / compose  — focus one arm of a sum
+//   Iso(s, a)    view_iso / review_iso / over / compose — a lossless bijection
+//
+// Every iso is both a lens and a prism (the `iso_to_lens` /
+// `iso_to_prism` coercions); the reverse coercions do not exist — a
+// lens that ignores half its input, or a prism with no total inverse,
+// cannot become an iso. The concrete optics (`fst_lens`, `snd_lens`,
+// `id_lens`, `left_prism`, `right_prism`, `swap_iso`, `assoc_iso`)
+// cover positional access on products and sums.
+//
+// Every structural coercion here is a spine-palette form
+// (`widen_sum!` / `narrow_sum!` / `flatten_sum!` / `one_sum!` /
+// `one_prod!`) — no algebraic elaborator, no `__intrinsics__`. The one
+// construction that the monomorphic spine engine cannot express on its
+// own — injecting a whole nested sum into the outer-left arm of a
+// left-nested sum — is built the adopter-natural way, through a
+// prism's own polymorphic `review`; see `demo/testapi/main`'s deep-prism tour.
+import optics/elab/spine_elaborators(flatten_sum, narrow_sum, one_prod, one_sum, widen_sum);
+
+// =====================================================================
+// Lens — a getter paired with a setter
+// =====================================================================
+/// Product of getter and setter functions focused from `S` to `A`.
+pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
+
+/// The getter is unary and the setter binary, so the two components have
+/// distinct types and `one_prod!` picks each out of the pair unambiguously.
+pub fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod!(l, S -> A)(x) }
+
+/// Writes a new focused value through a lens.
+pub fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod!(l, (A & S) -> S)(new_a, x) }
+
+/// Updates a lens focus by applying a function to the current value.
+pub fn over[S][A](l: Lens(S, A), f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
+
+/// Composes an outer lens with an inner lens into one deeper lens.
+pub fn compose_lens[S][A][B](outer: Lens(S, A), inner: Lens(A, B)) -> Lens(S, B) {
+  let get = .(x: S) -> B { view(inner, view(outer, x)) };
+  let put =
+    .(new_b: B, x: S) -> S { let focus = view(outer, x); set(outer, set(inner, new_b, focus), x) };
+  (get, put)
+}
+
+/// Concrete: focus the first component of a pair. `match!` destructures
+/// positionally, so it stays correct even when `a` and `b` coincide.
+pub fn fst_lens[A][B]() -> Lens(A & B, A) {
+  let get = .((x: A, _y: B)) -> A { x };
+  let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
+  (get, put)
+}
+
+/// Concrete: focus the second component of a pair.
+pub fn snd_lens[A][B]() -> Lens(A & B, B) {
+  let get = .((_x: A, y: B)) -> B { y };
+  let put = .(new_b: B, (x: A, _y: B)) -> A & B { (x, new_b) };
+  (get, put)
+}
+
+/// Concrete: the identity lens — focus the whole container. Unit of
+/// `compose_lens`.
+pub fn id_lens[A]() -> Lens(A, A) {
+  let get = .(x: A) -> A { x };
+  let put = .(new_a: A, _old: A) -> A { new_a };
+  (get, put)
+}
+
+// =====================================================================
+// Prism — a partial getter paired with a constructor
+// =====================================================================
+//
+// preview can miss, so it returns `(A | .)` — the `()` arm meaning
+// "this is not the focused case". review injects an `A` back into `S`.
+/// Product of preview and review functions focused from `S` to optional `A`.
+pub type Prism[S][A] = (S -> A | .) & (A -> S);
+
+/// Attempts to extract a prism focus as a bare optional sum.
+pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> A | .)(x) }
+
+/// Embeds a prism focus back into the source sum.
+pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
+
+/// Updates a prism focus when the source is in the matching arm.
+pub fn over_prism[S][A](p: Prism(S, A), f: A -> A, x: S) -> S {
+  match! preview(p, x) {
+    (.(av: A) { review(p, f(av)) }, .(_u: .) { x })
+  }
+}
+
+/// Composes two prisms into a prism for a nested focus.
+pub fn compose_prism[S][A][B](psa: Prism(S, A), pab: Prism(A, B)) -> Prism(S, B) {
+  let pre =
+    .(x: S) -> B | . {
+      match! preview(psa, x) {
+        (.(av: A) { preview(pab, av) }, .(_u: .) { widen_sum!((), B | .) })
+      }
+    };
+  let rev = .(bv: B) -> S { review(psa, review(pab, bv)) };
+  (pre, rev)
+}
+
+/// Concrete: focus the left arm of a sum. The preview maps the
+/// source's left arm to the target's `A` arm (identity) and the right arm
+/// to `()` (drop). Each `match!` clause explicitly constructs the common
+/// `A | .` result.
+///
+/// `rev` is `widen_sum!(av, A | B)` — a single left-injection. The
+/// glue is generated once against the abstract `A` (one opaque spine
+/// slot), so it stays a valid `__left__` even when `A` is later
+/// instantiated to a sum type. That is the adopter-natural way to
+/// build an outer-left injection that the monomorphic spine engine
+/// cannot reach (see this file's header and `testapi/main`'s deep-prism
+/// tour).
+pub fn left_prism[A][B]() -> Prism(A | B, A) {
+  let pre =
+    .(x: A | B) -> A | . {
+      match! x {
+        (.(av: A) { widen_sum!(av, A | .) }, .(_bv: B) { widen_sum!((), A | .) })
+      }
+    };
+  let rev = .(av: A) -> A | B { widen_sum!(av, A | B) };
+  (pre, rev)
+}
+
+/// Concrete: focus the right arm of a sum — the mirror of `left_prism`.
+pub fn right_prism[A][B]() -> Prism(A | B, B) {
+  let pre =
+    .(x: A | B) -> B | . {
+      match! x {
+        (.(_av: A) { widen_sum!((), B | .) }, .(bv: B) { widen_sum!(bv, B | .) })
+      }
+    };
+  let rev = .(bv: B) -> A | B { widen_sum!(bv, A | B) };
+  (pre, rev)
+}
+
+// =====================================================================
+// Iso — a lossless, reversible function pair
+// =====================================================================
+//
+// view_iso and review_iso are mutual inverses (a usage contract, not
+// enforced by the type system). When `s` and `a` coincide — e.g. an iso
+// composed with its own inverse — the two components have the same type,
+// so `one_prod!` cannot tell them apart; `match!` destructures positionally
+// and stays correct.
+/// Pair of inverse conversion functions between `S` and `A`.
+pub type Iso[S][A] = (S -> A) & (A -> S);
+
+/// Converts through the forward side of an isomorphism.
+pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
+  let fwd =
+    match! i {
+      .(f: S -> A, _b: A -> S) { f }
+    };
+  fwd(x)
+}
+
+/// Converts through the reverse side of an isomorphism.
+pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
+  let bwd =
+    match! i {
+      .(_f: S -> A, b: A -> S) { b }
+    };
+  bwd(v)
+}
+
+/// Maps through an isomorphism by converting, applying a function, and converting back.
+pub fn over_iso[S][A](i: Iso(S, A), f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
+
+/// Composes two isomorphisms into one round-trip conversion.
+pub fn compose_iso[S][A][B](isa: Iso(S, A), iab: Iso(A, B)) -> Iso(S, B) {
+  let to = .(x: S) -> B { view_iso(iab, view_iso(isa, x)) };
+  let from = .(v: B) -> S { review_iso(isa, review_iso(iab, v)) };
+  (to, from)
+}
+
+/// Concrete: swap the components of a pair.
+pub fn swap_iso[A][B]() -> Iso(A & B, B & A) {
+  let to = .((x: A, y: B)) -> B & A { (y, x) };
+  let from = .((y: B, x: A)) -> A & B { (x, y) };
+  (to, from)
+}
+
+/// Concrete: re-associate a left-nested triple to the right.
+pub fn assoc_iso[A][B][C]() -> Iso((A & B) & C, A & B & C) {
+  let to = .(((av: A, bv: B), cv: C)) -> A & B & C { (av, (bv, cv)) };
+  let from = .((av: A, (bv: B, cv: C))) -> (A & B) & C { ((av, bv), cv) };
+  (to, from)
+}
+
+// =====================================================================
+// Coercions — every iso is a lens and a prism
+// =====================================================================
+/// Treats an isomorphism as a total lens.
+pub fn iso_to_lens[S][A](i: Iso(S, A)) -> Lens(S, A) {
+  let get = .(x: S) -> A { view_iso(i, x) };
+  let put = .(new_a: A, _old: S) -> S { review_iso(i, new_a) };
+  (get, put)
+}
+
+/// Treats an isomorphism as a total prism.
+pub fn iso_to_prism[S][A](i: Iso(S, A)) -> Prism(S, A) {
+  let pre = .(x: S) -> A | . { widen_sum!(view_iso(i, x), A | .) };
+  let rev = .(v: A) -> S { review_iso(i, v) };
+  (pre, rev)
+}
+
+// =====================================================================
+// Laws — discharged by `equiv` over opaque atoms
+// =====================================================================
+//
+// `equiv` partial-evaluates with opaque atoms for value parameters
+// (specs/formal/equiv.md § 3); a law over a sum value residualizes a
+// symbolic case-split (§ 4.6), so the prism / iso round-trips below
+// discharge without ever deciding a branch.
+
+// ---------- Lens laws (get-set / set-get / set-set) ----------
+equiv fst_get_set[A][B](x: A & B) {
+  set(fst_lens(A, B, ()), view(fst_lens(A, B, ()), x), x);
+  x
+}
+
+equiv fst_set_get[A][B](x: A & B, new_a: A) {
+  view(fst_lens(A, B, ()), set(fst_lens(A, B, ()), new_a, x));
+  new_a
+}
+
+equiv fst_set_set[A][B](x: A & B, a1: A, a2: A) {
+  set(fst_lens(A, B, ()), a2, set(fst_lens(A, B, ()), a1, x));
+  set(fst_lens(A, B, ()), a2, x)
+}
+
+equiv snd_get_set[A][B](x: A & B) {
+  set(snd_lens(A, B, ()), view(snd_lens(A, B, ()), x), x);
+  x
+}
+
+equiv snd_set_get[A][B](x: A & B, new_b: B) {
+  view(snd_lens(A, B, ()), set(snd_lens(A, B, ()), new_b, x));
+  new_b
+}
+
+equiv snd_set_set[A][B](x: A & B, b1: B, b2: B) {
+  set(snd_lens(A, B, ()), b2, set(snd_lens(A, B, ()), b1, x));
+  set(snd_lens(A, B, ()), b2, x)
+}
+
+// id_lens is a left/right unit for view and set.
+equiv id_view[A](x: A) {
+  view(id_lens(A, ()), x);
+  x
+}
+
+equiv id_set[A](x: A, new_a: A) {
+  set(id_lens(A, ()), new_a, x);
+  new_a
+}
+
+// `over(l, f)` is `set(l, f(view(l, x)))` — its defining equation, on
+// the concrete `fst_lens`.
+equiv fst_over_def[A][B](x: A & B, f: A -> A) {
+  over(fst_lens(A, B, ()), f, x);
+  set(fst_lens(A, B, ()), f(view(fst_lens(A, B, ()), x)), x)
+}
+
+// ---------- Prism laws (review-preview round trip / build-match) ----------
+// preview(p, review(p, v)) ≡ Some(v) — building then matching hits.
+equiv left_review_preview[A][B](v: A) {
+  preview(left_prism(A, B, ()), review(left_prism(A, B, ()), v));
+  widen_sum!(v, A | .)
+}
+
+equiv right_review_preview[A][B](v: B) {
+  preview(right_prism(A, B, ()), review(right_prism(A, B, ()), v));
+  widen_sum!(v, B | .)
+}
+
+// over_prism on a freshly-reviewed value applies f under the focus.
+equiv left_over_review[A][B](v: A, f: A -> A) {
+  preview(
+    , left_prism(A, B, ())
+    , over_prism(left_prism(A, B, ()), f, review(left_prism(A, B, ()), v))
+    );
+  widen_sum!(f(v), A | .)
+}
+
+// ---------- Iso laws (mutual inverse / coercion agreement) ----------
+equiv swap_view_review[A][B](y: B & A) {
+  view_iso(swap_iso(A, B, ()), review_iso(swap_iso(A, B, ()), y));
+  y
+}
+
+equiv swap_review_view[A][B](x: A & B) {
+  review_iso(swap_iso(A, B, ()), view_iso(swap_iso(A, B, ()), x));
+  x
+}
+
+// Restated over a concrete small spine — opaque leaf atoms `av`, `bv`,
+// `cv` in a concrete tuple shape — because product-eta does not fire on
+// a fully-opaque product parameter; the round-trip then discharges by
+// reconstruction.
+equiv assoc_view_review[A][B][C](av: A, bv: B, cv: C) {
+  view_iso(assoc_iso(A, B, C, ()), review_iso(assoc_iso(A, B, C, ()), (av, (bv, cv))));
+  (av, (bv, cv))
+}
+
+equiv assoc_review_view[A][B][C](av: A, bv: B, cv: C) {
+  review_iso(assoc_iso(A, B, C, ()), view_iso(assoc_iso(A, B, C, ()), ((av, bv), cv)));
+  ((av, bv), cv)
+}
+
+// swap composed with swap is the identity iso (forward direction).
+equiv swap_swap_view[A][B](x: A & B) {
+  view_iso(compose_iso(swap_iso(A, B, ()), swap_iso(B, A, ())), x);
+  x
+}
+
+// over_iso is review_iso . f . view_iso — its defining equation.
+equiv swap_over_def[A][B](x: A & B, f: (B & A) -> B & A) {
+  over_iso(swap_iso(A, B, ()), f, x);
+  review_iso(swap_iso(A, B, ()), f(view_iso(swap_iso(A, B, ()), x)))
+}
+
+// ---------- Coercion laws (iso → lens / iso → prism agree with the iso) ----------
+// The derived lens's view is the iso's forward map.
+equiv iso_lens_view[A][B](x: A & B) {
+  view(iso_to_lens(swap_iso(A, B, ())), x);
+  view_iso(swap_iso(A, B, ()), x)
+}
+
+// The derived lens's set ignores the old container (an iso loses no
+// information): set to `new` then view returns `new`.
+equiv iso_lens_set_view[A][B](x: A & B, new: B & A) {
+  view(iso_to_lens(swap_iso(A, B, ())), set(iso_to_lens(swap_iso(A, B, ())), new, x));
+  new
+}
+
+// The derived prism's review is the iso's backward map.
+equiv iso_prism_review[A][B](y: B & A) {
+  review(iso_to_prism(swap_iso(A, B, ())), y);
+  review_iso(swap_iso(A, B, ()), y)
+}
+
+// An iso-derived prism always hits on preview.
+equiv iso_prism_preview[A][B](x: A & B) {
+  preview(iso_to_prism(swap_iso(A, B, ())), x);
+  widen_sum!(view_iso(swap_iso(A, B, ()), x), (B & A) | .)
+}

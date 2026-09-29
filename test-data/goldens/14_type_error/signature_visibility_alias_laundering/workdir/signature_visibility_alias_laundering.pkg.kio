@@ -1,0 +1,9 @@
+package signature_visibility_alias_laundering;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}

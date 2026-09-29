@@ -1,0 +1,19 @@
+module testapi/main;
+
+import testapi(I32);
+
+// `Wrap` is a bare scalar-payload newtype — a non-recursive, non-
+// existential newtype whose payload is a single host scalar. It crosses
+// the FFI as an exported-fn parameter and return in `bump`, so each
+// boundary wrapper must bridge the nominal struct against the erased
+// payload the body holds. A bare pass-through (boxing the struct on the
+// way in, downcasting to the struct on the way out) panics at runtime in
+// both directions, since the erased body boxes the payload, not the
+// struct.
+pub newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap }
+
+// Round-trips the newtype through the body: the parameter is converted
+// from the host's nominal `Wrap` to the erased payload (In), projected and
+// re-wrapped in-body, then the result is converted from the erased payload
+// back to the nominal `Wrap` (Out).
+pub fn bump(w: Wrap) -> Wrap { Wrap.mk_wrap(Wrap.un_wrap(w)) }

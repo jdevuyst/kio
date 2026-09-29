@@ -1,0 +1,8 @@
+[package]
+name = "exact-rust-host-bindings"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ffi_rust_exact_host_bindings = { path = "../workdir/out/rust" }

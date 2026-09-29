@@ -1,0 +1,6 @@
+module testapi/main;
+
+import elaborators(implicit_unit);
+import testapi/io(print);
+
+pub fn main() -> . { implicit_unit!(); print("unit\n") }

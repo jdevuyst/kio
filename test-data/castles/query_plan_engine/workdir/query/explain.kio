@@ -1,0 +1,154 @@
+/// The plan printer: a plan drawn as an indented tree, parent above its
+/// children, so the shape the evaluator will walk is visible before the
+/// rows are.
+module query/explain;
+
+import elab/control(if);
+import elab/match(match);
+import query/list as list;
+import query/plan as plan;
+import query/schema as schema;
+import query/text as text;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn line(depth: I32, body: String) -> . {
+  print(text.cat3(text.spaces(mul_i32(depth, 2)), body, "\n"))
+}
+
+rec(loop) fn cols_onto(cols: schema.Col_list, acc: String, first: Bool) -> String {
+  match! cols.>list.List.un_list {
+    (
+      , .(c: schema.Col, rest: schema.Col_list) {
+          let sep =
+            if! first {
+              ""
+            } else {
+              ", "
+            };
+          rec cols_onto(rest, text.cat3(acc, sep, schema.col_name(c)), .f)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn cols_text(cols: schema.Col_list) -> String { text.cat3("[", cols_onto(cols, "", .t), "]") }
+
+/// A predicate reads back the way it was written. Only the branch nodes
+/// take parentheses; a leaf never needs them.
+pub rec(loop) fn pred_text(p: plan.Pred) -> String {
+  match! p.>plan.Pred.un_pred {
+    (
+      , .(c: plan.Lit_col, o: plan.Lit_op, n: plan.Lit_num) {
+          text.cat5(
+            , schema.col_name(plan.lit_col_of(c))
+            , " "
+            , plan.op_text(plan.lit_op_of(o))
+            , " "
+            , int_to_string(plan.lit_num_of(n))
+            )
+        }
+      , .(l: plan.Pair_left, o: plan.Pair_op, r: plan.Pair_right) {
+          text.cat5(
+            , schema.col_name(plan.pair_left_of(l))
+            , " "
+            , plan.op_text(plan.pair_op_of(o))
+            , " "
+            , schema.col_name(plan.pair_right_of(r))
+            )
+        }
+      , .(l: plan.And_left, r: plan.And_right) {
+          text.cat5(
+            , "("
+            , rec(cont) pred_text(plan.and_left_of(l))
+            , " and "
+            , rec(cont) pred_text(plan.and_right_of(r))
+            , ")"
+            )
+        }
+      , .(l: plan.Or_left, r: plan.Or_right) {
+          text.cat5(
+            , "("
+            , rec(cont) pred_text(plan.or_left_of(l))
+            , " or "
+            , rec(cont) pred_text(plan.or_right_of(r))
+            , ")"
+            )
+        }
+      , .(a: plan.Not_arg) { text.cat2("not ", rec(cont) pred_text(plan.not_arg_of(a))) }
+      )
+  }
+}
+
+rec(loop) fn explain_at(p: plan.Plan, depth: I32) -> . {
+  match! p.>plan.Plan.un_plan {
+    (
+      , .(n: plan.Scan_table) {
+          line(depth, text.cat2("Scan ", schema.table_name(plan.scan_table_of(n))))
+        }
+      , .(pr: plan.Filter_pred, src: plan.Filter_src) {
+          line(depth, text.cat2("Filter ", pred_text(plan.filter_pred_of(pr))));
+          rec explain_at(plan.filter_src_of(src), add_i32(depth, 1))
+        }
+      , .(l: plan.Join_left, r: plan.Join_right, lk: plan.Join_lkey, rk: plan.Join_rkey) {
+          line(
+            , depth
+            , text.cat4(
+                , "Join on "
+                , schema.col_name(plan.join_lkey_of(lk))
+                , " = "
+                , schema.col_name(plan.join_rkey_of(rk))
+                )
+            );
+          rec(cont) explain_at(plan.join_left_of(l), add_i32(depth, 1));
+          rec explain_at(plan.join_right_of(r), add_i32(depth, 1))
+        }
+      , .(c: plan.Project_cols, src: plan.Project_src) {
+          line(depth, text.cat2("Project ", cols_text(plan.project_cols_of(c))));
+          rec explain_at(plan.project_src_of(src), add_i32(depth, 1))
+        }
+      , .(k: plan.Sum_key, v: plan.Sum_val, src: plan.Sum_src) {
+          line(
+            , depth
+            , text.cat5(
+                , "GroupSum by "
+                , schema.col_name(plan.sum_key_of(k))
+                , ", sum("
+                , schema.col_name(plan.sum_val_of(v))
+                , ")"
+                )
+            );
+          rec explain_at(plan.sum_src_of(src), add_i32(depth, 1))
+        }
+      , .(k: plan.Count_key, src: plan.Count_src) {
+          line(
+            , depth
+            , text.cat3("GroupCount by ", schema.col_name(plan.count_key_of(k)), ", count(*)")
+            );
+          rec explain_at(plan.count_src_of(src), add_i32(depth, 1))
+        }
+      , .(k: plan.Order_key, d: plan.Order_dir, src: plan.Order_src) {
+          line(
+            , depth
+            , text.cat4(
+                , "OrderBy "
+                , schema.col_name(plan.order_key_of(k))
+                , " "
+                , plan.dir_text(plan.order_dir_of(d))
+                )
+            );
+          rec explain_at(plan.order_src_of(src), add_i32(depth, 1))
+        }
+      , .(n: plan.Limit_n, src: plan.Limit_src) {
+          line(depth, text.cat2("Limit ", int_to_string(plan.limit_n_of(n))));
+          rec explain_at(plan.limit_src_of(src), add_i32(depth, 1))
+        }
+      )
+  }
+}
+
+pub fn explain(p: plan.Plan) -> . { explain_at(p, 1) }

@@ -1,0 +1,6 @@
+module wrong/name;
+
+// File is at `workdir/main.kio`, so per `specs/package.md`
+// § Module-name rules rule 1 the declared name must be `main`.
+// `wrong.name` does not match — parse error (exit 11).
+pub fn id[A](x: A) -> A { x }

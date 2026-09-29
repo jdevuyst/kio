@@ -1,0 +1,3 @@
+module _1;
+
+pub fn main() -> . { () }

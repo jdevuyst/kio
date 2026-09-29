@@ -1,0 +1,5 @@
+module second;
+
+pub fn second_value() -> . { () }
+
+pub op + _ { impl second_value }

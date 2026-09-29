@@ -1,0 +1,7 @@
+module greet;
+
+// A host-free generic combinator: pick the first of two like-typed
+// values. The consumer threads its host `String` through this, so the
+// dependency exercises a re-rooted generic export across the git package
+// edge without the dependency itself needing a host.
+pub fn first[A](x: A, _y: A) -> A { x }

@@ -1,0 +1,8 @@
+cold cache log:
+enriched-cache: miss <key> (no entry)
+enriched-cache: miss <key> (no entry)
+enriched-cache: miss <key> (no entry)
+edit cache log:
+enriched-cache: hit <key>
+enriched-cache: hit <key>
+enriched-cache: miss <key> (no entry)

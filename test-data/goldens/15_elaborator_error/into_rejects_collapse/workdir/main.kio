@@ -1,0 +1,7 @@
+module main;
+
+import elab/algebraic_elaborators(into);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn collapse_sum(s: A | A) -> A { into!(s) }

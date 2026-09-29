@@ -1,0 +1,37 @@
+/// The host env supplies exactly one integer comparison, `leq_i32`, so
+/// equality, strict order, and negation are derived from it here, once,
+/// for the rest of the package.
+module book/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+
+pub fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// `a == b` by the antisymmetry of a total order.
+pub fn int_eq(a: I32, b: I32) -> Bool {
+  if! leq_i32(a, b) {
+    leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+pub fn int_lt(a: I32, b: I32) -> Bool { not(leq_i32(b, a)) }
+
+pub fn min_int(a: I32, b: I32) -> I32 {
+  if! leq_i32(a, b) {
+    a
+  } else {
+    b
+  }
+}
+
+pub fn is_positive(n: I32) -> Bool { int_lt(0, n) }

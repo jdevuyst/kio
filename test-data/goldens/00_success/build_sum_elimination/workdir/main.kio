@@ -1,0 +1,13 @@
+module main;
+
+import __intrinsics__;
+
+host type Str role(str);
+
+pub fn left(s: Str) -> Str | Str { __left__(Str, Str, s) }
+
+pub fn right(s: Str) -> Str | Str { __right__(Str, Str, s) }
+
+pub fn pick(v: Str | Str) -> Str {
+  __either__(Str, Str, Str, v, .(a: Str) -> Str { a }, .(b: Str) -> Str { b })
+}

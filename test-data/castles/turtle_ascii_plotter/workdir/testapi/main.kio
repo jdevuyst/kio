@@ -1,0 +1,65 @@
+/// turtle_ascii_plotter — a turtle-graphics rasterizer whose output is a
+/// picture.
+///
+/// The fixture is a turtle program, one token per line: a `canvas` header with
+/// the two dimensions, then commands, each keyword followed by its arguments on
+/// their own lines. `turtle/parse` reads the whole thing into a command tree
+/// with nested `repeat` bodies before anything runs; `turtle/exec` walks that
+/// tree, moving the turtle on an unbounded plane and clipping the ink that
+/// falls off the paper; `turtle/canvas` prints what is left.
+///
+/// The three sections of output answer three questions in order. The echoed
+/// program shows what the parser built — indented, so nesting is visible. The
+/// plot shows what the interpreter drew. The stats close the loop: the ink
+/// census is exactly the number of non-`.` characters in the plot above it.
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/io(print);
+import turtle/canvas as canvas;
+import turtle/echo as echo;
+import turtle/exec as exec;
+import turtle/parse as parse;
+import turtle/state as st;
+import turtle/text as text;
+
+fn line(label: String, value: String) -> . { print(text.cat4(label, ": ", value, "\n")) }
+
+/// The header: the word `canvas`, then the width and the height, one per line.
+/// The keyword is a marker rather than a dispatch — the header is always the
+/// first three lines — so its text is read and dropped.
+fn read_header() -> I32 & I32 {
+  let _kw = parse.read_word();
+  let w = parse.read_number();
+  let h = parse.read_number();
+  (w, h)
+}
+
+fn turtle_text(s: st.State) -> String {
+  let at = text.cat4("x=", text.num(st.tx_of(s)), " y=", text.num(st.ty_of(s)));
+  let facing = text.cat2(" facing=", st.facing_name(st.heading_of(s)));
+  let holding = text.cat2(" pen=", st.pen_name(st.down_of(s)));
+  text.cat3(at, facing, holding)
+}
+
+fn report(paper: canvas.Canvas, s: st.State) -> . {
+  print("stats:\n");
+  line("commands", text.num(st.executed_of(s)));
+  line("inked", text.num(canvas.inked_cells(paper)));
+  line("clipped", text.num(st.clipped_of(s)));
+  line("final", turtle_text(s))
+}
+
+pub fn main() -> . {
+  let .(w: I32, h: I32) = read_header();
+  let program = parse.parse_program();
+  let finished = exec.run_block(program, st.start_state(w, h));
+  let paper = st.paper_of(finished);
+  line("turtle_ascii_plotter", "v1");
+  line("canvas", text.cat3(text.num(w), "x", text.num(h)));
+  print("program:\n");
+  echo.echo_block(program, 1);
+  print("plot:\n");
+  canvas.plot(paper);
+  report(paper, finished)
+}

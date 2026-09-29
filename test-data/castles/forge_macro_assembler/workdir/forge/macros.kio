@@ -1,0 +1,46 @@
+/// The macro library the assembler expands against.
+///
+/// A macro is a plain instruction-sequence template with no parameters:
+/// it names registers directly, and it may jump to a label the *caller*
+/// defines. `drain_tail` does exactly that - it closes the `series`
+/// program's drain loop - which is why expansion is deliberately
+/// unhygienic and the fixture that uses it defines `drain`.
+///
+/// The varop below folds over `forge/list`'s cons: `[* a, b, c *]` becomes
+/// `op_cons(a, op_cons(b, op_cons(c, no_ops())))`. It is module-local,
+/// which is why `forge/programs` declares its own for item lists.
+module forge/macros;
+
+import forge/isa as i;
+import forge/isa(Src);
+import forge/list as l;
+import forge/program as p;
+import forge/program(Macro, Macros, Srcs);
+import testapi(String);
+
+fn no_ops() -> Srcs { l.nil(Src, ()) }
+
+fn op_cons(x: Src, xs: Srcs) -> Srcs { l.cons(x, xs) }
+
+varop [* *] { foldr op_cons no_ops }
+
+/// `b <- a * a`.
+fn square_b() -> Srcs { [* i.mov(i.rb(), i.ra()), i.mul(i.rb(), i.ra()) *] }
+
+/// `a <- a - d`, the countdown step. Two programs call it.
+fn dec_a() -> Srcs { [* i.sub(i.ra(), i.rd()) *] }
+
+/// Emit the popped word, step the counter, and jump back to `drain`. The
+/// jump names the caller's label.
+fn drain_tail() -> Srcs { [* i.emit(i.rb()), i.sub(i.ra(), i.rd()), i.jmp("drain") *] }
+
+/// The table every program is assembled against.
+pub fn table() -> Macros {
+  l.cons(
+    , p.macro_def("square_b", square_b())
+    , l.cons(
+        , p.macro_def("dec_a", dec_a())
+        , l.cons(p.macro_def("drain_tail", drain_tail()), l.nil(Macro, ()))
+        )
+    )
+}

@@ -1,0 +1,5 @@
+package widget;
+
+bridge {
+  api
+}

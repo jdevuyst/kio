@@ -1,0 +1,80 @@
+/// The datum a single table cell holds.
+module query/value;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import query/text as text;
+import testapi(I32, String);
+import testapi/arith(sub_i32);
+import testapi/fmt(int_to_string);
+
+/// A value is an integer or a run of text. Text carries its own display
+/// width, because a text datum is stored here the way a column store
+/// stores one: the characters, plus the length that was known when the
+/// datum was written. Nothing downstream can recover that length
+/// otherwise.
+pub labels Value = { v_int: I32 } | { v_text: String, v_width: I32 };
+
+/// The answer to "read this value as an integer". Text has no integer
+/// reading. Every comparison the engine performs goes through this, so a
+/// predicate, join key, or sort key aimed at a text column is
+/// well-defined and simply never matches, rather than inventing an order
+/// for data the host cannot compare.
+pub labels Maybe_int = { some_int: I32 } | { no_int: . };
+
+pub fn int_val(n: I32) -> Value { {v_int = n}.>widen_sum!(Value) }
+
+pub fn text_val(s: String, width: I32) -> Value { {v_text = s, v_width = width}.>widen_sum!(Value) }
+
+pub fn some_int(n: I32) -> Maybe_int { {some_int = n}.>widen_sum!(Maybe_int) }
+
+pub fn no_int() -> Maybe_int { {no_int=}.>widen_sum!(Maybe_int) }
+
+pub fn some_int_of(n: Some_int) -> I32 { n.?{some_int} }
+
+pub fn value_int(v: Value) -> Maybe_int {
+  match! v {
+    (.(n: V_int) { some_int(n.?{v_int}) }, .(_s: V_text, _w: V_width) { no_int() })
+  }
+}
+
+pub fn value_text(v: Value) -> String {
+  match! v {
+    (.(n: V_int) { int_to_string(n.?{v_int}) }, .(s: V_text, _w: V_width) { s.?{v_text} })
+  }
+}
+
+pub fn value_width(v: Value) -> I32 {
+  match! v {
+    (.(n: V_int) { text.digits(n.?{v_int}) }, .(_s: V_text, w: V_width) { w.?{v_width} })
+  }
+}
+
+/// Render a value into a fixed-width column: integers flush right, text
+/// flush left, the way a report column reads.
+pub fn value_cell(v: Value, width: I32) -> String {
+  match! v {
+    (
+      , .(n: V_int) {
+          let shown = int_to_string(n.?{v_int});
+          text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+        }
+      , .(s: V_text, w: V_width) { text.pad_right(s.?{v_text}, sub_i32(width, w.?{v_width})) }
+      )
+  }
+}
+
+/// The same value in the last column of a line, where a right-hand pad
+/// would only leave trailing blanks. An integer keeps its leading pad -
+/// that is what carries it out to the rule.
+pub fn value_tail(v: Value, width: I32) -> String {
+  match! v {
+    (
+      , .(n: V_int) {
+          let shown = int_to_string(n.?{v_int});
+          text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+        }
+      , .(s: V_text, _w: V_width) { s.?{v_text} }
+      )
+  }
+}

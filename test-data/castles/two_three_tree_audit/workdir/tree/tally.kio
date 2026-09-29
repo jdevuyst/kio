@@ -1,0 +1,61 @@
+/// Structural bookkeeping. Every rebalance a 2-3 tree performs is one of six
+/// events, and an operation reports the ones it caused by handing a tally back
+/// up alongside its result. Splits and root grows come from insertion; borrows,
+/// merges and root shrinks come from deletion.
+module tree/tally;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+
+pub type Tally = I32 & I32 & I32 & I32 & I32 & I32;
+
+pub fn tally_zero() -> Tally { (0, 0, 0, 0, 0, 0) }
+
+pub fn tally_split() -> Tally { (1, 0, 0, 0, 0, 0) }
+
+pub fn tally_borrow_left() -> Tally { (0, 1, 0, 0, 0, 0) }
+
+pub fn tally_borrow_right() -> Tally { (0, 0, 1, 0, 0, 0) }
+
+pub fn tally_merge() -> Tally { (0, 0, 0, 1, 0, 0) }
+
+pub fn tally_root_grow() -> Tally { (0, 0, 0, 0, 1, 0) }
+
+pub fn tally_root_shrink() -> Tally { (0, 0, 0, 0, 0, 1) }
+
+pub fn tally_add(a: Tally, b: Tally) -> Tally {
+  let .(sa: I32, la: I32, ra: I32, ma: I32, ga: I32, ka: I32) = a;
+  let .(sb: I32, lb: I32, rb: I32, mb: I32, gb: I32, kb: I32) = b;
+  (
+    , add_i32(sa, sb)
+    , add_i32(la, lb)
+    , add_i32(ra, rb)
+    , add_i32(ma, mb)
+    , add_i32(ga, gb)
+    , add_i32(ka, kb)
+    )
+}
+
+pub fn splits(t: Tally) -> I32 { let .(s: I32, _l: I32, _r: I32, _m: I32, _g: I32, _k: I32) = t; s }
+
+pub fn borrow_lefts(t: Tally) -> I32 {
+  let .(_s: I32, l: I32, _r: I32, _m: I32, _g: I32, _k: I32) = t;
+  l
+}
+
+pub fn borrow_rights(t: Tally) -> I32 {
+  let .(_s: I32, _l: I32, r: I32, _m: I32, _g: I32, _k: I32) = t;
+  r
+}
+
+pub fn merges(t: Tally) -> I32 { let .(_s: I32, _l: I32, _r: I32, m: I32, _g: I32, _k: I32) = t; m }
+
+pub fn root_grows(t: Tally) -> I32 {
+  let .(_s: I32, _l: I32, _r: I32, _m: I32, g: I32, _k: I32) = t;
+  g
+}
+
+pub fn root_shrinks(t: Tally) -> I32 {
+  let .(_s: I32, _l: I32, _r: I32, _m: I32, _g: I32, k: I32) = t;
+  k
+}

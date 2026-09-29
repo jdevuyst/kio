@@ -1,0 +1,23 @@
+module main;
+
+host type I32 role(i32);
+
+host type Str role(str);
+
+host type Owned_str role(str) { owned };
+
+host fn print(value: Str) -> .;
+
+host fn enqueue(value: Owned_str) -> .;
+
+host fn id[T](value: T) -> T;
+
+host fn int_to_str(value: I32) -> Str;
+
+pub fn say_hello(value: Str) -> . { print(value) }
+
+pub fn enqueue_value(value: Owned_str) -> . { enqueue(value) }
+
+pub fn identity[T](value: T) -> T { id(value) }
+
+pub fn render(value: I32) -> Str { int_to_str(value) }

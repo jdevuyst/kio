@@ -1,0 +1,9 @@
+module fmt_composite_callee;
+
+fn prefix_impl(value: Formtype) -> Formtype { value }
+
+op - __ { impl prefix_impl }
+
+fn operator_call() -> . { (- form_value)(context_arg) }
+
+fn splice_call() -> . { (context_callee.<form_receiver)(context_arg) }

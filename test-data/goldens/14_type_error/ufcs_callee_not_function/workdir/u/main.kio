@@ -1,0 +1,8 @@
+module u/main;
+
+import u(String);
+
+// UFCS dispatch fails when the callee resolves to a non-function
+// value. Here `not_a_function` is bound to a String, so the
+// receiver-style call `r.>not_a_function` cannot dispatch.
+pub fn main() -> . { let not_a_function = "hello"; let r = "world"; let _ = r.>not_a_function; () }

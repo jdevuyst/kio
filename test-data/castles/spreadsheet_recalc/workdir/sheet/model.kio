@@ -1,0 +1,89 @@
+/// The fixture: the sheet as the user typed it, and the edits applied to it.
+///
+/// The sheet is deliberately knotted. `C3` and `D3` read each other — a
+/// genuine cycle — while `A4` multiplies `C3`, inheriting the error without
+/// being part of the cycle. `C4` is empty, which every formula reading it
+/// treats as zero.
+///
+/// The last two edits change the graph, not just a value: edit 2 gives `D3` a
+/// formula that no longer names `C3` (breaking the cycle), and edit 4 gives
+/// `A3` a formula naming `B3`, which already reads `A3` (closing a new one).
+module sheet/model;
+
+import sheet/addr(Addr, make_addr);
+import sheet/cells(Sheet, empty_sheet, formula_content, number_content, set_content);
+import sheet/formula(Expr, add, cell_ref, if_else, lit_num, max_range, mul, sub, sum_range);
+import sheet/list(List, cons, nil);
+import sheet/recalc(Edit, clear_edit, formula_edit, number_edit);
+import testapi(I32);
+
+fn a1() -> Addr { make_addr(0, 0) }
+
+fn b1() -> Addr { make_addr(0, 1) }
+
+fn c1() -> Addr { make_addr(0, 2) }
+
+fn d1() -> Addr { make_addr(0, 3) }
+
+fn a2() -> Addr { make_addr(1, 0) }
+
+fn b2() -> Addr { make_addr(1, 1) }
+
+fn c2() -> Addr { make_addr(1, 2) }
+
+fn d2() -> Addr { make_addr(1, 3) }
+
+fn a3() -> Addr { make_addr(2, 0) }
+
+fn b3() -> Addr { make_addr(2, 1) }
+
+fn c3() -> Addr { make_addr(2, 2) }
+
+fn d3() -> Addr { make_addr(2, 3) }
+
+fn a4() -> Addr { make_addr(3, 0) }
+
+fn b4() -> Addr { make_addr(3, 1) }
+
+fn c4() -> Addr { make_addr(3, 2) }
+
+fn d4() -> Addr { make_addr(3, 3) }
+
+fn number(s: Sheet, a: Addr, n: I32) -> Sheet { set_content(s, a, number_content(n)) }
+
+fn formula(s: Sheet, a: Addr, e: Expr) -> Sheet { set_content(s, a, formula_content(e)) }
+
+/// The starting sheet. `C4` is never written, so it stays empty.
+pub fn initial_sheet() -> Sheet {
+  empty_sheet()
+    .>number(a1(), 5)
+    .>number(b1(), 3)
+    .>number(c1(), 8)
+    .>formula(d1(), sum_range(a1(), c1()))
+    .>number(a2(), 2)
+    .>formula(b2(), add(cell_ref(a1()), cell_ref(b1())))
+    .>formula(c2(), mul(cell_ref(b2()), cell_ref(a2())))
+    .>formula(d2(), max_range(a1(), c2()))
+    .>formula(a3(), sub(cell_ref(d1()), cell_ref(d2())))
+    .>formula(b3(), if_else(cell_ref(a3()), cell_ref(c1()), cell_ref(a2())))
+    .>formula(c3(), add(cell_ref(d3()), lit_num(1)))
+    .>formula(d3(), add(cell_ref(c3()), lit_num(2)))
+    .>formula(a4(), mul(cell_ref(c3()), lit_num(2)))
+    .>formula(b4(), sum_range(a1(), d1()))
+    .>formula(d4(), add(cell_ref(b4()), cell_ref(c4())))
+}
+
+/// The edit script: a literal, a formula that breaks the cycle, a clear,
+/// and a formula that closes a new cycle.
+pub fn edit_script() -> List(Edit) {
+  cons(
+    , number_edit(a1(), 9)
+    , cons(
+        , formula_edit(d3(), add(cell_ref(b3()), lit_num(4)))
+        , cons(
+            , clear_edit(b4())
+            , cons(formula_edit(a3(), add(cell_ref(b3()), lit_num(1))), nil(Edit, ()))
+            )
+        )
+    )
+}

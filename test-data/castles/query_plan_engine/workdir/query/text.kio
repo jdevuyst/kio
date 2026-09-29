@@ -1,0 +1,64 @@
+/// Text plumbing for the report writer.
+///
+/// The host tier this package declares gives strings exactly one
+/// operation, `string_concat`, and no way to measure one. Every width the
+/// table renderer needs is therefore derived from data the engine already
+/// holds: an integer's width from its magnitude, a text datum's width
+/// from the length recorded beside it when the datum was written.
+module query/text;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(a, cat3(b, c, d)) }
+
+pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  cat2(a, cat4(b, c, d, e))
+}
+
+rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec repeat_onto(unit, sub_i32(n, 1), cat2(acc, unit))
+  }
+}
+
+pub fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
+
+pub fn spaces(n: I32) -> String { repeat(" ", n) }
+
+pub fn rule(n: I32) -> String { repeat("-", n) }
+
+pub fn pad_left(s: String, n: I32) -> String { cat2(spaces(n), s) }
+
+pub fn pad_right(s: String, n: I32) -> String { cat2(s, spaces(n)) }
+
+/// The bound climbs one decade per digit. The last decade answers
+/// directly: multiplying a bound past 10^9 would overflow the 32-bit host
+/// type before the comparison that consumes it could run.
+rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
+  if! lt_i32(n, bound) {
+    acc
+  } else if! leq_i32(1000000000, bound) {
+    add_i32(acc, 1)
+  } else {
+    rec digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
+  }
+}
+
+/// The printed width of an integer, sign included.
+pub fn digits(n: I32) -> I32 {
+  if! lt_i32(n, 0) {
+    add_i32(1, digits_from(sub_i32(0, n), 10, 1))
+  } else {
+    digits_from(n, 10, 1)
+  }
+}

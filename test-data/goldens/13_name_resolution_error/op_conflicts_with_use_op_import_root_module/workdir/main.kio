@@ -1,0 +1,11 @@
+module main;
+
+// The import and local declaration use one operator name but denote distinct
+// source identities, so neither may silently replace the other.
+import arith(op _ + _);
+
+fn local_add(x: ., y: .) -> . { x }
+
+op _ + _ { impl local_add }
+
+pub fn main() -> . { () }

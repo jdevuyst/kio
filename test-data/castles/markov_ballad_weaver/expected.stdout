@@ -1,0 +1,94 @@
+markov_ballad_weaver: v1
+seed: 95
+recurrence: next = (20077 * state + 12345) mod 32749
+seed state: 95
+first draws: 20218 5276 28331 29200 20896
+verses: 2
+lines per verse: 3
+word cap: 8
+
+-- corpus --
+phrases: 11
+tokens: 54
+vocabulary: 27
+1: silver moon over quiet water
+2: silver moon over sleeping fields
+3: silver moon above quiet water
+4: red dawn over quiet water
+5: red dawn wakes sleeping fields
+6: wild wind bends cedar branches
+7: wild wind crosses quiet water
+8: old river carries cedar branches
+9: old river carries fallen leaves
+10: bright stars crown sleeping fields
+11: moon follows silver song
+
+-- model --
+starts: silver*3 red*2 wild*2 old*2 bright*1 moon*1 (total 11)
+ends: water*4 fields*3 branches*2 leaves*1 song*1 (total 11)
+silver -> moon*3 song*1 (total 4)
+moon -> over*2 above*1 follows*1 (total 4)
+over -> quiet*2 sleeping*1 (total 3)
+quiet -> water*4 (total 4)
+sleeping -> fields*3 (total 3)
+above -> quiet*1 (total 1)
+red -> dawn*2 (total 2)
+dawn -> over*1 wakes*1 (total 2)
+wakes -> sleeping*1 (total 1)
+wild -> wind*2 (total 2)
+wind -> bends*1 crosses*1 (total 2)
+bends -> cedar*1 (total 1)
+cedar -> branches*2 (total 2)
+crosses -> quiet*1 (total 1)
+old -> river*2 (total 2)
+river -> carries*2 (total 2)
+carries -> cedar*1 fallen*1 (total 2)
+fallen -> leaves*1 (total 1)
+bright -> stars*1 (total 1)
+stars -> crown*1 (total 1)
+crown -> sleeping*1 (total 1)
+follows -> silver*1 (total 1)
+
+-- verses --
+verse 1
+  silver moon follows silver moon follows silver moon
+  red dawn wakes sleeping fields
+  wild wind bends cedar branches
+verse 2
+  old river carries cedar branches
+  wild wind crosses quiet water
+  wild wind crosses quiet water
+
+-- draws (verse 1) --
+line 1
+  draw 1: state 20218 from <start> | silver[0,3) red[3,5) wild[5,7) old[7,9) bright[9,10) moon[10,11) | total 11 roll 0 -> silver
+  draw 2: state 5276 from silver | moon[0,3) song[3,4) | total 4 roll 0 -> moon
+  draw 3: state 28331 from moon | over[0,2) above[2,3) follows[3,4) | total 4 roll 3 -> follows
+  draw 4: state 29200 from follows | silver[0,1) | total 1 roll 0 -> silver
+  draw 5: state 20896 from silver | moon[0,3) song[3,4) | total 4 roll 0 -> moon
+  draw 6: state 26647 from moon | over[0,2) above[2,3) follows[3,4) | total 4 roll 3 -> follows
+  draw 7: state 16500 from follows | silver[0,1) | total 1 roll 0 -> silver
+  draw 8: state 26710 from silver | moon[0,3) song[3,4) | total 4 roll 2 -> moon
+  stop: word cap
+line 2
+  draw 9: state 4140 from <start> | silver[0,3) red[3,5) wild[5,7) old[7,9) bright[9,10) moon[10,11) | total 11 roll 4 -> red
+  draw 10: state 14163 from red | dawn[0,2) | total 2 roll 1 -> dawn
+  draw 11: state 3329 from dawn | over[0,1) wakes[1,2) | total 2 roll 1 -> wakes
+  draw 12: state 7969 from wakes | sleeping[0,1) | total 1 roll 0 -> sleeping
+  draw 13: state 27093 from sleeping | fields[0,3) | total 3 roll 0 -> fields
+  stop: end word
+line 3
+  draw 14: state 30365 from <start> | silver[0,3) red[3,5) wild[5,7) old[7,9) bright[9,10) moon[10,11) | total 11 roll 5 -> wild
+  draw 15: state 27815 from wild | wind[0,2) | total 2 roll 1 -> wind
+  draw 16: state 18152 from wind | bends[0,1) crosses[1,2) | total 2 roll 0 -> bends
+  draw 17: state 19177 from bends | cedar[0,1) | total 1 roll 0 -> cedar
+  draw 18: state 31730 from cedar | branches[0,2) | total 2 roll 0 -> branches
+  stop: end word
+
+-- stats --
+words generated: 33
+distinct words used: 19
+longest line: 8
+lines by end word: 5
+lines by word cap: 1
+lines by no successor: 0

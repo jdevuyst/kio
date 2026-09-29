@@ -1,0 +1,6 @@
+module main;
+
+import origin as source;
+import origin(Tag);
+
+type Tag = source.Tag;

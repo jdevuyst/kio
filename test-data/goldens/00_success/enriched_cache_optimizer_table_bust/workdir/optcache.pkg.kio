@@ -1,0 +1,15 @@
+package optcache;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  a;
+  b;
+  c
+}

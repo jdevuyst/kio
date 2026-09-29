@@ -1,0 +1,103 @@
+module testapi/main;
+
+import elab/control(scope);
+import quotation(duplicate);
+import testapi(Bool);
+import testapi/io(print);
+import testapi/iter(loop);
+
+labels Fields = { flag: Bool };
+
+fn pass(value: Bool) -> Bool { print("pass\n"); value }
+
+fn row() -> Fields { print("row\n"); {flag = .t} }
+
+fn later() -> Bool { print("later\n"); .t }
+
+fn identity[A](value: A) -> A { print("identity\n"); value }
+
+fn stages(value: Bool) -> Bool -> Bool {
+  print("first stage\n");
+  .(last: Bool) { print("second stage\n"); last }
+}
+
+rec(loop) {
+  fn left() -> Bool { print("left\n"); .f };
+  fn ufcs_source() -> Bool { let value = duplicate!(rec(cont) left().>pass); .t };
+  fn field_source() -> Bool { let value = duplicate!({flag = rec(cont) left()}.?{flag}); .t };
+  fn flat_source() -> Bool { let value = duplicate!(stages(.t, rec(cont) left())); .t };
+  fn update_source() -> Bool {
+    let value = duplicate!(row().!{flag = rec(cont) left()}.?{flag});
+    .t
+  };
+  fn nested_source() -> Bool { let value = duplicate!(duplicate!(rec(cont) left())); .t };
+  fn ufcs_order() -> Bool { let value = duplicate!(rec(cont) left().>stages(later())); .t };
+  fn scoped_source() -> Bool {
+    let value =
+      duplicate!(scope! {
+        let saved = rec(cont) left();
+        print("scope body\n");
+        saved
+      });
+    print("outer continuation\n");
+    .t
+  };
+  fn pattern_source() -> Bool {
+    let value =
+      duplicate!(scope! {
+        let .(saved, other) = (rec(cont) left(), later());
+        print("pattern body\n");
+        saved
+      });
+    .t
+  };
+  fn row_let_source() -> Bool {
+    let value =
+      duplicate!(scope! {
+        let .({flag as saved}) = {flag = rec(cont) left()};
+        print("row let body\n");
+        saved
+      });
+    .t
+  }
+}
+
+rec(loop) {
+  fn generic_left[A](value: A) -> A { print("generic left\n"); value };
+  fn generic_source[A](value: A) -> A {
+    let pair = duplicate!(identity(A, rec(cont) generic_left(value)));
+    value
+  };
+  fn generic_ufcs[A](value: A) -> A {
+    let pair = duplicate!(rec(cont) generic_left(value).>identity(A));
+    value
+  }
+}
+
+pub fn main() -> . {
+  print("ufcs\n");
+  let one = ufcs_source();
+  print("field\n");
+  let two = field_source();
+  print("flat ordinary\n");
+  let three = stages(.t, left());
+  print("flat recursive\n");
+  let four = flat_source();
+  print("generic direct\n");
+  let five = generic_source(.t);
+  print("generic ufcs\n");
+  let six = generic_ufcs(.t);
+  print("update\n");
+  let seven = update_source();
+  print("nested quotation\n");
+  let nine = nested_source();
+  print("ufcs order\n");
+  let ten = ufcs_order();
+  print("nested scope\n");
+  let eleven = scoped_source();
+  print("pattern scope\n");
+  let twelve = pattern_source();
+  print("row let scope\n");
+  let thirteen = row_let_source();
+  print("done\n")
+}

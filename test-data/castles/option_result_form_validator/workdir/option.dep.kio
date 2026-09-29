@@ -1,0 +1,7 @@
+dependency option;
+
+source {
+  path "../../../poc/option/workdir/option.pkg.kio"
+}
+
+rehost option/elab/testapi to testapi;

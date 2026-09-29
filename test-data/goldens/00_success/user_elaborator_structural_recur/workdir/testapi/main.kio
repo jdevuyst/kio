@@ -1,0 +1,9 @@
+module testapi/main;
+
+import elaborators(looped);
+import testapi(String);
+import testapi/io(print);
+
+fn keep(s: String) -> String { looped!(s, String) }
+
+pub fn main() -> . { print(keep("user_elaborator_structural_recur: ok\n")) }

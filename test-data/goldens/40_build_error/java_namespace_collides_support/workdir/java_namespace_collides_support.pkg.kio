@@ -1,0 +1,14 @@
+package java_namespace_collides_support;
+
+build {
+  cache "out/.kio-cache/";
+
+  target java {
+    out "out/java/";
+    namespace "shapes"
+  }
+}
+
+bridge {
+  main
+}

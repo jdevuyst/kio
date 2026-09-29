@@ -1,0 +1,14 @@
+package build_python_typed_stub_skin;
+
+build {
+  cache "out/.kio-cache/";
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api;
+  api/**
+}

@@ -1,0 +1,20 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+// `apply_slot` holds a product-domain function slot — one that takes its
+// whole `(I32 & I32)` domain as a single product argument — and applies it
+// to a pair. The host fn `add_i32`, declared with two parameters, is a
+// positional-arity value; flowing it into that slot applies it to the
+// single product, so the pair is spread across its two parameters. This is
+// the function-value slot adaptation of `specs/backends/README.md`
+// § Function-type FFI canonicalization.
+fn apply_slot(f: (I32 & I32) -> I32, p: I32 & I32) -> I32 { f(p) }
+
+pub fn main() -> . {
+  print(i32_to_string(apply_slot(add_i32, (2(I32), 3(I32)))));
+  print("\n"(String))
+}

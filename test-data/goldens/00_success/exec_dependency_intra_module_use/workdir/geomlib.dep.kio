@@ -1,0 +1,5 @@
+dependency geomlib;
+
+source {
+  path "../library/geomlib/geomlib.pkg.kio"
+}

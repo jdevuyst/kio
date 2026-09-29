@@ -1,0 +1,11 @@
+lock lib;
+
+resolved {
+  ;;
+  sig "digest";
+  commit "revision";
+  ref "main";
+  git "https://example.invalid/lib" // resolved tail
+  ;; // resolved close
+} // resolved outer
+;

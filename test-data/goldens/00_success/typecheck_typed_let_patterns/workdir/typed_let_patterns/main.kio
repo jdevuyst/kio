@@ -1,0 +1,33 @@
+module typed_let_patterns/main;
+
+import elab/sequence(do);
+import typed_let_patterns(I32);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+fn make_id[A]() -> A -> A { .(x: A) { x } }
+
+pub fn checked_placeholder(n: I32) -> I32 { let .(f: I32 -> I32) = .x. { x1 }; f(n) }
+
+fn checked_factory(n: I32) -> I32 { let .(f: I32 -> I32) = make_id(); f(n) }
+
+fn accepted_unary_destructuring(n: I32) -> I32 { let .(x: I32) = n; x }
+
+fn concrete_as_pattern(n: I32) -> I32 { let .(pair: (x: I32, _: .)) = (n, ()); x }
+
+pub fn do_pure_typed_let(n: I32) -> Box(I32) {
+  do! box_bind {
+    let .(f: I32 -> I32) = make_id();
+    box_pure(f(n))
+  }
+}
+
+fn use_all(n: I32) -> I32 {
+  let _a = checked_factory(n);
+  let _b = accepted_unary_destructuring(n);
+  concrete_as_pattern(n)
+}

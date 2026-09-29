@@ -1,0 +1,1 @@
+inside a `///` doc-comment, use `\{@\}` to wrap the snippet in the surrounding module

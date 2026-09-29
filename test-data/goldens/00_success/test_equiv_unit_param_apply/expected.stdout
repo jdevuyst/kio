@@ -1,0 +1,7 @@
+  pass equiv `fn_applied_to_unit_param` in unitp/m
+  pass equiv `lambda_applied_to_unit_param` in unitp/m
+  pass equiv `fn_applied_to_stuck_unit` in unitp/m
+  pass equiv `nullary_applied_to_unit_param` in unitp/m
+  pass equiv `nullary_applied_to_stuck_unit` in unitp/m
+
+result: 5/5 equiv blocks passed

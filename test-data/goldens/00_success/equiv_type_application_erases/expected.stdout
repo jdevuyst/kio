@@ -1,0 +1,4 @@
+  pass equiv `type_app_is_value_id` in host/m
+  pass equiv `type_only_fn_reduces` in host/m
+
+result: 2/2 equiv blocks passed

@@ -1,0 +1,10 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn id[A](x: A) -> A { x }
+
+fn make_unit_fn() -> . -> String { id(. -> String, .(u) { "unit-fn-ok\n"(String) }) }
+
+pub fn main() -> . { let f = make_unit_fn(); print(f(())) }

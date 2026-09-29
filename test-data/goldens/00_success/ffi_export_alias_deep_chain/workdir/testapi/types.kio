@@ -1,0 +1,46 @@
+module testapi/types;
+
+// A 20-hop parametric alias chain: the boundary crossing through the
+// chain's head must be identical to writing `A & B` inline, however
+// long the (acyclic) chain — the unfold has no depth ceiling.
+pub type Both0[A][B] = A & B;
+
+pub type Both1[A][B] = Both0(A, B);
+
+pub type Both2[A][B] = Both1(A, B);
+
+pub type Both3[A][B] = Both2(A, B);
+
+pub type Both4[A][B] = Both3(A, B);
+
+pub type Both5[A][B] = Both4(A, B);
+
+pub type Both6[A][B] = Both5(A, B);
+
+pub type Both7[A][B] = Both6(A, B);
+
+pub type Both8[A][B] = Both7(A, B);
+
+pub type Both9[A][B] = Both8(A, B);
+
+pub type Both10[A][B] = Both9(A, B);
+
+pub type Both11[A][B] = Both10(A, B);
+
+pub type Both12[A][B] = Both11(A, B);
+
+pub type Both13[A][B] = Both12(A, B);
+
+pub type Both14[A][B] = Both13(A, B);
+
+pub type Both15[A][B] = Both14(A, B);
+
+pub type Both16[A][B] = Both15(A, B);
+
+pub type Both17[A][B] = Both16(A, B);
+
+pub type Both18[A][B] = Both17(A, B);
+
+pub type Both19[A][B] = Both18(A, B);
+
+pub newtype Pair[A][B] : Both19(A, B) { pub constructor mk_pair; pub projector un_pair }

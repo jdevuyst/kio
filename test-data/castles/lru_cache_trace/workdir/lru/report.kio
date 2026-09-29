@@ -1,0 +1,68 @@
+module lru/report;
+
+import lru/cache as cache;
+import lru/cache(Cache);
+import lru/text as text;
+import testapi(I32, String);
+
+pub fn header() -> String {
+  let capacity_line =
+    text.cat4(
+      , "capacity="
+      , text.int_text(cache.capacity())
+      , " operations="
+      , text.int_text(cache.operation_count())
+      );
+  text.cat3("LRU cache trace\n", capacity_line, "\n\n")
+}
+
+pub fn stats(c: Cache) -> String {
+  let left =
+    text.cat6(
+      , "final stats hits="
+      , text.int_text(cache.hits(c))
+      , " misses="
+      , text.int_text(cache.misses(c))
+      , " evictions="
+      , text.int_text(cache.evictions(c))
+      );
+  let right =
+    text.cat5(
+      , " clock="
+      , text.int_text(cache.clock(c))
+      , " full="
+      , text.bool_text(cache.is_full(c))
+      , "\n"
+      );
+  text.cat2(left, right)
+}
+
+pub fn replacements(c: Cache) -> String {
+  let left =
+    text.cat4(
+      , "replacement log count="
+      , text.int_text(cache.victim_count(c))
+      , " first="
+      , text.int_text(cache.victim_at(c, 0))
+      );
+  let right = text.cat3(" latest=", text.int_text(cache.victim_at(c, 1)), "\n");
+  text.cat2(left, right)
+}
+
+pub fn slot_line(c: Cache, slot: I32) -> String {
+  let left =
+    text.cat6(
+      , "slot "
+      , text.int_text(slot)
+      , " key="
+      , text.int_text(cache.slot_key(c, slot))
+      , " value="
+      , text.int_text(cache.slot_value(c, slot))
+      );
+  let right = text.cat3(" age=", text.int_text(cache.slot_age(c, slot)), "\n");
+  text.cat2(left, right)
+}
+
+pub fn final_table(c: Cache) -> String {
+  text.cat5("final slots\n", slot_line(c, 0), slot_line(c, 1), slot_line(c, 2), "")
+}

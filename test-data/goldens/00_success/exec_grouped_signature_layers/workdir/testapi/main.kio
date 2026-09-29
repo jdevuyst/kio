@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn join(prefix: String)(suffix: String) -> String { string_concat(prefix, suffix) }
+
+pub fn main() -> . {
+  print(join("flat-"(String), "ok\n"(String)));
+  print(join("direct-"(String))("ok\n"(String)));
+  let partial = join("partial-"(String));
+  print(partial("ok\n"(String)))
+}

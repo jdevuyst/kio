@@ -1,0 +1,6 @@
+package widget;
+
+bridge {
+  store;
+  relay
+}

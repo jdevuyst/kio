@@ -1,0 +1,13 @@
+package deferred_literal_inference_error;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

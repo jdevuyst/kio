@@ -1,0 +1,3 @@
+module main;
+
+import check_err_unknown_module/nonexistent(foo);

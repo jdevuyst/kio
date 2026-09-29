@@ -1,0 +1,40 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_prod, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/io(print);
+
+// Compound *product* slot: `pair` binds the `(I32 & String)`
+// sub-product, `b` binds the `Bool`. The dispatcher reconstructs
+// `pair` from the scrutinee's flattened factors via `__pair__`.
+fn handle_product(s: (I32 & String) & Bool) -> String {
+  match! s {
+    .(pair: I32 & String, b: Bool) { one_prod!(pair, String) }
+  }
+}
+
+// Pure *sum* slot: the `(I32 | String)` clause covers two arms of
+// the three-arm scrutinee; the `Bool` arm is a separate clause.
+fn handle_sum(s: I32 | String | Bool) -> String {
+  match! s {
+    (
+      , .(x: I32 | String) { "int-or-string\n" }
+      , .(b: Bool) {
+          if! b {
+            "bool-true\n"
+          } else {
+            "bool-false\n"
+          }
+        }
+      )
+  }
+}
+
+pub fn main() -> . {
+  print(handle_product(((100(I32), "product-slot\n"), .t)));
+  print(handle_sum(widen_sum!("string-arm\n")));
+  print(handle_sum(widen_sum!(.t)));
+  print(handle_sum(widen_sum!(.f)))
+}

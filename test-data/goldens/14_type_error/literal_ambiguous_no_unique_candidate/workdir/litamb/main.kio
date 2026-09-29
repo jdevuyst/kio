@@ -1,0 +1,10 @@
+module litamb/main;
+
+import litamb(I32, I64);
+
+// `100` is bound in a `let` right-hand side — a synthesis position,
+// so no expected type pins it (tier 2 does not apply). The package
+// exports two int-shaped host types, `I32` and `I64`, so tier 3
+// finds no unique candidate. The literal is a type error; annotate
+// it — `100(I32)` — to disambiguate.
+fn ambiguous() -> I32 { let n = 100; n }

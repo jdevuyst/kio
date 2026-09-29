@@ -1,0 +1,3 @@
+module typecheck_user_elaborator_target_placeholder;
+
+host type String role(str);

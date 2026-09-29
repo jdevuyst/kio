@@ -1,0 +1,133 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// `I32` equality built from the antisymmetry of `leq_i32` — both
+// runners supply `leq_<kind>`, so equality stays within the host
+// surface every applicable emitter provides.
+fn i32_eq(a: I32, b: I32) -> Bool {
+  if! leq_i32(a, b) {
+    leq_i32(b, a)
+  } else {
+    leq_i32(1, 0)
+  }
+}
+
+// Parametric over the payload `A`: return the first element of a
+// host array, or `()` when the array is empty. Proves the generic
+// instantiation path — `main` calls it at `A = I32` and
+// `A = String`, two distinct monomorphizations of one polymorphic
+// fn operating on a host array.
+pub fn first[A](xs: Array(A)) -> A | . {
+  if! leq_i32(1, array_len(xs)) {
+    widen_sum!(array_get(xs, 0))
+  } else {
+    widen_sum!(())
+  }
+}
+
+// Generic reverse: read the host array right-to-left and push each
+// element into a fresh host array. The fresh array is host-produced
+// here from Kio's perspective on the way back out.
+fn reverse[A](xs: Array(A)) -> Array(A) {
+  let out = array_make_empty(A, ());
+  let _ =
+    loop(
+      , I32
+      , .
+      , .(i: I32) -> I32 | . {
+          if! leq_i32(0, i) {
+            array_push(out, array_get(xs, i));
+            widen_sum!(sub_i32(i, 1))
+          } else {
+            widen_sum!(())
+          }
+        }
+      , sub_i32(array_len(xs), 1)
+      );
+  out
+}
+
+// One step of the element-wise walk. Continue while `i` is in range
+// and the elements match; otherwise exit. The exit value is
+// `i >= len`, which is true exactly when the walk ran off the end
+// (every pair matched) and false when it stopped early on a mismatch
+// (still in range).
+fn arrays_equal_step[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A), i: I32) -> I32 | Bool {
+  let keep_going =
+    if! leq_i32(i, sub_i32(array_len(p), 1)) {
+      eq(array_get(p, i), array_get(q, i))
+    } else {
+      leq_i32(1, 0)
+    };
+  if! keep_going {
+    widen_sum!(add_i32(i, 1))
+  } else {
+    widen_sum!(leq_i32(array_len(p), i))
+  }
+}
+
+// Element-wise structural equality of two host arrays, parametric
+// over the payload `A` via a supplied `eq`. Used to assert the
+// round-trip `reverse(reverse(xs))` reproduces `xs`.
+fn arrays_equal[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A)) -> Bool {
+  if! i32_eq(array_len(p), array_len(q)) {
+    loop(I32, Bool, .(i: I32) -> I32 | Bool { arrays_equal_step(eq, p, q, i) }, 0)
+  } else {
+    leq_i32(1, 0)
+  }
+}
+
+fn show_first_i32(r: I32 | .) -> String {
+  match! r {
+    (.(n: I32) { int_to_string(n) }, .(_empty: .) { "none" })
+  }
+}
+
+fn show_first_str(r: String | .) -> String {
+  match! r {
+    (.(s: String) { s }, .(_empty: .) { "none" })
+  }
+}
+
+fn fill_i32(xs: Array(I32), a: I32, b: I32, c: I32) -> . {
+  array_push(xs, a);
+  array_push(xs, b);
+  array_push(xs, c)
+}
+
+pub fn main() -> . {
+  // `first` at a = I32.
+  let ints = array_make_empty(I32, ());
+  fill_i32(ints, 10, 20, 30);
+  print(show_first_i32(first(ints)));
+  print("\n");
+  // `first` at a = String — the second monomorphization.
+  let words = array_make_empty(String, ());
+  array_push(words, "alpha");
+  array_push(words, "beta");
+  print(show_first_str(first(words)));
+  print("\n");
+  // `first` on an empty array yields the `()` arm.
+  let empty = array_make_empty(I32, ());
+  print(show_first_i32(first(empty)));
+  print("\n");
+  // Round-trip: reverse(reverse(ints)) must reproduce `ints`
+  // element-by-element. The host array is permuted out and back;
+  // the structural comparison is the assertion.
+  let round_tripped = reverse(reverse(ints));
+  print(bool_to_string(arrays_equal(i32_eq, ints, round_tripped)));
+  print("\n");
+  // A single reverse must NOT equal the original (sanity check
+  // that `arrays_equal` actually distinguishes order).
+  print(bool_to_string(arrays_equal(i32_eq, ints, reverse(ints))));
+  print("\n")
+}

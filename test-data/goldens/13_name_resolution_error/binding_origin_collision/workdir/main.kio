@@ -1,0 +1,6 @@
+module main;
+
+import first(pick);
+import second(pick);
+
+pub fn run() -> . { pick() }

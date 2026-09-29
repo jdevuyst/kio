@@ -1,0 +1,34 @@
+module main;
+
+import elab/algebraic_elaborators(onto);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// R-Project-Prod: `A & B → A`. Drop the `B` slot. `__fst__`
+// chains realize the projection. Every `a : A` is in the image
+// (paired with any `b : B`), so the mapping is a surjection.
+fn project_first(p: A & B) -> A { onto!(p) }
+
+// R-Project-Prod, sub-product target: `A & B & C → B & C`.
+// Drop the leftmost slot, keep the rest. The surjection
+// extends over the kept sub-product.
+fn project_sub(p: A & B & C) -> B & C { onto!(p) }
+
+// R-Project-Prod composed with source-order pinning: `A & A → A`
+// keeps the leftmost `A` slot. This is the product-collapse case
+// (`A & A → A`) realized via R-Project-Prod, not a separate rule.
+fn product_collapse(p: A & A) -> A { onto!(p) }
+
+// R-Collapse-Sum: `A | A → A`. Source-arm identification onto a
+// single target arm. `__either__(s, id, id)` forwards either
+// inhabitant to the target's `A`.
+fn collapse_sum(s: A | A) -> A { onto!(s) }
+
+// R-Project-Prod and R-Collapse-Sum composed via DNF normalization:
+// source `(A & B) | (A & B)` distributes-and-collapses to `A`.
+// Each DNF branch projects to `A`, then the like-typed arms collapse.
+fn project_and_collapse(s: (A & B) | (A & B)) -> A { onto!(s) }

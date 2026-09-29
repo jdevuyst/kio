@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+fn apply[A][B](f: (A & A) -> B, x: A, y: A) -> B { f(x, y) }
+
+pub fn main() -> . {
+  // Each stem owns its numbered references. Binding annotations
+  // supply the expected parameter and result types.
+  let .(hash_lambda: (I32 & I32) -> I32) = .x. { add_i32(x1, x2) };
+  let .(dollar_lambda: (I32 & I32) -> I32) = .arg. { add_i32(arg1, arg2) };
+  let .(question_lambda: (I32 & I32) -> I32) = ._p. { add_i32(_p1, _p2) };
+  print(i32_to_string(apply(hash_lambda, 1, 2)));
+  print("\n");
+  print(i32_to_string(apply(dollar_lambda, 10, 20)));
+  print("\n");
+  print(i32_to_string(apply(question_lambda, 100, 200)))
+}

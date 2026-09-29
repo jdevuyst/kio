@@ -1,0 +1,26 @@
+module testapi/main;
+
+import testapi(I32);
+
+pub labels {
+  , a: I32
+  , b: I32
+  , c: I32
+  , d: I32
+  , e: I32
+  , f: I32
+  , g: I32
+  , h: I32
+  , i: I32
+  , j: I32
+  , k: I32
+  , l: I32
+  };
+
+pub type Wide = A & B & C & D & E & F & G & H & I & J & K & L;
+
+fn last(row: Wide) -> I32 { row.?{l} }
+
+fn revise(row: Wide) -> Wide { row.!{k = 120(I32)} }
+
+pub fn entry(row: Wide) -> I32 { last(revise(row)) }

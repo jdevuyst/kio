@@ -1,0 +1,2 @@
+Noncanonical entry order is the formatter regression's deliberate input;
+run.sh separately asserts canonical output and second-pass idempotence.

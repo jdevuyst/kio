@@ -1,0 +1,11 @@
+module testapi/main;
+
+import lib(identity);
+import lib/combine(keep_first);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let a = identity("root module with submodules: ok\n");
+  print(keep_first(a, "unused"))
+}

@@ -1,0 +1,4 @@
+  pass equiv `qualified_fn_over_alias` in main
+  pass equiv `selective_fn_over_alias` in main
+
+result: 2/2 equiv blocks passed

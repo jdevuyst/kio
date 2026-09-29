@@ -1,0 +1,110 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Cons-list of `a`.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Map step: state is `(processed_list_reversed, remaining_list)`.
+// Walks the input head-to-tail, prepending `f(head)` to the
+// processed list. When the input is empty, returns the processed
+// list (which is in reversed order). For a true `map` we'd
+// reverse it back; for this demo we expose a `map_reverse` that
+// returns reversed, and `main` knows the order it built the
+// inputs in.
+//
+// Clause order matters: the cons pattern is strictly more
+// specific than the unit pattern, so it comes first. (Match
+// dispatch uses a per-clause coercion; a `.(_: .)` slot is
+// non-consuming and would absorb both arms if first.)
+fn map_step[A][B](f: A -> B, processed: List(B), remaining: List(A)) ->
+  (List(B) & List(A)) | List(B)
+   {
+  match! remaining.>List.un_list {
+    (
+      , .(x: A, rest: List(A)) {
+          widen_sum!((push(f(x), processed), rest), (List(B) & List(A)) | List(B))
+        }
+      , .(_empty: .) { widen_sum!(processed, (List(B) & List(A)) | List(B)) }
+      )
+  }
+}
+
+fn map_reverse[A][B](f: A -> B, xs: List(A)) -> List(B) {
+  loop(
+    , List(B) & List(A)
+    , List(B)
+    , .(state: List(B) & List(A)) -> (List(B) & List(A)) | List(B) {
+        match! state {
+          .(processed: List(B), remaining: List(A)) { map_step(f, processed, remaining) }
+        }
+      }
+    , (nil(B, ()), xs)
+    )
+}
+
+// Join an `Int` list into a comma-separated string. Each step
+// appends "," + int_to_string(head) to the accumulator, except
+// the first element (which has no leading comma). Walks
+// head-to-tail; final state carries the joined string.
+//
+// The state is `(remaining_list, accumulator)`. Initially
+// accumulator is "". On the first cons cell we append just the
+// rendered head; on subsequent cons cells we append ","-then-
+// rendered. A `Bool` flag would normally drive the "first"
+// case, but we encode it as `accumulator == ""` indirectly via
+// the `match!` clause structure — instead, accept that the
+// first element gets prepended with "," and trim it on exit.
+fn join_step(processed: String, remaining: List(Int)) -> (String & List(Int)) | String {
+  match! remaining.>List.un_list {
+    (
+      , .(x: Int, rest: List(Int)) {
+          widen_sum!(
+            , (string_concat(processed, string_concat(",", int_to_string(x))), rest)
+            , (String & List(Int)) | String
+            )
+        }
+      , .(_empty: .) { widen_sum!(processed, (String & List(Int)) | String) }
+      )
+  }
+}
+
+fn join_csv(xs: List(Int)) -> String {
+  loop(
+    , String & List(Int)
+    , String
+    , .(state: String & List(Int)) -> (String & List(Int)) | String {
+        match! state {
+          .(processed: String, remaining: List(Int)) { join_step(processed, remaining) }
+        }
+      }
+    , ("", xs)
+    )
+}
+
+fn plus_ten(n: Int) -> Int { add(n, 10) }
+
+pub fn main() -> . {
+  // Inputs in source order: [1, 2, 3]. `push` cons-prepends, so
+  // building bottom-up gives the list in source order.
+  let xs = push(1, push(2, push(3, nil(Int, ()))));
+  // `map_reverse` returns the processed list reversed (head-
+  // first walk + prepend), so the result is `[13, 12, 11]` in
+  // cons-cell order. `join_csv` walks the cons-list, producing
+  // ",13,12,11" (leading comma is the artifact of the always-
+  // prepend rule). Print it as-is and confirm.
+  let mapped = map_reverse(plus_ten, xs);
+  print(join_csv(mapped));
+  print("\n")
+}

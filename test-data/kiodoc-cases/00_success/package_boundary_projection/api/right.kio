@@ -1,0 +1,10 @@
+module api/right;
+
+/// Right public function uses its private [`helper`].
+pub fn make() -> . { helper() }
+
+fn helper() -> . { () }
+
+pub newtype Box : . { constructor box; projector unbox }
+
+pub fn build_box() -> . { () }

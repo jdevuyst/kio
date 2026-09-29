@@ -1,0 +1,18 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn choose(flag: Bool) -> (String & . & .) -> String {
+  if! flag {
+    .(result: String, _effect: ., _third: .) { print("if-selected\n"); result }
+  } else {
+    .(result: String, _effect: ., _third: .) { print("if-unselected\n"); result }
+  }
+}
+
+pub fn main() -> . {
+  let selected = choose(.t);
+  print(selected(("if-result\n", print("if-arg\n"), print("if-third\n"))))
+}

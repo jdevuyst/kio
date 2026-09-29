@@ -1,0 +1,51 @@
+module robot/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import robot/model as model;
+import testapi(Bool, String);
+import testapi/io as io;
+import testapi/text as text;
+
+pub labels Input = { world: model.World } | { end: . } | { invalid: String };
+
+fn fields(hazard_line: String, door_line: String) -> Input {
+  let valid_hazard =
+    if! text.string_eq(hazard_line, "hazard") {
+      .t
+    } else {
+      text.string_eq(hazard_line, "clear")
+    };
+  let valid_door =
+    if! text.string_eq(door_line, "blocked") {
+      .t
+    } else {
+      text.string_eq(door_line, "open")
+    };
+  if! valid_hazard {
+    if! valid_door {
+      {world = {
+        , model.hazard = text.string_eq(hazard_line, "hazard")
+        , model.blocked = text.string_eq(door_line, "blocked")
+        }}
+        .>widen_sum!
+    } else {
+      {invalid = "door field must be open or blocked"}.>widen_sum!
+    }
+  } else {
+    {invalid = "hazard field must be clear or hazard"}.>widen_sum!
+  }
+}
+
+pub fn read() -> Input {
+  match! io.read_ascii_line() {
+    .(hazard_line: String) {
+      match! io.read_ascii_line() {
+        .(door_line: String) { fields(hazard_line, door_line) };
+        .() { {invalid = "missing door field"}.>widen_sum! }
+      }
+    };
+    .() { {end=}.>widen_sum! }
+  }
+}

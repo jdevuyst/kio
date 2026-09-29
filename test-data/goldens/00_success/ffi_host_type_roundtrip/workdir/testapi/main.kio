@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(Count, I32, String, Token);
+import testapi/arith(add_count);
+import testapi/fmt(count_to_string, i32_to_string);
+import testapi/io(print);
+import testapi/opaque(make_token, token_value);
+
+fn keep(t: Token) -> Token { t }
+
+pub fn main() -> . {
+  let token = keep(make_token(37));
+  print(i32_to_string(token_value(token)));
+  print("|"(String));
+  print(count_to_string(add_count(40(Count), 2(Count))));
+  print("\n"(String))
+}

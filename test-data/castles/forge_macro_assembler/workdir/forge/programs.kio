@@ -1,0 +1,131 @@
+/// The nine checked-in FORGE-4 programs.
+///
+/// Six assemble and run; three are rejected, one per way assembly can
+/// fail. Between them they reach every opcode, both jump forms, both stack
+/// instructions, every macro in `forge/macros`, and every reason the
+/// machine can stop.
+///
+/// Each program is a chain of splices onto an item accumulator, so it
+/// reads down the page the way an assembly listing does: `ins` lays down
+/// an instruction, `at` marks a label, and `mac` calls a macro. The
+/// accumulator holds the items reversed - `forge/list` conses at the head
+/// - and `done` puts them back in order.
+module forge/programs;
+
+import forge/isa as i;
+import forge/isa(Src);
+import forge/list as l;
+import forge/program as p;
+import forge/program(Item, Items);
+import testapi(I32, String);
+
+fn start() -> Items { l.nil(Item, ()) }
+
+fn ins(b: Items, x: Src) -> Items { l.cons(p.instr(x), b) }
+
+fn at(b: Items, name: String) -> Items { l.cons(p.mark(name), b) }
+
+fn mac(b: Items, name: String) -> Items { l.cons(p.call(name), b) }
+
+fn done(b: Items) -> Items { l.reverse(b) }
+
+/// Euclid on 252 and 105. Emits both inputs, then every remainder, then
+/// the gcd, then the quotient of the first input by it - so `MOD` runs
+/// three times with a live divisor and `DIV` once. Both jump forms fire:
+/// `jmpz` falls through on the way round the loop and takes the branch on
+/// the way out.
+pub fn gcd() -> Items {
+  start()
+    .>ins(i.loadi(i.ra(), 252))
+    .>ins(i.loadi(i.rb(), 105))
+    .>ins(i.emit(i.ra()))
+    .>ins(i.emit(i.rb()))
+    .>at("loop")
+    .>ins(i.jmpz(i.rb(), "done"))
+    .>ins(i.mov(i.rc(), i.ra()))
+    .>ins(i.mod(i.rc(), i.rb()))
+    .>ins(i.mov(i.ra(), i.rb()))
+    .>ins(i.mov(i.rb(), i.rc()))
+    .>ins(i.emit(i.rb()))
+    .>ins(i.jmp("loop"))
+    .>at("done")
+    .>ins(i.emit(i.ra()))
+    .>ins(i.loadi(i.rd(), 252))
+    .>ins(i.div(i.rd(), i.ra()))
+    .>ins(i.emit(i.rd()))
+    .>ins(i.halt())
+    .>done
+}
+
+/// Squares of 5 down to 1. The first loop stacks each square and sums them
+/// in `c`; the second drains the stack, emitting the squares in the order
+/// they come back off, and the total lands last. All three macros expand
+/// here, and `drain_tail` jumps back to the `drain` label this program
+/// defines.
+pub fn series() -> Items {
+  start()
+    .>ins(i.loadi(i.ra(), 5))
+    .>ins(i.loadi(i.rc(), 0))
+    .>ins(i.loadi(i.rd(), 1))
+    .>at("top")
+    .>ins(i.jmpz(i.ra(), "done"))
+    .>mac("square_b")
+    .>ins(i.push(i.rb()))
+    .>ins(i.add(i.rc(), i.rb()))
+    .>mac("dec_a")
+    .>ins(i.jmp("top"))
+    .>at("done")
+    .>ins(i.loadi(i.ra(), 5))
+    .>at("drain")
+    .>ins(i.jmpz(i.ra(), "tally"))
+    .>ins(i.pop(i.rb()))
+    .>mac("drain_tail")
+    .>at("tally")
+    .>ins(i.emit(i.rc()))
+    .>ins(i.halt())
+    .>done
+}
+
+/// A jump to itself. It cannot finish, and the fuel budget is what stops
+/// it - the machine can never hang the host.
+pub fn spin() -> Items { start().>ins(i.loadi(i.ra(), 1)).>at("spin").>ins(i.jmp("spin")).>done }
+
+/// No `HALT`: the program counter simply walks past the last instruction.
+/// It also calls `dec_a`, the macro `series` uses, which is what makes that
+/// macro a shared template rather than a one-off.
+pub fn runoff() -> Items {
+  start().>ins(i.loadi(i.ra(), 3)).>ins(i.loadi(i.rd(), 1)).>mac("dec_a").>ins(i.emit(i.ra())).>done
+}
+
+/// A zero divisor. `DIV` and `MOD` share one guard, so this is the fault
+/// both of them raise.
+pub fn div_zero() -> Items {
+  start()
+    .>ins(i.loadi(i.ra(), 10))
+    .>ins(i.loadi(i.rb(), 0))
+    .>ins(i.div(i.ra(), i.rb()))
+    .>ins(i.halt())
+    .>done
+}
+
+/// One push, two pops. The second finds the stack empty.
+pub fn pop_empty() -> Items {
+  start()
+    .>ins(i.loadi(i.ra(), 5))
+    .>ins(i.push(i.ra()))
+    .>ins(i.pop(i.rb()))
+    .>ins(i.pop(i.rc()))
+    .>ins(i.halt())
+    .>done
+}
+
+/// Calls a macro the table does not define.
+pub fn no_macro() -> Items { start().>ins(i.loadi(i.ra(), 1)).>mac("ghost").>ins(i.halt()).>done }
+
+/// Jumps to a label nothing marks.
+pub fn no_label() -> Items { start().>ins(i.jmp("nowhere")).>ins(i.halt()).>done }
+
+/// Marks one label twice, so no jump to it could have a single meaning.
+pub fn twice() -> Items {
+  start().>at("start").>ins(i.loadi(i.ra(), 1)).>at("start").>ins(i.halt()).>done
+}

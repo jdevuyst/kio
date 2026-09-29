@@ -1,0 +1,156 @@
+/// Weaving verses out of the chain.
+///
+/// A draw is a weighted choice, not a uniform one: the generator advances one
+/// step, rolls the new state modulo the successor list's total weight, and
+/// walks the cumulative counts until the roll falls inside a band. A successor
+/// observed twice therefore owns twice as wide a band as one observed once,
+/// and the counts the model spent the corpus collecting actually steer the
+/// text.
+///
+/// Every draw is recorded as a `Step` — the state it consumed, the word it
+/// came from, the successor list it rolled against, the roll, and the word it
+/// landed on. The generation loop threads that trace, and `ballad/report`
+/// replays it so the weighted choices can be audited from the output.
+module ballad/weave;
+
+import ballad/list(List, cons, nil, of1, reverse);
+import ballad/model(Model, Tally, is_end, starts_of, succs_of, total_weight, {count}, {word});
+import ballad/prng(next, roll, seed_state);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+/// Why a line stopped.
+pub labels Stop = { by_end_word: . } | { by_word_cap: . } | { by_no_successor: . };
+
+fn stopped_at_end() -> Stop { {by_end_word=}.>widen_sum!(Stop) }
+
+fn stopped_at_cap() -> Stop { {by_word_cap=}.>widen_sum!(Stop) }
+
+fn stopped_dry() -> Stop { {by_no_successor=}.>widen_sum!(Stop) }
+
+/// One recorded draw.
+pub labels Step = {
+  , step_state: I32
+  , step_from: String
+  , step_succs: List(Tally)
+  , step_roll: I32
+  , step_to: String
+  };
+
+pub labels Line = { line_words: List(String), line_stop: Stop, line_draws: List(Step) };
+
+labels Drawn = { drawn_line: Line, drawn_state: I32 };
+
+/// The word a start draw is charged to in the trace. It is not a corpus word:
+/// the first draw of a line rolls against the model's start weights, so the
+/// trace names the roll's source rather than inventing a predecessor.
+fn start_label() -> String { "<start>" }
+
+/// Walk the cumulative counts. `acc` is the exclusive upper bound of every
+/// band already passed, so the first entry whose band contains `r` wins. The
+/// caller guarantees `r < total`, which is why the last entry always matches;
+/// returning it on exhaustion keeps the walk total without inventing a word.
+rec(loop) fn land(head: Tally, rest: List(Tally), r: I32, acc: I32) -> String {
+  let upto = add_i32(acc, head.?{count});
+  if! lt_i32(r, upto) {
+    head.?{word}
+  } else match! rest.>List.un_list {
+    (.(t: Tally, more: List(Tally)) { rec land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
+  }
+}
+
+/// One weighted draw against a non-empty word list. The list arrives split
+/// into head and tail because that is how the caller learned it was non-empty
+/// — an empty list has no band to land in, and this way the type carries that.
+fn draw(state: I32, from: String, head: Tally, rest: List(Tally)) -> Step {
+  let succs = cons(head, rest);
+  let stepped = next(state);
+  let r = roll(stepped, total_weight(succs));
+  {
+    , step_state = stepped
+    , step_from = from
+    , step_succs = succs
+    , step_roll = r
+    , step_to = land(head, rest, r, 0)
+    }
+}
+
+fn finish(state: I32, stop: Stop, words: List(String), draws: List(Step)) -> Drawn {
+  {
+    , drawn_line = {line_words = reverse(words), line_stop = stop, line_draws = reverse(draws)}
+    , drawn_state = state
+    }
+}
+
+/// Extend a line one word at a time. An end word closes the line even when the
+/// cap would also have closed it, because ending on a word the corpus ends on
+/// is the model's own judgement and the cap is only a leash.
+///
+/// The `by_no_successor` stop keeps the walk total. A model learned this way
+/// cannot reach it: a word that is not phrase-final is followed by something
+/// in the corpus, so it has a chain row, and a phrase-final word is an end
+/// word that the check above already caught.
+rec(loop) fn extend(
+  , m: Model
+  , cap: I32
+  , state: I32
+  , cur: String
+  , n: I32
+  , words: List(String)
+  , draws: List(Step)
+  ) -> Drawn {
+  if! is_end(m, cur) {
+    finish(state, stopped_at_end(), words, draws)
+  } else if! leq_i32(cap, n) {
+    finish(state, stopped_at_cap(), words, draws)
+  } else match! succs_of(m, cur).>List.un_list {
+    (
+      , .(head: Tally, rest: List(Tally)) {
+          let d = draw(state, cur, head, rest);
+          rec extend(
+            , m
+            , cap
+            , d.?{step_state}
+            , d.?{step_to}
+            , add_i32(n, 1)
+            , cons(d.?{step_to}, words)
+            , cons(d, draws)
+            )
+        }
+      , .(_empty: .) { finish(state, stopped_dry(), words, draws) }
+      )
+  }
+}
+
+/// Open a line with a weighted draw from the corpus's start words, then let it
+/// run. A corpus with no phrases has no start words and weaves an empty line.
+fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
+  match! starts_of(m).>List.un_list {
+    (
+      , .(head: Tally, rest: List(Tally)) {
+          let d = draw(state, start_label(), head, rest);
+          extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
+        }
+      , .(_empty: .) { finish(state, stopped_dry(), nil(String, ()), nil(Step, ())) }
+      )
+  }
+}
+
+rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: List(Line)) -> List(Line) {
+  if! leq_i32(remaining, 0) {
+    reverse(acc)
+  } else {
+    let d = open_line(m, cap, state);
+    rec weave_onto(m, cap, sub_i32(remaining, 1), d.?{drawn_state}, cons(d.?{drawn_line}, acc))
+  }
+}
+
+/// Weave `count` lines, threading one generator state through all of them, so
+/// the whole run is a single deterministic function of the fixture's seed.
+pub fn weave(m: Model, cap: I32, count: I32, seed: I32) -> List(Line) {
+  weave_onto(m, cap, count, seed_state(seed), nil(Line, ()))
+}

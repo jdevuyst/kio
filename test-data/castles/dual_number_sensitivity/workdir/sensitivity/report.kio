@@ -1,0 +1,37 @@
+module sensitivity/report;
+
+import sensitivity/jet as jet;
+import testapi(F64, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+fn number(value: F64) -> . { io.print(fmt.f64_to_string(value)) }
+
+fn pair(x: F64, y: F64) -> . { io.print("("); number(x); io.print(", "); number(y); io.print(")") }
+
+pub fn model(name: String, run: (jet.Jet & jet.Jet) -> jet.Jet, x: F64, y: F64, vx: F64, vy: F64) -> . {
+  let result = jet.evaluate(run, x, y);
+  let .(slope, curvature) = jet.directional(result, vx, vy);
+  io.print(name);
+  io.print(" at ");
+  pair(x, y);
+  io.print("\n  value=");
+  number(result.?{jet.value});
+  io.print(" gradient=");
+  pair(result.?{jet.dx}, result.?{jet.dy});
+  io.print("\n  hessian=(");
+  number(result.?{jet.dxx});
+  io.print(", ");
+  number(result.?{jet.dxy});
+  io.print("; ");
+  number(result.?{jet.dxy});
+  io.print(", ");
+  number(result.?{jet.dyy});
+  io.print(")\n  direction=");
+  pair(vx, vy);
+  io.print(" slope=");
+  number(slope);
+  io.print(" curvature=");
+  number(curvature);
+  io.print("\n")
+}

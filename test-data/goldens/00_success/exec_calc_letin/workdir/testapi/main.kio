@@ -1,0 +1,299 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(flatten_sum, narrow_sum, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat, string_eq);
+
+// Cons-list of `a`. Used here in three places: as the node
+// stack of pending worklist frames, as the value stack of
+// intermediate `I32` results, and as the carrier of the
+// environment's assoc-list (`(String & I32)` pairs).
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Environment: an assoc list of `(name, value)` pairs with
+// first-match-wins lookup (the standard cons-as-shadowing
+// convention). The separate newtype keeps the carrier type
+// readable in frame signatures and lookup state below.
+newtype Env : List(String & I32) { pub constructor mk_env; pub projector un_env }
+
+fn empty_env() -> Env { Env.mk_env(nil(String & I32, ())) }
+
+fn extend(name: String, value: I32, env: Env) -> Env {
+  Env.mk_env(push((name, value), env.>Env.un_env))
+}
+
+// Compare the head pair `(k, v)` against the target `name`:
+// return `v` on a hit, or continue the loop with the tail.
+// Single one-level `if`/`else` plus the head-pair projection.
+fn lookup_head(name: String, k: String, v: I32, rest: List(String & I32)) -> (String & Env) | I32 {
+  narrow_sum!(if! string_eq(k, name) {
+    widen_sum!(v, I32 | (String & Env))
+  } else {
+    widen_sum!((name, Env.mk_env(rest)), I32 | (String & Env))
+  })
+}
+
+// Dispatch on the env's list cell: a hit-or-recurse on the
+// head, or the empty-env sentinel. Single one-level `match!`
+// on the list cell. The cell is the result of the
+// `List(String & I32)` projector — its non-empty arm is the
+// pair `((String & I32) & List(String & I32))`, head and tail.
+fn lookup_dispatch(name: String, cell: . | ((String & I32) & List(String & I32))) ->
+  (String & Env) | I32
+   {
+  match! cell {
+    (
+      , .(head: String & I32, rest: List(String & I32)) {
+          match! head {
+            .(k: String, v: I32) { lookup_head(name, k, v, rest) }
+          }
+        }
+      , .(_empty: .) { widen_sum!(0, (String & Env) | I32) }
+      )
+  }
+}
+
+// Iterative variable lookup. State is `(name, remaining_env)`;
+// each step pops the head pair, returns its value on a name
+// match, or continues with the tail otherwise. Exits with `0`
+// when no binding is found — well-formed test inputs always
+// hit a binding before the env empties, so the sentinel is
+// only reachable on malformed source.
+fn lookup_step(state: String & Env) -> (String & Env) | I32 {
+  match! state {
+    .(name: String, env: Env) { lookup_dispatch(name, env.>Env.un_env.>List.un_list) }
+  }
+}
+
+fn lookup(name: String, env: Env) -> I32 {
+  loop(.(state: String & Env) { lookup_step(state) }, (name, env))
+}
+
+// Tiny calculator AST with let-bindings. Four arms:
+//
+// - Literal: `I32`.
+// - Binary: `(op_code, left, right)` where `op_code` is `0` for
+//   add, `1` for mul. The op-code lives inline rather than as a
+//   separate arm position because two sum arms with identical
+//   payload shapes cannot be dispatched on by `match!` — `match!`
+//   routes each scrutinee DNF branch to the first clause whose
+//   parameter type fits, so a clause with the same shape as an
+//   earlier clause is unreachable. Same encoding as
+//   `exec_expr_eval`'s `Expr`.
+// - Let: `(name, value_expr, body_expr)`.
+// - Var: `String` — name to look up in the environment.
+rec newtype Expr : I32 | (I32 & Expr & Expr) | (String & Expr & Expr) | String {
+  pub constructor mk_expr;
+  pub projector un_expr
+  }
+
+fn lit(n: I32) -> Expr { Expr.mk_expr(widen_sum!(n)) }
+
+fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum!((0, l, r))) }
+
+fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum!((1, l, r))) }
+
+fn let_(name: String, value: Expr, body: Expr) -> Expr {
+  Expr.mk_expr(widen_sum!((name, value, body)))
+}
+
+fn var(name: String) -> Expr { Expr.mk_expr(widen_sum!(name)) }
+
+// Worklist frame. Three arms:
+//
+// - `(Expr & Env)` — walk this expression in this env.
+// - `I32` — pending binary-op combiner (op code).
+// - `(String & Expr & Env)` — pending let-extend: when fired,
+//   pops the value-stack top, builds `(name, V) :: env`, and
+//   pushes a frame to walk `body_expr` in the extended env.
+//
+// The three shapes are pairwise distinct (2-product, atomic
+// `I32`, 3-product), so `match!` dispatches unambiguously — but
+// `match!`'s per-leaf product-projection rule means the 3-product
+// clause must precede the 2-product clause (the wider source
+// could narrow onto the narrower slot via `narrow_prod!`).
+newtype Frame : (Expr & Env) | I32 | (String & Expr & Env) {
+  pub constructor mk_frame;
+  pub projector un_frame
+  }
+
+// `State` wraps `(node-stack, value-stack)` in a single newtype.
+// Naming it once lets the `step` function's nested matches
+// keep their clause-disjunction type short — `State | I32`
+// rather than `(List(Frame) & List(I32)) | (List(Frame) &
+// List(I32)) | ...`. Otherwise the kio-prime pretty-printer's
+// emitted union exceeds its line-wrap threshold and splits
+// across lines with a leading `|`, which the regular Kio
+// parser rejects in argument position.
+newtype State : List(Frame) & List(I32) { pub constructor mk_state; pub projector un_state }
+
+fn state(nodes: List(Frame), values: List(I32)) -> State { State.mk_state((nodes, values)) }
+
+fn frame_expr(e: Expr, env: Env) -> Frame { Frame.mk_frame(widen_sum!((e, env))) }
+
+fn frame_op(op: I32) -> Frame { Frame.mk_frame(widen_sum!(op)) }
+
+fn frame_let(name: String, body: Expr, env: Env) -> Frame {
+  Frame.mk_frame(widen_sum!((name, body, env)))
+}
+
+// Combiner sub-helper: `add` for op-code 0, `mul` for op-code 1.
+fn apply_op(op: I32, left: I32, right: I32) -> I32 {
+  if! leq_i32(op, 0) {
+    add_i32(left, right)
+  } else {
+    mul_i32(left, right)
+  }
+}
+
+// Receives the value-stack top (`right`) and the remaining
+// stack, pops one more value (`left`), and pushes
+// `apply_op(op, left, right)`. Split out so `combine` itself
+// carries a single one-level `match!`.
+fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
+  match! rest1.>List.un_list {
+    (
+      , .(left: I32, rest2: List(I32)) { push(apply_op(op, left, right), rest2) }
+      , .(_empty: .) { push(0, nil(I32, ())) }
+      )
+  }
+}
+
+// Apply the pending op to the top two value-stack entries.
+// The binary-arm walker pushes `left` then `right` then the op
+// marker, so when the marker fires the value stack carries
+// `right`'s value on top and `left`'s next-to-top. Pops them
+// in that order and computes `left OP right`. Same shape as
+// `exec_expr_eval`'s `combine`.
+fn combine(op: I32, values: List(I32)) -> List(I32) {
+  match! values.>List.un_list {
+    (
+      , .(right: I32, rest1: List(I32)) { combine_with_right(op, right, rest1) }
+      , .(_empty: .) { push(0, nil(I32, ())) }
+      )
+  }
+}
+
+// Expr-arm handler. Returns the bare `State` newtype rather
+// than the loop's `state | exit` sum; the caller widens. The
+// clause ordering puts the two 3-tuple arms first because
+// match's per-leaf product-projection rule admits product-to-
+// component routing — a single-`I32` or single-`String` clause
+// would also match the wider 3-tuple branches by projecting one
+// component, and the 3-tuple clauses would be rejected as
+// unreachable if placed after them.
+fn handle_expr(e: Expr, env: Env, rest_nodes: List(Frame), values: List(I32)) -> State {
+  match! e.>Expr.un_expr {
+    (
+      , .(op: I32, l: Expr, r: Expr) {
+          let with_op = push(frame_op(op), rest_nodes);
+          let with_right = push(frame_expr(r, env), with_op);
+          let with_left = push(frame_expr(l, env), with_right);
+          state(with_left, values)
+        }
+      , .(name: String, val: Expr, body: Expr) {
+          let with_marker = push(frame_let(name, body, env), rest_nodes);
+          let with_value = push(frame_expr(val, env), with_marker);
+          state(with_value, values)
+        }
+      , .(n: I32) { state(rest_nodes, push(n, values)) }
+      , .(name: String) { state(rest_nodes, push(lookup(name, env), values)) }
+      )
+  }
+}
+
+// Let-marker handler. Pops the value-stack top (the result of
+// the let-binding's value-expr), extends the env, and pushes
+// the body-walking frame. Returns the bare `State` shape; the
+// caller widens — same shape-preservation reason as
+// `handle_expr`.
+fn handle_let_marker(name: String, body: Expr, env: Env, rest_nodes: List(Frame), values: List(I32)) -> State {
+  match! values.>List.un_list {
+    (
+      , .(v: I32, rest_values: List(I32)) {
+          let new_env = extend(name, v, env);
+          let with_body = push(frame_expr(body, new_env), rest_nodes);
+          state(with_body, rest_values)
+        }
+      , .(_empty: .) { state(rest_nodes, values) }
+      )
+  }
+}
+
+// Frame-arm handler: dispatch on which kind of frame is on
+// top. Returns the new `State` (the let-marker / Expr handlers
+// already return `State`; the op-marker clause wraps the
+// combine result). Single one-level `match!` on the `Frame`
+// projector.
+fn handle_frame(top: Frame, rest_nodes: List(Frame), values: List(I32)) -> State {
+  match! top.>Frame.un_frame {
+    (
+      , .(name: String, body: Expr, env: Env) {
+          handle_let_marker(name, body, env, rest_nodes, values)
+        }
+      , .(e: Expr, env: Env) { handle_expr(e, env, rest_nodes, values) }
+      , .(op: I32) { state(rest_nodes, combine(op, values)) }
+      )
+  }
+}
+
+// Node-stack-empty exit. Returns the top of the value stack as
+// the evaluator's result. For a well-formed AST the value
+// stack has exactly one element at this point; the empty arm
+// returns a sentinel.
+fn exit_top(values: List(I32)) -> I32 {
+  match! values.>List.un_list {
+    (.(top: I32, _rest: List(I32)) { top }, .(_empty: .) { 0 })
+  }
+}
+
+// Dispatch on whether the node stack is non-empty (continue
+// with the new state) or empty (exit with the value-stack
+// top). Single one-level `match!` on the node-stack list cell.
+fn step_inner(nodes: List(Frame), values: List(I32)) -> State | I32 {
+  match! nodes.>List.un_list {
+    (
+      , .(top: Frame, rest_nodes: List(Frame)) {
+          widen_sum!(handle_frame(top, rest_nodes, values), State | I32)
+        }
+      , .(_empty: .) { widen_sum!(exit_top(values), State | I32) }
+      )
+  }
+}
+
+// One step of the worklist evaluator. State carries the
+// `(node-stack, value-stack)` pair; on exit the top of the
+// value stack is the evaluator's result. The exit arm pops the
+// top of the value stack (which the final `combine` step
+// produced); the loop continues while the node stack is non-
+// empty.
+fn step(st: State) -> State | I32 {
+  match! st.>State.un_state {
+    .(nodes: List(Frame), values: List(I32)) { step_inner(nodes, values) }
+  }
+}
+
+fn eval(e: Expr) -> I32 {
+  loop(
+    , .(st: State) { step(st) }
+    , state(push(frame_expr(e, empty_env()), nil(Frame, ())), nil(I32, ()))
+    )
+}
+
+// Test AST: `Let("x", Lit(2), Let("y", Lit(3), Add(Var("x"),
+// Var("y"))))` — binds `x = 2` and `y = 3`, then evaluates
+// `x + y`, producing `5`.
+pub fn main() -> . {
+  let ast = let_("x", lit(2), let_("y", lit(3), add(var("x"), var("y"))));
+  print(string_concat(int_to_string(eval(ast)), "\n"))
+}

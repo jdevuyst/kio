@@ -1,0 +1,5 @@
+module provider;
+
+import __comptime__;
+
+pub pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }

@@ -1,0 +1,7 @@
+module testapi/main;
+
+import testapi as t;
+
+pub fn echo_token(value: t.Token) -> t.Token { value }
+
+pub fn echo_box[T](value: t.Box(T)) -> t.Box(T) { value }

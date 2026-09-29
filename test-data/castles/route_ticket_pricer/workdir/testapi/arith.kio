@@ -1,0 +1,9 @@
+module testapi/arith;
+
+import testapi(I128, I64, U64);
+
+host fn add_i64(p0: I64, p1: I64) -> I64;
+
+host fn mul_u64(p0: U64, p1: U64) -> U64;
+
+host fn add_i128(p0: I128, p1: I128) -> I128;

@@ -1,0 +1,120 @@
+/// The number tower: written fractions, the canonical `Rational` they reduce
+/// to, and the one fault that reduction can report.
+module rational/core;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+/// A fraction exactly as somebody wrote it down — the pair an exercise author
+/// spelled or a student submitted. Nothing about it is canonical: the
+/// denominator may be negative or zero, and the pair need not be in lowest
+/// terms.
+pub labels Fraction = { numerator: I32, denominator: I32 };
+
+/// A fraction in canonical form: lowest terms, denominator strictly positive.
+/// The constructor is private, so `reduce` below is the only door into the type
+/// and no caller anywhere can mint a `Rational` that breaks the invariant.
+pub newtype Rational : Fraction { constructor of_fraction; pub projector as_fraction }
+
+/// The single way this arithmetic is partial. It is reached from a fraction
+/// written with a zero denominator and from a division whose divisor reduced to
+/// zero — one fault, not two, because a fraction bar *is* division.
+pub labels { division_by_zero: . };
+
+/// Either a canonical rational or the reason there is no such number.
+pub type Eval = Rational | Division_by_zero;
+
+pub fn fraction(numerator: I32, denominator: I32) -> Fraction { {numerator, denominator} }
+
+pub fn written_numerator(value: Fraction) -> I32 { value.?{numerator} }
+
+pub fn written_denominator(value: Fraction) -> I32 { value.?{denominator} }
+
+pub fn numerator_of(value: Rational) -> I32 { value.>Rational.as_fraction.>written_numerator }
+
+pub fn denominator_of(value: Rational) -> I32 { value.>Rational.as_fraction.>written_denominator }
+
+fn negate(value: I32) -> I32 { arith.sub(0, value) }
+
+fn magnitude(value: I32) -> I32 {
+  if! arith.lt_i32(value, 0) {
+    negate(value)
+  } else {
+    value
+  }
+}
+
+/// Euclid's algorithm. Both arguments stay non-negative for the whole descent,
+/// so whatever the host makes `mod` do with a negative operand cannot reach it.
+rec(loop) fn gcd_of_magnitudes(left: I32, right: I32) -> I32 {
+  if! arith.eq_i32(right, 0) {
+    left
+  } else {
+    rec gcd_of_magnitudes(right, arith.mod(left, right))
+  }
+}
+
+/// The greatest common divisor, taken over magnitudes so the answer is
+/// non-negative whatever signs came in. `gcd(0, d)` is `d`, and that is what
+/// lets `0/d` reduce to `0/1` in `reduce` below with no special case.
+fn gcd(left: I32, right: I32) -> I32 { gcd_of_magnitudes(magnitude(left), magnitude(right)) }
+
+/// Canonicalize a written fraction: refuse a zero denominator, move the sign
+/// onto the numerator, then divide both parts by their greatest common divisor.
+/// That divisor goes into both parts exactly, so the host's truncating `div`
+/// throws nothing away here even when the numerator is negative.
+pub fn reduce(value: Fraction) -> Eval {
+  let written_num = written_numerator(value);
+  let written_den = written_denominator(value);
+  if! arith.eq_i32(written_den, 0) {
+    widen_sum!({division_by_zero=})
+  } else {
+    let .(upright: Bool) = arith.lt_i32(0, written_den);
+    let num = if! upright {
+      written_num
+    } else {
+      negate(written_num)
+    };
+    let den = if! upright {
+      written_den
+    } else {
+      negate(written_den)
+    };
+    let divisor = gcd(num, den);
+    let reduced = fraction(arith.div(num, divisor), arith.div(den, divisor));
+    widen_sum!(Rational.of_fraction(reduced), Eval)
+  }
+}
+
+/// Canonical form makes equality component-wise: two rationals denote the same
+/// number exactly when their reduced pairs agree.
+pub fn equal(left: Rational, right: Rational) -> Bool {
+  if! arith.eq_i32(numerator_of(left), numerator_of(right)) {
+    arith.eq_i32(denominator_of(left), denominator_of(right))
+  } else {
+    .f
+  }
+}
+
+/// Cross-multiplication is sound here precisely because the invariant keeps
+/// both denominators positive: multiplying the comparison through by them
+/// cannot flip its direction.
+pub fn less(left: Rational, right: Rational) -> Bool {
+  arith.lt_i32(
+    , arith.mul(numerator_of(left), denominator_of(right))
+    , arith.mul(numerator_of(right), denominator_of(left))
+    )
+}
+
+/// Whether a fraction was already written in the form it reduces to — the test
+/// that separates an exact answer from an equivalent but unreduced one.
+pub fn is_canonical(written: Fraction, reduced: Rational) -> Bool {
+  if! arith.eq_i32(written_numerator(written), numerator_of(reduced)) {
+    arith.eq_i32(written_denominator(written), denominator_of(reduced))
+  } else {
+    .f
+  }
+}

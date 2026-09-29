@@ -1,0 +1,61 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/labels as ql;
+import testapi/labels(Tag);
+import testapi/text(string_concat);
+
+labels { foo: I32, bar: String, ready: . };
+
+fn colon(label: String, value: String) -> String { string_concat(label, string_concat("=", value)) }
+
+fn show(row: Bar & Foo) -> String {
+  string_concat(row.?{bar}, string_concat(":", int_to_string(row.?{foo})))
+}
+
+fn construct_reordered(foo: I32, bar: String) -> Bar & Foo { {foo, bar} }
+
+fn access_written_order(row: Foo & Bar) -> I32 & String { row.?{foo, bar} }
+
+fn update_reordered(row: Foo & Bar, foo: I32, bar: String) -> Bar & Foo { row.!{foo, bar} }
+
+fn observe_access(_pair: I32 & String) -> . { () }
+
+fn empty_construct() -> . { () }
+
+fn empty_access(row: Foo & Bar) -> . { row.?{} }
+
+fn empty_update(row: Foo & Bar) -> Bar & Foo { row.!{} }
+
+fn row_let(row: Foo & Bar & Ready) -> String {
+  let .({bar as payload, foo, ready}) = row;
+  string_concat(payload, string_concat(":", int_to_string(foo)))
+}
+
+fn qualified(tag: String) -> Tag { {ql.tag} }
+
+pub fn main() -> . {
+  let constructed = construct_reordered(7, "made");
+  print(colon("construct", show(constructed)));
+  print("\n");
+  let source = {foo = 7, bar = "made"};
+  let accessed = access_written_order(source);
+  observe_access(accessed);
+  print(colon("access", show({bar = source.?{bar}, foo = source.?{foo}})));
+  print("\n");
+  let updated = update_reordered(source, 9, "next");
+  print(colon("update", show(updated)));
+  print("\n");
+  empty_construct();
+  empty_access(source);
+  let emptied = empty_update(source);
+  print(colon("empty", show(emptied)));
+  print("\n");
+  let row = {foo = 7, bar = "made", ready=};
+  print(colon("rowlet", row_let(row)));
+  print("\n");
+  print(colon("qualified", qualified("tagged").?{ql.tag}));
+  print("\n")
+}

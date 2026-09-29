@@ -1,0 +1,5 @@
+module main;
+
+host type Value;
+
+fn value() -> . { Value }

@@ -1,0 +1,59 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Cons-list of `A`. The payload's `()` branch is the empty list,
+// the `(A & List(A))` branch is a cons cell.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Step function for `loop`. Takes the running state — a product
+// of the accumulator and the remaining list — and returns
+// either the next state to continue or the accumulator to exit.
+// Note the clause order: the cons-cell pattern must
+// come BEFORE the unit pattern. The `match!` dispatch uses a per-
+// clause coercion that permits drops; a `.(_: .)` slot is non-
+// consuming and so absorbs both arms if placed first. The product
+// pattern is strictly more specific, so it goes first and the
+// unit pattern is the fallback.
+fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
+  match! ys.>List.un_list {
+    (
+      , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
+      , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+      )
+  }
+}
+
+// Left-fold via the host `loop` step-state primitive. Walks
+// `xs` head-to-tail, accumulating into `seed`. For commutative
+// `f` (`add`), the result is order-insensitive; for non-
+// commutative `f`, callers see the head-first order.
+fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
+  loop(
+    , B & List(A)
+    , B
+    , .(state: B & List(A)) -> (B & List(A)) | B {
+        match! state {
+          .(acc: B, ys: List(A)) { step(f, acc, ys) }
+        }
+      }
+    , (seed, xs)
+    )
+}
+
+pub fn main() -> . {
+  let xs = push(1, push(2, push(3, push(4, nil(Int, ())))));
+  let total = fold(add, 0, xs);
+  print(int_to_string(total));
+  print("\n")
+}

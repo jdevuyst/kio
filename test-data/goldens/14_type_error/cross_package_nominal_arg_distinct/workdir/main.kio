@@ -1,0 +1,22 @@
+/// The consumer declares its own `Meters` newtype and also depends on
+/// `bdep`, which declares a same-named `Meters` over the same shared
+/// `Float`. Identity-exact nominal typing (`specs/language.md`
+/// § Nominal types) keeps the two `Meters` distinct: `Meters` here is
+/// `(main, Meters)`, the dependency's is `(bdep/meters, Meters)`. A
+/// cross-module fn's signature is qualified in its *declaring* module,
+/// so `dep_len`'s parameter wants the dependency's
+/// `(bdep/meters, Meters)`. Passing the consumer's `(main, Meters)` is
+/// therefore a type error in the **argument** slot — exit 14. Before
+/// the fix the typer requalified `dep_len`'s parameter in the *caller*,
+/// conflating the two and wrongly accepting this. (`Float` is imported
+/// from the dependency so it is one shared host type — only the `Meters`
+/// argument is at issue, not the `Float` return.)
+module main;
+
+import bdep/meters(Float, dep_len);
+
+pub newtype Meters : Float { pub constructor mk; pub projector un }
+
+pub fn local_meters(f: Float) -> Meters { Meters.mk(f) }
+
+pub fn mix(f: Float) -> Float { dep_len(local_meters(f)) }

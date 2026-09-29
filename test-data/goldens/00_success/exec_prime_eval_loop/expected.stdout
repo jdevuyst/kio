@@ -1,0 +1,4 @@
+sum_to(5) = 15
+sum_to(10) = 55
+double_then_sum(4) = 20
+grid_sum(4) = 65

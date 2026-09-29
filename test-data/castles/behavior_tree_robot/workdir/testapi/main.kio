@@ -1,0 +1,35 @@
+module testapi/main;
+
+import elab/match(match);
+import robot/engine as engine;
+import robot/input as input;
+import robot/memory as memory;
+import robot/model as model;
+import robot/report as report;
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) -> . {
+  match! input.read() {
+    .(next: input.World) {
+      let world = next.?{input.world};
+      let evaluation = engine.tick(tree, world, memory.begin(state));
+      let next_state = memory.finish(evaluation.?{engine.state});
+      let number = arith.add_i32(ticks, 1);
+      report.tick(number, world, evaluation.?{engine.result}, next_state);
+      rec simulate(tree, number, next_state)
+    };
+    .(_end: input.End) { report.summary(ticks, state) };
+    .(error: input.Invalid) {
+      io.print(text.string_concat("input error: ", text.string_concat(error.?{input.invalid}, "\n")))
+    }
+  }
+}
+
+pub fn main() -> . {
+  io.print("robot: reactive safety, remembered delivery sequence\n");
+  simulate(model.delivery_tree(), 0, memory.empty())
+}

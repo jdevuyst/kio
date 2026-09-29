@@ -1,0 +1,11 @@
+signature fixture v(1);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        pub fn run() -> .;
+      }
+    }
+  }
+}

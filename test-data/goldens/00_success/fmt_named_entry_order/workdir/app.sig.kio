@@ -1,0 +1,53 @@
+signature app v(2);
+
+v(1) {
+  ;
+  nonbreaking {
+    add {
+      module api {
+        ;
+        pub type Gone = .;
+        pub type Old = .;
+      }
+    }
+  }
+}
+
+v(2) {
+  ;
+  nonbreaking {
+    remove {
+      module api {
+        ; Gone // removed tail
+        ; // removed close
+      }
+    };
+    modify {
+      module api {
+        pub type Old = !;
+      }
+    };
+    add {
+      ; api.Fresh // reference tail
+      ; // add close
+    }
+  };
+  breaking {
+    add {
+      module api {
+        host type H;
+      }
+    }
+  };
+  with {
+    module api {
+      pub rec newtype Fresh : . | Fresh {
+        pub constructor make;
+        pub projector read // member tail
+        ; // member close
+      };
+    }
+  } // with tail
+  ; // version close
+} // version outer
+;

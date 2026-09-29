@@ -1,0 +1,7 @@
+module main;
+
+import elaborator(hkt_identity);
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+fn run(value: Box(.)) -> Box(.) { hkt_identity!(Box, ., value) }

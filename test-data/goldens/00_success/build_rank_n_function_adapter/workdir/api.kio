@@ -1,0 +1,9 @@
+module api;
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { constructor functor; projector map }
+
+fn box_functor() -> Functor(Box) {
+  Functor.functor(.[A][B](step, value) { Box.box(step(Box.unbox(value))) })
+}

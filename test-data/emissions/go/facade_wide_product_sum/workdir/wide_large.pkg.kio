@@ -1,0 +1,13 @@
+package wide_large;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

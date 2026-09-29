@@ -1,0 +1,134 @@
+/// The encoding scheme: how wide a group is, how wide a byte is, and
+/// which glyph stands for which five-bit value.
+///
+/// The alphabet is an association list rather than an indexed table, and
+/// both directions of the mapping read from that one list, so they share
+/// the same glyph-to-value correspondence.
+module base32/alphabet;
+
+import base32/bits as bits;
+import base32/list as list;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// A payload: one byte value per element, each in `[0, 256)`.
+pub type Bytes = list.List(I32);
+
+/// A transmission: one glyph per element, each a single-character string.
+pub type Glyphs = list.List(String);
+
+/// One alphabet entry — a five-bit value and the glyph that stands for it.
+type Entry = I32 & String;
+
+/// Bits carried by one glyph.
+pub fn group_bits() -> I32 { 5 }
+
+/// Bits carried by one payload byte.
+pub fn byte_bits() -> I32 { 8 }
+
+/// Glyphs in one output quantum. Forty bits — five bytes, eight glyphs —
+/// is the least common multiple of the two widths, so a payload whose
+/// length is a multiple of five encodes with no padding at all.
+pub fn quantum() -> I32 { 8 }
+
+/// The padding glyph. It carries no bits; it only rounds a transmission
+/// up to a whole quantum.
+pub fn pad() -> String { "=" }
+
+pub fn is_pad(glyph: String) -> Bool { string_eq(glyph, pad()) }
+
+fn push(rest: list.List(Entry), value: I32, glyph: String) -> list.List(Entry) {
+  list.cons((value, glyph), rest)
+}
+
+/// The alphabet, low value first. `A`-`Z` cover 0-25 and `2`-`7` cover
+/// 26-31. RFC 4648 omits `0` and `1`, avoiding ambiguity with `O` and
+/// `l`/`I`; only six digits are needed, so `8` and `9` are not part of the
+/// 32-entry alphabet. Each `push` prepends, so the chain is written in
+/// value order and reversed once at the end.
+fn table() -> list.List(Entry) {
+  list.reverse(list.nil(Entry, ())
+    .>push(0, "A")
+    .>push(1, "B")
+    .>push(2, "C")
+    .>push(3, "D")
+    .>push(4, "E")
+    .>push(5, "F")
+    .>push(6, "G")
+    .>push(7, "H")
+    .>push(8, "I")
+    .>push(9, "J")
+    .>push(10, "K")
+    .>push(11, "L")
+    .>push(12, "M")
+    .>push(13, "N")
+    .>push(14, "O")
+    .>push(15, "P")
+    .>push(16, "Q")
+    .>push(17, "R")
+    .>push(18, "S")
+    .>push(19, "T")
+    .>push(20, "U")
+    .>push(21, "V")
+    .>push(22, "W")
+    .>push(23, "X")
+    .>push(24, "Y")
+    .>push(25, "Z")
+    .>push(26, "2")
+    .>push(27, "3")
+    .>push(28, "4")
+    .>push(29, "5")
+    .>push(30, "6")
+    .>push(31, "7"))
+}
+
+rec(loop) {
+  /// The glyph standing for a five-bit value.
+  ///
+  /// Every value the encoder looks up has been masked into `[0, 32)` and
+  /// the table covers that range exactly, so the exhausted-table arm
+  /// cannot fire. It answers `#` — a glyph the alphabet does not contain
+  /// — so a damaged table would show up in the transmission instead of
+  /// quietly encoding as some other valid glyph.
+  pub fn glyph_of(value: I32) -> String { rec by_value(table(), value) };
+  fn by_value(entries: list.List(Entry), value: I32) -> String {
+    match! entries.>list.List.un_list {
+      (
+        , .(head: Entry, rest: list.List(Entry)) {
+            let .(carried: I32, glyph: String) = head;
+            if! bits.int_eq(carried, value) {
+              glyph
+            } else {
+              rec by_value(rest, value)
+            }
+          }
+        , .(_empty: .) { "#" }
+        )
+    }
+  }
+}
+
+rec(loop) {
+  /// The five-bit value a glyph stands for, or `()` when the glyph is not
+  /// in the alphabet at all — the corruption the decoder reports.
+  pub fn value_of(glyph: String) -> I32 | . { rec by_glyph(table(), glyph) };
+  fn by_glyph(entries: list.List(Entry), glyph: String) -> I32 | . {
+    match! entries.>list.List.un_list {
+      (
+        , .(head: Entry, rest: list.List(Entry)) {
+            let .(carried: I32, spelling: String) = head;
+            if! string_eq(spelling, glyph) {
+              widen_sum!(carried)
+            } else {
+              rec by_glyph(rest, glyph)
+            }
+          }
+        , .(_empty: .) { widen_sum!(()) }
+        )
+    }
+  }
+}

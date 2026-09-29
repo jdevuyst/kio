@@ -1,0 +1,5 @@
+module hostapi;
+
+host type F64 role(f64);
+
+host fn add_f64(p0: F64, p1: F64) -> F64;

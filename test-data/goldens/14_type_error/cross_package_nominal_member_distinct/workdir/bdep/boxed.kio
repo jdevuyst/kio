@@ -1,0 +1,8 @@
+/// A `Box` newtype the dependency owns, over its own `String`.
+module bdep/boxed;
+
+host type String role(str);
+
+/// The dependency's `Box`, whose constructor/projector PAYLOAD is the
+/// dependency's own `String`.
+pub newtype Box : String { pub constructor mk; pub projector un }

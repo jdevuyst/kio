@@ -1,0 +1,77 @@
+module rs/polynomial;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as c;
+import list/list as l;
+import rs/field as f;
+import testapi(Bool, I32);
+import testapi/arith as a;
+import testapi/iter(loop);
+
+pub type Polynomial = c.List(I32);
+
+fn coefficient(poly: Polynomial, index: I32) -> I32 {
+  match! l.at(index, poly) {
+    .(value: I32) { value };
+    .() { 0 }
+  }
+}
+
+pub fn indices(count: I32) -> c.List(I32) { l.iterate(count, .(n) { a.add_i32(n, 1) }, 0) }
+
+pub fn add(left: Polynomial, right: Polynomial) -> Polynomial {
+  let width =
+    if! a.lt_i32(l.length(left), l.length(right)) {
+      l.length(right)
+    } else {
+      l.length(left)
+    };
+  l.map(.(index) { f.add(coefficient(left, index), coefficient(right, index)) }, indices(width))
+}
+
+pub fn scale(poly: Polynomial, scalar: I32) -> Polynomial {
+  l.map(.(value) { f.multiply(value, scalar) }, poly)
+}
+
+pub fn multiply_linear(poly: Polynomial, root: I32) -> Polynomial {
+  add(scale(poly, f.subtract(0, root)), c.cons(0, poly))
+}
+
+pub fn horner(poly: Polynomial, coordinate: I32) -> I32 {
+  l.foldr(.(value, rest) { f.add(value, f.multiply(coordinate, rest)) }, 0, poly)
+}
+
+rec(loop) fn direct_walk(poly: Polynomial, coordinate: I32, power: I32, total: I32) -> I32 {
+  match! c.uncons(poly) {
+    .(value: I32, rest: Polynomial) {
+      rec direct_walk(
+        , rest
+        , coordinate
+        , f.multiply(power, coordinate)
+        , f.add(total, f.multiply(value, power))
+        )
+    };
+    .() { total }
+  }
+}
+
+pub fn direct(poly: Polynomial, coordinate: I32) -> I32 { direct_walk(poly, coordinate, 1, 0) }
+
+pub rec(loop) fn equal(left: Polynomial, right: Polynomial) -> Bool {
+  match! c.uncons(left) {
+    .(value: I32, rest: Polynomial) {
+      match! c.uncons(right) {
+        .(other: I32, remaining: Polynomial) {
+          if! f.equal(value, other) {
+            rec equal(rest, remaining)
+          } else {
+            .f
+          }
+        };
+        .() { .f }
+      }
+    };
+    .() { l.null(right) }
+  }
+}

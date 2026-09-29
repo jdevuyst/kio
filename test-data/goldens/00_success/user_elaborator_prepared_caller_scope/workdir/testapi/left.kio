@@ -1,0 +1,31 @@
+module testapi/left;
+
+import elab/match(match);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+import testapi/model as model;
+import testapi/model(Expr, Leaf, Pair, Summary);
+import testapi/model({value});
+import testapi/normalize(normalize);
+
+fn add_summary(left: Summary, right: Summary) -> Summary {
+  let .({value as left_value}) = left;
+  let .({value as right_value}) = right;
+  model.summary(add_i32(left_value, right_value))
+}
+
+pub rec(loop) fn reduce(value: Expr) -> Summary {
+  let normalized = normalize(value);
+  match! Expr.get(normalized) {
+    (
+      , .(leaf: Leaf) { model.summary(Leaf.get(leaf)) }
+      , .(pair: Pair) {
+          match! Pair.get(pair) {
+            .(left: Expr, right: Expr) {
+              add_summary(rec(cont) reduce(left), rec(cont) reduce(right))
+            }
+          }
+        }
+      )
+  }
+}

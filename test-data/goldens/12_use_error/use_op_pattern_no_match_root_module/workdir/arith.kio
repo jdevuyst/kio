@@ -1,0 +1,6 @@
+module arith;
+
+pub fn add(x: ., y: .) -> . { x }
+
+// arith exports `_ + _` only — no `??` operator anywhere.
+pub op _ + _ { impl add }

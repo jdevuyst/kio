@@ -1,0 +1,66 @@
+module main;
+
+host type I32 role(i32);
+
+fn step(a: I32, b: I32) -> I32 { a }
+
+fn nil() -> I32 { 0 }
+
+fn cons(value: I32, rest: I32) -> I32 { value }
+
+fn choose(cond: I32, yes: I32, no: I32) -> I32 { yes }
+
+fn entry((key: I32, value: I32), rest: I32) -> I32 { key }
+
+fn pair(key: I32, value: I32) -> I32 & I32 { (key, value) }
+
+op _ => _ { impl pair; };
+
+op _ :: __ { impl cons; };
+
+op _ ? _ : __ { impl choose; };
+
+varop [! !] { foldr cons nil; };
+
+varop [% %] { foldr entry nil; };
+
+fn short_chain(a: I32, b: I32, c: I32) -> I32 { a :: b :: c }
+
+fn long_chain() -> I32 {
+  step(1, 1)
+    :: step(2, 2)
+    :: step(3, 3)
+    :: step(4, 4)
+    :: step(5, 5)
+    :: step(6, 6)
+    :: step(7, 7)
+    :: step(8, 8)
+    :: nil()
+}
+
+fn different_pattern(a: I32, b: I32, c: I32, d: I32) -> I32 { (a ? b : c) :: d }
+
+fn short_fold(a: I32, b: I32) -> I32 { [! a, b !] }
+
+fn long_fold() -> I32 {
+  [!
+    , step(1, 1)
+    , step(2, 2)
+    , step(3, 3)
+    , step(4, 4)
+    , step(5, 5)
+    , step(6, 6)
+    , step(7, 7)
+    , step(8, 8)
+    , nil()
+    !]
+}
+
+fn long_entries() -> I32 {
+  [%
+    , step(1, 1) => step(2, 2)
+    , step(3, 3) => step(4, 4)
+    , step(5, 5) => step(6, 6)
+    , step(7, 7) => step(8, 8)
+    %]
+}

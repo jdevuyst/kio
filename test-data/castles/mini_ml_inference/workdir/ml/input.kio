@@ -1,0 +1,48 @@
+module ml/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as walk;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+pub fn count() -> I32 | String {
+  match! io.read_ascii_line() {
+    .(line: String) {
+      match! fmt.string_to_int(line) {
+        .(n: I32) {
+          if! arith.leq_i32(0, n) {
+            n.>widen_sum!
+          } else {
+            "negative frame count".>widen_sum!
+          }
+        };
+        .() { "invalid frame count".>widen_sum! }
+      }
+    };
+    .() { "missing frame count".>widen_sum! }
+  }
+}
+
+rec(loop) fn read_tokens(remaining: I32, reversed: lists.List(String)) ->
+  lists.List(String) | String
+   {
+  if! arith.leq_i32(remaining, 0) {
+    walk.reverse(reversed).>widen_sum!
+  } else match! io.read_ascii_line() {
+    .(token: String) { rec read_tokens(arith.sub_i32(remaining, 1), lists.cons(token, reversed)) };
+    .() { "incomplete token frame".>widen_sum! }
+  }
+}
+
+pub fn frame() -> lists.List(String) | String {
+  match! count() {
+    .(n: I32) { read_tokens(n, lists.nil()) };
+    .(error: String) { error.>widen_sum! }
+  }
+}

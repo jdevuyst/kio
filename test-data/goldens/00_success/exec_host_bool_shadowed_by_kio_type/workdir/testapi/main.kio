@@ -1,0 +1,25 @@
+module testapi/main;
+
+import flag(Bool, bool_to, no, yes);
+import testapi(String);
+import testapi/fmt(bool_to_string);
+import testapi/io(print);
+import testapi/text(string_concat, string_eq);
+
+// `flag`'s `Bool` is imported *bare* (the structural sum). A reference
+// to it here means that sum — `show_flag_bool` eliminates it with the
+// module's own `bool_to`, never naming the labels.
+fn show_flag_bool(b: Bool) -> String { bool_to("true", "false", b) }
+
+pub fn main() -> . {
+  // Kio `Bool` (from `flag`): `yes()` / `no()` build the structural sum.
+  print(string_concat("flag yes  = ", string_concat(show_flag_bool(yes()), "\n")));
+  print(string_concat("flag no   = ", string_concat(show_flag_bool(no()), "\n")));
+  // Host `Bool` (from `testapi`): `string_eq` returns the host
+  // `role(bool)` value, fed straight to `bool_to_string`. The host
+  // `Bool` is named only in `testapi/text` and `testapi/fmt`'s host fn
+  // signatures, so it stays the host type — the emitted host trait must
+  // demand a `bool` here, not the `flag` structural sum.
+  print(string_concat("host eq   = ", string_concat(bool_to_string(string_eq("a", "a")), "\n")));
+  print(string_concat("host neq  = ", string_concat(bool_to_string(string_eq("a", "b")), "\n")))
+}

@@ -1,0 +1,5 @@
+module helper/submod;
+
+// `secret` is sealed to the `helper` subtree (`pub(helper)`): only modules
+// at or under `helper` may import it.
+pub(helper) fn secret() -> . { () }

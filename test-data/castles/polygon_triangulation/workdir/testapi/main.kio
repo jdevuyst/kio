@@ -1,0 +1,108 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import polygon/certificate as cert;
+import polygon/clip as clip;
+import polygon/fixtures as fixtures;
+import polygon/geometry as geo;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as num;
+import testapi/array as arr;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn number(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+rec(loop) fn print_triangles(triangles: Array(geo.Triangle), i: I32) -> . {
+  if! geo.equal(i, arr.array_len(triangles)) {
+    io.print("\n")
+  } else {
+    if! geo.equal(i, 0) {
+      ()
+    } else {
+      io.print(" ")
+    };
+    let .(a, b, c) = arr.array_get(triangles, i);
+    number(a);
+    io.print("-");
+    number(b);
+    io.print("-");
+    number(c);
+    rec print_triangles(triangles, num.add_i32(i, 1))
+  }
+}
+
+fn report(name: String, original: Array(geo.Point)) -> . {
+  io.print(name);
+  let defect = geo.validate(original);
+  if! text.string_eq(defect, "") {
+    let points = geo.normalized(original);
+    io.print(": vertices=");
+    number(arr.array_len(original));
+    io.print(" input-area2=");
+    number(geo.area2(original));
+    io.print(" orientation=");
+    io.print(if! geo.less(geo.area2(original), 0) {
+      "reversed\n"
+    } else {
+      "kept\n"
+    });
+    match! clip.triangulate(points) {
+      .(triangles: Array(geo.Triangle)) {
+        io.print("  triangles=");
+        print_triangles(triangles, 0);
+        io.print("  count=");
+        number(arr.array_len(triangles));
+        io.print(" area2=");
+        number(cert.triangle_area2(points, triangles));
+        io.print(" boundary=");
+        number(arr.array_len(points));
+        io.print(" internal=");
+        number(cert.internal_edges(points, triangles));
+        io.print(" certificate=");
+        io.print(cert.certify(points, triangles));
+        io.print("\n")
+      };
+      .(message: String) {
+        io.print("  triangulation rejected: ");
+        io.print(message);
+        io.print("\n")
+      }
+    }
+  } else {
+    io.print(": rejected: ");
+    io.print(defect);
+    io.print("\n")
+  }
+}
+
+fn damaged_certificate() -> . {
+  let points = fixtures.rectangle();
+  match! clip.triangulate(points) {
+    .(triangles: Array(geo.Triangle)) {
+      let damaged = arr.array_clone(triangles);
+      arr.array_set(damaged, 1, arr.array_get(damaged, 0));
+      io.print("damaged rectangle: count and area preserved; certificate=");
+      io.print(cert.certify(points, damaged));
+      io.print("\n")
+    };
+    .(message: String) { io.print("damaged rectangle: "); io.print(message); io.print("\n") }
+  }
+}
+
+pub fn main() -> . {
+  io.print("Ear clipping with integer-coordinate certificates\n");
+  report("rectangle", fixtures.rectangle());
+  report("arrow", fixtures.arrow());
+  report("notch", fixtures.notch());
+  report("arrow-clockwise", fixtures.clockwise_arrow());
+  damaged_certificate();
+  report("repeated point", fixtures.repeated_point());
+  report("straight corner", fixtures.straight_corner());
+  report("crossed boundary", fixtures.crossed_boundary());
+  report("too short", fixtures.too_short());
+  report("out of range", fixtures.out_of_range())
+}

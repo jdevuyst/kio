@@ -1,0 +1,106 @@
+module logic/simulate;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import list/list as traversal;
+import logic/model as model;
+import logic/queue as queue;
+import logic/report as report;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+rec(loop) fn cancellation_report(now: I32, canceled: lists.List(model.Event)) -> . {
+  match! lists.uncons(canceled) {
+    .(event: model.Event, tail: lists.List(model.Event)) {
+      report.canceled(now, event);
+      rec cancellation_report(now, tail)
+    };
+    .() { () }
+  }
+}
+
+fn cancel_pending(now: I32, output: I32, state: model.State) -> model.State {
+  let canceled = queue.for_wire(output, state.?{model.agenda});
+  cancellation_report(now, canceled);
+  state.!{
+    , model.agenda = queue.without_wire(output, state.?{model.agenda})
+    , model.canceled = arith.add_i32(state.?{model.canceled}, traversal.length(canceled))
+    }
+}
+
+fn schedule(now: I32, gate: model.Gate, desired: Bool, state: model.State) -> model.State {
+  let event =
+    {
+      , model.at = arith.add_i32(now, gate.?{model.delay})
+      , model.serial = state.?{model.next_serial}
+      , model.target = gate.?{model.output}
+      , model.value = desired
+      , model.source = .f
+      };
+  state.!{
+    , model.agenda = queue.insert(event, state.?{model.agenda})
+    , model.next_serial = arith.add_i32(state.?{model.next_serial}, 1)
+    }
+}
+
+fn propagate(now: I32, changed: I32, state: model.State, gate: model.Gate) -> model.State {
+  if! model.affected(gate.?{model.operation}, changed) {
+    let output = gate.?{model.output};
+    let desired = model.evaluate(gate.?{model.operation}, state.?{model.wires});
+    if! model.same_bit(desired, model.read_wire(output, state.?{model.ideals})) {
+      state
+    } else {
+      let .(updated: model.State) = state.!{model.ideals = model.write_wire(
+        , output
+        , desired
+        , state.?{model.ideals}
+        )};
+      if! gate.?{model.inertial} {
+        let canceled = cancel_pending(now, output, updated);
+        if! model.same_bit(desired, model.read_wire(output, canceled.?{model.wires})) {
+          canceled
+        } else {
+          schedule(now, gate, desired, canceled)
+        }
+      } else {
+        schedule(now, gate, desired, updated)
+      }
+    }
+  } else {
+    state
+  }
+}
+
+fn commit(event: model.Event, state: model.State, gates: lists.List(model.Gate)) -> model.State {
+  let wire = event.?{model.target};
+  let value = event.?{model.value};
+  if! model.same_bit(model.read_wire(wire, state.?{model.wires}), value) {
+    state
+  } else {
+    report.edge(event);
+    let .(updated: model.State) = state.!{
+      , model.wires = model.write_wire(wire, value, state.?{model.wires})
+      , model.edges = arith.add_i32(state.?{model.edges}, 1)
+      };
+    traversal.foldl(
+      , .(current: model.State, gate: model.Gate) {
+          propagate(event.?{model.at}, wire, current, gate)
+        }
+      , updated
+      , gates
+      )
+  }
+}
+
+pub rec(loop) fn run(state: model.State, gates: lists.List(model.Gate)) -> model.State {
+  match! lists.uncons(state.?{model.agenda}) {
+    .(event: model.Event, tail: lists.List(model.Event)) {
+      let next =
+        commit(event, state.!{model.agenda = tail, model.last_time = event.?{model.at}}, gates);
+      rec run(next, gates)
+    };
+    .() { state }
+  }
+}

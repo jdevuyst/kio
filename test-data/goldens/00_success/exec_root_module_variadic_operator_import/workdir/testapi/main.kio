@@ -1,0 +1,12 @@
+module testapi/main;
+
+// `[* *]` is imported from the root module `listpkg` without co-importing
+// its `nil` / `cat` callables. `[* (), (), () *]` folds
+// (right-fold) to `cat((), cat((), cat((), nil())))`. The fold's
+// result is `()` — discarded as an expression statement — and
+// `main` prints a constant to give the exec a stdout to check.
+import listpkg(varop [* *]);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . { [* (), (), () *]; print("ok") }

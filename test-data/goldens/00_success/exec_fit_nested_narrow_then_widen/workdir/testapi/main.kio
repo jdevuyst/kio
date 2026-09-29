@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(fit, one_prod);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `fit!` covers a cross-level reshape no single axis-specific can
+// reach alone. Source spine: `((String & I32) & Bool)` (a 2-slot
+// product whose slot 0 is itself a 2-slot product). Target spine:
+// `(Bool & I32)` (a 2-slot product). fit! composes the reshape:
+// drops the nested `String` (per-slot narrow_prod!), then matches
+// the remaining factors against the target spine with source-order
+// pinning (the I32 and Bool end up in the right positions).
+fn reshape(p: (String & I32) & Bool) -> Bool & I32 { fit!(p) }
+
+pub fn main() -> . {
+  let r = reshape((("preserved", 99), .t));
+  // Pick out the I32 and Bool slots and stringify.
+  let n = one_prod!(r, I32);
+  let b = one_prod!(r, Bool);
+  let bs =
+    if! b {
+      "true"
+    } else {
+      "false"
+    };
+  print(string_concat(
+    , "fit nested: "
+    , string_concat(int_to_string(n), string_concat(" ", string_concat(bs, "\n")))
+    ))
+}

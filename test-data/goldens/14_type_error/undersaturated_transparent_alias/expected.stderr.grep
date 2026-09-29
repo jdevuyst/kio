@@ -1,0 +1,1 @@
+type alias `Pair` requires 2 type arguments, but 1 was supplied

@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+labels { left[A]: A, right[A]: A };
+
+type Branch[A] = Left(A) | Right(A);
+
+fn left[A](value: A) -> (Left(A) & .) | (Right(A) & .) {
+  widen_sum!(({left = value}, ()), (Left(A) & .) | (Right(A) & .))
+}
+
+fn right[A](value: A) -> (Left(A) & .) | (Right(A) & .) {
+  widen_sum!(({right = value}, ()), (Left(A) & .) | (Right(A) & .))
+}
+
+fn classify[A](source: (Left(A) & .) | (Right(A) & .), result: String) -> String {
+  match! source {
+    .(_branch: Branch(A) & .) { result }
+  }
+}
+
+pub fn main() -> . {
+  print(classify(left("value"), "left\n"));
+  print(classify(right("value"), "right\n"))
+}

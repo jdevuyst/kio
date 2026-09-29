@@ -1,0 +1,3 @@
+module build_rust_projector_after_tuple_projection;
+
+host type String role(str);

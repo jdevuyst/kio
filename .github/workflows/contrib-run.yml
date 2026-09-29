@@ -1,0 +1,181 @@
+name: Contrib Case Runner
+
+# Builds and runs a single contributed case on maintainer demand.
+# A contrib case executes contributor-authored Kio — and, for a run.sh
+# case, an arbitrary shell script — so it runs ONLY when a maintainer
+# applies the `test-contrib` label. Applying a label requires triage or
+# write permission, so an outside contributor can't self-trigger; a
+# first step re-checks the label-adder's permission as defence in depth.
+# pr-policy-check strips `test-contrib` on every push, so a stale
+# approval never runs code the maintainer didn't review.
+#
+# The run steps invoke repo scripts (ci/impl-toolchain.sh, contrib-tests.sh)
+# from the PR checkout, so a PR touching anything outside test-data/contrib/
+# could run attacker-controlled code with the base-repo token. Two gates in
+# the identify step prevent that: (1) the PR must already carry the
+# `contrib case` label, which pr-policy-check applies only after validating
+# the whole case contract (lane confinement included) — so the runner
+# executes only what the automation blessed, not just what a maintainer
+# clicked; (2) a direct re-assertion that every changed file is under
+# test-data/contrib/, at the exact SHA about to run, closing the window
+# where the mutable label lags a push.
+#
+# `pull_request_target` runs with the base repo's token, which is why
+# executing PR code under it is normally dangerous. Here it's gated by the
+# maintainer-only label + the permission re-check + the two confinement
+# gates above, and the job needs no secrets (it only builds and runs Kio),
+# so `permissions` is minimal and the checkout uses
+# `persist-credentials: false`.
+on:  # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  MISE_AUTO_INSTALL: "0"
+
+jobs:
+  run-case:
+    if: github.event.label.name == 'test-contrib'
+    runs-on: ubuntu-latest
+    # One case per run, so the job cap is the per-case timeout: enough
+    # for a cold full-matrix build of one small case, tight enough to
+    # kill a hanging (or maliciously looping) program.
+    timeout-minutes: 25
+    steps:
+      - name: Authorize (label applied by a maintainer)
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const sender = context.payload.sender.login;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner, repo: context.repo.repo, username: sender,
+            });
+            // `permission` is the legacy field: admin | write | read | none.
+            // A Maintain-role user reads back as 'write', so write-and-up is
+            // exactly {admin, write}; triage reads as 'read' and is rejected.
+            if (!['admin', 'write'].includes(data.permission)) {
+              core.setFailed(
+                `@${sender} lacks write access; refusing to run PR code. ` +
+                `Only a maintainer may apply the test-contrib label.`);
+            }
+
+      - name: Identify the contrib case (sanctioned + lane-confined)
+        id: case
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            const prefix = 'test-data/contrib/';
+            const contribLabel = 'contrib case';
+            // pulls.listFiles truncates at 3000 with no signal; an
+            // `every(in-lane)` over a truncated list could miss a poisoned
+            // file past the cap. A real contrib case is a handful of files,
+            // so a PR at the cap is never valid — fail closed.
+            const LISTFILES_CAP = 3000;
+
+            // Gate 1 — the case must carry the `contrib case` sanction.
+            // pr-policy-check applies it ONLY after the full case contract
+            // passes, which includes lane confinement. The maintainer's
+            // test-contrib label means "run it"; this label means "the
+            // automation validated it". Read via pulls.get (labels are
+            // inline on the PR object) so this stays within the granted
+            // pull-requests:read — issues.listLabelsOnIssue would need an
+            // issues scope this least-privileged workflow doesn't hold. Live
+            // fetch, so a label removed after the labeled event (e.g. by a
+            // poison push) is honored.
+            const { data: prData } = await github.rest.pulls.get({
+              owner, repo, pull_number: number });
+            if (!(prData.labels || []).some(l => l.name === contribLabel)) {
+              core.setFailed(
+                `PR is not labeled "${contribLabel}"; refusing to run. That ` +
+                `label is applied only after pr-policy-check validates the ` +
+                `case contract, including that the PR touches nothing ` +
+                `outside ${prefix}.`);
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+            if (files.length === 0 || files.length >= LISTFILES_CAP) {
+              core.setFailed(
+                `PR changes ${files.length} files; refusing to run a ` +
+                `non-contrib-sized PR.`);
+              return;
+            }
+
+            // Gate 2 — re-assert lane confinement at the exact commit we're
+            // about to check out and execute. The run steps invoke repo
+            // scripts (ci/impl-toolchain.sh, contrib-tests.sh) from the PR
+            // checkout, so a PR touching anything outside the contrib lane
+            // could run attacker-controlled code. Belt-and-suspenders on top
+            // of gate 1, closing the window where a label lags a push.
+            const outside = files.filter(f =>
+              !(f.filename.startsWith(prefix) &&
+                (f.previous_filename === undefined ||
+                 f.previous_filename.startsWith(prefix))));
+            if (outside.length > 0) {
+              core.setFailed(
+                `PR touches ${outside.length} file(s) outside ${prefix} ` +
+                `(e.g. ${outside[0].filename}); refusing to run. The contrib ` +
+                `runner executes repo scripts from the PR checkout, so it ` +
+                `runs only lane-confined PRs.`);
+              return;
+            }
+
+            const dirs = [...new Set(files
+              .map(f => f.filename.slice(prefix.length).split('/')[0])
+              .filter(Boolean))];
+            if (dirs.length !== 1) {
+              core.setFailed(
+                `Expected exactly one ${prefix}<case>/ directory in the PR, ` +
+                `found ${dirs.length}. The test-contrib label runs a single ` +
+                `contrib case.`);
+              return;
+            }
+            core.setOutput('name', dirs[0]);
+
+      - name: Check out the PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # The exact commit the label approved, not the floating branch
+          # tip — closes the race between the label event and checkout.
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: rust
+
+      - name: Install toolchains
+        shell: bash
+        run: |
+          # Core toolchain plus every backend's tooling, so the case runs
+          # on all the backends it declares (full matrix).
+          sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
+          sh ci/impl-toolchain.sh install "$(sh ci/impl-toolchain.sh select --count=999)"
+
+      - name: Finalize toolchain resolution
+        shell: bash
+        run: |
+          # Pin the repo's versions as mise's global config so shims
+          # resolve from the /tmp build dirs the harness invokes compilers
+          # in (mirrors ci.yml).
+          mkdir -p "$HOME/.config/mise"
+          cp mise.toml "$HOME/.config/mise/config.toml"
+
+      - name: Run the contrib case
+        shell: bash
+        env:
+          CASE: ${{ steps.case.outputs.name }}
+        run: sh ci/checks/orchestrators/contrib-tests.sh --impls=FULL_IMPL_MATRIX -- "^${CASE}$"

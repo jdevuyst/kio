@@ -1,0 +1,88 @@
+module store/history;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as cells;
+import list/list as lists;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Entry = { key: String, value: I32 | ., revision: I32 };
+
+pub labels Snapshot = { head: I32, journal: cells.List(Entry) };
+
+pub fn empty() -> Snapshot { {head = 0, journal = cells.nil()} }
+
+pub fn write(s: Snapshot, key: String, value: I32 | ., revision: I32) -> Snapshot {
+  {head = revision, journal = cells.cons({key, value, revision}, s.?{journal})}
+}
+
+rec(loop) fn search(entries: cells.List(Entry), key: String) -> I32 | . {
+  match! cells.uncons(entries) {
+    .(entry: Entry, rest: cells.List(Entry)) {
+      if! text.string_eq(entry.?{key}, key) {
+        entry.?{value}
+      } else {
+        rec search(rest, key)
+      }
+    };
+    .() { widen_sum!((), I32 | .) }
+  }
+}
+
+pub fn get(s: Snapshot, key: String) -> I32 | . { search(s.?{journal}, key) }
+
+pub fn show_value(value: I32 | .) -> String {
+  match! value {
+    .(n: I32) { fmt.int_to_string(n) };
+    .() { "<missing>" }
+  }
+}
+
+pub fn show_entry(entry: Entry) -> String {
+  text.string_concat(entry.?{key}, text.string_concat("=", show_value(entry.?{value})))
+}
+
+rec(loop) fn visible_walk(
+  , entries: cells.List(Entry)
+  , seen: cells.List(String)
+  , visible: cells.List(Entry)
+  ) -> cells.List(Entry) {
+  match! cells.uncons(entries) {
+    .(entry: Entry, rest: cells.List(Entry)) {
+      if! lists.elem(text.string_eq, entry.?{key}, seen) {
+        rec visible_walk(rest, seen, visible)
+      } else {
+        let next_seen = cells.cons(entry.?{key}, seen);
+        match! entry.?{value} {
+          .(_n: I32) { rec visible_walk(rest, next_seen, cells.cons(entry, visible)) };
+          .() { rec visible_walk(rest, next_seen, visible) }
+        }
+      }
+    };
+    .() { lists.reverse(visible) }
+  }
+}
+
+pub fn visible(s: Snapshot) -> cells.List(Entry) {
+  visible_walk(s.?{journal}, cells.nil(), cells.nil())
+}
+
+pub fn view(s: Snapshot) -> String { lists.to_string(show_entry, visible(s)) }
+
+fn show_revision(entry: Entry) -> String {
+  text.string_concat(
+    , show_entry(entry)
+    , text.string_concat("@", fmt.int_to_string(entry.?{revision}))
+    )
+}
+
+pub fn signature(s: Snapshot) -> String {
+  text.string_concat(
+    , fmt.int_to_string(s.?{head})
+    , text.string_concat(":", lists.to_string(show_revision, s.?{journal}))
+    )
+}

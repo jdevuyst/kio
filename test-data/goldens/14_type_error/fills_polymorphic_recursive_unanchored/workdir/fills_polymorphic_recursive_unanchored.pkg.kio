@@ -1,0 +1,14 @@
+package fills_polymorphic_recursive_unanchored;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main;
+  host
+}

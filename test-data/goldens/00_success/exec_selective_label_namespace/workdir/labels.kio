@@ -1,0 +1,7 @@
+module labels;
+
+import testapi(String);
+
+pub labels { item: String };
+
+pub fn item() -> String { "ordinary\n" }

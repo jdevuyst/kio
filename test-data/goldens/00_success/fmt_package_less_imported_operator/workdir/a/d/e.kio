@@ -1,0 +1,5 @@
+module a/d/e;
+
+pub op _ => _ { impl entry }
+
+pub varop [% %] { foldr pair empty }

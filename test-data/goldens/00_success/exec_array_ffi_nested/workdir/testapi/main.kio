@@ -1,0 +1,73 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Render an `Array(A)` left-to-right, each cell via `show`, joined
+// by `sep`. Generic over the payload `a` — instantiated below at
+// `A = I32` for an inner row and at `A = Array(I32)` for the outer
+// matrix, so the same walk exercises the nested GAT
+// `H::Array<H::Array<I32>>`.
+fn render[A](sep: String, show: A -> String, arr: Array(A)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) {
+            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+              widen_sum!(
+                , if! leq_i32(i, 0) {
+                    (show(array_get(arr, i)), add_i32(i, 1))
+                  } else {
+                    (string_concat(acc, string_concat(sep, show(array_get(arr, i)))), add_i32(i, 1))
+                  }
+                , (String & I32) | String
+                )
+            } else {
+              widen_sum!(acc, (String & I32) | String)
+            }
+          }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+fn show_int(n: I32) -> String { int_to_string(n) }
+
+// Render an inner `Array(I32)` as a bracketed CSV row.
+fn show_row(row: Array(I32)) -> String {
+  string_concat("[", string_concat(render(",", show_int, row), "]"))
+}
+
+// Build a fresh inner `Array(I32)` row from three ints. Each row is
+// itself a host array, and the outer array stores rows — so pushing
+// a row exercises `Array(Array(I32))` on the host side.
+fn make_row(a: I32, b: I32, c: I32) -> Array(I32) {
+  let row = array_make_empty(I32, ());
+  array_push(row, a);
+  array_push(row, b);
+  array_push(row, c);
+  row
+}
+
+pub fn main() -> . {
+  // Array(Array(I32)): the outer array stores inner arrays. Kio
+  // builds each row, pushes it into the outer array, then walks
+  // the nesting via two `render` instantiations.
+  let matrix = array_make_empty(Array(I32), ());
+  array_push(matrix, make_row(1, 2, 3));
+  array_push(matrix, make_row(4, 5, 6));
+  array_push(matrix, make_row(7, 8, 9));
+  print(render(" ", show_row, matrix));
+  print("\n")
+}

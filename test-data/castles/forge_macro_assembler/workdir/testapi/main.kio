@@ -1,0 +1,33 @@
+/// forge_macro_assembler - a macro assembler and virtual machine for
+/// FORGE-4, a four-register machine with an operand stack.
+///
+/// Nine programs are written as in-source fixtures (`forge/programs`), as
+/// lists of source items: instructions, label marks, and macro calls. Each
+/// one goes through the whole toolchain - macro expansion (`forge/expand`),
+/// pass one placing labels and pass two resolving jumps (`forge/assemble`),
+/// then the fuel-bounded machine (`forge/vm`) - and is reported with its
+/// disassembly (`forge/disasm`).
+///
+/// There is no stdin: the fixtures are the input, and stdout is the whole
+/// story.
+module testapi/main;
+
+import forge/macros as mac;
+import forge/programs as prog;
+import forge/report as r;
+import testapi(I32, String);
+
+pub fn main() -> . {
+  let macros = mac.table();
+  r.header(macros, 9);
+  let t1 = r.program("gcd", prog.gcd(), macros, r.nothing_done());
+  let t2 = r.program("series", prog.series(), macros, t1);
+  let t3 = r.program("spin", prog.spin(), macros, t2);
+  let t4 = r.program("runoff", prog.runoff(), macros, t3);
+  let t5 = r.program("div_zero", prog.div_zero(), macros, t4);
+  let t6 = r.program("pop_empty", prog.pop_empty(), macros, t5);
+  let t7 = r.program("no_macro", prog.no_macro(), macros, t6);
+  let t8 = r.program("no_label", prog.no_label(), macros, t7);
+  let t9 = r.program("twice", prog.twice(), macros, t8);
+  r.summary(t9)
+}

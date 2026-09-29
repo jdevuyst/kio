@@ -1,0 +1,69 @@
+module signal/codec;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import list_host as numbers;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub labels Run = { sample: I32, count: I32 };
+
+pub labels Encoder = {
+  , pending: Run | .
+  , packets_rev: lists.List(Run)
+  , samples: I32
+  , transitions: I32
+  , splits: I32
+  };
+
+pub fn cap() -> I32 { 4 }
+
+pub fn empty() -> Encoder {
+  {
+    , pending = ().>widen_sum!(Run | .)
+    , packets_rev = lists.nil(Run, ())
+    , samples = 0
+    , transitions = 0
+    , splits = 0
+    }
+}
+
+pub fn accept(state: Encoder, value: I32) -> Encoder {
+  let next = {sample = value, count = 1}.>widen_sum!(Run | .);
+  let total = arith.add_i32(state.?{samples}, 1);
+  match! state.?{pending} {
+    .(run: Run) {
+      if! numbers.eq_i32(run.?{sample}, value) {
+        if! arith.lt_i32(run.?{count}, cap()) {
+          let extended = {sample = value, count = arith.add_i32(run.?{count}, 1)};
+          state.!{pending = extended.>widen_sum!(Run | .), samples = total}
+        } else {
+          state.!{
+            , pending = next
+            , packets_rev = lists.cons(run, state.?{packets_rev})
+            , samples = total
+            , splits = arith.add_i32(state.?{splits}, 1)
+            }
+        }
+      } else {
+        state.!{
+          , pending = next
+          , packets_rev = lists.cons(run, state.?{packets_rev})
+          , samples = total
+          , transitions = arith.add_i32(state.?{transitions}, 1)
+          }
+      }
+    };
+    .() { state.!{pending = next, samples = total} }
+  }
+}
+
+pub fn finish(state: Encoder) -> lists.List(Run) {
+  match! state.?{pending} {
+    .(run: Run) { traversal.reverse(lists.cons(run, state.?{packets_rev})) };
+    .() { traversal.reverse(state.?{packets_rev}) }
+  }
+}

@@ -1,0 +1,9 @@
+module main;
+
+import elab/algebraic_elaborators(align);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn project(p: A & B) -> A { align!(p) }

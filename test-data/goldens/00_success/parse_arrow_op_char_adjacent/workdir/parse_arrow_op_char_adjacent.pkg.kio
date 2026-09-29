@@ -1,0 +1,18 @@
+package parse_arrow_op_char_adjacent;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  parse_arrow_op_char_adjacent;
+  parse_arrow_op_char_adjacent/**
+}

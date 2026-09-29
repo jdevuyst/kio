@@ -1,0 +1,2 @@
+type `lib.Widget` is reachable from the package's host contract surface
+module `lib` is not selected by any bridge glob

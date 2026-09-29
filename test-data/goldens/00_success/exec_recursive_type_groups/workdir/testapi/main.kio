@@ -1,0 +1,76 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+pub rec labels Tree = { leaf: String } | { branch: Tree & Tree };
+
+rec {
+  pub type Chain = . | Node;
+  pub newtype Node : String & Chain { pub constructor mk_node; pub projector un_node }
+}
+
+rec {
+  pub newtype Even : . | Odd { pub constructor mk_even; pub projector un_even };
+  pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
+}
+
+fn leaf(text: String) -> Tree { widen_sum!({leaf = text}) }
+
+fn branch(left: Tree, right: Tree) -> Tree { widen_sum!({branch = (left, right)}) }
+
+fn first(tree: Tree) -> Tree {
+  match! tree {
+    (
+      , .(value: Leaf) { widen_sum!(value) }
+      , .(value: Branch) {
+          match! Branch.get(value) {
+            .(left: Tree, _right: Tree) { left }
+          }
+        }
+      )
+  }
+}
+
+fn leaf_text(tree: Tree) -> String {
+  match! tree {
+    (.(value: Leaf) { Leaf.get(value) }, .(_value: Branch) { "branch\n" })
+  }
+}
+
+fn chain_nil() -> Chain { widen_sum!(()) }
+
+fn chain_cons(text: String, tail: Chain) -> Chain { widen_sum!(Node.mk_node((text, tail))) }
+
+fn chain_head(chain: Chain) -> String {
+  match! chain {
+    (
+      , .(value: Node) {
+          match! Node.un_node(value) {
+            .(text: String, _tail: Chain) { text }
+          }
+        }
+      , .(_empty: .) { "empty\n" }
+      )
+  }
+}
+
+fn zero() -> Even { Even.mk_even(widen_sum!(())) }
+
+fn one() -> Odd { Odd.mk_odd(widen_sum!(zero())) }
+
+fn two() -> Even { Even.mk_even(widen_sum!(one())) }
+
+fn force_mutual(value: Even) -> String {
+  match! Even.un_even(value) {
+    (.(odd: Odd) { let _predecessor = Odd.un_odd(odd); "mutual\n" }, .(_zero: .) { "zero\n" })
+  }
+}
+
+pub fn main() -> . {
+  print(leaf_text(first(branch(leaf("labels\n"), leaf("unused\n")))));
+  print(chain_head(chain_cons("alias\n", chain_nil())));
+  print(force_mutual(two()))
+}

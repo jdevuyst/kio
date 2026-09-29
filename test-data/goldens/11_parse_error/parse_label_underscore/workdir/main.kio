@@ -1,0 +1,6 @@
+module main;
+
+// Label names may not begin with `_`: the generated newtype name
+// would be `_Foo`, which has no clean capitalization rule. See
+// specs/language.md § Naming conventions.
+labels { _foo : . };

@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi/iter(loop);
+
+type Token = .;
+
+fn touch[A](_unit: .) -> . { () }
+
+rec(loop) {
+  pub fn main() -> . { rec walk(()) };
+  fn walk(_value: .) -> . { touch(Token)() }
+}

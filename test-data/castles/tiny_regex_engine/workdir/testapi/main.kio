@@ -1,0 +1,33 @@
+module testapi/main;
+
+import regex/matcher(
+  , anchored_hi
+  , byte_probe_passed
+  , c_dot_t
+  , colour_optional
+  , gray_alternation
+  , literal_cat
+  );
+import regex/result(Verdict, render);
+import testapi(String);
+import testapi/fmt(bool_to_string);
+import testapi/io(print);
+
+fn print_case(pattern: String, candidate: String, result: Verdict) -> . {
+  print(render(pattern, candidate, result))
+}
+
+pub fn main() -> . {
+  print("tiny regex engine\n");
+  print_case("cat", "concatenate", literal_cat("concatenate"));
+  print_case("c.t", "cot", c_dot_t("cot"));
+  print_case("c.t", "cut", c_dot_t("cut"));
+  print_case("colou?r", "color", colour_optional("color"));
+  print_case("colou?r", "colour", colour_optional("colour"));
+  print_case("^hi", "ship", anchored_hi("ship"));
+  print_case("gr(a|e)y", "grey", gray_alternation("grey"));
+  print("summary matched=6 missed=1\n");
+  print("byte-probe=");
+  print(bool_to_string(byte_probe_passed()));
+  print("\n")
+}

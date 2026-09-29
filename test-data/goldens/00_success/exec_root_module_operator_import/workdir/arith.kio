@@ -1,0 +1,15 @@
+module arith;
+
+// `left` is host-free: a polymorphic pick of the left
+// operand.
+pub fn left[A](x: A, y: A) -> A { x }
+
+pub op _ <| _ { impl left }
+
+// An unrelated second `pub op`. The consumer imports only `_ <| _`;
+// the presence of `_ |> _` does not change which operator that import
+// resolves to. This is the open-world property: adding `_ |> _` here
+// can only enable a new import, never alter an existing one.
+pub fn right[A](x: A, y: A) -> A { y }
+
+pub op _ |> _ { impl right }

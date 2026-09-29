@@ -1,0 +1,174 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Cons-list of `A`. Same `()` / `(A & List(A))` shape as the other
+// host-loop goldens; used twice here — once as the node-stack of
+// pending `Frame`s, once as the value-stack of intermediate I32s.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Tiny arithmetic expression AST. The literal arm carries an
+// `I32`; the binary arm carries `(op_code, left, right)` where
+// `op_code` is `0` for add and `1` for mul. The op-code lives
+// inline rather than as a separate arm position because two sum
+// arms with the same payload shape (`(Expr & Expr) | (Expr &
+// Expr)`) cannot be dispatched on by `match!` — `match!` routes
+// each scrutinee DNF branch to the first clause whose parameter
+// type fits, so a second clause with identical parameter shape
+// is unreachable. Tagging inline keeps the dispatch a clean
+// single-arm payload match plus a single `leq_i32` on the op.
+rec newtype Expr : I32 | (I32 & Expr & Expr) { pub constructor mk_expr; pub projector un_expr }
+
+fn lit(n: I32) -> Expr { Expr.mk_expr(widen_sum!(n)) }
+
+fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum!((0, l, r))) }
+
+fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum!((1, l, r))) }
+
+// One worklist frame. `Expr` means "walk this node next"; `I32`
+// is a pending-combiner marker carrying the op code (the same
+// `0` / `1` convention as `Expr`'s binary arm). The two arms are
+// nominally distinct (newtype `Expr` vs atomic `I32`), so
+// `match!` dispatches cleanly.
+//
+// `Frame` itself is a newtype rather than a bare `Expr | I32`
+// because the cons-list's element type needs a single named
+// reference — `List(Frame)` reads cleaner than `List(Expr |
+// I32)`, and the wrapper makes the projector/constructor pair
+// available for the step body.
+newtype Frame : Expr | I32 { pub constructor mk_frame; pub projector un_frame }
+
+fn frame_expr(e: Expr) -> Frame { Frame.mk_frame(widen_sum!(e)) }
+
+fn frame_op(op: I32) -> Frame { Frame.mk_frame(widen_sum!(op)) }
+
+// `State` wraps `(node-stack, value-stack)` in a single newtype.
+// Naming it once lets every helper's match-arm-uniform return
+// type be a single nominal.
+newtype State : List(Frame) & List(I32) { pub constructor mk_state; pub projector un_state }
+
+fn state(nodes: List(Frame), values: List(I32)) -> State { State.mk_state((nodes, values)) }
+
+// Combiner sub-helper: `add` for op-code 0, `mul` for op-code 1.
+// One `if`/`else` over the `op` discriminant.
+fn apply_op(op: I32, left: I32, right: I32) -> I32 {
+  if! leq_i32(op, 0) {
+    add_i32(left, right)
+  } else {
+    mul_i32(left, right)
+  }
+}
+
+// Combine helper: receives the value-stack top (`right`) and
+// the remaining stack, pops one more value (`left`), and
+// pushes `apply_op(op, left, right)`. Split out so `combine`
+// itself carries a single one-level `match!`.
+fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
+  match! rest1.>List.un_list {
+    (
+      , .(left: I32, rest2: List(I32)) { push(apply_op(op, left, right), rest2) }
+      , .(_empty: .) { push(0, nil(I32, ())) }
+      )
+  }
+}
+
+// Apply the pending op to the top two values on the value
+// stack. Single one-level `match!` on the value stack; the
+// second-pop is in `combine_with_right`.
+fn combine(op: I32, values: List(I32)) -> List(I32) {
+  match! values.>List.un_list {
+    (
+      , .(right: I32, rest1: List(I32)) { combine_with_right(op, right, rest1) }
+      , .(_empty: .) { push(0, nil(I32, ())) }
+      )
+  }
+}
+
+// Expr-arm handler. Returns the new state.
+// For the binary arm pushes left, right, then the op marker;
+// for the literal arm pushes the value onto the value stack.
+// Single one-level `match!` on the `Expr` projector.
+fn handle_expr(e: Expr, rest_nodes: List(Frame), values: List(I32)) -> State {
+  match! e.>Expr.un_expr {
+    (
+      , .(op: I32, l: Expr, r: Expr) {
+          let with_op = push(frame_op(op), rest_nodes);
+          let with_right = push(frame_expr(r), with_op);
+          let with_left = push(frame_expr(l), with_right);
+          state(with_left, values)
+        }
+      , .(n: I32) { state(rest_nodes, push(n, values)) }
+      )
+  }
+}
+
+// Frame-arm handler. Dispatches on whether the top frame is an
+// Expr to walk or an op marker to fire. Single one-level
+// `match!` on the `Frame` projector; returns the new state.
+fn handle_frame(top: Frame, rest_nodes: List(Frame), values: List(I32)) -> State {
+  match! top.>Frame.un_frame {
+    (
+      , .(e: Expr) { handle_expr(e, rest_nodes, values) }
+      , .(op: I32) { state(rest_nodes, combine(op, values)) }
+      )
+  }
+}
+
+// Node-stack-empty exit. Returns the top of the value stack as
+// the evaluator's result. For a well-formed AST the value
+// stack has exactly one element at this point; the empty arm
+// returns a sentinel.
+fn exit_top(values: List(I32)) -> I32 {
+  match! values.>List.un_list {
+    (.(top: I32, _rest: List(I32)) { top }, .(_empty: .) { 0 })
+  }
+}
+
+// Dispatch on whether the node stack is non-empty (continue
+// with the new state) or empty (exit with the value-stack top).
+// Single one-level `match!` on the node-stack list cell.
+fn step_inner(nodes: List(Frame), values: List(I32)) -> State | I32 {
+  match! nodes.>List.un_list {
+    (
+      , .(top: Frame, rest_nodes: List(Frame)) {
+          widen_sum!(handle_frame(top, rest_nodes, values), State | I32)
+        }
+      , .(_empty: .) { widen_sum!(exit_top(values), State | I32) }
+      )
+  }
+}
+
+// One step of the worklist evaluator. State carries the
+// `(node_stack, value_stack)` pair; on exit the top of the
+// value stack is the evaluator's result. The exit arm pops the
+// top of the value stack (which the final `combine` step
+// produced); the loop continues while the node stack is non-
+// empty.
+fn step(st: State) -> State | I32 {
+  match! st.>State.un_state {
+    .(nodes: List(Frame), values: List(I32)) { step_inner(nodes, values) }
+  }
+}
+
+fn eval(e: Expr) -> I32 {
+  loop(.(st: State) { step(st) }, state(push(frame_expr(e), nil(Frame, ())), nil(I32, ())))
+}
+
+// Build the test AST: `Mul(Add(Lit(2), Lit(3)), Lit(4))`,
+// which evaluates to `(2 + 3) * 4 == 20`.
+pub fn main() -> . {
+  let ast = mul(add(lit(2), lit(3)), lit(4));
+  print(string_concat(int_to_string(eval(ast)), "\n"))
+}

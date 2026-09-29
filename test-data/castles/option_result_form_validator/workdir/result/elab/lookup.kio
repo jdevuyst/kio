@@ -1,0 +1,139 @@
+/// Sum-label lookup elaborators for structural sums.
+module result/elab/lookup;
+
+import __intrinsics__;
+
+import __comptime__;
+import result/elab/elaborator_util(
+  , Matched_slot
+  , Matched_slot_tail
+  , Maybe_matched_slot
+  , Slot
+  , dnf_branch_slots
+  , dnf_branch_spine
+  , dnf_eliminate
+  , slot_term
+  , take_first_matching
+  );
+
+/// Boolean-like structural result captured by `contains!`.
+pub type Lookup_bool = . | .;
+
+/// Runtime `true` value captured by `contains!`.
+pub fn true() -> Lookup_bool { __left__(., ., ()) }
+
+/// Runtime `false` value captured by `contains!`.
+pub fn false() -> Lookup_bool { __right__(., ., ()) }
+
+pure fn bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, . -> Lookup_bool) }
+
+pure fn call_bool(ct: __Comptime__, fn_type: __Type__, value_fn: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, fn_type, value_fn, __term_unit__(ct))
+}
+
+pure fn branch_lookup(
+  , ct: __Comptime__
+  , branch_type: __Type__
+  , branch_value: __Checked_term__
+  , needle: __Type__
+  ) -> Maybe_matched_slot {
+  take_first_matching(
+    , ct
+    , needle
+    , dnf_branch_spine(ct, branch_type)
+    , dnf_branch_slots(ct, branch_type, branch_value)
+    )
+}
+
+pure fn some_lookup(ct: __Comptime__, result_type: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_left__(ct, result_type, value)
+}
+
+pure fn no_lookup(ct: __Comptime__, result_type: __Type__) -> __Checked_term__ {
+  __intrinsic_right__(ct, result_type, __term_unit__(ct))
+}
+
+pure fn branch_lookup_result(
+  , ct: __Comptime__
+  , result_type: __Type__
+  , needle: __Type__
+  , branch_type: __Type__
+  , branch_value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , Matched_slot
+    , .
+    , __Checked_term__
+    , branch_lookup(ct, branch_type, branch_value, needle)
+    , .(found: Matched_slot) -> __Checked_term__ {
+        some_lookup(ct, result_type, slot_term(ct, __fst__(Slot, Matched_slot_tail, found)))
+      }
+    , .() -> __Checked_term__ { no_lookup(ct, result_type) }
+    )
+}
+
+pure fn contains_branch_result(
+  , ct: __Comptime__
+  , fn_type: __Type__
+  , true_fn: __Checked_term__
+  , false_fn: __Checked_term__
+  , needle: __Type__
+  , branch_type: __Type__
+  , branch_value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , Matched_slot
+    , .
+    , __Checked_term__
+    , branch_lookup(ct, branch_type, branch_value, needle)
+    , .(_found: Matched_slot) -> __Checked_term__ { call_bool(ct, fn_type, true_fn) }
+    , .() -> __Checked_term__ { call_bool(ct, fn_type, false_fn) }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn lookup_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , needle: __Type__
+  ) -> __Checked_term__ {
+  let result_type = __type_sum__(ct, needle, __type_unit__(ct));
+  dnf_eliminate(
+    , ct
+    , source
+    , result_type
+    , value
+    , .(branch_type: __Type__, branch_value: __Checked_term__) -> __Checked_term__ {
+        branch_lookup_result(ct, result_type, needle, branch_type, branch_value)
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn contains_checked(
+  , ct: __Comptime__
+  , true_fn: __Checked_term__
+  , false_fn: __Checked_term__
+  , source: __Type__
+  , value: __Checked_term__
+  , needle: __Type__
+  ) -> __Checked_term__ {
+  let result_type = __reflect_type__(ct, Lookup_bool);
+  let fn_type = bool_fn_type(ct);
+  dnf_eliminate(
+    , ct
+    , source
+    , result_type
+    , value
+    , .(branch_type: __Type__, branch_value: __Checked_term__) -> __Checked_term__ {
+        contains_branch_result(ct, fn_type, true_fn, false_fn, needle, branch_type, branch_value)
+      }
+    )
+}
+
+/// Returns the requested label value when the active sum branch contains it.
+pub elab lookup : [Source] Source -> [Needle] Needle | . { impl lookup_checked }
+
+/// Tests whether the active sum branch contains the requested label type.
+pub elab contains : [Source] Source -> [Needle] Lookup_bool { captures (true, false); impl contains_checked }

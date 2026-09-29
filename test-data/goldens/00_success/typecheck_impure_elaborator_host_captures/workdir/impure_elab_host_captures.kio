@@ -1,0 +1,5 @@
+module impure_elab_host_captures;
+
+host type I32 role(i32);
+
+host fn id_i32(value: I32) -> I32;

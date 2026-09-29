@@ -1,0 +1,121 @@
+/// The player and the pure replay step. The player carries its position
+/// and a small ledger (collected items, blocked moves, accepted moves)
+/// as a five-slot product. A single command applies one cardinal move
+/// against the generated world: an in-bounds, non-wall target is entered
+/// (collecting an item when present), and anything else is a blocked
+/// bump that leaves the position unchanged. All of this is pure —
+/// `testapi/main` owns the stdin read loop and threads the player
+/// through `step`.
+module maze/replay;
+
+import elab/control(if);
+import elab/match(match);
+import maze/world(and, in_bounds, int_eq, is_item, is_wall);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/text(string_eq);
+
+/// The player ledger: position `(px, py)`, collected `score`, blocked
+/// `bumps`, and accepted `moves`.
+pub type Ledger = I32 & I32 & I32 & I32 & I32;
+
+/// The starting player at the origin with an empty ledger.
+pub fn start_player() -> Ledger { (0, 0, 0, 0, 0) }
+
+pub fn px(p: Ledger) -> I32 {
+  match! p {
+    .(x: I32, _y: I32, _s: I32, _b: I32, _m: I32) { x }
+  }
+}
+
+pub fn py(p: Ledger) -> I32 {
+  match! p {
+    .(_x: I32, y: I32, _s: I32, _b: I32, _m: I32) { y }
+  }
+}
+
+pub fn score(p: Ledger) -> I32 {
+  match! p {
+    .(_x: I32, _y: I32, s: I32, _b: I32, _m: I32) { s }
+  }
+}
+
+pub fn bumps(p: Ledger) -> I32 {
+  match! p {
+    .(_x: I32, _y: I32, _s: I32, b: I32, _m: I32) { b }
+  }
+}
+
+pub fn moves(p: Ledger) -> I32 {
+  match! p {
+    .(_x: I32, _y: I32, _s: I32, _b: I32, m: I32) { m }
+  }
+}
+
+/// A direction is a unit delta `(dx, dy)` paired with a recognised flag:
+/// an unrecognised command yields `(0, 0)` with the flag cleared, so the
+/// replay counts it as ignored rather than as a move.
+pub fn delta_of(cmd: String) -> (I32 & I32) & Bool {
+  let neg_one = sub_i32(0, 1);
+  if! string_eq(cmd, "N") {
+    ((0, neg_one), .t)
+  } else if! string_eq(cmd, "S") {
+    ((0, 1), .t)
+  } else if! string_eq(cmd, "E") {
+    ((1, 0), .t)
+  } else if! string_eq(cmd, "W") {
+    ((neg_one, 0), .t)
+  } else {
+    ((0, 0), .f)
+  }
+}
+
+fn not_wall(seed: I32, w: I32, h: I32, x: I32, y: I32) -> Bool {
+  if! is_wall(seed, w, h, x, y) {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn apply(seed: I32, w: I32, h: I32, p: Ledger, d: I32 & I32) -> Ledger {
+  match! d {
+    .(dx: I32, dy: I32) {
+      let nx = add_i32(px(p), dx);
+      let ny = add_i32(py(p), dy);
+      if! and(in_bounds(w, h, nx, ny), not_wall(seed, w, h, nx, ny)) {
+        let gained = if! is_item(seed, w, h, nx, ny) {
+          1
+        } else {
+          0
+        };
+        (nx, ny, add_i32(score(p), gained), bumps(p), add_i32(moves(p), 1))
+      } else {
+        (px(p), py(p), score(p), add_i32(bumps(p), 1), moves(p))
+      }
+    }
+  }
+}
+
+/// Apply one command to the player against the seeded world. A
+/// recognised command whose target is in-bounds and not a wall is
+/// accepted: the player enters the target, banking an item when the
+/// cell carries one, and the accepted-move count rises. A recognised
+/// command into a wall or off the grid is a blocked bump. An
+/// unrecognised command leaves the ledger untouched.
+pub fn step(seed: I32, w: I32, h: I32, p: Ledger, cmd: String) -> Ledger {
+  match! delta_of(cmd) {
+    .(d: I32 & I32, recognised: Bool) {
+      if! recognised {
+        apply(seed, w, h, p, d)
+      } else {
+        p
+      }
+    }
+  }
+}
+
+/// True when the player stands on the goal corner.
+pub fn escaped(w: I32, h: I32, p: Ledger) -> Bool {
+  and(int_eq(px(p), sub_i32(w, 1)), int_eq(py(p), sub_i32(h, 1)))
+}

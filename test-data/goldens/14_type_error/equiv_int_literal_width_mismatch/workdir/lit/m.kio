@@ -1,0 +1,8 @@
+module lit/m;
+
+import lit(U16, U8);
+
+equiv width_distinct() {
+  1(U8);
+  1(U16)
+}

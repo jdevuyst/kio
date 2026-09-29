@@ -1,0 +1,7 @@
+module main;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+fn apply(f: . -> .) -> . { f(()) }
+
+pub rec(loop) fn spin(value: .) -> . { apply(.x. { rec spin(x1) }) }

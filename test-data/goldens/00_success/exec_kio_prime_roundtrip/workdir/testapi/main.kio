@@ -1,0 +1,29 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// Exercises the kio-prime round-trip: a tuple literal, a host function
+// call, and an `if`/`else` arm — three constructs that desugar
+// or elaborate at different points along the surface → Kio'
+// boundary. After the round-trip, none of the surface forms
+// should remain in the emitted Kio' source per
+// `specs/prime.md` § What's not in Kio'.
+fn pick(b: Bool, a: String, c: String) -> String | String {
+  if! b {
+    __left__(String, String, a)
+  } else {
+    __right__(String, String, c)
+  }
+}
+
+pub fn main() -> . {
+  let result = pick(.t, "kio prime\n", "fallback\n");
+  print(match! result {
+    .(s: String) { s }
+  })
+}

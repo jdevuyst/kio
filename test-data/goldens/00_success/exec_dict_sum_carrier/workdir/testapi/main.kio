@@ -1,0 +1,63 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// Regression: a polymorphic-function dictionary newtype whose stored
+// function both takes and returns a *sum* slot that mentions the
+// per-call binder (`(F(A) | F(A))`). At the Rust dictionary boundary
+// the per-call binder erases to `Rc<dyn Any>`, so the stored sum mints
+// as a distinct (erased) enum from the typed sum the caller sees. The
+// typed<->erased adapter must walk the sum variant-by-variant (match,
+// convert payload, re-inject); previously a sum slot fell to an
+// identity `clone()` that handed the typed enum where the erased enum
+// was required (and vice versa), which does not type-check in Rust.
+
+// A canonical arity-1 brand to instantiate the dictionary at.
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+// `Swap[*F]` stores `[A]((F(A) | F(A))) -> (F(A) | F(A))`: a function
+// over a binder-mentioning sum, in both argument and result position.
+pub newtype Swap[*F] : [A] (F(A) | F(A)) -> F(A) | F(A) {
+  pub constructor mk_swap;
+  pub projector run
+  }
+
+// `Cell`'s instance: swap the two arms of the sum.
+fn cell_swap() -> Swap(Cell) {
+  Swap.mk_swap(
+    , Cell
+    , .[A](s) {
+        __either__(
+          , Cell(A)
+          , Cell(A)
+          , Cell(A) | Cell(A)
+          , s
+          , .(l) { __right__(Cell(A), Cell(A), l) }
+          , .(r) { __left__(Cell(A), Cell(A), r) }
+          )
+      }
+    )
+}
+
+// Build a left-arm `(Cell(String) | Cell(String))`, run it through the
+// instance (which swaps it to the right arm), then peel whichever arm
+// survives back to its `String` payload.
+fn use_swap() -> String {
+  let sw = cell_swap();
+  let c = Cell.mk_cell(String, "dict sum carrier ok\n"(String));
+  let input = __left__(Cell(String), Cell(String), c);
+  let swapped = Swap.run(Cell, sw)(String, input);
+  __either__(
+    , Cell(String)
+    , Cell(String)
+    , String
+    , swapped
+    , .(l) { Cell.un_cell(String, l) }
+    , .(r) { Cell.un_cell(String, r) }
+    )
+}
+
+pub fn main() -> . { print(use_swap()) }

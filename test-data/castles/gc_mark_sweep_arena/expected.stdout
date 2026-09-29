@@ -1,0 +1,54 @@
+gc_mark_sweep_arena
+
+roots: @0 @33
+
+heap before gc (36 cells, 9 objects)
+@0 frame n=3 [*9, *13, 7]
+@5 frame n=2 [*17, 99]
+@9 pair n=2 [*21, *26]
+@13 pair n=2 [*21, 5]
+@17 pair n=2 [*5, *29]
+@21 vec n=3 [3, 4, 5]
+@26 box n=1 [*9]
+@29 vec n=2 [11, 22]
+@33 box n=1 [*21]
+
+-- mark --
+worklist pushes: 9
+worklist pops: 9
+revisits skipped: 3
+marked objects: 6
+
+-- sweep --
+live objects: 6 (@0 @9 @13 @21 @26 @33)
+dead objects: 3 (@5 @17 @29)
+live cells: 24
+dead cells: 12
+
+-- compact --
+forwarding table (old -> new)
+  @0 -> @0
+  @9 -> @5
+  @13 -> @9
+  @21 -> @13
+  @26 -> @18
+  @33 -> @21
+roots after fixup: @0 @21
+arena top: 36 -> 24
+cells reclaimed: 12
+
+heap after gc (24 cells, 6 objects)
+@0 frame n=3 [*5, *9, 7]
+@5 pair n=2 [*13, *18]
+@9 pair n=2 [*13, 5]
+@13 vec n=3 [3, 4, 5]
+@18 box n=1 [*5]
+@21 box n=1 [*13]
+
+-- verify --
+objects in arena: 6
+roots checked: 2
+pointer fields checked: 7
+dangling pointers: 0
+reachable from roots: 6 of 6
+verdict: heap verified

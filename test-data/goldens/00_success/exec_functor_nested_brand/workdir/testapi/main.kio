@@ -1,0 +1,78 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Either[E][A] : E | A` — the arity-2 "one of two shapes" sum,
+// error-arm `e` and value-arm `a`. Kind `*→*→*`; partially applying
+// it to one argument leaves a kind-`*→*` brand.
+pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_either }
+
+// `Wrapped[A] : Either(String, A)` — an arity-1 brand whose carrier
+// *nests another brand*: the arity-2 `Either`, with the error arm
+// fixed to `String` and the value arm left as the varying parameter
+// `a`. This is the `Compose`-style nested brand — a brand inside a
+// brand's carrier, where the inner brand is multi-arity. `Wrapped`'s
+// own carrier-conversion delegates the value position through
+// `Either`'s arity-2 (`Brand2`) erase / recover.
+pub newtype Wrapped[A] : Either(String, A) { pub constructor mk_wrap; pub projector un_wrap }
+
+// A `Functor[*F]` dictionary with a polymorphic-function payload:
+// `fmap` lifts an `A -> B` through the brand to an `F(A) ->
+// F(B)`. Every brand crossing is mediated by the concrete brand's
+// constructor / projector at the instance site.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `Wrapped`'s functor instance. `un_wrap` peels the outer brand to
+// the inner `Either(String, A)`; `__either__` on its `String | A`
+// payload re-wraps a `left` error unchanged and lifts a `right` value
+// through the user's step function `s`, re-wrapping both legs through
+// `Either.mk_either` / `Wrapped.mk_wrap`.
+fn wrapped_functor() -> Functor(Wrapped) {
+  Functor.mk_functor(
+    , Wrapped
+    , .[A][B](s, m) {
+        let inner = Wrapped.un_wrap(A, m);
+        __either__(
+          , String
+          , A
+          , Wrapped(B)
+          , Either.un_either(String, A, inner)
+          , .(err) { Wrapped.mk_wrap(B, Either.mk_either(String, B, __left__(String, B, err))) }
+          , .(av) { Wrapped.mk_wrap(B, Either.mk_either(String, B, __right__(String, B, s(av)))) }
+          )
+      }
+    )
+}
+
+// Exercise the dictionary on a `right` value: brand a String into a
+// `Wrapped(String)`, lift the identity through `fmap`, then peel both
+// brand layers and surface the recovered string (or the error arm).
+fn use_dictionary() -> String {
+  let dict = wrapped_functor();
+  let m =
+    Wrapped.mk_wrap(
+      , String
+      , Either.mk_either(
+          , String
+          , String
+          , __right__(String, String, "functor on nested brand ok\n"(String))
+          )
+      );
+  let mapped = Functor.fmap(Wrapped, dict)(String, String, .(s) { s }, m);
+  __either__(
+    , String
+    , String
+    , String
+    , Either.un_either(String, String, Wrapped.un_wrap(String, mapped))
+    , .(err) { err }
+    , .(s) { s }
+    )
+}
+
+pub fn main() -> . { print(use_dictionary()) }

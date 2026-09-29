@@ -1,0 +1,260 @@
+name: PR Auto-close (unsanctioned PRs)
+
+# `pull_request_target` is required: this workflow must comment on and
+# close PRs from forks, which needs the base-repo write token. The
+# standard risk of the trigger — running attacker-controlled PR code
+# with elevated privileges — does not apply here: the workflow has no
+# `actions/checkout` step and only calls the GitHub API via
+# `actions/github-script`. No PR-supplied content is ever executed or
+# expanded into a shell context (changed-file paths are only
+# string-compared in JS).
+on:  # zizmor: ignore[dangerous-triggers]
+  schedule:
+    # Monday 06:00 UTC, shared cron slot with the other weekly workflows.
+    # Acts as a safety net for events that might have been missed; the
+    # primary trigger is now the pull_request_target path below.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # Per-PR group for event runs so independent PR events don't serialize;
+  # a single 'sweep' group for cron / dispatch so only one full scan runs
+  # at a time.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  auto-close:
+    runs-on: ubuntu-latest
+    # Skip event runs for bot-authored PRs before
+    # spending a workflow minute. `user.type` is `"Bot"` for GitHub
+    # App accounts and unspoofable by humans (GitHub forbids square
+    # brackets in user logins, but we don't rely on that — we check
+    # the type directly). For cron / workflow_dispatch runs the
+    # expression resolves to null != 'Bot' = true, so the sweep
+    # still proceeds and applies its own type filter below.
+    if: ${{ github.event.pull_request.user.type != 'Bot' }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const acceptingLabel = 'accepting prs';
+            const contribPrefix = 'test-data/contrib/';
+
+            // GitHub's pulls.listFiles returns at most 3000 files; past
+            // that the changed-file set is truncated with no signal, so
+            // an `every(in-lane)` check over a truncated list could let a
+            // file beyond the cap escape the lane guard and keep an
+            // abusive PR open. A real contrib case is a handful of files,
+            // so a PR at the cap is never contrib-lane.
+            const LISTFILES_CAP = 3000;
+
+            const contributingUrl =
+              `${context.serverUrl}/${owner}/${repo}/blob/HEAD/CONTRIBUTING.md`;
+            const closeBody =
+              `Closing under the contribution policy in ` +
+              `[CONTRIBUTING.md](${contributingUrl}): Kio doesn't ` +
+              `accept code PRs outside the contributed test-case ` +
+              `lane.\n\n` +
+              `Two kinds of PR stay open:\n\n` +
+              `- **a contributed case** — open a "Contribute an example ` +
+              `program or library" issue (or a "Bug report" for a ` +
+              `reproducer), then a PR that touches only ` +
+              `\`test-data/contrib/<your-github-username>-<issue#>/\` ` +
+              `and links the issue with \`Closes #N\`;\n` +
+              `- **a maintainer-invited change** — the linked issue ` +
+              `carries the \`${acceptingLabel}\` label.\n\n` +
+              `If this PR fixes a bug, the most useful next step is a ` +
+              `bug report with a minimal \`.kio\` reproducer, which a ` +
+              `maintainer can turn into a fix.\n\n` +
+              `If this close crossed paths with a just-applied label ` +
+              `or a just-linked issue, reopen the PR and it'll be ` +
+              `re-checked.`;
+
+            async function closePr(number) {
+              core.info(`Closing PR #${number}`);
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: number, body: closeBody
+              });
+              await github.rest.pulls.update({
+                owner, repo, pull_number: number, state: 'closed'
+              });
+            }
+
+            function hasAcceptingLabel(issueNodes) {
+              return issueNodes.some(
+                issue => issue.labels.nodes.some(l => l.name === acceptingLabel)
+              );
+            }
+
+            // Does `path` exist on the PR's base commit? Distinguishes a
+            // new case directory from a follow-up to an existing one.
+            async function pathExistsOnBase(path, ref) {
+              try {
+                await github.rest.repos.getContent({ owner, repo, path, ref });
+                return true;
+              } catch (e) {
+                if (e.status === 404) return false;
+                throw e;
+              }
+            }
+
+            // The contrib lane (CONTRIBUTING.md § Contribute an example
+            // program or library) is the one path where an external PR is
+            // sanctioned without the accepting-prs label. It must touch
+            // nothing outside test-data/contrib/ (renames checked on both
+            // ends, so a file can't move out of or into the lane) and be
+            // either a NEW case that links its reserving issue, or a
+            // FOLLOW-UP to a case directory that already exists on the base
+            // branch (whose reserving issue is typically closed, so it need
+            // not be re-linked). The follow-up exemption MUST match
+            // pr-policy-check's (which validates ownership on that path), or
+            // a valid follow-up passes policy-check yet gets auto-closed.
+            async function isContribLanePr(number, linkedIssueCount, baseSha) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: number, per_page: 100
+              });
+              if (files.length === 0 || files.length >= LISTFILES_CAP) return false;
+              const confined = files.every(f =>
+                f.filename.startsWith(contribPrefix) &&
+                (f.previous_filename === undefined ||
+                 f.previous_filename.startsWith(contribPrefix))
+              );
+              if (!confined) return false;
+              if (linkedIssueCount >= 1) return true;
+              // No linked issue: valid only if every touched case directory
+              // already exists on base (a follow-up). A new directory with
+              // no issue is unsanctioned. On an API error we can't confirm,
+              // so keep the PR open — auto-close is destructive, so err
+              // toward not closing (the next sweep re-checks).
+              const dirs = [...new Set(files
+                .map(f => f.filename.slice(contribPrefix.length).split('/')[0])
+                .filter(Boolean))];
+              try {
+                for (const d of dirs) {
+                  if (!await pathExistsOnBase(contribPrefix + d, baseSha)) return false;
+                }
+                return true;
+              } catch (e) {
+                core.warning(
+                  `Follow-up check for PR #${number} failed (${e.message}); ` +
+                  `keeping it open.`);
+                return true;
+              }
+            }
+
+            if (context.eventName === 'pull_request_target') {
+              // Single-PR check, no grace period. The job-level `if:`
+              // already filtered bot authors; drafts are still skipped here.
+              const pr = context.payload.pull_request;
+              if (pr.draft) {
+                core.info(`PR #${pr.number} is a draft, skipping.`);
+                return;
+              }
+
+              const query = `
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      closingIssuesReferences(first: 20) {
+                        nodes {
+                          labels(first: 30) { nodes { name } }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              const result = await github.graphql(query, {
+                owner, repo, number: pr.number
+              });
+              const issues =
+                result.repository.pullRequest.closingIssuesReferences.nodes;
+              if (hasAcceptingLabel(issues)) {
+                core.info(`PR #${pr.number} is sanctioned, skipping.`);
+                return;
+              }
+              if (await isContribLanePr(pr.number, issues.length, pr.base.sha)) {
+                core.info(`PR #${pr.number} is a contrib-lane PR, skipping.`);
+                return;
+              }
+              await closePr(pr.number);
+              return;
+            }
+
+            // Cron / workflow_dispatch path: full sweep with 48h grace.
+            // Drafts are exempt — stale.yml handles long-idle drafts on
+            // its own (slower) schedule. Bot-authored PRs never link
+            // issues; excluding them avoids auto-closing automated PRs
+            // that aren't subject to the contribution policy.
+            const ageThresholdMs = 48 * 60 * 60 * 1000;
+            const cutoff = new Date(Date.now() - ageThresholdMs);
+
+            const sweepQuery = `
+              query($owner: String!, $repo: String!, $cursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(states: OPEN, first: 100, after: $cursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes {
+                      number
+                      createdAt
+                      isDraft
+                      baseRefOid
+                      author { __typename }
+                      closingIssuesReferences(first: 20) {
+                        nodes {
+                          labels(first: 30) { nodes { name } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const candidates = [];
+            let cursor = null;
+            while (true) {
+              const result = await github.graphql(sweepQuery, {
+                owner, repo, cursor
+              });
+              const conn = result.repository.pullRequests;
+              for (const pr of conn.nodes) {
+                if (pr.isDraft) continue;
+                if (pr.author && pr.author.__typename === 'Bot') continue;
+                if (new Date(pr.createdAt) > cutoff) continue;
+                if (hasAcceptingLabel(pr.closingIssuesReferences.nodes)) continue;
+                candidates.push({
+                  number: pr.number,
+                  linkedIssueCount: pr.closingIssuesReferences.nodes.length,
+                  baseSha: pr.baseRefOid
+                });
+              }
+              if (!conn.pageInfo.hasNextPage) break;
+              cursor = conn.pageInfo.endCursor;
+            }
+
+            const toClose = [];
+            for (const candidate of candidates) {
+              if (await isContribLanePr(candidate.number, candidate.linkedIssueCount, candidate.baseSha)) {
+                core.info(`PR #${candidate.number} is a contrib-lane PR, skipping.`);
+                continue;
+              }
+              toClose.push(candidate.number);
+            }
+
+            for (const number of toClose) {
+              await closePr(number);
+            }
+
+            core.info(toClose.length === 0
+              ? 'No PRs to close.'
+              : `Closed ${toClose.length} PR(s): ${toClose.map(n => '#' + n).join(', ')}`);

@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi as t;
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A role-inheriting ("rehosting") type alias: `Reint` names the same
+// type as the role(i32) host type `Int`, so it inherits Int's role
+// (specs/language.md § Literals, "Role-inheriting aliases"). A
+// literal whose expected type is the alias is admitted through it, so
+// the bare `42` below takes `Reint` and the program builds and runs.
+type Reint = t.Int;
+
+fn as_reint() -> Reint { 42 }
+
+pub fn main() -> . { let _ = print(int_to_string(as_reint())); print("\n") }

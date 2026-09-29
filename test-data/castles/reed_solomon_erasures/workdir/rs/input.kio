@@ -1,0 +1,128 @@
+module rs/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as c;
+import list/list as l;
+import rs/polynomial as p;
+import rs/symbols as s;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Frame = {
+  , name: String
+  , dimension: I32
+  , message: p.Polynomial
+  , coordinates: c.List(I32)
+  , received: s.Word
+  };
+
+pub labels Read_result = { loaded: Frame } | { error: String } | { done: . };
+
+fn integer() -> I32 | String {
+  match! io.read_ascii_line() {
+    .(token: String) {
+      match! fmt.string_to_int(token) {
+        .(n: I32) { n.>widen_sum! };
+        .() { text.string_concat("invalid integer token: ", token).>widen_sum! }
+      }
+    };
+    .() { "unexpected end of input".>widen_sum! }
+  }
+}
+
+fn bounded(low: I32, high: I32) -> I32 | String {
+  match! integer() {
+    .(n: I32) {
+      if! a.lt_i32(n, low) {
+        "frame count out of range".>widen_sum!
+      } else if! a.lt_i32(high, n) {
+        "frame count out of range".>widen_sum!
+      } else {
+        n.>widen_sum!
+      }
+    };
+    .(error: String) { error.>widen_sum! }
+  }
+}
+
+rec(loop) fn integers(count: I32, reversed: c.List(I32)) -> c.List(I32) | String {
+  if! a.leq_i32(count, 0) {
+    l.reverse(reversed).>widen_sum!
+  } else match! integer() {
+    .(n: I32) { rec integers(a.sub_i32(count, 1), c.cons(n, reversed)) };
+    .(error: String) { error.>widen_sum! }
+  }
+}
+
+rec(loop) fn samples(count: I32, reversed: s.Word) -> s.Word | String {
+  if! a.leq_i32(count, 0) {
+    l.reverse(reversed).>widen_sum!
+  } else match! integer() {
+    .(coordinate: I32) {
+      match! integer() {
+        .(value: I32) {
+          rec samples(a.sub_i32(count, 1), c.cons({s.coordinate, s.value}, reversed))
+        };
+        .(error: String) { error.>widen_sum! }
+      }
+    };
+    .(error: String) { error.>widen_sum! }
+  }
+}
+
+fn receive(name: String, dimension: I32, message: p.Polynomial, coordinates: c.List(I32)) -> Read_result {
+  match! bounded(0, 8) {
+    .(count: I32) {
+      match! samples(count, c.nil()) {
+        .(received: s.Word) {
+          {loaded = {name, dimension, message, coordinates, received}}.>widen_sum!
+        };
+        .(message: String) { {error = message}.>widen_sum! }
+      }
+    };
+    .(message: String) { {error = message}.>widen_sum! }
+  }
+}
+
+fn contents(name: String, dimension: I32, length: I32) -> Read_result {
+  match! integers(dimension, c.nil()) {
+    .(message: p.Polynomial) {
+      match! integers(length, c.nil()) {
+        .(coordinates: c.List(I32)) { receive(name, dimension, message, coordinates) };
+        .(message: String) { {error = message}.>widen_sum! }
+      }
+    };
+    .(message: String) { {error = message}.>widen_sum! }
+  }
+}
+
+fn header(name: String) -> Read_result {
+  match! bounded(1, 4) {
+    .(dimension: I32) {
+      match! bounded(1, 8) {
+        .(length: I32) { contents(name, dimension, length) };
+        .(message: String) { {error = message}.>widen_sum! }
+      }
+    };
+    .(message: String) { {error = message}.>widen_sum! }
+  }
+}
+
+pub fn next() -> Read_result {
+  match! io.read_ascii_line() {
+    .(name: String) {
+      if! text.string_eq(name, "END") {
+        {done=}.>widen_sum!
+      } else {
+        header(name)
+      }
+    };
+    .() { {error = "missing END marker"}.>widen_sum! }
+  }
+}

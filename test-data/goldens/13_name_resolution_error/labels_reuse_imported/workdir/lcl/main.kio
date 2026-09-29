@@ -1,0 +1,5 @@
+module lcl/main;
+
+import lcl/labels(Field, {field});
+
+labels Row = { field: _ };

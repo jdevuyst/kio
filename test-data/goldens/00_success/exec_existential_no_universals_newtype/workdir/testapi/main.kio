@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Both hidden types are inferred at construction and rebound independently
+// when the projector invokes its continuation.
+newtype Box <A> <B> : A & B { pub constructor mk_box; pub projector un_box }
+
+fn make_box[A][B](x: A, y: B) -> Box { Box.mk_box(A, B, (x, y)) }
+
+fn open_box(box: Box) -> . {
+  Box.un_box(box)(.[A][B](_pair: A & B) -> . { print("existential-no-universals-ok\n") })
+}
+
+pub fn main() -> . { open_box(make_box(., ., (), ())) }

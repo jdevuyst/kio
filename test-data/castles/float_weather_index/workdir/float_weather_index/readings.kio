@@ -1,0 +1,36 @@
+module float_weather_index/readings;
+
+import testapi(F64);
+import testapi/arith as arith;
+
+pub fn morning_temperature() -> F64 { 72.5(F64) }
+
+pub fn morning_humidity() -> F64 { 68.0(F64) }
+
+pub fn morning_wind() -> F64 { 5.5(F64) }
+
+pub fn morning_correction() -> F64 { 0.0(F64) }
+
+pub fn midday_temperature() -> F64 { 84.0(F64) }
+
+pub fn midday_humidity() -> F64 { 55.0(F64) }
+
+pub fn midday_wind() -> F64 { 9.0(F64) }
+
+pub fn midday_correction() -> F64 { 1.25(F64) }
+
+pub fn evening_temperature() -> F64 { 76.25(F64) }
+
+pub fn evening_humidity() -> F64 { 72.0(F64) }
+
+pub fn evening_wind() -> F64 { 3.0(F64) }
+
+pub fn evening_correction() -> F64 { 0.75(F64) }
+
+pub fn night_temperature() -> F64 { 66.0(F64) }
+
+pub fn night_humidity() -> F64 { 81.0(F64) }
+
+pub fn night_wind() -> F64 { 2.5(F64) }
+
+pub fn night_correction() -> F64 { arith.sub_f64(0.0(F64), 1.0(F64)) }

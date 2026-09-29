@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod, widen_prod);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `widen_prod!`: extend the target by adding a `()` slot (R-Identity-
+// Prod-intro). Source `(String & I32)` widens to
+// `(String & I32 & .)` — the new slot synthesizes `__unit__`. The
+// non-`()` slots' values pass through unchanged.
+fn extend(p: String & I32) -> String & I32 & . { widen_prod!(p) }
+
+pub fn main() -> . {
+  let extended = extend(("widen_prod: synthesized unit, kept ", 5));
+  // Recover the data slots by `one_prod!` (it picks the leftmost
+  // source slot of each type). The synthesized `()` slot is just
+  // there to verify the widen produced a valid 3-slot product.
+  let s = one_prod!(extended, String);
+  let n = one_prod!(extended, I32);
+  print(string_concat(s, string_concat(int_to_string(n), "\n")))
+}

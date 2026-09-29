@@ -1,0 +1,46 @@
+/// Lazy conditionals and immediate scoped expressions.
+module library/control;
+
+import __comptime__;
+
+pure fn invoke(ct: __Comptime__, thunk: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn if_checked(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _condition_type: __Type__
+  , result_type: __Type__
+  , condition: __Checked_term__
+  , on_true: __Checked_term__
+  , on_false: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let true_result = invoke(ct, on_true);
+  let false_result = invoke(ct, on_false);
+  let with_true = __fill__(ct, fills, result_type, __term_type__(ct, true_result));
+  let with_false = __fill__(ct, with_true, result_type, __term_type__(ct, false_result));
+  (
+    , __intrinsic_if_then_else__(
+        , ct
+        , result_type
+        , condition
+        , .() -> __Checked_term__ { true_result }
+        , .() -> __Checked_term__ { false_result }
+        )
+    , with_false
+    )
+}
+
+/// Evaluates the condition once and evaluates only its selected branch.
+pub elab if : [Condition][Result] Condition -> (. -> Result) -> (. -> Result) -> Result { trailing thunk; trailing thunk else; impl(fills) if_checked }
+
+pure fn scope_checked(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _result_type: __Type__
+  , body: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (invoke(ct, body), fills) }
+
+/// Evaluates a scoped body once and returns its final expression.
+pub elab scope : [Result] (. -> Result) -> Result { trailing thunk; impl(fills) scope_checked }

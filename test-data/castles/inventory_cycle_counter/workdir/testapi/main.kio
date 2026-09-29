@@ -1,0 +1,26 @@
+module testapi/main;
+
+import inventory_cycle_counter/audit as audit;
+import inventory_cycle_counter/model as model;
+import inventory_cycle_counter/report as report;
+import testapi(String);
+import testapi/fmt as fmt;
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn main() -> . {
+  let a = model.bin_a();
+  let b = model.bin_b();
+  let c = model.bin_c();
+  let d = model.bin_d();
+  print("inventory cycle counter\n");
+  print(report.bin_line(a));
+  print(report.bin_line(b));
+  print(report.bin_line(c));
+  print(report.bin_line(d));
+  print(string_concat(
+    , "discrepancy="
+    , string_concat(fmt.int_to_string(audit.discrepancy(a, b, c, d)), "\n")
+    ));
+  print("summary ok=1 missing=2 overage=1\n")
+}

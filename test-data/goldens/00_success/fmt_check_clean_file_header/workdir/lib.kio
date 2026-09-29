@@ -1,0 +1,4 @@
+// file-header comment above a module — preserved by `kio fmt`.
+module lib;
+
+pub fn keep[A](x: A) -> A { x }

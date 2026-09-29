@@ -1,0 +1,9 @@
+module a;
+
+import elab/control(scope);
+
+pub fn unrelated() -> . {
+  scope! {
+    ()
+  }
+}

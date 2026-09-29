@@ -1,0 +1,9 @@
+module derive_empty_candidates_structural_no_rule/main;
+
+import elab/derive(derive);
+
+type Unit_structural = (. | !) & (! | .);
+
+fn bad() -> Unit_structural { derive!((), Unit_structural) }
+
+pub fn main() -> . { () }

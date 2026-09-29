@@ -1,0 +1,8 @@
+dependency widget;
+
+source {
+  path "../library/widget.pkg.kio"
+}
+
+retype widget/store.A to core/a.A;
+retype widget/store.B to core/b.B;

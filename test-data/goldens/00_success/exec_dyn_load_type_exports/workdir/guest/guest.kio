@@ -1,0 +1,24 @@
+module guest;
+
+import hostapi(I32, Resource, add_i32);
+import internal(bump);
+
+pub type Twin[A] = A & A;
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Sealed <U> : I32 & U { pub constructor mk_sealed; pub projector un_sealed }
+
+pub newtype Outer[A][B] <U> : (A & B) & U { pub constructor mk_outer; pub projector un_outer }
+
+pub newtype Free <U> : Resource & U { pub constructor mk_free; pub projector un_free }
+
+pub newtype Token : I32 { pub constructor mk_token; pub(guest) projector un_token }
+
+pub newtype Mirror[A] : Twin(A) { pub constructor mk_mirror; pub projector un_mirror }
+
+pub(guest) newtype Leak : I32 { pub constructor mk_leak; pub projector un_leak }
+
+pub fn seal(n: I32) -> Sealed { Sealed.mk_sealed((n, bump(n))) }
+
+pub(guest) fn hidden_fn(n: I32) -> I32 { bump(n) }

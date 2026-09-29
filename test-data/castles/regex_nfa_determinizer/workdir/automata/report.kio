@@ -1,0 +1,130 @@
+/// Turning the pipeline's results into text.
+///
+/// The host surface here prints a string and stringifies a number, but it
+/// cannot *measure* a string. So a column is padded from the decimal width
+/// of the number it holds, worked out arithmetically — and a probe word is
+/// padded from its letter count plus its two quotes.
+module automata/report;
+
+import automata/dfa as dfa;
+import automata/seq(Ints, List, fold, len);
+import automata/symbol(letter, width);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn num(value: I32) -> String { int_to_string(value) }
+
+pub fn line(text: String) -> . { print(cat(text, "\n")) }
+
+rec(loop) fn blanks(n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec blanks(sub_i32(n, 1), cat(" ", acc))
+  }
+}
+
+rec(loop) fn digits_from(value: I32, limit: I32, acc: I32) -> I32 {
+  if! lt_i32(value, limit) {
+    acc
+  } else {
+    rec digits_from(value, mul_i32(limit, 10), add_i32(acc, 1))
+  }
+}
+
+/// Every number this report prints is a count or a state id, so none of them
+/// is negative.
+fn digits(value: I32) -> I32 { digits_from(value, 10, 1) }
+
+/// `value`, right-aligned in a field of `slot` columns.
+pub fn cell(value: I32, slot: I32) -> String {
+  cat(blanks(sub_i32(slot, digits(value)), ""), num(value))
+}
+
+rec(loop) fn set_body(xs: Ints, lead: Bool, acc: String) -> String {
+  match! xs.>List.unpack {
+    (
+      , .(x: I32, rest: Ints) {
+          let sep =
+            if! lead {
+              ""
+            } else {
+              ","
+            };
+          rec set_body(rest, .f, cat3(acc, sep, num(x)))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// A set of NFA states, as `{0,2,4,6,7,8}`.
+pub fn show_set(xs: Ints) -> String { cat3("{", set_body(xs, .t, ""), "}") }
+
+/// A word, quoted, then left-aligned in `slot` columns so the verdicts line
+/// up under each other.
+pub fn show_word(word: Ints, slot: I32) -> String {
+  cat(
+    , cat3("\"", fold(word, .(acc: String, sym: I32) { cat(acc, letter(sym)) }, ""), "\"")
+    , blanks(sub_i32(slot, add_i32(len(word), 2)), "")
+    )
+}
+
+pub fn verdict(ok: Bool) -> String {
+  if! ok {
+    "accept"
+  } else {
+    "reject"
+  }
+}
+
+rec(loop) fn header_from(sym: I32, acc: String) -> String {
+  if! leq_i32(width(), sym) {
+    acc
+  } else {
+    rec header_from(add_i32(sym, 1), cat3(acc, blanks(5, ""), letter(sym)))
+  }
+}
+
+/// Two columns of margin, two of marker, four of state number, then six per
+/// letter — the same arithmetic `table_row` lays out.
+pub fn table_header() -> String { cat("      st", header_from(0, "")) }
+
+rec(loop) fn row_cells(d: dfa.Dfa, state: I32, sym: I32, acc: String) -> String {
+  if! leq_i32(width(), sym) {
+    acc
+  } else {
+    rec row_cells(d, state, add_i32(sym, 1), cat(acc, cell(dfa.step(d, state, sym), 6)))
+  }
+}
+
+/// `>` marks the start state and `*` an accepting one; a state can be both.
+fn marker(d: dfa.Dfa, state: I32) -> String {
+  let entry =
+    if! eq_i32(dfa.start(d), state) {
+      ">"
+    } else {
+      " "
+    };
+  let final =
+    if! dfa.is_accepting(d, state) {
+      "*"
+    } else {
+      " "
+    };
+  cat(entry, final)
+}
+
+pub fn table_row(d: dfa.Dfa, state: I32) -> String {
+  cat3("  ", marker(d, state), cat(cell(state, 4), row_cells(d, state, 0, "")))
+}

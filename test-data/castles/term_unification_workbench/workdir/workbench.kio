@@ -1,0 +1,54 @@
+module workbench;
+
+import elab/match(match);
+import substitutions as subst;
+import terms as term;
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/io(print);
+import testapi/text(string_concat);
+import unifier as solver;
+
+fn line(prefix: String, value: String) -> . {
+  print(string_concat(prefix, string_concat(value, "\n")))
+}
+
+pub fn run(name: String, left: term.Term, right: term.Term) -> . {
+  line("case: ", name);
+  line("  left: ", term.render(left));
+  line("  right: ", term.render(right));
+  match! solver.solve(left, right) {
+    .(solution: solver.Solved) {
+      let bindings = solution.>solver.Solved.get;
+      let resolved_left = subst.apply(bindings, left);
+      let resolved_right = subst.apply(bindings, right);
+      line("  substitution: ", subst.render(bindings));
+      line("  left after: ", term.render(resolved_left));
+      line("  right after: ", term.render(resolved_right));
+      line("  verified equal: ", fmt.bool_to_string(term.equal(resolved_left, resolved_right)))
+    };
+    .(failure: solver.Occurs) {
+      line("  occurs check: v", fmt.int_to_string(failure.>solver.Occurs.get))
+    };
+    .(failure: solver.Clash) {
+      let .(left_symbol, right_symbol) = failure.>solver.Clash.get;
+      line(
+        , "  symbol clash: "
+        , string_concat(
+            , fmt.int_to_string(left_symbol)
+            , string_concat(" vs ", fmt.int_to_string(right_symbol))
+            )
+        )
+    };
+    .(failure: solver.Arity) {
+      let .(left_count, right_count) = failure.>solver.Arity.get;
+      line(
+        , "  arity mismatch: "
+        , string_concat(
+            , fmt.int_to_string(left_count)
+            , string_concat(" vs ", fmt.int_to_string(right_count))
+            )
+        )
+    }
+  }
+}

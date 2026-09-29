@@ -1,0 +1,69 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// A key/value pair, used as the element type of a list-of-pairs
+// dict.
+newtype Pair : String & Int { pub constructor mk_pair; pub projector un_pair }
+
+fn pair_of(k: String, v: Int) -> Pair { Pair.mk_pair((k, v)) }
+
+// Right-associative pair construction: `k => v` desugars to
+// `pair_of(k, v)`. No nesting since each operand is atomic.
+op _ => _ { impl pair_of }
+
+// Same cons-list of `a` as in exec_operators_cons_list — the
+// `::` operator gives it the standard right-folded surface.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+op _ :: __ { impl push }
+
+fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
+  match! ys.>List.un_list {
+    (
+      , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
+      , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+      )
+  }
+}
+
+fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
+  loop(
+    , B & List(A)
+    , B
+    , .(state: B & List(A)) -> (B & List(A)) | B {
+        match! state {
+          .(acc: B, ys: List(A)) { step(f, acc, ys) }
+        }
+      }
+    , (seed, xs)
+    )
+}
+
+// Fold step that appends `<k>=<v>\n` onto the accumulator string.
+fn format_step(p: Pair, acc: String) -> String {
+  match! p.>Pair.un_pair {
+    .(k: String, v: Int) {
+      acc
+        .>string_concat(k)
+        .>string_concat("=")
+        .>string_concat(int_to_string(v))
+        .>string_concat("\n")
+    }
+  }
+}
+
+pub fn main() -> . {
+  let d = ("a" => 1) :: ("b" => 2) :: ("c" => 3) :: nil(Pair, ());
+  print(fold(format_step, "", d))
+}

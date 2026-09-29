@@ -1,0 +1,8 @@
+module main;
+
+import other(noise);
+import provider(Wrapped);
+
+fn consume(wrapper: Wrapped(.) -> .) -> . { () }
+
+fn partial() -> . { noise(); consume(.(function: Wrapped(_)) { () }) }

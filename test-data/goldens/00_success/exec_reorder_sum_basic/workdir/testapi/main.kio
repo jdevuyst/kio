@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(reorder_sum, widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `reorder_sum!` permutes the arms of a sum. Source `(String | I32)`
+// has the same arm multiset as target `(I32 | String)`, so the
+// reorder is a pure permutation — String moves from slot 0 to
+// slot 1, I32 moves from slot 1 to slot 0.
+fn swap(s: String | I32) -> I32 | String { reorder_sum!(s) }
+
+// Lift a String into a `String | I32` sum so we can exercise the
+// reorder on a constructed sum value. `widen_sum!` is the spine
+// palette's injection.
+fn lift(s: String) -> String | I32 { widen_sum!(s) }
+
+pub fn main() -> . {
+  // Construct a left-arm sum value, reorder so it lands as the
+  // right arm of `(I32 | String)`, then discriminate via match.
+  let r = swap(lift("reorder_sum: forwarded\n"));
+  let out =
+    match! r {
+      (.(n: I32) { int_to_string(n) }, .(s: String) { s })
+    };
+  print(out)
+}

@@ -1,0 +1,9 @@
+module elaborator_owner_c;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pub pure fn branch(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {
+  value
+}

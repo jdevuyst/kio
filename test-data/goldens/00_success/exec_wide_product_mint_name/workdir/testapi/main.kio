@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import wide(grid, grid_total);
+
+pub fn main() -> . { print(int_to_string(grid_total(grid()))) }

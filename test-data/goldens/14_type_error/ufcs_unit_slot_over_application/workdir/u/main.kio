@@ -1,0 +1,5 @@
+module u/main;
+
+fn accepts_unit[A]() -> . { () }
+
+pub fn caller() -> . { ().>accepts_unit(()) }

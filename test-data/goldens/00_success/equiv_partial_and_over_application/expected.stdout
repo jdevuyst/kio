@@ -1,0 +1,4 @@
+  pass equiv `partial_application_captures` in equiv_partial_and_over_application
+  pass equiv `over_application_reapplies_returned_function` in equiv_partial_and_over_application
+
+result: 2/2 equiv blocks passed

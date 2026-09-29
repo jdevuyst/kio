@@ -1,0 +1,145 @@
+module polygon/certificate;
+
+import elab/control(if);
+import polygon/geometry as geo;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as num;
+import testapi/array as arr;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn valid_index(i: I32, n: I32) -> Bool { geo.both(num.leq_i32(0, i), geo.less(i, n)) }
+
+rec(loop) fn triangle_check(points: Array(geo.Point), triangles: Array(geo.Triangle), i: I32) -> String {
+  if! geo.equal(i, arr.array_len(triangles)) {
+    ""
+  } else {
+    let .(a, b, c) = arr.array_get(triangles, i);
+    let n = arr.array_len(points);
+    if! geo.both(valid_index(a, n), geo.both(valid_index(b, n), valid_index(c, n))) {
+      if! geo.less(
+        , 0
+        , geo.cross(arr.array_get(points, a), arr.array_get(points, b), arr.array_get(points, c))
+        ) {
+        rec triangle_check(points, triangles, num.add_i32(i, 1))
+      } else {
+        "nonpositive triangle"
+      }
+    } else {
+      "invalid vertex index"
+    }
+  }
+}
+
+rec(loop) fn area_walk(points: Array(geo.Point), triangles: Array(geo.Triangle), i: I32, total: I32) -> I32 {
+  if! geo.equal(i, arr.array_len(triangles)) {
+    total
+  } else {
+    let .(a, b, c) = arr.array_get(triangles, i);
+    rec area_walk(
+      , points
+      , triangles
+      , num.add_i32(i, 1)
+      , num.add_i32(
+          , total
+          , geo.cross(arr.array_get(points, a), arr.array_get(points, b), arr.array_get(points, c))
+          )
+      )
+  }
+}
+
+pub fn triangle_area2(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> I32 {
+  area_walk(points, triangles, 0, 0)
+}
+
+fn add_edge(edges: Array(I32), n: I32, a: I32, b: I32) -> . {
+  let index = num.add_i32(num.mul_i32(a, n), b);
+  arr.array_set(edges, index, num.add_i32(arr.array_get(edges, index), 1))
+}
+
+rec(loop) fn collect_edges(edges: Array(I32), n: I32, triangles: Array(geo.Triangle), i: I32) -> . {
+  if! geo.equal(i, arr.array_len(triangles)) {
+    ()
+  } else {
+    let .(a, b, c) = arr.array_get(triangles, i);
+    add_edge(edges, n, a, b);
+    add_edge(edges, n, b, c);
+    add_edge(edges, n, c, a);
+    rec collect_edges(edges, n, triangles, num.add_i32(i, 1))
+  }
+}
+
+fn edge_count(edges: Array(I32), n: I32, a: I32, b: I32) -> I32 {
+  arr.array_get(edges, num.add_i32(num.mul_i32(a, n), b))
+}
+
+rec(loop) fn edge_check(edges: Array(I32), n: I32, a: I32, b: I32) -> Bool {
+  if! geo.equal(a, n) {
+    .t
+  } else if! num.leq_i32(n, b) {
+    rec edge_check(edges, n, num.add_i32(a, 1), num.add_i32(a, 2))
+  } else {
+    let forward = edge_count(edges, n, a, b);
+    let backward = edge_count(edges, n, b, a);
+    let valid = if! geo.equal(geo.next(a, n), b) {
+      geo.both(geo.equal(forward, 1), geo.equal(backward, 0))
+    } else if! geo.equal(geo.next(b, n), a) {
+      geo.both(geo.equal(forward, 0), geo.equal(backward, 1))
+    } else {
+      geo.both(geo.equal(forward, backward), num.leq_i32(forward, 1))
+    };
+    if! valid {
+      rec edge_check(edges, n, a, num.add_i32(b, 1))
+    } else {
+      .f
+    }
+  }
+}
+
+rec(loop) fn internal_walk(edges: Array(I32), n: I32, a: I32, b: I32, total: I32) -> I32 {
+  if! geo.equal(a, n) {
+    total
+  } else if! num.leq_i32(n, b) {
+    rec internal_walk(edges, n, num.add_i32(a, 1), num.add_i32(a, 2), total)
+  } else {
+    let extra = if! geo.either(geo.equal(geo.next(a, n), b), geo.equal(geo.next(b, n), a)) {
+      0
+    } else if! geo.less(0, edge_count(edges, n, a, b)) {
+      1
+    } else {
+      0
+    };
+    rec internal_walk(edges, n, a, num.add_i32(b, 1), num.add_i32(total, extra))
+  }
+}
+
+pub fn internal_edges(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> I32 {
+  let n = arr.array_len(points);
+  let edges = arr.array_make_filled(num.mul_i32(n, n), 0);
+  collect_edges(edges, n, triangles, 0);
+  internal_walk(edges, n, 0, 1, 0)
+}
+
+pub fn certify(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> String {
+  let n = arr.array_len(points);
+  if! geo.equal(arr.array_len(triangles), num.sub_i32(n, 2)) {
+    let defect = triangle_check(points, triangles, 0);
+    if! text.string_eq(defect, "") {
+      if! geo.equal(triangle_area2(points, triangles), geo.area2(points)) {
+        let edges = arr.array_make_filled(num.mul_i32(n, n), 0);
+        collect_edges(edges, n, triangles, 0);
+        if! edge_check(edges, n, 0, 1) {
+          "ok"
+        } else {
+          "edge multiplicity mismatch"
+        }
+      } else {
+        "area mismatch"
+      }
+    } else {
+      defect
+    }
+  } else {
+    "triangle count mismatch"
+  }
+}

@@ -1,0 +1,5 @@
+dependency lib;
+
+source {
+  git "https://example.com/lib.git";
+}

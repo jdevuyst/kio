@@ -1,0 +1,27 @@
+module bdd/compile;
+
+import bdd/apply as engine;
+import bdd/expression as expr;
+import bdd/logic as logic;
+import bdd/store as table;
+import elab/match(match);
+import testapi/iter(loop);
+
+pub rec(loop) fn compile(m: engine.Manager, expression: expr.Expression) ->
+  engine.Manager & table.Node_id
+   {
+  match! expression {
+    .(c: expr.Constant) { (m, table.from_bool(c.?{expr.constant})) };
+    .(v: expr.Variable) { engine.intern(m, v.?{expr.variable}, table.false_id(), table.true_id()) };
+    .(n: expr.Negation) {
+      let .(next: engine.Manager, child: table.Node_id) = rec(cont) compile(m, n.?{expr.negation});
+      engine.apply(next, logic.exclusive_op(), child, table.true_id())
+    };
+    .(b: expr.Binary) {
+      let .(op: logic.Operation, left: expr.Expression, right: expr.Expression) = b.?{expr.binary};
+      let .(after_left: engine.Manager, a: table.Node_id) = rec(cont) compile(m, left);
+      let .(after_right: engine.Manager, b: table.Node_id) = rec(cont) compile(after_left, right);
+      engine.apply(after_right, op, a, b)
+    }
+  }
+}

@@ -1,0 +1,18 @@
+module main;
+
+import elab/algebraic_elaborators(into);
+
+// `into!` (and `onto!`) never crosses a label boundary. A
+// `labels` declaration mints a `newtype` (`Wrap`); the label is
+// structurally opaque to the elaborator, identical in kind to a
+// user-declared `newtype`. So even though the payload of `wrap` is
+// `A`, the elaborator won't peel the wrapper to expose it — `wrap`
+// `Wrap` and `A` are simply different nominal types from its perspective.
+// To move between a payload type and `F` you write `{f = x}`
+// (sugar for the constructor-member call) or call `F.get`.
+// Exit code 15 (elaborator error).
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+labels { wrap: A };
+
+fn strip(w: Wrap) -> A { into!(w) }

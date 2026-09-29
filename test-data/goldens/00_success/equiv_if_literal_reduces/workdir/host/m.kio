@@ -1,0 +1,30 @@
+module host/m;
+
+import elab/control(if);
+import host(Bool, bar, foo);
+
+equiv if_true_takes_then_arm() {
+  if! .t {
+    foo()
+  } else {
+    bar()
+  };
+  if! .t {
+    foo()
+  } else {
+    foo()
+  }
+}
+
+equiv if_false_takes_else_arm() {
+  if! .f {
+    bar()
+  } else {
+    foo()
+  };
+  if! .f {
+    foo()
+  } else {
+    foo()
+  }
+}

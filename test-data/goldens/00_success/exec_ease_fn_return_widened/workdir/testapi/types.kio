@@ -1,0 +1,5 @@
+module testapi/types;
+
+import testapi as api;
+
+pub type String = api.String;

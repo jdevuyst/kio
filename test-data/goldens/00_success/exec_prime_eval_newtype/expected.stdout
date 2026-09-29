@@ -1,0 +1,5 @@
+warmer(40) = 41
+unbox(box(7)) = 7
+point_x = 3
+point_y = 4
+sum = 55

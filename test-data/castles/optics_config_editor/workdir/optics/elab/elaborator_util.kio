@@ -1,0 +1,4036 @@
+/// Shared reflected-type and checked-term utilities used by the POC elaborator modules.
+module optics/elab/elaborator_util;
+
+import __intrinsics__;
+
+import __comptime__;
+import optics/elab/testapi(String);
+
+/// Shared success-or-diagnostic result returned by checked-term construction helpers.
+pub type Elaborator_result = __Checked_term__ | __Diagnostic_text__;
+
+/// Optional reflected target type supplied by an explicit or expected elaborator target.
+pub type Optional_type = __Type__ | .;
+
+/// Pair of reflected types used by structural recursion over source and target shapes.
+pub type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+type Maybe_type_pair = Type_pair | .;
+
+/// Builds a successful elaborator result carrying a checked term.
+pub pure fn ok(ct: __Comptime__, value: __Checked_term__) -> Elaborator_result {
+  __left__(__Checked_term__, __Diagnostic_text__, value)
+}
+
+/// Builds a diagnostic elaborator result.
+pub pure fn err(ct: __Comptime__, message: __Diagnostic_text__) -> Elaborator_result {
+  __right__(__Checked_term__, __Diagnostic_text__, message)
+}
+
+/// Turns an elaborator result into a checked term or emits the diagnostic text.
+pub pure fn finish_elaborator_result(ct: __Comptime__, result: Elaborator_result) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , __Checked_term__
+    , result
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(message: __Diagnostic_text__) -> __Checked_term__ { __elab_error__(ct, message) }
+    )
+}
+
+/// Reports whether an elaborator result is a checked-term success.
+pub pure fn elaborator_result_ok(ct: __Comptime__, result: Elaborator_result) -> Comptime_bool {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , Comptime_bool
+    , result
+    , .(_term: __Checked_term__) -> Comptime_bool { .t }
+    , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+    )
+}
+
+/// Chooses one of two checked terms using a compile-time boolean.
+pub pure fn choose_checked_term(
+  , ct: __Comptime__
+  , cond: Comptime_bool
+  , on_true: __Checked_term__
+  , on_false: __Checked_term__
+  ) -> __Checked_term__ {
+  __if_then_else__(cond, .() -> __Checked_term__ { on_true }, .() -> __Checked_term__ { on_false })
+}
+
+pure fn some_type_pair(ct: __Comptime__, pair: Type_pair) -> Maybe_type_pair {
+  __left__(Type_pair, ., pair)
+}
+
+pure fn no_type_pair(ct: __Comptime__) -> Maybe_type_pair { __right__(Type_pair, ., ()) }
+
+pure fn product_view(ct: __Comptime__, typ: __Type__) -> Maybe_type_pair {
+  __either__(
+    , .
+    , Type_view_tail1
+    , Maybe_type_pair
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> Maybe_type_pair { no_type_pair(ct) }
+    , .(tail1: Type_view_tail1) -> Maybe_type_pair {
+        __either__(
+          , .
+          , Type_view_tail2
+          , Maybe_type_pair
+          , tail1
+          , .(_bottom: .) -> Maybe_type_pair { no_type_pair(ct) }
+          , .(tail2: Type_view_tail2) -> Maybe_type_pair {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , Maybe_type_pair
+                , tail2
+                , .(pair: Type_pair) -> Maybe_type_pair { some_type_pair(ct, pair) }
+                , .(_tail3: Type_view_tail3) -> Maybe_type_pair { no_type_pair(ct) }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn sum_view(ct: __Comptime__, typ: __Type__) -> Maybe_type_pair {
+  __either__(
+    , .
+    , Type_view_tail1
+    , Maybe_type_pair
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> Maybe_type_pair { no_type_pair(ct) }
+    , .(tail1: Type_view_tail1) -> Maybe_type_pair {
+        __either__(
+          , .
+          , Type_view_tail2
+          , Maybe_type_pair
+          , tail1
+          , .(_bottom: .) -> Maybe_type_pair { no_type_pair(ct) }
+          , .(tail2: Type_view_tail2) -> Maybe_type_pair {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , Maybe_type_pair
+                , tail2
+                , .(_product: Type_pair) -> Maybe_type_pair { no_type_pair(ct) }
+                , .(tail3: Type_view_tail3) -> Maybe_type_pair {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , Maybe_type_pair
+                      , tail3
+                      , .(pair: Type_pair) -> Maybe_type_pair { some_type_pair(ct, pair) }
+                      , .(_tail4: Type_view_tail4) -> Maybe_type_pair { no_type_pair(ct) }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Cons-list of reflected types used for product, sum, and DNF spines.
+pub rec newtype Type_list : . | (__Type__ & Type_list) {
+  pub constructor mk_type_list;
+  pub projector un_type_list
+  }
+
+/// Builds the empty reflected-type list.
+pub pure fn type_nil() -> Type_list {
+  Type_list.mk_type_list(__left__(., __Type__ & Type_list, ()))
+}
+
+/// Prepends one reflected type to a `Type_list`.
+pub pure fn type_cons(ct: __Comptime__, head: __Type__, tail: Type_list) -> Type_list {
+  Type_list.mk_type_list(__right__(., __Type__ & Type_list, (head, tail)))
+}
+
+pure fn type_empty(ct: __Comptime__, xs: Type_list) -> Comptime_bool {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Comptime_bool
+    , Type_list.un_type_list(xs)
+    , .(_done: .) -> Comptime_bool { .t }
+    , .(_cell: __Type__ & Type_list) -> Comptime_bool { .f }
+    )
+}
+
+type Reverse_state = Type_list;
+
+type Reverse_next = Type_list & Reverse_state;
+
+type Reverse_step = Type_list | Reverse_next;
+
+pure fn reverse_step(ct: __Comptime__, fuel: Type_list, acc: Reverse_state) -> Reverse_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Reverse_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Reverse_step { __left__(Type_list, Reverse_next, acc) }
+    , .(cell: __Type__ & Type_list) -> Reverse_step {
+        __right__(
+          , Type_list
+          , Reverse_next
+          , (
+              , __snd__(__Type__, Type_list, cell)
+              , type_cons(ct, __fst__(__Type__, Type_list, cell), acc)
+              )
+          )
+      }
+    )
+}
+
+/// Reverses a reflected-type list with compile-time structural recursion.
+pub pure fn type_reverse(ct: __Comptime__, xs: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Reverse_state
+    , Type_list
+    , xs
+    , type_nil()
+    , .(
+        , loop_recur: (Type_list & Reverse_state) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Reverse_state
+        ) -> Type_list {
+        let loop_step_fn =
+          .(fuel: Type_list, acc: Reverse_state) -> Reverse_step { reverse_step(ct, fuel, acc) };
+        __either__(
+          , Type_list
+          , Type_list & Reverse_state
+          , Type_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Type_list) -> Type_list { loop_done }
+          , .(loop_next: Type_list & Reverse_state) -> Type_list {
+              loop_recur(
+                , __fst__(Type_list, Reverse_state, loop_next)
+                , __snd__(Type_list, Reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Prepends a reversed type prefix onto a tail list.
+pub pure fn type_prepend_reverse(ct: __Comptime__, prefix_rev: Type_list, tail: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Reverse_state
+    , Type_list
+    , prefix_rev
+    , tail
+    , .(
+        , loop_recur: (Type_list & Reverse_state) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Reverse_state
+        ) -> Type_list {
+        let loop_step_fn =
+          .(fuel: Type_list, acc: Reverse_state) -> Reverse_step { reverse_step(ct, fuel, acc) };
+        __either__(
+          , Type_list
+          , Type_list & Reverse_state
+          , Type_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Type_list) -> Type_list { loop_done }
+          , .(loop_next: Type_list & Reverse_state) -> Type_list {
+              loop_recur(
+                , __fst__(Type_list, Reverse_state, loop_next)
+                , __snd__(Type_list, Reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Appends two reflected-type lists.
+pub pure fn type_append(ct: __Comptime__, left: Type_list, right: Type_list) -> Type_list {
+  type_prepend_reverse(ct, type_reverse(ct, left), right)
+}
+
+type Type_list_equal_state = Type_list & Comptime_bool;
+
+type Type_list_equal_next = Type_list & Type_list_equal_state;
+
+type Type_list_equal_step = Comptime_bool | Type_list_equal_next;
+
+pure fn type_list_equal_state_tail(ct: __Comptime__, state: Type_list_equal_state) -> Type_list {
+  __fst__(Type_list, state)
+}
+
+pure fn type_list_equal_state_bool(ct: __Comptime__, state: Type_list_equal_state) -> Comptime_bool {
+  __snd__(Type_list, state)
+}
+
+pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Type_list_equal_state
+    , left
+    , (right, .t)
+    , .(
+        , loop_recur: (Type_list & Type_list_equal_state) -> Comptime_bool
+        , loop_fuel: Type_list
+        , loop_state: Type_list_equal_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Type_list_equal_state) -> Type_list_equal_step {
+            __if_then_else__(
+              , type_list_equal_state_bool(ct, state)
+              , .() -> Type_list_equal_step {
+                  __either__(
+                    , .
+                    , __Type__ & Type_list
+                    , Type_list_equal_step
+                    , Type_list.un_type_list(fuel)
+                    , .(_left_done: .) -> Type_list_equal_step {
+                        __if_then_else__(
+                          , type_empty(ct, type_list_equal_state_tail(ct, state))
+                          , .() -> Type_list_equal_step {
+                              __left__(Comptime_bool, Type_list_equal_next, .t)
+                            }
+                          , .() -> Type_list_equal_step {
+                              __left__(Comptime_bool, Type_list_equal_next, .f)
+                            }
+                          )
+                      }
+                    , .(left_cell: __Type__ & Type_list) -> Type_list_equal_step {
+                        __either__(
+                          , .
+                          , __Type__ & Type_list
+                          , Type_list_equal_step
+                          , Type_list.un_type_list(type_list_equal_state_tail(ct, state))
+                          , .(_right_done: .) -> Type_list_equal_step {
+                              __left__(Comptime_bool, Type_list_equal_next, .f)
+                            }
+                          , .(right_cell: __Type__ & Type_list) -> Type_list_equal_step {
+                              __if_then_else__(
+                                , __type_equal__(
+                                    , ct
+                                    , __fst__(__Type__, Type_list, left_cell)
+                                    , __fst__(__Type__, Type_list, right_cell)
+                                    )
+                                , .() -> Type_list_equal_step {
+                                    __right__(
+                                      , Comptime_bool
+                                      , Type_list_equal_next
+                                      , (
+                                          , __snd__(__Type__, Type_list, left_cell)
+                                          , (__snd__(__Type__, Type_list, right_cell), .t)
+                                          )
+                                      )
+                                  }
+                                , .() -> Type_list_equal_step {
+                                    __left__(Comptime_bool, Type_list_equal_next, .f)
+                                  }
+                                )
+                            }
+                          )
+                      }
+                    )
+                }
+              , .() -> Type_list_equal_step { __left__(Comptime_bool, Type_list_equal_next, .f) }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Type_list_equal_next
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Type_list_equal_next) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Type_list, Type_list_equal_state, loop_next)
+                , __snd__(Type_list, Type_list_equal_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Pair of the matched reflected type and the remaining reflected-type list.
+pub type Type_take = __Type__ & Type_list;
+
+/// Optional result for taking one matching type from a reflected-type list.
+pub type Maybe_type_take = Type_take | .;
+
+pure fn type_take_some(ct: __Comptime__, head: __Type__, rest: Type_list) -> Maybe_type_take {
+  __left__(Type_take, ., (head, rest))
+}
+
+pure fn type_take_none(ct: __Comptime__) -> Maybe_type_take { __right__(Type_take, ., ()) }
+
+type Type_take_state = Type_list & Type_list;
+
+fn type_take_remaining(state: Type_take_state) -> Type_list { __fst__(Type_list, Type_list, state) }
+
+pure fn type_take_prefix_rev(state: Type_take_state) -> Type_list {
+  __snd__(Type_list, Type_list, state)
+}
+
+type Type_take_fuel = __Type__ & Type_list;
+
+pure fn type_take_target(ct: __Comptime__, fuel: Type_take_fuel) -> __Type__ {
+  __fst__(__Type__, Type_list, fuel)
+}
+
+pure fn type_take_types(ct: __Comptime__, fuel: Type_take_fuel) -> Type_list {
+  __snd__(__Type__, Type_list, fuel)
+}
+
+type Type_take_next = Type_take_fuel & Type_take_state;
+
+type Type_take_step = Maybe_type_take | Type_take_next;
+
+/// Removes the first type equal to the target and returns it with the residual list.
+pub pure fn take_first_type_matching(ct: __Comptime__, target: __Type__, types: Type_list) -> Maybe_type_take {
+  __structural_recur__(
+    , ct
+    , Type_take_fuel
+    , Type_take_state
+    , Maybe_type_take
+    , (target, types)
+    , (types, type_nil())
+    , .(
+        , loop_recur: (Type_take_fuel & Type_take_state) -> Maybe_type_take
+        , loop_fuel: Type_take_fuel
+        , loop_state: Type_take_state
+        ) -> Maybe_type_take {
+        let loop_step_fn =
+          .(fuel: Type_take_fuel, state: Type_take_state) -> Type_take_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Type_take_step
+              , Type_list.un_type_list(type_take_types(ct, fuel))
+              , .(_done: .) -> Type_take_step {
+                  __left__(Maybe_type_take, Type_take_next, type_take_none(ct))
+                }
+              , .(cell: __Type__ & Type_list) -> Type_take_step {
+                  __if_then_else__(
+                    , __type_equal__(
+                        , ct
+                        , __fst__(__Type__, Type_list, cell)
+                        , type_take_target(ct, fuel)
+                        )
+                    , .() -> Type_take_step {
+                        __left__(
+                          , Maybe_type_take
+                          , Type_take_next
+                          , type_take_some(
+                              , ct
+                              , __fst__(__Type__, Type_list, cell)
+                              , type_prepend_reverse(
+                                  , ct
+                                  , type_take_prefix_rev(state)
+                                  , __snd__(__Type__, Type_list, cell)
+                                  )
+                              )
+                          )
+                      }
+                    , .() -> Type_take_step {
+                        __right__(
+                          , Maybe_type_take
+                          , Type_take_next
+                          , (
+                              , (type_take_target(ct, fuel), __snd__(__Type__, Type_list, cell))
+                              , (
+                                  , __snd__(__Type__, Type_list, cell)
+                                  , type_cons(
+                                      , ct
+                                      , __fst__(__Type__, Type_list, cell)
+                                      , type_take_prefix_rev(state)
+                                      )
+                                  )
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Maybe_type_take
+          , Type_take_next
+          , Maybe_type_take
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Maybe_type_take) -> Maybe_type_take { loop_done }
+          , .(loop_next: Type_take_next) -> Maybe_type_take {
+              loop_recur(
+                , __fst__(Type_take_fuel, Type_take_state, loop_next)
+                , __snd__(Type_take_fuel, Type_take_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Type_multiset_state = Type_list & Comptime_bool;
+
+pure fn type_multiset_remaining(ct: __Comptime__, state: Type_multiset_state) -> Type_list {
+  __fst__(Type_list, state)
+}
+
+pure fn type_multiset_ok(ct: __Comptime__, state: Type_multiset_state) -> Comptime_bool {
+  __snd__(Type_list, state)
+}
+
+type Type_multiset_next = Type_list & Type_multiset_state;
+
+type Type_multiset_step = Comptime_bool | Type_multiset_next;
+
+/// Checks whether every requested type can be taken from a target multiset.
+pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, haystack: Type_list) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Type_multiset_state
+    , needles
+    , (haystack, .t)
+    , .(
+        , loop_recur: (Type_list & Type_multiset_state) -> Comptime_bool
+        , loop_fuel: Type_list
+        , loop_state: Type_multiset_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Type_multiset_state) -> Type_multiset_step {
+            __if_then_else__(
+              , type_multiset_ok(ct, state)
+              , .() -> Type_multiset_step {
+                  __either__(
+                    , .
+                    , __Type__ & Type_list
+                    , Type_multiset_step
+                    , Type_list.un_type_list(fuel)
+                    , .(_done: .) -> Type_multiset_step {
+                        __left__(Comptime_bool, Type_multiset_next, .t)
+                      }
+                    , .(cell: __Type__ & Type_list) -> Type_multiset_step {
+                        __either__(
+                          , Type_take
+                          , .
+                          , Type_multiset_step
+                          , take_first_type_matching(
+                              , ct
+                              , __fst__(__Type__, Type_list, cell)
+                              , type_multiset_remaining(ct, state)
+                              )
+                          , .(taken: Type_take) -> Type_multiset_step {
+                              __right__(
+                                , Comptime_bool
+                                , Type_multiset_next
+                                , (
+                                    , __snd__(__Type__, Type_list, cell)
+                                    , (__snd__(__Type__, Type_list, taken), .t)
+                                    )
+                                )
+                            }
+                          , .(_missing: .) -> Type_multiset_step {
+                              __left__(Comptime_bool, Type_multiset_next, .f)
+                            }
+                          )
+                      }
+                    )
+                }
+              , .() -> Type_multiset_step { __left__(Comptime_bool, Type_multiset_next, .f) }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Type_list & Type_multiset_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Type_list & Type_multiset_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Type_list, Type_multiset_state, loop_next)
+                , __snd__(Type_list, Type_multiset_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Checks reflected-type multiset equality, ignoring spine order.
+pub pure fn type_multiset_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> Comptime_bool {
+  __if_then_else__(
+    , type_multiset_contains_all(ct, left, right)
+    , .() -> Comptime_bool { type_multiset_contains_all(ct, right, left) }
+    , .() -> Comptime_bool { .f }
+    )
+}
+
+/// One disjunctive-normal-form branch represented by its reflected product type.
+pub type Dnf_branch = __Type__;
+
+/// List of DNF branches for a reflected type.
+pub type Dnf_branch_list = Type_list;
+
+fn dnf_branch_nil() -> Dnf_branch_list { type_nil() }
+
+fn dnf_branch_cons(ct: __Comptime__, head: Dnf_branch, tail: Dnf_branch_list) -> Dnf_branch_list {
+  type_cons(ct, head, tail)
+}
+
+/// Returns the only DNF branch when a list has exactly one branch.
+pub pure fn single_dnf_branch(ct: __Comptime__, xs: Dnf_branch_list) -> Dnf_branch | . {
+  __either__(
+    , .
+    , Dnf_branch & Dnf_branch_list
+    , Dnf_branch | .
+    , Type_list.un_type_list(xs)
+    , .() -> Dnf_branch | . { __right__(Dnf_branch, ., ()) }
+    , .(cell: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
+        __either__(
+          , .
+          , Dnf_branch & Dnf_branch_list
+          , Dnf_branch | .
+          , Type_list.un_type_list(__snd__(Dnf_branch, Dnf_branch_list, cell))
+          , .() -> Dnf_branch | . {
+              __left__(Dnf_branch, ., __fst__(Dnf_branch, Dnf_branch_list, cell))
+            }
+          , .(_more: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
+              __right__(Dnf_branch, ., ())
+            }
+          )
+      }
+    )
+}
+
+/// Returns the reflected product type carried by a DNF branch.
+pub pure fn dnf_branch_type(ct: __Comptime__, branch: Dnf_branch) -> __Type__ { branch }
+
+pure fn combine_dnf_branch_type(ct: __Comptime__, left: __Type__, right: __Type__) -> __Type__ {
+  __if_then_else__(
+    , __type_equal__(ct, left, __type_unit__(ct))
+    , .() -> __Type__ { right }
+    , .() -> __Type__ {
+        __if_then_else__(
+          , __type_equal__(ct, right, __type_unit__(ct))
+          , .() -> __Type__ { left }
+          , .() -> __Type__ { __type_product__(ct, left, right) }
+          )
+      }
+    )
+}
+
+pure fn dnf_product_rights_rev(ct: __Comptime__, left: __Type__, rights: Type_list, acc: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Type_list
+    , Type_list
+    , rights
+    , acc
+    , .(
+        , loop_recur: (Type_list & Type_list) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Type_list
+        ) -> Type_list {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Type_list
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> Type_list { loop_state }
+          , .(cell: __Type__ & Type_list) -> Type_list {
+              loop_recur(
+                , __snd__(__Type__, Type_list, cell)
+                , type_cons(
+                    , ct
+                    , combine_dnf_branch_type(ct, left, __fst__(__Type__, Type_list, cell))
+                    , loop_state
+                    )
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn dnf_product_rev(ct: __Comptime__, lefts: Type_list, rights: Type_list, acc: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Type_list
+    , Type_list
+    , lefts
+    , acc
+    , .(
+        , loop_recur: (Type_list & Type_list) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Type_list
+        ) -> Type_list {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Type_list
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> Type_list { loop_state }
+          , .(cell: __Type__ & Type_list) -> Type_list {
+              loop_recur(
+                , __snd__(__Type__, Type_list, cell)
+                , dnf_product_rights_rev(ct, __fst__(__Type__, Type_list, cell), rights, loop_state)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn dnf_product(ct: __Comptime__, lefts: Type_list, rights: Type_list) -> Type_list {
+  type_reverse(ct, dnf_product_rev(ct, lefts, rights, type_nil()))
+}
+
+pure fn dnf_branch_types(ct: __Comptime__, typ: __Type__) -> Type_list {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , .
+    , Type_list
+    , typ
+    , ()
+    , .(loop_recur: (__Type__ & .) -> Type_list, loop_fuel: __Type__, _loop_state: .) -> Type_list {
+        __either__(
+          , .
+          , Type_view_tail1
+          , Type_list
+          , __type_view__(ct, loop_fuel)
+          , .(_unit: .) -> Type_list { type_cons(ct, __type_unit__(ct), type_nil()) }
+          , .(tail1: Type_view_tail1) -> Type_list {
+              __either__(
+                , .
+                , Type_view_tail2
+                , Type_list
+                , tail1
+                , .(_bottom: .) -> Type_list { type_nil() }
+                , .(tail2: Type_view_tail2) -> Type_list {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail3
+                      , Type_list
+                      , tail2
+                      , .(pair: Type_pair) -> Type_list {
+                          dnf_product(
+                            , ct
+                            , loop_recur(__fst__(__Type__, __Type__, pair), ())
+                            , loop_recur(__snd__(__Type__, __Type__, pair), ())
+                            )
+                        }
+                      , .(tail3: Type_view_tail3) -> Type_list {
+                          __either__(
+                            , Type_pair
+                            , Type_view_tail4
+                            , Type_list
+                            , tail3
+                            , .(pair: Type_pair) -> Type_list {
+                                type_append(
+                                  , ct
+                                  , loop_recur(__fst__(__Type__, __Type__, pair), ())
+                                  , loop_recur(__snd__(__Type__, __Type__, pair), ())
+                                  )
+                              }
+                            , .(_tail4: Type_view_tail4) -> Type_list {
+                                type_cons(ct, loop_fuel, type_nil())
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Computes the DNF branches of a reflected type.
+pub pure fn dnf_branches(ct: __Comptime__, typ: __Type__) -> Dnf_branch_list {
+  dnf_branch_types(ct, typ)
+}
+
+pure fn collect_type_step(ct: __Comptime__, acc: Type_list, typ: __Type__) -> Type_list {
+  type_cons(ct, typ, acc)
+}
+
+/// Flattens a reflected product type into its right-associated slot types.
+pub pure fn product_spine(ct: __Comptime__, typ: __Type__) -> Type_list {
+  type_reverse(
+    , ct
+    , __type_product_spine_fold__(
+        , ct
+        , Type_list
+        , typ
+        , type_nil()
+        , .(acc: Type_list, item: __Type__) -> Type_list { collect_type_step(ct, acc, item) }
+        )
+    )
+}
+
+/// Flattens a reflected sum type into its right-associated arm types.
+pub pure fn sum_spine(ct: __Comptime__, typ: __Type__) -> Type_list {
+  type_reverse(
+    , ct
+    , __type_sum_spine_fold__(
+        , ct
+        , Type_list
+        , typ
+        , type_nil()
+        , .(acc: Type_list, item: __Type__) -> Type_list { collect_type_step(ct, acc, item) }
+        )
+    )
+}
+
+/// Builds a right-associated product type from a reflected-type list.
+pub pure fn right_fold_product(ct: __Comptime__, xs: Type_list) -> __Type__ {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , .
+    , __Type__
+    , xs
+    , ()
+    , .(loop_recur: (Type_list & .) -> __Type__, loop_fuel: Type_list, _loop_state: .) -> __Type__ {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , __Type__
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> __Type__ { __type_unit__(ct) }
+          , .(cell: __Type__ & Type_list) -> __Type__ {
+              __either__(
+                , .
+                , __Type__ & Type_list
+                , __Type__
+                , Type_list.un_type_list(__snd__(__Type__, Type_list, cell))
+                , .(_last: .) -> __Type__ { __fst__(__Type__, Type_list, cell) }
+                , .(_tail: __Type__ & Type_list) -> __Type__ {
+                    __type_product__(
+                      , ct
+                      , __fst__(__Type__, Type_list, cell)
+                      , loop_recur(__snd__(__Type__, Type_list, cell), ())
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Builds a right-associated sum type from a reflected-type list.
+pub pure fn right_fold_sum(ct: __Comptime__, xs: Type_list) -> __Type__ {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , .
+    , __Type__
+    , xs
+    , ()
+    , .(loop_recur: (Type_list & .) -> __Type__, loop_fuel: Type_list, _loop_state: .) -> __Type__ {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , __Type__
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> __Type__ { __type_bottom__(ct) }
+          , .(cell: __Type__ & Type_list) -> __Type__ {
+              __either__(
+                , .
+                , __Type__ & Type_list
+                , __Type__
+                , Type_list.un_type_list(__snd__(__Type__, Type_list, cell))
+                , .(_last: .) -> __Type__ { __fst__(__Type__, Type_list, cell) }
+                , .(_tail: __Type__ & Type_list) -> __Type__ {
+                    __type_sum__(
+                      , ct
+                      , __fst__(__Type__, Type_list, cell)
+                      , loop_recur(__snd__(__Type__, Type_list, cell), ())
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Cons-list of checked terms paired with type spines during materialization.
+pub rec newtype Term_list : . | (__Checked_term__ & Term_list) {
+  pub constructor mk_term_list;
+  pub projector un_term_list
+  }
+
+/// Builds the empty checked-term list.
+pub pure fn term_nil() -> Term_list {
+  Term_list.mk_term_list(__left__(., __Checked_term__ & Term_list, ()))
+}
+
+/// Prepends one checked term to a `Term_list`.
+pub pure fn term_cons(ct: __Comptime__, head: __Checked_term__, tail: Term_list) -> Term_list {
+  Term_list.mk_term_list(__right__(., __Checked_term__ & Term_list, (head, tail)))
+}
+
+type Maybe_term = __Checked_term__ | .;
+
+type Term_take = __Checked_term__ & Term_list;
+
+type Maybe_term_take = Term_take | .;
+
+pure fn some_term(ct: __Comptime__, term: __Checked_term__) -> Maybe_term {
+  __left__(__Checked_term__, ., term)
+}
+
+pure fn no_term(ct: __Comptime__) -> Maybe_term { __right__(__Checked_term__, ., ()) }
+
+pure fn some_term_take(ct: __Comptime__, term: __Checked_term__, rest: Term_list) -> Maybe_term_take {
+  __left__(Term_take, ., (term, rest))
+}
+
+pure fn no_term_take(ct: __Comptime__) -> Maybe_term_take { __right__(Term_take, ., ()) }
+
+pure fn split_first_term(ct: __Comptime__, terms: Term_list) -> Maybe_term_take {
+  __either__(
+    , .
+    , __Checked_term__ & Term_list
+    , Maybe_term_take
+    , Term_list.un_term_list(terms)
+    , .(_done: .) -> Maybe_term_take { no_term_take(ct) }
+    , .(cell: __Checked_term__ & Term_list) -> Maybe_term_take {
+        some_term_take(
+          , ct
+          , __fst__(__Checked_term__, Term_list, cell)
+          , __snd__(__Checked_term__, Term_list, cell)
+          )
+      }
+    )
+}
+
+pure fn finish_fold_term_product(ct: __Comptime__, state: Maybe_term) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , .
+    , __Checked_term__
+    , state
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(_empty: .) -> __Checked_term__ { __term_unit__(ct) }
+    )
+}
+
+pure fn push_term_product(ct: __Comptime__, head: __Checked_term__, state: Maybe_term) -> Maybe_term {
+  __either__(
+    , __Checked_term__
+    , .
+    , Maybe_term
+    , state
+    , .(tail: __Checked_term__) -> Maybe_term { some_term(ct, __intrinsic_pair__(ct, head, tail)) }
+    , .(_empty: .) -> Maybe_term { some_term(ct, head) }
+    )
+}
+
+type Fold_term_state = Term_list & Maybe_term;
+
+pure fn fold_term_terms(ct: __Comptime__, state: Fold_term_state) -> Term_list {
+  __fst__(Term_list, Maybe_term, state)
+}
+
+pure fn fold_term_acc(ct: __Comptime__, state: Fold_term_state) -> Maybe_term {
+  __snd__(Term_list, Maybe_term, state)
+}
+
+type Fold_term_next = Type_list & Fold_term_state;
+
+type Fold_term_step = __Checked_term__ | Fold_term_next;
+
+pure fn fold_term_product_step(ct: __Comptime__, fuel: Type_list, state: Fold_term_state) -> Fold_term_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Fold_term_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Fold_term_step {
+        __left__(
+          , __Checked_term__
+          , Fold_term_next
+          , finish_fold_term_product(ct, fold_term_acc(ct, state))
+          )
+      }
+    , .(cell: __Type__ & Type_list) -> Fold_term_step {
+        __either__(
+          , Term_take
+          , .
+          , Fold_term_step
+          , split_first_term(ct, fold_term_terms(ct, state))
+          , .(taken: Term_take) -> Fold_term_step {
+              __right__(
+                , __Checked_term__
+                , Fold_term_next
+                , (
+                    , __snd__(__Type__, Type_list, cell)
+                    , (
+                        , __snd__(__Checked_term__, Term_list, taken)
+                        , push_term_product(
+                            , ct
+                            , __fst__(__Checked_term__, Term_list, taken)
+                            , fold_term_acc(ct, state)
+                            )
+                        )
+                    )
+                )
+            }
+          , .(_missing: .) -> Fold_term_step {
+              __left__(
+                , __Checked_term__
+                , Fold_term_next
+                , finish_fold_term_product(ct, fold_term_acc(ct, state))
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Builds a product term from reversed slot types and reversed checked terms.
+pub pure fn right_fold_term_product_from_reversed(
+  , ct: __Comptime__
+  , types_rev: Type_list
+  , terms_rev: Term_list
+  ) -> __Checked_term__ {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Fold_term_state
+    , __Checked_term__
+    , types_rev
+    , (terms_rev, no_term(ct))
+    , .(
+        , loop_recur: (Type_list & Fold_term_state) -> __Checked_term__
+        , loop_fuel: Type_list
+        , loop_state: Fold_term_state
+        ) -> __Checked_term__ {
+        __either__(
+          , __Checked_term__
+          , Type_list & Fold_term_state
+          , __Checked_term__
+          , fold_term_product_step(ct, loop_fuel, loop_state)
+          , .(loop_done: __Checked_term__) -> __Checked_term__ { loop_done }
+          , .(loop_next: Type_list & Fold_term_state) -> __Checked_term__ {
+              loop_recur(
+                , __fst__(Type_list, Fold_term_state, loop_next)
+                , __snd__(Type_list, Fold_term_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Pair of a reflected type and the checked term occupying that slot.
+pub type Slot = __Type__ & __Checked_term__;
+
+/// Cons-list of typed checked-term slots.
+pub rec newtype Slot_list : . | (Slot & Slot_list) {
+  pub constructor mk_slot_list;
+  pub projector un_slot_list
+  }
+
+/// Builds the empty slot list.
+pub pure fn slot_nil() -> Slot_list { Slot_list.mk_slot_list(__left__(., Slot & Slot_list, ())) }
+
+/// Prepends one typed checked-term slot.
+pub pure fn slot_cons(ct: __Comptime__, head: Slot, tail: Slot_list) -> Slot_list {
+  Slot_list.mk_slot_list(__right__(., Slot & Slot_list, (head, tail)))
+}
+
+/// Projects the reflected type from a slot.
+pub pure fn slot_type(ct: __Comptime__, slot: Slot) -> __Type__ {
+  __fst__(__Type__, __Checked_term__, slot)
+}
+
+/// Projects the checked term from a slot.
+pub pure fn slot_term(ct: __Comptime__, slot: Slot) -> __Checked_term__ {
+  __snd__(__Type__, __Checked_term__, slot)
+}
+
+/// Reports whether a slot list is empty.
+pub pure fn slot_empty(ct: __Comptime__, slots: Slot_list) -> Comptime_bool {
+  __either__(
+    , .
+    , Slot & Slot_list
+    , Comptime_bool
+    , Slot_list.un_slot_list(slots)
+    , .(_done: .) -> Comptime_bool { .t }
+    , .(_cell: Slot & Slot_list) -> Comptime_bool { .f }
+    )
+}
+
+type Slot_reverse_state = Slot_list & Slot_list;
+
+pure fn slot_reverse_source(state: Slot_reverse_state) -> Slot_list {
+  __fst__(Slot_list, Slot_list, state)
+}
+
+pure fn slot_reverse_acc(state: Slot_reverse_state) -> Slot_list {
+  __snd__(Slot_list, Slot_list, state)
+}
+
+type Slot_reverse_next = Type_list & Slot_reverse_state;
+
+type Slot_reverse_step = Slot_list | Slot_reverse_next;
+
+pure fn slot_reverse_step(ct: __Comptime__, fuel: Type_list, state: Slot_reverse_state) -> Slot_reverse_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Slot_reverse_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Slot_reverse_step {
+        __left__(Slot_list, Slot_reverse_next, slot_reverse_acc(state))
+      }
+    , .(type_cell: __Type__ & Type_list) -> Slot_reverse_step {
+        __either__(
+          , .
+          , Slot & Slot_list
+          , Slot_reverse_step
+          , Slot_list.un_slot_list(slot_reverse_source(state))
+          , .(_missing: .) -> Slot_reverse_step {
+              __left__(Slot_list, Slot_reverse_next, slot_reverse_acc(state))
+            }
+          , .(slot_cell: Slot & Slot_list) -> Slot_reverse_step {
+              __right__(
+                , Slot_list
+                , Slot_reverse_next
+                , (
+                    , __snd__(__Type__, Type_list, type_cell)
+                    , (
+                        , __snd__(Slot, Slot_list, slot_cell)
+                        , slot_cons(
+                            , ct
+                            , __fst__(Slot, Slot_list, slot_cell)
+                            , slot_reverse_acc(state)
+                            )
+                        )
+                    )
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Reverses slots while threading the expected type order.
+pub pure fn slot_reverse_by_types(ct: __Comptime__, types: Type_list, xs: Slot_list) -> Slot_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Slot_reverse_state
+    , Slot_list
+    , types
+    , (xs, slot_nil())
+    , .(
+        , loop_recur: (Type_list & Slot_reverse_state) -> Slot_list
+        , loop_fuel: Type_list
+        , loop_state: Slot_reverse_state
+        ) -> Slot_list {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Slot_reverse_state) -> Slot_reverse_step {
+            slot_reverse_step(ct, fuel, state)
+          };
+        __either__(
+          , Slot_list
+          , Type_list & Slot_reverse_state
+          , Slot_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Slot_list) -> Slot_list { loop_done }
+          , .(loop_next: Type_list & Slot_reverse_state) -> Slot_list {
+              loop_recur(
+                , __fst__(Type_list, Slot_reverse_state, loop_next)
+                , __snd__(Type_list, Slot_reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Prepends a reversed slot prefix while rebuilding terms in the given type order.
+pub pure fn slot_prepend_reverse_by_types(
+  , ct: __Comptime__
+  , types_rev: Type_list
+  , prefix_rev: Slot_list
+  , tail: Slot_list
+  ) -> Slot_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Slot_reverse_state
+    , Slot_list
+    , types_rev
+    , (prefix_rev, tail)
+    , .(
+        , loop_recur: (Type_list & Slot_reverse_state) -> Slot_list
+        , loop_fuel: Type_list
+        , loop_state: Slot_reverse_state
+        ) -> Slot_list {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Slot_reverse_state) -> Slot_reverse_step {
+            slot_reverse_step(ct, fuel, state)
+          };
+        __either__(
+          , Slot_list
+          , Type_list & Slot_reverse_state
+          , Slot_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Slot_list) -> Slot_list { loop_done }
+          , .(loop_next: Type_list & Slot_reverse_state) -> Slot_list {
+              loop_recur(
+                , __fst__(Type_list, Slot_reverse_state, loop_next)
+                , __snd__(Type_list, Slot_reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Product_cursor_tail = __Checked_term__ & Slot_list & Type_list;
+
+type Product_cursor = __Type__ & Product_cursor_tail;
+
+pure fn cursor_type(ct: __Comptime__, cursor: Product_cursor) -> __Type__ {
+  __fst__(__Type__, Product_cursor_tail, cursor)
+}
+
+pure fn cursor_term(ct: __Comptime__, cursor: Product_cursor) -> __Checked_term__ {
+  __fst__(__Checked_term__, Slot_list & Type_list, __snd__(__Type__, Product_cursor_tail, cursor))
+}
+
+pure fn cursor_acc(ct: __Comptime__, cursor: Product_cursor) -> Slot_list {
+  __fst__(
+    , Slot_list
+    , Type_list
+    , __snd__(
+        , __Checked_term__
+        , Slot_list & Type_list
+        , __snd__(__Type__, Product_cursor_tail, cursor)
+        )
+    )
+}
+
+pure fn cursor_types_rev(ct: __Comptime__, cursor: Product_cursor) -> Type_list {
+  __snd__(
+    , Slot_list
+    , Type_list
+    , __snd__(
+        , __Checked_term__
+        , Slot_list & Type_list
+        , __snd__(__Type__, Product_cursor_tail, cursor)
+        )
+    )
+}
+
+type Product_slots_next = Type_list & Product_cursor;
+
+type Product_slots_step = Slot_list | Product_slots_next;
+
+pure fn product_slots_step(ct: __Comptime__, fuel: Type_list, cursor: Product_cursor) -> Product_slots_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Product_slots_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Product_slots_step {
+        __left__(
+          , Slot_list
+          , Product_slots_next
+          , slot_reverse_by_types(ct, cursor_types_rev(ct, cursor), cursor_acc(ct, cursor))
+          )
+      }
+    , .(cell: __Type__ & Type_list) -> Product_slots_step {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Product_slots_step
+          , Type_list.un_type_list(__snd__(__Type__, Type_list, cell))
+          , .(_last: .) -> Product_slots_step {
+              __left__(
+                , Slot_list
+                , Product_slots_next
+                , slot_reverse_by_types(
+                    , ct
+                    , type_cons(
+                        , ct
+                        , __fst__(__Type__, Type_list, cell)
+                        , cursor_types_rev(ct, cursor)
+                        )
+                    , slot_cons(
+                        , ct
+                        , (__fst__(__Type__, Type_list, cell), cursor_term(ct, cursor))
+                        , cursor_acc(ct, cursor)
+                        )
+                    )
+                )
+            }
+          , .(_more: __Type__ & Type_list) -> Product_slots_step {
+              __either__(
+                , Type_pair
+                , .
+                , Product_slots_step
+                , product_view(ct, cursor_type(ct, cursor))
+                , .(pair: Type_pair) -> Product_slots_step {
+                    __right__(
+                      , Slot_list
+                      , Product_slots_next
+                      , (
+                          , __snd__(__Type__, Type_list, cell)
+                          , (
+                              , __snd__(__Type__, __Type__, pair)
+                              , (
+                                  , __intrinsic_snd__(
+                                      , ct
+                                      , cursor_type(ct, cursor)
+                                      , cursor_term(ct, cursor)
+                                      )
+                                  , (
+                                      , slot_cons(
+                                          , ct
+                                          , (
+                                              , __fst__(__Type__, Type_list, cell)
+                                              , __intrinsic_fst__(
+                                                  , ct
+                                                  , cursor_type(ct, cursor)
+                                                  , cursor_term(ct, cursor)
+                                                  )
+                                              )
+                                          , cursor_acc(ct, cursor)
+                                          )
+                                      , type_cons(
+                                          , ct
+                                          , __fst__(__Type__, Type_list, cell)
+                                          , cursor_types_rev(ct, cursor)
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      )
+                  }
+                , .() -> Product_slots_step {
+                    __left__(
+                      , Slot_list
+                      , Product_slots_next
+                      , slot_reverse_by_types(
+                          , ct
+                          , cursor_types_rev(ct, cursor)
+                          , cursor_acc(ct, cursor)
+                          )
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Explodes a product value into typed slots following its reflected product spine.
+pub pure fn product_slots(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Slot_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Product_cursor
+    , Slot_list
+    , product_spine(ct, source)
+    , (source, (value, (slot_nil(), type_nil())))
+    , .(
+        , loop_recur: (Type_list & Product_cursor) -> Slot_list
+        , loop_fuel: Type_list
+        , loop_state: Product_cursor
+        ) -> Slot_list {
+        __either__(
+          , Slot_list
+          , Type_list & Product_cursor
+          , Slot_list
+          , product_slots_step(ct, loop_fuel, loop_state)
+          , .(loop_done: Slot_list) -> Slot_list { loop_done }
+          , .(loop_next: Type_list & Product_cursor) -> Slot_list {
+              loop_recur(
+                , __fst__(Type_list, Product_cursor, loop_next)
+                , __snd__(Type_list, Product_cursor, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Returns the product spine for one DNF branch.
+pub pure fn dnf_branch_spine(ct: __Comptime__, branch_type: __Type__) -> Type_list {
+  __if_then_else__(
+    , __type_equal__(ct, branch_type, __type_unit__(ct))
+    , .() -> Type_list { type_nil() }
+    , .() -> Type_list { product_spine(ct, branch_type) }
+    )
+}
+
+/// Explodes a branch value into typed slots for that DNF branch.
+pub pure fn dnf_branch_slots(ct: __Comptime__, branch_type: __Type__, value: __Checked_term__) -> Slot_list {
+  __if_then_else__(
+    , __type_equal__(ct, branch_type, __type_unit__(ct))
+    , .() -> Slot_list { slot_nil() }
+    , .() -> Slot_list { product_slots(ct, branch_type, value) }
+    )
+}
+
+pure fn combine_dnf_branch_value(
+  , ct: __Comptime__
+  , left_type: __Type__
+  , left_value: __Checked_term__
+  , right_type: __Type__
+  , right_value: __Checked_term__
+  ) -> __Checked_term__ {
+  __if_then_else__(
+    , __type_equal__(ct, left_type, __type_unit__(ct))
+    , .() -> __Checked_term__ {
+        __if_then_else__(
+          , __type_equal__(ct, right_type, __type_unit__(ct))
+          , .() -> __Checked_term__ { __term_unit__(ct) }
+          , .() -> __Checked_term__ { right_value }
+          )
+      }
+    , .() -> __Checked_term__ {
+        __if_then_else__(
+          , __type_equal__(ct, right_type, __type_unit__(ct))
+          , .() -> __Checked_term__ { left_value }
+          , .() -> __Checked_term__ { __intrinsic_pair__(ct, left_value, right_value) }
+          )
+      }
+    )
+}
+
+type Dnf_term_mapper = (__Type__ & __Checked_term__) -> __Checked_term__;
+
+type Dnf_emitter = (__Checked_term__ & Dnf_term_mapper) -> __Checked_term__;
+
+type Dnf_emitter_recur = (__Type__ & __Type__) -> Dnf_emitter;
+
+pure fn dnf_unit_emitter(ct: __Comptime__) -> Dnf_emitter {
+  .(_value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
+    mapper(__type_unit__(ct), __term_unit__(ct))
+  }
+}
+
+pure fn dnf_bottom_emitter(ct: __Comptime__, result_type: __Type__) -> Dnf_emitter {
+  .(value: __Checked_term__, _mapper: Dnf_term_mapper) -> __Checked_term__ {
+    __intrinsic_absurd__(ct, value, result_type)
+  }
+}
+
+pure fn dnf_product_emitter(
+  , ct: __Comptime__
+  , source: __Type__
+  , left: __Type__
+  , right: __Type__
+  , left_emit: Dnf_emitter
+  , right_emit: Dnf_emitter
+  ) -> Dnf_emitter {
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
+    let left_value = __intrinsic_fst__(ct, source, value);
+    let right_value = __intrinsic_snd__(ct, source, value);
+    left_emit(
+      , left_value
+      , .(left_branch: __Type__, left_branch_value: __Checked_term__) -> __Checked_term__ {
+          right_emit(
+            , right_value
+            , .(right_branch: __Type__, right_branch_value: __Checked_term__) -> __Checked_term__ {
+                mapper(
+                  , combine_dnf_branch_type(ct, left_branch, right_branch)
+                  , combine_dnf_branch_value(
+                      , ct
+                      , left_branch
+                      , left_branch_value
+                      , right_branch
+                      , right_branch_value
+                      )
+                  )
+              }
+            )
+        }
+      )
+  }
+}
+
+pure fn dnf_sum_emitter(
+  , ct: __Comptime__
+  , source: __Type__
+  , result_type: __Type__
+  , left_emit: Dnf_emitter
+  , right_emit: Dnf_emitter
+  ) -> Dnf_emitter {
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
+    __intrinsic_either__(
+      , ct
+      , source
+      , result_type
+      , value
+      , .(left_value: __Checked_term__) -> __Checked_term__ { left_emit(left_value, mapper) }
+      , .(right_value: __Checked_term__) -> __Checked_term__ { right_emit(right_value, mapper) }
+      )
+  }
+}
+
+pure fn dnf_atom_emitter(ct: __Comptime__, source: __Type__) -> Dnf_emitter {
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ { mapper(source, value) }
+}
+
+pure fn dnf_eliminate_step(
+  , ct: __Comptime__
+  , loop_recur: Dnf_emitter_recur
+  , loop_fuel: __Type__
+  , result_type: __Type__
+  ) -> Dnf_emitter {
+  __either__(
+    , .
+    , Type_view_tail1
+    , Dnf_emitter
+    , __type_view__(ct, loop_fuel)
+    , .(_unit: .) -> Dnf_emitter { dnf_unit_emitter(ct) }
+    , .(tail1: Type_view_tail1) -> Dnf_emitter {
+        __either__(
+          , .
+          , Type_view_tail2
+          , Dnf_emitter
+          , tail1
+          , .(_bottom: .) -> Dnf_emitter { dnf_bottom_emitter(ct, result_type) }
+          , .(tail2: Type_view_tail2) -> Dnf_emitter {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , Dnf_emitter
+                , tail2
+                , .(pair: Type_pair) -> Dnf_emitter {
+                    let left = __fst__(__Type__, __Type__, pair);
+                    let right = __snd__(__Type__, __Type__, pair);
+                    dnf_product_emitter(
+                      , ct
+                      , loop_fuel
+                      , left
+                      , right
+                      , loop_recur(left, result_type)
+                      , loop_recur(right, result_type)
+                      )
+                  }
+                , .(tail3: Type_view_tail3) -> Dnf_emitter {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , Dnf_emitter
+                      , tail3
+                      , .(pair: Type_pair) -> Dnf_emitter {
+                          dnf_sum_emitter(
+                            , ct
+                            , loop_fuel
+                            , result_type
+                            , loop_recur(__fst__(__Type__, __Type__, pair), result_type)
+                            , loop_recur(__snd__(__Type__, __Type__, pair), result_type)
+                            )
+                        }
+                      , .(_tail4: Type_view_tail4) -> Dnf_emitter {
+                          dnf_atom_emitter(ct, loop_fuel)
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn dnf_eliminate_emitter(ct: __Comptime__, source: __Type__, result_type: __Type__) -> Dnf_emitter {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , __Type__
+    , Dnf_emitter
+    , source
+    , result_type
+    , .(loop_recur: Dnf_emitter_recur, loop_fuel: __Type__, loop_state: __Type__) -> Dnf_emitter {
+        dnf_eliminate_step(ct, loop_recur, loop_fuel, loop_state)
+      }
+    )
+}
+
+/// Builds a DNF branch dispatcher over a reflected sum value.
+pub pure fn dnf_eliminate(
+  , ct: __Comptime__
+  , source: __Type__
+  , result_type: __Type__
+  , value: __Checked_term__
+  , branch: (__Type__ & __Checked_term__) -> __Checked_term__
+  ) -> __Checked_term__ { dnf_eliminate_emitter(ct, source, result_type)(value, branch) }
+
+type Maybe_type_list = Type_list | .;
+
+pure fn some_type_list(types: Type_list) -> Maybe_type_list { __left__(Type_list, ., types) }
+
+pure fn no_type_list_value() -> Maybe_type_list { __right__(Type_list, ., ()) }
+
+pure fn split_type_prefix(ct: __Comptime__, prefix: Type_list, xs: Type_list) -> Maybe_type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Type_list
+    , Maybe_type_list
+    , prefix
+    , xs
+    , .(
+        , loop_recur: (Type_list & Type_list) -> Maybe_type_list
+        , loop_fuel: Type_list
+        , loop_state: Type_list
+        ) -> Maybe_type_list {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Maybe_type_list
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> Maybe_type_list { some_type_list(loop_state) }
+          , .(prefix_cell: __Type__ & Type_list) -> Maybe_type_list {
+              __either__(
+                , .
+                , __Type__ & Type_list
+                , Maybe_type_list
+                , Type_list.un_type_list(loop_state)
+                , .(_short: .) -> Maybe_type_list { no_type_list_value() }
+                , .(source_cell: __Type__ & Type_list) -> Maybe_type_list {
+                    __if_then_else__(
+                      , __type_equal__(
+                          , ct
+                          , __fst__(__Type__, Type_list, prefix_cell)
+                          , __fst__(__Type__, Type_list, source_cell)
+                          )
+                      , .() -> Maybe_type_list {
+                          loop_recur(
+                            , __snd__(__Type__, Type_list, prefix_cell)
+                            , __snd__(__Type__, Type_list, source_cell)
+                            )
+                        }
+                      , .() -> Maybe_type_list { no_type_list_value() }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+type Slot_split = Slot_list & Slot_list;
+
+type Maybe_slot_split = Slot_split | .;
+
+pure fn some_slot_split(prefix: Slot_list, rest: Slot_list) -> Maybe_slot_split {
+  __left__(Slot_split, ., (prefix, rest))
+}
+
+pure fn no_slot_split() -> Maybe_slot_split { __right__(Slot_split, ., ()) }
+
+type Slot_prefix_state = Slot_list & Type_list & Slot_list;
+
+pure fn slot_prefix_remaining(state: Slot_prefix_state) -> Slot_list {
+  __fst__(Slot_list, Type_list & Slot_list, state)
+}
+
+pure fn slot_prefix_types_rev(state: Slot_prefix_state) -> Type_list {
+  __fst__(Type_list, Slot_list, __snd__(Slot_list, Type_list & Slot_list, state))
+}
+
+pure fn slot_prefix_slots_rev(state: Slot_prefix_state) -> Slot_list {
+  __snd__(Type_list, Slot_list, __snd__(Slot_list, Type_list & Slot_list, state))
+}
+
+pure fn split_slots_by_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_list) -> Maybe_slot_split {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Slot_prefix_state
+    , Maybe_slot_split
+    , prefix
+    , (slots, (type_nil(), slot_nil()))
+    , .(
+        , loop_recur: (Type_list & Slot_prefix_state) -> Maybe_slot_split
+        , loop_fuel: Type_list
+        , loop_state: Slot_prefix_state
+        ) -> Maybe_slot_split {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Maybe_slot_split
+          , Type_list.un_type_list(loop_fuel)
+          , .(_done: .) -> Maybe_slot_split {
+              some_slot_split(
+                , slot_prepend_reverse_by_types(
+                    , ct
+                    , slot_prefix_types_rev(loop_state)
+                    , slot_prefix_slots_rev(loop_state)
+                    , slot_nil()
+                    )
+                , slot_prefix_remaining(loop_state)
+                )
+            }
+          , .(prefix_cell: __Type__ & Type_list) -> Maybe_slot_split {
+              __either__(
+                , .
+                , Slot & Slot_list
+                , Maybe_slot_split
+                , Slot_list.un_slot_list(slot_prefix_remaining(loop_state))
+                , .(_short: .) -> Maybe_slot_split { no_slot_split() }
+                , .(slot_cell: Slot & Slot_list) -> Maybe_slot_split {
+                    __if_then_else__(
+                      , __type_equal__(
+                          , ct
+                          , __fst__(__Type__, Type_list, prefix_cell)
+                          , slot_type(ct, __fst__(Slot, Slot_list, slot_cell))
+                          )
+                      , .() -> Maybe_slot_split {
+                          loop_recur(
+                            , __snd__(__Type__, Type_list, prefix_cell)
+                            , (
+                                , __snd__(Slot, Slot_list, slot_cell)
+                                , (
+                                    , type_cons(
+                                        , ct
+                                        , __fst__(__Type__, Type_list, prefix_cell)
+                                        , slot_prefix_types_rev(loop_state)
+                                        )
+                                    , slot_cons(
+                                        , ct
+                                        , __fst__(Slot, Slot_list, slot_cell)
+                                        , slot_prefix_slots_rev(loop_state)
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                      , .() -> Maybe_slot_split { no_slot_split() }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+type Literal_input = Type_list & Slot_list;
+
+type Literal_recur = (__Type__ & Literal_input) -> Elaborator_result;
+
+pure fn literal_factors(input: Literal_input) -> Type_list { __fst__(Type_list, Slot_list, input) }
+
+pure fn literal_slots(input: Literal_input) -> Slot_list { __snd__(Type_list, Slot_list, input) }
+
+pure fn literal_unit(ct: __Comptime__, factors: Type_list, slots: Slot_list) -> Elaborator_result {
+  __if_then_else__(
+    , type_empty(ct, factors)
+    , .() -> Elaborator_result {
+        __if_then_else__(
+          , slot_empty(ct, slots)
+          , .() -> Elaborator_result { ok(ct, __term_unit__(ct)) }
+          , .() -> Elaborator_result { err(ct, "DNF branch has extra unit slots") }
+          )
+      }
+    , .() -> Elaborator_result { err(ct, "DNF branch is not unit") }
+    )
+}
+
+pure fn literal_atom(ct: __Comptime__, target: __Type__, factors: Type_list, slots: Slot_list) -> Elaborator_result {
+  let single = type_cons(ct, target, type_nil());
+  __if_then_else__(
+    , type_list_equal(ct, factors, single)
+    , .() -> Elaborator_result {
+        __either__(
+          , Slot_split
+          , .
+          , Elaborator_result
+          , split_slots_by_prefix(ct, single, slots)
+          , .(parts: Slot_split) -> Elaborator_result {
+              __if_then_else__(
+                , slot_empty(ct, __snd__(Slot_list, Slot_list, parts))
+                , .() -> Elaborator_result {
+                    __either__(
+                      , .
+                      , Slot & Slot_list
+                      , Elaborator_result
+                      , Slot_list.un_slot_list(__fst__(Slot_list, Slot_list, parts))
+                      , .(_empty: .) -> Elaborator_result {
+                          err(ct, "DNF branch atom slot is empty")
+                        }
+                      , .(cell: Slot & Slot_list) -> Elaborator_result {
+                          ok(ct, slot_term(ct, __fst__(Slot, Slot_list, cell)))
+                        }
+                      )
+                  }
+                , .() -> Elaborator_result { err(ct, "DNF branch has extra atom slots") }
+                )
+            }
+          , .(_bad: .) -> Elaborator_result {
+              err(ct, "DNF branch atom slot does not match target")
+            }
+          )
+      }
+    , .() -> Elaborator_result { err(ct, "DNF branch atom does not match target") }
+    )
+}
+
+type Product_materialize_state = Elaborator_result;
+
+type Product_materialize_fuel = __Type__ & Dnf_branch_list;
+
+// Nested target materialization starts after the candidate-search frame unwinds; tail retries
+// still pass through its measured callback.
+type Product_materialize_attempt = . -> Elaborator_result;
+
+pure fn product_materialize_target(ct: __Comptime__, fuel: Product_materialize_fuel) -> __Type__ {
+  __fst__(__Type__, Dnf_branch_list, fuel)
+}
+
+pure fn product_materialize_candidates(ct: __Comptime__, fuel: Product_materialize_fuel) -> Dnf_branch_list {
+  __snd__(__Type__, Dnf_branch_list, fuel)
+}
+
+pure fn materialize_product_search(
+  , ct: __Comptime__
+  , left: __Type__
+  , right: __Type__
+  , factors: Type_list
+  , slots: Slot_list
+  , candidates: Dnf_branch_list
+  , recur: Literal_recur
+  ) -> Elaborator_result {
+  let attempt =
+    __structural_recur__(
+      , ct
+      , Product_materialize_fuel
+      , Product_materialize_state
+      , Product_materialize_attempt
+      , (__type_product__(ct, left, right), candidates)
+      , err(ct, "DNF branch does not match target product")
+      , .(
+          , loop_recur: (Product_materialize_fuel & Product_materialize_state) -> Product_materialize_attempt
+          , loop_fuel: Product_materialize_fuel
+          , loop_state: Product_materialize_state
+          ) -> Product_materialize_attempt {
+          __either__(
+            , .
+            , Dnf_branch & Dnf_branch_list
+            , Product_materialize_attempt
+            , Type_list.un_type_list(product_materialize_candidates(ct, loop_fuel))
+            , .(_done: .) -> Product_materialize_attempt { .() -> Elaborator_result { loop_state } }
+            , .(cell: Dnf_branch & Dnf_branch_list) -> Product_materialize_attempt {
+                let retry =
+                  .() -> Elaborator_result {
+                    let next_attempt =
+                      loop_recur(
+                        , (
+                            , product_materialize_target(ct, loop_fuel)
+                            , __snd__(Dnf_branch, Dnf_branch_list, cell)
+                            )
+                        , loop_state
+                        );
+                    next_attempt()
+                  };
+                let left_factors =
+                  dnf_branch_spine(
+                    , ct
+                    , dnf_branch_type(ct, __fst__(Dnf_branch, Dnf_branch_list, cell))
+                    );
+                __either__(
+                  , Type_list
+                  , .
+                  , Product_materialize_attempt
+                  , split_type_prefix(ct, left_factors, factors)
+                  , .(right_factors: Type_list) -> Product_materialize_attempt {
+                      __either__(
+                        , Slot_split
+                        , .
+                        , Product_materialize_attempt
+                        , split_slots_by_prefix(ct, left_factors, slots)
+                        , .(slot_parts: Slot_split) -> Product_materialize_attempt {
+                            .() -> Elaborator_result {
+                              __either__(
+                                , __Checked_term__
+                                , __Diagnostic_text__
+                                , Elaborator_result
+                                , recur(
+                                    , left
+                                    , (left_factors, __fst__(Slot_list, Slot_list, slot_parts))
+                                    )
+                                , .(left_term: __Checked_term__) -> Elaborator_result {
+                                    __either__(
+                                      , __Checked_term__
+                                      , __Diagnostic_text__
+                                      , Elaborator_result
+                                      , recur(
+                                          , right
+                                          , (
+                                              , right_factors
+                                              , __snd__(Slot_list, Slot_list, slot_parts)
+                                              )
+                                          )
+                                      , .(right_term: __Checked_term__) -> Elaborator_result {
+                                          ok(ct, __intrinsic_pair__(ct, left_term, right_term))
+                                        }
+                                      , .(_right_message: __Diagnostic_text__) -> Elaborator_result {
+                                          retry()
+                                        }
+                                      )
+                                  }
+                                , .(_left_message: __Diagnostic_text__) -> Elaborator_result {
+                                    retry()
+                                  }
+                                )
+                            }
+                          }
+                        , .(_slot_mismatch: .) -> Product_materialize_attempt { retry }
+                        )
+                    }
+                  , .(_type_mismatch: .) -> Product_materialize_attempt { retry }
+                  )
+              }
+            )
+        }
+      );
+  attempt()
+}
+
+pure fn materialize_sum(
+  , ct: __Comptime__
+  , target: __Type__
+  , left: __Type__
+  , right: __Type__
+  , input: Literal_input
+  , recur: Literal_recur
+  ) -> Elaborator_result {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , Elaborator_result
+    , recur(left, input)
+    , .(left_term: __Checked_term__) -> Elaborator_result {
+        ok(ct, __intrinsic_left__(ct, target, left_term))
+      }
+    , .(_left_message: __Diagnostic_text__) -> Elaborator_result {
+        __either__(
+          , __Checked_term__
+          , __Diagnostic_text__
+          , Elaborator_result
+          , recur(right, input)
+          , .(right_term: __Checked_term__) -> Elaborator_result {
+              ok(ct, __intrinsic_right__(ct, target, right_term))
+            }
+          , .(_right_message: __Diagnostic_text__) -> Elaborator_result {
+              err(ct, "DNF branch does not match target sum")
+            }
+          )
+      }
+    )
+}
+
+pure fn materialize_literal_target(
+  , ct: __Comptime__
+  , target: __Type__
+  , factors: Type_list
+  , slots: Slot_list
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Literal_input
+    , Elaborator_result
+    , target
+    , (factors, slots)
+    , .(
+        , loop_recur: (__Type__ & Literal_input) -> Elaborator_result
+        , loop_fuel: __Type__
+        , loop_state: Literal_input
+        ) -> Elaborator_result {
+        __if_then_else__(
+          , __type_equal__(ct, loop_fuel, __type_unit__(ct))
+          , .() -> Elaborator_result {
+              literal_unit(ct, literal_factors(loop_state), literal_slots(loop_state))
+            }
+          , .() -> Elaborator_result {
+              __if_then_else__(
+                , __type_equal__(ct, loop_fuel, __type_bottom__(ct))
+                , .() -> Elaborator_result {
+                    err(ct, "DNF branch cannot materialize bottom target")
+                  }
+                , .() -> Elaborator_result {
+                    __either__(
+                      , Type_pair
+                      , .
+                      , Elaborator_result
+                      , product_view(ct, loop_fuel)
+                      , .(pair: Type_pair) -> Elaborator_result {
+                          materialize_product_search(
+                            , ct
+                            , __fst__(__Type__, __Type__, pair)
+                            , __snd__(__Type__, __Type__, pair)
+                            , literal_factors(loop_state)
+                            , literal_slots(loop_state)
+                            , dnf_branches(ct, __fst__(__Type__, __Type__, pair))
+                            , loop_recur
+                            )
+                        }
+                      , .(_not_product: .) -> Elaborator_result {
+                          __either__(
+                            , Type_pair
+                            , .
+                            , Elaborator_result
+                            , sum_view(ct, loop_fuel)
+                            , .(pair: Type_pair) -> Elaborator_result {
+                                materialize_sum(
+                                  , ct
+                                  , loop_fuel
+                                  , __fst__(__Type__, __Type__, pair)
+                                  , __snd__(__Type__, __Type__, pair)
+                                  , loop_state
+                                  , loop_recur
+                                  )
+                              }
+                            , .(_atom: .) -> Elaborator_result {
+                                literal_atom(
+                                  , ct
+                                  , loop_fuel
+                                  , literal_factors(loop_state)
+                                  , literal_slots(loop_state)
+                                  )
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Builds a checked value for a DNF branch from an explicit spine and slots.
+pub pure fn materialize_dnf_branch_with_spine(
+  , ct: __Comptime__
+  , target: __Type__
+  , branch_type: __Type__
+  , branch_spine: Type_list
+  , branch_value: __Checked_term__
+  ) -> Elaborator_result {
+  materialize_literal_target(
+    , ct
+    , target
+    , branch_spine
+    , dnf_branch_slots(ct, branch_type, branch_value)
+    )
+}
+
+/// Builds a checked value for a DNF branch from slots.
+pub pure fn materialize_dnf_branch(
+  , ct: __Comptime__
+  , target: __Type__
+  , branch_type: __Type__
+  , branch_value: __Checked_term__
+  ) -> Elaborator_result {
+  materialize_dnf_branch_with_spine(
+    , ct
+    , target
+    , branch_type
+    , dnf_branch_spine(ct, branch_type)
+    , branch_value
+    )
+}
+
+/// Pair of a taken slot and the remaining slot list.
+pub type Slot_take = Slot & Slot_list;
+
+type Maybe_slot_take = Slot_take | .;
+
+fn some_slot_take(slot: Slot, rest: Slot_list) -> Maybe_slot_take {
+  __left__(Slot_take, ., (slot, rest))
+}
+
+fn no_slot_take() -> Maybe_slot_take { __right__(Slot_take, ., ()) }
+
+/// Matched-slot metadata: unmatched target suffix plus remaining source slots.
+pub type Matched_slot_tail = Type_list & Slot_list;
+
+/// Slot selected for a target position along with the residual matching state.
+pub type Matched_slot = Slot & Matched_slot_tail;
+
+/// Optional result of finding a matching source slot.
+pub type Maybe_matched_slot = Matched_slot | .;
+
+pure fn matched_slot(ct: __Comptime__, slot: Slot, rest_types: Type_list, rest_slots: Slot_list) -> Maybe_matched_slot {
+  __left__(Matched_slot, ., (slot, (rest_types, rest_slots)))
+}
+
+pure fn no_matched_slot(ct: __Comptime__) -> Maybe_matched_slot { __right__(Matched_slot, ., ()) }
+
+pure fn matched_slot_value(ct: __Comptime__, taken: Matched_slot) -> Slot {
+  __fst__(Slot, Matched_slot_tail, taken)
+}
+
+pure fn matched_slot_rest_types(ct: __Comptime__, taken: Matched_slot) -> Type_list {
+  __fst__(Type_list, Slot_list, __snd__(Slot, Matched_slot_tail, taken))
+}
+
+pure fn matched_slot_rest_slots(ct: __Comptime__, taken: Matched_slot) -> Slot_list {
+  __snd__(Type_list, Slot_list, __snd__(Slot, Matched_slot_tail, taken))
+}
+
+type Take_state = Slot_list & Type_list & Slot_list;
+
+pure fn take_slots(state: Take_state) -> Slot_list {
+  __fst__(Slot_list, Type_list & Slot_list, state)
+}
+
+pure fn take_prefix_types_rev(state: Take_state) -> Type_list {
+  __fst__(Type_list, Slot_list, __snd__(Slot_list, Type_list & Slot_list, state))
+}
+
+pure fn take_prefix_slots_rev(state: Take_state) -> Slot_list {
+  __snd__(Type_list, Slot_list, __snd__(Slot_list, Type_list & Slot_list, state))
+}
+
+type Take_next = Type_list & Take_state;
+
+type Take_step = Maybe_matched_slot | Take_next;
+
+/// Takes the first source slot whose type can satisfy a target type.
+pub pure fn take_first_matching(
+  , ct: __Comptime__
+  , target: __Type__
+  , slot_types: Type_list
+  , slots: Slot_list
+  ) -> Maybe_matched_slot {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Take_state
+    , Maybe_matched_slot
+    , slot_types
+    , (slots, (type_nil(), slot_nil()))
+    , .(
+        , loop_recur: (Type_list & Take_state) -> Maybe_matched_slot
+        , loop_fuel: Type_list
+        , loop_state: Take_state
+        ) -> Maybe_matched_slot {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Take_state) -> Take_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Take_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Take_step {
+                  __left__(Maybe_matched_slot, Take_next, no_matched_slot(ct))
+                }
+              , .(type_cell: __Type__ & Type_list) -> Take_step {
+                  __either__(
+                    , .
+                    , Slot & Slot_list
+                    , Take_step
+                    , Slot_list.un_slot_list(take_slots(state))
+                    , .(_missing_slot: .) -> Take_step {
+                        __left__(Maybe_matched_slot, Take_next, no_matched_slot(ct))
+                      }
+                    , .(slot_cell: Slot & Slot_list) -> Take_step {
+                        __if_then_else__(
+                          , __type_equal__(ct, __fst__(__Type__, Type_list, type_cell), target)
+                          , .() -> Take_step {
+                              __left__(
+                                , Maybe_matched_slot
+                                , Take_next
+                                , matched_slot(
+                                    , ct
+                                    , __fst__(Slot, Slot_list, slot_cell)
+                                    , type_prepend_reverse(
+                                        , ct
+                                        , take_prefix_types_rev(state)
+                                        , __snd__(__Type__, Type_list, type_cell)
+                                        )
+                                    , slot_prepend_reverse_by_types(
+                                        , ct
+                                        , take_prefix_types_rev(state)
+                                        , take_prefix_slots_rev(state)
+                                        , __snd__(Slot, Slot_list, slot_cell)
+                                        )
+                                    )
+                                )
+                            }
+                          , .() -> Take_step {
+                              __right__(
+                                , Maybe_matched_slot
+                                , Take_next
+                                , (
+                                    , __snd__(__Type__, Type_list, type_cell)
+                                    , (
+                                        , __snd__(Slot, Slot_list, slot_cell)
+                                        , (
+                                            , type_cons(
+                                                , ct
+                                                , __fst__(__Type__, Type_list, type_cell)
+                                                , take_prefix_types_rev(state)
+                                                )
+                                            , slot_cons(
+                                                , ct
+                                                , __fst__(Slot, Slot_list, slot_cell)
+                                                , take_prefix_slots_rev(state)
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            }
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Maybe_matched_slot
+          , Type_list & Take_state
+          , Maybe_matched_slot
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Maybe_matched_slot) -> Maybe_matched_slot { loop_done }
+          , .(loop_next: Type_list & Take_state) -> Maybe_matched_slot {
+              loop_recur(
+                , __fst__(Type_list, Take_state, loop_next)
+                , __snd__(Type_list, Take_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Build_slot_state = Type_list & Slot_list;
+
+type Build_term_state = Type_list & Term_list;
+
+type Build_product_state = Build_slot_state & Build_term_state;
+
+pure fn build_slot_state(state: Build_product_state) -> Build_slot_state {
+  __fst__(Build_slot_state, Build_term_state, state)
+}
+
+pure fn build_term_state(state: Build_product_state) -> Build_term_state {
+  __snd__(Build_slot_state, Build_term_state, state)
+}
+
+pure fn build_slot_types(state: Build_product_state) -> Type_list {
+  __fst__(Type_list, Slot_list, build_slot_state(state))
+}
+
+pure fn build_slots(state: Build_product_state) -> Slot_list {
+  __snd__(Type_list, Slot_list, build_slot_state(state))
+}
+
+pure fn build_term_types_rev(state: Build_product_state) -> Type_list {
+  __fst__(Type_list, Term_list, build_term_state(state))
+}
+
+pure fn build_terms_rev(state: Build_product_state) -> Term_list {
+  __snd__(Type_list, Term_list, build_term_state(state))
+}
+
+type Build_product_next = Type_list & Build_product_state;
+
+type Build_product_step = Elaborator_result | Build_product_next;
+
+pure fn finish_product_build(
+  , ct: __Comptime__
+  , state: Build_product_state
+  , require_all: Comptime_bool
+  ) -> Elaborator_result {
+  let built =
+    right_fold_term_product_from_reversed(ct, build_term_types_rev(state), build_terms_rev(state));
+  __if_then_else__(
+    , require_all
+    , .() -> Elaborator_result {
+        __if_then_else__(
+          , slot_empty(ct, build_slots(state))
+          , .() -> Elaborator_result { ok(ct, built) }
+          , .() -> Elaborator_result { err(ct, "source has unused product slots") }
+          )
+      }
+    , .() -> Elaborator_result { ok(ct, built) }
+    )
+}
+
+/// Builds a product value from source slots, optionally requiring every source slot to be consumed.
+pub pure fn build_product_from_slots(
+  , ct: __Comptime__
+  , targets: Type_list
+  , slot_types: Type_list
+  , slots: Slot_list
+  , require_all: Comptime_bool
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Build_product_state
+    , Elaborator_result
+    , targets
+    , ((slot_types, slots), (type_nil(), term_nil()))
+    , .(
+        , loop_recur: (Type_list & Build_product_state) -> Elaborator_result
+        , loop_fuel: Type_list
+        , loop_state: Build_product_state
+        ) -> Elaborator_result {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Build_product_state) -> Build_product_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Build_product_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Build_product_step {
+                  __left__(
+                    , Elaborator_result
+                    , Build_product_next
+                    , finish_product_build(ct, state, require_all)
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Build_product_step {
+                  __either__(
+                    , Matched_slot
+                    , .
+                    , Build_product_step
+                    , take_first_matching(
+                        , ct
+                        , __fst__(__Type__, Type_list, cell)
+                        , build_slot_types(state)
+                        , build_slots(state)
+                        )
+                    , .(taken: Matched_slot) -> Build_product_step {
+                        __right__(
+                          , Elaborator_result
+                          , Build_product_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , (
+                                  , (
+                                      , matched_slot_rest_types(ct, taken)
+                                      , matched_slot_rest_slots(ct, taken)
+                                      )
+                                  , (
+                                      , type_cons(
+                                          , ct
+                                          , __fst__(__Type__, Type_list, cell)
+                                          , build_term_types_rev(state)
+                                          )
+                                      , term_cons(
+                                          , ct
+                                          , slot_term(ct, matched_slot_value(ct, taken))
+                                          , build_terms_rev(state)
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      }
+                    , .(_missing: .) -> Build_product_step {
+                        __left__(
+                          , Elaborator_result
+                          , Build_product_next
+                          , err(ct, "target product slot not provided by source")
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Elaborator_result
+          , Type_list & Build_product_state
+          , Elaborator_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: Type_list & Build_product_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(Type_list, Build_product_state, loop_next)
+                , __snd__(Type_list, Build_product_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn build_widen_missing(
+  , ct: __Comptime__
+  , target: __Type__
+  , original_slot_types: Type_list
+  , original_slots: Slot_list
+  , state: Build_product_state
+  ) -> Build_product_step {
+  __either__(
+    , Matched_slot
+    , .
+    , Build_product_step
+    , take_first_matching(ct, target, original_slot_types, original_slots)
+    , .(taken: Matched_slot) -> Build_product_step {
+        __right__(
+          , Elaborator_result
+          , Build_product_next
+          , (
+              , type_nil()
+              , (
+                  , build_slot_state(state)
+                  , (
+                      , type_cons(ct, target, build_term_types_rev(state))
+                      , term_cons(
+                          , ct
+                          , slot_term(ct, matched_slot_value(ct, taken))
+                          , build_terms_rev(state)
+                          )
+                      )
+                  )
+              )
+          )
+      }
+    , .(_missing: .) -> Build_product_step {
+        __if_then_else__(
+          , __type_equal__(ct, target, __type_unit__(ct))
+          , .() -> Build_product_step {
+              __right__(
+                , Elaborator_result
+                , Build_product_next
+                , (
+                    , type_nil()
+                    , (
+                        , build_slot_state(state)
+                        , (
+                            , type_cons(ct, target, build_term_types_rev(state))
+                            , term_cons(ct, __term_unit__(ct), build_terms_rev(state))
+                            )
+                        )
+                    )
+                )
+            }
+          , .() -> Build_product_step {
+              __left__(
+                , Elaborator_result
+                , Build_product_next
+                , err(ct, "target product slot cannot be widened")
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Builds a product value while allowing target slots to reuse source-compatible values.
+pub pure fn build_widen_product_from_slots(
+  , ct: __Comptime__
+  , targets: Type_list
+  , slot_types: Type_list
+  , slots: Slot_list
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Build_product_state
+    , Elaborator_result
+    , targets
+    , ((slot_types, slots), (type_nil(), term_nil()))
+    , .(
+        , loop_recur: (Type_list & Build_product_state) -> Elaborator_result
+        , loop_fuel: Type_list
+        , loop_state: Build_product_state
+        ) -> Elaborator_result {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Build_product_state) -> Build_product_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Build_product_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Build_product_step {
+                  __left__(
+                    , Elaborator_result
+                    , Build_product_next
+                    , ok(
+                        , ct
+                        , right_fold_term_product_from_reversed(
+                            , ct
+                            , build_term_types_rev(state)
+                            , build_terms_rev(state)
+                            )
+                        )
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Build_product_step {
+                  __either__(
+                    , Matched_slot
+                    , .
+                    , Build_product_step
+                    , take_first_matching(
+                        , ct
+                        , __fst__(__Type__, Type_list, cell)
+                        , build_slot_types(state)
+                        , build_slots(state)
+                        )
+                    , .(taken: Matched_slot) -> Build_product_step {
+                        __right__(
+                          , Elaborator_result
+                          , Build_product_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , (
+                                  , (
+                                      , matched_slot_rest_types(ct, taken)
+                                      , matched_slot_rest_slots(ct, taken)
+                                      )
+                                  , (
+                                      , type_cons(
+                                          , ct
+                                          , __fst__(__Type__, Type_list, cell)
+                                          , build_term_types_rev(state)
+                                          )
+                                      , term_cons(
+                                          , ct
+                                          , slot_term(ct, matched_slot_value(ct, taken))
+                                          , build_terms_rev(state)
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      }
+                    , .(_missing: .) -> Build_product_step {
+                        __either__(
+                          , Elaborator_result
+                          , Build_product_next
+                          , Build_product_step
+                          , build_widen_missing(
+                              , ct
+                              , __fst__(__Type__, Type_list, cell)
+                              , slot_types
+                              , slots
+                              , state
+                              )
+                          , .(done: Elaborator_result) -> Build_product_step {
+                              __left__(Elaborator_result, Build_product_next, done)
+                            }
+                          , .(next: Build_product_next) -> Build_product_step {
+                              __right__(
+                                , Elaborator_result
+                                , Build_product_next
+                                , (
+                                    , __snd__(__Type__, Type_list, cell)
+                                    , __snd__(Type_list, Build_product_state, next)
+                                    )
+                                )
+                            }
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Elaborator_result
+          , Type_list & Build_product_state
+          , Elaborator_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: Type_list & Build_product_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(Type_list, Build_product_state, loop_next)
+                , __snd__(Type_list, Build_product_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Selects the first slot matching a requested type and returns its checked term.
+pub pure fn pick_first_slot(
+  , ct: __Comptime__
+  , target: __Type__
+  , slot_types: Type_list
+  , slots: Slot_list
+  ) -> Elaborator_result {
+  __either__(
+    , Matched_slot
+    , .
+    , Elaborator_result
+    , take_first_matching(ct, target, slot_types, slots)
+    , .(taken: Matched_slot) -> Elaborator_result {
+        ok(ct, slot_term(ct, matched_slot_value(ct, taken)))
+      }
+    , .(_missing: .) -> Elaborator_result { err(ct, "no product slot matches target") }
+    )
+}
+
+/// Infers the first available type from a product value.
+pub pure fn first_product_type(ct: __Comptime__, source: __Type__, _value: __Checked_term__) ->
+  __Type__ | .
+   {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , __Type__ | .
+    , Type_list.un_type_list(product_spine(ct, source))
+    , .(_empty: .) -> __Type__ | . { __right__(__Type__, ., ()) }
+    , .(cell: __Type__ & Type_list) -> __Type__ | . {
+        __left__(__Type__, ., __fst__(__Type__, Type_list, cell))
+      }
+    )
+}
+
+/// Infers the first available type from a sum value.
+pub pure fn first_sum_type(ct: __Comptime__, source: __Type__, _value: __Checked_term__) ->
+  __Type__ | .
+   {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , __Type__ | .
+    , Type_list.un_type_list(sum_spine(ct, source))
+    , .(_empty: .) -> __Type__ | . { __right__(__Type__, ., ()) }
+    , .(cell: __Type__ & Type_list) -> __Type__ | . {
+        __left__(__Type__, ., __fst__(__Type__, Type_list, cell))
+      }
+    )
+}
+
+/// Target arm paired with the suffix path needed to inject into that arm.
+pub type Target_slot = __Type__ & Type_list;
+
+/// Cons-list of target arms and their injection suffixes.
+pub rec newtype Target_slot_list : . | (Target_slot & Target_slot_list) {
+  pub constructor mk_target_slot_list;
+  pub projector un_target_slot_list
+  }
+
+/// Builds the empty target-slot list.
+pub pure fn target_slot_nil() -> Target_slot_list {
+  Target_slot_list.mk_target_slot_list(__left__(., Target_slot & Target_slot_list, ()))
+}
+
+/// Prepends one target slot.
+pub pure fn target_slot_cons(ct: __Comptime__, head: Target_slot, tail: Target_slot_list) -> Target_slot_list {
+  Target_slot_list.mk_target_slot_list(__right__(., Target_slot & Target_slot_list, (head, tail)))
+}
+
+/// Projects the target arm type from a target slot.
+pub pure fn target_slot_type(ct: __Comptime__, slot: Target_slot) -> __Type__ {
+  __fst__(__Type__, Type_list, slot)
+}
+
+/// Projects the injection suffix for a target slot.
+pub pure fn target_slot_suffix(ct: __Comptime__, slot: Target_slot) -> Type_list {
+  __snd__(__Type__, Type_list, slot)
+}
+
+type Target_slot_reverse_next = Target_slot_list & Target_slot_list;
+
+type Target_slot_reverse_step = Target_slot_list | Target_slot_reverse_next;
+
+pure fn target_slot_reverse_step(ct: __Comptime__, fuel: Target_slot_list, acc: Target_slot_list) -> Target_slot_reverse_step {
+  __either__(
+    , .
+    , Target_slot & Target_slot_list
+    , Target_slot_reverse_step
+    , Target_slot_list.un_target_slot_list(fuel)
+    , .(_done: .) -> Target_slot_reverse_step {
+        __left__(Target_slot_list, Target_slot_reverse_next, acc)
+      }
+    , .(cell: Target_slot & Target_slot_list) -> Target_slot_reverse_step {
+        __right__(
+          , Target_slot_list
+          , Target_slot_reverse_next
+          , (
+              , __snd__(Target_slot, Target_slot_list, cell)
+              , target_slot_cons(ct, __fst__(Target_slot, Target_slot_list, cell), acc)
+              )
+          )
+      }
+    )
+}
+
+pure fn target_slot_reverse(ct: __Comptime__, xs: Target_slot_list) -> Target_slot_list {
+  __structural_recur__(
+    , ct
+    , Target_slot_list
+    , Target_slot_list
+    , Target_slot_list
+    , xs
+    , target_slot_nil()
+    , .(
+        , loop_recur: (Target_slot_list & Target_slot_list) -> Target_slot_list
+        , loop_fuel: Target_slot_list
+        , loop_state: Target_slot_list
+        ) -> Target_slot_list {
+        let loop_step_fn =
+          .(fuel: Target_slot_list, acc: Target_slot_list) -> Target_slot_reverse_step {
+            target_slot_reverse_step(ct, fuel, acc)
+          };
+        __either__(
+          , Target_slot_list
+          , Target_slot_list & Target_slot_list
+          , Target_slot_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Target_slot_list) -> Target_slot_list { loop_done }
+          , .(loop_next: Target_slot_list & Target_slot_list) -> Target_slot_list {
+              loop_recur(
+                , __fst__(Target_slot_list, Target_slot_list, loop_next)
+                , __snd__(Target_slot_list, Target_slot_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Target_slots_next = Type_list & Target_slot_list;
+
+type Target_slots_step = Target_slot_list | Target_slots_next;
+
+pure fn target_slots_step(ct: __Comptime__, fuel: Type_list, acc: Target_slot_list) -> Target_slots_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Target_slots_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Target_slots_step {
+        __left__(Target_slot_list, Target_slots_next, target_slot_reverse(ct, acc))
+      }
+    , .(cell: __Type__ & Type_list) -> Target_slots_step {
+        __right__(
+          , Target_slot_list
+          , Target_slots_next
+          , (
+              , __snd__(__Type__, Type_list, cell)
+              , target_slot_cons(ct, (__fst__(__Type__, Type_list, cell), fuel), acc)
+              )
+          )
+      }
+    )
+}
+
+/// Annotates each target sum arm with the suffix needed to inject into it.
+pub pure fn target_slots(ct: __Comptime__, types: Type_list) -> Target_slot_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Target_slot_list
+    , Target_slot_list
+    , types
+    , target_slot_nil()
+    , .(
+        , loop_recur: (Type_list & Target_slot_list) -> Target_slot_list
+        , loop_fuel: Type_list
+        , loop_state: Target_slot_list
+        ) -> Target_slot_list {
+        __either__(
+          , Target_slot_list
+          , Type_list & Target_slot_list
+          , Target_slot_list
+          , target_slots_step(ct, loop_fuel, loop_state)
+          , .(loop_done: Target_slot_list) -> Target_slot_list { loop_done }
+          , .(loop_next: Type_list & Target_slot_list) -> Target_slot_list {
+              loop_recur(
+                , __fst__(Type_list, Target_slot_list, loop_next)
+                , __snd__(Type_list, Target_slot_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Pair of a matched target slot and the remaining target-slot list.
+pub type Target_slot_take = Target_slot & Target_slot_list;
+
+/// Optional result for taking one compatible target slot.
+pub type Maybe_target_slot_take = Target_slot_take | .;
+
+pure fn some_target_slot_take(ct: __Comptime__, slot: Target_slot, rest: Target_slot_list) -> Maybe_target_slot_take {
+  __left__(Target_slot_take, ., (slot, rest))
+}
+
+pure fn no_target_slot_take(ct: __Comptime__) -> Maybe_target_slot_take {
+  __right__(Target_slot_take, ., ())
+}
+
+type Target_take_next = Target_slot_list & Target_slot_list;
+
+type Target_take_step = Maybe_target_slot_take | Target_take_next;
+
+/// Prepends reversed target slots back onto a target-slot tail.
+pub pure fn target_slot_prepend_reverse(
+  , ct: __Comptime__
+  , prefix_rev: Target_slot_list
+  , tail: Target_slot_list
+  ) -> Target_slot_list {
+  __structural_recur__(
+    , ct
+    , Target_slot_list
+    , Target_slot_list
+    , Target_slot_list
+    , prefix_rev
+    , tail
+    , .(
+        , loop_recur: (Target_slot_list & Target_slot_list) -> Target_slot_list
+        , loop_fuel: Target_slot_list
+        , loop_state: Target_slot_list
+        ) -> Target_slot_list {
+        let loop_step_fn =
+          .(fuel: Target_slot_list, acc: Target_slot_list) -> Target_slot_reverse_step {
+            __either__(
+              , .
+              , Target_slot & Target_slot_list
+              , Target_slot_reverse_step
+              , Target_slot_list.un_target_slot_list(fuel)
+              , .(_done: .) -> Target_slot_reverse_step {
+                  __left__(Target_slot_list, Target_slot_reverse_next, acc)
+                }
+              , .(cell: Target_slot & Target_slot_list) -> Target_slot_reverse_step {
+                  __right__(
+                    , Target_slot_list
+                    , Target_slot_reverse_next
+                    , (
+                        , __snd__(Target_slot, Target_slot_list, cell)
+                        , target_slot_cons(ct, __fst__(Target_slot, Target_slot_list, cell), acc)
+                        )
+                    )
+                }
+              )
+          };
+        __either__(
+          , Target_slot_list
+          , Target_slot_list & Target_slot_list
+          , Target_slot_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Target_slot_list) -> Target_slot_list { loop_done }
+          , .(loop_next: Target_slot_list & Target_slot_list) -> Target_slot_list {
+              loop_recur(
+                , __fst__(Target_slot_list, Target_slot_list, loop_next)
+                , __snd__(Target_slot_list, Target_slot_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Removes the first target slot that can accept a source type.
+pub pure fn take_first_target_matching(ct: __Comptime__, target: __Type__, slots: Target_slot_list) -> Maybe_target_slot_take {
+  __structural_recur__(
+    , ct
+    , Target_slot_list
+    , Target_slot_list
+    , Maybe_target_slot_take
+    , slots
+    , target_slot_nil()
+    , .(
+        , loop_recur: (Target_slot_list & Target_slot_list) -> Maybe_target_slot_take
+        , loop_fuel: Target_slot_list
+        , loop_state: Target_slot_list
+        ) -> Maybe_target_slot_take {
+        let loop_step_fn =
+          .(fuel: Target_slot_list, prefix_rev: Target_slot_list) -> Target_take_step {
+            __either__(
+              , .
+              , Target_slot & Target_slot_list
+              , Target_take_step
+              , Target_slot_list.un_target_slot_list(fuel)
+              , .(_done: .) -> Target_take_step {
+                  __left__(Maybe_target_slot_take, Target_take_next, no_target_slot_take(ct))
+                }
+              , .(cell: Target_slot & Target_slot_list) -> Target_take_step {
+                  __if_then_else__(
+                    , __type_equal__(
+                        , ct
+                        , target_slot_type(ct, __fst__(Target_slot, Target_slot_list, cell))
+                        , target
+                        )
+                    , .() -> Target_take_step {
+                        __left__(
+                          , Maybe_target_slot_take
+                          , Target_take_next
+                          , some_target_slot_take(
+                              , ct
+                              , __fst__(Target_slot, Target_slot_list, cell)
+                              , target_slot_prepend_reverse(
+                                  , ct
+                                  , prefix_rev
+                                  , __snd__(Target_slot, Target_slot_list, cell)
+                                  )
+                              )
+                          )
+                      }
+                    , .() -> Target_take_step {
+                        __right__(
+                          , Maybe_target_slot_take
+                          , Target_take_next
+                          , (
+                              , __snd__(Target_slot, Target_slot_list, cell)
+                              , target_slot_cons(
+                                  , ct
+                                  , __fst__(Target_slot, Target_slot_list, cell)
+                                  , prefix_rev
+                                  )
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Maybe_target_slot_take
+          , Target_slot_list & Target_slot_list
+          , Maybe_target_slot_take
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Maybe_target_slot_take) -> Maybe_target_slot_take { loop_done }
+          , .(loop_next: Target_slot_list & Target_slot_list) -> Maybe_target_slot_take {
+              loop_recur(
+                , __fst__(Target_slot_list, Target_slot_list, loop_next)
+                , __snd__(Target_slot_list, Target_slot_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Cons-list of source-to-target sum-arm routes.
+pub rec newtype Route_list : . | (Type_list & Route_list) {
+  pub constructor mk_route_list;
+  pub projector un_route_list
+  }
+
+pure fn route_nil() -> Route_list {
+  Route_list.mk_route_list(__left__(., Type_list & Route_list, ()))
+}
+
+pure fn route_cons(head: Type_list, tail: Route_list) -> Route_list {
+  Route_list.mk_route_list(__right__(., Type_list & Route_list, (head, tail)))
+}
+
+type Route_reverse_next = Route_list & Route_list;
+
+type Route_reverse_step = Route_list | Route_reverse_next;
+
+pure fn route_reverse_step(fuel: Route_list, acc: Route_list) -> Route_reverse_step {
+  __either__(
+    , .
+    , Type_list & Route_list
+    , Route_reverse_step
+    , Route_list.un_route_list(fuel)
+    , .(_done: .) -> Route_reverse_step { __left__(Route_list, Route_reverse_next, acc) }
+    , .(cell: Type_list & Route_list) -> Route_reverse_step {
+        __right__(
+          , Route_list
+          , Route_reverse_next
+          , (
+              , __snd__(Type_list, Route_list, cell)
+              , route_cons(__fst__(Type_list, Route_list, cell), acc)
+              )
+          )
+      }
+    )
+}
+
+pure fn route_reverse(ct: __Comptime__, xs: Route_list) -> Route_list {
+  __structural_recur__(
+    , ct
+    , Route_list
+    , Route_list
+    , Route_list
+    , xs
+    , route_nil()
+    , .(
+        , loop_recur: (Route_list & Route_list) -> Route_list
+        , loop_fuel: Route_list
+        , loop_state: Route_list
+        ) -> Route_list {
+        let loop_step_fn = route_reverse_step;
+        __either__(
+          , Route_list
+          , Route_list & Route_list
+          , Route_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Route_list) -> Route_list { loop_done }
+          , .(loop_next: Route_list & Route_list) -> Route_list {
+              loop_recur(
+                , __fst__(Route_list, Route_list, loop_next)
+                , __snd__(Route_list, Route_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Either a route list or a diagnostic explaining why routing failed.
+pub type Route_result = Route_list | __Diagnostic_text__;
+
+/// Reports whether route construction succeeded.
+pub pure fn route_result_present(ct: __Comptime__, result: Route_result) -> Comptime_bool {
+  __either__(
+    , Route_list
+    , __Diagnostic_text__
+    , Comptime_bool
+    , result
+    , .(_routes: Route_list) -> Comptime_bool { .t }
+    , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+    )
+}
+
+pure fn routes_ok(ct: __Comptime__, routes: Route_list) -> Route_result {
+  __left__(Route_list, __Diagnostic_text__, routes)
+}
+
+pure fn routes_err(ct: __Comptime__, message: __Diagnostic_text__) -> Route_result {
+  __right__(Route_list, __Diagnostic_text__, message)
+}
+
+type Unique_route_state = Target_slot_list & Route_list;
+
+type Unique_route_next = Type_list & Unique_route_state;
+
+type Unique_route_step = Route_result | Unique_route_next;
+
+pure fn unique_route_targets(state: Unique_route_state) -> Target_slot_list {
+  __fst__(Target_slot_list, Route_list, state)
+}
+
+pure fn unique_route_routes(state: Unique_route_state) -> Route_list {
+  __snd__(Target_slot_list, Route_list, state)
+}
+
+/// Routes source sum arms to unique compatible target arms.
+pub pure fn route_source_arms_unique(
+  , ct: __Comptime__
+  , sources: Type_list
+  , targets: Target_slot_list
+  ) -> Route_result {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Unique_route_state
+    , Route_result
+    , sources
+    , (targets, route_nil())
+    , .(
+        , loop_recur: (Type_list & Unique_route_state) -> Route_result
+        , loop_fuel: Type_list
+        , loop_state: Unique_route_state
+        ) -> Route_result {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Unique_route_state) -> Unique_route_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Unique_route_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Unique_route_step {
+                  __left__(
+                    , Route_result
+                    , Unique_route_next
+                    , routes_ok(ct, route_reverse(ct, unique_route_routes(state)))
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Unique_route_step {
+                  __either__(
+                    , Target_slot_take
+                    , .
+                    , Unique_route_step
+                    , take_first_target_matching(
+                        , ct
+                        , __fst__(__Type__, Type_list, cell)
+                        , unique_route_targets(state)
+                        )
+                    , .(taken: Target_slot_take) -> Unique_route_step {
+                        __right__(
+                          , Route_result
+                          , Unique_route_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , (
+                                  , __snd__(Target_slot, Target_slot_list, taken)
+                                  , route_cons(
+                                      , target_slot_suffix(
+                                          , ct
+                                          , __fst__(Target_slot, Target_slot_list, taken)
+                                          )
+                                      , unique_route_routes(state)
+                                      )
+                                  )
+                              )
+                          )
+                      }
+                    , .(_missing: .) -> Unique_route_step {
+                        __left__(
+                          , Route_result
+                          , Unique_route_next
+                          , routes_err(ct, "no matching target sum arm")
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Route_result
+          , Type_list & Unique_route_state
+          , Route_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Route_result) -> Route_result { loop_done }
+          , .(loop_next: Type_list & Unique_route_state) -> Route_result {
+              loop_recur(
+                , __fst__(Type_list, Unique_route_state, loop_next)
+                , __snd__(Type_list, Unique_route_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Collapse_route_state = Route_list;
+
+type Collapse_route_next = Type_list & Collapse_route_state;
+
+type Collapse_route_step = Route_result | Collapse_route_next;
+
+/// Routes source sum arms to target arms, allowing compatible source arms to collapse.
+pub pure fn route_source_arms_collapse(
+  , ct: __Comptime__
+  , sources: Type_list
+  , targets: Target_slot_list
+  ) -> Route_result {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Collapse_route_state
+    , Route_result
+    , sources
+    , route_nil()
+    , .(
+        , loop_recur: (Type_list & Collapse_route_state) -> Route_result
+        , loop_fuel: Type_list
+        , loop_state: Collapse_route_state
+        ) -> Route_result {
+        let loop_step_fn =
+          .(fuel: Type_list, routes_rev: Collapse_route_state) -> Collapse_route_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Collapse_route_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Collapse_route_step {
+                  __left__(
+                    , Route_result
+                    , Collapse_route_next
+                    , routes_ok(ct, route_reverse(ct, routes_rev))
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Collapse_route_step {
+                  __either__(
+                    , Target_slot_take
+                    , .
+                    , Collapse_route_step
+                    , __if_then_else__(
+                        , __type_equal__(
+                            , ct
+                            , __fst__(__Type__, Type_list, cell)
+                            , __type_bottom__(ct)
+                            )
+                        , .() -> Target_slot_take | . {
+                            __left__(
+                              , Target_slot_take
+                              , .
+                              , ((__type_bottom__(ct), type_nil()), targets)
+                              )
+                          }
+                        , .() -> Target_slot_take | . {
+                            take_first_target_matching(
+                              , ct
+                              , __fst__(__Type__, Type_list, cell)
+                              , targets
+                              )
+                          }
+                        )
+                    , .(taken: Target_slot_take) -> Collapse_route_step {
+                        __right__(
+                          , Route_result
+                          , Collapse_route_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , route_cons(
+                                  , target_slot_suffix(
+                                      , ct
+                                      , __fst__(Target_slot, Target_slot_list, taken)
+                                      )
+                                  , routes_rev
+                                  )
+                              )
+                          )
+                      }
+                    , .(_missing: .) -> Collapse_route_step {
+                        __left__(
+                          , Route_result
+                          , Collapse_route_next
+                          , routes_err(ct, "source sum arm has no target arm")
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Route_result
+          , Type_list & Collapse_route_state
+          , Route_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Route_result) -> Route_result { loop_done }
+          , .(loop_next: Type_list & Collapse_route_state) -> Route_result {
+              loop_recur(
+                , __fst__(Type_list, Collapse_route_state, loop_next)
+                , __snd__(Type_list, Collapse_route_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Checked-term transformer used by fit and sum dispatch builders.
+pub type Term_mapper = __Checked_term__ -> __Checked_term__;
+
+type Prefix_state = Type_list & Type_list;
+
+pure fn prefix_acc(state: Prefix_state) -> Type_list { __fst__(Type_list, Type_list, state) }
+
+pure fn prefix_target(state: Prefix_state) -> Type_list { __snd__(Type_list, Type_list, state) }
+
+type Prefix_next = Type_list & Prefix_state;
+
+type Prefix_step = Type_list | Prefix_next;
+
+pure fn prefix_before_suffix(ct: __Comptime__, targets: Type_list, suffix: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Prefix_state
+    , Type_list
+    , targets
+    , (type_nil(), suffix)
+    , .(
+        , loop_recur: (Type_list & Prefix_state) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Prefix_state
+        ) -> Type_list {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Prefix_state) -> Prefix_step {
+            __if_then_else__(
+              , type_list_equal(ct, fuel, prefix_target(state))
+              , .() -> Prefix_step { __left__(Type_list, Prefix_next, prefix_acc(state)) }
+              , .() -> Prefix_step {
+                  __either__(
+                    , .
+                    , __Type__ & Type_list
+                    , Prefix_step
+                    , Type_list.un_type_list(fuel)
+                    , .(_done: .) -> Prefix_step {
+                        __left__(Type_list, Prefix_next, prefix_acc(state))
+                      }
+                    , .(cell: __Type__ & Type_list) -> Prefix_step {
+                        __right__(
+                          , Type_list
+                          , Prefix_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , (
+                                  , type_cons(
+                                      , ct
+                                      , __fst__(__Type__, Type_list, cell)
+                                      , prefix_acc(state)
+                                      )
+                                  , prefix_target(state)
+                                  )
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Type_list
+          , Type_list & Prefix_state
+          , Type_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Type_list) -> Type_list { loop_done }
+          , .(loop_next: Type_list & Prefix_state) -> Type_list {
+              loop_recur(
+                , __fst__(Type_list, Prefix_state, loop_next)
+                , __snd__(Type_list, Prefix_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Inject_prefix_state = __Type__ & __Checked_term__;
+
+pure fn inject_prefix_type(ct: __Comptime__, state: Inject_prefix_state) -> __Type__ {
+  __fst__(__Type__, __Checked_term__, state)
+}
+
+pure fn inject_prefix_term(ct: __Comptime__, state: Inject_prefix_state) -> __Checked_term__ {
+  __snd__(__Type__, __Checked_term__, state)
+}
+
+type Inject_prefix_next = Type_list & Inject_prefix_state;
+
+type Inject_prefix_step = __Checked_term__ | Inject_prefix_next;
+
+pure fn suffix_base_type(ct: __Comptime__, suffix: Type_list) -> __Type__ {
+  right_fold_sum(ct, suffix)
+}
+
+pure fn suffix_base_term(
+  , ct: __Comptime__
+  , suffix_type: __Type__
+  , suffix: Type_list
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , __Checked_term__
+    , Type_list.un_type_list(suffix)
+    , .(_empty: .) -> __Checked_term__ { value }
+    , .(cell: __Type__ & Type_list) -> __Checked_term__ {
+        __if_then_else__(
+          , type_empty(ct, __snd__(__Type__, Type_list, cell))
+          , .() -> __Checked_term__ { value }
+          , .() -> __Checked_term__ { __intrinsic_left__(ct, suffix_type, value) }
+          )
+      }
+    )
+}
+
+/// Builds nested sum injection terms along a target suffix path.
+pub pure fn inject_at_suffix(
+  , ct: __Comptime__
+  , targets: Type_list
+  , suffix: Type_list
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  let base_type = suffix_base_type(ct, suffix);
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Inject_prefix_state
+    , __Checked_term__
+    , prefix_before_suffix(ct, targets, suffix)
+    , (base_type, suffix_base_term(ct, base_type, suffix, value))
+    , .(
+        , loop_recur: (Type_list & Inject_prefix_state) -> __Checked_term__
+        , loop_fuel: Type_list
+        , loop_state: Inject_prefix_state
+        ) -> __Checked_term__ {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Inject_prefix_state) -> Inject_prefix_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Inject_prefix_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Inject_prefix_step {
+                  __left__(__Checked_term__, Inject_prefix_next, inject_prefix_term(ct, state))
+                }
+              , .(cell: __Type__ & Type_list) -> Inject_prefix_step {
+                  let next_type =
+                    __type_sum__(
+                      , ct
+                      , __fst__(__Type__, Type_list, cell)
+                      , inject_prefix_type(ct, state)
+                      );
+                  __right__(
+                    , __Checked_term__
+                    , Inject_prefix_next
+                    , (
+                        , __snd__(__Type__, Type_list, cell)
+                        , (
+                            , next_type
+                            , __intrinsic_right__(ct, next_type, inject_prefix_term(ct, state))
+                            )
+                        )
+                    )
+                }
+              )
+          };
+        __either__(
+          , __Checked_term__
+          , Type_list & Inject_prefix_state
+          , __Checked_term__
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: __Checked_term__) -> __Checked_term__ { loop_done }
+          , .(loop_next: Type_list & Inject_prefix_state) -> __Checked_term__ {
+              loop_recur(
+                , __fst__(Type_list, Inject_prefix_state, loop_next)
+                , __snd__(Type_list, Inject_prefix_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Dispatch_state = __Type__ & Term_mapper;
+
+pure fn dispatch_type(ct: __Comptime__, state: Dispatch_state) -> __Type__ {
+  __fst__(__Type__, Term_mapper, state)
+}
+
+pure fn dispatch_mapper(ct: __Comptime__, state: Dispatch_state) -> Term_mapper {
+  __snd__(__Type__, Term_mapper, state)
+}
+
+type Dispatch_loop_state = Route_list & Dispatch_state;
+
+pure fn dispatch_routes(ct: __Comptime__, state: Dispatch_loop_state) -> Route_list {
+  __fst__(Route_list, Dispatch_state, state)
+}
+
+pure fn dispatch_state(ct: __Comptime__, state: Dispatch_loop_state) -> Dispatch_state {
+  __snd__(Route_list, Dispatch_state, state)
+}
+
+type Dispatch_result = Term_mapper | __Diagnostic_text__;
+
+pure fn dispatch_ok(ct: __Comptime__, mapper: Term_mapper) -> Dispatch_result {
+  __left__(Term_mapper, __Diagnostic_text__, mapper)
+}
+
+pure fn dispatch_err(ct: __Comptime__, message: __Diagnostic_text__) -> Dispatch_result {
+  __right__(Term_mapper, __Diagnostic_text__, message)
+}
+
+type Dispatch_next = Type_list & Dispatch_loop_state;
+
+type Dispatch_step = Dispatch_result | Dispatch_next;
+
+pure fn apply_sum_route(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , target_spine: Type_list
+  , source_type: __Type__
+  , route: Type_list
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __if_then_else__(
+    , __type_equal__(ct, source_type, __type_bottom__(ct))
+    , .() -> __Checked_term__ { __intrinsic_absurd__(ct, value, target_type) }
+    , .() -> __Checked_term__ { inject_at_suffix(ct, target_spine, route, value) }
+    )
+}
+
+pure fn terminal_dispatch(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , target_spine: Type_list
+  , source_type: __Type__
+  , route: Type_list
+  ) -> Term_mapper {
+  .(scrutinee: __Checked_term__) -> __Checked_term__ {
+    apply_sum_route(ct, target_type, target_spine, source_type, route, scrutinee)
+  }
+}
+
+pure fn extend_dispatch(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , target_spine: Type_list
+  , head: __Type__
+  , route: Type_list
+  , previous: Dispatch_state
+  ) -> Dispatch_state {
+  let residual_type = dispatch_type(ct, previous);
+  let sum_type = __type_sum__(ct, head, residual_type);
+  let previous_mapper = dispatch_mapper(ct, previous);
+  (
+    , sum_type
+    , .(scrutinee: __Checked_term__) -> __Checked_term__ {
+        __intrinsic_either__(
+          , ct
+          , sum_type
+          , target_type
+          , scrutinee
+          , .(left_value: __Checked_term__) -> __Checked_term__ {
+              apply_sum_route(ct, target_type, target_spine, head, route, left_value)
+            }
+          , .(right_value: __Checked_term__) -> __Checked_term__ { previous_mapper(right_value) }
+          )
+      }
+    )
+}
+
+pure fn finish_dispatch(ct: __Comptime__, state: Dispatch_loop_state) -> Dispatch_result {
+  __either__(
+    , .
+    , Type_list & Route_list
+    , Dispatch_result
+    , Route_list.un_route_list(dispatch_routes(ct, state))
+    , .(_done: .) -> Dispatch_result {
+        dispatch_ok(ct, dispatch_mapper(ct, dispatch_state(ct, state)))
+      }
+    , .(_extra: Type_list & Route_list) -> Dispatch_result {
+        dispatch_err(ct, "sum dispatch route count mismatch")
+      }
+    )
+}
+
+pure fn build_sum_dispatcher(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , target_spine: Type_list
+  , source_spine: Type_list
+  , routes: Route_list
+  ) -> Dispatch_result {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Dispatch_result
+    , Type_list.un_type_list(type_reverse(ct, source_spine))
+    , .(_no_source: .) -> Dispatch_result { dispatch_err(ct, "sum source spine is empty") }
+    , .(source_cell: __Type__ & Type_list) -> Dispatch_result {
+        __either__(
+          , .
+          , Type_list & Route_list
+          , Dispatch_result
+          , Route_list.un_route_list(route_reverse(ct, routes))
+          , .(_no_route: .) -> Dispatch_result { dispatch_err(ct, "sum route list is empty") }
+          , .(route_cell: Type_list & Route_list) -> Dispatch_result {
+              __structural_recur__(
+                , ct
+                , Type_list
+                , Dispatch_loop_state
+                , Dispatch_result
+                , __snd__(__Type__, Type_list, source_cell)
+                , (
+                    , __snd__(Type_list, Route_list, route_cell)
+                    , (
+                        , __fst__(__Type__, Type_list, source_cell)
+                        , terminal_dispatch(
+                            , ct
+                            , target_type
+                            , target_spine
+                            , __fst__(__Type__, Type_list, source_cell)
+                            , __fst__(Type_list, Route_list, route_cell)
+                            )
+                        )
+                    )
+                , .(
+                    , loop_recur: (Type_list & Dispatch_loop_state) -> Dispatch_result
+                    , loop_fuel: Type_list
+                    , loop_state: Dispatch_loop_state
+                    ) -> Dispatch_result {
+                    let loop_step_fn =
+                      .(fuel: Type_list, state: Dispatch_loop_state) -> Dispatch_step {
+                        __either__(
+                          , .
+                          , __Type__ & Type_list
+                          , Dispatch_step
+                          , Type_list.un_type_list(fuel)
+                          , .(_done: .) -> Dispatch_step {
+                              __left__(Dispatch_result, Dispatch_next, finish_dispatch(ct, state))
+                            }
+                          , .(source_head: __Type__ & Type_list) -> Dispatch_step {
+                              __either__(
+                                , .
+                                , Type_list & Route_list
+                                , Dispatch_step
+                                , Route_list.un_route_list(dispatch_routes(ct, state))
+                                , .(_missing_route: .) -> Dispatch_step {
+                                    __left__(
+                                      , Dispatch_result
+                                      , Dispatch_next
+                                      , dispatch_err(ct, "sum dispatch route count mismatch")
+                                      )
+                                  }
+                                , .(route_head: Type_list & Route_list) -> Dispatch_step {
+                                    __right__(
+                                      , Dispatch_result
+                                      , Dispatch_next
+                                      , (
+                                          , __snd__(__Type__, Type_list, source_head)
+                                          , (
+                                              , __snd__(Type_list, Route_list, route_head)
+                                              , extend_dispatch(
+                                                  , ct
+                                                  , target_type
+                                                  , target_spine
+                                                  , __fst__(__Type__, Type_list, source_head)
+                                                  , __fst__(Type_list, Route_list, route_head)
+                                                  , dispatch_state(ct, state)
+                                                  )
+                                              )
+                                          )
+                                      )
+                                  }
+                                )
+                            }
+                          )
+                      };
+                    __either__(
+                      , Dispatch_result
+                      , Type_list & Dispatch_loop_state
+                      , Dispatch_result
+                      , loop_step_fn(loop_fuel, loop_state)
+                      , .(loop_done: Dispatch_result) -> Dispatch_result { loop_done }
+                      , .(loop_next: Type_list & Dispatch_loop_state) -> Dispatch_result {
+                          loop_recur(
+                            , __fst__(Type_list, Dispatch_loop_state, loop_next)
+                            , __snd__(Type_list, Dispatch_loop_state, loop_next)
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Builds a sum dispatcher from precomputed source-to-target routes.
+pub pure fn build_sum_from_routes(
+  , ct: __Comptime__
+  , source_spine: Type_list
+  , target_type: __Type__
+  , target_spine: Type_list
+  , routes: Route_list
+  , value: __Checked_term__
+  ) -> Elaborator_result {
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Elaborator_result
+    , build_sum_dispatcher(ct, target_type, target_spine, source_spine, routes)
+    , .(mapper: Term_mapper) -> Elaborator_result { ok(ct, mapper(value)) }
+    , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+    )
+}
+
+type Type_pair_result = Type_pair | __Diagnostic_text__;
+
+fn type_pair_ok(left: __Type__, right: __Type__) -> Type_pair_result {
+  __left__(Type_pair, __Diagnostic_text__, (left, right))
+}
+
+fn type_pair_err(message: __Diagnostic_text__) -> Type_pair_result {
+  __right__(Type_pair, __Diagnostic_text__, message)
+}
+
+fn first_two_types(ct: __Comptime__, types: Type_list) -> Type_pair_result {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Type_pair_result
+    , Type_list.un_type_list(types)
+    , .(_empty: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots") }
+    , .(first_cell: __Type__ & Type_list) -> Type_pair_result {
+        __either__(
+          , .
+          , __Type__ & Type_list
+          , Type_pair_result
+          , Type_list.un_type_list(__snd__(__Type__, Type_list, first_cell))
+          , .(_one: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots") }
+          , .(second_cell: __Type__ & Type_list) -> Type_pair_result {
+              type_pair_ok(
+                , __fst__(__Type__, Type_list, first_cell)
+                , __fst__(__Type__, Type_list, second_cell)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Type_term = __Type__ & __Checked_term__;
+
+type Type_term_result = Type_term | __Diagnostic_text__;
+
+pure fn type_term_ok(ct: __Comptime__, typ: __Type__, term: __Checked_term__) -> Type_term_result {
+  __left__(Type_term, __Diagnostic_text__, (typ, term))
+}
+
+pure fn type_term_err(ct: __Comptime__, message: __Diagnostic_text__) -> Type_term_result {
+  __right__(Type_term, __Diagnostic_text__, message)
+}
+
+pure fn flatten_product_step_from_parts(
+  , ct: __Comptime__
+  , current_type: __Type__
+  , value: __Checked_term__
+  , outer: Type_pair
+  , inner: Type_pair
+  ) -> Type_term_result {
+  let outer_l = __fst__(__Type__, __Type__, outer);
+  let outer_r = __snd__(__Type__, __Type__, outer);
+  let l1 = __fst__(__Type__, __Type__, inner);
+  let l2 = __snd__(__Type__, __Type__, inner);
+  let l2_r = __type_product__(ct, l2, outer_r);
+  let next_type = __type_product__(ct, l1, l2_r);
+  let outer_value = __intrinsic_fst__(ct, current_type, value);
+  let l1_value = __intrinsic_fst__(ct, outer_l, outer_value);
+  let l2_value = __intrinsic_snd__(ct, outer_l, outer_value);
+  let r_value = __intrinsic_snd__(ct, current_type, value);
+  type_term_ok(
+    , ct
+    , next_type
+    , __intrinsic_pair__(ct, l1_value, __intrinsic_pair__(ct, l2_value, r_value))
+    )
+}
+
+pure fn flatten_product_once(ct: __Comptime__, current_type: __Type__, value: __Checked_term__) -> Type_term_result {
+  __either__(
+    , Type_pair
+    , .
+    , Type_term_result
+    , product_view(ct, current_type)
+    , .(outer: Type_pair) -> Type_term_result {
+        __if_then_else__(
+          , __type_is_product_root__(ct, __fst__(__Type__, __Type__, outer))
+          , .() -> Type_term_result {
+              __either__(
+                , Type_pair
+                , .
+                , Type_term_result
+                , product_view(ct, __fst__(__Type__, __Type__, outer))
+                , .(inner: Type_pair) -> Type_term_result {
+                    flatten_product_step_from_parts(ct, current_type, value, outer, inner)
+                  }
+                , .(_not_inner_product: .) -> Type_term_result {
+                    type_term_err(ct, "product source has no left-nested product to flatten")
+                  }
+                )
+            }
+          , .() -> Type_term_result {
+              type_term_err(ct, "product source has no left-nested product to flatten")
+            }
+          )
+      }
+    , .(_not_product: .) -> Type_term_result {
+        type_term_err(ct, "product source has no left-nested product to flatten")
+      }
+    )
+}
+
+pure fn flatten_sum_step_from_parts(
+  , ct: __Comptime__
+  , current_type: __Type__
+  , value: __Checked_term__
+  , outer: Type_pair
+  , inner: Type_pair
+  ) -> Type_term_result {
+  let outer_l = __fst__(__Type__, __Type__, outer);
+  let outer_r = __snd__(__Type__, __Type__, outer);
+  let l1 = __fst__(__Type__, __Type__, inner);
+  let l2 = __snd__(__Type__, __Type__, inner);
+  let l2_r = __type_sum__(ct, l2, outer_r);
+  let next_type = __type_sum__(ct, l1, l2_r);
+  type_term_ok(
+    , ct
+    , next_type
+    , __intrinsic_either__(
+        , ct
+        , current_type
+        , next_type
+        , value
+        , .(inner_value: __Checked_term__) -> __Checked_term__ {
+            __intrinsic_either__(
+              , ct
+              , outer_l
+              , next_type
+              , inner_value
+              , .(l1_value: __Checked_term__) -> __Checked_term__ {
+                  __intrinsic_left__(ct, next_type, l1_value)
+                }
+              , .(l2_value: __Checked_term__) -> __Checked_term__ {
+                  __intrinsic_right__(
+                    , ct
+                    , next_type
+                    , __intrinsic_left__(ct, __type_sum__(ct, l2, outer_r), l2_value)
+                    )
+                }
+              )
+          }
+        , .(r_value: __Checked_term__) -> __Checked_term__ {
+            __intrinsic_right__(
+              , ct
+              , next_type
+              , __intrinsic_right__(ct, __type_sum__(ct, l2, outer_r), r_value)
+              )
+          }
+        )
+    )
+}
+
+pure fn flatten_sum_once(ct: __Comptime__, current_type: __Type__, value: __Checked_term__) -> Type_term_result {
+  __either__(
+    , Type_pair
+    , .
+    , Type_term_result
+    , sum_view(ct, current_type)
+    , .(outer: Type_pair) -> Type_term_result {
+        __if_then_else__(
+          , __type_is_sum_root__(ct, __fst__(__Type__, __Type__, outer))
+          , .() -> Type_term_result {
+              __either__(
+                , Type_pair
+                , .
+                , Type_term_result
+                , sum_view(ct, __fst__(__Type__, __Type__, outer))
+                , .(inner: Type_pair) -> Type_term_result {
+                    flatten_sum_step_from_parts(ct, current_type, value, outer, inner)
+                  }
+                , .(_not_inner_sum: .) -> Type_term_result {
+                    type_term_err(ct, "sum source has no left-nested sum to flatten")
+                  }
+                )
+            }
+          , .() -> Type_term_result {
+              type_term_err(ct, "sum source has no left-nested sum to flatten")
+            }
+          )
+      }
+    , .(_not_sum: .) -> Type_term_result {
+        type_term_err(ct, "sum source has no left-nested sum to flatten")
+      }
+    )
+}
+
+type Flatten_state = Type_term;
+
+pure fn flatten_state_type(ct: __Comptime__, state: Flatten_state) -> __Type__ {
+  __fst__(__Type__, __Checked_term__, state)
+}
+
+pure fn flatten_state_term(ct: __Comptime__, state: Flatten_state) -> __Checked_term__ {
+  __snd__(__Type__, __Checked_term__, state)
+}
+
+type Flatten_next = __Type__ & Flatten_state;
+
+type Flatten_step = Elaborator_result | Flatten_next;
+
+/// Flattens a product value to a requested product target.
+pub pure fn flatten_product_to(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Flatten_state
+    , Elaborator_result
+    , source
+    , (source, value)
+    , .(
+        , loop_recur: (__Type__ & Flatten_state) -> Elaborator_result
+        , loop_fuel: __Type__
+        , loop_state: Flatten_state
+        ) -> Elaborator_result {
+        let loop_step_fn =
+          .(_fuel: __Type__, state: Flatten_state) -> Flatten_step {
+            __if_then_else__(
+              , __type_equal__(ct, flatten_state_type(ct, state), target)
+              , .() -> Flatten_step {
+                  __left__(Elaborator_result, Flatten_next, ok(ct, flatten_state_term(ct, state)))
+                }
+              , .() -> Flatten_step {
+                  __either__(
+                    , Type_term
+                    , __Diagnostic_text__
+                    , Flatten_step
+                    , flatten_product_once(
+                        , ct
+                        , flatten_state_type(ct, state)
+                        , flatten_state_term(ct, state)
+                        )
+                    , .(next: Type_term) -> Flatten_step {
+                        __either__(
+                          , Type_pair
+                          , .
+                          , Flatten_step
+                          , product_view(ct, flatten_state_type(ct, state))
+                          , .(outer: Type_pair) -> Flatten_step {
+                              __right__(
+                                , Elaborator_result
+                                , Flatten_next
+                                , (__fst__(__Type__, __Type__, outer), next)
+                                )
+                            }
+                          , .(_not_product: .) -> Flatten_step {
+                              __left__(
+                                , Elaborator_result
+                                , Flatten_next
+                                , err(ct, "product source has no left-nested product to flatten")
+                                )
+                            }
+                          )
+                      }
+                    , .(message: __Diagnostic_text__) -> Flatten_step {
+                        __left__(Elaborator_result, Flatten_next, err(ct, message))
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Elaborator_result
+          , __Type__ & Flatten_state
+          , Elaborator_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: __Type__ & Flatten_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(__Type__, Flatten_state, loop_next)
+                , __snd__(__Type__, Flatten_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+/// Flattens a sum value to a requested sum target.
+pub pure fn flatten_sum_to(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Flatten_state
+    , Elaborator_result
+    , source
+    , (source, value)
+    , .(
+        , loop_recur: (__Type__ & Flatten_state) -> Elaborator_result
+        , loop_fuel: __Type__
+        , loop_state: Flatten_state
+        ) -> Elaborator_result {
+        let loop_step_fn =
+          .(_fuel: __Type__, state: Flatten_state) -> Flatten_step {
+            __if_then_else__(
+              , __type_equal__(ct, flatten_state_type(ct, state), target)
+              , .() -> Flatten_step {
+                  __left__(Elaborator_result, Flatten_next, ok(ct, flatten_state_term(ct, state)))
+                }
+              , .() -> Flatten_step {
+                  __either__(
+                    , Type_term
+                    , __Diagnostic_text__
+                    , Flatten_step
+                    , flatten_sum_once(
+                        , ct
+                        , flatten_state_type(ct, state)
+                        , flatten_state_term(ct, state)
+                        )
+                    , .(next: Type_term) -> Flatten_step {
+                        __either__(
+                          , Type_pair
+                          , .
+                          , Flatten_step
+                          , sum_view(ct, flatten_state_type(ct, state))
+                          , .(outer: Type_pair) -> Flatten_step {
+                              __right__(
+                                , Elaborator_result
+                                , Flatten_next
+                                , (__fst__(__Type__, __Type__, outer), next)
+                                )
+                            }
+                          , .(_not_sum: .) -> Flatten_step {
+                              __left__(
+                                , Elaborator_result
+                                , Flatten_next
+                                , err(ct, "sum source has no left-nested sum to flatten")
+                                )
+                            }
+                          )
+                      }
+                    , .(message: __Diagnostic_text__) -> Flatten_step {
+                        __left__(Elaborator_result, Flatten_next, err(ct, message))
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Elaborator_result
+          , __Type__ & Flatten_state
+          , Elaborator_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: __Type__ & Flatten_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(__Type__, Flatten_state, loop_next)
+                , __snd__(__Type__, Flatten_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}

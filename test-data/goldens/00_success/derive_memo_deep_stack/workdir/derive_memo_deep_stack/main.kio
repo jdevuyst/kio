@@ -1,0 +1,34 @@
+module derive_memo_deep_stack/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+import testapi(String);
+
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+
+type Deep = Pair(
+  , Cell(String)
+  , Pair(
+      , Cell(String)
+      , Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String)))))
+      )
+  );
+
+fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+
+fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
+  Render.mk_render(.(p) { Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p))) })
+}
+
+fn derived0() -> Render(Deep) { derive!((render_pair, render_cell_string), Render(Deep)) }
+
+fn derived1() -> Render(Deep) { derive!((render_pair, render_cell_string), Render(Deep)) }
+
+fn derived2() -> Render(Deep) { derive!((render_pair, render_cell_string), Render(Deep)) }
+
+pub fn main() -> . { () }

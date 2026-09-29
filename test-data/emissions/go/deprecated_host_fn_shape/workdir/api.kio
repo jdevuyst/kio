@@ -1,0 +1,7 @@
+module api;
+
+host type Str role(str);
+
+host fn open() -> Str;
+
+pub fn echo(s: Str) -> Str { s }

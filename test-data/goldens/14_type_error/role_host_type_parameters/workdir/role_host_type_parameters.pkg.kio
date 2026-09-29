@@ -1,0 +1,13 @@
+package role_host_type_parameters;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  invalid
+}

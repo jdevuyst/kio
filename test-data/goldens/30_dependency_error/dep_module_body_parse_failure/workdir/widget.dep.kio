@@ -1,0 +1,5 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}

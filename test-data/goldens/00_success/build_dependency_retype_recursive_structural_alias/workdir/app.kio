@@ -1,0 +1,6 @@
+module app;
+
+import core/store(accept);
+import widget/store(make);
+
+pub fn main() -> . { accept(make()) }

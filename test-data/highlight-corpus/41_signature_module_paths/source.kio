@@ -1,0 +1,40 @@
+signature app v(2);
+
+v(1) {
+  with {
+    module context/if {
+      pub type Item = .;
+    }
+  };
+  breaking {
+    add {
+      added/with.Item;
+      module added/body {
+        pub fn item() -> .;
+      }
+    };
+    modify {
+      modified/with.Item;
+      module modified/body {
+        pub fn item() -> .;
+      }
+    };
+    remove {
+      removed/with.item;
+      module removed/body {
+        item;
+        removed;
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      second/with.item;
+    }
+  }
+}
+
+// removed/body is a comment, not a module path

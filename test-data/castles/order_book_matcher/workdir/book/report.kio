@@ -1,0 +1,305 @@
+/// Everything the run prints: the per-event transcript, the resting book
+/// by price level, the summary, and the closing invariant.
+module book/report;
+
+import book/book(
+  , Book
+  , asks_of
+  , at
+  , best_price
+  , bids_of
+  , cancel_count
+  , cancelled_qty
+  , depth
+  , entered_qty
+  , is_empty
+  , reduced_qty
+  , resting_qty
+  , tape_len
+  , trade_at
+  , unfilled_qty
+  );
+import book/num(int_eq);
+import book/order(
+  , Order
+  , Side
+  , Trade
+  , id_of
+  , price_of
+  , qty_of
+  , remaining_of
+  , seq_of
+  , side_of
+  , side_text
+  , trade_maker
+  , trade_price
+  , trade_qty
+  , trade_taker
+  );
+import book/text as text;
+import elab/control(if);
+import elab/match(match);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+pub fn limit_header(step: I32, side: Side, price: I32, qty: I32, id: I32) -> String {
+  let head = text.cat5("event ", text.int_text(step), ": LIMIT ", side_text(side), " ");
+  let tail =
+    text.cat6(text.int_text(qty), " @ ", text.int_text(price), " (id ", text.int_text(id), ")\n");
+  text.cat2(head, tail)
+}
+
+pub fn market_header(step: I32, side: Side, qty: I32, id: I32) -> String {
+  let head = text.cat5("event ", text.int_text(step), ": MARKET ", side_text(side), " ");
+  let tail = text.cat4(text.int_text(qty), " (id ", text.int_text(id), ")\n");
+  text.cat2(head, tail)
+}
+
+pub fn cancel_header(step: I32, id: I32) -> String {
+  text.cat4("event ", text.int_text(step), ": CANCEL id ", text.cat2(text.int_text(id), "\n"))
+}
+
+pub fn amend_header(step: I32, id: I32, qty: I32) -> String {
+  let head = text.cat4("event ", text.int_text(step), ": AMEND id ", text.int_text(id));
+  text.cat4(head, " to ", text.int_text(qty), "\n")
+}
+
+fn trade_line(t: Trade) -> String {
+  let who =
+    text.cat5(
+      , "  trade taker "
+      , text.int_text(trade_taker(t))
+      , " maker "
+      , text.int_text(trade_maker(t))
+      , "  "
+      );
+  let what =
+    text.cat5("qty ", text.int_text(trade_qty(t)), " @ ", text.int_text(trade_price(t)), "\n");
+  text.cat2(who, what)
+}
+
+/// The trades one event generated: everything the event appended to the
+/// tape, from where the tape stood before it ran.
+pub rec(loop) fn print_trades(i: I32, b: Book) -> . {
+  if! leq_i32(tape_len(b), i) {
+    ()
+  } else {
+    print(trade_line(trade_at(b, i)));
+    rec print_trades(add_i32(i, 1), b)
+  }
+}
+
+pub fn fill_line(filled: I32, total: I32) -> String {
+  text.cat5("  fill ", text.int_text(filled), " of ", text.int_text(total), "\n")
+}
+
+pub fn rest_line(qty: I32, price: I32) -> String {
+  text.cat5("  rest ", text.int_text(qty), " @ ", text.int_text(price), "\n")
+}
+
+pub fn unfilled_line(qty: I32) -> String {
+  text.cat3("  unfilled ", text.int_text(qty), " (book exhausted)\n")
+}
+
+pub fn cancel_line(o: Order) -> String {
+  let head = text.cat4("  cancel: order ", text.int_text(id_of(o)), " ", side_text(side_of(o)));
+  let tail =
+    text.cat5(" ", text.int_text(remaining_of(o)), " @ ", text.int_text(price_of(o)), "\n");
+  text.cat2(head, tail)
+}
+
+pub fn reduce_line(id: I32, from: I32, to: I32) -> String {
+  let head = text.cat4("  reduce: order ", text.int_text(id), " ", text.int_text(from));
+  let tail =
+    text.cat5(" to ", text.int_text(to), " (released ", text.int_text(sub_i32(from, to)), ")\n");
+  text.cat2(head, tail)
+}
+
+pub fn reject_line(reason: String) -> String { text.cat3("  reject: ", reason, "\n") }
+
+pub fn no_order_reason(id: I32) -> String { text.cat2("no resting order ", text.int_text(id)) }
+
+/// A reduce keeps the order's place in the queue, so the book takes it.
+/// Growing an order would have to send it to the back of the level, which
+/// is a new order in all but name -- so the book refuses, and the trader
+/// can enter one.
+pub fn no_growth_reason(id: I32, remaining: I32, target: I32) -> String {
+  let head = text.cat4("order ", text.int_text(id), " cannot grow ", text.int_text(remaining));
+  text.cat3(head, " to ", text.int_text(target))
+}
+
+fn price_text(price: I32 | .) -> String {
+  match! price {
+    (.(p: I32) { text.int_text(p) }, .(_none: .) { text.missing() })
+  }
+}
+
+/// A spread needs both sides, so an empty side has none.
+fn spread_text(b: Book) -> String {
+  match! best_price(bids_of(b)) {
+    (
+      , .(bid: I32) {
+          match! best_price(asks_of(b)) {
+            (.(ask: I32) { text.int_text(sub_i32(ask, bid)) }, .(_none: .) { text.missing() })
+          }
+        }
+      , .(_none: .) { text.missing() }
+      )
+  }
+}
+
+pub fn book_line(b: Book) -> String {
+  text.cat7(
+    , "  book: bid "
+    , price_text(best_price(bids_of(b)))
+    , "  ask "
+    , price_text(best_price(asks_of(b)))
+    , "  spread "
+    , spread_text(b)
+    , "\n"
+    )
+}
+
+fn order_line(o: Order) -> String {
+  let head = text.cat4("      id ", text.int_text(id_of(o)), "  seq ", text.int_text(seq_of(o)));
+  let tail =
+    text.cat5("  qty ", text.int_text(qty_of(o)), "  rem ", text.int_text(remaining_of(o)), "\n");
+  text.cat2(head, tail)
+}
+
+fn level_line(price: I32, qty: I32, orders: I32) -> String {
+  text.cat7(
+    , "    price "
+    , text.int_text(price)
+    , "  qty "
+    , text.int_text(qty)
+    , "  orders "
+    , text.int_text(orders)
+    , "\n"
+    )
+}
+
+/// One past the last order of the level that starts before `i`. The queue
+/// is sorted by price, so a level is a run of equal prices and nothing
+/// else can be one.
+rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
+  if! leq_i32(depth(orders), i) {
+    i
+  } else if! int_eq(price_of(at(orders, i)), price) {
+    rec level_end(add_i32(i, 1), price, orders)
+  } else {
+    i
+  }
+}
+
+rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I32 {
+  if! leq_i32(end, i) {
+    total
+  } else {
+    rec level_qty(add_i32(i, 1), end, add_i32(total, remaining_of(at(orders, i))), orders)
+  }
+}
+
+rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) -> . {
+  if! leq_i32(end, i) {
+    ()
+  } else {
+    print(order_line(at(orders, i)));
+    rec print_orders(add_i32(i, 1), end, orders)
+  }
+}
+
+rec(loop) fn print_levels(i: I32, orders: Array(Order)) -> . {
+  if! leq_i32(depth(orders), i) {
+    ()
+  } else {
+    let price = price_of(at(orders, i));
+    let end = level_end(add_i32(i, 1), price, orders);
+    print(level_line(price, level_qty(i, end, 0, orders), sub_i32(end, i)));
+    print_orders(i, end, orders);
+    rec print_levels(end, orders)
+  }
+}
+
+fn print_side(orders: Array(Order)) -> . {
+  if! is_empty(orders) {
+    print("    (empty)\n")
+  } else {
+    print_levels(0, orders)
+  }
+}
+
+/// The queues print best price first, so the two sides read outwards from
+/// the spread: the top ask and the top bid are the lines nearest it.
+pub fn print_book(b: Book) -> . {
+  print("== resting book ==\n");
+  print("  asks (best first)\n");
+  print_side(asks_of(b));
+  print("  bids (best first)\n");
+  print_side(bids_of(b))
+}
+
+fn stat_line(label: String, value: I32) -> String {
+  text.cat4("  ", label, text.int_text(value), "\n")
+}
+
+rec(loop) fn sum_volume(i: I32, total: I32, b: Book) -> I32 {
+  if! leq_i32(tape_len(b), i) {
+    total
+  } else {
+    rec sum_volume(add_i32(i, 1), add_i32(total, trade_qty(trade_at(b, i))), b)
+  }
+}
+
+fn tape_volume(b: Book) -> I32 { sum_volume(0, 0, b) }
+
+rec(loop) fn sum_notional(i: I32, total: I32, b: Book) -> I32 {
+  if! leq_i32(tape_len(b), i) {
+    total
+  } else {
+    let t = trade_at(b, i);
+    rec sum_notional(add_i32(i, 1), add_i32(total, mul_i32(trade_price(t), trade_qty(t))), b)
+  }
+}
+
+pub fn print_summary(b: Book) -> . {
+  print("\n== summary ==\n");
+  print(stat_line("trades:            ", tape_len(b)));
+  print(stat_line("volume:            ", tape_volume(b)));
+  print(stat_line("notional:          ", sum_notional(0, 0, b)));
+  print(stat_line("orders cancelled:  ", cancel_count(b)));
+  print(stat_line("unfilled market:   ", unfilled_qty(b)))
+}
+
+fn ledger_line(entered: I32, cancelled: I32, reduced: I32, resting: I32) -> String {
+  let head =
+    text.cat4("  entered ", text.int_text(entered), " - cancelled ", text.int_text(cancelled));
+  let tail =
+    text.cat5(" - reduced ", text.int_text(reduced), " - resting ", text.int_text(resting), "\n");
+  text.cat2(head, tail)
+}
+
+/// The volume the tape reports, against a total the tape had no hand in.
+///
+/// The ledger counts quantity across the book's boundary as it happens:
+/// what entered the book when an order came to rest, and what left it by
+/// cancel or by reduce. Whatever entered and did not leave by those doors,
+/// and is not still resting, left by trading -- so it must equal the
+/// volume on the tape. Two independent counts of the same quantity; if
+/// they disagree, one of them lost an order.
+pub fn print_invariant(b: Book) -> . {
+  let entered = entered_qty(b);
+  let cancelled = cancelled_qty(b);
+  let reduced = reduced_qty(b);
+  let resting = add_i32(resting_qty(bids_of(b)), resting_qty(asks_of(b)));
+  let from_book = sub_i32(sub_i32(sub_i32(entered, cancelled), reduced), resting);
+  let from_tape = tape_volume(b);
+  print("\n== invariant ==\n");
+  print(ledger_line(entered, cancelled, reduced, resting));
+  print(stat_line("volume from the book:  ", from_book));
+  print(stat_line("volume from the tape:  ", from_tape));
+  print(text.cat3("  agree: ", bool_to_string(int_eq(from_book, from_tape)), "\n"))
+}

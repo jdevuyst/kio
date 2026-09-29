@@ -1,0 +1,5 @@
+module slot0;
+
+pub newtype P : . & . { pub constructor mk_p; pub projector un_p }
+
+pub newtype Y : . { pub constructor mk_y; projector un_y }

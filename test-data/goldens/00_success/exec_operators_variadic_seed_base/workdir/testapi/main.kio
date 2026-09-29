@@ -1,0 +1,44 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn nil() -> String { "[]" }
+
+fn take_right(_acc: String, elem: String) -> String { elem }
+
+varop [* *] { foldl take_right nil }
+
+fn seed(value: String) -> String { value }
+
+fn keep_right(_value: String, acc: String) -> String { acc }
+
+fn keep_left(acc: String, _value: String) -> String { acc }
+
+fn seed_entry(_key: String, value: String) -> String { value }
+
+fn keep_entry((_key: String, _value: String), acc: String) -> String { acc }
+
+fn entry(key: String, value: String) -> String & String { (key, value) }
+
+op _ => _ { impl entry }
+
+varop [+ +] { foldr1 keep_right seed }
+
+varop [! !] { foldl1 keep_left seed }
+
+varop [% %] { foldr1 keep_entry seed_entry }
+
+pub fn main() -> . {
+  print([* "a", "b", "c" *]);
+  print("\n");
+  print([* "solo" *]);
+  print("\n");
+  print([* *]);
+  print("\n");
+  print([+ "a", "b", "c" +]);
+  print("\n");
+  print([! "a", "b", "c" !]);
+  print("\n");
+  print([% "a" => "b", "c" => "d" %])
+}

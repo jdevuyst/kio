@@ -1,0 +1,5 @@
+module main;
+
+newtype W : . { pub constructor mk_w; pub projector un_w }
+
+fn bad() -> . { let .(x: W) = (); let _ = x; () }

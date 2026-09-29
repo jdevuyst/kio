@@ -1,0 +1,37 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Polymorphic `labels` (specs/language.md § Labels):
+// each entry can be parameterised the same way a `fn` is. The
+// generated newtype `Show[A] : A -> String` is reachable
+// directly in type position with the same parameterisation.
+pub labels { show[A]: A -> String };
+
+// Build the dictionary via the `{show = ...}` value sugar — the
+// typer infers the leading type-arg of `Show.mk` from
+// the value-arg's type, the same way it does for tuple-literal
+// `__pair__` desugaring (specs/language.md § Type flow,
+// "surface forms that desugar to polymorphic intrinsic calls
+// with elided type arguments"). Two instantiations: `Show(I32)`
+// and `Show(String)`, exercising both inference paths.
+fn make_int_show() -> Show(I32) { {show = int_to_string} }
+
+fn opaque_string(s: String) -> String { s }
+
+fn make_string_show() -> Show(String) { {show = opaque_string} }
+
+pub fn main() -> . {
+  let int_dict = make_int_show();
+  // `Show.get(I32, int_dict)` projects the polymorphic payload
+  // out of the dictionary and instantiates it at I32; the result
+  // is `I32 -> String`.
+  let ints = Show.get(int_dict);
+  print(ints(7));
+  print("\n");
+  let str_dict = make_string_show();
+  let strs = Show.get(str_dict);
+  print(strs("hello"))
+}

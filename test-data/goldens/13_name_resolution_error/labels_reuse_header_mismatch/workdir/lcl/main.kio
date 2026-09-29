@@ -1,0 +1,5 @@
+module lcl/main;
+
+labels { value[A]: A };
+
+labels Choice = { value: _, unit: . };

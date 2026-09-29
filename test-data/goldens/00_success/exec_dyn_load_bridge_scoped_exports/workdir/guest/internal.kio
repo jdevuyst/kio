@@ -1,0 +1,5 @@
+module internal;
+
+import hostapi(I32, add_i32);
+
+pub fn hidden_helper(x: I32) -> I32 { add_i32(x, 100) }

@@ -1,0 +1,41 @@
+module testapi/ledger;
+
+import testapi(I128, I64, U64);
+import testapi/arith as arith;
+
+fn north_margin() -> I64 { arith.add_i64(arith.add_i64(3520, -418), 921) }
+
+fn south_margin() -> I64 { arith.add_i64(arith.add_i64(1880, 502), 390) }
+
+fn west_margin() -> I64 { arith.add_i64(arith.add_i64(-820, 611), -142) }
+
+fn north_ballots() -> U64 { arith.mul_u64(249876, 10000) }
+
+fn south_ballots() -> U64 { arith.mul_u64(147000, 12500) }
+
+fn west_ballots() -> U64 { arith.mul_u64(94479, 12000) }
+
+fn north_ledger() -> I128 {
+  arith.add_i128(900000000000000000000000000000, 400000000000000000000000000000)
+}
+
+fn south_ledger() -> I128 {
+  arith.add_i128(610000000000000000000000000000, 40000000000000000000000000000)
+}
+
+fn west_ledger() -> I128 {
+  arith.add_i128(1000000000000000000000000000000, 700000000000000000000000000000)
+}
+
+pub fn north_row() -> I64 & U64 & I128 { (north_margin(), north_ballots(), north_ledger()) }
+
+pub fn south_row() -> I64 & U64 & I128 { (south_margin(), south_ballots(), south_ledger()) }
+
+pub fn west_row() -> I64 & U64 & I128 { (west_margin(), west_ballots(), west_ledger()) }
+
+pub fn total_row() -> I64 & U64 & I128 {
+  let total_margin = arith.add_i64(arith.add_i64(north_margin(), south_margin()), west_margin());
+  let total_ballots = arith.mul_u64(683751, 8000);
+  let total_ledger = arith.add_i128(arith.add_i128(north_ledger(), south_ledger()), west_ledger());
+  (total_margin, total_ballots, total_ledger)
+}

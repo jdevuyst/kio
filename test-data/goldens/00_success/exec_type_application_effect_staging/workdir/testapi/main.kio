@@ -1,0 +1,65 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn mark(message: String) -> . { print(message) }
+
+fn marked[A](message: String, value: A) -> A { mark(message); value }
+
+fn effect_after_b(_unit: .)[A][B] -> B -> B {
+  mark("after B\n"(String));
+  .(value: B) -> B { value }
+}
+
+fn effect_after_a(_unit: .)[A] -> [B] B -> B {
+  mark("after A\n"(String));
+  .[B](value: B) -> B { value }
+}
+
+fn produce_once(_unit: .) -> [A] A -> A { mark("produce\n"(String)); .[A](value: A) -> A { value } }
+
+pub fn main() -> . {
+  mark("pair start\n"(String));
+  let after_b = effect_after_b(());
+  let after_a = effect_after_a(());
+  mark("pair residuals\n"(String));
+  let after_b_a = after_b(String);
+  let after_a_a = after_a(String);
+  mark("between A and B\n"(String));
+  let after_b_b = after_b_a(String);
+  let after_a_b = after_a_a(String);
+  mark("pair ready\n"(String));
+  let pair_b = after_b_b("b"(String));
+  let pair_a = after_a_b("a"(String));
+  mark("repeat start\n"(String));
+  let after_a_again = after_a(.);
+  let after_a_again_ready = after_a_again(String);
+  let after_b_again = after_b(.);
+  let after_b_again_ready = after_b_again(String);
+  mark("repeat ready\n"(String));
+  let repeat_a = after_a_again_ready("a"(String));
+  let repeat_b = after_b_again_ready("b"(String));
+  mark("producer start\n"(String));
+  let produced = produce_once(());
+  mark("producer residual\n"(String));
+  let string_identity = produced(String);
+  mark("after String\n"(String));
+  let unit_identity_result = produced(.);
+  mark("after Unit\n"(String));
+  let produced_string = string_identity("produced"(String));
+  mark("producer done\n"(String));
+  mark("combined start\n"(String));
+  let combined = effect_after_b(());
+  mark("combined residual\n"(String));
+  let combined_value =
+    combined(String, String, marked("value argument\n"(String), "combined"(String)));
+  mark("combined done\n"(String));
+  mark("unit start\n"(String));
+  let unit_stage = .[A]() -> A -> A { mark("unit value\n"(String)); .(value: A) -> A { value } };
+  mark("unit residual\n"(String));
+  let unit_ready = unit_stage(String, marked("unit argument\n"(String), ()));
+  mark("unit ready\n"(String));
+  let unit_value = unit_ready("unit"(String));
+  ()
+}

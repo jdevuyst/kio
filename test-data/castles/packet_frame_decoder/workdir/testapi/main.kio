@@ -1,0 +1,6 @@
+module testapi/main;
+
+import packet_frame_decoder/report as report;
+import testapi/io as io;
+
+pub fn main() -> . { io.print(report.report()) }

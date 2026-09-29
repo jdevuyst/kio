@@ -1,0 +1,10 @@
+module main;
+
+import __comptime__;
+
+pub rec newtype Type_list : . | (__Type__ & Type_list) {
+  pub constructor mk_type_list;
+  pub projector un_type_list
+  }
+
+pub fn main() -> . { () }

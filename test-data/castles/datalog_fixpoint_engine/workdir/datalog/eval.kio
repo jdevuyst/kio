@@ -1,0 +1,156 @@
+/// Bottom-up evaluation to a fixpoint, twice over.
+///
+/// Both strategies fire every rule against the database, add the
+/// conclusions that are not already there, and repeat until a round adds
+/// nothing. They differ in what a round may look at. The naive one
+/// re-derives everything from scratch each round. The semi-naive one
+/// keeps the facts that were new last round - the delta - and admits only
+/// derivations consuming at least one of them, because anything derivable
+/// without a new fact was already derived. Both must reach the same
+/// database, and that identity is the correctness argument for the
+/// second.
+module datalog/eval;
+
+import datalog/atom(Atom, Atoms, atom_eq);
+import datalog/list as list;
+import datalog/program as program;
+import datalog/subst as subst;
+import datalog/unify as unify;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32);
+import testapi/iter(loop);
+
+pub labels Round = { rd_index: I32, rd_derivs: I32, rd_added: I32 };
+
+pub type Trace = list.List(Round);
+
+fn round(index: I32, derivs: I32, added: I32) -> Round {
+  {rd_index = index, rd_derivs = derivs, rd_added = added}
+}
+
+pub fn round_index(r: Round) -> I32 { r.?{rd_index} }
+
+pub fn round_derivs(r: Round) -> I32 { r.?{rd_derivs} }
+
+pub fn round_added(r: Round) -> I32 { r.?{rd_added} }
+
+pub labels Run = { run_trace: Trace, run_derivs: I32, run_db: Atoms };
+
+fn mk_run(trace: Trace, derivs: I32, db: Atoms) -> Run {
+  {run_trace = trace, run_derivs = derivs, run_db = db}
+}
+
+pub fn trace_of(r: Run) -> Trace { r.?{run_trace} }
+
+pub fn derivs_of(r: Run) -> I32 { r.?{run_derivs} }
+
+pub fn db_of(r: Run) -> Atoms { r.?{run_db} }
+
+labels Absorbed = { ab_db: Atoms, ab_added: Atoms };
+
+fn absorbed(db: Atoms, added: Atoms) -> Absorbed { {ab_db = db, ab_added = added} }
+
+fn holds(db: Atoms, fact: Atom) -> Bool { list.any(db, .(f: Atom) { atom_eq(f, fact) }) }
+
+/// Insert this round's conclusions, keeping the database a set. What was
+/// genuinely new is handed back as the next round's delta.
+rec(loop) fn absorb(db: Atoms, candidates: Atoms, added: Atoms) -> Absorbed {
+  match! candidates.>list.List.un_list {
+    (
+      , .(fact: Atom, rest: Atoms) {
+          if! holds(db, fact) {
+            rec absorb(db, rest, added)
+          } else {
+            rec absorb(list.snoc(db, fact), rest, list.snoc(added, fact))
+          }
+        }
+      , .(_empty: .) { absorbed(db, added) }
+      )
+  }
+}
+
+/// One complete solution of a body is one derivation, whether or not the
+/// fact it concludes turns out to be new. The length of this list is what
+/// the trace reports as the round's derivation count.
+fn heads(r: program.Rule, solutions: subst.Substs) -> Atoms {
+  list.map(solutions, .(s: subst.Subst) { unify.apply_atom(program.head_of(r), s) })
+}
+
+fn naive_heads(rules: program.Rules, db: Atoms) -> Atoms {
+  list.concat_map(
+    , rules
+    , .(r: program.Rule) { heads(r, unify.solve_all(program.body_of(r), db, subst.empty())) }
+    )
+}
+
+fn delta_heads(rules: program.Rules, db: Atoms, old: Atoms, delta: Atoms) -> Atoms {
+  list.concat_map(
+    , rules
+    , .(r: program.Rule) {
+        heads(r, unify.solve_delta(program.body_of(r), db, old, delta, subst.empty()))
+      }
+    )
+}
+
+rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I32, trace: Trace) -> Run {
+  let candidates = naive_heads(rules, db);
+  let attempted = list.length(candidates);
+  let step = absorb(db, candidates, list.nil(Atom, ()));
+  let next_db = step.?{ab_db};
+  let added = list.length(step.?{ab_added});
+  let total = add_i32(derivs, attempted);
+  let next_trace = list.snoc(trace, round(index, attempted, added));
+  if! eq_i32(added, 0) {
+    mk_run(next_trace, total, next_db)
+  } else {
+    rec naive_rounds(rules, next_db, add_i32(index, 1), total, next_trace)
+  }
+}
+
+pub fn naive(rules: program.Rules, edb: Atoms) -> Run {
+  naive_rounds(rules, edb, 1, 0, list.nil(Round, ()))
+}
+
+/// The next round's `old` is simply this round's `db`, which is why the
+/// three-list invariant `db = old + delta` costs nothing to maintain.
+rec(loop) fn semi_rounds(
+  , rules: program.Rules
+  , old: Atoms
+  , db: Atoms
+  , delta: Atoms
+  , index: I32
+  , derivs: I32
+  , trace: Trace
+  ) -> Run {
+  let candidates = delta_heads(rules, db, old, delta);
+  let attempted = list.length(candidates);
+  let step = absorb(db, candidates, list.nil(Atom, ()));
+  let next_db = step.?{ab_db};
+  let next_delta = step.?{ab_added};
+  let added = list.length(next_delta);
+  let total = add_i32(derivs, attempted);
+  let next_trace = list.snoc(trace, round(index, attempted, added));
+  if! eq_i32(added, 0) {
+    mk_run(next_trace, total, next_db)
+  } else {
+    rec semi_rounds(rules, db, next_db, next_delta, add_i32(index, 1), total, next_trace)
+  }
+}
+
+/// Round one treats the whole extensional database as the delta - every
+/// given fact is new - so nothing is `old` yet.
+pub fn semi_naive(rules: program.Rules, edb: Atoms) -> Run {
+  semi_rounds(rules, list.nil(Atom, ()), edb, edb, 1, 0, list.nil(Round, ()))
+}
+
+fn subset(xs: Atoms, ys: Atoms) -> Bool { list.all(xs, .(x: Atom) { holds(ys, x) }) }
+
+pub fn same_fixpoint(xs: Atoms, ys: Atoms) -> Bool {
+  if! subset(xs, ys) {
+    subset(ys, xs)
+  } else {
+    .f
+  }
+}

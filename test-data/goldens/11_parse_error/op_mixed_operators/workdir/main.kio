@@ -1,0 +1,11 @@
+module main;
+
+fn add(a: A, b: A) -> A { a }
+fn mul(a: A, b: A) -> A { a }
+
+op _ + __ { impl add; };
+op _ * __ { impl mul; };
+
+fn use_ops(x: A, y: A, z: A) -> A {
+  x + y * z
+}

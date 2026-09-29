@@ -1,0 +1,61 @@
+module catalog/fixtures;
+
+import catalog/domain as dom;
+import catalog/domain(Book, Book_index, Member, Member_index, Op, Op_list);
+import catalog/domain({copies_out}, {copies_total}, {fines}, {held}, {member_id}, {title});
+import dict/dict(op _ => _, varop [% %]);
+import list/core as lcore;
+import list/list as list;
+import testapi(I32, String);
+
+fn book(name: String, copies: I32) -> Book { {title = name, copies_total = copies, copies_out = 0} }
+
+fn member(id: I32) -> Member { {member_id = id, fines = 0, held = lcore.nil(I32, ())} }
+
+fn queued(pending: Op_list, next: Op) -> Op_list { lcore.cons(next, pending) }
+
+pub fn books() -> Book_index {
+  [%
+    , 206 => book("Embassytown", 1)
+    , 205 => book("Kindred", 2)
+    , 204 => book("Ubik", 1)
+    , 203 => book("Solaris", 2)
+    , 202 => book("Neuromancer", 1)
+    , 201 => book("Dune", 3)
+    %](dom.cmp_i32)
+}
+
+pub fn members() -> Member_index {
+  [% 104 => member(104), 103 => member(103), 102 => member(102), 101 => member(101) %](dom.cmp_i32)
+}
+
+/// The day's circulation desk, in order. Six of these are expected to
+/// fail; the driver records each failure and carries on.
+pub fn ops() -> Op_list {
+  let pending = lcore.nil(Op, ());
+  let pending = queued(pending, dom.op_checkout(101, 201));
+  let pending = queued(pending, dom.op_checkout(102, 201));
+  let pending = queued(pending, dom.op_checkout(103, 202));
+  let pending = queued(pending, dom.op_checkout(104, 202));
+  let pending = queued(pending, dom.op_hold(104, 202));
+  let pending = queued(pending, dom.op_report());
+  let pending = queued(pending, dom.op_checkout(101, 203));
+  let pending = queued(pending, dom.op_return(101, 201, 0));
+  let pending = queued(pending, dom.op_return(102, 203, 4));
+  let pending = queued(pending, dom.op_return(103, 202, 3));
+  let pending = queued(pending, dom.op_checkout(104, 202));
+  let pending = queued(pending, dom.op_hold(101, 204));
+  let pending = queued(pending, dom.op_checkout(199, 201));
+  let pending = queued(pending, dom.op_checkout(101, 299));
+  let pending = queued(pending, dom.op_checkout(102, 204));
+  let pending = queued(pending, dom.op_hold(103, 204));
+  let pending = queued(pending, dom.op_return(101, 203, 2));
+  let pending = queued(pending, dom.op_checkout(103, 205));
+  let pending = queued(pending, dom.op_return(104, 202, 6));
+  let pending = queued(pending, dom.op_report());
+  let pending = queued(pending, dom.op_return(102, 201, 1));
+  let pending = queued(pending, dom.op_hold(102, 206));
+  let pending = queued(pending, dom.op_checkout(101, 206));
+  let pending = queued(pending, dom.op_checkout(104, 203));
+  list.reverse(pending)
+}

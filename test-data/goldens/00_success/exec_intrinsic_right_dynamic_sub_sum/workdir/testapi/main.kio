@@ -1,0 +1,43 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Int, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `__right__(L, R, r)` where `R` is structurally a sum and `r` is
+// a *dynamic* `R`-value (not a static `__left__` / `__right__`
+// chain) — the recovery's binary-right-inject case. The recovered
+// `EnrichedInject{variant: 1, variants: 2}` lowers to nested-binary
+// `[1, payload]` regardless of `R`'s spine.
+fn widen_right(x: Int | Int) -> Int | Int | Int { __right__(Int, Int | Int, x) }
+
+fn show(s: Int | Int | Int) -> . {
+  __either__(
+    , Int
+    , Int | Int
+    , .
+    , s
+    , .(l: Int) -> . { print("L="(String)); print(int_to_string(l)) }
+    , .(r: Int | Int) -> . {
+        __either__(
+          , Int
+          , Int
+          , .
+          , r
+          , .(rl: Int) -> . { print("RL="(String)); print(int_to_string(rl)) }
+          , .(rr: Int) -> . { print("RR="(String)); print(int_to_string(rr)) }
+          )
+      }
+    );
+  print("\n"(String))
+}
+
+pub fn main() -> . {
+  // Build a *dynamic* `(Int | Int)` — runtime value, not a static
+  // injection visible to recovery.
+  let dyn_value = __right__(Int, Int, 42(Int));
+  // `widen_right`'s body is `__right__` of that dynamic sub-sum.
+  show(widen_right(dyn_value))
+}

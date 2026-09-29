@@ -1,0 +1,5 @@
+  fail equiv `neq_stuck` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): f(())
+    group B (arms 2): g(())
+
+result: 1/1 equiv block failed

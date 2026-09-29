@@ -1,0 +1,7 @@
+module testapi/forward;
+
+import middle({caption});
+
+pub type {display} = {caption};
+
+pub(testapi) type {local} = {display};

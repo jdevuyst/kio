@@ -1,0 +1,3 @@
+module testapi/types;
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }

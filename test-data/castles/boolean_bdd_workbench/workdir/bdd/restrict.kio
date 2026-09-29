@@ -1,0 +1,75 @@
+module bdd/restrict;
+
+import bdd/store as table;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(reorder_prod);
+import list/core as lists;
+import list/list as walk;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+type Cached = table.Node_id & table.Node_id;
+
+labels State = { store: table.Store, cache: lists.List(Cached), hits: I32 };
+
+fn remember(s: State, from: table.Node_id, to: table.Node_id) -> State & table.Node_id {
+  (s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod!(State), to)
+}
+
+rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> State & table.Node_id {
+  match! walk.find(
+    , .(from: table.Node_id, _to: table.Node_id) { table.same_id(from, id) }
+    , s.?{cache}
+    ) {
+    .(_from: table.Node_id, to: table.Node_id) {
+      (s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod!(State), to)
+    };
+    .() {
+      match! table.lookup(s.?{store}, id) {
+        .(node: table.Node) {
+          if! arith.eq_i32(node.?{table.level}, variable) {
+            let answer = if! value {
+              node.?{table.high}
+            } else {
+              node.?{table.low}
+            };
+            remember(s, id, answer)
+          } else if! arith.lt_i32(variable, node.?{table.level}) {
+            remember(s, id, id)
+          } else {
+            let .(after_low: State, low: table.Node_id) = rec(cont) visit(
+              , s
+              , node.?{table.low}
+              , variable
+              , value
+              );
+            let .(after_high: State, high: table.Node_id) = rec(cont) visit(
+              , after_low
+              , node.?{table.high}
+              , variable
+              , value
+              );
+            let .(store: table.Store, answer: table.Node_id) = table.intern(
+              , after_high.?{store}
+              , node.?{table.level}
+              , low
+              , high
+              );
+            remember(after_high.!{store}, id, answer)
+          }
+        };
+        .() { remember(s, id, id) }
+      }
+    }
+  }
+}
+
+pub fn restrict(store: table.Store, id: table.Node_id, variable: I32, value: Bool) ->
+  table.Store & table.Node_id & I32
+   {
+  let initial = {store, cache = lists.nil(Cached, ()), hits = 0};
+  let .(final: State, answer: table.Node_id) = visit(initial, id, variable, value);
+  (final.?{store}, answer, final.?{hits})
+}

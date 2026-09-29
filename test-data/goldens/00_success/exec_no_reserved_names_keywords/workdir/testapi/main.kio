@@ -1,0 +1,100 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn if() -> String { "if\n" }
+
+fn else() -> String { "else\n" }
+
+fn do() -> String { "do\n" }
+
+fn let() -> String { "let\n" }
+
+fn fn() -> String { "fn\n" }
+
+fn module() -> String { "module\n" }
+
+fn use() -> String { "use\n" }
+
+fn from() -> String { "from\n" }
+
+fn as() -> String { "as\n" }
+
+fn pub() -> String { "pub\n" }
+
+fn type() -> String { "type\n" }
+
+fn env() -> String { "env\n" }
+
+fn bridge() -> String { "bridge\n" }
+
+fn package() -> String { "package\n" }
+
+fn pkg() -> String { "pkg\n" }
+
+fn source() -> String { "source\n" }
+
+fn build() -> String { "build\n" }
+
+fn cache() -> String { "cache\n" }
+
+fn docs() -> String { "docs\n" }
+
+fn target() -> String { "target\n" }
+
+fn constructor() -> String { "constructor\n" }
+
+fn projector() -> String { "projector\n" }
+
+fn role() -> String { "role\n" }
+
+fn alias() -> String { "alias\n" }
+
+fn newtype() -> String { "newtype\n" }
+
+fn elaborator() -> String { "elaborator\n" }
+
+fn labels() -> String { "labels\n" }
+
+fn op() -> String { "op\n" }
+
+fn equiv() -> String { "equiv\n" }
+
+fn inline() -> String { "inline\n" }
+
+fn call_string(f: . -> String) -> String { f() }
+
+pub fn main() -> . {
+  let if_value = if;
+  let _a = print(if_value());
+  let _b = print(call_string(else));
+  let _c = print(do());
+  let _d = print(let());
+  let _e = print(fn());
+  let _f = print(call_string(module));
+  let _g = print(use());
+  let _h = print(from());
+  let _i = print(as());
+  let _j = print(pub());
+  let _k = print(type());
+  let _l = print(env());
+  let _m = print(bridge());
+  let _n = print(package());
+  let _o = print(pkg());
+  let _p = print(source());
+  let _q = print(build());
+  let _r = print(cache());
+  let _s = print(docs());
+  let _t = print(target());
+  let _u = print(constructor());
+  let _v = print(projector());
+  let _w = print(role());
+  let _x = print(alias());
+  let _y = print(newtype());
+  let _aa = print(elaborator());
+  let _ab = print(labels());
+  let _ac = print(op());
+  let _ad = print(equiv());
+  print(inline())
+}

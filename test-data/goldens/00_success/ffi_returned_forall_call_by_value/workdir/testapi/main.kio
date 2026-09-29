@@ -1,0 +1,14 @@
+module testapi/main;
+
+host fn produce(_unit: .) -> [A] A;
+
+host fn observe(_unit: .) -> .;
+
+host fn consume(value: .) -> .;
+
+pub fn main() -> . {
+  let produced = produce(());
+  observe(());
+  consume(produced(.));
+  consume(produced(.))
+}

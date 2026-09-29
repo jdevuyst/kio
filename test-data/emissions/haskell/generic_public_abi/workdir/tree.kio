@@ -1,0 +1,26 @@
+module tree;
+
+import __intrinsics__;
+
+pub rec newtype Tree : . | Tree { pub constructor mk_tree; pub projector un_tree }
+
+pub rec newtype Branch : . | Branch { constructor mk_branch; projector un_branch }
+
+pub rec newtype Leaf : . | Leaf { constructor mk_leaf; projector un_leaf }
+
+pub rec newtype Node : . | Node { pub constructor mk_node; pub projector un_node }
+
+rec {
+  pub newtype Alpha : . | Beta { pub constructor mk_alpha; pub projector un_alpha };
+  pub newtype Beta : . | Alpha { pub constructor mk_beta; pub projector un_beta }
+}
+
+pub fn empty() -> Tree { Tree.mk_tree(__left__(., Tree, ())) }
+
+pub fn keep(value: Tree) -> Tree { value }
+
+pub fn branch_wrapped() -> Branch & . {
+  __pair__(Branch, ., Branch.mk_branch(__left__(., Branch, ())), ())
+}
+
+pub fn leaf_wrapped() -> . | Leaf { __left__(., Leaf, ()) }

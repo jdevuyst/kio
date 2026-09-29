@@ -1,0 +1,48 @@
+module testapi/main;
+
+import control as control;
+import testapi(String);
+import testapi/io as io;
+import testapi/text as text;
+
+labels { slot: String };
+
+fn x2(left: String, right: String) -> String { text.string_concat(left, right) }
+
+op _ + _ { impl x2 }
+
+fn apply1(f: String -> String) -> String { f("a") }
+
+fn apply2(f: (String & String) -> String) -> String { f("a", "b") }
+
+fn apply3(f: (String & String & String) -> String) -> String { f("a", "b", "c") }
+
+fn apply_callee(f: (String & (String -> String)) -> String) -> String {
+  f("a", .(value) { text.string_concat(value, "ufcs") })
+}
+
+pub fn main() -> . {
+  io.print(apply2(.x. { text.string_concat(x2, x1) }));
+  io.print("\n");
+  io.print(apply2(.x. { text.string_concat(x2, x2) }));
+  io.print("\n");
+  io.print(apply1(.x. { let x2 = x1; x2 }));
+  io.print("\n");
+  io.print(apply1(.x. { .(x01: String) { text.string_concat(x1, x01) }("local") }));
+  io.print("\n");
+  io.print(apply1(.x. { text.string_concat(x1, apply1(.x. { x1 })) }));
+  io.print("\n");
+  io.print(apply1(.x. { let .({slot as x2}) = {slot = x1}; x2 }));
+  io.print("\n");
+  io.print(apply1(.x. { x1 + "!" }));
+  io.print("\n");
+  io.print(apply1(.x. { text.string_concat(x1, control.x9()) }));
+  io.print("\n");
+  io.print(apply_callee(.x. { x1.>x2 }));
+  io.print("\n");
+  io.print(apply3(._p. { _p3 }));
+  io.print("\n");
+  let p1 = "captured";
+  io.print(apply1(.x. { let ignored = x1; p1 }));
+  io.print("\n")
+}

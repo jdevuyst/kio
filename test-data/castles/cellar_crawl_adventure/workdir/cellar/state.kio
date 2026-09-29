@@ -1,0 +1,173 @@
+/// The game state: where the player stands, where every item sits, which doors
+/// have been opened, and the running counters.
+///
+/// Items follow the classic world-model shape — an item is always *somewhere*,
+/// either lying in a room or held by the player — so the inventory is derived
+/// from item locations rather than stored a second time and kept in step.
+module cellar/state;
+
+import cellar/ids as ids;
+import cellar/world as world;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add, mul, sub);
+
+pub labels Loc = { in_room: ids.Room_id } | { held: . };
+
+fn at_room(r: ids.Room_id) -> Loc { {in_room = r}.>widen_sum!(Loc) }
+
+fn carried() -> Loc { {held=}.>widen_sum!(Loc) }
+
+pub labels Game = {
+  , room: ids.Room_id
+  , lantern_at: Loc
+  , key_at: Loc
+  , cork_at: Loc
+  , bottle_at: Loc
+  , hatch_open: Bool
+  , vault_open: Bool
+  , turns: I32
+  , moves: I32
+  , fumbles: I32
+  , over: Bool
+  };
+
+pub fn new_game() -> Game {
+  {
+    , room = world.start_room()
+    , lantern_at = at_room(world.item_origin(ids.lantern()))
+    , key_at = at_room(world.item_origin(ids.brass_key()))
+    , cork_at = at_room(world.item_origin(ids.cork()))
+    , bottle_at = at_room(world.item_origin(ids.bottle()))
+    , hatch_open = .f
+    , vault_open = .f
+    , turns = 0
+    , moves = 0
+    , fumbles = 0
+    , over = .f
+    }
+}
+
+pub fn room_of(g: Game) -> ids.Room_id { g.?{room} }
+
+pub fn turns_of(g: Game) -> I32 { g.?{turns} }
+
+pub fn moves_of(g: Game) -> I32 { g.?{moves} }
+
+pub fn fumbles_of(g: Game) -> I32 { g.?{fumbles} }
+
+pub fn is_over(g: Game) -> Bool { g.?{over} }
+
+fn item_loc(g: Game, i: ids.Item_id) -> Loc {
+  if! ids.item_eq(i, ids.lantern()) {
+    g.?{lantern_at}
+  } else if! ids.item_eq(i, ids.brass_key()) {
+    g.?{key_at}
+  } else if! ids.item_eq(i, ids.cork()) {
+    g.?{cork_at}
+  } else {
+    g.?{bottle_at}
+  }
+}
+
+fn put(g: Game, i: ids.Item_id, l: Loc) -> Game {
+  if! ids.item_eq(i, ids.lantern()) {
+    g.!{lantern_at = l}
+  } else if! ids.item_eq(i, ids.brass_key()) {
+    g.!{key_at = l}
+  } else if! ids.item_eq(i, ids.cork()) {
+    g.!{cork_at = l}
+  } else {
+    g.!{bottle_at = l}
+  }
+}
+
+pub fn hold(g: Game, i: ids.Item_id) -> Game { put(g, i, carried()) }
+
+pub fn leave_here(g: Game, i: ids.Item_id) -> Game { put(g, i, at_room(room_of(g))) }
+
+pub fn carrying(g: Game, i: ids.Item_id) -> Bool {
+  match! item_loc(g, i) {
+    (.(_r: In_room) { .f }, .(_h: Held) { .t })
+  }
+}
+
+pub fn item_lies_in(g: Game, i: ids.Item_id, r: ids.Room_id) -> Bool {
+  match! item_loc(g, i) {
+    (.(x: In_room) { ids.room_eq(x.?{in_room}, r) }, .(_h: Held) { .f })
+  }
+}
+
+pub fn door_open(g: Game, from: ids.Room_id, d: ids.Dir_id) -> Bool {
+  if! world.is_hatch(from, d) {
+    g.?{hatch_open}
+  } else if! world.is_vault_door(from, d) {
+    g.?{vault_open}
+  } else {
+    .f
+  }
+}
+
+pub fn open_door(g: Game, from: ids.Room_id, d: ids.Dir_id) -> Game {
+  if! world.is_hatch(from, d) {
+    g.!{hatch_open = .t}
+  } else if! world.is_vault_door(from, d) {
+    g.!{vault_open = .t}
+  } else {
+    g
+  }
+}
+
+pub fn tick(g: Game) -> Game { g.!{turns = add(g.?{turns}, 1)} }
+
+pub fn fumble(g: Game) -> Game { g.!{fumbles = add(g.?{fumbles}, 1)} }
+
+pub fn walk_to(g: Game, r: ids.Room_id) -> Game { g.!{room = r, moves = add(g.?{moves}, 1)} }
+
+pub fn finish(g: Game) -> Game { g.!{over = .t} }
+
+fn one_if(b: Bool) -> I32 {
+  if! b {
+    1
+  } else {
+    0
+  }
+}
+
+pub fn doors_opened(g: Game) -> I32 { add(one_if(g.?{hatch_open}), one_if(g.?{vault_open})) }
+
+/// The lantern and the key are tools; only wine scores.
+fn value_of(i: ids.Item_id) -> I32 {
+  if! ids.item_eq(i, ids.cork()) {
+    5
+  } else if! ids.item_eq(i, ids.bottle()) {
+    50
+  } else {
+    0
+  }
+}
+
+fn carried_value(g: Game, i: ids.Item_id) -> I32 {
+  if! carrying(g, i) {
+    value_of(i)
+  } else {
+    0
+  }
+}
+
+/// What the player is walking out with.
+pub fn haul(g: Game) -> I32 {
+  add(
+    , add(carried_value(g, ids.lantern()), carried_value(g, ids.brass_key()))
+    , add(carried_value(g, ids.cork()), carried_value(g, ids.bottle()))
+    )
+}
+
+pub fn door_credit(g: Game) -> I32 { mul(doors_opened(g), 10) }
+
+/// Ten a door, plus the value of the haul, less one for every fumbled turn.
+pub fn score(g: Game) -> I32 { sub(add(door_credit(g), haul(g)), fumbles_of(g)) }
+
+pub fn won(g: Game) -> Bool { carrying(g, ids.bottle()) }

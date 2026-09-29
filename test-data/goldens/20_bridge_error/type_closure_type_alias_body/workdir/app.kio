@@ -1,0 +1,5 @@
+module app;
+
+import lib/types(Token);
+
+pub type Public = Token;

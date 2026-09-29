@@ -1,0 +1,35 @@
+module guest;
+
+import hostapi(I32, add_i32);
+
+pub fn sum9(
+  , first_addend: I32
+  , second_addend: I32
+  , third_addend: I32
+  , fourth_addend: I32
+  , fifth_addend: I32
+  , sixth_addend: I32
+  , seventh_addend: I32
+  , eighth_addend: I32
+  , ninth_addend: I32
+  ) -> I32 {
+  add_i32(
+    , first_addend
+    , add_i32(
+        , second_addend
+        , add_i32(
+            , third_addend
+            , add_i32(
+                , fourth_addend
+                , add_i32(
+                    , fifth_addend
+                    , add_i32(
+                        , sixth_addend
+                        , add_i32(seventh_addend, add_i32(eighth_addend, ninth_addend))
+                        )
+                    )
+                )
+            )
+        )
+    )
+}

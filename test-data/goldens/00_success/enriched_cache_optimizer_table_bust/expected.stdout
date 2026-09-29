@@ -1,0 +1,12 @@
+cold cache log:
+enriched-cache: miss <key> (no entry)
+enriched-cache: miss <key> (no entry)
+enriched-cache: miss <key> (no entry)
+body-edit cache log:
+enriched-cache: hit <key>
+enriched-cache: hit <key>
+enriched-cache: miss <key> (no entry)
+member-rename cache log:
+enriched-cache: hit <key>
+enriched-cache: miss <key> (no entry)
+enriched-cache: miss <key> (no entry)

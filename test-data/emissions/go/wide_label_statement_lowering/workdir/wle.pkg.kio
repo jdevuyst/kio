@@ -1,0 +1,14 @@
+package wle;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

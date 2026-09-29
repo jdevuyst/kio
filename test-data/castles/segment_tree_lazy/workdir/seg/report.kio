@@ -1,0 +1,99 @@
+/// Rendering. The transcript has to stand on its own -- a reader who never
+/// opens the source should be able to see what each operation asked for,
+/// what both structures answered, and what each one paid for the answer.
+module seg/report;
+
+import elab/control(if);
+import seg/num(int_lt);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+/// How many cells of an array dump go on one line.
+literal per_line = 16;
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn num(n: I32) -> String { int_to_string(n) }
+
+pub fn line(text: String) -> . { print(cat(text, "\n")) }
+
+/// A right-aligned two-digit index, so the transcript's left edge stays
+/// straight.
+pub fn index2(n: I32) -> String {
+  if! leq_i32(n, 9) {
+    cat("0", num(n))
+  } else {
+    num(n)
+  }
+}
+
+/// `[lo,hi]`.
+pub fn range(l: I32, r: I32) -> String { cat3("[", cat3(num(l), ",", num(r)), "]") }
+
+/// A signed delta, so `+3` and `-2` both read as deltas rather than as
+/// operands.
+pub fn signed(x: I32) -> String {
+  if! int_lt(x, 0) {
+    num(x)
+  } else {
+    cat("+", num(x))
+  }
+}
+
+pub fn yes_no(b: Bool) -> String {
+  if! b {
+    "yes"
+  } else {
+    "NO"
+  }
+}
+
+/// `field=value` -- the transcript's cost columns.
+fn field(name: String, value: I32) -> String { cat3(name, "=", num(value)) }
+
+/// `name: value` -- the summary block's one line shape.
+pub fn stat(name: String, value: I32) -> . { line(cat3("  ", name, cat(": ", num(value)))) }
+
+pub fn cost(visits: I32, pushes: I32, touched: I32) -> String {
+  cat3(
+    , cat3("  | tree ", field("visits", visits), cat(" ", field("pushes", pushes)))
+    , "  | ref "
+    , field("touches", touched)
+    )
+}
+
+rec(loop) fn row_text(cells: Array(I32), i: I32, stop: I32, acc: String) -> String {
+  if! leq_i32(stop, i) {
+    acc
+  } else {
+    rec row_text(cells, add_i32(i, 1), stop, cat3(acc, " ", num(array_get(cells, i))))
+  }
+}
+
+rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) -> . {
+  if! leq_i32(n, i) {
+    ()
+  } else {
+    let stop = if! leq_i32(add_i32(i, per_line), n) {
+      add_i32(i, per_line)
+    } else {
+      n
+    };
+    let label = cat3("  [", cat3(index2(i), "..", index2(sub_i32(stop, 1))), "]");
+    line(cat(label, row_text(cells, i, stop, "")));
+    rec dump_from(cells, stop, n)
+  }
+}
+
+/// Print `cells[0 .. n)` under a heading, sixteen values to a line.
+pub fn dump(heading: String, cells: Array(I32), n: I32) -> . {
+  line(heading);
+  dump_from(cells, 0, n)
+}

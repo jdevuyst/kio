@@ -1,0 +1,22 @@
+module main;
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+newtype Cell : . { pub constructor mk_cell; pub projector un_cell }
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+newtype Reversed : . { pub constructor mk_reversed; pub projector un_reversed }
+module main;
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+newtype Cell : . { pub constructor mk_cell; pub projector un_cell }
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+newtype Reversed : . { pub constructor mk_reversed; pub projector un_reversed }

@@ -1,0 +1,60 @@
+module circuit_netlist_eval/bool_logic;
+
+import elab/control(if);
+import testapi(Bool, I32);
+
+pub fn b_not(v: Bool) -> Bool {
+  if! v {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn b_and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn b_or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn b_xor(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b_not(b)
+  } else {
+    b
+  }
+}
+
+pub fn b_eq(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    b_not(b)
+  }
+}
+
+pub fn bit_weight(v: Bool, weight: I32) -> I32 {
+  if! v {
+    weight
+  } else {
+    0
+  }
+}
+
+pub fn warning_bit(ok: Bool) -> I32 {
+  if! ok {
+    0
+  } else {
+    1
+  }
+}

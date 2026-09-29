@@ -1,0 +1,102 @@
+suite
+compiler
+_
+0
+pass
+startup
+_
+2
+suite
+parser
+_
+0
+fail
+missing operand
+expected expression
+1
+skip
+fuzz
+quarantined
+3
+suite
+spans
+_
+0
+pass
+ranges
+_
+4
+end
+spans
+_
+4
+end
+parser
+_
+8
+suite
+codegen
+_
+0
+fail
+closures
+capture mismatch
+2
+pass
+constants
+_
+5
+end
+codegen
+_
+7
+end
+compiler
+_
+17
+end
+orphan
+_
+0
+pass
+loose case
+_
+1
+suite
+recovery
+_
+0
+end
+wrong name
+_
+0
+fail
+bad weight
+_
+many
+skip
+negative weight
+_
+-1
+pass
+zero weight
+_
+0
+noise
+ignored
+_
+0
+pass
+retry
+_
+1
+end
+recovery
+_
+2
+suite
+unfinished
+_
+0
+fail
+half record

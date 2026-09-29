@@ -1,0 +1,23 @@
+module main;
+
+import __intrinsics__;
+
+pub type Unit_alias = .;
+
+pub labels Unit_label = { unit: . };
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub pure fn empty() -> . { () }
+
+pub pure fn append(_head: ., _tail: .) -> . { () }
+
+pub op _ + _ { impl append }
+
+pub varop [* *] { foldr append empty }
+
+pub pure fn id[A](value: A) -> A { value }
+
+pub pure fn wrap[A](value: A) -> Box(A) { Box.mk_box(A, value) }
+
+fn impure_use() -> . { id(()) }

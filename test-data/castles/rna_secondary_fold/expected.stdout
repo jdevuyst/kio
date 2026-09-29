@@ -1,0 +1,23 @@
+RNA pairing combinatorial toy; not biological prediction
+AU/UA/GC/CG pairs score one; min-loop counts enclosed positions
+empty sequence= min-loop=2
+  fold= pairs=0 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+unpairable sequence=AAAA min-loop=2
+  fold=.... pairs=0 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+hairpin sequence=GCAAAGC min-loop=2
+  fold=((...)) pairs=2 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+crossing-choice sequence=ACUG min-loop=1
+  fold=.(.) pairs=1 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+nested sequence=AUGCAUGCAU min-loop=2
+  fold=((((..)))) pairs=4 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+separate-stems sequence=GCAAAGCAUAAAU min-loop=2
+  fold=((...))((..)) pairs=4 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+competing-blocks sequence=GGGAAACCCUUU min-loop=2
+  fold=...(((...))) pairs=3 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+loop-restricted sequence=GCAAAGC min-loop=5
+  fold=(.....) pairs=1 optimum=true legal=true symmetric=true noncrossing=true brackets=true score=true
+audit crossed-pairs legal=true symmetric=true noncrossing=false brackets=false score=true
+audit incompatible-bases legal=false symmetric=true noncrossing=true brackets=true score=true
+audit short-loop legal=false symmetric=true noncrossing=true brackets=true score=true
+audit one-sided-pair legal=true symmetric=false noncrossing=true brackets=false score=true
+audit wrong-score legal=true symmetric=true noncrossing=true brackets=true score=false

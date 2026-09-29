@@ -1,0 +1,4 @@
+right(2) |> map_right(double) == right(4)
+left("err") |> map_right(double) == left("err")
+right(2) |> and_then(check_positive) == right(2)
+right(-1) |> and_then(check_positive) == left("not positive")

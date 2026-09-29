@@ -1,0 +1,16 @@
+module main;
+
+import elab/spine_elaborators(one_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// `one_sum!` carries a STRICT type rule: over a uniform-arm source
+// `A | A` the collapsed target is uniquely `A`, and there is no valid
+// alternative. Here the call site's explicit target is `B`, which the
+// source does not determine — a strict elaborator's context must *conform*
+// to the rule, not override it. This is the strict-vs-default
+// distinction in action: a DEFAULT-rule elaborator (`narrow_*`) would let
+// context override, but `one_sum!` rejects the disagreement. Exit 15.
+fn pick(x: A | A) -> B { one_sum!(x) }

@@ -1,0 +1,10 @@
+module main;
+
+// The banned form: outer type annotation on a destructuring
+// pattern. The pattern's slot types already constitute the
+// product; an outer `: T` is redundant. Write the as-pattern
+// form `name: (a: A, b: B)` if a name for the whole product is
+// wanted.
+fn rejected[A][B]((x: A, y: B): (A & B)) -> A {
+  x
+}

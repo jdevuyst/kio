@@ -1,0 +1,7 @@
+module fmt_monadic_label_receiver;
+
+fn subject() -> . {
+  do!({field = value}) {
+    final_value
+  }
+}

@@ -1,0 +1,73 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import quotation(duplicate, marked_duplicate, marked_swap, second, swap);
+import stack/testapi/main(deep);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/io as io;
+import testapi/iter(loop);
+
+rec(loop) {
+  fn positive(n: I32) -> Bool { io.print("condition\n"); arith.leq_i32(1, n) };
+  fn walk(n: I32) -> Bool {
+    match! n {
+      .(value: I32) {
+        if! rec(cont) positive(value) {
+          if! rec(cont) positive(value) {
+            rec walk(arith.sub_i32(value, 1))
+          } else {
+            .f
+          }
+        } else {
+          .t
+        }
+      }
+    }
+  }
+}
+
+rec(loop) {
+  fn ignored() -> Bool { io.print("unexpected discarded input\n"); .f };
+  fn discarded() -> Bool { second!(rec(cont) ignored(), .t) }
+}
+
+rec(loop) {
+  fn left() -> Bool { io.print("left\n"); .f };
+  fn right() -> Bool { io.print("right\n"); .t };
+  fn duplicated() -> Bool { let pair = duplicate!(rec(cont) left()); .t };
+  fn marked_duplicated() -> Bool { let pair = marked_duplicate!(rec(cont) left()); .t };
+  fn swapped() -> Bool { let pair = swap!(rec(cont) left(), rec(cont) right()); .t };
+  fn marked_swapped() -> Bool { let pair = marked_swap!(rec(cont) left(), rec(cont) right()); .t }
+}
+
+pub fn main() -> . {
+  io.print("nested conditions\n");
+  if! walk(2) {
+    io.print("done\n")
+  } else {
+    io.print("unexpected false\n")
+  };
+  io.print("discard\n");
+  if! discarded() {
+    io.print("done\n")
+  } else {
+    io.print("unexpected false\n")
+  };
+  io.print("duplicate\n");
+  let a = duplicated();
+  io.print("marked duplicate\n");
+  let b = marked_duplicated();
+  io.print("swap\n");
+  let c = swapped();
+  io.print("marked swap\n");
+  let d = marked_swapped();
+  io.print("deep quotation\n");
+  if! deep(100) {
+    io.print("done\n")
+  } else {
+    io.print("unexpected false\n")
+  };
+  io.print("done\n")
+}

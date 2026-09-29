@@ -1,0 +1,16 @@
+module widget/relay;
+
+// statement
+import core/a(
+  // selection A
+  , A
+  );
+import core/b(
+  // selection B
+  , B
+  );
+import widget/store(
+  // selection C
+  , C
+  // closing boundary
+  );

@@ -1,0 +1,120 @@
+/// Determinization by the subset construction.
+///
+/// A DFA state is a *set* of NFA states: exactly those the NFA could be in
+/// after reading the input so far. The worklist interns every epsilon
+/// closure it meets, so two moves that land on the same set share one DFA
+/// state — that interning is the whole of the merging determinization does.
+/// The empty set is interned like any other, which is where the dead state
+/// comes from: nothing moves out of it.
+module automata/subset;
+
+import automata/dfa as dfa;
+import automata/nfa as nfa;
+import automata/seq(
+  , Ints
+  , List
+  , append
+  , cons
+  , empty
+  , fold
+  , insert
+  , intern
+  , len
+  , member
+  , nth_or
+  , one
+  , positions
+  , reverse
+  , singleton
+  );
+import automata/symbol(epsilon, width);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32);
+import testapi/iter(loop);
+
+/// The interned DFA states, in the order they were first reached. A set's
+/// position is its DFA state number.
+pub type Sets = List(Ints);
+
+fn hits(e: nfa.Edge, src: I32, sym: I32) -> Bool {
+  if! eq_i32(nfa.edge_src(e), src) {
+    eq_i32(nfa.edge_sym(e), sym)
+  } else {
+    .f
+  }
+}
+
+/// Everything `states` reaches on one symbol, unioned into `acc`. With
+/// `sym = epsilon()` this is one epsilon step; with a letter it is `move`.
+fn advance(es: nfa.Edges, states: Ints, sym: I32, acc: Ints) -> Ints {
+  fold(
+    , states
+    , .(outer: Ints, s: I32) {
+        fold(
+          , es
+          , .(inner: Ints, e: nfa.Edge) {
+              if! hits(e, s, sym) {
+                insert(nfa.edge_dst(e), inner)
+              } else {
+                inner
+              }
+            }
+          , outer
+          )
+      }
+    , acc
+    )
+}
+
+/// Epsilon closure as a fixpoint: keep folding epsilon targets back in until
+/// the set stops growing. Sets carry no duplicates, so the size is the test.
+rec(loop) fn saturate(es: nfa.Edges, seen: Ints) -> Ints {
+  let grown = advance(es, seen, epsilon(), seen);
+  if! eq_i32(len(grown), len(seen)) {
+    seen
+  } else {
+    rec saturate(es, grown)
+  }
+}
+
+pub fn closure(es: nfa.Edges, states: Ints) -> Ints { saturate(es, states) }
+
+fn transition(es: nfa.Edges, sets: Sets, src: Ints, sym: I32) -> Sets & I32 {
+  intern(sets, closure(es, advance(es, src, sym, empty())))
+}
+
+/// One row: where `src` goes on each letter in turn. A target that is new
+/// appends a state set, so the set table grows as the row is built.
+rec(loop) fn row_of(es: nfa.Edges, sets: Sets, src: Ints, sym: I32, row: Ints) -> Sets & Ints {
+  if! leq_i32(width(), sym) {
+    (sets, reverse(row))
+  } else {
+    let .(grown: Sets, id: I32) = transition(es, sets, src, sym);
+    rec row_of(es, grown, src, add_i32(sym, 1), cons(id, row))
+  }
+}
+
+/// The worklist. Sets are processed in interning order, so the flat table
+/// comes out row-major and needs no second pass.
+rec(loop) fn drive(es: nfa.Edges, sets: Sets, at: I32, table: Ints) -> Sets & Ints {
+  if! leq_i32(len(sets), at) {
+    (sets, table)
+  } else {
+    let .(grown: Sets, row: Ints) = row_of(es, sets, nth_or(sets, at, empty()), 0, empty());
+    rec drive(es, grown, add_i32(at, 1), append(table, row))
+  }
+}
+
+/// Determinize. The result carries the DFA and, beside it, the NFA state set
+/// behind each DFA state — the report prints those, because they are the
+/// evidence that the construction merged what it claims to have merged.
+pub fn determinize(n: nfa.Nfa) -> dfa.Dfa & Sets {
+  let es = nfa.edges_of(n);
+  let accept = nfa.accept_state(n);
+  let .(sets: Sets, table: Ints) =
+    drive(es, one(closure(es, singleton(nfa.start_state(n)))), 0, empty());
+  let accepting = positions(sets, .(s: Ints) { member(accept, s) });
+  (dfa.make(len(sets), 0, accepting, table), sets)
+}

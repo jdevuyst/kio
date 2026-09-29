@@ -1,0 +1,141 @@
+module grid_firebreak_search/grid;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub fn width() -> I32 { 6 }
+
+pub fn height() -> I32 { 5 }
+
+pub fn cell_count() -> I32 { 30 }
+
+pub fn last_cell() -> I32 { arith.sub_i32(cell_count(), 1) }
+
+pub fn eq_i32(a: I32, b: I32) -> Bool {
+  if! arith.leq_i32(a, b) {
+    arith.leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+pub fn not_bool(v: Bool) -> Bool {
+  if! v {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn or_bool(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn and_bool(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+fn eq_any2(i: I32, a: I32, b: I32) -> Bool {
+  if! eq_i32(i, a) {
+    .t
+  } else {
+    eq_i32(i, b)
+  }
+}
+
+fn eq_any3(i: I32, a: I32, b: I32, c: I32) -> Bool {
+  if! eq_any2(i, a, b) {
+    .t
+  } else {
+    eq_i32(i, c)
+  }
+}
+
+fn eq_any4(i: I32, a: I32, b: I32, c: I32, d: I32) -> Bool {
+  if! eq_any3(i, a, b, c) {
+    .t
+  } else {
+    eq_i32(i, d)
+  }
+}
+
+fn eq_any5(i: I32, a: I32, b: I32, c: I32, d: I32, e: I32) -> Bool {
+  if! eq_any4(i, a, b, c, d) {
+    .t
+  } else {
+    eq_i32(i, e)
+  }
+}
+
+pub fn is_left_edge(i: I32) -> Bool { eq_any5(i, 0, 6, 12, 18, 24) }
+
+pub fn is_right_edge(i: I32) -> Bool { eq_any5(i, 5, 11, 17, 23, 29) }
+
+pub fn has_north(i: I32) -> Bool { arith.leq_i32(width(), i) }
+
+pub fn has_south(i: I32) -> Bool { arith.leq_i32(i, 23) }
+
+pub fn has_west(i: I32) -> Bool { not_bool(is_left_edge(i)) }
+
+pub fn has_east(i: I32) -> Bool { not_bool(is_right_edge(i)) }
+
+pub fn north_of(i: I32) -> I32 { arith.sub_i32(i, width()) }
+
+pub fn south_of(i: I32) -> I32 { arith.add_i32(i, width()) }
+
+pub fn west_of(i: I32) -> I32 { arith.sub_i32(i, 1) }
+
+pub fn east_of(i: I32) -> I32 { arith.add_i32(i, 1) }
+
+pub fn is_barrier_cell(i: I32) -> Bool { or_bool(eq_any5(i, 2, 3, 10, 16, 22), eq_i32(i, 27)) }
+
+pub fn is_candidate_cell(i: I32) -> Bool {
+  or_bool(or_bool(eq_any5(i, 7, 8, 9, 13, 14), eq_any5(i, 15, 19, 20, 21, 25)), eq_i32(i, 26))
+}
+
+pub fn risk_at(i: I32) -> I32 {
+  if! is_barrier_cell(i) {
+    0
+  } else if! eq_any2(i, 13, 20) {
+    9
+  } else if! eq_any3(i, 7, 14, 21) {
+    8
+  } else if! eq_any3(i, 8, 12, 19) {
+    7
+  } else if! eq_any3(i, 6, 15, 26) {
+    6
+  } else if! eq_any3(i, 1, 9, 25) {
+    5
+  } else if! eq_any2(i, 18, 23) {
+    4
+  } else if! eq_any3(i, 0, 17, 28) {
+    3
+  } else if! eq_any2(i, 4, 24) {
+    2
+  } else {
+    1
+  }
+}
+
+pub fn cost_at(i: I32) -> I32 {
+  if! eq_any3(i, 8, 19, 25) {
+    2
+  } else if! eq_any4(i, 7, 15, 26, 28) {
+    3
+  } else if! eq_any4(i, 9, 13, 21, 23) {
+    4
+  } else if! eq_any2(i, 14, 20) {
+    5
+  } else {
+    9
+  }
+}

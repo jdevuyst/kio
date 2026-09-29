@@ -1,0 +1,124 @@
+================================================================================
+standalone nonminting label forwarding
+================================================================================
+type {local} = {original};
+pub type {renamed} = {provider.original};
+--------------------------------------------------------------------------------
+
+(source_file
+  (label_forward_decl
+    (keyword_type)
+    (bracket_lbrace)
+    (entity_name_label)
+    (bracket_rbrace)
+    (operator_builtin)
+    (bracket_lbrace)
+    (label_path
+      (entity_name_label))
+    (bracket_rbrace)
+    (separator_semicolon))
+  (label_forward_decl
+    (keyword_pub)
+    (keyword_type)
+    (bracket_lbrace)
+    (entity_name_label)
+    (bracket_rbrace)
+    (operator_builtin)
+    (bracket_lbrace)
+    (label_path
+      (identifier)
+      (separator_dot)
+      (entity_name_label))
+    (bracket_rbrace)
+    (separator_semicolon)))
+
+================================================================================
+contextual keywords remain label bindings and target leaves
+================================================================================
+type {type} = {original};
+type {next} = {type};
+--------------------------------------------------------------------------------
+
+(source_file
+  (label_forward_decl
+    (keyword_type)
+    (bracket_lbrace)
+    (entity_name_label)
+    (bracket_rbrace)
+    (operator_builtin)
+    (bracket_lbrace)
+    (label_path
+      (entity_name_label))
+    (bracket_rbrace)
+    (separator_semicolon))
+  (label_forward_decl
+    (keyword_type)
+    (bracket_lbrace)
+    (entity_name_label)
+    (bracket_rbrace)
+    (operator_builtin)
+    (bracket_lbrace)
+    (label_path
+      (entity_name_label))
+    (bracket_rbrace)
+    (separator_semicolon)))
+
+================================================================================
+ordinary type-named function and uppercase alias stay distinct
+================================================================================
+fn type() -> . {}
+type Ordinary = .;
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (bracket_rbrace)))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (separator_dot)
+    (separator_semicolon)))
+
+================================================================================
+forwarding comments retain their source positions
+================================================================================
+/// Declaration documentation.
+type {
+  /// Interior documentation trivia.
+  local
+} = {
+  provider.
+  // Target trivia.
+  original
+};
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment_doc)
+  (label_forward_decl
+    (keyword_type)
+    (bracket_lbrace)
+    (comment_doc)
+    (entity_name_label)
+    (bracket_rbrace)
+    (operator_builtin)
+    (bracket_lbrace)
+    (label_path
+      (identifier)
+      (separator_dot)
+      (comment_line)
+      (entity_name_label))
+    (bracket_rbrace)
+    (separator_semicolon)))

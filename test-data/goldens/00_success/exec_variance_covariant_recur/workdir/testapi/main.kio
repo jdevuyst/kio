@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Box`'s parameter `[A]` occurs in a covariant (positive) position
+// in its payload, so `Box(Rec)` places the recursive `Rec` in a
+// positive position and strict positivity accepts it. This is the
+// accepting twin of 16_totality_error/loop_via_arrow_lhs, where `Rec`
+// under a negative (arrow-LHS) position is rejected.
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+rec newtype Rec : Box(Rec) { pub constructor mk_rec; pub projector un_rec }
+
+fn unwrap(b: Box(String)) -> String { Box.un_box(b) }
+
+pub fn main() -> . { print(unwrap(Box.mk_box("covariant recursion accepted\n"))) }

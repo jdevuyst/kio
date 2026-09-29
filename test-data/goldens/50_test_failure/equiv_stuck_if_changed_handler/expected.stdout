@@ -1,0 +1,5 @@
+  fail equiv `stuck_if_ne` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): __if_then_else__(condition(__param_x__), .() { .() { foo(()) }(()) }, .() { .() { bar(()) }(()) })
+    group B (arms 2): __if_then_else__(condition(__param_x__), .() { .() { foo(()) }(()) }, .() { .() { baz(()) }(()) })
+
+result: 1/1 equiv block failed

@@ -1,0 +1,2 @@
+this polymorphic `fn` needs an independently known result type before its body is checked
+help: write a concrete return annotation or provide an enclosing expected result

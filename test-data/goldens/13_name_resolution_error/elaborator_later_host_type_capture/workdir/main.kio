@@ -1,0 +1,11 @@
+module main;
+
+import __comptime__;
+
+pure fn implementation(ct: __Comptime__, _later_type: __Type__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+elab demo : . -> . { captures Later; impl implementation }
+
+host type Later;

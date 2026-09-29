@@ -1,0 +1,13 @@
+package elaborator_imported_private_newtype_capture;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  consumer
+}

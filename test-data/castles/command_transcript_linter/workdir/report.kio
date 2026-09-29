@@ -1,0 +1,54 @@
+module report;
+
+import elab/control(if);
+import rules as rules;
+import scanner as scan;
+import testapi(Bool, String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+fn cat2(a: String, b: String) -> String { text.string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+fn issue_missing_colon() -> String {
+  if! rules.missing_colon(scan.line2()) {
+    "line 2: missing colon after SAVE\n"
+  } else {
+    ""
+  }
+}
+
+fn issue_unsafe_retry() -> String {
+  if! rules.unsafe_retry(scan.line3()) {
+    "line 3: unsafe retry payload rm -rf\n"
+  } else {
+    ""
+  }
+}
+
+fn issue_malformed_opcode() -> String {
+  if! rules.malformed_opcode(scan.line4()) {
+    "line 4: malformed opcode RTRY\n"
+  } else {
+    ""
+  }
+}
+
+fn retry_summary() -> String {
+  cat3("retry-safe=", fmt.bool_to_string(rules.retry_safe(scan.line3())), "\n")
+}
+
+pub fn header() -> String {
+  cat2(
+    , cat3("lines=", fmt.int_to_string(scan.line_count()), "\n")
+    , cat3("bytes=", fmt.i32_to_string(scan.byte_count()), "\n")
+    )
+}
+
+pub fn issues() -> String {
+  cat2(
+    , issue_missing_colon()
+    , cat2(issue_unsafe_retry(), cat2(issue_malformed_opcode(), retry_summary()))
+    )
+}

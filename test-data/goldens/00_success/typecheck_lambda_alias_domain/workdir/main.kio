@@ -1,0 +1,15 @@
+module main;
+
+host type I32 role(i32);
+
+type Intpair = I32 & I32;
+
+type Empty = .;
+
+fn product_domain() -> Intpair -> I32 { .(x, y) { x } }
+
+fn product_tail_domain() -> (I32 & Intpair) -> I32 { .(x, y, z) { z } }
+
+fn unit_domain() -> Empty -> I32 { .() { 0(I32) } }
+
+fn main() -> . { () }

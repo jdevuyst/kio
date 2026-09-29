@@ -1,0 +1,40 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// The canonical type constructor: payload is exactly the
+// type-parameter, so `Identity(A)` is its carrier `A`. Lift and
+// peel are identities — every target treats it as transparent.
+pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
+
+// A `Functor[*F]` instance with a polymorphic-function payload:
+// `fmap` lifts an `A -> B` through the brand to an `F(A) ->
+// F(B)`. The `[*F]` binder is kind-`*→*`; the instance newtype is
+// shared across goldens — every concrete brand instantiates it with
+// its own body for the brand-crossing.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `Identity`'s functor instance. The brand-crossing goes through
+// `Identity`'s own constructor / projector: peel via `un_id`, apply
+// the user's function, re-wrap via `mk_id`. At every target this
+// composes to a runtime no-op around the function call.
+fn identity_functor() -> Functor(Identity) {
+  Functor.mk_functor(Identity, .[A][B](s, m) { Identity.mk_id(B, s(Identity.un_id(A, m))) })
+}
+
+// Pass the instance as a value to a consumer. The consumer doesn't
+// know `Identity` specifically — it works against any concrete
+// brand — but here we instantiate at `Identity` to exercise the
+// canonical-brand path end-to-end.
+fn use_instance() -> String {
+  let inst = identity_functor();
+  let branded = Identity.mk_id(String, "functor on identity ok\n"(String));
+  let mapped = Functor.fmap(Identity, inst)(String, String, .(s) { s }, branded);
+  Identity.un_id(String, mapped)
+}
+
+pub fn main() -> . { print(use_instance()) }

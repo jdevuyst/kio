@@ -1,0 +1,5 @@
+module selected;
+
+import testapi(Bool);
+
+pub labels Card = { flag: Bool };

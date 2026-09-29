@@ -1,0 +1,13 @@
+/// `@type` against value bindings resolves.
+///
+/// A `fn`'s bound-value type: [`@type compute`].
+/// A `newtype`'s constructor is a value-level fn: [`@type mk_wrapped`].
+/// A `newtype`'s projector is too: [`@type un_wrapped`].
+module dtype/main;
+
+/// Computes a result.
+pub fn compute(n: .) -> . { n }
+
+/// A wrapper newtype — `Wrapped` is the type-level name (rejected by
+/// `@type`), but its constructor / projector are value-level fns.
+pub newtype Wrapped : . { pub constructor mk_wrapped; pub projector un_wrapped; };

@@ -1,0 +1,4 @@
+module intrinsic_shadow_attempt/main;
+
+// User declarations cannot occupy reserved names, including intrinsic spellings.
+fn __pair__() -> . { () }

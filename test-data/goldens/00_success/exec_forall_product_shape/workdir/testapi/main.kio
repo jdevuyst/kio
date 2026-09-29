@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Regression: a product whose slots are bare rank-N polytype values.
+//
+// The Rust backend mints one content-hashed `Prod_<hash>` struct per
+// distinct structural shape, with one generic parameter per leaf. A
+// `Forall` (rank-N) slot counts as one leaf on the mint side, so the
+// struct is declared with two generics here. The use-site generic-arg
+// collector previously dropped `Forall` leaves, so the return type,
+// the constructor, and the parameter position each supplied zero
+// generic args against a two-generic struct (rustc E0107), and the
+// emitted crate failed to build.
+fn id[U](v: U) -> U { v }
+
+fn mk_pair() -> ([T] T -> T) & ([T] T -> T) { (id, id) }
+
+fn use_pair(p: ([T] T -> T) & ([T] T -> T)) -> . { let _ = p; () }
+
+pub fn main() -> . { use_pair(mk_pair()); print("forall-product ok\n"(String)) }

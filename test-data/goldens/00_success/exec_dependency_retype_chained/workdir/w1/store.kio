@@ -1,0 +1,10 @@
+module w1/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub type Tag = _rehost_gdgphcgfcphdhegphcgf.Tag;
+
+pub fn make1(n: I32) -> Tag { Tag.mk(n) }

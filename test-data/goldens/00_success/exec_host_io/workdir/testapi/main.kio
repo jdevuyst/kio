@@ -1,0 +1,11 @@
+module testapi/main;
+
+import testapi(Int, Str);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn main() -> . {
+  print(string_concat("2 + 3 = ", string_concat(int_to_string(add_i32(2, 3)), "\n")))
+}

@@ -1,0 +1,93 @@
+/// A finished layout: what a list of break points actually means.
+///
+/// A break list `b0 .. bk` describes the lines `[b0, b1)`, `[b1, b2)`, and so
+/// on, so both algorithms hand back the same kind of answer and everything
+/// downstream is shared.
+///
+/// Each line is measured from the paragraph again, from scratch, rather than
+/// reusing anything the search accumulated. That is what makes re-summing the
+/// recovered lines a genuinely independent check on the DP's own `best[n]`: a
+/// back-pointer that walks to the wrong predecessor, or a scan whose running
+/// width drifts, shows up as two numbers that disagree.
+module justify/layout;
+
+import elab/control(if);
+import elab/match(match);
+import justify/cost as cost;
+import justify/dp(Table, table_back);
+import justify/list as list;
+import justify/list(List);
+import justify/word(Words, span_used);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+
+pub labels Line = { start: I32, stop: I32, used: I32, slack: I32, badness: I32 };
+
+pub fn line_start(l: Line) -> I32 { l.?{start} }
+
+pub fn line_stop(l: Line) -> I32 { l.?{stop} }
+
+pub fn line_used(l: Line) -> I32 { l.?{used} }
+
+pub fn line_slack(l: Line) -> I32 { l.?{slack} }
+
+pub fn line_badness(l: Line) -> I32 { l.?{badness} }
+
+fn make_line(xs: Words, column: I32, from: I32, to: I32, n: I32) -> Line {
+  let used = span_used(xs, from, to);
+  {
+    , start = from
+    , stop = to
+    , used
+    , slack = sub_i32(column, used)
+    , badness = cost.badness(used, column, eq_i32(to, n))
+    }
+}
+
+rec(loop) fn lines_onto(xs: Words, column: I32, n: I32, breaks: List(I32), acc: List(Line)) -> List(Line) {
+  match! breaks.>List.unpack {
+    (
+      , .(from: I32, rest: List(I32)) {
+          if! list.is_empty(rest) {
+            list.reverse(acc)
+          } else {
+            let to = list.head_or(rest, from);
+            rec lines_onto(xs, column, n, rest, list.cons(make_line(xs, column, from, to, n), acc))
+          }
+        }
+      , .(_empty: .) { list.reverse(acc) }
+      )
+  }
+}
+
+/// The lines a break list describes. The final break is a boundary, not a line,
+/// so a list of `k + 1` break points yields `k` lines.
+pub fn lines_of(xs: Words, column: I32, breaks: List(I32), n: I32) -> List(Line) {
+  lines_onto(xs, column, n, breaks, list.nil(Line, ()))
+}
+
+rec(loop) fn total_onto(ls: List(Line), acc: I32) -> I32 {
+  match! ls.>List.unpack {
+    (
+      , .(l: Line, rest: List(Line)) { rec total_onto(rest, cost.sat_add(acc, line_badness(l))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// What a layout costs, re-summed from its own lines.
+pub fn total_badness(ls: List(Line)) -> I32 { total_onto(ls, 0) }
+
+rec(loop) fn walk_back(back: List(I32), j: I32, acc: List(I32)) -> List(I32) {
+  if! leq_i32(j, 0) {
+    list.cons(0, acc)
+  } else {
+    rec walk_back(back, list.at(back, j, 0), list.cons(j, acc))
+  }
+}
+
+/// Follow the back-pointers from the last break to the first. Consing each break
+/// point visited onto the front of the accumulator turns the backward walk into
+/// a forward break list for free.
+pub fn recover(t: Table, n: I32) -> List(I32) { walk_back(table_back(t), n, list.nil(I32, ())) }

@@ -1,0 +1,73 @@
+module elab;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Result = __Checked_term__ & __Fill_ctx__;
+
+type Stage = . | . | .;
+
+pure fn stage_zero() -> Stage { __left__(., . | ., ()) }
+
+pure fn stage_one() -> Stage { __right__(., . | ., __left__(., ., ())) }
+
+pure fn stage_two() -> Stage { __right__(., . | ., __right__(., ., ())) }
+
+pure fn remint_product_member(ct: __Comptime__, source: __Type__) -> __Type__ {
+  __type_product_spine_fold__(
+    , ct
+    , __Type__
+    , source
+    , __type_unit__(ct)
+    , .(_acc: __Type__, member: __Type__) -> __Type__ { member }
+    )
+}
+
+pure fn advance(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , source: __Type__
+  , recur: (__Type__ & Stage) -> Result
+  , stage: Stage
+  ) -> Result {
+  __either__(
+    , .
+    , . | .
+    , Result
+    , stage
+    , .(_zero: .) -> Result { recur(remint_product_member(ct, source), stage_one()) }
+    , .(later: . | .) -> Result {
+        __either__(
+          , .
+          , .
+          , Result
+          , later
+          , .(_one: .) -> Result { recur(remint_product_member(ct, source), stage_two()) }
+          , .(_two: .) -> Result { (__term_unit__(ct), fills) }
+          )
+      }
+    )
+}
+
+pure fn guarded_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , source: __Type__
+  , _value: __Checked_term__
+  , _target: __Type__
+  ) -> Result {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Stage
+    , Result
+    , source
+    , stage_zero()
+    , .(recur: (__Type__ & Stage) -> Result, _fuel: __Type__, stage: Stage) -> Result {
+        advance(ct, fills, source, recur, stage)
+      }
+    )
+}
+
+pub elab guarded : [Source] Source -> [Target] Target { impl(fills) guarded_impl }

@@ -1,0 +1,9 @@
+module testapi/array;
+
+import testapi(Array, I32);
+
+host fn array_make_empty[T]() -> Array(T);
+
+host fn array_get[T](items: Array(T), index: I32) -> T;
+
+host fn array_push[T](items: Array(T), value: T) -> .;

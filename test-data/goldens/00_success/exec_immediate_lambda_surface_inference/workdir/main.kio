@@ -1,0 +1,43 @@
+module main;
+
+type A = . & .;
+
+fn identity_hkt[*G](value: G(.)) -> G(.) { value }
+
+newtype N : . { pub constructor mk_n; pub projector un_n }
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+newtype Wrap[A] : A { constructor mk_wrap; projector un_wrap }
+
+fn make_pair() -> . & . { ((), ()) }
+
+fn shadowed_partition[A](value: A) -> . { .(first, second)(tail) { tail }(value, (), ()) }
+
+fn later_binder_does_not_shadow(value: N) -> . { .(first: N)[N](second) { () }(value, ., ()) }
+
+fn repeated_binders_keep_their_layers() -> N {
+  .[T](first: T)[T](second: T) { second }(., (), N, N.mk_n(()))
+}
+
+fn main() -> . {
+  let whole_placeholder = .(value: _) { value }(());
+  let placeholder = .[A](first: A, second) { second }(_, (), ());
+  let elided = .[A](first: A, second) { second }((), ());
+  let unit = ();
+  let partial = .[A][B](first: A, second: B, third) { third }(., unit, (), ());
+  let elided_flat = .[A](first: A)(second) { second }(_, (), ());
+  let zero_value_layer = .[A]()(value) { value }(., (), ());
+  let mid_binder = .(first)[A](second: A, third) { third }((), ., (), ());
+  let product_producer_flat = .(left, right)(tail) { tail }(make_pair(), ());
+  let earlier_product_is_one_slot = .(first, second, third)(tail) { tail }(make_pair(), (), (), ());
+  let later_group_reuses_binder = .[A](first: A)(second: A, tail) { tail }(., (), (), ());
+  let binder_shadow_partition = shadowed_partition(., ());
+  let later_binder_scope = later_binder_does_not_shadow(N.mk_n(()));
+  let repeated_binder_layers = repeated_binders_keep_their_layers();
+  let box = Box.mk_box(., ());
+  let wrap = Wrap.mk_wrap(., ());
+  let repeated_hkt =
+    .[*F](function, first: F(.))[*F](second: F(.)) -> F(.) { second }(identity_hkt, box, Wrap, wrap);
+  ()
+}

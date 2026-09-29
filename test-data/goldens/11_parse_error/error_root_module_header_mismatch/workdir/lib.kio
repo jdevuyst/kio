@@ -1,0 +1,3 @@
+module wrong_name;
+
+pub fn identity[A](x: A) -> A { x }

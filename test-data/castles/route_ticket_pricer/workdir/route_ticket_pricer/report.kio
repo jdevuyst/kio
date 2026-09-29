@@ -1,0 +1,42 @@
+module route_ticket_pricer/report;
+
+import route_ticket_pricer/audit as audit;
+import route_ticket_pricer/bulk as bulk;
+import route_ticket_pricer/fares as fares;
+import testapi(I128, I64, String, U64);
+import testapi/fmt(i128_to_string, i64_to_string, u64_to_string);
+import testapi/io(print);
+
+fn print_i64_line(value: I64) -> . { print(i64_to_string(value)); print("\n") }
+
+fn print_u64_line(value: U64) -> . { print(u64_to_string(value)); print("\n") }
+
+fn print_i128_line(value: I128) -> . { print(i128_to_string(value)); print("\n") }
+
+pub fn print_report() -> . {
+  print("route_ticket_pricer\n");
+  print("fare.local_connector.i64=");
+  print_i64_line(fares.local_connector_fare());
+  print("fare.airport_express.i64=");
+  print_i64_line(fares.airport_express_fare());
+  print("fare.harbor_freight.i64=");
+  print_i64_line(fares.harbor_freight_fare());
+  print("fare.night_bus.i64=");
+  print_i64_line(fares.night_bus_fare());
+  print("fare.total.i64=");
+  print_i64_line(fares.route_fare_total());
+  print("bulk.weekday.u64=");
+  print_u64_line(bulk.weekday_bulk_count());
+  print("bulk.event.u64=");
+  print_u64_line(bulk.event_bulk_count());
+  print("bulk.freight.u64=");
+  print_u64_line(bulk.freight_bulk_count());
+  print("audit.gross.i128=");
+  print_i128_line(audit.gross_audit_total());
+  print("audit.tax.i128=");
+  print_i128_line(audit.tax_audit_total());
+  print("audit.checksum.i128=");
+  print_i128_line(audit.checksum_total());
+  print("audit.total.i128=");
+  print_i128_line(audit.grand_audit_total())
+}

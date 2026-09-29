@@ -1,0 +1,14 @@
+# Skills — fix-it mode
+
+Trigger: running an `audit-*` skill, the `audit` umbrella skill, or `review-commits` with a fix directive.
+
+The audit skills under `ai/skills/` (`audit-*`, `review-commits`) default to **report only** — they surface findings without touching the tree. Their `allowed-tools` frontmatter describes that report-mode surface (read/search only); a fix-directive run edits the tree under the session's normal permissions, so the frontmatter list is not a cap on fix mode. The `audit` skill is the umbrella entry point: it runs every `audit-*` skill and rolls findings into one prioritized report. When a new `audit-*` skill is added, wire it into `ai/skills/audit/SKILL.md` so the umbrella keeps running it; `audit-skills` cross-checks this.
+
+When an audit skill is invoked with a directive to fix the findings (e.g. "run `audit-spec-drift` and fix what you find"):
+
+1. **Classify findings before fixing them.** Work autonomously through regressions introduced by the current authorized work and defects whose required behavior follows uniquely from the effective authorized contract (the pre-work specification baseline plus specific user supersessions given before implementation) and falls within the authorized fix directive. A delegated directive cannot broaden its inherited authority. An audit result, current implementation behavior, a new test, or a same-work spec edit does not authorize a new behavior. Report findings outside the directive without changing code or trackers; stop and ask the user before implementation when a finding exposes a contract or design choice. If unauthorized implementation already exists, isolate or revert it from the landable range; a later decision begins newly authorized work and does not waive fresh review or other gates.
+2. **Group fixes into clear logical commits.** One commit per finding-cluster, split by topic / bug / area — not one blob. Hunk-split shared files when the same file participates in multiple clusters.
+3. **Test before each commit.** Run a *relevant subset* through `ci/cargo.sh` — `check`, `clippy`, or a targeted `test` against the touched code — and fix any regression before committing. **`sh ci/all.sh FULL_IMPL_MATRIX` is very slow and appropriate only when exhaustive implementation-matrix coverage is required**, usually once at the end of a matrix-sensitive change: per-commit full-matrix runs dominate wall time without catching much that the cheaper per-commit subset misses. See [`local-ci.md`](local-ci.md) for local check mechanics.
+4. **Don't sign off.** Commit without `git commit -s`; DCO sign-off is a separate step the user requests before a push (per AGENTS.md § Universal rules — Commits, sign-off, and push).
+5. **Don't push.** Pushing is a separate, explicitly-authorized step.
+6. **Report at the end.** Summarize what was fixed, the commits made, what couldn't be fixed and why, and what follow-up is worth authorizing next.

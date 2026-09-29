@@ -1,0 +1,11 @@
+module calendar_blackout_planner/model;
+
+import testapi(Bool, I32, String);
+
+pub labels Window = { name: String, support_load: I32, priority: I32, frozen: Bool };
+
+pub fn alpha() -> Window { {name = "alpha", support_load = 4, priority = 5, frozen = .f} }
+
+pub fn beta() -> Window { {name = "beta", support_load = 2, priority = 8, frozen = .t} }
+
+pub fn gamma() -> Window { {name = "gamma", support_load = 8, priority = 7, frozen = .f} }

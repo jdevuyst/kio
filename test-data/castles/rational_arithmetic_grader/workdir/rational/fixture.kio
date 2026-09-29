@@ -1,0 +1,64 @@
+/// The marked homework: nine exercises, each a question paired with the fraction
+/// one student handed in for it. Between them they reach all four verdicts and
+/// every corner of reduction worth reaching.
+///
+/// The expression constructors are imported bare: here they are the vocabulary,
+/// and each exercise should read as the arithmetic it encodes.
+module rational/fixture;
+
+import rational/core(fraction);
+import rational/expr(add, div, lit, mul, sub);
+import rational/grader as grader;
+import rational/grader(Exercise, Roster, exercise);
+import testapi(I32);
+
+/// Already reduced.
+fn common_denominator() -> Exercise { exercise(add(lit(1, 2), lit(1, 3)), fraction(5, 6)) }
+
+/// The evaluator's own reduction is the non-trivial one here (`8/16`, gcd 8);
+/// the student stopped one step short of it.
+fn quarters() -> Exercise { exercise(add(lit(1, 4), lit(1, 4)), fraction(2, 4)) }
+
+/// `24/36`, gcd 12.
+fn product_reduction() -> Exercise { exercise(mul(lit(3, 4), lit(8, 9)), fraction(2, 3)) }
+
+/// Negative, so the sign has to end up on the numerator.
+fn negative_difference() -> Exercise { exercise(sub(lit(1, 6), lit(3, 4)), fraction(-7, 12)) }
+
+/// The student put the sign on the denominator instead, which is the same number
+/// only once sign canonicalization has had its say.
+fn negative_denominator() -> Exercise { exercise(sub(lit(2, 5), lit(4, 5)), fraction(2, -5)) }
+
+/// Comes out whole, so it must print as `7` and not as `7/1`.
+fn whole_quotient() -> Exercise { exercise(div(lit(7, 2), lit(1, 2)), fraction(7, 1)) }
+
+/// The student inverted the answer.
+fn inverted_answer() -> Exercise { exercise(mul(lit(2, 3), lit(3, 5)), fraction(5, 2)) }
+
+/// The divisor `1/3 - 1/3` is zero, so the question has no answer. The faulting
+/// division is buried two levels down and sits on a different side of its parent
+/// each time — right of the `+`, left of the `*` — so the fault has to climb out
+/// through both of the evaluator's short-circuit paths.
+fn zero_divisor() -> Exercise {
+  exercise(
+    , mul(add(lit(1, 2), div(lit(5, 6), sub(lit(1, 3), lit(1, 3)))), lit(1, 4))
+    , fraction(0, 1)
+    )
+}
+
+/// The submission has a zero denominator: not a number, so not the answer.
+fn impossible_answer() -> Exercise { exercise(mul(lit(1, 2), lit(2, 3)), fraction(4, 0)) }
+
+/// Built back to front, so the roster comes out in the order it is written.
+pub fn exercises() -> Roster {
+  let end = grader.no_exercises();
+  let ninth = grader.with_exercise(impossible_answer(), end);
+  let eighth = grader.with_exercise(zero_divisor(), ninth);
+  let seventh = grader.with_exercise(inverted_answer(), eighth);
+  let sixth = grader.with_exercise(whole_quotient(), seventh);
+  let fifth = grader.with_exercise(negative_denominator(), sixth);
+  let fourth = grader.with_exercise(negative_difference(), fifth);
+  let third = grader.with_exercise(product_reduction(), fourth);
+  let second = grader.with_exercise(quarters(), third);
+  grader.with_exercise(common_denominator(), second)
+}

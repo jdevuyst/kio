@@ -1,0 +1,3 @@
+module demo/api;
+
+host type String role(str);

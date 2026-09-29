@@ -1,0 +1,71 @@
+module planner/deps;
+
+import elab/control(if);
+import planner/bool(both, invert);
+import planner/state(Plan_state, is_done);
+import planner/tasks(
+  , compile_core
+  , emit_js
+  , emit_rust
+  , fetch_sources
+  , inspect_schema
+  , package_bundle
+  , release_notes
+  );
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+
+fn unfinished(plan: Plan_state, task: I32) -> Bool { invert(is_done(plan, task)) }
+
+fn ready_fetch(plan: Plan_state) -> Bool { unfinished(plan, fetch_sources()) }
+
+fn ready_schema(plan: Plan_state) -> Bool {
+  both(unfinished(plan, inspect_schema()), is_done(plan, fetch_sources()))
+}
+
+fn ready_core(plan: Plan_state) -> Bool {
+  both(unfinished(plan, compile_core()), is_done(plan, inspect_schema()))
+}
+
+fn ready_js(plan: Plan_state) -> Bool {
+  both(unfinished(plan, emit_js()), is_done(plan, compile_core()))
+}
+
+fn ready_rust(plan: Plan_state) -> Bool {
+  both(unfinished(plan, emit_rust()), is_done(plan, compile_core()))
+}
+
+fn ready_bundle(plan: Plan_state) -> Bool {
+  both(
+    , unfinished(plan, package_bundle())
+    , both(is_done(plan, emit_js()), is_done(plan, emit_rust()))
+    )
+}
+
+fn ready_notes(plan: Plan_state) -> Bool {
+  both(unfinished(plan, release_notes()), is_done(plan, inspect_schema()))
+}
+
+pub fn is_ready(plan: Plan_state, task: I32) -> Bool {
+  if! eq_i32(task, fetch_sources()) {
+    ready_fetch(plan)
+  } else if! eq_i32(task, inspect_schema()) {
+    ready_schema(plan)
+  } else if! eq_i32(task, compile_core()) {
+    ready_core(plan)
+  } else if! eq_i32(task, emit_js()) {
+    ready_js(plan)
+  } else if! eq_i32(task, emit_rust()) {
+    ready_rust(plan)
+  } else if! eq_i32(task, package_bundle()) {
+    ready_bundle(plan)
+  } else if! eq_i32(task, release_notes()) {
+    ready_notes(plan)
+  } else {
+    .f
+  }
+}
+
+pub fn is_blocked(plan: Plan_state, task: I32) -> Bool {
+  both(unfinished(plan, task), invert(is_ready(plan, task)))
+}

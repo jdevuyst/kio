@@ -1,0 +1,3 @@
+module sinklib/core;
+
+pub fn pick[A][B]((a: A, _b: B)) -> A { a }

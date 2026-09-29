@@ -1,0 +1,21 @@
+/// Module with utility functions.
+///
+/// Use [`@signature helper`] to see the helper's declaration header.
+/// Or embed the full source with [`@source helper`].
+/// Qualified paths also resolve: [`@signature sig.main.helper`].
+module sig/main;
+
+/// Returns its argument unchanged.
+///
+/// See also [`@signature identity`] and [`@source MyAlias`].
+/// Its bound-value type is [`@type identity`].
+pub fn identity(x: .) -> . { x }
+
+/// A helper function.
+fn helper() -> . { () }
+
+/// A type alias.
+pub type MyAlias = .;
+
+/// A wrapper newtype — its declaration header is [`@signature Wrapped`].
+pub newtype Wrapped : . { pub constructor mk_wrapped; pub projector un_wrapped; };

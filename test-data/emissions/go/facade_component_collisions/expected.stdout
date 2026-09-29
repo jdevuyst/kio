@@ -1,0 +1,10 @@
+api.child function
+api/child.value
+api.Child members
+api.Foo_bar members
+api._Foo_bar members
+foo/bar/baz.value
+foo_bar.value
+_foo_bar.value
+api.foo_bar
+api._foo_bar

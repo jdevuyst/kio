@@ -1,0 +1,6 @@
+module typecheck_user_elaborator_intrinsic_if_then_else/main;
+
+import elaborators(bool_if);
+import typecheck_user_elaborator_intrinsic_if_then_else(Bool);
+
+pub fn keep(b: Bool) -> Bool { bool_if!(b, Bool) }

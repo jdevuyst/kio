@@ -1,0 +1,100 @@
+/// The order flow: what arrives at the book, in the order it arrives.
+module book/event;
+
+import book/order(Side, buy_side, sell_side);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, I32);
+import testapi/array(array_get, array_len, array_make_empty, array_push);
+
+pub labels Limit_req = { lr_side: Side, lr_price: I32, lr_qty: I32 };
+
+pub labels Market_req = { mr_side: Side, mr_qty: I32 };
+
+pub labels Amend_req = { ar_id: I32, ar_qty: I32 };
+
+/// A limit order names the worst price it will accept; a market order
+/// takes whatever the book has. A cancel names an order id; an amend
+/// names one and a new quantity.
+pub labels Event =
+  { limit: Limit_req }
+  | { market: Market_req }
+  | { cancel: I32 }
+  | { amend: Amend_req };
+
+fn limit_event(side: Side, price: I32, qty: I32) -> Event {
+  {limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum!(Event)
+}
+
+fn market_event(side: Side, qty: I32) -> Event {
+  {market = {mr_side = side, mr_qty = qty}}.>widen_sum!(Event)
+}
+
+fn cancel_event(id: I32) -> Event { {cancel = id}.>widen_sum!(Event) }
+
+fn amend_event(id: I32, qty: I32) -> Event {
+  {amend = {ar_id = id, ar_qty = qty}}.>widen_sum!(Event)
+}
+
+pub fn limit_of(e: Limit) -> Limit_req { e.?{limit} }
+
+pub fn market_of(e: Market) -> Market_req { e.?{market} }
+
+pub fn cancel_of(e: Cancel) -> I32 { e.?{cancel} }
+
+pub fn amend_of(e: Amend) -> Amend_req { e.?{amend} }
+
+pub fn limit_side(r: Limit_req) -> Side { r.?{lr_side} }
+
+pub fn limit_price(r: Limit_req) -> I32 { r.?{lr_price} }
+
+pub fn limit_qty(r: Limit_req) -> I32 { r.?{lr_qty} }
+
+pub fn market_side(r: Market_req) -> Side { r.?{mr_side} }
+
+pub fn market_qty(r: Market_req) -> I32 { r.?{mr_qty} }
+
+pub fn amend_id(r: Amend_req) -> I32 { r.?{ar_id} }
+
+pub fn amend_qty(r: Amend_req) -> I32 { r.?{ar_qty} }
+
+pub fn event_count(events: Array(Event)) -> I32 { array_len(events) }
+
+pub fn event_at(events: Array(Event), index: I32) -> Event { array_get(events, index) }
+
+/// The arriving flow, in source rather than on stdin so the transcript
+/// stands on its own.
+///
+/// It is shaped to make every path through the engine fire: an order that
+/// rests untouched; a second order joining a price level already occupied,
+/// which must queue behind the order that got there first; a limit order
+/// that fills completely on arrival; one that fills partially and rests
+/// with the remainder; a cancel that finds nothing, because the order it
+/// names traded two events earlier; a cancel that removes a resting order;
+/// a reduce-only amend; an amend that would grow an order and is refused;
+/// an amend of an order that was already cancelled; a market order that
+/// walks three price levels; a market order that exhausts its side of the
+/// book and is left unfilled; and a limit order that takes part of a
+/// resting order and leaves the maker resting with the rest.
+pub fn arrivals() -> Array(Event) {
+  let events = array_make_empty(Event, ());
+  array_push(events, limit_event(sell_side(), 101, 5));
+  array_push(events, limit_event(sell_side(), 102, 4));
+  array_push(events, limit_event(sell_side(), 101, 6));
+  array_push(events, limit_event(buy_side(), 99, 3));
+  array_push(events, limit_event(buy_side(), 98, 7));
+  array_push(events, limit_event(buy_side(), 101, 5));
+  array_push(events, cancel_event(1));
+  array_push(events, limit_event(buy_side(), 101, 9));
+  array_push(events, limit_event(sell_side(), 103, 2));
+  array_push(events, limit_event(sell_side(), 105, 3));
+  array_push(events, cancel_event(4));
+  array_push(events, amend_event(5, 4));
+  array_push(events, amend_event(5, 9));
+  array_push(events, amend_event(4, 2));
+  array_push(events, market_event(buy_side(), 8));
+  array_push(events, market_event(sell_side(), 12));
+  array_push(events, limit_event(buy_side(), 100, 6));
+  array_push(events, limit_event(buy_side(), 100, 4));
+  array_push(events, limit_event(sell_side(), 100, 3));
+  events
+}

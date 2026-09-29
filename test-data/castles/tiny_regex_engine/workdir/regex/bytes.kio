@@ -1,0 +1,22 @@
+module regex/bytes;
+
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/text(string_code_at, string_eq);
+
+pub fn byte_text_at(text: String, index: I32) -> String {
+  match! string_code_at(text, index) {
+    (.(code: I32) { int_to_string(code) }, .(_eof: .) { "EOF" })
+  }
+}
+
+pub fn has_byte_at(text: String, index: I32) -> Bool {
+  match! string_code_at(text, index) {
+    (.(_code: I32) { .t }, .(_eof: .) { .f })
+  }
+}
+
+pub fn byte_is(text: String, index: I32, decimal: String) -> Bool {
+  string_eq(byte_text_at(text, index), decimal)
+}

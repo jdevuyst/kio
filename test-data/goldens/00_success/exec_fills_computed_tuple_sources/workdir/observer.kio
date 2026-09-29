@@ -1,0 +1,12 @@
+module observer;
+
+import __comptime__;
+
+pure fn retain_impl(
+  , _ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+
+pub elab retain : [Source] Source -> Source { impl(fills) retain_impl }

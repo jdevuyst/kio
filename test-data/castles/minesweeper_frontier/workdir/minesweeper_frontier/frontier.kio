@@ -1,0 +1,159 @@
+module minesweeper_frontier/frontier;
+
+import elab/control(if);
+import minesweeper_frontier/model(
+  , cell_count
+  , cell_index
+  , eq_i32
+  , height
+  , last_index
+  , mine_at
+  , revealed_at
+  , width
+  );
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+pub fn class_remote() -> I32 { 0 }
+
+pub fn class_safe_frontier() -> I32 { 1 }
+
+pub fn class_mine_frontier() -> I32 { 2 }
+
+pub fn class_revealed() -> I32 { 3 }
+
+fn adjacent_to_revealed(revealed: Array(Bool), row: I32, col: I32) -> Bool {
+  let north = arith.sub_i32(row, 1);
+  let south = arith.add_i32(row, 1);
+  let west = arith.sub_i32(col, 1);
+  let east = arith.add_i32(col, 1);
+  if! revealed_at(revealed, north, west) {
+    .t
+  } else if! revealed_at(revealed, north, col) {
+    .t
+  } else if! revealed_at(revealed, north, east) {
+    .t
+  } else if! revealed_at(revealed, row, west) {
+    .t
+  } else if! revealed_at(revealed, row, east) {
+    .t
+  } else if! revealed_at(revealed, south, west) {
+    .t
+  } else if! revealed_at(revealed, south, col) {
+    .t
+  } else {
+    revealed_at(revealed, south, east)
+  }
+}
+
+fn classify_cell(mines: Array(Bool), revealed: Array(Bool), row: I32, col: I32) -> I32 {
+  if! revealed_at(revealed, row, col) {
+    class_revealed()
+  } else if! adjacent_to_revealed(revealed, row, col) {
+    if! mine_at(mines, row, col) {
+      class_mine_frontier()
+    } else {
+      class_safe_frontier()
+    }
+  } else {
+    class_remote()
+  }
+}
+
+rec(loop) fn fill_class_cols(
+  , row: I32
+  , col: I32
+  , classes: Array(I32)
+  , mines: Array(Bool)
+  , revealed: Array(Bool)
+  ) -> Array(I32) {
+  if! arith.leq_i32(col, arith.sub_i32(width(), 1)) {
+    array.array_set(classes, cell_index(row, col), classify_cell(mines, revealed, row, col));
+    rec fill_class_cols(row, arith.add_i32(col, 1), classes, mines, revealed)
+  } else {
+    classes
+  }
+}
+
+rec(loop) fn fill_class_rows(
+  , row: I32
+  , classes: Array(I32)
+  , mines: Array(Bool)
+  , revealed: Array(Bool)
+  ) -> Array(I32) {
+  if! arith.leq_i32(row, arith.sub_i32(height(), 1)) {
+    let updated = fill_class_cols(row, 0, classes, mines, revealed);
+    rec fill_class_rows(arith.add_i32(row, 1), updated, mines, revealed)
+  } else {
+    classes
+  }
+}
+
+pub fn build_classes(mines: Array(Bool), revealed: Array(Bool)) -> Array(I32) {
+  let classes = array.array_make_filled(cell_count(), class_remote());
+  fill_class_rows(0, classes, mines, revealed)
+}
+
+pub rec(loop) fn count_class(i: I32, classes: Array(I32), wanted: I32, total: I32) -> I32 {
+  if! arith.leq_i32(i, last_index()) {
+    if! eq_i32(array.array_get(classes, i), wanted) {
+      rec count_class(arith.add_i32(i, 1), classes, wanted, arith.add_i32(total, 1))
+    } else {
+      rec count_class(arith.add_i32(i, 1), classes, wanted, total)
+    }
+  } else {
+    total
+  }
+}
+
+pub rec(loop) fn collect_safe_frontier(i: I32, classes: Array(I32), picks: Array(I32)) -> Array(I32) {
+  if! arith.leq_i32(i, last_index()) {
+    if! eq_i32(array.array_get(classes, i), class_safe_frontier()) {
+      array.array_push(picks, i);
+      rec collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
+    } else {
+      rec collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
+    }
+  } else {
+    picks
+  }
+}
+
+pub fn safe_frontier_indices(classes: Array(I32)) -> Array(I32) {
+  collect_safe_frontier(0, classes, array.array_make_empty(I32, ()))
+}
+
+pub fn rotate_recommendations(picks: Array(I32)) -> Array(I32) {
+  let len = array.array_len(picks);
+  if! arith.leq_i32(2, len) {
+    array.array_swap(picks, 0, arith.sub_i32(len, 1));
+    picks
+  } else {
+    picks
+  }
+}
+
+pub rec(loop) fn find_best_safe(
+  , i: I32
+  , classes: Array(I32)
+  , counts: Array(I32)
+  , best_index: I32
+  , best_count: I32
+  ) -> I32 & I32 {
+  if! arith.leq_i32(i, last_index()) {
+    if! eq_i32(array.array_get(classes, i), class_safe_frontier()) {
+      let count = array.array_get(counts, i);
+      if! arith.leq_i32(count, best_count) {
+        rec find_best_safe(arith.add_i32(i, 1), classes, counts, i, count)
+      } else {
+        rec find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
+      }
+    } else {
+      rec find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
+    }
+  } else {
+    (best_index, best_count)
+  }
+}

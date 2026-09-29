@@ -1,0 +1,5 @@
+module widget/feature/qualified;
+
+import widget/feature/store as source;
+
+pub(widget/feature) fn keep(value: source.Token) -> source.Token { value }

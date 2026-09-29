@@ -1,0 +1,25 @@
+module app/api;
+
+import app/types(Shared);
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+pub(app) type Scoped = .;
+
+pub(app) newtype Scoped_box : Scoped { pub(app) constructor mk; pub(app) projector un }
+
+pub(app) newtype Scoped_facade : Scoped { pub constructor mk; pub projector un }
+
+pub(app) fn scoped_identity(value: Scoped_box) -> Scoped_box { value }
+
+pub(app) fn imported_scoped_identity(value: Shared) -> Shared { value }
+
+pub(app) rec(loop) fn recursive_identity(value: Scoped) -> Scoped { value }
+
+newtype Hidden : . { constructor mk; projector un }
+
+newtype Private_facade : Hidden { pub constructor mk; pub projector un }
+
+pub newtype Opaque : Hidden { constructor mk; projector un }
+
+pub labels Public_row = { value: Opaque };

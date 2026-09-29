@@ -1,0 +1,3 @@
+module errspan;
+
+host type Foo role(i32);

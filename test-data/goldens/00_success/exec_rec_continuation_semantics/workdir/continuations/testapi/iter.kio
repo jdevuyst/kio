@@ -1,0 +1,7 @@
+module continuations/testapi/iter;
+
+import testapi/iter as _rehost_hegfhdhegbhagjcpgjhegfhc;
+
+pub fn loop[S][R](step: S -> S | R, state: S) -> R {
+  _rehost_hegfhdhegbhagjcpgjhegfhc.loop(S, R, step, state)
+}

@@ -1,0 +1,30 @@
+turnstile event replay
+line 1: push rejected; gate locked
+line 2: coin accepted; gate unlocked
+line 3: push accepted; gate relocked
+line 4: badge 1001 accepted; gate unlocked
+line 5: push accepted; gate relocked
+line 6: badge 1004 denied; gate unchanged
+line 7: maintenance opened; gate held open
+line 8: push allowed by maintenance
+line 9: coin ignored while maintenance open
+line 10: maintenance closed; gate locked
+line 11: badge 1002 accepted; gate unlocked
+line 12: push accepted; gate relocked
+line 13: unknown event hello
+line 14: badge -3 denied; gate unchanged
+line 15: coin accepted; gate unlocked
+line 16: push accepted; gate relocked
+
+final counters
+lines: 16
+entries: 5
+pushes: 6
+forced_pushes: 1
+coins: 2
+accepted_badges: 2
+denied_badges: 2
+maintenance_events: 2
+unknown_events: 1
+final_mode: locked
+credit_pending: no

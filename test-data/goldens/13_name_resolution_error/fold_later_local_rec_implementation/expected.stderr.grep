@@ -1,0 +1,1 @@
+operator `varop \[\* \*\]` implementation `empty` does not resolve to a function or newtype member

@@ -1,0 +1,14 @@
+module main;
+
+import helper as h;
+import helper(Alias, wrap);
+
+equiv qualified_fn_over_alias(x: h.Alias) {
+  h.wrap(x);
+  x
+}
+
+equiv selective_fn_over_alias(x: Alias) {
+  wrap(x);
+  x
+}

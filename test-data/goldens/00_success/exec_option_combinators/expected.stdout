@@ -1,0 +1,5 @@
+some(2) |> map(double) == some(4)
+none |> map(double) == none
+some(2) |> and_then(safe_div_by(2)) == some(1)
+some(2) |> and_then(safe_div_by(0)) == none
+none |> or_else(some(7)) == some(7)

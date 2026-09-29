@@ -1,0 +1,4 @@
+apply_cb(host_double, 21) = 42
+twice(host_double, 5) = 20
+apply_cb(missing_cap, 1) = dyn_load_prime: host adapter does not offer `testapi/main.missing_cap`
+apply_cb(bad_groups, 1) = dyn_load_prime: host adapter has invalid group shape for `testapi/main.bad_groups`

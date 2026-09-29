@@ -1,0 +1,7 @@
+module testapi/fmt;
+
+import testapi(I32, String);
+
+host fn i32_to_string(n: I32) -> String;
+
+host fn sum_to_string(s: I32 | String) -> String;

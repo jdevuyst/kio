@@ -1,0 +1,5 @@
+  pass equiv `selective_unfold` in main
+  pass equiv `qualified_unfold` in main
+  pass equiv `selective_and_qualified_agree` in main
+
+result: 3/3 equiv blocks passed

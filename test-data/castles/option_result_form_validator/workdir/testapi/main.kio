@@ -1,0 +1,6 @@
+module testapi/main;
+
+import form/report(report);
+import testapi/io(print);
+
+pub fn main() -> . { print(report()) }

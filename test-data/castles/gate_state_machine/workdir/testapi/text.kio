@@ -1,0 +1,5 @@
+module testapi/text;
+
+import testapi(String);
+
+host fn string_concat(a: String, b: String) -> String;

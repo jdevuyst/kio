@@ -1,0 +1,7 @@
+/// A `String` host type that the dependency owns.
+module textdep/text;
+
+host type String role(str);
+
+/// Consumes the dependency's own `String`.
+pub fn dep_string(s: String) -> String { s }

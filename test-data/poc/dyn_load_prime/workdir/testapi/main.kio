@@ -1,0 +1,687 @@
+/// A worked example of dynamic loading: load a guest package from its raw emitted Kio' image, then call its exports through the record surface.
+module testapi/main;
+
+import defaults(default_host_adapter, instantiate_checked_default, instantiate_default);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn);
+import host_descriptor(host_fn_eq);
+import host_descriptor(mk_host_fn, mk_host_id);
+import hostrec(make_lit_default, serve_default, test_bool_default);
+import loader(
+  , {apply}
+  , {bool_in}
+  , {exports}
+  , {f64_out}
+  , {hostfn_in}
+  , {i32_in}
+  , {i32_out}
+  , {lookup}
+  , {pair_in}
+  , {pair_out}
+  );
+import loader(Contract, Diag, Host_adapter, Image, Loaded, Surface, contract_check);
+import loader(Export_info, Export_infos, un_export_infos);
+import loader(Lr_diag, Lr_image);
+import loader(contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
+import loader(export_info_name, export_info_sig);
+import loader(host_adapter_functions, host_adapter_types);
+import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
+import loader(instantiate);
+import loader({str_in}, {str_out}, {sum_is_left}, {sum_payload}, {unit_in});
+import loader/scan(load_package);
+import prime(group_slots_cons, group_slots_nil);
+import result(Call_result, call_done, call_stuck);
+import testapi(Bool, F64, I32, Scalar, String);
+import testapi/arith(add_i32);
+import testapi/arith(eq_i32);
+import testapi/fmt(f64_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/loader_allocator_hygiene(loader_allocator_hygiene_report);
+import testapi/scalar(scalar_as_i32, scalar_of_i32);
+import testapi/text(string_concat);
+import testapi/text(string_eq);
+import value(Value, value_to_scalar, vhost);
+
+// Dynamic-loading worked example — NOT a drop-in library.
+//
+// Its subject is a language mechanism demonstrated end to end: loading a
+// pre-compiled package from its emitted Kio' image and running it through
+// a Kio-written interpreter. A host that links `dyn_load_prime` loads a
+// guest package — the tree `kio build`'s `kio-prime` target writes: one
+// Kio' text file per module (host modules included) plus the `.pkg.kio`
+// manifest — and calls its exported items through the record surface.
+//
+// `guest_image` is the **verbatim** emitted tree for a thirteen-export,
+// one-newtype guest, concatenated. `load_package` (`scan.kio`) lexes it, scans
+// its module-level grammar, resolves the bodies against the manifest's
+// bridge surface, and `instantiate_default` binds every top-level value
+// once and packs the operations behind the existential `Loaded`. The demo
+// then opens the existential and drives every operation family: i32,
+// string, float, and bool marshalling, a zero-parameter export
+// (`unit_in`), a product-returning export (`pair_out`), a sum-returning
+// export (`sum_is_left` / `sum_payload`), the guest newtype's exported
+// constructor and projector (member exports, looked up bare and
+// module-qualified), the export listing, a typed contract match and two
+// mismatches, and a deliberately ill-shaped call whose stuck reason
+// names the offending host fn.
+
+// The guest package's emitted Kio' image, verbatim — the text `kio build
+// kio-prime` writes, every module plus the manifest. Adjacent string
+// literals fold into one (`specs/grammar.md` § Lexical structure), so the
+// image reads line-for-line as emitted.
+fn guest_image() -> String {
+  "/// A worked-example guest package: greeting, cross-fn arithmetic, a "
+  "polymorphic id, multi-param sums, branching, floats, products, sums, and "
+  "an exported newtype.\nmodule guest;\n\nimport __intrinsics__;\n\nimport "
+  "hostapi(Bool, F64, I32, String);\nimport hostapi(add_i32, div_i32, "
+  "leq_i32, mod_i32, mul_f64, string_concat);\n\n/// A tagged value: the "
+  "newtype and both members are `pub` in a\n/// bridge-matched module, so "
+  "the constructor and projector are loadable\n/// entries (a member-export "
+  "demo).\npub newtype Tag[A] : A { pub constructor mk_tag; pub projector "
+  "un_tag; };\n\n/// Greets by name.\npub fn greet(name: String) -> String { "
+  "string_concat(\"Hello, \"(String), name) }\n\n/// Doubles an integer.\npub fn "
+  "double(x: I32) -> I32 { add_i32(x, x) }\n\n/// Quadruples via a cross-fn "
+  "call.\npub fn quad(x: I32) -> I32 { double(double(x)) }\n\n/// The "
+  "polymorphic identity.\npub fn id_poly[A](x: A) -> A { x }\n\n/// Applies "
+  "the polymorphic identity at I32.\npub fn use_poly(n: I32) -> I32 { "
+  "id_poly(I32, n) }\n\n/// Sums three integers (a multi-value-param export, "
+  "N=3).\npub fn add3(a: I32, b: I32, c: I32) -> I32 { add_i32(add_i32(a, "
+  "b), c) }\n\n/// Calls the multi-param add3 (a cross-fn multi-arg call).\n"
+  "pub fn use_add3(x: I32) -> I32 { add3(x, x, x) }\n\n/// Picks x when b, "
+  "else y.\npub fn pick(b: Bool, x: I32, y: I32) -> I32 { "
+  "__if_then_else__(I32, b, .() { x }, .() { y }) }\n\n/// The default gain "
+  "(a zero-parameter float export).\npub fn default_gain() -> F64 { "
+  "1.5e-1(F64) }\n\n/// Scales a float measurement.\npub fn scale(x: F64) -> "
+  "F64 { mul_f64(x, 2.5(F64)) }\n\n/// Splits a division into quotient and "
+  "remainder (a product export).\npub fn divmod(a: I32, b: I32) -> I32 & I32 "
+  "{ __pair__(I32, I32, div_i32(a, b), mod_i32(a, b)) }\n\n/// Small numbers "
+  "by name, larger ones numerically (a sum export).\npub fn classify(n: I32) "
+  "-> String | I32 {\n  __if_then_else__(\n    , String | I32\n    , "
+  "leq_i32(n, 9(I32))\n    , .() { __left__(String, I32, \"small\"(String)) }\n    "
+  ", .() { __right__(String, I32, n) }\n    )\n}\n\n/// Applies a host-supplied "
+  "function (a higher-order export).\npub fn apply_cb(f: I32 -> I32, x: I32) "
+  "-> I32 { f(x) }\n\npackage guest_pkg;\n\nbuild {\n  cache \"out/.kio-cache/\";\n\n  "
+  "target kio-prime {\n    out \"out/kio-prime\";\n  }\n}\n\nbridge {\n  guest;\n  "
+  "hostapi;\n}\n\nmodule hostapi;\n\nhost type Bool role(bool);\n\nhost type F64 "
+  "role(f64);\n\nhost type I32 role(i32);\n\nhost type String role(str);\n\nfn "
+  "scope_before(p0: I32) -> I32 { p0 }\n\nhost fn add_i32(p0: I32, p1: I32) "
+  "-> I32;\n\nfn scope_after(p0: I32, p1: I32) -> I32 { add_i32(p0, p1) }\n\n"
+  "host fn div_i32(p0: I32, p1: I32) -> I32;\n\nhost fn mod_i32(p0: I32, p1: "
+  "I32) -> I32;\n\nhost fn leq_i32(p0: I32, p1: I32) -> Bool;\n\nhost fn "
+  "mul_f64(p0: F64, p1: F64) -> F64;\n\nhost fn string_concat(p0: String, p1: "
+  "String) -> String;\n"(String)
+}
+
+// =====================================================================
+// Calling exports through the record surface
+// =====================================================================
+//
+// Each helper takes the whole `Surface(P)` record and reads just the
+// operations it needs by field name (`surf.?{lookup}` …); nothing is
+// positional, so widening the surface never touches a consumer.
+
+// Look up an export and apply it to one marshalled argument, projecting
+// the result through `out`; any diagnostic renders as its message.
+fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> String {
+  match! surf.?{lookup}(name) {
+    (
+      , .(g: P) {
+          match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+            (
+              , .(r: P) {
+                  match! surf.?{i32_out}(r) {
+                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+fn run_greet[P](surf: Surface(P), who: String) -> String {
+  match! surf.?{lookup}("greet"(String)) {
+    (
+      , .(g: P) {
+          match! surf.?{apply}((g, surf.?{str_in}(who))) {
+            (
+              , .(r: P) {
+                  match! surf.?{str_out}(r) {
+                    (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// A deliberately ill-shaped call — a host-string export applied to an
+// i32 — whose failure names the offending host fn and expected shape.
+fn run_greet_wrong[P](surf: Surface(P)) -> String {
+  match! surf.?{lookup}("greet"(String)) {
+    (
+      , .(g: P) {
+          match! surf.?{apply}((g, surf.?{i32_in}(3(I32)))) {
+            (.(_r: P) { "unexpectedly succeeded"(String) }, .(d: Diag) { diag_message(d) })
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// The multi-value-param export `add3` called directly: its product domain
+// `(I32 & (I32 & I32))` is folded with `pair_in`.
+fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
+  match! surf.?{lookup}("add3"(String)) {
+    (
+      , .(g: P) {
+          let arg =
+            surf.?{pair_in}((
+              , surf.?{i32_in}(a)
+              , surf.?{pair_in}((surf.?{i32_in}(b), surf.?{i32_in}(c)))
+              ));
+          match! surf.?{apply}((g, arg)) {
+            (
+              , .(r: P) {
+                  match! surf.?{i32_out}(r) {
+                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// The branching export over both arms: bool marshalling in.
+fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
+  match! surf.?{lookup}("pick"(String)) {
+    (
+      , .(g: P) {
+          let arg =
+            surf.?{pair_in}((
+              , surf.?{bool_in}(b)
+              , surf.?{pair_in}((surf.?{i32_in}(x), surf.?{i32_in}(y)))
+              ));
+          match! surf.?{apply}((g, arg)) {
+            (
+              , .(r: P) {
+                  match! surf.?{i32_out}(r) {
+                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// A zero-parameter float export (`unit_in`), scaled by a second float
+// export (`f64_in` / `f64_out` marshalling).
+fn run_scaled_gain[P](surf: Surface(P)) -> String {
+  match! surf.?{lookup}("default_gain"(String)) {
+    (
+      , .(gain_fn: P) {
+          match! surf.?{apply}((gain_fn, surf.?{unit_in})) {
+            (
+              , .(gain: P) {
+                  match! surf.?{lookup}("scale"(String)) {
+                    (
+                      , .(scale_fn: P) {
+                          match! surf.?{apply}((scale_fn, gain)) {
+                            (
+                              , .(r: P) {
+                                  match! surf.?{f64_out}(r) {
+                                    (.(x: F64) { f64_to_string(x) }, .(d: Diag) { diag_message(d) })
+                                  }
+                                }
+                              , .(d: Diag) { diag_message(d) }
+                              )
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// A product-returning export decomposed with `pair_out`.
+fn run_divmod[P](surf: Surface(P), a: I32, b: I32) -> String {
+  match! surf.?{lookup}("divmod"(String)) {
+    (
+      , .(g: P) {
+          let arg = surf.?{pair_in}((surf.?{i32_in}(a), surf.?{i32_in}(b)));
+          match! surf.?{apply}((g, arg)) {
+            (
+              , .(r: P) {
+                  match! surf.?{pair_out}(r) {
+                    (
+                      , .(parts: P & P) {
+                          match! parts {
+                            .(q: P, m: P) {
+                              match! surf.?{i32_out}(q) {
+                                (
+                                  , .(qn: I32) {
+                                      match! surf.?{i32_out}(m) {
+                                        (
+                                          , .(mn: I32) {
+                                              string_concat(
+                                                , int_to_string(qn)
+                                                , string_concat(" r "(String), int_to_string(mn))
+                                                )
+                                            }
+                                          , .(d: Diag) { diag_message(d) }
+                                          )
+                                      }
+                                    }
+                                  , .(d: Diag) { diag_message(d) }
+                                  )
+                              }
+                            }
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// A sum-returning export consumed with `sum_is_left` / `sum_payload`.
+fn run_classify[P](surf: Surface(P), n: I32) -> String {
+  match! surf.?{lookup}("classify"(String)) {
+    (
+      , .(g: P) {
+          match! surf.?{apply}((g, surf.?{i32_in}(n))) {
+            (
+              , .(r: P) {
+                  match! surf.?{sum_is_left}(r) {
+                    (
+                      , .(is_left: Bool) {
+                          match! surf.?{sum_payload}(r) {
+                            (
+                              , .(payload: P) {
+                                  if! is_left {
+                                    match! surf.?{str_out}(payload) {
+                                      (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+                                    }
+                                  } else match! surf.?{i32_out}(payload) {
+                                    (.(m: I32) { int_to_string(m) }, .(d: Diag) { diag_message(d) })
+                                  }
+                                }
+                              , .(d: Diag) { diag_message(d) }
+                              )
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// Render the surface's export listing, one `name : signature` line each.
+fn render_exports[P](surf: Surface(P)) -> String {
+  loop(
+    , .(st: Export_infos & String) {
+        match! st {
+          .(rem: Export_infos, acc: String) {
+            match! un_export_infos(rem) {
+              (
+                , .(e: Export_info, rest: Export_infos) {
+                    let line =
+                      string_concat(
+                        , "  "(String)
+                        , string_concat(
+                            , export_info_name(e)
+                            , string_concat(
+                                , " : "(String)
+                                , string_concat(export_info_sig(e), "\n"(String))
+                                )
+                            )
+                        );
+                    widen_sum!((rest, string_concat(acc, line)), (Export_infos & String) | String)
+                  }
+                , .(_e: .) { widen_sum!(acc, (Export_infos & String) | String) }
+                )
+            }
+          }
+        }
+      }
+    , (surf.?{exports}, ""(String))
+    )
+}
+
+// The guest newtype's members are loadable entries: `Tag.mk_tag` (the
+// bare spelling) tags the payload and `guest.Tag.un_tag` (the
+// module-qualified spelling) projects it back; both erase to the
+// identity, so the i32 rides through unchanged.
+fn run_tag_roundtrip[P](surf: Surface(P), x: I32) -> String {
+  match! surf.?{lookup}("Tag.mk_tag"(String)) {
+    (
+      , .(mk: P) {
+          match! surf.?{apply}((mk, surf.?{i32_in}(x))) {
+            (
+              , .(tagged: P) {
+                  match! surf.?{lookup}("guest.Tag.un_tag"(String)) {
+                    (
+                      , .(un: P) {
+                          match! surf.?{apply}((un, tagged)) {
+                            (
+                              , .(r: P) {
+                                  match! surf.?{i32_out}(r) {
+                                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                                  }
+                                }
+                              , .(d: Diag) { diag_message(d) }
+                              )
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+// One flow per report line, selected by index (the existential opens once
+// per call; the flows share the record-surface helpers above).
+fn dispatch_flow[P](surf: Surface(P), arg: I32, which: I32) -> String {
+  if! eq_i32(which, 0(I32)) {
+    run_greet(surf, "World"(String))
+  } else if! eq_i32(which, 1(I32)) {
+    run_i32(surf, "quad"(String), arg)
+  } else if! eq_i32(which, 2(I32)) {
+    run_i32(surf, "use_poly"(String), arg)
+  } else if! eq_i32(which, 3(I32)) {
+    run_i32(surf, "use_add3"(String), arg)
+  } else if! eq_i32(which, 4(I32)) {
+    run_add3(surf, 3(I32), 4(I32), 5(I32))
+  } else if! eq_i32(which, 5(I32)) {
+    run_pick(surf, .t(Bool), 7(I32), 9(I32))
+  } else if! eq_i32(which, 6(I32)) {
+    run_pick(surf, .f(Bool), 7(I32), 9(I32))
+  } else if! eq_i32(which, 7(I32)) {
+    run_scaled_gain(surf)
+  } else if! eq_i32(which, 8(I32)) {
+    run_divmod(surf, 17(I32), 5(I32))
+  } else if! eq_i32(which, 9(I32)) {
+    run_classify(surf, 4(I32))
+  } else if! eq_i32(which, 10(I32)) {
+    run_classify(surf, 42(I32))
+  } else if! eq_i32(which, 11(I32)) {
+    run_greet_wrong(surf)
+  } else if! eq_i32(which, 12(I32)) {
+    run_tag_roundtrip(surf, arg)
+  } else {
+    render_exports(surf)
+  }
+}
+
+// =====================================================================
+// Opening the instantiated existential
+// =====================================================================
+fn with_surface(handle: Loaded, arg: I32, which: I32) -> String {
+  Loaded.get(handle)(.[P](surf: Surface(P)) { dispatch_flow(surf, arg, which) })
+}
+
+// =====================================================================
+// Contracts the host states against the loaded image
+// =====================================================================
+//
+// A matching contract copies the exact canonical signatures advertised by
+// `image_exports`. Member exports are stated like any other entry —
+// `Tag.mk_tag` bare, `guest.Tag.un_tag` qualified. The mismatch contracts name
+// an absent export and a wrong canonical signature.
+fn good_contract() -> Contract {
+  contract_cons(
+    , mk_expect("greet"(String), "(h{hostapi.String}) -> h{hostapi.String}"(String))
+    , contract_cons(
+        , mk_expect("quad"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+        , contract_cons(
+            , mk_expect("use_poly"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+            , contract_cons(
+                , mk_expect(
+                    , "add3"(String)
+                    , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
+                    )
+                , contract_cons(
+                    , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
+                    , contract_cons(
+                        , mk_expect(
+                            , "guest.Tag.un_tag"(String)
+                            , "[#0] (n{guest.Tag}(#0)) -> #0"(String)
+                            )
+                        , contract_nil()
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn missing_contract() -> Contract {
+  contract_cons(
+    , mk_expect("triple"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+    , contract_nil()
+    )
+}
+
+fn signature_contract() -> Contract {
+  contract_cons(
+    , mk_expect("add3"(String), "(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}"(String))
+    , contract_nil()
+    )
+}
+
+// =====================================================================
+// The flows — call and contract-match a resolved image
+// =====================================================================
+// The host's own callback: double an i32 guest value, or report the
+// shape it wanted.
+fn host_double(dom: Value) -> Call_result {
+  match! value_to_scalar(dom) {
+    (
+      , .(s: Scalar) {
+          match! scalar_as_i32(s) {
+            (
+              , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
+              , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
+              )
+          }
+        }
+      , .(_no: .) { call_stuck("host_double expected a scalar"(String)) }
+      )
+  }
+}
+
+// This host's callback descriptor, advertised in the adapter inventory and
+// implemented by the `call` capability passed to `instantiate`.
+fn host_double_descriptor() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/main"(String), "host_double"(String))
+    , "(h{hostapi.I32}) -> h{hostapi.I32}"(String)
+    )
+}
+
+fn adapter_with_callbacks() -> Host_adapter {
+  let standard = default_host_adapter();
+  mk_host_adapter(
+    , host_adapter_types(standard)
+    , host_fn_bindings_cons(
+        , mk_host_fn_binding(host_double_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
+        , host_adapter_functions(standard)
+        )
+    )
+}
+
+fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
+  match! call {
+    .(descriptor: Host_fn, dom: Value) {
+      if! host_fn_eq(descriptor, host_double_descriptor()) {
+        host_double(dom)
+      } else {
+        serve_default(descriptor, dom)
+      }
+    }
+  }
+}
+
+// Mint the callback handle with `hostfn_in` and pass it into the
+// higher-order export.
+fn run_apply_cb[P](surf: Surface(P), x: I32) -> String {
+  match! surf.?{hostfn_in}(host_double_descriptor()) {
+    (
+      , .(cb: P) {
+          match! surf.?{lookup}("apply_cb"(String)) {
+            (
+              , .(f: P) {
+                  match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
+                    (
+                      , .(r: P) {
+                          match! surf.?{i32_out}(r) {
+                            (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                          }
+                        }
+                      , .(d: Diag) { diag_message(d) }
+                      )
+                  }
+                }
+              , .(d: Diag) { diag_message(d) }
+              )
+          }
+        }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
+
+// Run the selected flow through the prepared default instance; an
+// instantiation failure renders as its diagnostic.
+fn flow(loaded: Loaded | Diag, arg: I32, which: I32) -> String {
+  match! un_inst(loaded) {
+    (.(handle: Loaded) { with_surface(handle, arg, which) }, .(d: Diag) { diag_message(d) })
+  }
+}
+
+fn un_check(r: . | Diag) -> . | Diag { r }
+
+// Contract-match the resolved image against `c`.
+fn loaded_contract(image: Image, c: Contract) -> String {
+  match! un_check(contract_check(image, c)) {
+    (.(d: Diag) { diag_message(d) }, .(_ok: .) { "ok"(String) })
+  }
+}
+
+// Contract-match and on a match call an export through the gated handle —
+// `instantiate_checked_default`, the contract-gated pack.
+fn checked_quad(image: Image, arg: I32) -> String {
+  match! un_inst(instantiate_checked_default(image, good_contract())) {
+    (.(handle: Loaded) { with_surface(handle, arg, 1(I32)) }, .(d: Diag) { diag_message(d) })
+  }
+}
+
+fn line(label: String, body: String) -> String {
+  string_concat(label, string_concat(body, "\n"(String)))
+}
+
+/// Instantiates the resolved image with the callback-advertising adapter and
+/// matching `call` capability, then drives the higher-order callback export
+/// with the minted handle.
+fn callback_demo(image: Image, x: I32) -> String {
+  match! un_inst(instantiate(
+    , adapter_with_callbacks()
+    , serve_with_callbacks
+    , make_lit_default
+    , test_bool_default
+    , image
+    )) {
+    (
+      , .(handle: Loaded) { Loaded.get(handle)(.[P](surf: Surface(P)) { run_apply_cb(surf, x) }) }
+      , .(d: Diag) { diag_message(d) }
+      )
+  }
+}
+
+fn run_image(image: Image) -> . {
+  let default_loaded = instantiate_default(image);
+  print(line(""(String), flow(default_loaded, 0(I32), 0(I32))));
+  print(line("quad(5) = "(String), flow(default_loaded, 5(I32), 1(I32))));
+  print(line("use_poly(42) = "(String), flow(default_loaded, 42(I32), 2(I32))));
+  print(line("use_add3(10) = "(String), flow(default_loaded, 10(I32), 3(I32))));
+  print(line("add3(3, 4, 5) = "(String), flow(default_loaded, 0(I32), 4(I32))));
+  print(line("pick(.t, 7, 9) = "(String), flow(default_loaded, 0(I32), 5(I32))));
+  print(line("pick(.f, 7, 9) = "(String), flow(default_loaded, 0(I32), 6(I32))));
+  print(line("scale(default_gain()) = "(String), flow(default_loaded, 0(I32), 7(I32))));
+  print(line("divmod(17, 5) = "(String), flow(default_loaded, 0(I32), 8(I32))));
+  print(line("classify(4) = "(String), flow(default_loaded, 0(I32), 9(I32))));
+  print(line("classify(42) = "(String), flow(default_loaded, 0(I32), 10(I32))));
+  print(line("greet(3) = "(String), flow(default_loaded, 0(I32), 11(I32))));
+  print(line("apply_cb(host_double, 21) = "(String), callback_demo(image, 21(I32))));
+  print(line("un_tag(mk_tag(11)) = "(String), flow(default_loaded, 11(I32), 12(I32))));
+  print(string_concat(
+    , "exports:"(String)
+    , string_concat("\n"(String), flow(default_loaded, 0(I32), 13(I32)))
+    ));
+  print(line("contract (match) = "(String), loaded_contract(image, good_contract())));
+  print(line("contract (missing export) = "(String), loaded_contract(image, missing_contract())));
+  print(line("contract (signature) = "(String), loaded_contract(image, signature_contract())));
+  print(line("checked quad(5) = "(String), checked_quad(image, 5(I32))))
+}
+
+/// operation family: the marshalled export calls, the export listing, the
+/// contract outcomes, a contract-gated call, and a stuck call's reason.
+pub fn main() -> . {
+  print(loader_allocator_hygiene_report());
+  match! un_load_outcome(load_package(guest_image())) {
+    (
+      , .(im: Lr_image) { run_image(Lr_image.get(im)) }
+      , .(d: Lr_diag) { print(diag_message(Lr_diag.get(d))) }
+      )
+  }
+}

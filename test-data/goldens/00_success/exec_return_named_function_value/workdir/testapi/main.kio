@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(Bool, String);
+import testapi/fmt(bool_to_string);
+import testapi/io(print);
+
+newtype Boolbox : Bool { pub constructor mk_boolbox; pub projector un_boolbox }
+
+fn box_bool(value: Bool) -> Boolbox { Boolbox.mk_boolbox(value) }
+
+fn make_boxer() -> Bool -> Boolbox { box_bool }
+
+pub fn main() -> . {
+  let boxed = make_boxer()(.t);
+  print(bool_to_string(Boolbox.un_boolbox(boxed)));
+  print("\n"(String))
+}

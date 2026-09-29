@@ -1,0 +1,5 @@
+dependency mathlib;
+
+source {
+  path "../library/mathlib/mathlib.pkg.kio"
+}

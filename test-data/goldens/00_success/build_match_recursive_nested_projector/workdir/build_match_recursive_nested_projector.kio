@@ -1,0 +1,5 @@
+module build_match_recursive_nested_projector;
+
+host type Bool role(bool);
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;

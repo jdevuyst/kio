@@ -1,0 +1,5 @@
+module packet_checksum_classifier/source;
+
+import testapi(String);
+
+pub fn frames() -> String { "PKT:A17:08\nPKT:B04:03\nPKT:C99:12\nERR:X00:00\n" }

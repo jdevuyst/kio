@@ -1,0 +1,15 @@
+package bridge_glob_bare_type_name;
+
+build {
+  target js {
+    out "out/js/";
+  };
+
+  target ts {
+    out "out/ts/";
+  }
+}
+
+bridge {
+  Widget;
+}

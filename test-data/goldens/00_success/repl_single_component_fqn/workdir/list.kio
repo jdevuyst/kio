@@ -1,0 +1,4 @@
+module list;
+
+/// Root item.
+pub pure fn item(value: .) -> . { value }

@@ -1,0 +1,41 @@
+package pure_elaborator_nested_compile_time_impurity;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  };
+
+  target python {
+    out "out/python/"
+  };
+
+  target java {
+    out "out/java/"
+  };
+
+  target rust {
+    out "out/rust/"
+  };
+
+  target go {
+    out "out/go/"
+  };
+
+  target swift {
+    out "out/swift/"
+  };
+
+  target haskell {
+    out "out/haskell/"
+  }
+}
+
+bridge {
+  **
+}

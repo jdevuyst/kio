@@ -1,0 +1,31 @@
+module calendar_blackout_planner/report;
+
+import calendar_blackout_planner/model(Window, {name}, {support_load});
+import calendar_blackout_planner/scoring as scoring;
+import testapi(String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+fn cat2(a: String, b: String) -> String { text.string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+pub fn window_line(window: Window) -> String {
+  cat3(
+    , window.?{name}
+    , cat3(" score=", fmt.int_to_string(scoring.score(window)), " status=")
+    , cat3(scoring.status(window), "", "\n")
+    )
+}
+
+pub fn winner_line(window: Window) -> String {
+  cat3(
+    , "winner="
+    , window.?{name}
+    , cat3(
+        , " score="
+        , fmt.int_to_string(scoring.score(window))
+        , cat3(" support-load=", fmt.int_to_string(window.?{support_load}), "\n")
+        )
+    )
+}

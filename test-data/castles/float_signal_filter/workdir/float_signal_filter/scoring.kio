@@ -1,0 +1,45 @@
+module float_signal_filter/scoring;
+
+import testapi(F64);
+import testapi/arith(add_f64, mul_f64, sub_f64);
+
+fn square(value: F64) -> F64 { mul_f64(value, value) }
+
+fn residual(raw: F64, smoothed: F64) -> F64 { sub_f64(raw, smoothed) }
+
+fn sum5(a: F64, b: F64, c: F64, d: F64, e: F64) -> F64 {
+  add_f64(add_f64(add_f64(add_f64(a, b), c), d), e)
+}
+
+fn weighted_level(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) -> F64 {
+  sum5(
+    , mul_f64(s0, 0.125(F64))
+    , mul_f64(s1, 0.25(F64))
+    , mul_f64(s2, 0.25(F64))
+    , mul_f64(s3, 0.25(F64))
+    , mul_f64(s4, 0.125(F64))
+    )
+}
+
+fn roughness(raw: F64 & F64 & F64 & F64 & F64, smoothed: F64 & F64 & F64 & F64 & F64) -> F64 {
+  let .(r0: F64, r1: F64, r2: F64, r3: F64, r4: F64) = raw;
+  let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = smoothed;
+  sum5(
+    , square(residual(r0, s0))
+    , square(residual(r1, s1))
+    , square(residual(r2, s2))
+    , square(residual(r3, s3))
+    , square(residual(r4, s4))
+    )
+}
+
+pub fn score_report(calibrated: F64 & F64 & F64 & F64 & F64, smoothed: F64 & F64 & F64 & F64 & F64) ->
+  F64 & F64 & F64 & F64
+   {
+  let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = smoothed;
+  let level = weighted_level(s0, s1, s2, s3, s4);
+  let rough = roughness(calibrated, smoothed);
+  let trend = sub_f64(s4, s0);
+  let score = sub_f64(sub_f64(100.0(F64), mul_f64(rough, 32.0(F64))), mul_f64(trend, 1.5(F64)));
+  (level, rough, trend, score)
+}

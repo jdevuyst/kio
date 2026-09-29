@@ -1,0 +1,32 @@
+module unitp/m;
+
+import unitp(mk);
+
+fn wrap(x: .) -> . { x }
+
+fn thunk() -> . { () }
+
+equiv fn_applied_to_unit_param(x: .) {
+  wrap(x);
+  x
+}
+
+equiv lambda_applied_to_unit_param(x: .) {
+  .(y: .) { y }(x);
+  x
+}
+
+equiv fn_applied_to_stuck_unit() {
+  wrap(mk());
+  mk()
+}
+
+equiv nullary_applied_to_unit_param(x: .) {
+  thunk(x);
+  ()
+}
+
+equiv nullary_applied_to_stuck_unit() {
+  thunk(mk());
+  ()
+}

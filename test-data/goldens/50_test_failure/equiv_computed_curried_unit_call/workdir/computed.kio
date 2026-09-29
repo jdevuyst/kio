@@ -1,0 +1,17 @@
+module computed;
+
+host type T;
+
+fn getf(k: T) -> . -> T -> T { .(u: .)(b: T) -> T { b } }
+
+fn f2(u: .)(v: .)(b: T) -> T { b }
+
+equiv computed_unit_call(k: T, y: T) {
+  getf(k)()(y);
+  y
+}
+
+equiv following_group_stays_distinct(y: T, z: T) {
+  f2()()(y);
+  f2()()(z)
+}

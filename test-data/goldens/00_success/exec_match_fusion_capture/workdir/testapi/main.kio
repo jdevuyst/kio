@@ -1,0 +1,30 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// A case-of-case (sum-elimination of a sum-elimination result). The
+// outer left arm `.(p) { x }` references the fn parameter `x`, whose
+// name collides with the inner left arm's payload binder `.(x:
+// String)`. `optimize`'s `match_fusion` pushes the outer arms into each
+// inner arm; fusing without capture-avoidance would re-bind this `x` to
+// the inner payload, returning the `s`-derived value instead of the fn
+// parameter. The fix bails on this collision.
+fn pick(s: String | String, x: String) -> String {
+  __either__(
+    , __either__(
+        , String
+        , String
+        , String | String
+        , s
+        , .(x: String) -> String | String { __left__(String, String, x) }
+        , .(y: String) -> String | String { __right__(String, String, y) }
+        )
+    , .(p: String) -> String { x }
+    , .(q: String) -> String { q }
+    )
+}
+
+pub fn main() -> . { print(pick(__left__(String, String, "from_s\n"(String)), "from_x\n"(String))) }

@@ -1,0 +1,2 @@
+error: (this is applied like a function, but its type is `\.`|too many arguments in this call)
+fn caller\(a: A, b: B\) -> \. \{ f\(a, b\) \}

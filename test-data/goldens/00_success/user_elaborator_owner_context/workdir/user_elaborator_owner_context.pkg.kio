@@ -1,0 +1,21 @@
+package user_elaborator_owner_context;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  user_elaborator_owner_context;
+  user_elaborator_owner_context/**;
+  elaborator_owner_b;
+  elaborator_owner_c;
+  elaborators
+}

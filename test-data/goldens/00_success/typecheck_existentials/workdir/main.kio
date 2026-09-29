@@ -1,0 +1,7 @@
+module main;
+
+import __intrinsics__;
+
+newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack }
+
+fn make_pack[A][U](x: A, y: U) -> Pack(A) { Pack.mk_pack(A, U, __pair__(A, U, x, y)) }

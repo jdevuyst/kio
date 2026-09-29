@@ -1,0 +1,14 @@
+module type_alias/main;
+
+import type_alias(I32);
+
+// Type aliases name structural type expressions. Both the monomorphic
+// `Small` and the parametric `Pair` are unfolded structurally by the
+// typer.
+type Small = I32;
+
+type Pair[A][B] = A & B;
+
+fn id_int(x: Small) -> Small { x }
+
+fn id_pair(p: Pair(I32, I32)) -> Pair(I32, I32) { p }

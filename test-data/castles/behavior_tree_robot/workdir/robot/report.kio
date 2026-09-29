@@ -1,0 +1,90 @@
+module robot/report;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import list/list as traversal;
+import robot/engine as engine;
+import robot/memory as memory;
+import robot/model as model;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+rec(loop) fn events(messages: lists.List(String)) -> . {
+  match! lists.uncons(messages) {
+    .(message: String, tail: lists.List(String)) {
+      io.print(text.string_concat("  ", text.string_concat(message, "\n")));
+      rec events(tail)
+    };
+    .() { () }
+  }
+}
+
+pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) -> . {
+  let hazard =
+    if! world.?{model.hazard} {
+      "hazard"
+    } else {
+      "clear"
+    };
+  let door =
+    if! world.?{model.blocked} {
+      "blocked"
+    } else {
+      "open"
+    };
+  io.print(text.string_concat(
+    , "tick "
+    , text.string_concat(
+        , fmt.int_to_string(number)
+        , text.string_concat(
+            , " "
+            , text.string_concat(
+                , hazard
+                , text.string_concat(
+                    , "/"
+                    , text.string_concat(
+                        , door
+                        , text.string_concat(
+                            , " -> "
+                            , text.string_concat(engine.status_name(result), "\n")
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    ));
+  events(traversal.reverse(state.?{memory.events}))
+}
+
+pub fn summary(ticks: I32, state: memory.State) -> . {
+  io.print(text.string_concat(
+    , "summary ticks="
+    , text.string_concat(
+        , fmt.int_to_string(ticks)
+        , text.string_concat(
+            , " completed-actions="
+            , text.string_concat(
+                , fmt.int_to_string(state.?{memory.completed})
+                , text.string_concat(
+                    , " cancellations="
+                    , text.string_concat(
+                        , fmt.int_to_string(state.?{memory.canceled})
+                        , text.string_concat(
+                            , " work-ticks="
+                            , text.string_concat(
+                                , fmt.int_to_string(state.?{memory.work_ticks})
+                                , "\n"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    ))
+}

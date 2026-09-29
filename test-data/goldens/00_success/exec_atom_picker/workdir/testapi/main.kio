@@ -1,0 +1,37 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(atom, into);
+import testapi(I32, String);
+import testapi/io(print);
+
+// `atom!(e, T)` — pick a single value of type `T` from `e`.
+// Exercises the new semantics:
+//   - product projection (`A & B → A` via target T)
+//   - sum collapse over uniform arms (`A | A → A`)
+//   - cross-arm projection (sum-of-products with common type)
+//   - target inference when the source's DNF pins T uniquely
+
+// Pure product projection: pick the `String` component of a pair.
+fn pick_string(p: String & I32) -> String { atom!(p) }
+
+// Picks the `I32` from the other side of the same pair.
+fn pick_i32(p: String & I32) -> I32 { atom!(p) }
+
+// First-wins for like-typed components: source has two `String`s,
+// `atom!(String)` picks the first by source order.
+fn pick_first_string(p: String & I32 & String) -> String { atom!(p) }
+
+// Cross-arm projection: each arm of the sum carries a `String` as
+// the second component. `atom!(String)` projects per arm and
+// collapses to a single `String`.
+fn pick_common(s: (I32 & String) | (I32 & String)) -> String { atom!(s) }
+
+// Target inference with a uniform sum: target = `String`.
+fn collapse_uniform(s: String | String | String) -> String { atom!(s) }
+
+pub fn main() -> . {
+  print(pick_string(("first\n", 0)));
+  print(pick_first_string(("second\n", 0, "later\n")));
+  print(pick_common(into!((0, "third\n"))));
+  print(collapse_uniform(into!("fourth\n")))
+}

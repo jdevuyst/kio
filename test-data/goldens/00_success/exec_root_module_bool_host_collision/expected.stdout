@@ -1,0 +1,4 @@
+root module yes  = true
+root module no   = false
+host  eq   = true
+host  neq  = false

@@ -1,0 +1,15 @@
+kio repl — the module inspector
+loaded: list
+type `:help` for commands, `:quit` to leave
+pub pure fn item(value: .) -> .
+/// Root item.
+pub pure fn item(value: .) -> . { value }
+Root item.
+
+pub pure fn item(value: .) -> .
+list.item
+references to `item`:
+  list:4:13  in fn item
+list.item : . -> .
+pure
+bye

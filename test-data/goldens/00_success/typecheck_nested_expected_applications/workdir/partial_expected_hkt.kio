@@ -1,0 +1,11 @@
+module partial_expected_hkt;
+
+host type I32 role(i32);
+
+newtype Box[T] : T { pub constructor mk_box; pub projector un_box }
+
+fn identity_app[*F][A](value: F(A)) -> F(A) { value }
+
+fn take[*G][V](_value: V, _wrapped: G(V)) -> . { () }
+
+fn defers_unknown_head() -> . { take(1, identity_app(Box.mk_box(2))) }

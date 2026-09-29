@@ -1,0 +1,38 @@
+module petri/fixture;
+
+import petri/model as model;
+import queue/list/list(varop [* *]);
+import testapi(I32, String);
+
+fn transition(name: String, consumes: model.Marking, produces: model.Marking) -> model.Transition {
+  {model.name, model.consumes, model.produces}
+}
+
+pub fn locking() -> model.Net {
+  // Places: left waiting/holding/done, right waiting/holding/done, lock A/B.
+  let acquire_left =
+    transition("acquire-left", [* 1, 0, 0, 0, 0, 0, 1, 0 *], [* 0, 1, 0, 0, 0, 0, 0, 0 *]);
+  let acquire_right =
+    transition("acquire-right", [* 0, 0, 0, 1, 0, 0, 0, 1 *], [* 0, 0, 0, 0, 1, 0, 0, 0 *]);
+  let finish_left =
+    transition("finish-left", [* 0, 1, 0, 0, 0, 0, 0, 1 *], [* 0, 0, 1, 0, 0, 0, 1, 1 *]);
+  let finish_right =
+    transition("finish-right", [* 0, 0, 0, 0, 1, 0, 1, 0 *], [* 0, 0, 0, 0, 0, 1, 1, 1 *]);
+  {
+    , model.initial = [* 1, 0, 0, 1, 0, 0, 1, 1 *]
+    , model.terminal = [* 0, 0, 1, 0, 0, 1, 1, 1 *]
+    , model.capacity = 1
+    , model.transitions = [* acquire_left, acquire_right, finish_left, finish_right *]
+    }
+}
+
+pub fn overflowing() -> model.Transition {
+  transition("duplicate-lock-a", [* 0, 0, 0, 0, 0, 0, 0, 0 *], [* 0, 0, 0, 0, 0, 0, 1, 0 *])
+}
+
+pub fn already_completed() -> model.Net {
+  let net = locking();
+  net.!{model.initial = net.?{model.terminal}}
+}
+
+pub fn already_stuck() -> model.Net { locking().!{model.initial = [* 0, 1, 0, 0, 1, 0, 0, 0 *]} }

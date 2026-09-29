@@ -1,0 +1,44 @@
+module pid/model;
+
+import testapi(F64);
+
+pub labels Calibration = { offset: F64, scale: F64 };
+
+pub labels Gains = { kp: F64, ki: F64, kd: F64, bias: F64 };
+
+pub labels Memory = { previous_error: F64, accumulated_error: F64 };
+
+pub labels Step = {
+  , measured: F64
+  , error: F64
+  , integral: F64
+  , derivative: F64
+  , proportional: F64
+  , integral_term: F64
+  , derivative_term: F64
+  , command: F64
+  };
+
+pub labels Scenario = {
+  , target: F64
+  , raw_one: F64
+  , raw_two: F64
+  , raw_three: F64
+  , calibration_cfg: Calibration
+  , gains_cfg: Gains
+  , initial_memory: Memory
+  };
+
+pub labels Timeline = { first: Step, second: Step, third: Step };
+
+pub fn scenario() -> Scenario {
+  {
+    , target = 70.0
+    , raw_one = 62.5
+    , raw_two = 66.0
+    , raw_three = 68.4
+    , calibration_cfg = {offset = 0.4, scale = 1.08}
+    , gains_cfg = {kp = 1.25, ki = 0.16, kd = 0.72, bias = 10.0}
+    , initial_memory = {previous_error = 6.5, accumulated_error = 3.0}
+    }
+}

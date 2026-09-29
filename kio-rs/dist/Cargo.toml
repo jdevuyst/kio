@@ -1,0 +1,31 @@
+[package]
+name = "kio"
+version = "0.1.0"
+edition = "2024"
+description = "The kio command — distributable build of the Kio compiler CLI."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jdevuyst/kio"
+# Distribution-only wrapper: dist releases this crate so the shipped
+# archive carries just the `kio` binary, not the internal `kio-prime`
+# tool the `kio-rs` crate also builds. Never published to crates.io —
+# the library/CLI crate `kio-rs` is the crates.io channel.
+publish = false
+
+[[bin]]
+name = "kio"
+path = "src/main.rs"
+
+[dependencies]
+# The compiler crate, built with the `kio` binary's feature set;
+# `prime` is deliberately excluded so the released binary carries no
+# kio-prime code.
+kio-lang = { path = "..", default-features = false, features = ["surface", "cli", "lsp", "repl", "parallel"] }
+
+[package.metadata.dist]
+# Release this crate even though it is publish = false.
+dist = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

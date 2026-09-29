@@ -1,0 +1,194 @@
+module testapi/main;
+
+import library/dict(
+  , Dict
+  , Flag
+  , Ordering
+  , bool_select
+  , delete
+  , eq
+  , filter
+  , fold_asc
+  , get
+  , get_or
+  , gt
+  , insert
+  , intersection
+  , lt
+  , map_values
+  , member
+  , no
+  , op _ => _
+  , size
+  , union
+  , varop [% %]
+  , yes
+  );
+import library/elab/control(if);
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add, eq_i32, lt_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn host_bool(b: Bool) -> Flag {
+  if! b {
+    yes()
+  } else {
+    no()
+  }
+}
+
+fn cmp_i32(pair: I32 & I32) -> Ordering {
+  match! pair {
+    .(a: I32, b: I32) {
+      bool_select(lt(), bool_select(eq(), gt(), host_bool(eq_i32(a, b))), host_bool(lt_i32(a, b)))
+    }
+  }
+}
+
+// A distinct ordinary function implementing the same lawful order.
+fn cmp_i32_equivalent(pair: I32 & I32) -> Ordering { cmp_i32(pair) }
+
+fn cmp_i32_desc(pair: I32 & I32) -> Ordering {
+  match! pair {
+    .(a: I32, b: I32) { cmp_i32((b, a)) }
+  }
+}
+
+fn gt_flag(a: I32, b: I32) -> Flag { host_bool(lt_i32(b, a)) }
+
+fn op_get(d: Dict(I32, I32), k: I32) -> I32 | . { get(cmp_i32, d, k) }
+
+fn op_insert(d: Dict(I32, I32), kv: I32 & I32) -> Dict(I32, I32) {
+  match! kv {
+    .(key: I32, value: I32) { insert(cmp_i32, d, key, value) }
+  }
+}
+
+fn op_delete(d: Dict(I32, I32), k: I32) -> Dict(I32, I32) { delete(cmp_i32, d, k) }
+
+fn op_union(d1: Dict(I32, I32), d2: Dict(I32, I32)) -> Dict(I32, I32) { union(cmp_i32, d1, d2) }
+
+op _ <| __ |> { impl op_get }
+
+op _ +> _ { impl op_insert }
+
+op _ -< _ { impl op_delete }
+
+op _ |+| _ { impl op_union }
+
+fn show(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+}
+
+fn show_lookup(label: String, result: I32 | .) -> . {
+  show(
+    , label
+    , match! result {
+        (
+          , .(n: I32) -> String { string_concat("present(", string_concat(int_to_string(n), ")")) }
+          , .(_absent: .) -> String { "absent" }
+          )
+      }
+    )
+}
+
+fn show_entries(label: String, d: Dict(I32, I32)) -> . {
+  let folded =
+    fold_asc(
+      , d
+      , (yes(), "")
+      , .(acc: Flag & String, key: I32, value: I32) -> Flag & String {
+          match! acc {
+            .(first: Flag, body: String) {
+              let entry =
+                string_concat(int_to_string(key), string_concat("=", int_to_string(value)));
+              bool_select(
+                , (no(), entry)
+                , (no(), string_concat(body, string_concat(", ", entry)))
+                , first
+                )
+            }
+          }
+        }
+      );
+  match! folded {
+    .(_first: Flag, body: String) { show(label, string_concat("[", string_concat(body, "]"))) }
+  }
+}
+
+fn show_int(label: String, n: I32) -> . { show(label, int_to_string(n)) }
+
+fn empty_literal() -> Dict(I32, I32) { [% %](cmp_i32) }
+
+fn unit_dictionary() -> Dict(I32, .) { [% 1 => () %](cmp_i32) }
+
+fn show_lookup_value[A](label: String, result: A | ., format_present: A -> String) -> . {
+  show(
+    , label
+    , match! result {
+        (.(value: A) { format_present(value) }, .(_absent: .) { "absent" })
+      }
+    )
+}
+
+fn show_unit_lookup(label: String, result: . | .) -> . {
+  show_lookup_value(label, result, .(_unit: .) { "present-unit" })
+}
+
+fn sum_dictionary() -> Dict(I32, I32 | .) {
+  [% 1 => widen_sum!(7, I32 | .), 2 => widen_sum!((), I32 | .) %](cmp_i32)
+}
+
+fn show_sum_lookup(label: String, result: (I32 | .) | .) -> . {
+  show_lookup_value(
+    , label
+    , result
+    , .(present: I32 | .) {
+        match! present {
+          (
+            , .(n: I32) { string_concat("present-number(", string_concat(int_to_string(n), ")")) }
+            , .(_unit: .) { "present-unit" }
+            )
+        }
+      }
+    )
+}
+
+pub fn main() -> . {
+  let d = [% 5 => 50, 2 => 20, 8 => 80, 1 => 10, 9 => 90 %](cmp_i32);
+  show_entries("literal |> fold_asc", d);
+  show_int("size", size(d));
+  show_lookup("get(d, 8)", get(cmp_i32, d, 8));
+  show_lookup("get(d, 4)", get(cmp_i32, d, 4));
+  show("member(d, 2)", bool_to_string(bool_select(.t, .f, member(cmp_i32, d, 2))));
+  show_int("get_or(d, 4, 0)", get_or(cmp_i32, d, 4, 0));
+  show_entries("insert(d, 7, 70)", insert(cmp_i32, d, 7, 70));
+  show_entries("delete(d, 2)", delete(cmp_i32, d, 2));
+  show_lookup("insert(d, 5, 500) |> get 5", get(cmp_i32, insert(cmp_i32, d, 5, 500), 5));
+  show_entries("map_values(*2, d)", map_values(cmp_i32, .(x: I32) -> I32 { add(x, x) }, d));
+  show_entries("filter(v>40, d)", filter(cmp_i32, .(x: I32) -> Flag { gt_flag(x, 40) }, d));
+  let left = [% 1 => 1, 2 => 2 %](cmp_i32);
+  let right = [% 2 => 222, 3 => 3 %](cmp_i32_equivalent);
+  show_entries("union(l, r)", union(cmp_i32_equivalent, left, right));
+  show_entries("intersection(l, r)", intersection(cmp_i32_equivalent, left, right));
+  show_lookup("d[8]", d <| 8 |>);
+  show_entries("d +> (6, 60)", d +> (6, 60));
+  show_entries("d -< 9", d -< 9);
+  show_entries("l |+| r", left |+| right);
+  show_entries("empty literal", empty_literal());
+  show_entries("repeated keys", [% 2 => 20, 1 => 10, 2 => 200, 1 => 100 %](cmp_i32));
+  show_entries("descending comparator", [% 1 => 10, 3 => 30, 2 => 20 %](cmp_i32_desc));
+  show_int(
+    , "empty fold carry"
+    , fold_asc(empty_literal(), 17, .(n: I32, _k: I32, _v: I32) { add(n, 1) })
+    );
+  show_unit_lookup("unit present", get(cmp_i32, unit_dictionary(), 1));
+  show_unit_lookup("unit absent", get(cmp_i32, unit_dictionary(), 2));
+  show_sum_lookup("sum number", get(cmp_i32, sum_dictionary(), 1));
+  show_sum_lookup("sum unit", get(cmp_i32, sum_dictionary(), 2));
+  show_sum_lookup("sum absent", get(cmp_i32, sum_dictionary(), 3))
+}

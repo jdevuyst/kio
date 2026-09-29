@@ -1,0 +1,15 @@
+module host/m;
+
+import host(f);
+
+fn g(u: .) -> . { u }
+
+equiv eta_host() {
+  .(x: .) { f(x) };
+  f
+}
+
+equiv eta_fn() {
+  .(x: .) { g(x) };
+  g
+}

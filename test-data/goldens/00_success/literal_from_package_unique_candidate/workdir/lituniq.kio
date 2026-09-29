@@ -1,0 +1,5 @@
+module lituniq;
+
+host type Int role(i32);
+
+host type Str role(str);

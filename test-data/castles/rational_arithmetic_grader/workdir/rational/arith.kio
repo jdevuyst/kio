@@ -1,0 +1,54 @@
+/// Exact arithmetic on canonical rationals. Every result goes back through
+/// `core.reduce`, so the lowest-terms invariant is restored at each step rather
+/// than allowed to drift and be repaired at the end.
+module rational/arith;
+
+import rational/core as core;
+import rational/core(Eval, Rational);
+import testapi(I32);
+import testapi/arith as arith;
+
+/// Each operation returns an `Eval` rather than a bare `Rational`. Only division
+/// can actually fail — the others multiply two strictly positive denominators,
+/// which never comes out zero — but the one uniform result type is what lets the
+/// evaluator thread every node through a single combinator instead of one per
+/// operator.
+fn reduced(numerator: I32, denominator: I32) -> Eval {
+  core.reduce(core.fraction(numerator, denominator))
+}
+
+fn parts(value: Rational) -> I32 & I32 { (core.numerator_of(value), core.denominator_of(value)) }
+
+/// Addition and subtraction are both `(ad, cb) -> (ad ± cb) / bd`; only the sign
+/// joining the cross terms differs, so they are one function and a choice of
+/// `join`.
+fn cross(left: Rational, right: Rational, join: (I32 & I32) -> I32) -> Eval {
+  let .(left_num: I32, left_den: I32) = parts(left);
+  let .(right_num: I32, right_den: I32) = parts(right);
+  reduced(
+    , join(arith.mul(left_num, right_den), arith.mul(right_num, left_den))
+    , arith.mul(left_den, right_den)
+    )
+}
+
+/// `a/b * c/d` is `ac/bd`, multiplying the parts straight across.
+fn across(left: Rational, right_num: I32, right_den: I32) -> Eval {
+  let .(left_num: I32, left_den: I32) = parts(left);
+  reduced(arith.mul(left_num, right_num), arith.mul(left_den, right_den))
+}
+
+pub fn add(left: Rational, right: Rational) -> Eval { cross(left, right, arith.add) }
+
+pub fn sub(left: Rational, right: Rational) -> Eval { cross(left, right, arith.sub) }
+
+pub fn mul(left: Rational, right: Rational) -> Eval {
+  across(left, core.numerator_of(right), core.denominator_of(right))
+}
+
+/// Dividing is multiplying by the reciprocal, which is the same operation with
+/// the divisor's two parts swapped. That swap is also the whole zero-divisor
+/// check: a zero divisor has a zero numerator, so swapping lands the zero in the
+/// denominator, where `core.reduce` already knows to report it.
+pub fn div(left: Rational, right: Rational) -> Eval {
+  across(left, core.denominator_of(right), core.numerator_of(right))
+}

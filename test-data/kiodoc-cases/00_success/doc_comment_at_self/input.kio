@@ -1,0 +1,21 @@
+/// A simple example module.
+///
+/// Module-level doc-comment with a `{@}` snippet:
+///
+/// ```kio {@}
+/// ()
+/// ```
+module doctest/utils;
+
+/// Returns its argument unchanged.
+///
+/// Private items are visible inside `{@}` snippets:
+///
+/// ```kio {@}
+/// let x = identity(helper());
+/// x
+/// ```
+pub fn identity(x: .) -> . { x }
+
+// Private helper — visible to {@} snippets in this module.
+fn helper() -> . { () }

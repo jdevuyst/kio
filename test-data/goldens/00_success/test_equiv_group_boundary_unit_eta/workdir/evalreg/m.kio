@@ -1,0 +1,32 @@
+module evalreg/m;
+
+host type T;
+
+fn pick_second(a: T, b: T)(u: .) -> T { b }
+
+fn thunk() -> . { () }
+
+equiv comma_prefix_suspends(a: T, b: T) {
+  pick_second(a, b);
+  .(u: .) -> T { b }
+}
+
+equiv packet_prefix_suspends(a: T, b: T) {
+  pick_second((a, b));
+  .(u: .) -> T { b }
+}
+
+equiv comma_prefix_applies(a: T, b: T, u: .) {
+  pick_second(a, b)(u);
+  b
+}
+
+equiv nullary_eta() {
+  .(u: .) { thunk(u) };
+  thunk
+}
+
+equiv unit_constant_spelling() {
+  .() { () };
+  .(u: .) { () }
+}

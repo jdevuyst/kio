@@ -1,0 +1,72 @@
+module minesweeper_frontier/counts;
+
+import elab/control(if);
+import minesweeper_frontier/model(
+  , bool_to_i32
+  , cell_count
+  , cell_index
+  , height
+  , last_index
+  , mine_at
+  , width
+  );
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+fn neighbor_count(mines: Array(Bool), row: I32, col: I32) -> I32 {
+  let north = arith.sub_i32(row, 1);
+  let south = arith.add_i32(row, 1);
+  let west = arith.sub_i32(col, 1);
+  let east = arith.add_i32(col, 1);
+  let top =
+    arith.add_i32(bool_to_i32(mine_at(mines, north, west)), bool_to_i32(mine_at(mines, north, col)));
+  let top_full = arith.add_i32(top, bool_to_i32(mine_at(mines, north, east)));
+  let middle =
+    arith.add_i32(bool_to_i32(mine_at(mines, row, west)), bool_to_i32(mine_at(mines, row, east)));
+  let bottom =
+    arith.add_i32(bool_to_i32(mine_at(mines, south, west)), bool_to_i32(mine_at(mines, south, col)));
+  let bottom_full = arith.add_i32(bottom, bool_to_i32(mine_at(mines, south, east)));
+  arith.add_i32(arith.add_i32(top_full, middle), bottom_full)
+}
+
+rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
+  if! arith.leq_i32(col, arith.sub_i32(width(), 1)) {
+    array.array_set(counts, cell_index(row, col), neighbor_count(mines, row, col));
+    rec fill_count_cols(row, arith.add_i32(col, 1), counts, mines)
+  } else {
+    counts
+  }
+}
+
+rec(loop) fn fill_count_rows(row: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
+  if! arith.leq_i32(row, arith.sub_i32(height(), 1)) {
+    let updated = fill_count_cols(row, 0, counts, mines);
+    rec fill_count_rows(arith.add_i32(row, 1), updated, mines)
+  } else {
+    counts
+  }
+}
+
+pub fn build_counts(mines: Array(Bool)) -> Array(I32) {
+  let counts = array.array_make_filled(cell_count(), 0);
+  fill_count_rows(0, counts, mines)
+}
+
+pub rec(loop) fn sum_revealed_counts(i: I32, counts: Array(I32), revealed: Array(Bool), total: I32) -> I32 {
+  if! arith.leq_i32(i, last_index()) {
+    if! array.array_get(revealed, i) {
+      rec sum_revealed_counts(
+        , arith.add_i32(i, 1)
+        , counts
+        , revealed
+        , arith.add_i32(total, array.array_get(counts, i))
+        )
+    } else {
+      rec sum_revealed_counts(arith.add_i32(i, 1), counts, revealed, total)
+    }
+  } else {
+    total
+  }
+}

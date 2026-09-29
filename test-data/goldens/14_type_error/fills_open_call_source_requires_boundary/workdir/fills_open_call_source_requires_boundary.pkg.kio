@@ -1,0 +1,13 @@
+package fills_open_call_source_requires_boundary;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

@@ -1,0 +1,12 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub type Dict = _rehost_gdgphcgfcphdhegphcgf.Dict;
+
+pub fn poly_id[A](x: A) -> A { x }
+
+pub fn relay_dict() -> Dict { Dict.mk(poly_id) }

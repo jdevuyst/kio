@@ -1,0 +1,17 @@
+module host/m;
+
+import elab/control(if);
+import host(Bool, Input, bar, condition, foo);
+
+equiv stuck_if_eq(x: Input) {
+  if! condition(x) {
+    foo()
+  } else {
+    bar()
+  };
+  if! condition(x) {
+    foo()
+  } else {
+    bar()
+  }
+}

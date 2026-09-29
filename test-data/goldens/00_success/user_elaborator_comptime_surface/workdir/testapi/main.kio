@@ -1,0 +1,19 @@
+module testapi/main;
+
+import elaborators(checked);
+import testapi(String);
+import testapi/io(print);
+
+type Pair_alias = String & String;
+
+fn keep(v: Pair_alias & String) -> Pair_alias & String { checked!(v, Pair_alias & String) }
+
+fn first(v: Pair_alias & String) -> String {
+  let .(p: Pair_alias, _tail: String) = keep(v);
+  let .(head: String, _second: String) = p;
+  head
+}
+
+pub fn main() -> . {
+  print(first((("user_elaborator_comptime_surface: ok\n", "ignored"), "also ignored")))
+}

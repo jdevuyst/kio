@@ -1,0 +1,30 @@
+module testapi/main;
+
+import core/store as target;
+import testapi(String);
+import testapi/io(print);
+import widget/store as source;
+
+fn read_item[A](value: target.Item(A)) -> A { value.>target.Item.get }
+
+fn inspect_packet(value: target.Pack(String)) -> . {
+  target.Pack.get(value)(.[U](prefix: String, payload: U, format: U -> String) {
+    print(prefix);
+    print(format(payload))
+  })
+}
+
+pub fn main() -> . {
+  print(read_item({source.item = "generic-string\n"}));
+  read_item({source.item=});
+  print("generic-unit\n");
+  print(target.Item.mk("target-constructor\n").?{source.item});
+  let first = {source.pack = ("existential-string: ", "payload\n", .(text: String) { text })};
+  let second = {source.pack = ("existential-unit: ", (), .(_unit: .) { "unit\n" })};
+  inspect_packet(first);
+  inspect_packet(second);
+  print(source.family_item(({source.item = "named-family\n"}, first)));
+  print(source.later_item(({source.item = "later-family\n"}, second)));
+  source.later_item(({source.item=}, {source.pack = ((), (), .(_unit: .) { "unused" })}));
+  print("later-unit\n")
+}

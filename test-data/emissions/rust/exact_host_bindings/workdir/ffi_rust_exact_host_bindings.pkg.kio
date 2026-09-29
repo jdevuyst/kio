@@ -1,0 +1,17 @@
+package ffi_rust_exact_host_bindings;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  a;
+  a_;
+  left;
+  main;
+  right
+}

@@ -1,0 +1,77 @@
+module expression_formatter/scan;
+
+import expression_formatter/types(
+  , Add_token
+  , Binding_token
+  , Close_token
+  , Eq_token
+  , Group_token
+  , Left_token
+  , Literal_token
+  , Mul_token
+  , Open_token
+  , Source_text
+  );
+import expression_formatter/types(
+  , {add_token}
+  , {binding_token}
+  , {close_token}
+  , {eq_token}
+  , {group_token}
+  , {left_token}
+  , {literal_token}
+  , {mul_token}
+  , {open_token}
+  , {source_text}
+  );
+import expression_formatter/types(
+  , {token_depth}
+  , {token_kind}
+  , {token_start}
+  , {token_stop}
+  , {token_text}
+  );
+import expression_formatter/types(Token_depth, Token_kind, Token_start, Token_stop, Token_text);
+import testapi(Int, String);
+import testapi/text(string_slice);
+
+fn token(src: String, kind: String, start: Int, stop: Int, depth: Int) ->
+  Token_kind & Token_text & Token_start & Token_stop & Token_depth
+   {
+  {
+    , token_kind = kind
+    , token_text = string_slice(src, start, stop)
+    , token_start = start
+    , token_stop = stop
+    , token_depth = depth
+    }
+}
+
+pub fn fixture() -> String { "total=base+(tax*3)" }
+
+pub fn scan() ->
+  & Source_text
+  & Binding_token
+  & Eq_token
+  & Left_token
+  & Add_token
+  & Open_token
+  & Group_token
+  & Mul_token
+  & Literal_token
+  & Close_token
+   {
+  let src = fixture();
+  {
+    , source_text = src
+    , binding_token = token(src, "identifier", 0, 5, 0)
+    , eq_token = token(src, "equals", 5, 6, 0)
+    , left_token = token(src, "identifier", 6, 10, 0)
+    , add_token = token(src, "operator", 10, 11, 0)
+    , open_token = token(src, "open", 11, 12, 1)
+    , group_token = token(src, "identifier", 12, 15, 1)
+    , mul_token = token(src, "operator", 15, 16, 1)
+    , literal_token = token(src, "number", 16, 17, 1)
+    , close_token = token(src, "close", 17, 18, 0)
+    }
+}

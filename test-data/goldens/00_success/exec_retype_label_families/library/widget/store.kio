@@ -1,0 +1,11 @@
+module store;
+
+host type String role(str);
+
+pub labels Family[A] = { item[A]: A, pack[A] <U> : A & U & (U -> String) };
+
+pub labels Later[A] = { item[A]: _, pack[A]: _ };
+
+pub fn family_item[A](row: Family(A)) -> A { row.?{item} }
+
+pub fn later_item[A](row: Later(A)) -> A { row.?{item} }

@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_sum, one_prod, widen_prod, widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// Lift a String into a `String | String` sum so we have a value to
+// exercise narrow_sum! against.
+fn lift(s: String) -> String | String { widen_sum!(s) }
+
+// **Codiagonal** (sum axis): `narrow_sum!` collapses two same-typed
+// `String` arms down to one. The two arms are isomorphic in type;
+// the form forwards whichever was inhabited.
+fn codiagonal(s: String | String) -> String { narrow_sum!(s) }
+
+// **Diagonal** (product axis): `widen_prod!` duplicates a source
+// slot to fill the wider target. The source value of type `String`
+// is read twice — slots 0 and 1 of the target both reference the
+// same source String.
+fn diagonal(s: String) -> String & String { widen_prod!(s) }
+
+pub fn main() -> . {
+  // Codiagonal side-by-side with diagonal — same program structure,
+  // dual operations exercised.
+  print(codiagonal(lift("codiagonal: collapsed\n")));
+  print(one_prod!(diagonal("diagonal: duplicated\n")))
+}

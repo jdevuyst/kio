@@ -1,0 +1,107 @@
+module ml/schemes;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as walk;
+import ml/types as types;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub type Scheme = lists.List(I32) & types.Ty;
+
+pub type Environment = lists.List(String & Scheme);
+
+pub fn monomorphic(ty: types.Ty) -> Scheme { (lists.nil(), ty) }
+
+pub fn extend(name: String, scheme: Scheme, environment: Environment) -> Environment {
+  let visible =
+    walk.filter(
+      , .(entry: String & Scheme) {
+          let .(key: String, _value: Scheme) = entry;
+          if! text.string_eq(name, key) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , environment
+      );
+  lists.cons((name, scheme), visible)
+}
+
+pub rec(loop) fn lookup(name: String, environment: Environment) -> Scheme | . {
+  match! lists.uncons(environment) {
+    .((key: String, value: Scheme), rest: Environment) {
+      if! text.string_eq(name, key) {
+        value.>widen_sum!
+      } else {
+        rec lookup(name, rest)
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}
+
+fn free_variables(scheme: Scheme, substitutions: types.Substitution) -> lists.List(I32) {
+  let .(quantified: lists.List(I32), body: types.Ty) = scheme;
+  walk.filter(
+    , .(id: I32) {
+        if! types.contains(id, quantified) {
+          .f
+        } else {
+          .t
+        }
+      }
+    , types.variables(types.apply(substitutions, body))
+    )
+}
+
+pub fn generalize(ty: types.Ty, environment: Environment, substitutions: types.Substitution) -> Scheme {
+  let solved = types.apply(substitutions, ty);
+  let environment_variables =
+    walk.foldl(
+      , .(acc: lists.List(I32), entry: String & Scheme) {
+          let .(_name: String, scheme: Scheme) = entry;
+          walk.append(acc, free_variables(scheme, substitutions))
+        }
+      , lists.nil()
+      , environment
+      );
+  let quantified =
+    walk.filter(
+      , .(id: I32) {
+          if! types.contains(id, environment_variables) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , types.unique(types.variables(solved))
+      );
+  (quantified, solved)
+}
+
+rec(loop) fn replacements(ids: lists.List(I32), next: I32, mapping: types.Substitution) ->
+  types.Substitution & I32
+   {
+  match! lists.uncons(ids) {
+    .(id: I32, rest: lists.List(I32)) {
+      rec replacements(
+        , rest
+        , arith.add_i32(next, 1)
+        , lists.cons((id, types.variable_type(next)), mapping)
+        )
+    };
+    .() { (mapping, next) }
+  }
+}
+
+pub fn instantiate(scheme: Scheme, substitutions: types.Substitution, next: I32) -> types.Ty & I32 {
+  let .(quantified: lists.List(I32), body: types.Ty) = scheme;
+  let .(mapping: types.Substitution, after: I32) = replacements(quantified, next, lists.nil());
+  (types.apply(mapping, types.apply(substitutions, body)), after)
+}

@@ -1,0 +1,15 @@
+module main;
+
+host type I32 role(i32);
+
+host type Box[T];
+
+host fn make[A][B](f: A -> A) -> Box(B);
+
+fn keep(value: I32) -> I32 { value }
+
+fn invoke(f: [A][B] (A -> A) -> Box(B)) -> Box(I32) { f(keep) }
+
+fn direct() -> Box(I32) { make(keep) }
+
+fn indirect() -> Box(I32) { invoke(make) }

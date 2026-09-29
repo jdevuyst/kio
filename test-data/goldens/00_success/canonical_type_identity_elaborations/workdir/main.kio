@@ -1,0 +1,61 @@
+module main;
+
+import captured(captured_keep, captured_pair, captured_type_app);
+import dep as d;
+import elab/control(if);
+import other as types;
+import types as real;
+
+type Actual = types.Other;
+
+type Bool = real.Bool;
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+labels { cell[Cell]: Cell };
+
+fn identity[A](value: A) -> A { value }
+
+fn make_box(value: real.Actual) -> Box(real.Actual) { Box.mk_box(value) }
+
+fn consume_box(value: Box(real.Actual)) -> real.Actual { Box.un_box(value) }
+
+fn call(value: real.Actual) -> d.Flag { d.id(value) }
+
+fn choose(cond: Bool, value: real.Actual) -> d.Flag {
+  if! cond {
+    value
+  } else {
+    value
+  }
+}
+
+fn local_nominal_under_same_named_binder[Box](value: real.Actual) -> real.Actual {
+  consume_box(identity(make_box(value)))
+}
+
+fn field_roundtrip[Cell](value: d.Flag) -> d.Flag { {cell = value}.?{cell} }
+
+fn consume_other(value: types.Other) -> types.Other { value }
+
+fn inferred_literal_under_same_named_binder[Actual]() -> types.Other {
+  let value = 1;
+  consume_other(value)
+}
+
+equiv field_eval() {
+  field_roundtrip(Bool, real.btrue());
+  real.btrue()
+}
+
+fn call_captured(value: real.Actual) -> real.Actual {
+  captured_keep!(real.Actual, ())(identity(value))
+}
+
+fn call_captured_pair() -> (real.Actual -> real.Actual) & (real.Actual -> real.Actual) {
+  captured_pair!(real.Actual, ())
+}
+
+fn call_captured_type_app(value: real.Actual) -> real.Actual {
+  captured_type_app!(real.Actual, ())(value)
+}

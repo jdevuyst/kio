@@ -1,0 +1,100 @@
+module ml/parser;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import ml/syntax as ast;
+import testapi(Bool, String);
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub type Tokens = lists.List(String);
+
+type Parsed = (ast.Expr & Tokens) | String;
+
+rec(loop) fn expression(tokens: Tokens) -> Parsed {
+  match! lists.uncons(tokens) {
+    .(token: String, rest: Tokens) {
+      if! text.string_eq(token, "int") {
+        (ast.integer_expr(), rest).>widen_sum!
+      } else if! text.string_eq(token, "bool") {
+        (ast.boolean_expr(), rest).>widen_sum!
+      } else if! text.string_eq(token, "var") {
+        match! lists.uncons(rest) {
+          .(name: String, after: Tokens) { (ast.variable_expr(name), after).>widen_sum! };
+          .() { "missing variable name".>widen_sum! }
+        }
+      } else if! text.string_eq(token, "lam") {
+        match! lists.uncons(rest) {
+          .(name: String, after: Tokens) {
+            match! rec(cont) expression(after) {
+              .(body: ast.Expr, remaining: Tokens) {
+                (ast.lambda_expr(name, body), remaining).>widen_sum!
+              };
+              .(error: String) { error.>widen_sum! }
+            }
+          };
+          .() { "missing lambda name".>widen_sum! }
+        }
+      } else if! text.string_eq(token, "let") {
+        match! lists.uncons(rest) {
+          .(name: String, after: Tokens) {
+            match! rec(cont) expression(after) {
+              .(value: ast.Expr, middle: Tokens) {
+                match! rec(cont) expression(middle) {
+                  .(body: ast.Expr, remaining: Tokens) {
+                    (ast.binding_expr(name, value, body), remaining).>widen_sum!
+                  };
+                  .(error: String) { error.>widen_sum! }
+                }
+              };
+              .(error: String) { error.>widen_sum! }
+            }
+          };
+          .() { "missing let name".>widen_sum! }
+        }
+      } else {
+        let binary = if! text.string_eq(token, "app") {
+          .t
+        } else {
+          text.string_eq(token, "pair")
+        };
+        if! binary {
+          match! rec(cont) expression(rest) {
+            .(left: ast.Expr, middle: Tokens) {
+              match! rec(cont) expression(middle) {
+                .(right: ast.Expr, remaining: Tokens) {
+                  let result =
+                    if! text.string_eq(token, "app") {
+                      ast.apply_expr(left, right)
+                    } else {
+                      ast.pair_expr(left, right)
+                    };
+                  (result, remaining).>widen_sum!
+                };
+                .(error: String) { error.>widen_sum! }
+              }
+            };
+            .(error: String) { error.>widen_sum! }
+          }
+        } else {
+          text.string_concat("unknown token ", token).>widen_sum!
+        }
+      }
+    };
+    .() { "incomplete expression".>widen_sum! }
+  }
+}
+
+pub fn parse(tokens: Tokens) -> String | ast.Expr {
+  match! expression(tokens) {
+    .(expr: ast.Expr, remaining: Tokens) {
+      match! lists.uncons(remaining) {
+        .(_token: String, _rest: Tokens) { "trailing tokens".>widen_sum! };
+        .() { expr.>widen_sum! }
+      }
+    };
+    .(error: String) { error.>widen_sum! }
+  }
+}

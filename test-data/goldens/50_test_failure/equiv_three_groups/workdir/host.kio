@@ -1,0 +1,7 @@
+module host;
+
+host fn a() -> .;
+
+host fn b() -> .;
+
+host fn c() -> .;

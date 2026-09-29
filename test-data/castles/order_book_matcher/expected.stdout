@@ -1,0 +1,109 @@
+== transcript ==
+
+event 1: LIMIT sell 5 @ 101 (id 1)
+  rest 5 @ 101
+  book: bid --  ask 101  spread --
+
+event 2: LIMIT sell 4 @ 102 (id 2)
+  rest 4 @ 102
+  book: bid --  ask 101  spread --
+
+event 3: LIMIT sell 6 @ 101 (id 3)
+  rest 6 @ 101
+  book: bid --  ask 101  spread --
+
+event 4: LIMIT buy 3 @ 99 (id 4)
+  rest 3 @ 99
+  book: bid 99  ask 101  spread 2
+
+event 5: LIMIT buy 7 @ 98 (id 5)
+  rest 7 @ 98
+  book: bid 99  ask 101  spread 2
+
+event 6: LIMIT buy 5 @ 101 (id 6)
+  trade taker 6 maker 1  qty 5 @ 101
+  fill 5 of 5
+  book: bid 99  ask 101  spread 2
+
+event 7: CANCEL id 1
+  reject: no resting order 1
+  book: bid 99  ask 101  spread 2
+
+event 8: LIMIT buy 9 @ 101 (id 7)
+  trade taker 7 maker 3  qty 6 @ 101
+  fill 6 of 9
+  rest 3 @ 101
+  book: bid 101  ask 102  spread 1
+
+event 9: LIMIT sell 2 @ 103 (id 8)
+  rest 2 @ 103
+  book: bid 101  ask 102  spread 1
+
+event 10: LIMIT sell 3 @ 105 (id 9)
+  rest 3 @ 105
+  book: bid 101  ask 102  spread 1
+
+event 11: CANCEL id 4
+  cancel: order 4 buy 3 @ 99
+  book: bid 101  ask 102  spread 1
+
+event 12: AMEND id 5 to 4
+  reduce: order 5 7 to 4 (released 3)
+  book: bid 101  ask 102  spread 1
+
+event 13: AMEND id 5 to 9
+  reject: order 5 cannot grow 4 to 9
+  book: bid 101  ask 102  spread 1
+
+event 14: AMEND id 4 to 2
+  reject: no resting order 4
+  book: bid 101  ask 102  spread 1
+
+event 15: MARKET buy 8 (id 10)
+  trade taker 10 maker 2  qty 4 @ 102
+  trade taker 10 maker 8  qty 2 @ 103
+  trade taker 10 maker 9  qty 2 @ 105
+  fill 8 of 8
+  book: bid 101  ask 105  spread 4
+
+event 16: MARKET sell 12 (id 11)
+  trade taker 11 maker 7  qty 3 @ 101
+  trade taker 11 maker 5  qty 4 @ 98
+  fill 7 of 12
+  unfilled 5 (book exhausted)
+  book: bid --  ask 105  spread --
+
+event 17: LIMIT buy 6 @ 100 (id 12)
+  rest 6 @ 100
+  book: bid 100  ask 105  spread 5
+
+event 18: LIMIT buy 4 @ 100 (id 13)
+  rest 4 @ 100
+  book: bid 100  ask 105  spread 5
+
+event 19: LIMIT sell 3 @ 100 (id 14)
+  trade taker 14 maker 12  qty 3 @ 100
+  fill 3 of 3
+  book: bid 100  ask 105  spread 5
+
+== resting book ==
+  asks (best first)
+    price 105  qty 1  orders 1
+      id 9  seq 10  qty 3  rem 1
+  bids (best first)
+    price 100  qty 7  orders 2
+      id 12  seq 17  qty 6  rem 3
+      id 13  seq 18  qty 4  rem 4
+
+== summary ==
+  trades:            8
+  volume:            29
+  notional:          2930
+  orders cancelled:  1
+  unfilled market:   5
+
+== invariant ==
+  entered 43 - cancelled 3 - reduced 3 - resting 8
+  volume from the book:  29
+  volume from the tape:  29
+  agree: true

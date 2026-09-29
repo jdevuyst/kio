@@ -1,0 +1,14 @@
+package java_invalid_namespace_value;
+
+build {
+  cache "out/.kio-cache/";
+
+  target java {
+    out "out/java/";
+    namespace "com.import.x"
+  }
+}
+
+bridge {
+  main
+}

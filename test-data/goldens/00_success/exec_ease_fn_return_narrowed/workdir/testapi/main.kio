@@ -1,0 +1,15 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import testapi(String);
+import testapi/io(print);
+
+// Source: `. -> (String & .)`. The function's return type grew
+// an extra `()` side-payload in the provider. The call site only wants
+// the `String` part, so `ease!` wraps to `. -> String`. The walk
+// recurses covariantly on the return slot — leaf sees source-
+// then-target `(String & ., String)`; the leaf `ease!` engine
+// fires `R-Project-Prod` to drop the unit side-payload.
+fn provider() -> String & . { ("ease! return narrowed ok\n", ()) }
+
+pub fn main() -> . { let narrow_ret = ease!(provider, . -> String); print(narrow_ret()) }

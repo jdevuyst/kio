@@ -1,0 +1,9 @@
+module util/list;
+
+// Per rule 1 of `specs/package.md` § Module-Name Rules, a module at a
+// non-trivial path inside the package declares its `module …;` as the
+// file's path relative to the package root, with `.kio` stripped and
+// directory separators kept as `/`. This file at `workdir/util/list.kio`
+// therefore declares `module util/list;`. A module's name is not pinned
+// under the package-name namespace.
+pub fn id[A](x: A) -> A { x }

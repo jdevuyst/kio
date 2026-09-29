@@ -1,0 +1,2 @@
+type alias `Hidden_alias` must be at least as visible as type alias `Public_secret`
+give type alias `Hidden_alias` visibility equal to or wider than type alias `Public_secret`

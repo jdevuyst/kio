@@ -1,0 +1,59 @@
+module symbolic_units/render;
+
+import elab/match(match);
+import symbolic_units/model(
+  , Expr
+  , Kilogram
+  , Meter
+  , Pow
+  , Product
+  , Quotient
+  , Score
+  , Second
+  , Summary
+  , {kilogram_exp}
+  , {meter_exp}
+  , {second_exp}
+  );
+import symbolic_units/text as text;
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+
+pub rec(loop) fn source(value: Expr) -> String {
+  match! Expr.get(value) {
+    (
+      , .(_m: Meter) { "m" }
+      , .(_s: Second) { "s" }
+      , .(_k: Kilogram) { "kg" }
+      , .(node: Product) {
+          match! Product.get(node) {
+            .(left: Expr, right: Expr) {
+              text.cat5("(", rec(cont) source(left), " * ", rec(cont) source(right), ")")
+            }
+          }
+        }
+      , .(node: Quotient) {
+          match! Quotient.get(node) {
+            .(left: Expr, right: Expr) {
+              text.cat5("(", rec(cont) source(left), " / ", rec(cont) source(right), ")")
+            }
+          }
+        }
+      , .(node: Pow) {
+          match! Pow.get(node) {
+            .(base: Expr, exponent: I32) {
+              text.cat4(rec(cont) source(base), "^", fmt.int_to_string(exponent), "")
+            }
+          }
+        }
+      )
+  }
+}
+
+pub fn reduced(value: Summary) -> String {
+  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  text.cat6("m^", fmt.int_to_string(m), " s^", fmt.int_to_string(s), " kg^", fmt.int_to_string(k))
+}
+
+pub fn score_text(score: Score) -> String { fmt.int_to_string(score.>Score.un_score) }

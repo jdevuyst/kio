@@ -1,0 +1,5 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub(widget/store) type Token = _rehost_gdgphcgfcphdhegphcgf.Token;

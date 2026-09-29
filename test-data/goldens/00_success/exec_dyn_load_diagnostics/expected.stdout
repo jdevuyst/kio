@@ -1,0 +1,9 @@
+truncated body: dyn_load_prime: malformed image — module `b`, fn `broken`: expected `,` or `)` in an argument list
+import cycle: dyn_load_prime: malformed image — the module imports form a cycle among: a, b
+unresolvable import: dyn_load_prime: malformed image — module `b` imports `nope` from `a`, which declares no such item
+declaration before module header: dyn_load_prime: malformed image — a declaration appears before the first `module` header at line 1, column 1
+unterminated string: dyn_load_prime: malformed image — unterminated string literal — no closing `"` before end-of-input at line 10, column 21
+intrinsic arity: dyn_load_prime: malformed image — module `a`, fn `p`: wrong number of value arguments to `__fst__` — expected 1, got 2 at line 12, column 49
+unbound name: dyn_load_prime: malformed image — module `a`, fn `u`: unbound name `missing` at line 10, column 27
+higher-kinded host type binder: dyn_load_prime: malformed host type `hostapi.Wrapper`: host type parameters must have kind `*`
+parser fuel: parser step budget exhausted — the declaration body is unreasonably large, or the image is malformed in a way that stalls the parse

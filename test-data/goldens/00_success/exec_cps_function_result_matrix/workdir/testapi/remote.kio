@@ -1,0 +1,5 @@
+module testapi/remote;
+
+pub newtype Pack <U> : U { pub constructor mk_pack; pub projector unpack }
+
+pub fn pack() -> Pack { Pack.mk_pack(()) }

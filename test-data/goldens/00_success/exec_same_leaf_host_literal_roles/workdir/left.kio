@@ -1,0 +1,5 @@
+module left;
+
+host type Shared role(i64);
+
+pub fn left_value() -> Shared { 4294967296 }

@@ -1,0 +1,11 @@
+module main;
+
+host type I32 role(i32);
+
+host type String role(str);
+
+pub labels { l1: I32, l2: String };
+
+pub fn label_pair(a: L1, b: L2) -> L1 & L2 { (a, b) }
+
+pub fn make_pair(n: I32, s: String) -> I32 & String { (n, s) }

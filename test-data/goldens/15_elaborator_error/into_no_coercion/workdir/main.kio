@@ -1,0 +1,18 @@
+module main;
+
+import elab/algebraic_elaborators(into);
+
+// `into!` is total: it must find a coercion from the source type
+// to the target type using only structural rules (commutativity
+// where types force a unique rearrangement, sum widening,
+// duplication, identity absorption — see specs/language.md §
+// iso! / into! / onto! mechanics for the full table). Mapping
+// `B` to `C` when they are different newtypes isn't one of those
+// rules, so the elaborator fails — exit code 15 (elaborator error).
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+fn coerce(x: A & B) -> A & C { into!(x) }

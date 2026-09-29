@@ -1,0 +1,12 @@
+package docs;
+
+build {
+  cache ();
+
+  docs {
+    md ".";
+    support "../test-data/poc/elab/workdir";
+    support "../test-data/poc/dict/workdir";
+    support "../test-data/poc/list/workdir"
+  }
+}

@@ -1,0 +1,16 @@
+module elab;
+
+import __comptime__;
+
+pure fn invoke_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , callback: __Checked_term__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let unit = __type_unit__(ct);
+  let specialized = __term_type_app__(ct, callback, unit);
+  (__term_call__(ct, __term_type__(ct, specialized), specialized, __term_unit__(ct)), fills)
+}
+
+pub elab invoke : [Source] Source -> . { impl(fills) invoke_impl }

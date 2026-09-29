@@ -1,0 +1,7 @@
+module origin;
+
+pub fn nil() -> . { () }
+
+pub fn cons(value: ., rest: .) -> . { value }
+
+pub varop [* *] { foldr cons nil }

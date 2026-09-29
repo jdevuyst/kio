@@ -1,0 +1,3 @@
+apply(ok(incr), 4) == ok(5)
+apply(ok(triple), 5) == ok(15)
+apply(err("nope"), 7) == err("nope")

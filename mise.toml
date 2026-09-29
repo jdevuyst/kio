@@ -1,0 +1,26 @@
+min_version = "2026.6.14"
+
+[settings]
+idiomatic_version_file = false
+
+[tools]
+node = "24.18.0"
+go = "1.26.4"
+swift = "6.3.2"
+java = "temurin-21.0.11+10.0.LTS"
+ghcup = { version = "0.2.6.2", postinstall = "ghcup install ghc 9.10.3 --set" }
+rust = { version = "1.96.0", profile = "minimal", components = "rustfmt,clippy", targets = "wasm32-unknown-unknown", postinstall = "rustup toolchain install nightly --profile minimal" }
+actionlint = "1.7.7"
+zizmor = "1.24.1"
+sccache = "0.15.0"
+tree-sitter = "0.26.9"
+shellcheck = "0.9.0"
+python = "3.12.13"
+pipx = "1.4.3"
+yamllint = "1.35.1"
+ripgrep = "14.1.1"
+"aqua:wasm-bindgen/wasm-pack" = "0.13.1"
+"npm:typescript" = "6.0.3"
+"npm:pyright" = "1.1.411"
+"npm:markdownlint-cli2" = "0.22.1"
+"github:mszostok/codeowners-validator[exe=codeowners-validator]" = "0.7.4"

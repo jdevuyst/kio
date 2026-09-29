@@ -1,0 +1,7 @@
+module m;
+
+host type Str role(str);
+
+host fn print(s: Str) -> .;
+
+pub fn main() -> . { print("hi\n"(Str)) }

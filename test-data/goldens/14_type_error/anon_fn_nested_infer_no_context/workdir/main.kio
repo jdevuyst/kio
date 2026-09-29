@@ -1,0 +1,12 @@
+module main;
+
+import elab/algebraic_elaborators(atom);
+
+// Synthesis-only lambda literal: `let` binds an un-coerced RHS,
+// so no expected type flows into the lambda. The annotation
+// `(_ & b)` has a nested `_` with no context to resolve against
+// — the typer rejects with a partial-annotation diagnostic.
+fn lambda_in_let_with_nested_infer[A][B](p: A & B) -> A {
+  let project = .(pair: _ & B) -> A { atom!(pair) };
+  project(p)
+}

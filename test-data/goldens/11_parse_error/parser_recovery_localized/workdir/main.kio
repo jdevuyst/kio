@@ -1,0 +1,11 @@
+module parser_recovery_localized/main;
+
+// `broken`'s body opens with `{` but never closes before the next
+// top-level `fn`. The tree-skeleton builder marks the group as
+// recovered and the parser surfaces a parse error scoped to that
+// group's source range — not "expected `}` at EOF" cascading
+// through the rest of the file.
+
+fn broken() -> . { (
+
+fn ok() -> . { () }

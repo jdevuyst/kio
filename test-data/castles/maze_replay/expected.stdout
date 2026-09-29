@@ -1,0 +1,11 @@
+maze_replay: v1
+seed: 7
+grid: 5x4
+goal: 4,3
+commands: 10
+checksum: 9422
+final: 4,3
+moves: 7
+bumps: 2
+score: 2
+status: escaped

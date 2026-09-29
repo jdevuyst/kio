@@ -1,0 +1,58 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, String);
+import testapi/io(print);
+
+labels Condition_record = { flag: Bool };
+
+fn make_flag(value: Bool) -> Condition_record { {flag = value} }
+
+fn make_pair(value: Bool) -> Condition_record & . { (make_flag(value), ()) }
+
+fn produced[A](make: . -> A) -> A { make(()) }
+
+fn identity[A](value: A) -> A { value }
+
+fn select_direct(value: Bool) -> String {
+  if! make_flag(value).?{flag} {
+    "direct-true\n"
+  } else {
+    "direct-false\n"
+  }
+}
+
+fn select_product(value: Bool) -> String {
+  if! make_pair(value).?{flag} {
+    "product-true\n"
+  } else {
+    "product-false\n"
+  }
+}
+
+fn select_callback(value: Bool) -> String {
+  if! produced(.() -> Condition_record { make_flag(value) }).?{flag} {
+    "callback-true\n"
+  } else {
+    "callback-false\n"
+  }
+}
+
+fn select_nested(value: Bool) -> String {
+  if! identity(produced(.() -> Condition_record { make_flag(value) }).?{flag}) {
+    "nested-true\n"
+  } else {
+    "nested-false\n"
+  }
+}
+
+pub fn main() -> . {
+  print(select_direct(.t));
+  print(select_direct(.f));
+  print(select_product(.t));
+  print(select_product(.f));
+  print(select_callback(.t));
+  print(select_callback(.f));
+  print(select_nested(.t));
+  print(select_nested(.f))
+}

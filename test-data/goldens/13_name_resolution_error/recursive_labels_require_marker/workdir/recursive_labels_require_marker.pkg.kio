@@ -1,0 +1,13 @@
+package recursive_labels_require_marker;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

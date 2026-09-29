@@ -1,0 +1,134 @@
+/// Minimization by Moore's partition refinement.
+///
+/// Two DFA states are equivalent when no word tells them apart. Start from
+/// the only distinction visible without reading anything — accepting versus
+/// not — then refine: a state's signature is its own block followed by the
+/// block each letter leads to, and a block splits whenever two of its
+/// members disagree. Blocks only ever split, so the rounds terminate; when a
+/// round splits nothing, every block is a class of indistinguishable states
+/// and the quotient automaton is the minimal DFA for the language.
+///
+/// Block ids are handed out as the states are scanned in order, so the start
+/// state always lands in block 0 and the numbering is canonical.
+module automata/minimize;
+
+import automata/dfa as dfa;
+import automata/seq(
+  , Ints
+  , List
+  , append
+  , cons
+  , empty
+  , fold
+  , intern
+  , len
+  , nil
+  , nth_or
+  , positions
+  , reverse
+  );
+import automata/symbol(width);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32);
+import testapi/iter(loop);
+
+/// `blocks[s]` is the block id of DFA state `s`.
+type Blocks = Ints;
+
+fn block_of(bs: Blocks, s: I32) -> I32 { nth_or(bs, s, 0) }
+
+rec(loop) fn initial(d: dfa.Dfa, s: I32, acc: Blocks) -> Blocks {
+  if! leq_i32(dfa.count(d), s) {
+    reverse(acc)
+  } else {
+    let tag = if! dfa.is_accepting(d, s) {
+      1
+    } else {
+      0
+    };
+    rec initial(d, add_i32(s, 1), cons(tag, acc))
+  }
+}
+
+rec(loop) fn row_blocks(d: dfa.Dfa, bs: Blocks, s: I32, sym: I32, acc: Ints) -> Ints {
+  if! leq_i32(width(), sym) {
+    reverse(acc)
+  } else {
+    rec row_blocks(d, bs, s, add_i32(sym, 1), cons(block_of(bs, dfa.step(d, s, sym)), acc))
+  }
+}
+
+/// The state's own block leads the signature. Without it, two states in
+/// different blocks that happen to move alike would merge, undoing the split
+/// an earlier round established.
+fn signature(d: dfa.Dfa, bs: Blocks, s: I32) -> Ints {
+  cons(block_of(bs, s), row_blocks(d, bs, s, 0, empty()))
+}
+
+/// One round. `bs` is the previous map and stays fixed throughout — the
+/// update is synchronous. Interning the distinct signatures both numbers the
+/// new blocks and counts them.
+rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Blocks) -> Blocks & I32 {
+  if! leq_i32(dfa.count(d), s) {
+    (reverse(acc), len(seen))
+  } else {
+    let .(grown: List(Ints), id: I32) = intern(seen, signature(d, bs, s));
+    rec relabel(d, bs, add_i32(s, 1), grown, cons(id, acc))
+  }
+}
+
+/// Refine to the fixpoint. Rounds only ever split, so an unchanged block
+/// count means an unchanged partition. The caller seeds `before` with zero,
+/// a count no partition can have, so the first round is never mistaken for a
+/// stable one.
+rec(loop) fn refine(d: dfa.Dfa, bs: Blocks, before: I32) -> Blocks & I32 {
+  let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil(Ints, ()), empty());
+  if! eq_i32(after, before) {
+    (next, after)
+  } else {
+    rec refine(d, next, after)
+  }
+}
+
+rec(loop) fn first_in(bs: Blocks, block: I32, at: I32) -> I32 {
+  match! bs.>List.unpack {
+    (
+      , .(x: I32, rest: Ints) {
+          if! eq_i32(x, block) {
+            at
+          } else {
+            rec first_in(rest, block, add_i32(at, 1))
+          }
+        }
+      , .(_empty: .) { 0 }
+      )
+  }
+}
+
+/// One representative per block, in block order. Every member of a block
+/// agrees on where each letter leads, so any one of them may speak for it.
+rec(loop) fn reps(bs: Blocks, blocks: I32, block: I32, acc: Ints) -> Ints {
+  if! leq_i32(blocks, block) {
+    reverse(acc)
+  } else {
+    rec reps(bs, blocks, add_i32(block, 1), cons(first_in(bs, block, 0), acc))
+  }
+}
+
+fn quotient_rows(d: dfa.Dfa, bs: Blocks, chosen: Ints) -> Ints {
+  fold(chosen, .(acc: Ints, rep: I32) { append(acc, row_blocks(d, bs, rep, 0, empty())) }, empty())
+}
+
+/// The quotient automaton: one state per block.
+pub fn minimize(d: dfa.Dfa) -> dfa.Dfa {
+  let .(bs: Blocks, blocks: I32) = refine(d, initial(d, 0, empty()), 0);
+  let chosen = reps(bs, blocks, 0, empty());
+  dfa.make(
+    , blocks
+    , block_of(bs, dfa.start(d))
+    , positions(chosen, .(rep: I32) { dfa.is_accepting(d, rep) })
+    , quotient_rows(d, bs, chosen)
+    )
+}

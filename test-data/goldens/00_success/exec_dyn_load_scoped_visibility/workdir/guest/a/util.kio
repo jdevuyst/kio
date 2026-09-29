@@ -1,0 +1,5 @@
+module a/util;
+
+import hostapi(I32, add_i32);
+
+pub(a) fn bump(x: I32) -> I32 { add_i32(x, 1) }

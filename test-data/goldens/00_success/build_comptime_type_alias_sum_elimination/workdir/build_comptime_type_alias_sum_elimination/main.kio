@@ -1,0 +1,35 @@
+module build_comptime_type_alias_sum_elimination/main;
+
+import __intrinsics__;
+
+import __comptime__;
+
+rec newtype Type_list : . | (__Type__ & Type_list) {
+  constructor mk_type_list;
+  projector un_type_list
+  }
+
+type Dnf_branch = __Type__;
+
+type Dnf_branch_list = Type_list;
+
+fn type_nil() -> Type_list { Type_list.mk_type_list(__left__(., __Type__ & Type_list, ())) }
+
+fn dnf_branch_cons(head: Dnf_branch, tail: Dnf_branch_list) -> Dnf_branch_list {
+  Type_list.mk_type_list(__right__(., Dnf_branch & Dnf_branch_list, (head, tail)))
+}
+
+fn single_dnf_branch(xs: Dnf_branch_list) -> Dnf_branch | . {
+  __either__(
+    , .
+    , Dnf_branch & Dnf_branch_list
+    , Dnf_branch | .
+    , Type_list.un_type_list(xs)
+    , .() -> Dnf_branch | . { __right__(Dnf_branch, ., ()) }
+    , .(cell: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
+        __left__(Dnf_branch, ., __fst__(Dnf_branch, Dnf_branch_list, cell))
+      }
+    )
+}
+
+pub fn main() -> . { () }

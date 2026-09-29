@@ -1,0 +1,184 @@
+module robot/engine;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import list/list as traversal;
+import robot/memory as memory;
+import robot/model as model;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Evaluation = { result: model.Status, state: memory.State };
+
+pub fn status_name(status: model.Status) -> String {
+  match! status {
+    .(_r: model.Running) { "Running" };
+    .(_s: model.Success) { "Success" };
+    .(_f: model.Failure) { "Failure" }
+  }
+}
+
+fn tick_action(task: model.Job, state: memory.State) -> Evaluation {
+  let id = task.?{model.task_id};
+  let progress = arith.add_i32(memory.get(id, state), 1);
+  let done = arith.leq_i32(task.?{model.duration}, progress);
+  let result =
+    if! done {
+      model.success_status()
+    } else {
+      model.running_status()
+    };
+  let next =
+    memory.store(
+      , id
+      , if! done {
+          0
+        } else {
+          progress
+        }
+      , task.?{model.task_name}
+      , .f
+      , memory.visit(id, state)
+      );
+  let message =
+    text.string_concat(
+      , task.?{model.task_name}
+      , text.string_concat(
+          , " "
+          , text.string_concat(
+              , fmt.int_to_string(progress)
+              , text.string_concat(
+                  , "/"
+                  , text.string_concat(
+                      , fmt.int_to_string(task.?{model.duration})
+                      , text.string_concat(" ", status_name(result))
+                      )
+                  )
+              )
+          )
+      );
+  {result, state = memory.event(message, memory.worked(done, next))}
+}
+
+fn invert_result(evaluation: Evaluation) -> Evaluation {
+  let result =
+    match! evaluation.?{result} {
+      .(_r: model.Running) { model.running_status() };
+      .(_s: model.Success) { model.failure_status() };
+      .(_f: model.Failure) { model.success_status() }
+    };
+  {
+    , result
+    , state = memory.event(text.string_concat("invert ", status_name(result)), evaluation.?{state})
+    }
+}
+
+rec(loop) {
+  pub fn tick(tree: model.Tree, world: model.World, state: memory.State) -> Evaluation {
+    match! tree {
+      .(action: model.Action) { tick_action(action.?{model.action}, state) };
+      .(sequence: model.Sequence) {
+        let .(id, children) = sequence.?{model.sequence};
+        let cursor = memory.get(id, state);
+        rec sequence_children(
+          , id
+          , cursor
+          , traversal.drop(cursor, children)
+          , world
+          , memory.visit(id, state)
+          )
+      };
+      .(selector: model.Selector) {
+        rec selector_children(selector.?{model.selector}, world, state)
+      };
+      .(invert: model.Invert) {
+        invert_result(rec(cont) tick(invert.?{model.invert}, world, state))
+      };
+      .(_test: model.Blocked_test) {
+        let result =
+          if! world.?{model.blocked} {
+            model.success_status()
+          } else {
+            model.failure_status()
+          };
+        {result, state = memory.event(text.string_concat("blocked? ", status_name(result)), state)}
+      };
+      .(guard: model.Hazard_guard) {
+        if! world.?{model.hazard} {
+          rec tick(guard.?{model.hazard_guard}, world, state)
+        } else {
+          {result = model.failure_status(), state}
+        }
+      };
+      .(once: model.Once) {
+        let .(id, child) = once.?{model.once};
+        if! arith.lt_i32(0, memory.get(id, state)) {
+          {
+            , result = model.success_status()
+            , state = memory.event("delivery already complete", state)
+            }
+        } else {
+          let evaluated = rec(cont) tick(child, world, state);
+          match! evaluated.?{result} {
+            .(_done: model.Success) {
+              {
+                , result = model.success_status()
+                , state = memory.store(id, 1, "", .t, evaluated.?{state})
+                }
+            };
+            .(_running: model.Running) { evaluated };
+            .(_failed: model.Failure) { evaluated }
+          }
+        }
+      }
+    }
+  };
+  fn sequence_children(
+    , id: I32
+    , cursor: I32
+    , children: lists.List(model.Tree)
+    , world: model.World
+    , state: memory.State
+    ) -> Evaluation {
+    match! lists.uncons(children) {
+      .(child: model.Tree, tail: lists.List(model.Tree)) {
+        let evaluated = rec(cont) tick(child, world, state);
+        match! evaluated.?{result} {
+          .(_done: model.Success) {
+            rec sequence_children(id, arith.add_i32(cursor, 1), tail, world, evaluated.?{state})
+          };
+          .(_running: model.Running) {
+            {
+              , result = model.running_status()
+              , state = memory.store(id, cursor, "", .f, evaluated.?{state})
+              }
+          };
+          .(_failed: model.Failure) {
+            {
+              , result = model.failure_status()
+              , state = memory.store(id, 0, "", .f, evaluated.?{state})
+              }
+          }
+        }
+      };
+      .() { {result = model.success_status(), state = memory.store(id, 0, "", .f, state)} }
+    }
+  };
+  fn selector_children(children: lists.List(model.Tree), world: model.World, state: memory.State) -> Evaluation {
+    match! lists.uncons(children) {
+      .(child: model.Tree, tail: lists.List(model.Tree)) {
+        let evaluated = rec(cont) tick(child, world, state);
+        match! evaluated.?{result} {
+          .(_failed: model.Failure) { rec selector_children(tail, world, evaluated.?{state}) };
+          .(_running: model.Running) { evaluated };
+          .(_done: model.Success) { evaluated }
+        }
+      };
+      .() { {result = model.failure_status(), state} }
+    }
+  }
+}

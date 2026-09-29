@@ -1,0 +1,13 @@
+package typecheck_elaborator_visibility_lattice;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  app/**
+}

@@ -1,0 +1,1 @@
+view(fst_lens(), ("one", 2)) == one

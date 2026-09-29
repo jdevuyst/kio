@@ -1,0 +1,4 @@
+  pass equiv `if_true_takes_then_arm` in host/m
+  pass equiv `if_false_takes_else_arm` in host/m
+
+result: 2/2 equiv blocks passed

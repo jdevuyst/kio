@@ -1,0 +1,3 @@
+module build_alias_function_slots;
+
+host type I32 role(i32);

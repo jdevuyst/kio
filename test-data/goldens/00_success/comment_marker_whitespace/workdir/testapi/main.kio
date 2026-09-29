@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A regular comment with a space after `//`.
+//
+// The line above is an empty `//` comment (marker, then end-of-line).
+/// A doc-comment with a space after `///`.
+///
+/// The line above is an empty `///` doc-comment.
+fn greeting() -> String { "ok\n" }
+
+pub fn main() -> . { print(greeting()) }

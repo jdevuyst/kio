@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Identity used as a type annotator: pinning the second arg's
+// type to `String -> .` lets the typer drive
+// `.x. { print(x1) }` bidirectionally — the placeholder gets the
+// parameter type from the expected function type without needing
+// an annotation at the lambda itself.
+fn id[A](x: A) -> A { x }
+
+pub fn main() -> . { let p = id(String -> ., .x. { print(x1) }); p("hello .#\n") }

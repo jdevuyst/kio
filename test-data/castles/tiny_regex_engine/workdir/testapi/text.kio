@@ -1,0 +1,13 @@
+module testapi/text;
+
+import testapi(Bool, I32, String);
+
+host fn string_code_at(s: String, index: I32) -> I32 | .;
+
+host fn string_concat(a: String, b: String) -> String;
+
+host fn string_eq(a: String, b: String) -> Bool;
+
+host fn string_len(s: String) -> I32;
+
+host fn string_slice(s: String, start: I32, end: I32) -> String;

@@ -1,0 +1,4 @@
+condition
+then factory
+else factory
+else invoke

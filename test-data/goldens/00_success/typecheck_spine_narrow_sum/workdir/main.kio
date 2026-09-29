@@ -1,0 +1,27 @@
+module main;
+
+import elab/spine_elaborators(narrow_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// Pure codiagonal. Source spine has two like-typed `A` arms; target
+// collapses them to one. Spec rule R-Collapse-Sum: both source `A`s
+// route to the single target `A`. Target multiset `{A}` ⊆ source
+// multiset `{A, A}`; non-`!` type-set equality `{A} = {A}` holds.
+fn collapse_pair(x: A | A) -> A { narrow_sum!(x) }
+
+// Codiagonal with retained heterogeneous arm. Source `[A, A, B]`,
+// target `[A, B]` — the two `A`s collapse, `B` passes through.
+// Non-`!` type-set equality `{A, B} = {A, B}` holds.
+fn collapse_one_keep_other(x: A | A | B) -> A | B { narrow_sum!(x) }
+
+// R-Identity-Sum-elim — the `!`-arm carve-out. Source `[A, !, A]`,
+// target `[A]`: the two `A`s collapse and the `!` arm drops because
+// `!` is uninhabited (no value-level loss). The carve-out is what
+// distinguishes narrow_sum! from a strict-multiset-only rule.
+fn carve_out_bottom(x: A | ! | A) -> A { narrow_sum!(x) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(x: A | A) -> A { x.>narrow_sum! }

@@ -1,0 +1,3 @@
+module helpers/ops;
+
+pub fn combine(left: ., right: .) -> . { left; right }

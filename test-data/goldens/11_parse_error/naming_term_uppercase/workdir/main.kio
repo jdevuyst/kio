@@ -1,0 +1,3 @@
+module naming_term_uppercase/main;
+
+fn Foo() -> . { () }

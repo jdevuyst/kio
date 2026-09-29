@@ -1,0 +1,14 @@
+package build_ts_labels_boundary_skin;
+
+build {
+  cache "out/.kio-cache/";
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  api;
+  api/**
+}

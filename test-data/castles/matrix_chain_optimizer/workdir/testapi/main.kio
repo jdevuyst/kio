@@ -1,0 +1,102 @@
+module testapi/main;
+
+import chain as chain;
+import chain(Evaluation, Matrix, {cols}, {cost}, {first}, {last}, {leaves}, {rows});
+import elab/control(if);
+import elab/match(match);
+import optimizer as optimizer;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as math;
+import testapi/array as arrays;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+import tree as tree;
+
+fn line(value: String) -> . { io.print(text.string_concat(value, "\n")) }
+
+fn field(name: String, value: I32) -> String { text.string_concat(name, fmt.int_to_string(value)) }
+
+fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.Tree) -> . {
+  match! tree.replay(solution, matrices) {
+    .(result: Evaluation) {
+      io.print(field("replay=", result.?{rows}));
+      io.print(field("x", result.?{cols}));
+      io.print(field(" cost=", result.?{cost}));
+      io.print(field(" leaves=", result.?{leaves}));
+      io.print(field(" order=", math.add_i32(result.?{first}, 1)));
+      io.print(field("..", math.add_i32(result.?{last}, 1)));
+      line(text.string_concat(
+        , " matches-table="
+        , fmt.bool_to_string(chain.equal(
+            , result.?{cost}
+            , optimizer.cost(plan, 0, math.sub_i32(arrays.array_len(matrices), 1))
+            ))
+        ))
+    };
+    .(error: String) { line(text.string_concat("replay rejected: ", error)) }
+  }
+}
+
+fn baseline_cost(label: String, matrices: Array(Matrix), solution: tree.Tree) -> . {
+  match! tree.replay(solution, matrices) {
+    .(result: Evaluation) { io.print(field(label, result.?{cost})) };
+    .(error: String) { io.print(text.string_concat(label, error)) }
+  }
+}
+
+fn run(name: String, matrices: Array(Matrix)) -> . {
+  let description =
+    if! math.leq_i32(arrays.array_len(matrices), 0) {
+      "(empty)"
+    } else {
+      chain.describe(matrices, 0, "")
+    };
+  line(text.string_concat(
+    , text.string_concat("matrix-chain ", name)
+    , text.string_concat(": ", description)
+    ));
+  match! chain.validate(matrices) {
+    .(error: String) { line(text.string_concat("rejected: ", error)) };
+    .() {
+      let count = arrays.array_len(matrices);
+      let last = math.sub_i32(count, 1);
+      let plan = optimizer.optimize(matrices);
+      let solution = optimizer.reconstruct(plan, 0, last);
+      line(text.string_concat("plan ", tree.render(solution)));
+      io.print(field("cost=", optimizer.cost(plan, 0, last)));
+      line(field(" root-split=", math.add_i32(optimizer.split(plan, 0, last), 1)));
+      replay_report(plan, matrices, solution);
+      baseline_cost("left-fold=", matrices, tree.left_fold(1, count, tree.leaf(0)));
+      baseline_cost(
+        , " right-fold="
+        , matrices
+        , tree.right_fold(math.sub_i32(last, 1), tree.leaf(last))
+        );
+      line("")
+    }
+  }
+}
+
+pub fn main() -> . {
+  let interior = arrays.array_make_empty(Matrix, ());
+  arrays.array_push(interior, chain.matrix(5, 10));
+  arrays.array_push(interior, chain.matrix(10, 3));
+  arrays.array_push(interior, chain.matrix(3, 12));
+  arrays.array_push(interior, chain.matrix(12, 5));
+  arrays.array_push(interior, chain.matrix(5, 8));
+  run("interior", interior);
+  let tie = arrays.array_make_filled(3, chain.matrix(4, 4));
+  run("tie", tie);
+  run("single", arrays.array_make_filled(1, chain.matrix(7, 9)));
+  let mismatch = arrays.array_make_empty(Matrix, ());
+  arrays.array_push(mismatch, chain.matrix(4, 6));
+  arrays.array_push(mismatch, chain.matrix(5, 3));
+  run("mismatch", mismatch);
+  run("zero", arrays.array_make_filled(1, chain.matrix(0, 4)));
+  run("empty", arrays.array_make_empty(Matrix, ()));
+  match! tree.replay(tree.join(tree.leaf(1), tree.leaf(0)), tie) {
+    .(_result: Evaluation) { line("reversed tie replay unexpectedly accepted") };
+    .(error: String) { line(text.string_concat("reversed tie replay rejected: ", error)) }
+  }
+}

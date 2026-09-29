@@ -1,0 +1,122 @@
+module testapi/main;
+
+import library/result(
+  , Bool
+  , Result
+  , apply
+  , bimap
+  , bind
+  , bool_to
+  , err
+  , fold
+  , is_ok
+  , map
+  , map_err
+  , ok
+  , op _ %> _
+  , op _ <*> _
+  , op _ ?> _
+  , op _ ?? _
+  , or_else
+  , swap
+  , unwrap_err_or
+  , unwrap_or
+  );
+// The `result` POC: a worked tour of the root module `Result` library.
+// The reusable library surface is `result.kio`; this demo entry imports
+// it through `library.dep.kio`, renders `Result` / `Bool` values, and
+// exercises both the named API and the operator DSL.
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// =====================================================================
+// Display helpers
+// =====================================================================
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+// =====================================================================
+// Rendering
+// =====================================================================
+//
+// Render a `Result(I32, String)` for display: `ok(n)` becomes
+// `"ok(<n>)"`, `err(msg)` becomes `"err(<msg>)"`. The library's own
+// `fold` does the dispatch; this wrapper only formats each arm.
+fn show(result: Result(I32, String)) -> String {
+  fold(
+    , .(v: I32) { cat("ok(", cat(int_to_string(v), ")")) }
+    , .(x: String) { cat("err(", cat(x, ")")) }
+    , result
+    )
+}
+
+// Render the library's pure `Bool` as `"true"` / `"false"`. The
+// library's `bool_to` eliminator keeps the label internals on its side of
+// the import — main never names the underlying labels.
+fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
+
+// `swap` flips the arms, so a swapped `Result(I32, String)` is a
+// `Result(String, I32)`. Render it with the flipped formatting.
+fn show_swapped(result: Result(String, I32)) -> String {
+  fold(
+    , .(s: String) { cat("ok(", cat(s, ")")) }
+    , .(n: I32) { cat("err(", cat(int_to_string(n), ")")) }
+    , result
+    )
+}
+
+fn line(label: String, value: String) -> . { print(cat(label, cat(" = ", cat(value, "\n")))) }
+
+// =====================================================================
+// The tour
+// =====================================================================
+//
+// `run` is the whole demonstrative tour. `inc` and `shout` are the
+// worked-example transforms.
+fn run() -> . {
+  let inc = .(n: I32) -> I32 { add_i32(n, 1) };
+  let shout = .(s: String) -> String { cat(s, "!") };
+  // ---------- Constructors + eliminator ----------
+  let good = ok(_, String, 41);
+  let bad = err(I32, _, "boom");
+  line("ok(41)", show(good));
+  line("err(boom)", show(bad));
+  // ---------- Predicates ----------
+  line("is_ok(ok)", show_bool(is_ok(good)));
+  line("is_ok(err)", show_bool(is_ok(bad)));
+  // ---------- Functor / bifunctor ----------
+  line("map(inc, ok(41))", show(map(inc, good)));
+  line("map(inc, err)", show(map(inc, bad)));
+  line("map_err(shout, err(boom))", show(map_err(shout, bad)));
+  line("bimap(inc, shout, ok)", show(bimap(inc, shout, good)));
+  line("bimap(inc, shout, err)", show(bimap(inc, shout, bad)));
+  // ---------- Monad ----------
+  // `bind` chains a fallible step. `checked_inc` only succeeds on the
+  // success arm; threading binds shows the short-circuit.
+  let checked_inc = .(n: I32) -> Result(I32, String) { ok(inc(n)) };
+  line("bind(ok, checked_inc)", show(bind(good, checked_inc)));
+  line("bind(err, checked_inc)", show(bind(bad, checked_inc)));
+  // `apply`: a Result-wrapped function over a Result-wrapped argument.
+  let rf = ok(_, String, inc);
+  line("apply(ok(inc), ok(41))", show(apply(rf, good)));
+  // ---------- Recovery ----------
+  line("or_else(err, ok(7))", show(or_else(bad, ok(7))));
+  line("unwrap_or(0, err)", int_to_string(unwrap_or(0, bad)));
+  line("unwrap_or(0, ok)", int_to_string(unwrap_or(0, good)));
+  line("unwrap_err_or(none, ok)", unwrap_err_or("none", good));
+  // ---------- Bridge ----------
+  line("swap(ok(41))", show_swapped(swap(good)));
+  line("swap(err(boom))", show_swapped(swap(bad)));
+  // ---------- Operator DSL ----------
+  // `?>` is bind, `%>` is map, `??` is unwrap-or, `<*>` is apply. The
+  // operators read receiver-first, left-to-right.
+  line("ok(41) %> inc", show(good %> inc));
+  line("ok(41) ?> checked_inc", show(good ?> checked_inc));
+  line("err ?> checked_inc", show(bad ?> checked_inc));
+  line("err ?? 99", int_to_string(bad ?? 99));
+  line("ok(inc) <*> ok(41)", show(rf <*> good))
+}
+
+pub fn main() -> . { run() }

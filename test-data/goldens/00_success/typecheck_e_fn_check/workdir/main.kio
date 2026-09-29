@@ -1,0 +1,29 @@
+module main;
+
+// Rank-2 sink: takes a polymorphic identity. The receiving slot
+// is the polytype `[U] U -> U`; the value-arg lambda literal
+// is checked against it via E-FnCheck.
+fn use_id(f: [U] U -> U) -> . { f(()) }
+
+// Annotation form 1: every slot absent. The lambda literal has no
+// `_` markers and no concrete annotations on value-params or
+// return; E-FnCheck fills them in from the receiving polytype.
+fn call_absent() -> . { use_id(.[A](x) { x }) }
+
+// Annotation form 2: every slot `_`-marked. The user wrote `_`
+// for every annotation; E-FnCheck fills each `_` from the
+// corresponding slot of the receiving polytype.
+fn call_underscore() -> . { use_id(.[A](x: _) -> _ { x }) }
+
+// Annotation form 3: every slot concrete and syntactically
+// equivalent to the receiving polytype's slot. E-FnCheck
+// verifies the equivalence, but does not synthesize new types.
+fn call_concrete() -> . { use_id(.[A](x: A) -> A { x }) }
+
+// Mixed shape on a multi-binder polytype. The receiving slot
+// is `[A][B](A & B) -> A`; the inner `fn` writes the first
+// binder concretely, leaves the second slot `_`, and drops
+// the return annotation.
+fn use_const_fst(g: [A][B] (A & B) -> A) -> . { g(., ., (), ()) }
+
+fn call_mixed() -> . { use_const_fst(.[P][Q](x: P, _y: _) { x }) }

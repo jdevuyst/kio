@@ -1,0 +1,180 @@
+/// Everything the simulator prints.
+///
+/// The pipeline diagram is the point: one row per cycle, one column per
+/// stage, showing which instruction is where. `--` means the stage is
+/// empty that cycle -- the pipeline filling or draining, a bubble a stall
+/// pushed in, or a slot a taken branch squashed. The event column names
+/// the decision the hazard unit or the branch made *during* that cycle,
+/// so its effect is visible in the row below it, exactly as it would be
+/// on a timing diagram drawn by hand.
+module cpu/report;
+
+import cpu/isa(Instr, instr_text, reg_text, slot_text);
+import cpu/machine(
+  , {bubbles}
+  , {cycle}
+  , {flushes}
+  , {fwd_ex_mem}
+  , {fwd_mem_wb}
+  , {retired}
+  , {st_ex}
+  , {st_id}
+  , {st_if}
+  , {st_mem}
+  , {st_wb}
+  , {stalls}
+  );
+import cpu/machine(Machine, stage_empty);
+import cpu/num(cat, cat3, digits, div, int_eq, int_lt, left, right, spaces);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_len);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+/// What a cycle decided, if it decided anything worth naming. Most cycles
+/// just issue, and a row for one of those ends at the stage columns rather
+/// than at an empty event.
+pub type Event = String | .;
+
+pub fn quiet() -> Event { widen_sum!((), Event) }
+
+pub fn noted(text: String) -> Event { widen_sum!(text, Event) }
+
+fn num(value: I32) -> String { int_to_string(value) }
+
+pub fn line(text: String) -> . { print(cat(text, "\n")) }
+
+pub fn blank() -> . { print("\n") }
+
+pub fn heading(text: String) -> . { line(cat3("-- ", text, " --")) }
+
+pub fn labeled(label: String, value: String) -> . { line(cat3(label, ": ", value)) }
+
+fn counted(label: String, value: I32) -> . { labeled(label, num(value)) }
+
+pub fn yes_no(flag: Bool) -> String {
+  if! flag {
+    "yes"
+  } else {
+    "no"
+  }
+}
+
+/// One stage column: the instruction's index, or `--` for an empty stage.
+fn cell(slot: I32) -> String {
+  if! stage_empty(slot) {
+    " --"
+  } else {
+    cat(spaces(sub_i32(2, digits(slot))), slot_text(slot))
+  }
+}
+
+pub fn pipeline_header() -> . { line("cyc |  IF  ID  EX MEM  WB | event") }
+
+pub fn pipeline_row(m: Machine, event: Event) -> . {
+  let stages =
+    cat3(
+      , cat(cell(m.?{st_if}), " ")
+      , cat(cell(m.?{st_id}), " ")
+      , cat3(cat(cell(m.?{st_ex}), " "), cat(cell(m.?{st_mem}), " "), cell(m.?{st_wb}))
+      );
+  let row = cat(cat(right(m.?{cycle}, 3), " | "), stages);
+  match! event {
+    (.(note: String) { line(cat3(row, " | ", note)) }, .(_nothing: .) { line(cat(row, " |")) })
+  }
+}
+
+rec(loop) fn listing_walk(code: Array(Instr), index: I32) -> . {
+  if! int_lt(index, array_len(code)) {
+    line(cat(
+      , left(slot_text(index), add_i32(1, digits(index)), 6)
+      , instr_text(array_get(code, index))
+      ));
+    rec listing_walk(code, add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+pub fn program_listing(code: Array(Instr)) -> . { listing_walk(code, 0) }
+
+/// Instructions per cycle, scaled to permille and truncated -- there are
+/// no floats in this host env, and a ratio printed as a whole number of
+/// thousandths says everything a two-decimal IPC would.
+fn ipc_permille(m: Machine) -> I32 { div(mul_i32(m.?{retired}, 1000), m.?{cycle}) }
+
+fn forwards_text(m: Machine) -> String {
+  let total = add_i32(m.?{fwd_ex_mem}, m.?{fwd_mem_wb});
+  cat3(
+    , cat(num(total), " (EX/MEM ")
+    , cat(num(m.?{fwd_ex_mem}), ", MEM/WB ")
+    , cat(num(m.?{fwd_mem_wb}), ")")
+    )
+}
+
+/// Every cycle the EX stage either holds an instruction that will go on
+/// to retire, or holds nothing. So the bubbles and the retired count have
+/// to add back up to the cycles, and printing the identity turns the
+/// counters into each other's check.
+fn audit_text(m: Machine) -> String {
+  cat3(num(sub_i32(m.?{cycle}, m.?{retired})), " == ", num(m.?{bubbles}))
+}
+
+pub fn counters(m: Machine) -> . {
+  counted("cycles", m.?{cycle});
+  counted("instructions retired", m.?{retired});
+  counted("stall cycles", m.?{stalls});
+  counted("bubbles (EX idle)", m.?{bubbles});
+  counted("squashed instructions", m.?{flushes});
+  labeled("forwards", forwards_text(m));
+  counted("ipc (permille)", ipc_permille(m));
+  labeled("audit (cycles - retired == bubbles)", audit_text(m))
+}
+
+rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
+  if! int_lt(index, array_len(regs)) {
+    let separator = if! int_eq(index, 0) {
+      ""
+    } else {
+      " "
+    };
+    let entry = cat3(reg_text(index), "=", num(array_get(regs, index)));
+    rec reg_walk(regs, add_i32(index, 1), cat3(text, separator, entry))
+  } else {
+    text
+  }
+}
+
+rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
+  if! int_lt(index, array_len(mem)) {
+    let separator = if! int_eq(index, 0) {
+      ""
+    } else {
+      " "
+    };
+    let entry = cat(cat3("[", num(index), "]="), num(array_get(mem, index)));
+    rec mem_walk(mem, add_i32(index, 1), cat3(text, separator, entry))
+  } else {
+    text
+  }
+}
+
+pub fn dump_registers(caption: String, regs: Array(I32)) -> . {
+  labeled(caption, reg_walk(regs, 0, ""))
+}
+
+pub fn dump_memory(caption: String, mem: Array(I32)) -> . { labeled(caption, mem_walk(mem, 0, "")) }
+
+fn arrow(from_value: I32, to_value: I32) -> String { cat3(num(from_value), " -> ", num(to_value)) }
+
+pub fn headline(off: Machine, on: Machine) -> . {
+  labeled("cycles", arrow(off.?{cycle}, on.?{cycle}));
+  counted("cycles saved by forwarding", sub_i32(off.?{cycle}, on.?{cycle}));
+  labeled("stall cycles", arrow(off.?{stalls}, on.?{stalls}));
+  labeled("ipc (permille)", arrow(ipc_permille(off), ipc_permille(on)))
+}

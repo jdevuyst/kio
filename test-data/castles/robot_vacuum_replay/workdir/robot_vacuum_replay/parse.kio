@@ -1,0 +1,39 @@
+module robot_vacuum_replay/parse;
+
+import elab/control(if);
+import elab/match(match);
+import robot_vacuum_replay/command(
+  , Command
+  , charge_command
+  , clean_command
+  , dock_command
+  , left_command
+  , pause_command
+  , right_command
+  , start_command
+  , step_command
+  , unknown_command
+  );
+import testapi(Bool, I32, String);
+import testapi/fmt(string_to_int);
+import testapi/text(string_eq);
+
+pub fn parse_command(line: String) -> Command {
+  if! string_eq(line, "START") {
+    start_command()
+  } else if! string_eq(line, "PAUSE") {
+    pause_command()
+  } else if! string_eq(line, "LEFT") {
+    left_command()
+  } else if! string_eq(line, "RIGHT") {
+    right_command()
+  } else if! string_eq(line, "STEP") {
+    step_command()
+  } else if! string_eq(line, "CLEAN") {
+    clean_command()
+  } else if! string_eq(line, "DOCK") {
+    dock_command()
+  } else match! string_to_int(line) {
+    (.(amount: I32) { charge_command(amount) }, .(_empty: .) { unknown_command(line) })
+  }
+}

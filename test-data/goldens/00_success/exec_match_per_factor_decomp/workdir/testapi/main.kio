@@ -1,0 +1,49 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+newtype A : I32 { pub constructor mk_a; pub projector a }
+
+newtype B : I32 { pub constructor mk_b; pub projector b }
+
+newtype C : I32 { pub constructor mk_c; pub projector c }
+
+newtype D : I32 { pub constructor mk_d; pub projector d }
+
+newtype E : I32 { pub constructor mk_e; pub projector e }
+
+newtype F : I32 { pub constructor mk_f; pub projector f }
+
+// Stress: a 3-way product of binary sums has 8 distinct atomic
+// leaves under spine-walk per-factor decomposition (one for each
+// element of the Cartesian product of the three sums' arms). Six
+// structurally-distinct types ensure each clause pattern unifies
+// with exactly one leaf (drop + duplication can't turn a
+// missing-distinct-type into a false positive). The match must
+// dispatch each of the 8 leaves to its dedicated clause via three
+// nested per-factor `__either__` sum dispatches over the scrutinee
+// spine — not a flat 8-way DNF decision.
+fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
+  match! p {
+    (
+      , .(x: A, y: C, z: E) { "ace\n" }
+      , .(x: A, y: C, z: F) { "acf\n" }
+      , .(x: A, y: D, z: E) { "ade\n" }
+      , .(x: A, y: D, z: F) { "adf\n" }
+      , .(x: B, y: C, z: E) { "bce\n" }
+      , .(x: B, y: C, z: F) { "bcf\n" }
+      , .(x: B, y: D, z: E) { "bde\n" }
+      , .(x: B, y: D, z: F) { "bdf\n" }
+      )
+  }
+}
+
+pub fn main() -> . {
+  // Build (B, C, F) — exercises the "bcf" clause.
+  let p =
+    (widen_sum!(B.mk_b(0), A | B), widen_sum!(C.mk_c(0), C | D), widen_sum!(F.mk_f(0), E | F));
+  print(handle(p))
+}

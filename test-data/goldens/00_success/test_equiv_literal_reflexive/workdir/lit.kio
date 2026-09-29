@@ -1,0 +1,7 @@
+module lit;
+
+host type Bool role(bool);
+
+host type Str role(str);
+
+host type U8 role(u8);

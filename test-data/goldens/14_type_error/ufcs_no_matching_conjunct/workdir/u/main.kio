@@ -1,0 +1,10 @@
+module u/main;
+
+import u(Int, String);
+
+fn want_int(x: Int) -> Int { x }
+
+// UFCS dispatch fails: the receiver is a String, none of its
+// conjuncts (just `String`) unifies with the callee's first
+// parameter type `Int`.
+pub fn main() -> . { let s = "hi"; let _ = s.>want_int; () }

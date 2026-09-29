@@ -1,0 +1,14 @@
+module testapi/syntax;
+
+import __intrinsics__;
+
+import testapi/definitions as definitions;
+import testapi/definitions(combine);
+
+pub op _ %+ _ { impl combine }
+
+pub op _ %* _ { impl __pair__ }
+
+pub varop [* *] { foldr definitions.accumulate definitions.begin; finalize definitions.Box.mk_box }
+
+pub varop [+ +] { foldr __pair__ definitions.begin; finalize __fst__ }

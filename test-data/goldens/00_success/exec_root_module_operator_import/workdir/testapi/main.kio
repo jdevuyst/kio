@@ -1,0 +1,11 @@
+module testapi/main;
+
+// `_ <| _` is `arith`'s root module operator, imported without
+// co-importing the underlying `left` function. The operator-fold
+// pass resolves `7 <| 9` against `arith`'s exported `pub op`.
+import arith(op _ <| _);
+import testapi(I32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+pub fn main() -> . { let n = 7 <| 9; print(i32_to_string(n)) }

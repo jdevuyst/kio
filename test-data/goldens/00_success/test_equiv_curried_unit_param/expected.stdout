@@ -1,0 +1,3 @@
+  pass equiv `curried_unit_groups` in curp/m
+
+result: 1/1 equiv block passed

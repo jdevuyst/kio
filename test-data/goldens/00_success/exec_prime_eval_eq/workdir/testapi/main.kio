@@ -1,0 +1,67 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A guest centred on i32 equality (the dyn_load_prime host-op `eq_i32`), with
+// the rest of the first-order arithmetic / comparison vocabulary. The
+// prime-eval differential runs `main` through dyn_load_prime's interpreter and
+// checks it agrees with compile-and-run.
+fn classify(label: String, n: I32) -> . {
+  let verdict =
+    if! eq_i32(n, 0) {
+      "zero"
+    } else if! lt_i32(n, 0) {
+      "negative"
+    } else {
+      "positive"
+    };
+  print(string_concat(label, string_concat(verdict, "\n")))
+}
+
+fn show(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+pub fn main() -> . {
+  classify("classify(0) = ", 0);
+  classify("classify(-4) = ", sub_i32(3, 7));
+  classify("classify(9) = ", add_i32(4, 5));
+  show(
+    , "eq(7,7) -> 1 : 0 = "
+    , if! eq_i32(7, 7) {
+        1
+      } else {
+        0
+      }
+    );
+  show(
+    , "eq(201,201) -> 1 : 0 = "
+    , if! eq_i32(201, 201) {
+        1
+      } else {
+        0
+      }
+    );
+  show(
+    , "eq(7,8) -> 1 : 0 = "
+    , if! eq_i32(7, 8) {
+        1
+      } else {
+        0
+      }
+    );
+  show("mul(6,7) = ", mul_i32(6, 7));
+  show(
+    , "leq pick = "
+    , if! leq_i32(2, 2) {
+        100
+      } else {
+        200
+      }
+    )
+}

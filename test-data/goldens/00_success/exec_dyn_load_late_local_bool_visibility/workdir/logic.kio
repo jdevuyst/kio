@@ -1,0 +1,14 @@
+module logic;
+
+import elab/control(if);
+import testapi(Bool, String);
+
+pub fn pick(c: Bool, when_true: String, when_false: String) -> String {
+  if! c {
+    when_true
+  } else {
+    when_false
+  }
+}
+
+host type Later_bool role(bool);

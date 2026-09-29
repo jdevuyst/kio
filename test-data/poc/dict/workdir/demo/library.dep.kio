@@ -1,0 +1,8 @@
+dependency library;
+
+source {
+  path "../dict.pkg.kio"
+}
+
+rehost library/dict to dict_host;
+rehost library/elab/testapi to testapi;

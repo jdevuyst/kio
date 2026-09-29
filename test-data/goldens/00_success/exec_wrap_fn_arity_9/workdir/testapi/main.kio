@@ -1,0 +1,56 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A nine-parameter function taken as a first-class value. It exercises
+// callable arity beyond the small fixed cases without changing source
+// grouping or imposing a backend-specific ceiling.
+fn join9(
+  , a: String
+  , b: String
+  , c: String
+  , d: String
+  , e: String
+  , g: String
+  , h: String
+  , i: String
+  , j: String
+  ) -> String {
+  string_concat(
+    , a
+    , string_concat(
+        , b
+        , string_concat(
+            , c
+            , string_concat(
+                , d
+                , string_concat(e, string_concat(g, string_concat(h, string_concat(i, j))))
+                )
+            )
+        )
+    )
+}
+
+fn call9(
+  , f: (String & String & String & String & String & String & String & String & String) -> String
+  , p: String & String & String & String & String & String & String & String & String
+  ) -> String { f(p) }
+
+pub fn main() -> . {
+  print(call9(
+    , join9
+    , (
+        , "1"(String)
+        , "2"(String)
+        , "3"(String)
+        , "4"(String)
+        , "5"(String)
+        , "6"(String)
+        , "7"(String)
+        , "8"(String)
+        , "9\n"(String)
+        )
+    ))
+}

@@ -1,0 +1,19 @@
+package dwkm;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  dwkm/**;
+  elab/testapi
+}

@@ -1,0 +1,5 @@
+module control;
+
+import testapi(String);
+
+pub fn x9() -> String { "q" }

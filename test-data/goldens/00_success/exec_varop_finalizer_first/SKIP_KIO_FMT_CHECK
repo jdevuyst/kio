@@ -1,0 +1,2 @@
+Finalizer-before-primary declarations are deliberate parser-acceptance inputs;
+the runtime runner executes these original bytes without canonicalizing them.

@@ -1,0 +1,4 @@
+list:1=10;2=20;3=30;
+list-size:3
+fold:seed:1=10;2=20;3=30;
+dict-size:3

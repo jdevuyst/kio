@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elab/derive(derive);
+import testapi(String);
+import testapi/io(print);
+
+// The canonical brand-eligible arity-1 newtype.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A `Monad[*F]` dictionary with a single polymorphic-function
+// payload: `bind` takes a branded value and a continuation.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// The Box instance — a zero-precondition base rule (`. -> R`).
+fn box_monad() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+// The simplest `derive!`: a single base instance, trivial derivation.
+// The synthesized call tree is just `box_monad()`.
+fn use_derived() -> String {
+  let monad = derive!(box_monad, Monad(Box));
+  let lifted = Box.mk_box("derive! base: ok\n"(String));
+  let stepped = Monad.bind(monad)(String, String, lifted, .(s) { Box.mk_box(s) });
+  Box.un_box(stepped)
+}
+
+pub fn main() -> . { print(use_derived()) }

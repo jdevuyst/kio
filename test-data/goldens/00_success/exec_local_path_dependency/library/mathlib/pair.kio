@@ -1,0 +1,7 @@
+module pair;
+
+pub type Pair[A] = A & A;
+
+pub fn dup[A](x: A) -> Pair(A) { (x, x) }
+
+pub fn first[A]((a: A, _b: A)) -> A { a }

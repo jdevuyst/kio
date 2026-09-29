@@ -1,0 +1,13 @@
+module build_compound_alias_tuple_slot/main;
+
+import __intrinsics__;
+
+type Tail = . & .;
+
+type Whole = . & Tail;
+
+fn make() -> Whole { __pair__(., Tail, (), __pair__(., ., (), ())) }
+
+fn tail(x: Whole) -> Tail { __snd__(., Tail, x) }
+
+pub fn main() -> . { () }

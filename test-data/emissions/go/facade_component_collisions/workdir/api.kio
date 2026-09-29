@@ -1,0 +1,13 @@
+module api;
+
+pub newtype Child : . { pub constructor make_child; pub projector read_child }
+
+pub newtype Foo_bar : . { pub constructor make_x; pub projector _make_x }
+
+pub newtype _Foo_bar : . { pub constructor mk; pub projector un }
+
+pub fn child() -> . { () }
+
+pub fn foo_bar() -> . { () }
+
+pub fn _foo_bar() -> . { () }

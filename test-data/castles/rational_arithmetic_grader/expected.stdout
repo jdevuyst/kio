@@ -1,0 +1,53 @@
+rational_arithmetic_grader
+
+exercise 1: (1/2 + 1/3)
+  correct: 5/6
+  submitted: 5/6
+  verdict: exact - in lowest terms
+
+exercise 2: (1/4 + 1/4)
+  correct: 1/2
+  submitted: 2/4
+  verdict: equivalent - accepted, 2/4 reduces to 1/2
+
+exercise 3: (3/4 * 8/9)
+  correct: 2/3
+  submitted: 2/3
+  verdict: exact - in lowest terms
+
+exercise 4: (1/6 - 3/4)
+  correct: -7/12
+  submitted: -7/12
+  verdict: exact - in lowest terms
+
+exercise 5: (2/5 - 4/5)
+  correct: -2/5
+  submitted: 2/-5
+  verdict: equivalent - accepted, 2/-5 reduces to -2/5
+
+exercise 6: (7/2 / 1/2)
+  correct: 7
+  submitted: 7
+  verdict: exact - in lowest terms
+
+exercise 7: (2/3 * 3/5)
+  correct: 2/5
+  submitted: 5/2
+  verdict: wrong - above the correct value
+
+exercise 8: ((1/2 + (5/6 / (1/3 - 1/3))) * 1/4)
+  correct: undefined
+  submitted: 0
+  verdict: undefined - the question divides by zero, so it has no answer
+
+exercise 9: (1/2 * 2/3)
+  correct: 1/3
+  submitted: 4/0
+  verdict: wrong - not a number, the submitted denominator is zero
+
+summary
+  exact: 4
+  equivalent: 2
+  wrong: 2
+  undefined: 1
+class total: 10 of 16 points

@@ -1,0 +1,5 @@
+module testapi/types;
+
+import testapi(String);
+
+pub newtype Box <A> : String & A { pub constructor mk_box; pub projector un_box }

@@ -1,0 +1,3 @@
+module host;
+
+host fn foo() -> .;

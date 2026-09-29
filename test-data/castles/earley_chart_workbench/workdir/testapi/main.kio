@@ -1,0 +1,16 @@
+module testapi/main;
+
+import earley/arrays as arrays;
+import earley/fixtures as fixtures;
+import earley/report as report;
+import testapi/io as io;
+
+pub fn main() -> . {
+  io.print("Earley chart workbench\n");
+  let nullable = fixtures.nullable();
+  report.suite("nullable", nullable, fixtures.nullable_examples());
+  report.suite("nullable-reordered", arrays.reversed(nullable), fixtures.nullable_examples());
+  report.suite("balanced", fixtures.balanced(), fixtures.balanced_examples());
+  report.suite("cyclic", fixtures.cyclic(), fixtures.cyclic_examples());
+  io.print("completed 18 recognitions\n")
+}

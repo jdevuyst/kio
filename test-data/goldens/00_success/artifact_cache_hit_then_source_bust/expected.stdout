@@ -1,0 +1,6 @@
+cold cache log:
+artifact-cache: miss <target> <key> (no entry)
+warm cache log:
+artifact-cache: hit <target> <key>
+edit cache log:
+artifact-cache: miss <target> <key> (no entry)

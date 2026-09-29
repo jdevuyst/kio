@@ -1,0 +1,33 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// The like-typed-group rule (specs/language.md § iso! / into! /
+// onto! mechanics — Commutativity): when source and target
+// products carry equal-typed components in different order, the
+// kth source component of type T must occupy the kth target slot
+// of type T. Source `(I32 & String & I32)` has two `I32`
+// components — at positions 0 and 2. Target `(I32 & I32 & String)`
+// has the two `I32` slots first; the rule pins source-position 0
+// to target-slot 0 and source-position 2 to target-slot 1, with
+// `String` landing in target-slot 2. The case uses `into!` since
+// rearrangement is iso!-shared.
+//
+// We tag the two ints with distinct values (1, 2) so the order
+// is observable at runtime. After the rearrangement, `match!`
+// destructures the realigned triple into its three positional
+// slots so the test prints them in the realigned order.
+fn realign(p: I32 & String & I32) -> I32 & I32 & String { into!(p) }
+
+fn print_line(s: String) -> . { print(s); print("\n") }
+
+pub fn main() -> . {
+  let original = (1, "middle", 2);
+  let .(q: (a: I32, b: I32, s: String)) = realign(original);
+  print_line(int_to_string(a));
+  print_line(int_to_string(b));
+  print_line(s)
+}

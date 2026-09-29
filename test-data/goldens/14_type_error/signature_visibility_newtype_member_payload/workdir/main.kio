@@ -1,0 +1,5 @@
+module main;
+
+newtype Hidden : . { constructor mk; projector un }
+
+pub newtype Public_box : Hidden { pub constructor mk; projector un }

@@ -1,0 +1,7 @@
+/// A module with directive typos.
+///
+/// This uses an unknown directive: [`@eval foo`].
+/// This is a typo: [`@signaure foo`].
+module baddir/main;
+
+fn foo() -> . { () }

@@ -1,0 +1,27 @@
+module main;
+
+import elab/algebraic_elaborators(atom);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// `atom!(p)` with target elided: source DNF is `[[A, B]]` — both
+// `A` and `B` appear in every arm, so the source-driven inference
+// path (`infer_atom_target`) finds two candidates and would
+// reject as ambiguous. The surrounding expected type (the
+// function's `-> A` return slot) pins `T = A` before the
+// source-driven fallback fires; the typer then runs the
+// algebraic engine with target `A` and the elaboration succeeds
+// via R-Project-Prod. See specs/language.md:100.
+fn pick_a(p: A & B) -> A { atom!(p) }
+
+// Same shape, opposite component. The source `A & B` is
+// symmetric in its two factors; the picked target falls out of
+// the function's `-> B` return slot, not from the source's DNF.
+fn pick_b(p: A & B) -> B { atom!(p) }
+
+// Same call shape under UFCS — `p.>atom!` against an expected
+// return type. Confirms the resolution order applies through
+// the UFCS spelling too.
+fn pick_a_ufcs(p: A & B) -> A { p.>atom! }

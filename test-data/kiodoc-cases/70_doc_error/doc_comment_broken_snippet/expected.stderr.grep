@@ -1,0 +1,9 @@
+# The correlated validator message names the .kio file and line.
+^input\.kio:5:1: doc-comment snippet for `doctest/broken` at line 5: `kio check` exited 14 but 0 was expected
+# The rejecting `kio check` diagnostic is reported under its own header,
+# after the correlated message rather than ahead of it.
+^--- kio check diagnostic ---$
+error: type mismatch: expected `\.`, found `\. -> \.`
+# ...then the source that was actually typechecked.
+^--- assembled program ---$
+^fn kiodoc_example_mgegpgdhegfhdhecpgchcgpglgfgo_d_i0\(\) -> \. \{

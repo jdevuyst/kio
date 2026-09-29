@@ -1,0 +1,7 @@
+module a_/b;
+
+host type Edge;
+
+host fn g(value: Edge) -> Edge;
+
+pub fn c(value: .) -> . { value }

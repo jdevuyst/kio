@@ -1,0 +1,9 @@
+module option/list/elab/testapi;
+
+host type String role(str);
+
+host type I32 role(i32);
+
+host type Int role(i32);
+
+host type Bool role(bool);

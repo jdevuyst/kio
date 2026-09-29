@@ -1,0 +1,5 @@
+module x;
+
+import m(op _ + _, op _ ? _ : ___, foo, varop [% %]);
+
+fn main() -> . { .x. { print(x1) } + () }

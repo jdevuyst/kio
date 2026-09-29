@@ -1,0 +1,3 @@
+module api;
+
+pub newtype Box : . { pub constructor make_box; projector read_box }

@@ -1,0 +1,19 @@
+module testapi/main;
+
+import app/rehost(tag);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn main() -> . {
+  // `print` / `string_concat` take the host `testapi.String` (role(str)).
+  // The host call keeps the exact `testapi.String`, even though
+  // `app/rehost` declares `type String = testapi.String` in its own scope —
+  // that alias is not in scope here.
+  print(string_concat("plain concat\n", ""));
+  // `tag` returns the rehost-aliased `String`; its result feeds straight
+  // into the host `print`, crossing the alias boundary back to the host
+  // type.
+  print(tag("tagged", "ok"));
+  print("\n")
+}

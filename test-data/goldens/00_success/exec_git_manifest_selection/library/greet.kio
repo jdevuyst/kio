@@ -1,0 +1,3 @@
+module greet;
+
+pub fn marker[A](first: A, _second: A) -> A { first }

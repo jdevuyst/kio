@@ -1,0 +1,20 @@
+Hierarchical test report
+SUITE compiler pass=11 fail=3 skip=3
+SUITE compiler/parser pass=4 fail=1 skip=3
+FAIL compiler/parser/missing operand x1: expected expression
+SUITE compiler/parser/spans pass=4 fail=0 skip=0
+SUITE compiler/codegen pass=5 fail=2 skip=0
+FAIL compiler/codegen/closures x2: capture mismatch
+SUITE recovery pass=1 fail=0 skip=0
+TOTAL pass=12 fail=3 skip=3
+DIAGNOSTICS 10
+ERROR end without suite: orphan
+ERROR test outside suite: loose case
+ERROR end wrong name while open: recovery
+ERROR invalid count: many
+ERROR negative count
+ERROR test count must be positive
+ERROR unknown event: noise
+ERROR count mismatch: recovery
+ERROR truncated event: missing message
+ERROR unclosed suite: unfinished

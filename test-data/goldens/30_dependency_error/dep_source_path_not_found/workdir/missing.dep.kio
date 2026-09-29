@@ -1,0 +1,5 @@
+dependency missing;
+
+source {
+  path "../library/missing/missing.pkg.kio"
+}

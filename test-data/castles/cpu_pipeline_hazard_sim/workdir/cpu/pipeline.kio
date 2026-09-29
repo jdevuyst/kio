@@ -1,0 +1,374 @@
+/// The datapath: one cycle of the five-stage pipeline, and the loop that
+/// runs cycles until the pipeline drains.
+///
+/// A cycle ends in exactly one of three ways, and they differ only in
+/// what happens at the *front* of the pipeline. EX, MEM and WB always
+/// move on -- an instruction past decode is never held back:
+///
+///   squash  a branch in EX resolved taken. The two instructions behind
+///           it are wrong-path and are killed, the program counter is
+///           redirected, and nothing enters EX next cycle.
+///   stall   the hazard unit is holding the instruction in ID. IF and ID
+///           freeze, the program counter freezes with them, and a bubble
+///           goes into EX in place of the held instruction.
+///   issue   the ordinary case: every stage shifts down one and the front
+///           end fetches.
+///
+/// Within a cycle the order is fixed: EX reads its register operands from
+/// the file as it stands at the *start* of the cycle -- that is the
+/// snapshot ID latched for it last cycle -- and only then does WB write.
+/// Getting that order backwards would hand EX a value a cycle early and
+/// quietly hide a hazard.
+module cpu/pipeline;
+
+import cpu/hazard(
+  , Load_use_stall
+  , Proceed
+  , Raw_stall
+  , Read
+  , hazard
+  , read_source
+  , {hit_ex_mem}
+  , {hit_mem_wb}
+  , {load_use_stall}
+  , {raw_stall}
+  , {value}
+  );
+import cpu/isa(
+  , Instr
+  , dest_of
+  , is_halt
+  , is_load
+  , is_store
+  , reg_text
+  , slot_text
+  , {code}
+  , {imm}
+  , {rs}
+  , {rt}
+  );
+import cpu/isa(Add, Beq, Halt, Load, Loadi, Mul, Nop, Store, Sub);
+import cpu/machine(
+  , {bubbles}
+  , {cycle}
+  , {ex_mem}
+  , {flushes}
+  , {forwarding}
+  , {fwd_ex_mem}
+  , {fwd_mem_wb}
+  , {mem_wb}
+  , {mem}
+  , {pc}
+  , {prog}
+  , {regs}
+  , {retired}
+  , {sealed}
+  , {st_ex}
+  , {st_id}
+  , {st_if}
+  , {st_mem}
+  , {st_wb}
+  , {stalls}
+  );
+import cpu/machine(Cpu, Machine, empty_stage, pipeline_empty, stage_empty, stage_filled);
+import cpu/num(cat, cat3, int_eq);
+import cpu/report(Event, noted, pipeline_row, quiet);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_set);
+import testapi/iter(loop);
+
+/// A branch's decision, produced in EX.
+labels Redirect = { jump: I32 } | { straight: . };
+
+/// Everything the EX stage produced this cycle: the value that goes into
+/// the EX/MEM latch, how many operands each bypass path served, and what
+/// the branch unit decided.
+labels Ex_out = { ex_value: I32, ex_hits: I32, mem_hits: I32, decision: Redirect };
+
+/// The next cycle's state, plus the one-line event the diagram shows
+/// against the cycle that produced it.
+labels Step = { next: Machine, note: Event };
+
+fn straight() -> Redirect { {straight=}.>widen_sum!(Redirect) }
+
+fn ex_out(value_now: I32, ex_hits_now: I32, mem_hits_now: I32, decision: Redirect) -> Ex_out {
+  {ex_value = value_now, ex_hits = ex_hits_now, mem_hits = mem_hits_now, decision}
+}
+
+/// An instruction that reads no register and takes no branch: LOADI's
+/// immediate, LOAD's effective address, and the nothing a NOP or a HALT
+/// leaves in the latch.
+fn ex_quiet(value_now: I32) -> Ex_out { ex_out(value_now, 0, 0, straight()) }
+
+fn ex_reads(a: Read, b: Read, value_now: I32, decision: Redirect) -> Ex_out {
+  ex_out(
+    , value_now
+    , add_i32(a.?{hit_ex_mem}, b.?{hit_ex_mem})
+    , add_i32(a.?{hit_mem_wb}, b.?{hit_mem_wb})
+    , decision
+    )
+}
+
+fn ex_alu(cpu: Cpu, m: Machine, inst: Instr, combine: (I32 & I32) -> I32) -> Ex_out {
+  let a = read_source(cpu, m, inst.?{rs});
+  let b = read_source(cpu, m, inst.?{rt});
+  ex_reads(a, b, combine(a.?{value}, b.?{value}), straight())
+}
+
+/// The branch unit. It compares two registers, so it is an ordinary
+/// consumer as far as hazards and forwarding are concerned -- a branch
+/// whose operand is still in flight stalls, or gets bypassed, like
+/// anything else. Resolving here, in EX, is what costs a taken branch the
+/// two instructions already fetched behind it.
+fn ex_branch(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
+  let a = read_source(cpu, m, inst.?{rs});
+  let b = read_source(cpu, m, inst.?{rt});
+  let decision =
+    if! int_eq(a.?{value}, b.?{value}) {
+      {jump = inst.?{imm}}.>widen_sum!(Redirect)
+    } else {
+      straight()
+    };
+  ex_reads(a, b, 0, decision)
+}
+
+/// A store reads its data register in EX and carries the value down in
+/// the EX/MEM latch; the address it writes to rides along in the
+/// instruction word. So a store is a consumer too, and a value it is
+/// about to spill can be bypassed to it.
+fn ex_store(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
+  let a = read_source(cpu, m, inst.?{rs});
+  ex_out(a.?{value}, a.?{hit_ex_mem}, a.?{hit_mem_wb}, straight())
+}
+
+/// Execute. Whatever the functional unit produces is what lands in the
+/// EX/MEM latch -- and for a LOAD that is the effective address, not the
+/// data. Bypassing the EX/MEM latch out of a LOAD would hand a consumer
+/// the address it is about to read from; the load-use stall exists so
+/// that never happens.
+fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
+  let code = inst.?{code};
+  match! code {
+    (
+      , .(_a: Add) { ex_alu(cpu, m, inst, .(x, y) { add_i32(x, y) }) }
+      , .(_s: Sub) { ex_alu(cpu, m, inst, .(x, y) { sub_i32(x, y) }) }
+      , .(_m: Mul) { ex_alu(cpu, m, inst, .(x, y) { mul_i32(x, y) }) }
+      , .(_li: Loadi) { ex_quiet(inst.?{imm}) }
+      , .(_ld: Load) { ex_quiet(inst.?{imm}) }
+      , .(_st: Store) { ex_store(cpu, m, inst) }
+      , .(_b: Beq) { ex_branch(cpu, m, inst) }
+      , .(_n: Nop) { ex_quiet(0) }
+      , .(_h: Halt) { ex_quiet(0) }
+      )
+  }
+}
+
+/// The memory port. A load reads the address the ALU left in the EX/MEM
+/// latch; a store writes the data it left there. Both happen in MEM and
+/// nowhere else, and MEM is in order, so a store followed by a load of
+/// the same word always sees the store first -- there is no memory hazard
+/// to detect.
+fn memory(cpu: Cpu, m: Machine) -> I32 {
+  let slot = m.?{st_mem};
+  if! stage_empty(slot) {
+    0
+  } else {
+    let inst = array_get(cpu.?{prog}, slot);
+    let carried = m.?{ex_mem};
+    if! is_load(inst) {
+      array_get(cpu.?{mem}, carried)
+    } else if! is_store(inst) {
+      array_set(cpu.?{mem}, inst.?{imm}, carried);
+      carried
+    } else {
+      carried
+    }
+  }
+}
+
+/// Write back. The register file takes the MEM/WB latch in the first half
+/// of the cycle, which is exactly why the hazard unit never has to worry
+/// about the instruction in WB.
+fn write_back(cpu: Cpu, m: Machine) -> . {
+  let slot = m.?{st_wb};
+  if! stage_empty(slot) {
+    ()
+  } else match! dest_of(array_get(cpu.?{prog}, slot)) {
+    (.(d: I32) { array_set(cpu.?{regs}, d, m.?{mem_wb}) }, .(_writes_nothing: .) { () })
+  }
+}
+
+/// Everything a cycle does no matter how it ends. The stages past decode
+/// always move on -- an instruction that has been issued is never held
+/// back -- the two latches take what EX and MEM just produced, and this
+/// cycle's counters are settled. The three endings then differ only in
+/// what they do to the *front* of the pipeline.
+fn carried(m: Machine, ex: Ex_out, latched: I32) -> Machine {
+  let done =
+    if! stage_filled(m.?{st_wb}) {
+      add_i32(m.?{retired}, 1)
+    } else {
+      m.?{retired}
+    };
+  let idle =
+    if! stage_empty(m.?{st_ex}) {
+      add_i32(m.?{bubbles}, 1)
+    } else {
+      m.?{bubbles}
+    };
+  m.!{
+    , st_mem = m.?{st_ex}
+    , st_wb = m.?{st_mem}
+    , ex_mem = ex.?{ex_value}
+    , mem_wb = latched
+    , retired = done
+    , bubbles = idle
+    , fwd_ex_mem = add_i32(m.?{fwd_ex_mem}, ex.?{ex_hits})
+    , fwd_mem_wb = add_i32(m.?{fwd_mem_wb}, ex.?{mem_hits})
+    }
+}
+
+fn step(state: Machine, note: Event) -> Step { {next = state, note} }
+
+fn killed(slot: I32) -> I32 {
+  if! stage_filled(slot) {
+    1
+  } else {
+    0
+  }
+}
+
+fn squashed_text(slot: I32) -> String {
+  if! stage_empty(slot) {
+    ""
+  } else {
+    cat(" ", slot_text(slot))
+  }
+}
+
+/// A taken branch. The two instructions behind it were fetched from the
+/// fall-through path and are killed; the branch itself has already moved
+/// on to MEM. The seal a fetched HALT would have put on the front end goes
+/// with them: a HALT can only have been fetched *after* this branch, so it
+/// is one of the two being squashed.
+fn squash_step(base: Machine, target: I32) -> Step {
+  let wrong_path = add_i32(killed(base.?{st_id}), killed(base.?{st_if}));
+  step(
+    , base.!{
+        , pc = target
+        , st_if = empty_stage()
+        , st_id = empty_stage()
+        , st_ex = empty_stage()
+        , sealed = .f
+        , flushes = add_i32(base.?{flushes}, wrong_path)
+        }
+    , noted(cat3(
+        , cat("branch taken -> ", slot_text(target))
+        , ", squash"
+        , cat(squashed_text(base.?{st_id}), squashed_text(base.?{st_if}))
+        ))
+    )
+}
+
+/// A stall. IF and ID hold what they have, the program counter freezes
+/// with them, and EX gets a bubble instead of the instruction it was owed.
+fn stall_step(base: Machine, note: Event) -> Step {
+  step(base.!{st_ex = empty_stage(), stalls = add_i32(base.?{stalls}, 1)}, note)
+}
+
+/// The ordinary cycle: the front of the pipeline shifts down one and
+/// fetches, unless a HALT has already sealed it.
+fn issue_step(cpu: Cpu, base: Machine) -> Step {
+  let shut = base.?{sealed};
+  let fetched =
+    if! shut {
+      empty_stage()
+    } else {
+      base.?{pc}
+    };
+  let pc_next =
+    if! shut {
+      base.?{pc}
+    } else {
+      add_i32(base.?{pc}, 1)
+    };
+  let sealed_next =
+    if! shut {
+      .t
+    } else {
+      is_halt(array_get(cpu.?{prog}, base.?{pc}))
+    };
+  step(
+    , base.!{
+        , pc = pc_next
+        , st_if = fetched
+        , st_id = base.?{st_if}
+        , st_ex = base.?{st_id}
+        , sealed = sealed_next
+        }
+    , quiet()
+    )
+}
+
+/// One cycle. The hazard unit is asked about `m` -- the stage occupancy
+/// the cycle actually ran with -- not about `base`, whose EX and MEM have
+/// already moved on; scanning the advanced stages would look one cycle
+/// into the future and miss every hazard.
+fn advance(cpu: Cpu, m: Machine) -> Step {
+  let ex =
+    if! stage_filled(m.?{st_ex}) {
+      execute(cpu, m, array_get(cpu.?{prog}, m.?{st_ex}))
+    } else {
+      ex_quiet(0)
+    };
+  let latched = memory(cpu, m);
+  write_back(cpu, m);
+  let base = carried(m, ex, latched);
+  let decision = ex.?{decision};
+  match! decision {
+    (
+      , .(taken: Jump) { squash_step(base, taken.?{jump}) }
+      , .(_fell_through: Straight) {
+          match! hazard(cpu, m) {
+            (
+              , .(_go: Proceed) { issue_step(cpu, base) }
+              , .(held: Raw_stall) {
+                  stall_step(base, noted(cat("stall: RAW on ", reg_text(held.?{raw_stall}))))
+                }
+              , .(held: Load_use_stall) {
+                  stall_step(
+                    , base
+                    , noted(cat("stall: load-use on ", reg_text(held.?{load_use_stall})))
+                    )
+                }
+              )
+          }
+        }
+      )
+  }
+}
+
+fn with_cycle(m: Machine, cycle_now: I32) -> Machine { m.!{cycle = cycle_now} }
+
+/// Run cycles until the pipeline drains. The row is printed for the state
+/// the cycle *ran with*, and the event alongside it is the decision that
+/// cycle made -- so the effect of a stall or a squash shows up in the next
+/// row, the way a timing diagram reads.
+///
+/// A drained pipeline is also an exhausted one: the only cycle that ends
+/// with all five stages empty is one whose fetch found nothing, and that
+/// happens only behind a HALT.
+pub rec(loop) fn run(cpu: Cpu, m: Machine) -> Machine {
+  let taken = advance(cpu, m);
+  pipeline_row(m, taken.?{note});
+  let next = taken.?{next};
+  if! pipeline_empty(next) {
+    next
+  } else {
+    rec run(cpu, with_cycle(next, add_i32(m.?{cycle}, 1)))
+  }
+}

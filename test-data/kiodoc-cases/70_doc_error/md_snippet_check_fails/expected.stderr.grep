@@ -1,0 +1,10 @@
+# The correlated message: markdown file, fence line, actual vs declared.
+^input\.md: snippet at line 22: `kio check` exited 14 but 0 was expected \(via default `check_exit_code=0`\)$
+# The rejecting diagnostic, under its own header rather than loose on stderr.
+^--- kio check diagnostic ---$
+error: type mismatch: expected `S`, found `I`
+# It carries the caret rendering and the secondary label.
+expected `S` because of this
+# Then the source that was actually typechecked, package file included.
+^--- assembled file \(kiodoc\.pkg\.kio\) ---$
+^--- assembled file \(kiodoc\.kio\) ---$

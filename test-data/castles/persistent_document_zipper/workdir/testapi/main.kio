@@ -1,0 +1,22 @@
+module testapi/main;
+
+import document/commands as commands;
+import document/session as session;
+import elab/match(match);
+import testapi(String);
+import testapi/io as io;
+import testapi/iter(loop);
+
+rec(loop) fn replay(state: session.Session) -> . {
+  match! io.read_ascii_line() {
+    .(command: String) { rec replay(commands.execute(state, command)) };
+    .() {
+      io.print("end of document session\n");
+      let final = session.show(state);
+      let _reported = session.snapshots(final);
+      ()
+    }
+  }
+}
+
+pub fn main() -> . { io.print("Persistent document editor\n"); replay(session.start()) }

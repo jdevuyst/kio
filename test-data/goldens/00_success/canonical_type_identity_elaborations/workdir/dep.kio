@@ -1,0 +1,7 @@
+module dep;
+
+import types as types;
+
+pub type Flag = types.Actual;
+
+pub fn id(value: Flag) -> Flag { value }

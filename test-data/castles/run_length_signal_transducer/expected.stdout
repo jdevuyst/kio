@@ -1,0 +1,28 @@
+Run-length signal codec: cap=4
+samples=18 transitions=4 splits=2 packets=7
+run 1: value=-2 length=2 boundary=start
+run 2: value=0 length=4 boundary=change
+run 3: value=7 length=4 boundary=change
+run 4: value=7 length=4 boundary=split
+run 5: value=7 length=1 boundary=split
+run 6: value=-1 length=1 boundary=change
+run 7: value=0 length=2 boundary=change
+sample 1: expected=-2 decoded=-2 ok
+sample 2: expected=-2 decoded=-2 ok
+sample 3: expected=0 decoded=0 ok
+sample 4: expected=0 decoded=0 ok
+sample 5: expected=0 decoded=0 ok
+sample 6: expected=0 decoded=0 ok
+sample 7: expected=7 decoded=7 ok
+sample 8: expected=7 decoded=7 ok
+sample 9: expected=7 decoded=7 ok
+sample 10: expected=7 decoded=7 ok
+sample 11: expected=7 decoded=7 ok
+sample 12: expected=7 decoded=7 ok
+sample 13: expected=7 decoded=7 ok
+sample 14: expected=7 decoded=7 ok
+sample 15: expected=7 decoded=7 ok
+sample 16: expected=-1 decoded=-1 ok
+sample 17: expected=0 decoded=0 ok
+sample 18: expected=0 decoded=0 ok
+roundtrip=ok

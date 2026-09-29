@@ -1,0 +1,5 @@
+  pass equiv `int_reflexive` in lit/m
+  pass equiv `bool_reflexive` in lit/m
+  pass equiv `str_reflexive` in lit/m
+
+result: 3/3 equiv blocks passed

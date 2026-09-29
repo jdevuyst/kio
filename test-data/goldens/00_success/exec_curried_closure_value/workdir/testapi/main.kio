@@ -1,0 +1,23 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A function whose value is a multi-group closure typed
+// `String -> String -> String`. The closure carries two value
+// groups, so applying it one group at a time — `pick(x)(y)` — must
+// curry: each group is a separate callable layer.
+fn make_first() -> String -> String -> String { .(a: String)(b: String) -> String { a } }
+
+fn make_second() -> String -> String -> String { .(a: String)(b: String) -> String { b } }
+
+pub fn main() -> . {
+  // Full per-group application of a multi-group closure value.
+  let first = make_first();
+  print(first("first-direct\n"(String))("dropped"(String)));
+  // Partial application: bind the first group as a value, then apply
+  // the second group's layer to it.
+  let second = make_second();
+  let pick_second = second("dropped"(String));
+  print(pick_second("second-partial\n"(String)))
+}

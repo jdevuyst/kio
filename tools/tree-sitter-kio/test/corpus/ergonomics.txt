@@ -1,0 +1,4015 @@
+================================================================================
+structural placeholder_stem_x
+================================================================================
+module m; fn run() { .x. // body
+{ (x1, x2()) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (comment_line)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (bracket_rparen)))
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_stem_t
+================================================================================
+module m; fn run() { .t. // body
+{ (t1, t2()) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (comment_line)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (bracket_rparen)))
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_stem_f
+================================================================================
+module m; fn run() { .f. // body
+{ (f1, f2()) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (comment_line)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (bracket_rparen)))
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_stem__arg
+================================================================================
+module m; fn run() { ._arg. // body
+{ (_arg1, _arg2()) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (comment_line)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (bracket_rparen)))
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_stem_x1_y
+================================================================================
+module m; fn run() { .x1_y. // body
+{ (x1_y1, x1_y2()) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (comment_line)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (bracket_rparen)))
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_.x1.
+================================================================================
+module m; fn run() { .x1. { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_dot)
+        (entity_name_label)
+        (separator_dot))
+      (label_value_expr
+        (bracket_lbrace)
+        (label_value_label
+          (label_path
+            (entity_name_label)))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_.x_.
+================================================================================
+module m; fn run() { .x_. { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_dot)
+        (entity_name_label)
+        (separator_dot))
+      (label_value_expr
+        (bracket_lbrace)
+        (label_value_label
+          (label_path
+            (entity_name_label)))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_.__x.
+================================================================================
+module m; fn run() { .__x. { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_dot)
+        (entity_name_label)
+        (separator_dot))
+      (label_value_expr
+        (bracket_lbrace)
+        (label_value_label
+          (label_path
+            (entity_name_label)))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_. x.
+================================================================================
+module m; fn run() { . x. { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_dot)
+        (entity_name_label)
+        (separator_dot))
+      (label_value_expr
+        (bracket_lbrace)
+        (label_value_label
+          (label_path
+            (entity_name_label)))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_.x .
+================================================================================
+module m; fn run() { .x . { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_dot)
+        (entity_name_label)
+        (separator_dot))
+      (label_value_expr
+        (bracket_lbrace)
+        (label_value_label
+          (label_path
+            (entity_name_label)))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_placeholder_intro_.(x: .).
+================================================================================
+module m; fn run() { .(x: .). { x1 } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (fn_lambda_expr
+        (separator_dot)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (value_param_binder
+              (binding_pattern
+                (variable_parameter)
+                (operator_builtin)
+                (separator_dot)))
+            (bracket_rparen)))
+        (ERROR)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_missing_outer_brace_neighbor
+================================================================================
+module probe; fn run() { .x. { x1 } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace)))
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace)))))))
+
+================================================================================
+structural placeholder_nested_ordinary_shadowing_roles
+================================================================================
+module m; fn run() { .x. { let x1 = value; .y. { (x1, y1, x2()) } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (let_statement
+            (keyword_let)
+            (identifier)
+            (operator_builtin)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (placeholder_expression
+            (separator_dot)
+            (variable_parameter)
+            (separator_dot)
+            (expression_block
+              (bracket_lbrace)
+              (grouped_expression
+                (bracket_lparen)
+                (expression_path
+                  (identifier))
+                (separator_comma)
+                (expression_path
+                  (identifier))
+                (separator_comma)
+                (call_expr
+                  (call_callee
+                    (entity_name_function))
+                  (expression_arguments
+                    (bracket_lparen)
+                    (bracket_rparen)))
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_explicit_rich_patterns
+================================================================================
+module m; fn run() { let .(x: A) = a; let .(left, (right, _: A)) = pair; let .(whole: (part: A, rest: A)) = pair; whole }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier))
+          (separator_comma)
+          (local_binding_pattern
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_binding_pattern
+                (identifier))
+              (separator_comma)
+              (local_binding_pattern
+                (slot)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_explicit_row_and_existential
+================================================================================
+module m; fn run() { let .({field as x, other}) = row; let .(<A> packed) = value; packed }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (row_let_stmt
+        (keyword_let)
+        (separator_dot)
+        (bracket_lparen)
+        (bracket_lbrace)
+        (row_let_entry
+          (label_path
+            (entity_name_label))
+          (keyword_declaration)
+          (variable_parameter))
+        (separator_comma)
+        (row_let_entry
+          (row_let_shorthand_path
+            (variable_parameter)))
+        (bracket_rbrace)
+        (bracket_rparen)
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (identifier)
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_monadic_rich_patterns_and_discard
+================================================================================
+module m; fn run() { do! (bind) { let _ <- action; let .(x: A) <- action; let .(whole: (left: A, right: A)) = pair; whole } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        prefix: (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        first: (neutral_block
+          (bracket_lbrace)
+          (neutral_bind
+            (keyword_let)
+            (slot)
+            (operator_run)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (neutral_bind
+            (keyword_let)
+            (separator_dot)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen))
+            (operator_run)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (let_statement
+            (keyword_let)
+            (separator_dot)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (local_pattern_tuple
+                  (bracket_lparen)
+                  (identifier)
+                  (operator_builtin)
+                  (type_path
+                    (entity_name_type))
+                  (separator_comma)
+                  (local_binding_pattern
+                    (identifier)
+                    (operator_builtin)
+                    (type_path
+                      (entity_name_type)))
+                  (bracket_rparen)))
+              (bracket_rparen))
+            (operator_builtin)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_call_before_binding_arrow_is_expression
+================================================================================
+module m; fn run() { let(f) <- x }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (operator_run)
+        (expression_path
+          (identifier)))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_discard_and_simple_name
+================================================================================
+module m; fn run() { let _ = value; let item = value; item }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (slot)
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_ordinary_let_let x: A = value
+================================================================================
+module m; fn run() { let x: A = value; x } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (ERROR
+          (identifier))
+        (operator_builtin)
+        (operator_expression
+          (expression_path
+            (identifier))
+          (operator_builtin)
+          (expression_path
+            (identifier))))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural unmarked_let_tuple_preserves_ordinary_call
+================================================================================
+module m; fn run() { let (x, y) = pair; x } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural unmarked_let_angle_preserves_ordinary_operators
+================================================================================
+module m; fn run() { let <A> x = value; x } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (operator_run)
+        (operator_expression
+          (expression_path
+            (identifier))
+          (operator_run)
+          (operator_expression
+            (expression_path
+              (identifier))
+            (operator_builtin)
+            (expression_path
+              (identifier)))))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural invalid_ordinary_let_let x <- value
+================================================================================
+module m; fn run() { let x <- value; x } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (ERROR
+        (identifier)
+        (operator_run)
+        (entity_name_label))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural neutral_pure_row_let
+================================================================================
+module m; fn run() { do! (bind) { let .({field as x}) = row; x } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        prefix: (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        first: (neutral_block
+          (bracket_lbrace)
+          (row_let_stmt
+            (keyword_let)
+            (separator_dot)
+            (bracket_lparen)
+            (bracket_lbrace)
+            (row_let_entry
+              (label_path
+                (entity_name_label))
+              (keyword_declaration)
+              (variable_parameter))
+            (bracket_rbrace)
+            (bracket_rparen)
+            (operator_builtin)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural neutral_pure_existential_let
+================================================================================
+module m; fn run() { do! (bind) { let .(<A> x) = value; x } } fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        prefix: (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        first: (neutral_block
+          (bracket_lbrace)
+          (let_statement
+            (keyword_let)
+            (separator_dot)
+            (grouped_existential_pattern
+              (bracket_lparen)
+              (existential_binder
+                (operator_run)
+                (variable_parameter)
+                (operator_run))
+              (identifier)
+              (bracket_rparen))
+            (operator_builtin)
+            (expression_path
+              (identifier)))
+          (separator_semicolon)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural identifier_word_boundaries_keep_raw_tokens
+================================================================================
+module m; fn run() { consume(http2_client3_(), _x1_y2__, Http_client2(.), HttpClient(), x1y(), a__b()) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (bracket_rparen)))
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (type_path
+            (entity_name_type)
+            (type_arguments
+              (bracket_lparen)
+              (separator_dot)
+              (bracket_rparen)))
+          (separator_comma)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (bracket_rparen)))
+          (separator_comma)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (bracket_rparen)))
+          (separator_comma)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (bracket_rparen)))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural reserved_names_keep_ordinary_roles
+================================================================================
+module m; fn run(value: __Type__) { (__term__, __call__()) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (grouped_expression
+        (bracket_lparen)
+        (expression_path
+          (identifier))
+        (separator_comma)
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (bracket_rparen)))
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_missing_braces_public_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_pub)
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_pure_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pure fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_pure)
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_public_pure_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub pure fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_pub)
+                  (keyword_pure)
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_pure_scoped_public_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pure pub(probe) fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_pure)
+                  (keyword_pub)
+                  (bracket_lparen)
+                  (module_path
+                    (entity_name_module))
+                  (bracket_rparen)
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_scoped_public_comments_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub(probe // scope
+ /detail) pure fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_pub)
+                  (bracket_lparen)
+                  (module_path
+                    (entity_name_module)
+                    (comment_line)
+                    (module_path_sep)
+                    (entity_name_module))
+                  (bracket_rparen)
+                  (keyword_pure)
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_comment_after_fn_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; fn // header
+neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_fn)
+                  (comment_line)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_missing_braces_comment_before_signature_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; fn neighbor // parameters
+[A]() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (incomplete_expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_fn)
+                  (entity_name_function)
+                  (comment_line)
+                  (fn_signature
+                    (type_param_group
+                      (bracket_lbracket)
+                      (type_param_binder
+                        (variable_parameter))
+                      (bracket_rbracket))
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural placeholder_lookahead_preserves_contextual_calls_and_qualified_ufcs
+================================================================================
+module probe; fn run(x: .) { pub(x); pure(x); fn(x); provider.item.call(x); T.member.<<x }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (ufcs_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_closing_dot_does_not_split_ufcs_run
+================================================================================
+T.member.<<r
+--------------------------------------------------------------------------------
+
+(source_file
+  (ufcs_expr
+    (call_callee
+      (identifier)
+      (separator_dot)
+      (entity_name_function))
+    (operator_arrow_ufcs)
+    (expression_path
+      (identifier))))
+
+================================================================================
+structural placeholder_balanced_outer_brace_neighbor
+================================================================================
+module probe; fn run() { .x. { x1 } fn neighbor() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_public_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_pub)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_pure_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pure fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_pure)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_public_pure_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub pure fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_pub)
+              (keyword_pure)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_pure_scoped_public_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pure pub(probe) fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_pure)
+              (keyword_pub)
+              (bracket_lparen)
+              (module_path
+                (entity_name_module))
+              (bracket_rparen)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_scoped_public_comments_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; pub(probe // scope
+ /detail) pure fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_pub)
+              (bracket_lparen)
+              (module_path
+                (entity_name_module)
+                (comment_line)
+                (module_path_sep)
+                (entity_name_module))
+              (bracket_rparen)
+              (keyword_pure)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_comment_after_fn_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; fn // header
+neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_fn)
+              (comment_line)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural placeholder_balanced_braces_comment_before_signature_neighbor
+================================================================================
+module probe; fn run() { .x. { x1; fn neighbor // parameters
+[A]() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_fn)
+              (entity_name_function)
+              (comment_line)
+              (fn_signature
+                (type_param_group
+                  (bracket_lbracket)
+                  (type_param_binder
+                    (variable_parameter))
+                  (bracket_rbracket))
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_ordinary_missing
+================================================================================
+module probe; fn run() { fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace)))))))
+
+================================================================================
+structural body_recovery_ordinary_balanced
+================================================================================
+module probe; fn run() { fn neighbor() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_neutral_missing
+================================================================================
+module probe; fn run() { do! (chain) { value; fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (block_call
+          head: (block_head)
+          prefix: (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          first: (neutral_block
+            (incomplete_neutral_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (separator_semicolon)
+              (function_definition
+                (fn_decl_head
+                  (keyword_fn)
+                  (entity_name_function)
+                  (fn_signature
+                    (value_param_group
+                      (bracket_lparen)
+                      (bracket_rparen))))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace))))))))))
+
+================================================================================
+structural body_recovery_neutral_balanced
+================================================================================
+module probe; fn run() { do! (chain) { value; fn neighbor() { () } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (block_head)
+        prefix: (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (separator_semicolon)
+          (unowned_function
+            (unowned_function_head
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen))))
+            (expression_block
+              (bracket_lbrace)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_incomplete_varop_before_missing
+================================================================================
+module probe; fn run() { [* value; fn neighbor() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (variadic_expression
+          (ambiguous_lbracket_star
+            (star_open_prefix)
+            (kind_annotation))
+          (variadic_elements
+            (variadic_element
+              (expression_path
+                (identifier))))
+          (variadic_star_close
+            (MISSING _varop_star_close)))
+        (separator_semicolon)
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace)))))))
+
+================================================================================
+structural body_recovery_incomplete_varop_before_balanced
+================================================================================
+module probe; fn run() { [* value; fn neighbor() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (variadic_expression
+        (ambiguous_lbracket_star
+          (star_open_prefix)
+          (kind_annotation))
+        (variadic_elements
+          (variadic_element
+            (expression_path
+              (identifier))))
+        (variadic_star_close
+          (MISSING _varop_star_close)))
+      (separator_semicolon)
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_incomplete_varop_body_missing
+================================================================================
+module probe; fn run() { fn neighbor() { [* value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (incomplete_variadic_expression
+              (ambiguous_lbracket_star
+                (star_open_prefix)
+                (kind_annotation))
+              (variadic_elements
+                (variadic_element
+                  (expression_path
+                    (identifier)))))
+            (bracket_rbrace)))))))
+
+================================================================================
+structural body_recovery_incomplete_varop_body_balanced
+================================================================================
+module probe; fn run() { fn neighbor() { [* value } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (incomplete_variadic_expression
+            (ambiguous_lbracket_star
+              (star_open_prefix)
+              (kind_annotation))
+            (variadic_elements
+              (variadic_element
+                (expression_path
+                  (identifier)))))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_multiple_neighbors_missing
+================================================================================
+module probe; fn run() { .x. { x1 } fn neighbor() { () } fn last() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (placeholder_expression
+          (separator_dot)
+          (variable_parameter)
+          (separator_dot)
+          (expression_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace)))
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace)))
+        (function_definition
+          (fn_decl_head
+            (keyword_fn)
+            (entity_name_function)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (bracket_rparen))))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace)))))))
+
+================================================================================
+structural body_recovery_multiple_neighbors_balanced
+================================================================================
+module probe; fn run() { .x. { x1 } fn neighbor() { () } fn last() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_contextual_calls_missing
+================================================================================
+module probe; fn run() { fn(value); pub(value); pure(value)
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (separator_semicolon)
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (separator_semicolon)
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))))))
+
+================================================================================
+structural body_recovery_contextual_calls_balanced
+================================================================================
+module probe; fn run() { fn(value); pub(value); pure(value) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_balanced_inner_signature
+================================================================================
+module probe; fn run() { fn neighbor(x: ) { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (value_param_binder
+                (binding_pattern
+                  (variable_parameter)))
+              (ERROR)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural body_recovery_balanced_malformed_scope
+================================================================================
+module probe; fn run() { pub(probe,) fn neighbor() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (bracket_rparen)))
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_typed
+================================================================================
+module source; fn run() { let .(<A> (left: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_later_typed
+================================================================================
+module source; fn run() { let .(<A> (left, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (identifier)
+            (separator_comma)
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_nested_typed
+================================================================================
+module source; fn run() { let .(<A> ((left: A, right), tail)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier))
+              (bracket_rparen))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_commas_typed
+================================================================================
+module source; fn run() { let .(<A> (,left: A,,right,)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (separator_comma)
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (separator_comma)
+            (local_binding_pattern
+              (identifier))
+            (separator_comma)
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_comma_nested_later_typed
+================================================================================
+module source; fn run() { let .(<A> (,(left, right), tail: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (separator_comma)
+            (local_binding_pattern
+              (local_pattern_tuple
+                (bracket_lparen)
+                (local_binding_pattern
+                  (identifier))
+                (separator_comma)
+                (local_binding_pattern
+                  (identifier))
+                (bracket_rparen)))
+            (separator_comma)
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_nested_untyped_before_typed
+================================================================================
+module source; fn run() { let .(<A> ((left, right), tail: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (identifier)
+              (separator_comma)
+              (local_binding_pattern
+                (identifier))
+              (ERROR
+                (bracket_rparen))
+              (separator_comma)
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))
+              (bracket_rparen))
+            (bracket_rparen))
+          (MISSING bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_comma_nested_typed
+================================================================================
+module source; fn run() { let .(<A> (,(left: A, right))) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (ERROR
+          (separator_dot)
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (bracket_lparen)
+          (separator_comma)
+          (local_binding_pattern
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier))
+              (bracket_rparen)))
+          (bracket_rparen)
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_untyped
+================================================================================
+module source; fn run() { let .(<A> (left, right)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (ERROR
+          (separator_dot)
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (bracket_lparen)
+          (identifier)
+          (separator_comma)
+          (local_binding_pattern
+            (identifier))
+          (bracket_rparen)
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_empty
+================================================================================
+module source; fn run() { let .(<A> ()) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (ERROR
+          (separator_dot)
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (bracket_lparen)
+          (bracket_rparen)
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_outer_annotation
+================================================================================
+module source; fn run() { let .(<A> (left: A, right: A): A) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (bracket_rparen))
+          (ERROR
+            (uppercase_identifier))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_as_typed
+================================================================================
+module source; fn run() { let .(whole: (left: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_as_nested_typed
+================================================================================
+module source; fn run() { let .(whole: ((left: A, right), tail)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_pattern_tuple
+                (bracket_lparen)
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type))
+                (separator_comma)
+                (local_binding_pattern
+                  (identifier))
+                (bracket_rparen))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_as_untyped
+================================================================================
+module source; fn run() { let .(whole: (left, right)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier))
+          (ERROR
+            (bracket_lparen)
+            (identifier)
+            (separator_comma)
+            (local_binding_pattern
+              (identifier))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_as_discard
+================================================================================
+module source; fn run() { let .(_: (left: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (slot)
+            (ERROR
+              (bracket_lparen)
+              (identifier))
+            (operator_builtin)
+            (type_path
+              (entity_name_type)))
+          (separator_comma)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (type_path
+              (entity_name_type)))
+          (bracket_rparen))
+        (ERROR
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_ordinary_type_group
+================================================================================
+module source; fn run() { let .(whole: (A & A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier)
+            (operator_builtin)
+            (type_group
+              (bracket_lparen)
+              (type_product
+                (type_path
+                  (entity_name_type))
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_ordinary_empty
+================================================================================
+module source; fn run() { let .() = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (MISSING identifier))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_wildcard
+================================================================================
+module source; fn run() { let .(<A> (_: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (slot)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_double_slot
+================================================================================
+module source; fn run() { let .(<A> (__: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (ERROR)
+            (slot)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_opening_triple_slot
+================================================================================
+module source; fn run() { let .(<A> (___: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (grouped_existential_pattern
+          (bracket_lparen)
+          (existential_binder
+            (operator_run)
+            (variable_parameter)
+            (operator_run))
+          (local_pattern_tuple
+            (bracket_lparen)
+            (slot)
+            (ERROR)
+            (operator_builtin)
+            (type_path
+              (entity_name_type))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (bracket_rparen))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_rich_double_slot
+================================================================================
+module source; fn run() { let .((__: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (local_pattern_tuple
+              (bracket_lparen)
+              (ERROR)
+              (local_binding_pattern
+                (slot)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural let_rich_triple_slot
+================================================================================
+module source; fn run() { let .((___: A, right: A)) = value; value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (local_pattern_tuple
+              (bracket_lparen)
+              (local_binding_pattern
+                (slot)
+                (ERROR)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (separator_comma)
+              (local_binding_pattern
+                (identifier)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))

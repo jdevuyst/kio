@@ -1,0 +1,15 @@
+module main;
+
+host type Item_payload;
+
+host type Replacement_payload;
+
+labels { first[A]: A, second[A]: A };
+
+fn consume[A](_update: (First(A) & Second(Replacement_payload)) ->
+  First(Item_payload) & Second(Replacement_payload)
+  ) -> . { () }
+
+pub fn update_candidate_open(replacement: Replacement_payload) -> . {
+  consume(.(state) { state.!{second = replacement} })
+}

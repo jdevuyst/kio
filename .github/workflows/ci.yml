@@ -1,0 +1,489 @@
+# Tests and Checks.
+#
+# The Linux gate runs directly on the hosted Ubuntu runner. mise installs
+# the core tools from the same root pins used by the dev container;
+# ci/impl-toolchain.sh installs the backend sampling pool and its
+# mise-brokered system packages. The job does not consume the published
+# dev container image. Optional Cargo-backed audit/report tools stay in
+# mise.optional.toml and are installed only when a deep audit needs them.
+# Ordinary runs sample implementations per case and cases per corpus.
+# workflow_dispatch can request either coverage axis in full.
+#
+# macOS / Windows run one narrower portability job each, directly on
+# the hosted runner, with mise reading the same root toolchain pins as
+# the dev container where a no-source-build runner route exists. That
+# job intentionally reuses one checkout and one Cargo target directory
+# instead of duplicating the selected Linux gate.
+
+name: Tests and Checks
+
+on:
+  schedule:
+    # First day of each month at 06:00 UTC.
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      implementation_coverage:
+        description: Per-case implementation coverage for Linux jobs.
+        required: true
+        default: sampled
+        type: choice
+        options:
+          - sampled
+          - full
+      case_coverage:
+        description: >-
+          Case coverage for Linux and portability golden compile checks.
+          `sampled` caps Linux cases per corpus bucket and portability
+          `00_success` cases at 100; `full` runs all applicable cases.
+          Sampled-out cases retain any wired case-binary checks.
+        required: true
+        default: sampled
+        type: choice
+        options:
+          - sampled
+          - full
+      platforms:
+        description: Platform jobs to run; scheduled and default manual runs use all.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - linux
+          - macos
+          - windows
+          - portability
+
+permissions:
+  contents: read
+
+concurrency:
+  # Distinct manual platform selections can run without cancelling each other.
+  # Avoid overlapping selections unless their shared platform work is intended.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.platforms || 'all' }}
+  cancel-in-progress: true
+
+jobs:
+  # Linux runs every check category with sampled implementation/case coverage;
+  # workflow_dispatch can request either axis in full.
+  # `ci/all.sh` discovers every script under ci/checks/orchestrators,
+  # ci/checks/repo-lint, and ci/checks/hygiene.
+  linux-ci-all:
+    name: checks / Linux
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    runs-on: ubuntu-latest
+    # Cap at 6h, the GitHub-hosted-runner maximum: the full ci/all.sh
+    # suite is very long-running (generative and golden tests dominate).
+    timeout-minutes: 360
+    # Runs directly on the host, not inside the devcontainer image: a
+    # container job can't free the runner's ~30G of preinstalled bloat,
+    # and the shared 72G disk fills before the build even starts (/mnt is
+    # a bind on the same disk, so relocation there is futile). So we free
+    # disk here and provision the toolchain via mise, like the
+    # portability jobs.
+    env:
+      # We install what the gate needs explicitly; don't let mise
+      # auto-install the rest of mise.toml (all backend extras) at
+      # harness runtime.
+      MISE_AUTO_INSTALL: "0"
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift 2>/dev/null || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # The backend API stability lint verifies transition history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install system packages
+        run: |
+          # Mirrors the devcontainer Dockerfile apt layer: xvfb + the
+          # VS Code GUI libs @vscode/test-electron needs for vscode-e2e.
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb libglib2.0-0t64 libnss3 libnspr4 libgtk-3-0t64 libgbm1 \
+            libdrm2 libxkbcommon0 libxkbfile1 libasound2t64 libatk1.0-0t64 \
+            libatk-bridge2.0-0t64 libcups2t64 libpango-1.0-0 libcairo2 \
+            libsecret-1-0 libxss1 libxshmfence1 libxcb-dri3-0 \
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
+            libdbus-1-3
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: rust
+
+      - name: Install core toolchain
+        shell: bash
+        run: sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
+
+      - name: Select implementation sample
+        id: impls
+        shell: bash
+        env:
+          IMPLEMENTATION_COVERAGE: ${{ inputs.implementation_coverage || 'sampled' }}
+        run: |
+          case "$IMPLEMENTATION_COVERAGE" in
+            sampled) impls=SAMPLE_IMPL ;;
+            full) impls=FULL_IMPL_MATRIX ;;
+            *) printf 'error: unknown implementation coverage: %s\n' "$IMPLEMENTATION_COVERAGE" >&2; exit 2 ;;
+          esac
+          # SAMPLE_IMPL draws from every configured backend, so both modes
+          # need the complete pinned pool, not a separate toolchain shard.
+          tool_impls=$(sh ci/impl-toolchain.sh impls)
+          tool_impls=$(sh ci/impl-toolchain.sh tooling-impls "$tool_impls")
+          printf 'impls=%s\n' "$impls" >>"$GITHUB_OUTPUT"
+          printf 'tool_impls=%s\n' "$tool_impls" >>"$GITHUB_OUTPUT"
+          printf 'selected impls: %s\n' "$impls"
+          printf 'tooling impls: %s\n' "$tool_impls"
+
+      - name: Install required backend tooling
+        shell: bash
+        env:
+          IMPLS: ${{ steps.impls.outputs.tool_impls }}
+        run: sh ci/impl-toolchain.sh install "$IMPLS"
+
+      - name: Finalize toolchain resolution
+        shell: bash
+        run: |
+          # The test harness invokes swiftc/rustc/etc. from /tmp build
+          # dirs — outside the repo, where no mise.toml is in scope, so a
+          # bare shim has no version to resolve ("No version is set for
+          # shim: swiftc"). The devcontainer image bakes this in; on the
+          # host we replicate it by pinning the repo's versions as mise's
+          # global config so shims resolve from any working directory.
+          mkdir -p "$HOME/.config/mise"
+          cp mise.toml "$HOME/.config/mise/config.toml"
+          # Ensure rustfmt/clippy are on the mise-managed rust toolchain:
+          # the hygiene checks run `cargo fmt`, and some install paths do
+          # not apply the `components` mise.toml declares.
+          mise exec rust -- rustup component add rustfmt clippy \
+            || rustup component add rustfmt clippy
+          # Same install paths drop the `targets` mise.toml declares on the
+          # same entry, and checks/hygiene/kio-repl-wasm builds for
+          # wasm32-unknown-unknown.
+          mise exec rust -- rustup target add wasm32-unknown-unknown \
+            || rustup target add wasm32-unknown-unknown
+
+      - name: Pre-warm the tree-sitter wasi-sdk
+        shell: bash
+        run: |
+          # `tree-sitter build --wasm` downloads a wasi-sdk into
+          # ~/.cache/tree-sitter on first use. highlight-agreement,
+          # devcontainer-lifecycle and vscode-e2e each drive that build, and
+          # ci/all.sh runs checks in parallel, so on a cold cache they race to
+          # populate one directory and a check can compile against a
+          # half-extracted SDK (clang present, wasi-sysroot headers not).
+          # Populate it once, serially, so a genuine fetch failure surfaces
+          # here instead of as a missing `stdlib.h` deep inside a check.
+          ( cd tools/tree-sitter-kio && tree-sitter build --wasm -o "$RUNNER_TEMP/ts-warm.wasm" )
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          workspaces: |
+            kio-rs
+            kio-rs/fuzz
+            kio-repl-wasm
+            ci/infra/kio-ci-scheduler-rs
+            ci/infra/kio-gen-rs
+            ci/infra/kio-prime-check-rs
+            ci/infra/kio-test-runner-rs
+
+      - name: Probe rustc version
+        id: rustc
+        shell: bash
+        run: echo "version=$(rustc --version)" >>"$GITHUB_OUTPUT"
+
+      # Persist the test-runner artifact cache (per-case compiled
+      # Rust/Go/Haskell/Swift driver + package builds) across runs. Each
+      # orchestrator's shared_cache_base() writes these under
+      # ~/.cache/kio/<suite> (XDG_CACHE_HOME is unset in CI), so the cache
+      # paths track that location rather than the workspace.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          # golden-tests.sh also assembles the dyn-load-prime driver under the
+          # workspace-relative .kio-cache/goldens; persist it alongside.
+          path: |
+            ~/.cache/kio/goldens
+            .kio-cache/goldens
+          key: goldens-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('test-data/goldens/**/*.kio') }}
+          restore-keys: |
+            goldens-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            goldens-runner-build-cache-${{ runner.os }}-
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.cache/kio/kio-gen
+          key: kio-gen-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('ci/infra/kio-gen-rs/Cargo.toml', 'ci/infra/kio-gen-rs/Cargo.lock', 'ci/infra/kio-gen-rs/src/**/*.rs') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            kio-gen-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('ci/infra/kio-gen-rs/Cargo.toml', 'ci/infra/kio-gen-rs/Cargo.lock', 'ci/infra/kio-gen-rs/src/**/*.rs') }}-
+            kio-gen-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            kio-gen-runner-build-cache-${{ runner.os }}-
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.cache/kio/poc
+          key: poc-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('test-data/poc/**/*.kio') }}
+          restore-keys: |
+            poc-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            poc-runner-build-cache-${{ runner.os }}-
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.cache/kio/castles
+          key: castles-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('test-data/castles/**/*.kio') }}
+          restore-keys: |
+            castles-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            castles-runner-build-cache-${{ runner.os }}-
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.cache/kio/contrib
+          key: contrib-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('test-data/contrib/**/*.kio') }}
+          restore-keys: |
+            contrib-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            contrib-runner-build-cache-${{ runner.os }}-
+
+      - name: Enable test-runner compiler wrapper
+        shell: bash
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            echo "KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache" >>"$GITHUB_ENV"
+          fi
+
+      # Case coverage is sampled by default: the whole corpus does not fit
+      # in the runner's 6h cap, and goldens dominate it. Case narrowing scopes
+      # the build+run tier only — every narrowed-out case still runs its corpus-wide
+      # (case-binary) checks, so each corpus's source invariants stay gated on
+      # every in-cohort case of every pass. Emissions samples one real case per
+      # backend bucket in the installed sampling pool.
+      # A `case_coverage=full` dispatch runs the corpus exhaustively.
+      - name: Run CI suite with selected coverage
+        shell: bash
+        env:
+          IMPLS: ${{ steps.impls.outputs.impls }}
+          CASE_COVERAGE: ${{ inputs.case_coverage || 'sampled' }}
+        run: |
+          set -eu
+          if [ "$CASE_COVERAGE" = full ]; then
+            sh ci/all.sh "$IMPLS" --all-cases
+          else
+            sh ci/all.sh "$IMPLS" --sample-cases \
+              --impl-verification=dyn-load-prime \
+              --case-coverage=dyn-load-prime:10
+          fi
+
+  # macOS / Windows portability is intentionally narrower than the Linux
+  # gate. It reuses one checkout and target directory per OS while
+  # covering the cross-platform harness surfaces. Both hosts prepare one
+  # scheduler binary and run its native self-test and crate tests.
+  portability:
+    name: checks / ${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms != 'linux' }}
+    runs-on: ${{ matrix.os }}
+    # Bound the sampled portability check while allowing an explicit full
+    # case-coverage run enough time for its larger compile sweep.
+    timeout-minutes: ${{ inputs.case_coverage == 'full' && 180 || 90 }}
+    # mise's auto_install (default on) reconciles the whole mise.toml
+    # when the harness runs under mise activation, pulling in tools
+    # beyond `install_args` — including `pipx` (aqua:pypa/pipx), which
+    # has no Windows build and hard-fails the run. `install_args` below
+    # already provisions every toolchain these checks use, so disable
+    # the run-time reconcile.
+    env:
+      MISE_AUTO_INSTALL: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        # The matrix is chosen before runner allocation. A static `include`
+        # would add an excluded OS back into the job.
+        os: ${{ fromJSON(inputs.platforms == 'macos' && '["macos-latest"]' || inputs.platforms == 'windows' && '["windows-latest"]' || '["macos-latest","windows-latest"]') }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          # macOS keeps Node, TypeScript, Rust and Swift for its native
+          # castle sample; Windows needs only Rust for its compile checks.
+          install_args: ${{ matrix.os == 'macos-latest' && 'node npm:typescript rust swift' || 'rust' }}
+
+      - name: Set SDKROOT (macOS Swift)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # The mise-installed Swift toolchain's swiftc needs the macOS
+          # SDK to resolve `import Foundation`; point SDKROOT at Xcode's.
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          workspaces: |
+            kio-rs
+            ci/infra/kio-ci-scheduler-rs
+            ci/infra/kio-gen-rs
+            ci/infra/kio-prime-check-rs
+            ci/infra/kio-test-runner-rs
+
+      - name: Probe rustc version
+        id: rustc
+        shell: bash
+        run: echo "version=$(rustc --version)" >>"$GITHUB_OUTPUT"
+
+      - name: Prepare CI scheduler
+        shell: bash
+        run: |
+          scheduler=$(sh ci/schedule.sh --prepare)
+          printf 'KIO_CI_SCHEDULER_BIN=%s\n' "$scheduler" >>"$GITHUB_ENV"
+
+      - name: CI scheduler self-test
+        shell: bash
+        run: sh ci/schedule.sh --self-test
+
+      - name: Shell signal trap self-test
+        shell: bash
+        run: >-
+          KIO_TEST_REQUIRE_TRAPPABLE_INT=1
+          sh ci/checks/repo-lint/shell-signal-trap-selftest.sh
+
+      - name: CI scheduler crate tests
+        shell: bash
+        run: >-
+          sh ci/cargo.sh test --locked
+          --manifest-path ci/infra/kio-ci-scheduler-rs/Cargo.toml
+          -- --nocapture
+
+      # The macOS castle sample writes its runner artifacts under
+      # ~/.cache/kio/castles (shared_cache_base in the orchestrators);
+      # persist that across runs rather than the empty workspace path.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        with:
+          path: ~/.cache/kio/castles
+          key: castles-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('test-data/castles/**/*.kio') }}
+          restore-keys: |
+            castles-runner-build-cache-${{ runner.os }}-${{ steps.rustc.outputs.version }}-
+            castles-runner-build-cache-${{ runner.os }}-
+
+      - name: kio-rs unit tests
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Full cargo test (lib + integration); the LSP integration
+          # smoke passes on macOS, unlike Windows where it is scoped out.
+          sh ci/cargo.sh test --manifest-path kio-rs/Cargo.toml
+
+      - name: Castle sample
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh ci/checks/orchestrators/castle-tests.sh --impls="kio@js,kio@ts,kio@rust,kio@swift" --case-count=5
+
+      - name: Kiodoc checks
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh ci/checks/orchestrators/kiodoc-tests.sh
+
+      - name: LSP checks
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh ci/checks/orchestrators/lsp-tests.sh
+
+      - name: kio-rs unit tests (--lib)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # --lib scopes to the library unit tests; the integration tests
+          # under kio-rs/tests/ (the LSP server smoke) assume a POSIX
+          # environment and async timing, and run on the Linux + macOS
+          # gates. The rquickjs/C-binding runner crate also depends on the
+          # POSIX runner route and is excluded from this Windows lane.
+          sh ci/cargo.sh test --manifest-path kio-rs/Cargo.toml --lib
+
+      - name: Compiler smoke — check / test / build all targets
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # The pure-Rust compiler must build, and check / test / build
+          # (parse, typecheck, equiv discharge, and every backend emitter)
+          # must work. Running emitted output additionally needs each
+          # host-language toolchain and runner integration, so this Windows
+          # lane stops at compile-only evidence; runtime goldens run on Linux
+          # and the macOS lane supplies its native castle sample.
+          set -eu
+          printf 'smoke: Cargo build starting at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          sh ci/cargo.sh build --manifest-path kio-rs/Cargo.toml --bin kio
+          printf 'smoke: Cargo build complete at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          kio="$PWD/kio-rs/target/debug/kio"
+          [ -f "$kio.exe" ] && kio="$kio.exe"
+          work=$(mktemp -d)
+          cd "$work" || exit 1
+          printf 'smoke: init starting at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          "$kio" init smoke
+          printf 'smoke: init complete at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          # Declare every target so `kio build` exercises all emitters
+          # (pure-Rust emit; running the output is intentionally skipped).
+          printf '%s\n' \
+            'package smoke;' \
+            '' \
+            'build {' \
+            '  cache "out/.kio-cache/";' \
+            '  target js { out "out/js/"; };' \
+            '  target ts { out "out/ts/"; };' \
+            '  target python { out "out/python/"; };' \
+            '  target java { out "out/java/"; };' \
+            '  target rust { out "out/rust/"; };' \
+            '  target go { out "out/go/"; };' \
+            '  target swift { out "out/swift/"; };' \
+            '  target haskell { out "out/haskell/"; };' \
+            '}' \
+            '' \
+            'bridge {' \
+            '  main;' \
+            '}' \
+            > smoke.pkg.kio
+          sh "$GITHUB_WORKSPACE/ci/schedule.sh" \
+            --resource compiler -- "$kio" check
+          printf 'smoke: check complete at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          sh "$GITHUB_WORKSPACE/ci/schedule.sh" \
+            --resource compiler -- "$kio" test
+          printf 'smoke: test complete at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          sh "$GITHUB_WORKSPACE/ci/schedule.sh" \
+            --resource compiler -- "$kio" build
+          printf 'smoke: all-target build complete at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+      - name: Golden compile checks — test + build, no run
+        shell: bash
+        env:
+          CASE_COVERAGE: ${{ inputs.case_coverage || 'sampled' }}
+        run: |
+          # Compile selected 00_success goldens with `kio test` and
+          # `kio build js` without executing the emitted output, via
+          # run-tests' runner=SKIP impl (kio test then kio build, then stop
+          # — no runner, run.sh cases skipped). `kio build js` is pure-Rust
+          # emit, so it needs no host-language toolchain and works on Windows. Kept
+          # inline here rather than under ci/checks/orchestrators/, which
+          # ci/all.sh (and the Linux gate) would auto-run — redundant, since
+          # Linux already does test + build + run for these cases.
+          set -eu
+          case "$CASE_COVERAGE" in
+            sampled) sample_cases=100 ;;
+            full) sample_cases=all ;;
+            *) printf 'error: invalid case coverage: %s\n' "$CASE_COVERAGE" >&2; exit 2 ;;
+          esac
+          sh ci/cargo.sh build --manifest-path kio-rs/Cargo.toml --bin kio
+          kio="$PWD/kio-rs/target/debug/kio"
+          [ -f "$kio.exe" ] && kio="$kio.exe"
+          work=$(mktemp -d)
+          sh ci/run-tests.sh \
+            --cases-dir=test-data/goldens/00_success \
+            --cache-base="$work/cache" \
+            --impl-def="name=kio,kio=$kio,runner=SKIP,target=js" \
+            --sample-cases="$sample_cases" \
+            --keep-cache

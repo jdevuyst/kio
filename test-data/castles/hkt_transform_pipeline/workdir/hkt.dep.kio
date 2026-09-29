@@ -1,0 +1,14 @@
+dependency hkt;
+
+source {
+  path "../../../poc/hkt/workdir/hkt.pkg.kio"
+}
+
+rehost hkt/elab/testapi to testapi;
+rehost hkt/elab/testapi/fmt to testapi/fmt;
+rehost hkt/elab/testapi/io to testapi/io;
+rehost hkt/elab/testapi/text to testapi/text;
+rehost hkt/testapi to testapi;
+rehost hkt/testapi/fmt to testapi/fmt;
+rehost hkt/testapi/io to testapi/io;
+rehost hkt/testapi/text to testapi/text;

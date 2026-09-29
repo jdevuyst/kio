@@ -1,0 +1,21 @@
+module testapi/model;
+
+import elab/spine_elaborators(widen_sum);
+import testapi(I32);
+
+pub labels { leaf: I32 };
+
+rec {
+  pub labels { expr: Leaf | Pair };
+  pub labels { pair: Expr & Expr }
+}
+
+pub labels Summary = { value: I32 };
+
+pub fn number(value: I32) -> Expr { {expr = {leaf = value}.>widen_sum!(Leaf | Pair)} }
+
+pub fn pair(left: Expr, right: Expr) -> Expr {
+  {expr = {pair = (left, right)}.>widen_sum!(Leaf | Pair)}
+}
+
+pub fn summary(value: I32) -> Summary { {value} }

@@ -1,0 +1,19 @@
+module main;
+
+import helper as h;
+import helper(unit_a);
+
+equiv selective_unfold() {
+  unit_a();
+  ()
+}
+
+equiv qualified_unfold() {
+  h.unit_a();
+  ()
+}
+
+equiv selective_and_qualified_agree() {
+  unit_a();
+  h.unit_a()
+}

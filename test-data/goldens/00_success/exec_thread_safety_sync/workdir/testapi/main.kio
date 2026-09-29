@@ -1,0 +1,39 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Exercises the `thread_safety = "sync"` build-block key. Like the
+// `send` case, the emitted crate uses the `Arc<dyn … + Send + Sync>`
+// wrap shape — Rust's `Arc<T>` is `Sync` only when `T: Send + Sync`,
+// so `sync` realizes the same shape as `send_sync` (see
+// `specs/backends/rust.md` § Output layout, thread safety). The package
+// source drives the same two bound-propagation patterns: a
+// polymorphic-newtype payload (existential erasure) and a rank-N
+// Church-numeral value, both reaching a host function callback.
+labels { boxed[A] <U> : A & U };
+
+fn box_value[A](v: A) -> Boxed(A) { Boxed.mk((v, v)) }
+
+fn extract_via_cps[T](b: Boxed(T)) -> T { Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) }) }
+
+type Nat = [A] ((A -> A) & A) -> A;
+
+fn zero() -> Nat { .[A](_f, x) { x } }
+
+fn succ(n: Nat) -> Nat { .[A](f, x) { f(n(f, x)) } }
+
+fn plus(m: Nat, n: Nat) -> Nat { .[A](f, x) { m(f, n(f, x)) } }
+
+fn to_int(n: Nat) -> I32 { n(.(x) { add_i32(x, 1(I32)) }, 0(I32)) }
+
+pub fn main() -> . {
+  let two = succ(succ(zero()));
+  let three = succ(succ(succ(zero())));
+  print(int_to_string(to_int(plus(two, three))));
+  print("\n"(String));
+  let b = box_value("thread-safety-sync-ok\n");
+  print(extract_via_cps(b))
+}

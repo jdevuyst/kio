@@ -1,0 +1,5 @@
+module main;
+
+import origin as source;
+
+type {view} = {source.secret};

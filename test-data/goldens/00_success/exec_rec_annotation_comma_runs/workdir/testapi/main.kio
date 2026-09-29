@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi as host;
+import testapi(Bool);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+rec(iter.loop) fn answer(n: host.I32) -> host.I32 {
+  if! (arith.leq_i32(n, 0)) {
+    41
+  } else {
+    let result = rec(,,, cont ,,,) answer(0);
+    io.print("continued\n");
+    result
+  }
+}
+
+pub fn main() -> . { io.print(fmt.i32_to_string(answer(1))); io.print("\n") }

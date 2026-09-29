@@ -1,0 +1,3 @@
+module m;
+
+fn caller(x: A) -> A { pure(x); helpers.pure(x) }

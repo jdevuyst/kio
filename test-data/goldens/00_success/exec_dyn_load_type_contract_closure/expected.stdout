@@ -1,0 +1,7 @@
+private alias in export: dyn_load_prime: export signature `guest.expose` reaches non-public type alias `guest.Secret`
+unbridged alias in export: dyn_load_prime: export signature `guest.expose` reaches unbridged type alias `provider.Public`
+phantom alias argument: dyn_load_prime: export signature `guest.expose` reaches unbridged nominal type `hidden.Hidden`
+private identity-forwarding alias in export: dyn_load_prime: export signature `guest.expose` reaches non-public type alias `guest.Secret`
+unbridged identity-forwarding alias in export: dyn_load_prime: export signature `guest.expose` reaches unbridged type alias `provider.Public`
+chained identity-forwarding aliases: dyn_load_prime: public type alias `guest.Public` reaches non-public type alias `guest.Secret`
+public bridged identity-forwarding aliases: ok

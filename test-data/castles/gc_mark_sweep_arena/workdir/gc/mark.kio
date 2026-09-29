@@ -1,0 +1,91 @@
+/// The mark phase. Reachability is a worklist walk, never a recursive
+/// descent into the heap: the roots seed an explicit `Array(I32)`
+/// stack, and each pop either marks a fresh object and pushes its
+/// pointer fields or drops one already marked. A cycle therefore costs
+/// one extra pop instead of unbounded stack depth, and a shared object
+/// is traced once however many parents reach it.
+module gc/mark;
+
+import elab/control(if);
+import elab/match(match);
+import gc/heap(field_slot, fold_fields, top);
+import gc/num(int_lt);
+import gc/slot(Imm, Ptr, {ptr});
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32);
+import testapi/array(
+  , array_get
+  , array_len
+  , array_make_empty
+  , array_make_filled
+  , array_pop_back
+  , array_push
+  , array_set
+  );
+import testapi/iter(loop);
+
+/// What the worklist did. The counters make the traversal auditable
+/// from the outside: `pushes` must come out as the roots plus the
+/// pointer fields of live objects, and `pops` as `marked + revisits`.
+pub labels Trace = { pushes: I32, pops: I32, revisits: I32, marked: I32 };
+
+pub labels Marking = { mark_bits: Array(Bool), mark_trace: Trace };
+
+/// An immediate is not an edge, so only pointer fields are pushed.
+fn push_fields(cells: Array(I32), work: Array(I32), addr: I32, pushed: I32) -> I32 {
+  fold_fields(
+    , cells
+    , addr
+    , .(count, index) {
+        match! field_slot(cells, addr, index) {
+          (
+            , .(p: Ptr) { array_push(work, p.?{ptr}); add_i32(count, 1) }
+            , .(_immediate: Imm) { count }
+            )
+        }
+      }
+    , pushed
+    )
+}
+
+rec(loop) fn seed_roots(roots: Array(I32), work: Array(I32), index: I32, pushed: I32) -> I32 {
+  if! int_lt(index, array_len(roots)) {
+    array_push(work, array_get(roots, index));
+    rec seed_roots(roots, work, add_i32(index, 1), add_i32(pushed, 1))
+  } else {
+    pushed
+  }
+}
+
+/// Drain the worklist. `array_pop_back` reports the empty stack as the
+/// unit arm of its `I32 | .` result, which is the loop's only exit.
+rec(loop) fn drain(cells: Array(I32), work: Array(I32), marks: Array(Bool), trace: Trace) -> Trace {
+  match! array_pop_back(work) {
+    (
+      , .(addr: I32) {
+          let .(popped: Trace) = trace.!{pops = add_i32(trace.?{pops}, 1)};
+          if! array_get(marks, addr) {
+            rec drain(cells, work, marks, popped.!{revisits = add_i32(popped.?{revisits}, 1)})
+          } else {
+            array_set(marks, addr, .t);
+            let grown = push_fields(cells, work, addr, popped.?{pushes});
+            rec drain(
+              , cells
+              , work
+              , marks
+              , popped.!{pushes = grown, marked = add_i32(popped.?{marked}, 1)}
+              )
+          }
+        }
+      , .(_empty: .) { trace }
+      )
+  }
+}
+
+pub fn mark_heap(cells: Array(I32), roots: Array(I32)) -> Marking {
+  let marks = array_make_filled(top(cells), .f);
+  let work = array_make_empty(I32, ());
+  let seeded = seed_roots(roots, work, 0, 0);
+  let trace = drain(cells, work, marks, {pushes = seeded, pops = 0, revisits = 0, marked = 0});
+  {mark_bits = marks, mark_trace = trace}
+}

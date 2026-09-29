@@ -1,0 +1,15 @@
+module main;
+
+import elab/spine_elaborators(narrow_prod);
+
+// `narrow_prod!` is product-axis only — at any `&`-product on the
+// source side, factors absent from the target can be dropped. Sum
+// *narrowing* (`A | B → A`) belongs to `narrow_sum!` (which has its
+// own constraints) or, more typically, to `match!`. `narrow_prod!`
+// therefore rejects this coercion and the error buckets as an elaborator
+// error (exit 15), not a type error.
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn narrow(x: A | B) -> A { narrow_prod!(x) }

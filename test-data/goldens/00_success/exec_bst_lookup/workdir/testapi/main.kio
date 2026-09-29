@@ -1,0 +1,102 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// `Option(String)` as `. | String`: the `()` branch is absence, the
+// `String` branch carries a present value. Re-defined locally per
+// the goldens convention (cases don't share source); the option-
+// printer pattern below mirrors `exec_option_combinators`.
+newtype Option : . | String { pub constructor mk_option; pub projector un_option }
+
+fn some(v: String) -> Option { Option.mk_option(widen_sum!(v)) }
+
+fn none() -> Option { Option.mk_option(widen_sum!(())) }
+
+// Binary-search tree over `I32` keys with `String` values. The `()`
+// arm is the leaf; the `(I32 & String & Tree & Tree)` arm is a branch
+// carrying `(key, value, left, right)`. Monomorphic — both key and
+// value types are fixed — so no type parameters.
+rec newtype Tree : . | (I32 & String & Tree & Tree) {
+  pub constructor mk_tree;
+  pub projector un_tree
+  }
+
+fn leaf() -> Tree { Tree.mk_tree(widen_sum!(())) }
+
+fn branch(k: I32, v: String, l: Tree, r: Tree) -> Tree { Tree.mk_tree(widen_sum!((k, v, l, r))) }
+
+// Iterative descent via host `loop`. State is `(target_key,
+// current_node)`. The step projects `current_node` — a leaf exits
+// with `none`; a branch compares the target key against the node
+// key and either exits with `some(v)` on equality or continues into
+// the appropriate child. The `target_key < k` decision is encoded
+// as nested `leq_i32` calls (equal == `a <= b && b <= a`).
+fn lookup_step(state: I32 & Tree) -> (I32 & Tree) | Option {
+  match! state {
+    .(target_key: I32, current: Tree) {
+      match! current.>Tree.un_tree {
+        (
+          , .(k: I32, v: String, l: Tree, r: Tree) {
+              if! leq_i32(target_key, k) {
+                if! leq_i32(k, target_key) {
+                  widen_sum!(some(v), (I32 & Tree) | Option)
+                } else {
+                  widen_sum!((target_key, l), (I32 & Tree) | Option)
+                }
+              } else {
+                widen_sum!((target_key, r), (I32 & Tree) | Option)
+              }
+            }
+          , .(_empty: .) { widen_sum!(none(), (I32 & Tree) | Option) }
+          )
+      }
+    }
+  }
+}
+
+fn lookup(k: I32, t: Tree) -> Option { loop(.(state: I32 & Tree) { lookup_step(state) }, (k, t)) }
+
+// Render an `Option` as `some("v")` or `none`. The option-printer
+// pattern: thin wrapper around the projector + `match!`. The `some`
+// payload is quoted because the value is a `String` literal in the
+// equations.
+fn print_option(o: Option) -> String {
+  match! o.>Option.un_option {
+    (.(s: String) { string_concat("some(\"", string_concat(s, "\")")) }, .(_empty: .) { "none" })
+  }
+}
+
+// Build the seven-node balanced test tree by direct branch
+// composition — `insert` is intentionally not exercised here. A
+// Kio'-encoded `insert` requires parent-slot worklist threading
+// (no user-level recursion) and adds substantial encoding mass
+// without expanding the case's shape coverage beyond what `lookup`
+// over a hand-built tree already gives.
+//
+//                  (5, "five")
+//                 /            \
+//           (2, "two")        (8, "eight")
+//           /        \         /          \
+//       (1, "one") (3, "three") (7, "seven") (9, "nine")
+fn make_tree() -> Tree {
+  branch(
+    , 5
+    , "five"
+    , branch(2, "two", branch(1, "one", leaf(), leaf()), branch(3, "three", leaf(), leaf()))
+    , branch(8, "eight", branch(7, "seven", leaf(), leaf()), branch(9, "nine", leaf(), leaf()))
+    )
+}
+
+pub fn main() -> . {
+  let t = make_tree();
+  print(string_concat(print_option(lookup(3, t)), "\n"));
+  print(string_concat(print_option(lookup(8, t)), "\n"));
+  print(string_concat(print_option(lookup(4, t)), "\n"))
+}

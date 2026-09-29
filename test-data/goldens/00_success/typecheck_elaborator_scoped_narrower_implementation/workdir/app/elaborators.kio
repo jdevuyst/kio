@@ -1,0 +1,11 @@
+module app/elaborators;
+
+import __comptime__;
+
+pub(app/elaborators) pure fn narrow_impl(
+  , _ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ { value }
+
+pub(app) elab scoped_elab : [Source] Source -> Source { impl narrow_impl }

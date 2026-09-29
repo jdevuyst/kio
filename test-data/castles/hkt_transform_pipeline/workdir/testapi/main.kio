@@ -1,0 +1,14 @@
+module testapi/main;
+
+import pipeline/report(render_summary);
+import pipeline/stages(box_summary, identity_summary);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  print("hkt transform pipeline\n");
+  print(render_summary(box_summary()));
+  print("\n");
+  print(render_summary(identity_summary()));
+  print("\n")
+}

@@ -1,0 +1,46 @@
+module testapi/main;
+
+import deferred as deferred;
+import market as market;
+import report as report;
+import testapi(Bool, I32, String);
+import testapi/array as array;
+import testapi/io as io;
+
+pub fn main() -> . {
+  let left = market.left();
+  let right = market.right();
+  let order = market.row(0, 1, 2, 3);
+  io.print("Stable matching market: four participants per side\n");
+  io.print("Ranks start at zero; lower totals indicate preferred partners.\n");
+  report.outcome(
+    , "left proposes; queue 0,1,2,3"
+    , left
+    , right
+    , deferred.solve(left, right, order)
+    , .f
+    );
+  let reversed = array.array_clone(order);
+  array.array_swap(reversed, 0, 3);
+  array.array_swap(reversed, 1, 2);
+  report.outcome(
+    , "left proposes; queue 3,2,1,0"
+    , left
+    , right
+    , deferred.solve(left, right, reversed)
+    , .f
+    );
+  report.outcome(
+    , "right proposes; queue 0,1,2,3"
+    , left
+    , right
+    , deferred.solve(right, left, order)
+    , .t
+    );
+  io.print("certificate control: identity matching\n");
+  report.certificate_report(left, right, order, order);
+  let duplicate = array.array_clone(order);
+  array.array_set(duplicate, 1, 0);
+  io.print("certificate control: duplicate recipient\n");
+  report.certificate_report(left, right, duplicate, order)
+}

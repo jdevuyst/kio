@@ -1,0 +1,60 @@
+module host/m;
+
+import __intrinsics__;
+
+import host(A, B, source);
+
+// `swap` flips the two arms of a sum. It is the canonical opaque-sum
+// transformation: the scrutinee `s` is an `equiv` parameter, so its
+// branch is never decided — the evaluator residualizes a symbolic
+// case-split (specs/formal/equiv.md section 4.6) over `s`, applying the
+// two handlers to fresh per-branch payload atoms.
+fn swap[A][B](s: A | B) -> B | A {
+  __either__(A, B, B | A, s, .(l) { __right__(B, A, l) }, .(r) { __left__(B, A, r) })
+}
+
+// This is the identity dispatch: each arm re-injects its
+// payload unchanged. The symbolic case-split collapses back to the
+// scrutinee under sum-eta, so the law discharges against `s`.
+equiv reinject_is_id[A][B](s: A | B) {
+  __either__(A, B, A | B, s, .(l) { __left__(A, B, l) }, .(r) { __right__(A, B, r) });
+  s
+}
+
+// `swap . swap = id`: the outer `swap` distributes over the inner
+// case-split, each branch double-flips back to its original injection,
+// and sum-eta collapses the result to `s`. This is the load-bearing
+// recursive-spine-free symbolic law.
+equiv swap_swap_is_id[A][B](s: A | B) {
+  swap(B, A, swap(A, B, s));
+  s
+}
+
+equiv source_swap_swap_is_id(x: A) {
+  swap(B, A, swap(A, B, source(x)));
+  source(x)
+}
+
+equiv case_payload_names_are_alpha[A][B](s: A | B) {
+  __either__(
+    , A
+    , B
+    , B | A
+    , s
+    , .(left_payload) { __right__(B, A, left_payload) }
+    , .(right_payload) { __left__(B, A, right_payload) }
+    );
+  __either__(A, B, B | A, s, .(x) { __right__(B, A, x) }, .(y) { __left__(B, A, y) })
+}
+
+equiv case_closures_capture_alpha_payload[A][X](s: A | A) {
+  __either__(
+    , A
+    , A
+    , X -> A
+    , s
+    , .(left_payload) { .(_x: X) { left_payload } }
+    , .(right_payload) { .(_x: X) { right_payload } }
+    );
+  __either__(A, A, X -> A, s, .(l) { .(_y: X) { l } }, .(r) { .(_y: X) { r } })
+}

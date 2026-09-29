@@ -1,0 +1,260 @@
+module elevator/bank;
+
+import elab/control(if);
+import elevator/schedule as schedule;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+labels Bank = {
+  , tick: I32
+  , car_a_floor: I32
+  , car_a_target: I32
+  , car_a_up: Bool
+  , car_b_floor: I32
+  , car_b_target: I32
+  , car_b_up: Bool
+  , lobby_waiting: I32
+  , middle_waiting: I32
+  , high_waiting: I32
+  , served_total: I32
+  , wait_total: I32
+  };
+
+labels Step = {
+  , next_bank: Bank
+  , arrival_lobby_count: I32
+  , arrival_middle_count: I32
+  , arrival_high_count: I32
+  , served_now: I32
+  , waiting_after: I32
+  };
+
+fn pending_total(lobby: I32, middle: I32, high: I32) -> I32 {
+  add_i32(add_i32(lobby, middle), high)
+}
+
+fn positive(value: I32) -> Bool { lt_i32(0, value) }
+
+fn choose_car_a_target(floor: I32, lobby: I32, middle: I32, high: I32) -> I32 {
+  if! positive(high) {
+    5
+  } else if! positive(middle) {
+    2
+  } else if! positive(lobby) {
+    0
+  } else {
+    floor
+  }
+}
+
+fn choose_car_b_target(floor: I32, lobby: I32, middle: I32, high: I32) -> I32 {
+  if! positive(lobby) {
+    0
+  } else if! positive(middle) {
+    2
+  } else if! positive(high) {
+    5
+  } else {
+    floor
+  }
+}
+
+fn move_toward(floor: I32, target: I32) -> I32 {
+  if! lt_i32(floor, target) {
+    add_i32(floor, 1)
+  } else if! lt_i32(target, floor) {
+    sub_i32(floor, 1)
+  } else {
+    floor
+  }
+}
+
+fn moving_up(floor: I32, target: I32) -> Bool { lt_i32(floor, target) }
+
+fn served_at_floor(floor: I32, lobby: I32, middle: I32, high: I32) -> I32 {
+  if! eq_i32(floor, 0) {
+    if! positive(lobby) {
+      1
+    } else {
+      0
+    }
+  } else if! eq_i32(floor, 2) {
+    if! positive(middle) {
+      1
+    } else {
+      0
+    }
+  } else if! eq_i32(floor, 5) {
+    if! positive(high) {
+      1
+    } else {
+      0
+    }
+  } else {
+    0
+  }
+}
+
+fn reduce_lobby(floor: I32, lobby: I32) -> I32 {
+  if! eq_i32(floor, 0) {
+    if! positive(lobby) {
+      sub_i32(lobby, 1)
+    } else {
+      lobby
+    }
+  } else {
+    lobby
+  }
+}
+
+fn reduce_middle(floor: I32, middle: I32) -> I32 {
+  if! eq_i32(floor, 2) {
+    if! positive(middle) {
+      sub_i32(middle, 1)
+    } else {
+      middle
+    }
+  } else {
+    middle
+  }
+}
+
+fn reduce_high(floor: I32, high: I32) -> I32 {
+  if! eq_i32(floor, 5) {
+    if! positive(high) {
+      sub_i32(high, 1)
+    } else {
+      high
+    }
+  } else {
+    high
+  }
+}
+
+fn initial_bank() -> Bank {
+  {
+    , tick = 0
+    , car_a_floor = 0
+    , car_a_target = 0
+    , car_a_up = .f
+    , car_b_floor = 5
+    , car_b_target = 5
+    , car_b_up = .f
+    , lobby_waiting = 0
+    , middle_waiting = 0
+    , high_waiting = 0
+    , served_total = 0
+    , wait_total = 0
+    }
+}
+
+fn step(bank: Bank) -> Step {
+  let tick = bank.?{tick};
+  let arrival_lobby = schedule.lobby(tick);
+  let arrival_middle = schedule.middle(tick);
+  let arrival_high = schedule.high(tick);
+  let lobby0 = add_i32(bank.?{lobby_waiting}, arrival_lobby);
+  let middle0 = add_i32(bank.?{middle_waiting}, arrival_middle);
+  let high0 = add_i32(bank.?{high_waiting}, arrival_high);
+  let waiting_before_service = pending_total(lobby0, middle0, high0);
+  let target_a = choose_car_a_target(bank.?{car_a_floor}, lobby0, middle0, high0);
+  let floor_a = move_toward(bank.?{car_a_floor}, target_a);
+  let up_a = moving_up(bank.?{car_a_floor}, target_a);
+  let served_a = served_at_floor(floor_a, lobby0, middle0, high0);
+  let lobby1 = reduce_lobby(floor_a, lobby0);
+  let middle1 = reduce_middle(floor_a, middle0);
+  let high1 = reduce_high(floor_a, high0);
+  let target_b = choose_car_b_target(bank.?{car_b_floor}, lobby1, middle1, high1);
+  let floor_b = move_toward(bank.?{car_b_floor}, target_b);
+  let up_b = moving_up(bank.?{car_b_floor}, target_b);
+  let served_b = served_at_floor(floor_b, lobby1, middle1, high1);
+  let lobby2 = reduce_lobby(floor_b, lobby1);
+  let middle2 = reduce_middle(floor_b, middle1);
+  let high2 = reduce_high(floor_b, high1);
+  let served_now = add_i32(served_a, served_b);
+  let next_bank =
+    {
+      , tick = add_i32(tick, 1)
+      , car_a_floor = floor_a
+      , car_a_target = target_a
+      , car_a_up = up_a
+      , car_b_floor = floor_b
+      , car_b_target = target_b
+      , car_b_up = up_b
+      , lobby_waiting = lobby2
+      , middle_waiting = middle2
+      , high_waiting = high2
+      , served_total = add_i32(bank.?{served_total}, served_now)
+      , wait_total = add_i32(bank.?{wait_total}, waiting_before_service)
+      };
+  {
+    , next_bank
+    , arrival_lobby_count = arrival_lobby
+    , arrival_middle_count = arrival_middle
+    , arrival_high_count = arrival_high
+    , served_now
+    , waiting_after = pending_total(lobby2, middle2, high2)
+    }
+}
+
+fn emit_i32(label: String, value: I32) -> . { print(string_concat(label, int_to_string(value))) }
+
+fn emit_bool(label: String, value: Bool) -> . { print(string_concat(label, bool_to_string(value))) }
+
+fn emit_frame(bank: Bank, frame: Step) -> . {
+  let next_bank = frame.?{next_bank};
+  emit_i32("tick ", bank.?{tick});
+  emit_i32(" arrivals L", frame.?{arrival_lobby_count});
+  emit_i32(" M", frame.?{arrival_middle_count});
+  emit_i32(" H", frame.?{arrival_high_count});
+  emit_i32(" | A f", next_bank.?{car_a_floor});
+  emit_i32("->", next_bank.?{car_a_target});
+  emit_bool(" up=", next_bank.?{car_a_up});
+  emit_i32(" | B f", next_bank.?{car_b_floor});
+  emit_i32("->", next_bank.?{car_b_target});
+  emit_bool(" up=", next_bank.?{car_b_up});
+  emit_i32(" | served ", frame.?{served_now});
+  emit_i32(" waiting ", frame.?{waiting_after});
+  emit_i32(" wait_total ", next_bank.?{wait_total});
+  print("\n")
+}
+
+rec(loop) fn run_ticks(bank: Bank) -> Bank {
+  if! leq_i32(bank.?{tick}, 11) {
+    let frame = step(bank);
+    emit_frame(bank, frame);
+    rec run_ticks(frame.?{next_bank})
+  } else {
+    bank
+  }
+}
+
+fn score(bank: Bank) -> I32 {
+  let served_points = mul_i32(bank.?{served_total}, 100);
+  let wait_penalty = mul_i32(bank.?{wait_total}, 3);
+  let pending_penalty =
+    mul_i32(pending_total(bank.?{lobby_waiting}, bank.?{middle_waiting}, bank.?{high_waiting}), 25);
+  sub_i32(sub_i32(served_points, wait_penalty), pending_penalty)
+}
+
+fn emit_summary(bank: Bank) -> . {
+  print("summary");
+  emit_i32(" served=", bank.?{served_total});
+  emit_i32(" wait=", bank.?{wait_total});
+  emit_i32(
+    , " pending="
+    , pending_total(bank.?{lobby_waiting}, bank.?{middle_waiting}, bank.?{high_waiting})
+    );
+  emit_i32(" score=", score(bank));
+  print("\n")
+}
+
+pub fn run() -> . {
+  print("elevator_bank_sim\n");
+  let final_bank = run_ticks(initial_bank());
+  emit_summary(final_bank)
+}

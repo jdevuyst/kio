@@ -1,0 +1,179 @@
+/// Insertion, bottom-up. A descent answers either `fitted` — the subtree took
+/// the key and kept its height — or `split(a, k, v, b)`: it overflowed, broke
+/// into `a` and `b`, and handed its middle key up. Modelling the promotion as a
+/// sum is what keeps it in the types instead of hiding it in a mutation.
+///
+/// An empty position always answers `split`, never a new node: a new key is a
+/// promotion its parent absorbs, so the tree can only ever grow at the root,
+/// and every leaf stays at the same depth.
+module tree/insert;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, lt_i32);
+import testapi/iter(loop);
+import tree/node(
+  , Leaf
+  , Node
+  , Three
+  , Tree
+  , Two
+  , contains
+  , leaf_node
+  , make_tree
+  , root_of
+  , size_of
+  , three_node
+  , two_node
+  , {three}
+  , {two}
+  );
+import tree/tally(Tally, tally_add, tally_root_grow, tally_split, tally_zero);
+
+labels Ins = { fitted: Node } | { split: Node & I32 & String & Node };
+
+type Ins_out = Ins & Tally;
+
+fn fitted(n: Node) -> Ins { {fitted = n}.>widen_sum!(Ins) }
+
+fn promoted(l: Node, k: I32, v: String, r: Node) -> Ins { {split = (l, k, v, r)}.>widen_sum!(Ins) }
+
+/// A 2-node has room for a promotion: it becomes a 3-node and nothing climbs.
+fn absorb_two_left(i: Ins, k1: I32, v1: String, r: Node) -> Ins {
+  match! i {
+    (
+      , .(f: Fitted) { fitted(two_node(f.?{fitted}, k1, v1, r)) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          fitted(three_node(a, pk, pv, b, k1, v1, r))
+        }
+      )
+  }
+}
+
+fn absorb_two_right(l: Node, k1: I32, v1: String, i: Ins) -> Ins {
+  match! i {
+    (
+      , .(f: Fitted) { fitted(two_node(l, k1, v1, f.?{fitted})) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          fitted(three_node(l, k1, v1, a, pk, pv, b))
+        }
+      )
+  }
+}
+
+/// A 3-node has no room. Absorbing a promotion would give it three keys and
+/// four children, so instead it hands its own middle key up and breaks into
+/// the two 2-nodes on either side of it.
+fn overflow_left(i: Ins, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node, acc: Tally) -> Ins_out {
+  match! i {
+    (
+      , .(f: Fitted) { (fitted(three_node(f.?{fitted}, k1, v1, m, k2, v2, r)), acc) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          (
+            , promoted(two_node(a, pk, pv, b), k1, v1, two_node(m, k2, v2, r))
+            , tally_add(acc, tally_split())
+            )
+        }
+      )
+  }
+}
+
+fn overflow_mid(l: Node, k1: I32, v1: String, i: Ins, k2: I32, v2: String, r: Node, acc: Tally) -> Ins_out {
+  match! i {
+    (
+      , .(f: Fitted) { (fitted(three_node(l, k1, v1, f.?{fitted}, k2, v2, r)), acc) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          (
+            , promoted(two_node(l, k1, v1, a), pk, pv, two_node(b, k2, v2, r))
+            , tally_add(acc, tally_split())
+            )
+        }
+      )
+  }
+}
+
+fn overflow_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, i: Ins, acc: Tally) -> Ins_out {
+  match! i {
+    (
+      , .(f: Fitted) { (fitted(three_node(l, k1, v1, m, k2, v2, f.?{fitted})), acc) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          (
+            , promoted(two_node(l, k1, v1, m), k2, v2, two_node(a, pk, pv, b))
+            , tally_add(acc, tally_split())
+            )
+        }
+      )
+  }
+}
+
+/// Descend to the key's position, insert there, and let the answer climb back
+/// out through the node it passed. The recursion is not tail: every level has
+/// work left to do once its child answers, which is exactly what `rec(cont)`
+/// marks.
+rec(loop) fn ins(t: Node, k: I32, v: String) -> Ins_out {
+  match! t.>Node.un_node {
+    (
+      , .(_e: Leaf) { (promoted(leaf_node(), k, v, leaf_node()), tally_zero()) }
+      , .(n: Two) {
+          let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
+          if! eq_i32(k, k1) {
+            (fitted(two_node(l, k, v, r)), tally_zero())
+          } else if! lt_i32(k, k1) {
+            let .(i: Ins, acc: Tally) = rec(cont) ins(l, k, v);
+            (absorb_two_left(i, k1, v1, r), acc)
+          } else {
+            let .(i: Ins, acc: Tally) = rec(cont) ins(r, k, v);
+            (absorb_two_right(l, k1, v1, i), acc)
+          }
+        }
+      , .(n: Three) {
+          let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+          if! eq_i32(k, k1) {
+            (fitted(three_node(l, k, v, m, k2, v2, r)), tally_zero())
+          } else if! eq_i32(k, k2) {
+            (fitted(three_node(l, k1, v1, m, k, v, r)), tally_zero())
+          } else if! lt_i32(k, k1) {
+            let .(i: Ins, acc: Tally) = rec(cont) ins(l, k, v);
+            overflow_left(i, k1, v1, m, k2, v2, r, acc)
+          } else if! lt_i32(k, k2) {
+            let .(i: Ins, acc: Tally) = rec(cont) ins(m, k, v);
+            overflow_mid(l, k1, v1, i, k2, v2, r, acc)
+          } else {
+            let .(i: Ins, acc: Tally) = rec(cont) ins(r, k, v);
+            overflow_right(l, k1, v1, m, k2, v2, i, acc)
+          }
+        }
+      )
+  }
+}
+
+/// Insert `k` with payload `v`. Re-inserting a key that is already there
+/// replaces its payload and leaves the size alone — the case that gives the
+/// stored-size invariant something to be wrong about.
+pub fn insert(t: Tree, k: I32, v: String) -> Tree & Tally {
+  let root = root_of(t);
+  let grew =
+    if! contains(root, k) {
+      0
+    } else {
+      1
+    };
+  let size = add_i32(size_of(t), grew);
+  let .(i: Ins, acc: Tally) = ins(root, k, v);
+  match! i {
+    (
+      , .(f: Fitted) { (make_tree(f.?{fitted}, size), acc) }
+      , .(s: Split) {
+          let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+          (make_tree(two_node(a, pk, pv, b), size), tally_add(acc, tally_root_grow()))
+        }
+      )
+  }
+}

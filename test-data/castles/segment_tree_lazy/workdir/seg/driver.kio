@@ -1,0 +1,125 @@
+/// The replay: every scripted operation goes to *both* structures, and the
+/// transcript reports what each answered and what each paid.
+///
+/// This is the castle's correctness argument. The tree's answers are never
+/// asserted against a table of hand-computed numbers -- they are asserted
+/// against a plain array doing the obvious thing. Drop a tag, apply one twice,
+/// or push one to the wrong child, and some query's two answers stop matching.
+module seg/driver;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import seg/brute(Brute, brute_min, brute_point_set, brute_range_add, brute_sum, touches);
+import seg/num(and, int_eq);
+import seg/ops(point_set, query_min, query_sum, range_add);
+import seg/report(cat, cat3, cost, index2, line, num, range, signed, yes_no);
+import seg/script(
+  , Add_range
+  , Min_range
+  , Op
+  , Set_point
+  , Sum_range
+  , op_at
+  , op_count
+  , {add_range}
+  , {min_range}
+  , {set_point}
+  , {sum_range}
+  );
+import seg/tree(Tree, tag_pushes, visits);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+
+/// What one operation produced: either nothing to compare (an update), or
+/// the two answers a query drew from the two structures.
+labels Outcome = { settled: String } | { answered: String & I32 & I32 };
+
+fn settled(text: String) -> Outcome { {settled = text}.>widen_sum!(Outcome) }
+
+fn answered(text: String, from_tree: I32, from_ref: I32) -> Outcome {
+  {answered = (text, from_tree, from_ref)}.>widen_sum!(Outcome)
+}
+
+/// Run one operation against both structures. The two calls are always
+/// adjacent, so no code path can update one and forget the other.
+fn apply_op(t: Tree, base: Brute, op: Op) -> Outcome {
+  match! op {
+    (
+      , .(a: Add_range) {
+          let .(l: I32, r: I32, x: I32) = a.?{add_range};
+          range_add(t, l, r, x);
+          brute_range_add(base, l, r, x);
+          settled(cat3("add ", range(l, r), cat(" ", signed(x))))
+        }
+      , .(q: Sum_range) {
+          let .(l: I32, r: I32) = q.?{sum_range};
+          answered(cat("sum ", range(l, r)), query_sum(t, l, r), brute_sum(base, l, r))
+        }
+      , .(q: Min_range) {
+          let .(l: I32, r: I32) = q.?{min_range};
+          answered(cat("min ", range(l, r)), query_min(t, l, r), brute_min(base, l, r))
+        }
+      , .(s: Set_point) {
+          let .(i: I32, v: I32) = s.?{set_point};
+          point_set(t, i, v);
+          brute_point_set(base, i, v);
+          settled(cat(cat3("set [", num(i), "] := "), num(v)))
+        }
+      )
+  }
+}
+
+fn stamp(k: I32) -> String { cat3("op", index2(add_i32(k, 1)), "  ") }
+
+/// Render one finished operation and report whether its two answers agreed.
+/// An update has nothing to compare, so it agrees vacuously.
+fn record(k: I32, outcome: Outcome, spent: String) -> Bool {
+  match! outcome {
+    (
+      , .(s: Settled) { line(cat3(stamp(k), s.?{settled}, spent)); .t }
+      , .(a: Answered) {
+          let .(text: String, from_tree: I32, from_ref: I32) = a.?{answered};
+          let agreed = int_eq(from_tree, from_ref);
+          let shown =
+            cat3(
+              , cat3(text, " = ", num(from_tree))
+              , cat3("  ref ", num(from_ref), "  agree ")
+              , yes_no(agreed)
+              );
+          line(cat3(stamp(k), shown, spent));
+          agreed
+        }
+      )
+  }
+}
+
+/// One scripted step: snapshot both meters, run the operation on both
+/// structures, and charge the difference to this line of the transcript.
+fn step(t: Tree, base: Brute, table: Array(I32), k: I32) -> Bool {
+  let seen_before = visits(t);
+  let pushed_before = tag_pushes(t);
+  let touched_before = touches(base);
+  let outcome = apply_op(t, base, op_at(table, k));
+  let spent =
+    cost(
+      , sub_i32(visits(t), seen_before)
+      , sub_i32(tag_pushes(t), pushed_before)
+      , sub_i32(touches(base), touched_before)
+      );
+  record(k, outcome, spent)
+}
+
+rec(loop) fn step_from(t: Tree, base: Brute, table: Array(I32), k: I32, agreed: Bool) -> Bool {
+  if! leq_i32(op_count(), k) {
+    agreed
+  } else {
+    let this_one = step(t, base, table, k);
+    rec step_from(t, base, table, add_i32(k, 1), and(agreed, this_one))
+  }
+}
+
+/// Replay the whole script. The result is the conjunction of every query's
+/// agreement, and it is the castle's verdict.
+pub fn replay(t: Tree, base: Brute, table: Array(I32)) -> Bool { step_from(t, base, table, 0, .t) }

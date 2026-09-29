@@ -1,0 +1,7 @@
+module main;
+
+fn unit() -> . { () }
+
+pub fn id[A](x: A) -> A { x }
+
+fn intermixed[A](x: A)[B](y: B) -> A { x }

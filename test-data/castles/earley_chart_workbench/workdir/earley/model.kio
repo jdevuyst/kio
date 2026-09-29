@@ -1,0 +1,66 @@
+module earley/model;
+
+import earley/arrays as numbers;
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32);
+import testapi/arith as arith;
+import testapi/array as arrays;
+
+pub labels Symbol = { terminal: I32 } | { nonterminal: I32 };
+
+pub labels Production = { lhs: I32, rhs: Array(Symbol) };
+
+pub type Grammar = Array(Production);
+
+pub labels Item = { production_index: I32, dot: I32, origin: I32 };
+
+pub type Column = Array(Item);
+
+pub type Chart = Array(Column);
+
+pub fn token(id: I32) -> Symbol { {terminal = id}.>widen_sum! }
+
+pub fn category(id: I32) -> Symbol { {nonterminal = id}.>widen_sum! }
+
+pub fn production(left: I32, right: Array(Symbol)) -> Production { {lhs = left, rhs = right} }
+
+pub fn left(rule: Production) -> I32 { rule.?{lhs} }
+
+pub fn right(rule: Production) -> Array(Symbol) { rule.?{rhs} }
+
+pub fn item(rule: I32, position: I32, start: I32) -> Item {
+  {production_index = rule, dot = position, origin = start}
+}
+
+pub fn rule_index(state: Item) -> I32 { state.?{production_index} }
+
+pub fn position(state: Item) -> I32 { state.?{dot} }
+
+pub fn start(state: Item) -> I32 { state.?{origin} }
+
+pub fn advance(state: Item) -> Item {
+  item(state.?{production_index}, arith.add_i32(state.?{dot}, 1), state.?{origin})
+}
+
+pub fn same(a: Item, b: Item) -> Bool {
+  if! numbers.equal(a.?{production_index}, b.?{production_index}) {
+    if! numbers.equal(a.?{dot}, b.?{dot}) {
+      numbers.equal(a.?{origin}, b.?{origin})
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+pub fn finished(grammar: Grammar, state: Item) -> Bool {
+  let rule = arrays.array_get(grammar, state.?{production_index});
+  numbers.equal(state.?{dot}, arrays.array_len(rule.?{rhs}))
+}
+
+pub fn next(grammar: Grammar, state: Item) -> Symbol {
+  let rule = arrays.array_get(grammar, state.?{production_index});
+  arrays.array_get(rule.?{rhs}, state.?{dot})
+}

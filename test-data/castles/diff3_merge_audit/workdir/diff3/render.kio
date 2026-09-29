@@ -1,0 +1,128 @@
+/// Turning the classified regions into the two output sections: the merged
+/// document, and the audit a reader can check the merge against.
+///
+/// A conflict prints all three texts between marker lines. Each marker
+/// introduces the block below it, so a reader walks the region top to
+/// bottom — ours, then the base it was written against, then theirs.
+module diff3/render;
+
+import diff3/lcs as lcs;
+import diff3/list as list;
+import diff3/merge as merge;
+import diff3/prim as prim;
+import diff3/scan as scan;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+/// Every conflict emits exactly these three lines on top of its text, which
+/// is what makes the audit's line count reproducible by hand.
+fn markers_per_conflict() -> I32 { 3 }
+
+fn ours_marker() -> String { "  <<<<<<< ours" }
+
+fn base_marker() -> String { "  ||||||| base" }
+
+fn theirs_marker() -> String { "  >>>>>>> theirs" }
+
+fn conflict_block(reg: merge.Region) -> list.List(String) {
+  list.append(
+    , list.cons(ours_marker(), merge.ours_of(reg))
+    , list.append(
+        , list.cons(base_marker(), merge.base_of(reg))
+        , list.cons(theirs_marker(), merge.theirs_of(reg))
+        )
+    )
+}
+
+/// The lines one region contributes to the merged document.
+fn emit(reg: merge.Region) -> list.List(String) {
+  match! merge.mark_of(reg) {
+    (
+      , .(_v: merge.Stable) { merge.base_of(reg) }
+      , .(_v: merge.Ours_only) { merge.ours_of(reg) }
+      , .(_v: merge.Theirs_only) { merge.theirs_of(reg) }
+      , .(_v: merge.Both_same) { merge.ours_of(reg) }
+      , .(_v: merge.Conflict) { conflict_block(reg) }
+      )
+  }
+}
+
+rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String)) -> list.List(String) {
+  match! list.List.unpack(found) {
+    (
+      , .(reg: merge.Region, rest: list.List(merge.Region)) {
+          rec merged_from(rest, list.rev_onto(emit(reg), acc))
+        }
+      , .(_empty: .) { list.reverse(acc) }
+      )
+  }
+}
+
+fn merged(found: list.List(merge.Region)) -> list.List(String) {
+  merged_from(found, list.nil(String, ()))
+}
+
+fn text(line: String) -> . { print(prim.cat(line, "\n")) }
+
+fn field(label: String, value: String) -> . { text(prim.cat(label, prim.cat(": ", value))) }
+
+fn count(label: String, value: I32) -> . { field(label, int_to_string(value)) }
+
+rec(loop) fn print_lines(lines: list.List(String)) -> . {
+  match! list.List.unpack(lines) {
+    (
+      , .(line: String, rest: list.List(String)) { text(line); rec print_lines(rest) }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+fn status(conflicts: I32) -> String {
+  if! prim.int_eq(conflicts, 0) {
+    "merged"
+  } else {
+    "conflicted"
+  }
+}
+
+pub fn report(
+  , doc: scan.Doc
+  , ours: lcs.Dp
+  , theirs: lcs.Dp
+  , found_anchors: list.List(merge.Anchor)
+  , found: list.List(merge.Region)
+  ) -> . {
+  let base_count = list.len(scan.base_lines(doc));
+  let ours_count = list.len(scan.our_lines(doc));
+  let theirs_count = list.len(scan.their_lines(doc));
+  let out = merged(found);
+  text("diff3_merge_audit: v1");
+  count("base lines", base_count);
+  count("ours lines", ours_count);
+  count("theirs lines", theirs_count);
+  text("--- merged ---");
+  print_lines(out);
+  text("--- audit ---");
+  count("lcs base/ours", lcs.lcs_len(ours));
+  count("lcs base/theirs", lcs.lcs_len(theirs));
+  count("anchors", list.len(found_anchors));
+  count("regions", list.len(found));
+  match! merge.tally(found) {
+    .(stable: I32, ours_only: I32, theirs_only: I32, both_same: I32, conflicts: I32) {
+      count("stable", stable);
+      count("ours-changed", ours_only);
+      count("theirs-changed", theirs_only);
+      count("both-same", both_same);
+      count("conflict", conflicts);
+      count("lines in", add_i32(base_count, add_i32(ours_count, theirs_count)));
+      count("lines out", list.len(out));
+      count("marker lines", mul_i32(conflicts, markers_per_conflict()));
+      field("status", status(conflicts))
+    }
+  }
+}

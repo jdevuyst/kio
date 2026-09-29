@@ -1,0 +1,5 @@
+package lsp_pkg;
+
+bridge {
+  main
+}

@@ -1,0 +1,5 @@
+module testapi/main;
+
+import petri/report as report;
+
+pub fn main() -> . { report.run() }

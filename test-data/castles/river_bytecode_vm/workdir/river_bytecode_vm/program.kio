@@ -1,0 +1,76 @@
+module river_bytecode_vm/program;
+
+import elab/control(if);
+import river_bytecode_vm/constants as c;
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32);
+
+pub fn program_len() -> I32 { 17 }
+
+pub fn opcode(pc: I32) -> I32 {
+  if! eq_i32(pc, 0) {
+    c.op_wait()
+  } else if! eq_i32(pc, 1) {
+    c.op_move()
+  } else if! eq_i32(pc, 2) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 3) {
+    c.op_ferry_alone()
+  } else if! eq_i32(pc, 4) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 5) {
+    c.op_move()
+  } else if! eq_i32(pc, 6) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 7) {
+    c.op_move()
+  } else if! eq_i32(pc, 8) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 9) {
+    c.op_move()
+  } else if! eq_i32(pc, 10) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 11) {
+    c.op_ferry_alone()
+  } else if! eq_i32(pc, 12) {
+    c.op_assert_safe()
+  } else if! eq_i32(pc, 13) {
+    c.op_move()
+  } else if! eq_i32(pc, 14) {
+    c.op_jump_if_done()
+  } else {
+    c.op_halt()
+  }
+}
+
+pub fn arg0(pc: I32) -> I32 {
+  if! eq_i32(pc, 1) {
+    c.item_goat()
+  } else if! eq_i32(pc, 5) {
+    c.item_wolf()
+  } else if! eq_i32(pc, 7) {
+    c.item_goat()
+  } else if! eq_i32(pc, 9) {
+    c.item_cabbage()
+  } else if! eq_i32(pc, 13) {
+    c.item_goat()
+  } else if! eq_i32(pc, 14) {
+    16
+  } else if! eq_i32(pc, 16) {
+    c.halt_success()
+  } else {
+    c.halt_trap()
+  }
+}
+
+pub fn item_name(item: I32) -> String {
+  if! eq_i32(item, c.item_goat()) {
+    "goat"
+  } else if! eq_i32(item, c.item_wolf()) {
+    "wolf"
+  } else if! eq_i32(item, c.item_cabbage()) {
+    "cabbage"
+  } else {
+    "none"
+  }
+}

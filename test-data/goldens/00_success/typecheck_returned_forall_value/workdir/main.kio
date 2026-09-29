@@ -1,0 +1,7 @@
+module main;
+
+host type N;
+
+host fn produce(_unit: .) -> [A] A;
+
+fn returned() -> N { produce()(N) }

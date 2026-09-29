@@ -1,0 +1,7 @@
+minesweeper_frontier
+board=6x5 cells=30 mines=6 revealed=8
+frontier safe=4 mine=3 remote=15 revealed=8
+recommend index=14 neighboring_mines=1
+frontier_list len=4 first_after_swap=20
+clone original=false plan=true
+revealed_neighbor_total=9

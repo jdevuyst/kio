@@ -1,0 +1,52 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/brackets(plain_nested, plain_outer);
+import testapi/io(print);
+
+fn cat(a: String, b: String) -> String { a }
+
+fn pick(a: String, b: String) -> String { a }
+
+fn pick_second(a: String, b: String) -> String { b }
+
+// Extended op-char set: `#`, `$`, `'`, and `` ` `` all participate
+// in multi-char OpToken runs. Bare `#` stays for the `.#`
+// placeholder-lambda surface form; only `#` adjacent to another
+// op-char joins a run. `'` and `` ` `` have no other role in the
+// language, so they're available as plain greedy op-chars.
+op _ ## _ { impl cat }
+
+op _ $$ _ { impl cat }
+
+op _ '' _ { impl cat }
+
+op _ `` _ { impl cat }
+
+op _ '` _ { impl cat }
+
+// Adjacent punctuation characters form one ordinary operator run.
+op _ <! __ !> { impl pick }
+
+// Whitespace makes `<` and `!` separate runs, so this is a distinct operator.
+op _ < ! __ ! > { impl pick_second }
+
+pub fn main() -> . {
+  print("a" ## "b");
+  print("\n");
+  print("x" $$ "y");
+  print("\n");
+  print("q" '' "r");
+  print("\n");
+  print("s" `` "t");
+  print("\n");
+  print("u" '` "v");
+  print("\n");
+  print("fused" <! "ignored" !>);
+  print("\n");
+  print("ignored" < ! "separated" ! >);
+  print("\n");
+  print(plain_outer());
+  print("\n");
+  print(plain_nested())
+}

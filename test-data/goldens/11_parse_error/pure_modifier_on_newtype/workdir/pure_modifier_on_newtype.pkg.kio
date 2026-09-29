@@ -1,0 +1,18 @@
+package pure_modifier_on_newtype;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  pure_modifier_on_newtype;
+  pure_modifier_on_newtype/**
+}

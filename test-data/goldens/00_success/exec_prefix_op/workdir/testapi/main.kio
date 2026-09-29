@@ -1,0 +1,40 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+// Unary negation as a user-defined prefix operator. `op - __ { impl neg; };`
+// registers `-` in the prefix keyspace (see `specs/language.md` §
+// Operators); use-sites `- e` desugar to `neg(e)`. Right-recursive
+// (`__`) so same-prefix chains right-associate.
+fn neg(x: I32) -> I32 { sub_i32(0, x) }
+
+op - __ { impl neg }
+
+// Addition, so the test can also exercise the prefix-then-binary
+// composition `- y + 100` parsing without parens.
+op _ + __ { impl add_i32 }
+
+fn print_i32(n: I32) -> . { print(i32_to_string(n)); print("\n") }
+
+pub fn main() -> . {
+  // Shape 1: prefix-op applied to a numeric literal with whitespace
+  // separating the `-` from the digit. The leading-minus carve-out
+  // documented in `specs/grammar.md` § Notes (Kio surface) only
+  // applies when `-` is flush against a digit; with the space,
+  // `- 40` is a prefix-op application of `-` to `40` — i.e.
+  // `neg(40)`.
+  print_i32(- 40);
+  // Shape 2: prefix-op applied to an identifier. The leading-minus
+  // carve-out only applies to digits, so `-` adjacent to an
+  // identifier is always its own op-token; `- y` is `neg(y)`.
+  let y = 5;
+  print_i32(- y);
+  // Shape 3: prefix-then-binary composition. Per `specs/language.md`
+  // § Operators — Nesting summary, prefix unary is the lone
+  // composition that doesn't need parens; `- y + 100` parses as
+  // `add(neg(y), 100)`.
+  print_i32((- y) + 100)
+}

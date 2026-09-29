@@ -1,0 +1,38 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+labels { value: I32 };
+
+rec(loop) fn row_tail_no_cont(n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    n
+  } else {
+    let .({value as next}) = {value = 0};
+    rec row_tail_no_cont(next)
+  }
+}
+
+rec(loop) {
+  fn row_tail_cont(n: I32) -> I32 {
+    if! leq_i32(n, 0) {
+      n
+    } else {
+      let .({value as next}) = {value = rec(cont) row_seed(0)};
+      rec row_tail_cont(next)
+    }
+  };
+  fn row_seed(value: I32) -> I32 { value }
+}
+
+pub fn main() -> . {
+  print(i32_to_string(row_tail_no_cont(1)));
+  print(",");
+  print(i32_to_string(row_tail_cont(1)));
+  print("\n")
+}

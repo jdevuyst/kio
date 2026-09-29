@@ -1,0 +1,5 @@
+module testapi/utils;
+
+import testapi(String);
+
+pub fn echo(s: String) -> String { s }

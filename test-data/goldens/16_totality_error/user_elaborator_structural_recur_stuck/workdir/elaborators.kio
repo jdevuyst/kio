@@ -1,0 +1,67 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Elaborator_result = __Checked_term__ | __Diagnostic_text__;
+
+pub type Target_request = __Type__ | .;
+
+rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
+
+pure fn stop() -> Fuel { Fuel.mk_fuel(__left__(., Fuel, ())) }
+
+pure fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__(., Fuel, rest)) }
+
+pure fn finish_elaborator_result(ct: __Comptime__, result: Elaborator_result) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , __Checked_term__
+    , result
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(message: __Diagnostic_text__) -> __Checked_term__ { __elab_error__(ct, message) }
+    )
+}
+
+pure fn stuck_impl(
+  , ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(_target: __Type__) -> Elaborator_result {
+        __structural_recur__(
+          , ct
+          , Fuel
+          , __Checked_term__
+          , Elaborator_result
+          , tick(stop())
+          , value
+          , .(
+              , loop_recur: (Fuel & __Checked_term__) -> Elaborator_result
+              , loop_fuel: Fuel
+              , loop_state: __Checked_term__
+              ) -> Elaborator_result { loop_recur(loop_fuel, loop_state) }
+          )
+      }
+    , .() -> Elaborator_result {
+        __right__(__Checked_term__, __Diagnostic_text__, "elaborator needs a target")
+      }
+    )
+}
+
+pub pure fn stuck_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> __Checked_term__ { finish_elaborator_result(ct, stuck_impl(ct, source, value, target)) }
+
+pub elab stuck : [Source] Source -> [Target] Target { impl stuck_checked }

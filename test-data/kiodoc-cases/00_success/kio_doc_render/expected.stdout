@@ -1,0 +1,594 @@
+rendered HTML site to out/docs
+rendered Markdown site to out/docs-md
+==== out/docs-md/guides/deeper.md ====
+<!-- Navigation -->
+
+- [Index](../index.md)
+- [Package Boundary](../package-boundary.md)
+
+**Modules**
+
+- [render_pkg](../render_pkg.md)
+- [render_pkg/main](../render_pkg/main.md)
+- [render_pkg/sub/util](../render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](../guides/deeper.md)
+- [Getting started](../intro.md)
+
+---
+
+# A nested guide
+
+This page sits one directory deep, so its links carry a `../`
+prefix back to the site root.
+
+See [`run`](../render_pkg.md#item-render_5fpkg-run) for the entry point.
+
+==== out/docs-md/index.md ====
+<!-- Navigation -->
+
+- [Index](index.md)
+- [Package Boundary](package-boundary.md)
+
+**Modules**
+
+- [render_pkg](render_pkg.md)
+- [render_pkg/main](render_pkg/main.md)
+- [render_pkg/sub/util](render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](guides/deeper.md)
+- [Getting started](intro.md)
+
+---
+
+# render_pkg documentation
+
+## Modules
+
+- [`render_pkg`](render_pkg.md)
+- [`render_pkg/main`](render_pkg/main.md) — The package's entry module.
+- [`render_pkg/sub/util`](render_pkg/sub/util.md) — Small utilities used elsewhere in the package.
+
+## Package surface
+
+- [Package Boundary](package-boundary.md) — the package's host and bridge items.
+
+## Guides
+
+- [A nested guide](guides/deeper.md)
+- [Getting started](intro.md)
+
+
+==== out/docs-md/intro.md ====
+<!-- Navigation -->
+
+- [Index](index.md)
+- [Package Boundary](package-boundary.md)
+
+**Modules**
+
+- [render_pkg](render_pkg.md)
+- [render_pkg/main](render_pkg/main.md)
+- [render_pkg/sub/util](render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](guides/deeper.md)
+- [Getting started](intro.md)
+
+---
+
+# Getting started
+
+This package exposes a single bridge entry point, [`run`](render_pkg.md#item-render_5fpkg-run).
+
+The host supplies [`emit`](render_pkg.md#item-render_5fpkg-emit) for output. Its signature:
+`host fn emit(value: S) -> .;`.
+
+- Step one.
+- Step two.
+
+## Example
+
+A quick taste of Kio (not type-checked here):
+
+```kio {ignore}
+// Identity on the host string type.
+fn echo(x: S) -> S { x }
+```
+
+==== out/docs-md/package-boundary.md ====
+<!-- Navigation -->
+
+- [Index](index.md)
+- [Package Boundary](package-boundary.md)
+
+**Modules**
+
+- [render_pkg](render_pkg.md)
+- [render_pkg/main](render_pkg/main.md)
+- [render_pkg/sub/util](render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](guides/deeper.md)
+- [Getting started](intro.md)
+
+---
+
+# Package Boundary
+
+<h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+<h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+Prints a line to the host.
+
+<h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+
+The package's public entry point.
+
+<h3 id="item-render_5fpkg_2fmain-identity"><code>identity</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">identity</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">A</span></code></pre>
+
+Returns its argument unchanged.
+
+The signature is `pub fn identity[A](x: A) -> A`.
+
+<h3 id="item-render_5fpkg_2fmain-Pair"><code>Pair</code> <span class="item-kind">type</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">Pair</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span> <span class="kio-operator-builtin">=</span> <span class="kio-entity-name-type">A</span> <span class="kio-operator-builtin">&amp;</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+A two-component product of `A` values.
+
+<h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+
+Discards its argument and returns unit.
+
+
+==== out/docs-md/render_pkg.md ====
+<!-- Navigation -->
+
+- [Index](index.md)
+- [Package Boundary](package-boundary.md)
+
+**Modules**
+
+- [render_pkg](render_pkg.md)
+- [render_pkg/main](render_pkg/main.md)
+- [render_pkg/sub/util](render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](guides/deeper.md)
+- [Getting started](intro.md)
+
+---
+
+# Module `render_pkg`
+
+<h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+<h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+Prints a line to the host.
+
+<h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+
+The package's public entry point.
+
+
+==== out/docs-md/render_pkg/main.md ====
+<!-- Navigation -->
+
+- [Index](../index.md)
+- [Package Boundary](../package-boundary.md)
+
+**Modules**
+
+- [render_pkg](../render_pkg.md)
+- [render_pkg/main](../render_pkg/main.md)
+- [render_pkg/sub/util](../render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](../guides/deeper.md)
+- [Getting started](../intro.md)
+
+---
+
+# Module `render_pkg/main`
+
+The package's entry module.
+
+It defines the [`identity`](../render_pkg/main.md#item-render_5fpkg_2fmain-identity) helper and the [`Pair`](../render_pkg/main.md#item-render_5fpkg_2fmain-Pair) type alias.
+
+<h3 id="item-render_5fpkg_2fmain-identity"><code>identity</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">identity</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">A</span></code></pre>
+
+Returns its argument unchanged.
+
+The signature is `pub fn identity[A](x: A) -> A`.
+
+<h3 id="item-render_5fpkg_2fmain-Pair"><code>Pair</code> <span class="item-kind">type</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">Pair</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span> <span class="kio-operator-builtin">=</span> <span class="kio-entity-name-type">A</span> <span class="kio-operator-builtin">&amp;</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-separator">;</span></code></pre>
+
+A two-component product of `A` values.
+
+
+==== out/docs-md/render_pkg/sub/util.md ====
+<!-- Navigation -->
+
+- [Index](../../index.md)
+- [Package Boundary](../../package-boundary.md)
+
+**Modules**
+
+- [render_pkg](../../render_pkg.md)
+- [render_pkg/main](../../render_pkg/main.md)
+- [render_pkg/sub/util](../../render_pkg/sub/util.md)
+
+**Guides**
+
+- [A nested guide](../../guides/deeper.md)
+- [Getting started](../../intro.md)
+
+---
+
+# Module `render_pkg/sub/util`
+
+Small utilities used elsewhere in the package.
+
+<h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
+
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+
+Discards its argument and returns unit.
+
+
+==== out/docs/guides/deeper.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="../_assets/style.css" />
+<script src="../_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="../index.html">Index</a></li>
+<li><a href="../package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="../render_pkg.html">render_pkg</a></li>
+<li><a href="../render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="../render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="../guides/deeper.html">A nested guide</a></li>
+<li><a href="../intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>A nested guide</h1>
+<p>This page sits one directory deep, so its links carry a <code>../</code> prefix back to the site root.</p>
+<p>See <a href="../render_pkg.html#item-render_5fpkg-run"><code>run</code></a> for the entry point.</p>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/index.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="_assets/style.css" />
+<script src="_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="index.html">Index</a></li>
+<li><a href="package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="render_pkg.html">render_pkg</a></li>
+<li><a href="render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="guides/deeper.html">A nested guide</a></li>
+<li><a href="intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>render_pkg documentation</h1>
+<h2>Modules</h2>
+<ul>
+<li><a href="render_pkg.html"><code>render_pkg</code></a></li>
+<li><a href="render_pkg/main.html"><code>render_pkg/main</code></a> — The package's entry module.</li>
+<li><a href="render_pkg/sub/util.html"><code>render_pkg/sub/util</code></a> — Small utilities used elsewhere in the package.</li>
+</ul>
+<h2>Package surface</h2>
+<ul>
+<li><a href="package-boundary.html">Package Boundary</a> — the package's host and bridge items.</li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="guides/deeper.html">A nested guide</a></li>
+<li><a href="intro.html">Getting started</a></li>
+</ul>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/intro.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="_assets/style.css" />
+<script src="_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="index.html">Index</a></li>
+<li><a href="package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="render_pkg.html">render_pkg</a></li>
+<li><a href="render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="guides/deeper.html">A nested guide</a></li>
+<li><a href="intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>Getting started</h1>
+<p>This package exposes a single bridge entry point, <a href="render_pkg.html#item-render_5fpkg-run"><code>run</code></a>.</p>
+<p>The host supplies <a href="render_pkg.html#item-render_5fpkg-emit"><code>emit</code></a> for output. Its signature: <code>host fn emit(value: S) -&gt; .;</code>.</p>
+<ul>
+<li>Step one.</li>
+<li>Step two.</li>
+</ul>
+<h2>Example</h2>
+<p>A quick taste of Kio (not type-checked here):</p>
+<pre><code class="language-kio"><span class="kio-comment-line">// Identity on the host string type.</span>
+<span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">echo</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">S</span> <span class="kio-punctuation-bracket">{</span> <span class="kio-identifier">x</span> <span class="kio-punctuation-bracket">}</span>
+</code></pre>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/package-boundary.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="_assets/style.css" />
+<script src="_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="index.html">Index</a></li>
+<li><a href="package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="render_pkg.html">render_pkg</a></li>
+<li><a href="render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="guides/deeper.html">A nested guide</a></li>
+<li><a href="intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>Package Boundary</h1>
+<h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
+<h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<p>Prints a line to the host.</p>
+<h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<p>The package's public entry point.</p>
+<h3 id="item-render_5fpkg_2fmain-identity"><code>identity</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">identity</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">A</span></code></pre>
+<p>Returns its argument unchanged.</p>
+<p>The signature is <code>pub fn identity[A](x: A) -&gt; A</code>.</p>
+<h3 id="item-render_5fpkg_2fmain-Pair"><code>Pair</code> <span class="item-kind">type</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">Pair</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span> <span class="kio-operator-builtin">=</span> <span class="kio-entity-name-type">A</span> <span class="kio-operator-builtin">&amp;</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-separator">;</span></code></pre>
+<p>A two-component product of <code>A</code> values.</p>
+<h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<p>Discards its argument and returns unit.</p>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/render_pkg.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="_assets/style.css" />
+<script src="_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="index.html">Index</a></li>
+<li><a href="package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="render_pkg.html">render_pkg</a></li>
+<li><a href="render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="guides/deeper.html">A nested guide</a></li>
+<li><a href="intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>Module <code>render_pkg</code></h1>
+<h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
+<h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<p>Prints a line to the host.</p>
+<h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<p>The package's public entry point.</p>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/render_pkg/main.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="../_assets/style.css" />
+<script src="../_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="../index.html">Index</a></li>
+<li><a href="../package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="../render_pkg.html">render_pkg</a></li>
+<li><a href="../render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="../render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="../guides/deeper.html">A nested guide</a></li>
+<li><a href="../intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>Module <code>render_pkg/main</code></h1>
+<p>The package's entry module.</p>
+<p>It defines the <a href="../render_pkg/main.html#item-render_5fpkg_2fmain-identity"><code>identity</code></a> helper and the <a href="../render_pkg/main.html#item-render_5fpkg_2fmain-Pair"><code>Pair</code></a> type alias.</p>
+<h3 id="item-render_5fpkg_2fmain-identity"><code>identity</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">identity</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">A</span></code></pre>
+<p>Returns its argument unchanged.</p>
+<p>The signature is <code>pub fn identity[A](x: A) -&gt; A</code>.</p>
+<h3 id="item-render_5fpkg_2fmain-Pair"><code>Pair</code> <span class="item-kind">type</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">Pair</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span> <span class="kio-operator-builtin">=</span> <span class="kio-entity-name-type">A</span> <span class="kio-operator-builtin">&amp;</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-separator">;</span></code></pre>
+<p>A two-component product of <code>A</code> values.</p>
+</main>
+</div>
+</body>
+</html>
+
+==== out/docs/render_pkg/sub/util.html ====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="../../_assets/style.css" />
+<script src="../../_assets/nav.js" defer></script>
+<title>kio docs</title>
+</head>
+<body>
+<div class="layout">
+<button class="toggle">Menu</button>
+<nav class="sidebar">
+<ul>
+<li><a href="../../index.html">Index</a></li>
+<li><a href="../../package-boundary.html">Package Boundary</a></li>
+</ul>
+<h2>Modules</h2>
+<ul>
+<li><a href="../../render_pkg.html">render_pkg</a></li>
+<li><a href="../../render_pkg/main.html">render_pkg/main</a></li>
+<li><a href="../../render_pkg/sub/util.html">render_pkg/sub/util</a></li>
+</ul>
+<h2>Guides</h2>
+<ul>
+<li><a href="../../guides/deeper.html">A nested guide</a></li>
+<li><a href="../../intro.html">Getting started</a></li>
+</ul>
+</nav>
+<main>
+<h1>Module <code>render_pkg/sub/util</code></h1>
+<p>Small utilities used elsewhere in the package.</p>
+<h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<p>Discards its argument and returns unit.</p>
+</main>
+</div>
+</body>
+</html>

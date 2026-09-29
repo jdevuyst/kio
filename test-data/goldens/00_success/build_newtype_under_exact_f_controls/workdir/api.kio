@@ -1,0 +1,23 @@
+module api;
+
+host type Box[T];
+
+pub newtype Token : . { pub constructor mk; pub projector get }
+
+pub rec newtype Loop : . | Loop { pub constructor mk; pub projector get }
+
+pub newtype Pack <U> : U { pub constructor mk; pub projector get }
+
+host fn token_seed() -> Box(Token);
+
+host fn loop_seed() -> Box(Loop);
+
+host fn pack_seed() -> Box(Pack);
+
+host fn tie[*F][T](plain: T, wrapped: F(T)) -> F(T);
+
+pub fn keep_token(value: Token) -> Box(Token) { tie(value, token_seed()) }
+
+pub fn keep_loop(value: Loop) -> Box(Loop) { tie(value, loop_seed()) }
+
+pub fn keep_pack(value: Pack) -> Box(Pack) { tie(value, pack_seed()) }

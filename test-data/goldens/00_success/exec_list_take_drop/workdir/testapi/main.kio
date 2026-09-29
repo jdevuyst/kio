@@ -1,0 +1,132 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
+  match! state {
+    .(remaining: List(A), output: List(A)) {
+      match! remaining.>List.un_list {
+        (
+          , .(x: A, rest: List(A)) {
+              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+            }
+          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+          )
+      }
+    }
+  }
+}
+
+fn reverse[A](xs: List(A)) -> List(A) {
+  loop(.(state: List(A) & List(A)) { reverse_step(state) }, (xs, nil(A, ())))
+}
+
+// `take(n, xs)`: collect up to `n` elements from the front of `xs`.
+// State is `(n_remaining, input_remaining, output_reversed)` as
+// `I32 & (List(A) & List(A))`; exit when `n_remaining <= 0` or
+// `input_remaining` is empty. A final reverse restores input order.
+fn take_step[A](state: I32 & List(A) & List(A)) -> (I32 & List(A) & List(A)) | List(A) {
+  match! state {
+    .(n: I32, rest_and_out: List(A) & List(A)) {
+      match! rest_and_out {
+        .(remaining: List(A), output: List(A)) {
+          match! remaining.>List.un_list {
+            (
+              , .(x: A, rest: List(A)) {
+                  if! leq_i32(n, 0) {
+                    widen_sum!(output, (I32 & List(A) & List(A)) | List(A))
+                  } else {
+                    widen_sum!(
+                      , (sub_i32(n, 1), (rest, push(x, output)))
+                      , (I32 & List(A) & List(A)) | List(A)
+                      )
+                  }
+                }
+              , .(_empty: .) { widen_sum!(output, (I32 & List(A) & List(A)) | List(A)) }
+              )
+          }
+        }
+      }
+    }
+  }
+}
+
+fn take[A](n: I32, xs: List(A)) -> List(A) {
+  reverse(loop(.(state: I32 & List(A) & List(A)) { take_step(state) }, (n, (xs, nil(A, ())))))
+}
+
+// `drop(n, xs)`: skip the first `n` elements of `xs`, return the rest.
+// State is `(n_remaining, input_remaining)` as `I32 & List(A)`;
+// exit when `n_remaining <= 0` or `input_remaining` is empty.
+fn drop_step[A](state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+  match! state {
+    .(n: I32, remaining: List(A)) {
+      match! remaining.>List.un_list {
+        (
+          , .(_x: A, rest: List(A)) {
+              if! leq_i32(n, 0) {
+                widen_sum!(remaining, (I32 & List(A)) | List(A))
+              } else {
+                widen_sum!((sub_i32(n, 1), rest), (I32 & List(A)) | List(A))
+              }
+            }
+          , .(_empty: .) { widen_sum!(remaining, (I32 & List(A)) | List(A)) }
+          )
+      }
+    }
+  }
+}
+
+fn drop[A](n: I32, xs: List(A)) -> List(A) {
+  loop(.(state: I32 & List(A)) { drop_step(state) }, (n, xs))
+}
+
+// Print a list of I32 as comma-separated values followed by a newline.
+fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
+  match! state {
+    .(xs: List(I32), acc: String) {
+      match! xs.>List.un_list {
+        (
+          , .(x: I32, rest: List(I32)) {
+              let sep =
+                match! rest.>List.un_list {
+                  (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
+                };
+              widen_sum!(
+                , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
+                , (List(I32) & String) | .
+                )
+            }
+          , .(_empty: .) {
+              print(string_concat(acc, "\n"));
+              widen_sum!((), (List(I32) & String) | .)
+            }
+          )
+      }
+    }
+  }
+}
+
+fn print_list(xs: List(I32)) -> . {
+  loop(.(state: List(I32) & String) { print_list_step(state) }, (xs, ""))
+}
+
+pub fn main() -> . {
+  let xs = push(1, push(2, push(3, push(4, push(5, push(6, push(7, nil(I32, ()))))))));
+  print_list(take(3, xs));
+  print_list(drop(3, xs))
+}

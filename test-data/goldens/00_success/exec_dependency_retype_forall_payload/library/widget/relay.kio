@@ -1,0 +1,5 @@
+module relay;
+
+import store(Dict, I32, relay_dict);
+
+pub fn relay_via() -> Dict { relay_dict() }

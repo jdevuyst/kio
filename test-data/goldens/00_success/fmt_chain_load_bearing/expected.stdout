@@ -1,0 +1,26 @@
+module main;
+
+type Mixed1 = (A & B) | C;
+
+type Mixed2 = A & (B | C);
+
+type Fn_chain = (A -> B) | C;
+
+type Fn_param = (A & B) -> C;
+
+type Bare_fn = A -> B;
+
+type Left_leaning = (A & B) & C;
+module main;
+
+type Mixed1 = (A & B) | C;
+
+type Mixed2 = A & (B | C);
+
+type Fn_chain = (A -> B) | C;
+
+type Fn_param = (A & B) -> C;
+
+type Bare_fn = A -> B;
+
+type Left_leaning = (A & B) & C;

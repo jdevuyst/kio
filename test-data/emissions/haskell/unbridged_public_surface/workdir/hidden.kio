@@ -1,0 +1,7 @@
+module hidden;
+
+pub newtype Hidden_pair : . & . { pub constructor make_hidden_pair; pub projector read_hidden_pair }
+
+pub fn hidden_pair(value: . & .) -> . & . { value }
+
+pub fn touch(value: .) -> . { value }

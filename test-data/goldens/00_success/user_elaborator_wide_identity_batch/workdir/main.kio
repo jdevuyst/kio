@@ -1,0 +1,75 @@
+module main;
+
+import elaborators(identity_a, identity_b, identity_c);
+
+newtype Shape0 : . { constructor mk_shape0; projector un_shape0 }
+
+newtype Shape1 : . { constructor mk_shape1; projector un_shape1 }
+
+newtype Shape2 : . { constructor mk_shape2; projector un_shape2 }
+
+newtype Shape3 : . { constructor mk_shape3; projector un_shape3 }
+
+newtype Shape4 : . { constructor mk_shape4; projector un_shape4 }
+
+newtype Shape5 : . { constructor mk_shape5; projector un_shape5 }
+
+newtype Shape6 : . { constructor mk_shape6; projector un_shape6 }
+
+newtype Shape7 : . { constructor mk_shape7; projector un_shape7 }
+
+newtype Shape8 : . { constructor mk_shape8; projector un_shape8 }
+
+newtype Shape9 : . { constructor mk_shape9; projector un_shape9 }
+
+newtype Shape10 : . { constructor mk_shape10; projector un_shape10 }
+
+newtype Shape11 : . { constructor mk_shape11; projector un_shape11 }
+
+newtype Shape12 : . { constructor mk_shape12; projector un_shape12 }
+
+fn keep_a0(value: Shape0) -> Shape0 { identity_a!(value) }
+
+fn keep_b0(value: Shape0) -> Shape0 { identity_b!(value) }
+
+fn keep_c0(value: Shape0) -> Shape0 { identity_c!(value) }
+
+fn keep_a1(value: Shape1) -> Shape1 { identity_a!(value) }
+
+fn keep_b1(value: Shape1) -> Shape1 { identity_b!(value) }
+
+fn keep_c1(value: Shape1) -> Shape1 { identity_c!(value) }
+
+fn keep_a2(value: Shape2) -> Shape2 { identity_a!(value) }
+
+fn keep_b2(value: Shape2) -> Shape2 { identity_b!(value) }
+
+fn keep_c2(value: Shape2) -> Shape2 { identity_c!(value) }
+
+fn keep_a3(value: Shape3) -> Shape3 { identity_a!(value) }
+
+fn keep_b3(value: Shape3) -> Shape3 { identity_b!(value) }
+
+fn keep_c3(value: Shape3) -> Shape3 { identity_c!(value) }
+
+fn keep_a4(value: Shape4) -> Shape4 { identity_a!(value) }
+
+fn keep_b4(value: Shape4) -> Shape4 { identity_b!(value) }
+
+fn keep_a5(value: Shape5) -> Shape5 { identity_a!(value) }
+
+fn keep_b5(value: Shape5) -> Shape5 { identity_b!(value) }
+
+fn keep_a6(value: Shape6) -> Shape6 { identity_a!(value) }
+
+fn keep_a7(value: Shape7) -> Shape7 { identity_a!(value) }
+
+fn keep_a8(value: Shape8) -> Shape8 { identity_a!(value) }
+
+fn keep_a9(value: Shape9) -> Shape9 { identity_a!(value) }
+
+fn keep_a10(value: Shape10) -> Shape10 { identity_a!(value) }
+
+fn keep_a11(value: Shape11) -> Shape11 { identity_a!(value) }
+
+fn keep_a12(value: Shape12) -> Shape12 { identity_a!(value) }

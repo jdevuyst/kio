@@ -1,0 +1,14 @@
+module floats/main;
+
+import floats(F32, F64, String);
+import floats(add_f32, add_f64, f32_to_string, f64_to_string, mul_f64, print);
+
+fn print_f32(n: F32) -> . { let s = f32_to_string(n); let l = print(s); print("\n"(String)) }
+
+fn print_f64(n: F64) -> . { let s = f64_to_string(n); let l = print(s); print("\n"(String)) }
+
+pub fn main() -> . {
+  let a = print_f64(add_f64(1.5(F64), 2.5(F64)));
+  let b = print_f64(mul_f64(0.1(F64), 3.0(F64)));
+  print_f32(add_f32(0.1(F32), 0.2(F32)))
+}

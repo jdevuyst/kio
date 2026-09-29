@@ -1,0 +1,6 @@
+module main;
+
+// A fn body is a statement-bearing block, but it must end with an
+// expression — a trailing `let` statement with no final expression
+// is a parse error (exit 11).
+fn f() -> . { let x = (); }

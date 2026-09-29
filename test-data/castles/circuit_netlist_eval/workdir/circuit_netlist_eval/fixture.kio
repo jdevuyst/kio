@@ -1,0 +1,45 @@
+module circuit_netlist_eval/fixture;
+
+import circuit_netlist_eval/domain(
+  , State
+  , {checksum}
+  , {enable}
+  , {fanout_ok}
+  , {fanout_probe}
+  , {gate_ab_and}
+  , {gate_bc_or}
+  , {gate_enable_a}
+  , {gate_mask}
+  , {gate_xor}
+  , {pin_a}
+  , {pin_b}
+  , {pin_c}
+  , {probe_alarm}
+  , {probe_carry}
+  , {stage}
+  , {truth_ok}
+  , {warning_count}
+  );
+import testapi(Bool, I32);
+
+pub fn initial_state() -> State {
+  {
+    , stage = 0
+    , pin_a = .t
+    , pin_b = .f
+    , pin_c = .t
+    , enable = .t
+    , gate_ab_and = .f
+    , gate_bc_or = .f
+    , gate_enable_a = .f
+    , gate_xor = .f
+    , gate_mask = .f
+    , fanout_probe = .f
+    , probe_carry = .f
+    , probe_alarm = .f
+    , checksum = 0
+    , fanout_ok = .t
+    , truth_ok = .t
+    , warning_count = 0
+    }
+}

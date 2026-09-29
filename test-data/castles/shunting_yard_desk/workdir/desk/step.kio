@@ -1,0 +1,38 @@
+/// The RPN queue's element type — the yard's output and the evaluator's input.
+///
+/// A parenthesis never reaches postfix form and neither does an unreadable
+/// token, so a `Step` is deliberately narrower than a `Token`: it is exactly
+/// what an RPN machine can execute, push a literal or apply an operator. The
+/// evaluator therefore has no impossible arm to answer for.
+module desk/step;
+
+import desk/op(Op, symbol);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+
+pub labels Action = { lit: I32 } | { app: Op };
+
+/// The action plus the position of the source token that produced it. Faults
+/// raised during evaluation quote that position, so `8 / 0` blames the `/`
+/// rather than the RPN slot the `/` happened to land in.
+pub labels Step = { act: Action, spot: I32 };
+
+fn lit_action(n: I32) -> Action { {lit = n}.>widen_sum!(Action) }
+
+fn app_action(op: Op) -> Action { {app = op}.>widen_sum!(Action) }
+
+pub fn lit_step(n: I32, spot: I32) -> Step { {act = lit_action(n), spot} }
+
+pub fn app_step(op: Op, spot: I32) -> Step { {act = app_action(op), spot} }
+
+pub fn act_of(s: Step) -> Action { s.?{act} }
+
+pub fn spot_of(s: Step) -> I32 { s.?{spot} }
+
+pub fn step_text(s: Step) -> String {
+  match! act_of(s) {
+    (.(l: Lit) { int_to_string(l.?{lit}) }, .(a: App) { symbol(a.?{app}) })
+  }
+}

@@ -1,0 +1,3 @@
+module value;
+
+pub fn unit() -> . { () }

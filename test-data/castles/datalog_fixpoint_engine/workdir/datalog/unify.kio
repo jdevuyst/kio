@@ -1,0 +1,260 @@
+/// Matching a goal against the database, and joining a whole rule body.
+///
+/// Matching is one-way: the goal carries variables, the database fact is
+/// ground, and a match either extends the substitution or fails. Full
+/// unification is never needed because a fact never contains a variable.
+///
+/// Two solvers sit on that. `solve_all` is the naive join - every goal
+/// ranges over the whole database. `solve_delta` is the semi-naive one -
+/// it admits only derivations in which at least one goal consumes a fact
+/// that is new this round. Their difference is the point of the program.
+module datalog/unify;
+
+import datalog/atom(
+  , Args
+  , Atom
+  , Atoms
+  , T_const
+  , T_var
+  , Term
+  , args_of
+  , mk_atom
+  , pred_of
+  , tconst
+  , tvar
+  );
+import datalog/atom({t_const});
+import datalog/atom({t_var});
+import datalog/list as list;
+import datalog/subst as subst;
+import datalog/subst({some_const});
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+import testapi/iter(loop);
+
+labels Maybe_subst = { some_subst: subst.Subst } | { no_subst: . };
+
+fn some_subst(s: subst.Subst) -> Maybe_subst { {some_subst = s}.>widen_sum!(Maybe_subst) }
+
+fn no_subst() -> Maybe_subst { {no_subst=}.>widen_sum!(Maybe_subst) }
+
+/// A stored fact's arguments are constants by construction. A variable
+/// reaching here would mean a non-ground atom was stored, so the term
+/// refuses to yield a code and the match fails rather than guessing.
+fn ground_code(t: Term) -> subst.Maybe_const {
+  match! t {
+    (.(k: T_const) { subst.some_const(k.?{t_const}) }, .(_v: T_var) { subst.no_const() })
+  }
+}
+
+/// A constant matches only itself. A variable already bound must agree
+/// with its binding - that check is what a join is made of. An unbound
+/// variable simply takes the constant on.
+fn unify_term(goal: Term, code: I32, s: subst.Subst) -> Maybe_subst {
+  match! goal {
+    (
+      , .(k: T_const) {
+          if! eq_i32(k.?{t_const}, code) {
+            some_subst(s)
+          } else {
+            no_subst()
+          }
+        }
+      , .(v: T_var) {
+          match! subst.lookup(s, v.?{t_var}) {
+            (
+              , .(bound: subst.Some_const) {
+                  if! eq_i32(bound.?{some_const}, code) {
+                    some_subst(s)
+                  } else {
+                    no_subst()
+                  }
+                }
+              , .(_free: subst.No_const) { some_subst(subst.extend(s, v.?{t_var}, code)) }
+              )
+          }
+        }
+      )
+  }
+}
+
+fn unify_slot(goal: Term, fact_arg: Term, s: subst.Subst) -> Maybe_subst {
+  match! ground_code(fact_arg) {
+    (
+      , .(code: subst.Some_const) { unify_term(goal, code.?{some_const}, s) }
+      , .(_open: subst.No_const) { no_subst() }
+      )
+  }
+}
+
+rec(loop) fn unify_args(goals: Args, fact_args: Args, s: subst.Subst) -> Maybe_subst {
+  match! goals.>list.List.un_list {
+    (
+      , .(goal: Term, goal_rest: Args) {
+          match! fact_args.>list.List.un_list {
+            (
+              , .(fact_arg: Term, fact_rest: Args) {
+                  match! unify_slot(goal, fact_arg, s) {
+                    (
+                      , .(next: Some_subst) {
+                          rec unify_args(goal_rest, fact_rest, next.?{some_subst})
+                        }
+                      , .(_none: No_subst) { no_subst() }
+                      )
+                  }
+                }
+              , .(_empty: .) { no_subst() }
+              )
+          }
+        }
+      , .(_empty: .) {
+          if! list.is_empty(fact_args) {
+            some_subst(s)
+          } else {
+            no_subst()
+          }
+        }
+      )
+  }
+}
+
+fn match_atom(goal: Atom, fact: Atom, s: subst.Subst) -> Maybe_subst {
+  if! eq_i32(pred_of(goal), pred_of(fact)) {
+    unify_args(args_of(goal), args_of(fact), s)
+  } else {
+    no_subst()
+  }
+}
+
+rec(loop) {
+  pub fn solve_all(body: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
+    match! body.>list.List.un_list {
+      (
+        , .(goal: Atom, rest: Atoms) { rec scan_all(goal, rest, db, db, s) }
+        , .(_empty: .) { list.of1(s) }
+        )
+    }
+  };
+  fn scan_all(goal: Atom, rest: Atoms, facts: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
+    match! facts.>list.List.un_list {
+      (
+        , .(fact: Atom, more: Atoms) {
+            match! match_atom(goal, fact, s) {
+              (
+                , .(next: Some_subst) {
+                    list.append(
+                      , rec(cont) solve_all(rest, db, next.?{some_subst})
+                      , rec(cont) scan_all(goal, rest, more, db, s)
+                      )
+                  }
+                , .(_none: No_subst) { rec scan_all(goal, rest, more, db, s) }
+                )
+            }
+          }
+        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        )
+    }
+  }
+}
+
+rec(loop) {
+  /// Reading the body left to right, some goal is the *first* to take a
+  /// new fact. Everything before it took an old fact; everything after it
+  /// is free. Enumerating derivations by that first position reaches each
+  /// of them exactly once, and reaches no derivation that used old facts
+  /// only - those were all attempted in an earlier round.
+  ///
+  /// `old` is the database as it stood before `delta` was added, so the
+  /// three lists satisfy `db = old + delta`.
+  pub fn solve_delta(body: Atoms, db: Atoms, old: Atoms, delta: Atoms, s: subst.Subst) -> subst.Substs {
+    match! body.>list.List.un_list {
+      (
+        , .(goal: Atom, rest: Atoms) {
+            list.append(
+              , rec(cont) scan_new(goal, rest, delta, db, s)
+              , rec(cont) scan_old(goal, rest, old, db, old, delta, s)
+              )
+          }
+        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        )
+    }
+  };
+  /// This goal takes a new fact, so the delta obligation is discharged
+  /// and the rest of the body may match anything.
+  fn scan_new(goal: Atom, rest: Atoms, facts: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
+    match! facts.>list.List.un_list {
+      (
+        , .(fact: Atom, more: Atoms) {
+            match! match_atom(goal, fact, s) {
+              (
+                , .(next: Some_subst) {
+                    list.append(
+                      , solve_all(rest, db, next.?{some_subst})
+                      , rec(cont) scan_new(goal, rest, more, db, s)
+                      )
+                  }
+                , .(_none: No_subst) { rec scan_new(goal, rest, more, db, s) }
+                )
+            }
+          }
+        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        )
+    }
+  };
+  /// This goal takes an old fact, so the delta obligation passes to the
+  /// goals after it. Scanning `old` rather than the whole database is
+  /// exactly what stops one derivation from being attempted twice.
+  fn scan_old(
+    , goal: Atom
+    , rest: Atoms
+    , facts: Atoms
+    , db: Atoms
+    , old: Atoms
+    , delta: Atoms
+    , s: subst.Subst
+    ) -> subst.Substs {
+    match! facts.>list.List.un_list {
+      (
+        , .(fact: Atom, more: Atoms) {
+            match! match_atom(goal, fact, s) {
+              (
+                , .(next: Some_subst) {
+                    list.append(
+                      , rec(cont) solve_delta(rest, db, old, delta, next.?{some_subst})
+                      , rec(cont) scan_old(goal, rest, more, db, old, delta, s)
+                      )
+                  }
+                , .(_none: No_subst) { rec scan_old(goal, rest, more, db, old, delta, s) }
+                )
+            }
+          }
+        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        )
+    }
+  }
+}
+
+fn apply_term(t: Term, s: subst.Subst) -> Term {
+  match! t {
+    (
+      , .(k: T_const) { tconst(k.?{t_const}) }
+      , .(v: T_var) {
+          match! subst.lookup(s, v.?{t_var}) {
+            (
+              , .(bound: subst.Some_const) { tconst(bound.?{some_const}) }
+              , .(_free: subst.No_const) { tvar(v.?{t_var}) }
+              )
+          }
+        }
+      )
+  }
+}
+
+/// Every rule is range-restricted - each head variable also occurs in the
+/// body - so grounding a head against a solved body always yields a fact.
+pub fn apply_atom(a: Atom, s: subst.Subst) -> Atom {
+  mk_atom(pred_of(a), list.map(args_of(a), .(t: Term) { apply_term(t, s) }))
+}

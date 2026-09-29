@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Build a 2-tuple via the surface form `(a, b)`, pass it to a
+// helper that destructures via `match!` to pull the second
+// component, and print it. Exercises the tuple literal sugar
+// end-to-end per `specs/language.md` § Anonymous sum and
+// product types: `(a, b)` is sugar for `__pair__(a, b)` with
+// the leading type arguments inferred from the surrounding
+// context.
+fn snd((_x: String, y: String)) -> String { y }
+
+pub fn main() -> . { print(snd(("first\n", "second\n"))) }

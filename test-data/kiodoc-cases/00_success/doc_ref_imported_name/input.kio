@@ -1,0 +1,11 @@
+/// Uses [`helper`] from the lib module.
+///
+/// The [`helper`] function is selectively imported from `docref.lib`.
+/// Also uses the qualified alias [`lib`] for qualified access.
+module docref/main;
+
+import docref/lib as lib;
+import docref/lib(helper);
+
+/// Calls [`helper`] and returns its result.
+pub fn run() -> . { helper() }

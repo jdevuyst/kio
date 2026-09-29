@@ -1,0 +1,26 @@
+module float_weather_index/model;
+
+import testapi(F64);
+import testapi/arith as arith;
+
+fn humidity_load(humidity: F64) -> F64 {
+  let gap = arith.sub_f64(humidity, 50.0(F64));
+  arith.mul_f64(gap, 0.125(F64))
+}
+
+fn wind_relief(wind: F64) -> F64 { arith.mul_f64(wind, 0.5(F64)) }
+
+pub fn raw_index(temperature: F64, humidity: F64, wind: F64, correction: F64) -> F64 {
+  let humid = humidity_load(humidity);
+  let relieved = arith.sub_f64(temperature, wind_relief(wind));
+  let corrected = arith.add_f64(relieved, correction);
+  arith.add_f64(corrected, humid)
+}
+
+pub fn smooth(previous: F64, current: F64) -> F64 {
+  let carried = arith.mul_f64(previous, 0.625(F64));
+  let observed = arith.mul_f64(current, 0.375(F64));
+  arith.add_f64(carried, observed)
+}
+
+pub fn comfort_target() -> F64 { 74.0(F64) }

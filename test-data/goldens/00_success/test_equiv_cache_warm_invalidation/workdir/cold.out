@@ -1,0 +1,4 @@
+  pass equiv `uses_a` in m
+  pass equiv `uses_b` in m
+
+result: 2/2 equiv blocks passed

@@ -1,0 +1,3 @@
+module main;
+
+rec newtype Bad : Bad -> . { pub constructor mk_bad; pub projector un_bad }

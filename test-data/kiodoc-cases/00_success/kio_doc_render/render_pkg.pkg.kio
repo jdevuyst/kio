@@ -1,0 +1,16 @@
+package render_pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "docs";
+    md_out "out/docs-md/";
+    html "out/docs/"
+  }
+}
+
+bridge {
+  render_pkg;
+  render_pkg/**
+}

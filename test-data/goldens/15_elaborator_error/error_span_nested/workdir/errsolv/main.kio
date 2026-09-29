@@ -1,0 +1,8 @@
+module errsolv/main;
+
+import elab/spine_elaborators(widen_sum);
+import errsolv(A, B, C);
+
+fn ok(x: B) -> B | C { widen_sum!(x) }
+
+fn bad(x: A) -> B | C { widen_sum!(x) }

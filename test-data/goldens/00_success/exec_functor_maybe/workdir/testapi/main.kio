@@ -1,0 +1,66 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// A non-trivial arity-1 type constructor: `Maybe[A] : . | A`
+// carries an optional `A`. Its payload `. | A` (a sum) differs from
+// the bare type-parameter `A`, so the carrier `Maybe(A)` is the sum
+// shape, not a transparent `A`. It is nonetheless a kind-`*→*`
+// constructor, so a `Functor[*F]` instance can be instantiated for
+// it.
+pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe }
+
+// A `Functor[*F]` dictionary with a polymorphic-function payload:
+// `fmap` lifts an `A -> B` through the brand to an `F(A) ->
+// F(B)`. Every brand crossing is mediated by the concrete brand's
+// constructor / projector at the instance site, which is what makes
+// the dictionary work for non-canonical brands like `Maybe`.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `Maybe`'s functor instance. The brand-crossing goes through
+// `Maybe.mk_maybe` / `Maybe.un_maybe`. `un_maybe` returns `. | A`;
+// we `__either__` on that sum: the `()` branch re-wraps nothing
+// (the carrier carries no `B`), and the `A` branch lifts the
+// payload through the user's step function `s` and re-wraps the
+// result.
+fn maybe_functor() -> Functor(Maybe) {
+  Functor.mk_functor(
+    , Maybe
+    , .[A][B](s, m) {
+        __either__(
+          , .
+          , A
+          , Maybe(B)
+          , Maybe.un_maybe(A, m)
+          , .(_unit) { Maybe.mk_maybe(B, __left__(., B, ())) }
+          , .(av) { Maybe.mk_maybe(B, __right__(., B, s(av))) }
+          )
+      }
+    )
+}
+
+// Exercise the dictionary on a present value: brand a String into
+// a `Just`-shaped `Maybe(String)`, lift the identity through
+// `fmap`, then peel the brand back via `un_maybe` and inject the
+// recovered string into the output stream.
+fn use_dictionary() -> String {
+  let dict = maybe_functor();
+  let m = Maybe.mk_maybe(String, __right__(., String, "functor on maybe ok\n"(String)));
+  let mapped = Functor.fmap(Maybe, dict)(String, String, .(s) { s }, m);
+  __either__(
+    , .
+    , String
+    , String
+    , Maybe.un_maybe(String, mapped)
+    , .(_unit) { "absent\n"(String) }
+    , .(s) { s }
+    )
+}
+
+pub fn main() -> . { print(use_dictionary()) }

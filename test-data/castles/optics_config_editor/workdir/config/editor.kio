@@ -1,0 +1,258 @@
+module config/editor;
+
+import elab/match(match);
+import optics/optics(
+  , Lens
+  , Prism
+  , assoc_iso
+  , compose_lens
+  , iso_to_lens
+  , left_prism
+  , over
+  , over_prism
+  , review
+  , right_prism
+  , set
+  , view
+  );
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+labels Mode_state = { stable_mode: . } | { degraded_mode: I32 };
+
+labels Service_config = { endpoint: String, retries: I32, timeout_ms: I32 };
+
+labels Feature_config = { dark_mode: Bool, rollout: I32 };
+
+labels Limit_fields = { warn_limit: I32, block_limit: I32, audit_limit: I32 };
+
+type Limit_bundle = (Warn_limit & Block_limit) & Audit_limit;
+
+labels App_config = { service: Service_config, feature: Feature_config, limits: Limit_bundle };
+
+labels Root_config = { app: App_config, mode: Mode_state, revision: I32 };
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn yes() -> Bool { eq_i32(1, 1) }
+
+fn no() -> Bool { eq_i32(0, 1) }
+
+fn service_lens() -> Lens(App_config, Service_config) {
+  let get = .(app: App_config) -> Service_config { app.?{service} };
+  let put = .(next: Service_config, app: App_config) -> App_config { app.!{service = next} };
+  (get, put)
+}
+
+fn feature_lens() -> Lens(App_config, Feature_config) {
+  let get = .(app: App_config) -> Feature_config { app.?{feature} };
+  let put = .(next: Feature_config, app: App_config) -> App_config { app.!{feature = next} };
+  (get, put)
+}
+
+fn limits_lens() -> Lens(App_config, Limit_bundle) {
+  let get = .(app: App_config) -> Limit_bundle { app.?{limits} };
+  let put = .(next: Limit_bundle, app: App_config) -> App_config { app.!{limits = next} };
+  (get, put)
+}
+
+fn app_lens() -> Lens(Root_config, App_config) {
+  let get = .(cfg: Root_config) -> App_config { cfg.?{app} };
+  let put = .(next: App_config, cfg: Root_config) -> Root_config { cfg.!{app = next} };
+  (get, put)
+}
+
+fn mode_lens() -> Lens(Root_config, Mode_state) {
+  let get = .(cfg: Root_config) -> Mode_state { cfg.?{mode} };
+  let put = .(next: Mode_state, cfg: Root_config) -> Root_config { cfg.!{mode = next} };
+  (get, put)
+}
+
+fn revision_lens() -> Lens(Root_config, I32) {
+  let get = .(cfg: Root_config) -> I32 { cfg.?{revision} };
+  let put = .(next: I32, cfg: Root_config) -> Root_config { cfg.!{revision = next} };
+  (get, put)
+}
+
+fn retries_lens() -> Lens(Service_config, I32) {
+  let get = .(svc: Service_config) -> I32 { svc.?{retries} };
+  let put = .(next: I32, svc: Service_config) -> Service_config { svc.!{retries = next} };
+  (get, put)
+}
+
+fn timeout_lens() -> Lens(Service_config, I32) {
+  let get = .(svc: Service_config) -> I32 { svc.?{timeout_ms} };
+  let put = .(next: I32, svc: Service_config) -> Service_config { svc.!{timeout_ms = next} };
+  (get, put)
+}
+
+fn dark_mode_lens() -> Lens(Feature_config, Bool) {
+  let get = .(feature: Feature_config) -> Bool { feature.?{dark_mode} };
+  let put =
+    .(next: Bool, feature: Feature_config) -> Feature_config { feature.!{dark_mode = next} };
+  (get, put)
+}
+
+fn rollout_lens() -> Lens(Feature_config, I32) {
+  let get = .(feature: Feature_config) -> I32 { feature.?{rollout} };
+  let put = .(next: I32, feature: Feature_config) -> Feature_config { feature.!{rollout = next} };
+  (get, put)
+}
+
+fn normalized_limits_lens() -> Lens(Limit_bundle, Warn_limit & Block_limit & Audit_limit) {
+  iso_to_lens(assoc_iso(Warn_limit, Block_limit, Audit_limit, ()))
+}
+
+fn normalized_audit_lens() -> Lens(Warn_limit & Block_limit & Audit_limit, I32) {
+  let get = .(limits: Warn_limit & Block_limit & Audit_limit) -> I32 { limits.?{audit_limit} };
+  let put =
+    .(next: I32, limits: Warn_limit & Block_limit & Audit_limit) -> & Warn_limit
+    & Block_limit
+    & Audit_limit { limits.!{audit_limit = next} };
+  (get, put)
+}
+
+fn stable_mode_prism() -> Prism(Mode_state, Stable_mode) {
+  left_prism(Stable_mode, Degraded_mode, ())
+}
+
+fn degraded_mode_prism() -> Prism(Mode_state, Degraded_mode) {
+  right_prism(Stable_mode, Degraded_mode, ())
+}
+
+fn config_service_lens() -> Lens(Root_config, Service_config) {
+  compose_lens(app_lens(), service_lens())
+}
+
+fn config_feature_lens() -> Lens(Root_config, Feature_config) {
+  compose_lens(app_lens(), feature_lens())
+}
+
+fn config_limits_lens() -> Lens(Root_config, Limit_bundle) {
+  compose_lens(app_lens(), limits_lens())
+}
+
+fn config_retries_lens() -> Lens(Root_config, I32) {
+  compose_lens(config_service_lens(), retries_lens())
+}
+
+fn config_timeout_lens() -> Lens(Root_config, I32) {
+  compose_lens(config_service_lens(), timeout_lens())
+}
+
+fn config_dark_mode_lens() -> Lens(Root_config, Bool) {
+  compose_lens(config_feature_lens(), dark_mode_lens())
+}
+
+fn config_rollout_lens() -> Lens(Root_config, I32) {
+  compose_lens(config_feature_lens(), rollout_lens())
+}
+
+fn limit_audit_lens() -> Lens(Limit_bundle, I32) {
+  compose_lens(normalized_limits_lens(), normalized_audit_lens())
+}
+
+fn config_audit_lens() -> Lens(Root_config, I32) {
+  compose_lens(config_limits_lens(), limit_audit_lens())
+}
+
+fn bump_by(amount: I32) -> I32 -> I32 { .(value: I32) -> I32 { add_i32(value, amount) } }
+
+fn bump_degraded_mode(mode: Degraded_mode) -> Degraded_mode {
+  mode.!{degraded_mode = add_i32(mode.?{degraded_mode}, 3)}
+}
+
+fn bump_mode(mode: Mode_state) -> Mode_state {
+  over_prism(degraded_mode_prism(), bump_degraded_mode, mode)
+}
+
+fn base_config() -> Root_config {
+  {
+    , app = {
+        , service = {endpoint = "api.internal", retries = 2, timeout_ms = 800}
+        , feature = {dark_mode = no(), rollout = 15}
+        , limits = (({warn_limit = 70}, {block_limit = 90}), {audit_limit = 2})
+        }
+    , mode = review(stable_mode_prism(), {stable_mode=})
+    , revision = 4
+    }
+}
+
+fn apply_patch(cfg: Root_config) -> Root_config {
+  let retry_patch = over(config_retries_lens(), bump_by(2), cfg);
+  let timeout_patch = set(config_timeout_lens(), 1200, retry_patch);
+  let dark_patch = set(config_dark_mode_lens(), yes(), timeout_patch);
+  let rollout_patch = over(config_rollout_lens(), bump_by(20), dark_patch);
+  let mode_patch =
+    set(mode_lens(), review(degraded_mode_prism(), {degraded_mode = 2}), rollout_patch);
+  let severity_patch = over(mode_lens(), bump_mode, mode_patch);
+  let audit_patch = over(config_audit_lens(), bump_by(1), severity_patch);
+  over(revision_lens(), bump_by(1), audit_patch)
+}
+
+fn show_mode(mode: Mode_state) -> String {
+  match! mode {
+    (
+      , .(_stable: Stable_mode) { "stable" }
+      , .(degraded: Degraded_mode) { cat("degraded:", int_to_string(degraded.?{degraded_mode})) }
+      )
+  }
+}
+
+fn config_score(cfg: Root_config) -> I32 {
+  let retries = view(config_retries_lens(), cfg);
+  let timeout = view(config_timeout_lens(), cfg);
+  let rollout = view(config_rollout_lens(), cfg);
+  let audit = view(config_audit_lens(), cfg);
+  add_i32(add_i32(timeout, mul_i32(retries, 3)), add_i32(rollout, audit))
+}
+
+fn line_for(name: String, cfg: Root_config) -> String {
+  let app = view(app_lens(), cfg);
+  let service = view(service_lens(), app);
+  let feature = view(feature_lens(), app);
+  let s0 = cat(name, ": endpoint=");
+  let s1 = cat(s0, service.?{endpoint});
+  let s2 = cat(s1, " retries=");
+  let s3 = cat(s2, int_to_string(view(retries_lens(), service)));
+  let s4 = cat(s3, " timeout=");
+  let s5 = cat(s4, int_to_string(view(timeout_lens(), service)));
+  let s6 = cat(s5, " dark=");
+  let s7 = cat(s6, bool_to_string(view(dark_mode_lens(), feature)));
+  let s8 = cat(s7, " rollout=");
+  let s9 = cat(s8, int_to_string(view(rollout_lens(), feature)));
+  let s10 = cat(s9, " mode=");
+  let s11 = cat(s10, show_mode(view(mode_lens(), cfg)));
+  let s12 = cat(s11, " revision=");
+  let s13 = cat(s12, int_to_string(view(revision_lens(), cfg)));
+  let s14 = cat(s13, " audit=");
+  let s15 = cat(s14, int_to_string(view(config_audit_lens(), cfg)));
+  let s16 = cat(s15, " score=");
+  let s17 = cat(s16, int_to_string(config_score(cfg)));
+  cat(s17, "\n")
+}
+
+fn checks_line(before: Root_config, after: Root_config) -> String {
+  let delta = sub_i32(config_score(after), config_score(before));
+  cat(
+    , cat(
+        , cat(
+            , cat(
+                , cat(cat("delta=", int_to_string(delta)), " timeout_ok=")
+                , bool_to_string(leq_i32(view(config_timeout_lens(), after), 1200))
+                )
+            , " rollout_ok="
+            )
+        , bool_to_string(leq_i32(view(config_rollout_lens(), after), 50))
+        )
+    , "\n"
+    )
+}
+
+pub fn program_output() -> String {
+  let before = base_config();
+  let after = apply_patch(before);
+  cat(cat(line_for("before", before), line_for("after", after)), checks_line(before, after))
+}

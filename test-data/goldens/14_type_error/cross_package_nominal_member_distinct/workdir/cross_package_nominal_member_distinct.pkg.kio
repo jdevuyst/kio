@@ -1,0 +1,14 @@
+package cross_package_nominal_member_distinct;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main;
+  bdep/boxed
+}

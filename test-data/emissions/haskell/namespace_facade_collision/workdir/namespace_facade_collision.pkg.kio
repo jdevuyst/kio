@@ -1,0 +1,14 @@
+package namespace_facade_collision;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "Type"
+  }
+}
+
+bridge {
+  main
+}

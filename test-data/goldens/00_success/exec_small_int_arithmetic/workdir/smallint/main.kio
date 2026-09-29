@@ -1,0 +1,15 @@
+module smallint/main;
+
+import smallint(I8, String, U16);
+import smallint(add_i8, add_u16, i8_to_string, mul_i8, print, sub_u16, u16_to_string);
+
+fn print_i8(n: I8) -> . { let s = i8_to_string(n); let l = print(s); print("\n"(String)) }
+
+fn print_u16(n: U16) -> . { let s = u16_to_string(n); let l = print(s); print("\n"(String)) }
+
+pub fn main() -> . {
+  let a = print_i8(add_i8(127(I8), 1(I8)));
+  let b = print_i8(mul_i8(50(I8), 50(I8)));
+  let c = print_u16(add_u16(65535(U16), 1(U16)));
+  print_u16(sub_u16(0(U16), 1(U16)))
+}

@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// A multi-group (curried) closure value whose body performs a host
+// effect: each value group is applied separately — `log(a)(b)` — and the
+// body calls `print` in both groups. The closure carries two value
+// groups and an effectful body, so a Haskell host that types host calls
+// as pure cannot give it a native transformer rendering and takes the
+// uniform-`m` private universal-carrier floor (specs/backends/haskell.md § Body model,
+// residual 1). Every target runs it; the effect order is the source
+// order.
+fn make_logger() -> String -> String -> . {
+  .(first: String)(second: String) -> . { print(first); print(second) }
+}
+
+pub fn main() -> . {
+  let log = make_logger();
+  // Full per-group application of the effectful curried closure value.
+  log("alpha\n"(String))("beta\n"(String));
+  // Partial application: bind the first group, then apply the second.
+  let log_gamma = make_logger()("gamma\n"(String));
+  log_gamma("delta\n"(String))
+}

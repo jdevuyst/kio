@@ -1,0 +1,3 @@
+module api/child;
+
+pub fn value() -> . { () }

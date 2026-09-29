@@ -1,0 +1,5 @@
+module app/syntax;
+
+pub fn choose[A](left: A, right: A) -> A { right }
+
+pub op _ / _ { impl choose }

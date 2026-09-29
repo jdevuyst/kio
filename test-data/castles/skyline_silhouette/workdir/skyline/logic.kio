@@ -1,0 +1,51 @@
+/// The comparison vocabulary the rest of the sweep is built from.
+///
+/// The host hands this package exactly one integer comparison, `leq_i32`.
+/// There is no equality test, no strict order, and no minimum or maximum, so
+/// every one of them is derived here once and used everywhere else through
+/// this module.
+module skyline/logic;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+
+pub fn not(b: Bool) -> Bool {
+  if! b {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+/// `a == b` from the antisymmetry of `<=`: two integers that are each at most
+/// the other are the same integer.
+pub fn eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// `a < b` from the totality of `<=`: `a` is at most `b` and `b` is not at
+/// most `a`.
+pub fn lt(a: I32, b: I32) -> Bool { and(leq_i32(a, b), not(leq_i32(b, a))) }
+
+pub fn max(a: I32, b: I32) -> I32 {
+  if! leq_i32(a, b) {
+    b
+  } else {
+    a
+  }
+}

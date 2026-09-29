@@ -1,0 +1,28 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into, onto);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Source: `(I32 & String)` — a single DNF branch.
+// Target: `I32 & (String | I32)` — CNF, two DNF branches.
+// `into!` matches source against the left target DNF branch
+// `(I32 & String)` (iso! identity); the right branch `(I32 & I32)`
+// is the widening (an unused alternative arm).
+fn widen_to_cnf(p: I32 & String) -> I32 & (String | I32) { into!(p) }
+
+pub fn main() -> . {
+  let widened = widen_to_cnf((42, "hello\n"));
+  // Project the components: `onto!` drops one factor at a time.
+  let i = onto!(widened, I32);
+  let inner = onto!(widened, String | I32);
+  let s =
+    match! inner {
+      (.(s: String) { s }, .(_n: I32) { "wrong\n" })
+    };
+  print(int_to_string(i));
+  print(" ");
+  print(s)
+}

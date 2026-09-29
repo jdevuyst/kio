@@ -1,0 +1,5 @@
+module core/relay;
+
+import core/store as origin;
+
+pub type Foo = origin.Foo;

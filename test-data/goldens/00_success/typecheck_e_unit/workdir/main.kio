@@ -1,0 +1,21 @@
+module main;
+
+import __intrinsics__;
+
+// Body is literally `()` — direct E-Unit synthesis.
+fn just_unit() -> . { () }
+
+// `()` as the let-bound RHS, then echoed.
+fn unit_in_let() -> . { let u = (); u }
+
+// `()` as the value-arg of an intrinsic call. The arg is checked
+// against `T = ()` (since `[T]` is pinned to `()` by the
+// explicit type-arg); inside E-App's check the value-arg goes
+// through E-Unit on `()`.
+fn id[T](x: T) -> T { x }
+
+fn unit_as_arg() -> . { id(., ()) }
+
+// `()` in a multi-arg position: each `()` synthesizes
+// independently via E-Unit.
+fn unit_pair() -> . & . { __pair__(., ., (), ()) }

@@ -1,0 +1,14 @@
+package go_invalid_namespace_value;
+
+build {
+  cache "out/.kio-cache/";
+
+  target go {
+    out "out/go/";
+    namespace "main"
+  }
+}
+
+bridge {
+  main
+}

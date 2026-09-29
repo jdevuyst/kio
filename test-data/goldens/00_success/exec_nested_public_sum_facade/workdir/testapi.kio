@@ -1,0 +1,9 @@
+module testapi;
+
+host type String role(str);
+
+pub newtype Red : . { pub constructor red; pub projector un_red }
+
+pub newtype Black : . { pub constructor black; pub projector un_black }
+
+pub newtype Nested : . | ((Red | Black) & String) { pub constructor nest; pub projector un_nest }

@@ -1,0 +1,3 @@
+module other;
+
+pub fn noise() -> . { () }

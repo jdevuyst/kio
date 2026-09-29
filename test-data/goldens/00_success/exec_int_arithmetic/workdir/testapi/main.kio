@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add, mul, sub);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn print_int(n: Int) -> . { let s = int_to_string(n); let l = print(s); print("\n"(String)) }
+
+pub fn main() -> . {
+  let a = print_int(add(mul(2(Int), 3(Int)), 4(Int)));
+  let b = print_int(sub(5(Int), 8(Int)));
+  let c = print_int(add(2147483647(Int), 1(Int)));
+  print_int(mul(2147483647(Int), 2147483647(Int)))
+}

@@ -1,0 +1,14 @@
+package wide_structural_line_layout;
+
+build {
+  cache ();
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

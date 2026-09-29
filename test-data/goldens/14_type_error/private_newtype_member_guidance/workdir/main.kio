@@ -1,0 +1,5 @@
+module main;
+
+import provider(Box);
+
+fn bad(value: .) -> Box { Box.seel(value) }

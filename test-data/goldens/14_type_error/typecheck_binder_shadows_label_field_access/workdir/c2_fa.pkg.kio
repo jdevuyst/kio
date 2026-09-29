@@ -1,0 +1,14 @@
+package c2_fa;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

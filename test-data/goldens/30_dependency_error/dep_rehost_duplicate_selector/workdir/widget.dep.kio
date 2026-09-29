@@ -1,0 +1,8 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}
+
+rehost widget/api to provider;
+rehost widget/api to provider;

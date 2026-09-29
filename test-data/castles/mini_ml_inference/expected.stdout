@@ -1,0 +1,20 @@
+Mini ML inference workbench
+identity: type (a0 -> a0)
+constant: type (a0 -> (a1 -> a0))
+composition: type ((a0 -> a1) -> ((a2 -> a0) -> (a2 -> a1)))
+let-polymorphism: type (Int * Bool)
+lambda-monomorphism: error incompatible types
+captured-result: type (a0 -> (a0 * a0))
+captured-function: error incompatible types
+substituted-environment: type ((Int -> (Bool -> a0)) -> (a0 * (Bool -> a0)))
+occurs-check: error occurs check
+unbound-name: error unbound variable missing
+lexical-shadowing: type Int
+pair-argument: type (Int * Bool)
+independent-instantiation: type ((a0 -> a0) * (a1 -> a1))
+identity-applied-to-identity: type (a0 -> a0)
+constructor-clash: error incompatible types
+incomplete-expression: parse error incomplete expression
+unknown-token: parse error unknown token mystery
+trailing-tokens: parse error trailing tokens
+completed 18 cases

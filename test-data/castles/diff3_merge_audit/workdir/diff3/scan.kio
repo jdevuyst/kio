@@ -1,0 +1,83 @@
+/// Reading the three-section document from stdin.
+///
+/// The fixture is a document, not a command stream: a `#base` / `#ours` /
+/// `#theirs` marker line opens a section and every following line belongs
+/// to it verbatim. Lines ahead of the first marker belong to no section
+/// and are dropped, so a stray leading blank line cannot shift a document.
+module diff3/scan;
+
+import diff3/list as list;
+import diff3/prim as prim;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/io(read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+pub labels Doc = { base: list.List(String), ours: list.List(String), theirs: list.List(String) };
+
+/// Sections are collected head-first and reversed once at the end, so a
+/// line costs one cons rather than a walk to the end of a growing list.
+labels Cursor = {
+  , section: I32
+  , base_rev: list.List(String)
+  , ours_rev: list.List(String)
+  , theirs_rev: list.List(String)
+  };
+
+fn start() -> Cursor {
+  {
+    , section = 0
+    , base_rev = list.nil(String, ())
+    , ours_rev = list.nil(String, ())
+    , theirs_rev = list.nil(String, ())
+    }
+}
+
+fn open_section(cursor: Cursor, next: I32) -> Cursor {
+  let .({base_rev, ours_rev, theirs_rev}) = cursor;
+  {section = next, base_rev, ours_rev, theirs_rev}
+}
+
+fn keep(cursor: Cursor, line: String) -> Cursor {
+  let .({section, base_rev, ours_rev, theirs_rev}) = cursor;
+  if! prim.int_eq(section, 1) {
+    {section, base_rev = list.cons(line, base_rev), ours_rev, theirs_rev}
+  } else if! prim.int_eq(section, 2) {
+    {section, base_rev, ours_rev = list.cons(line, ours_rev), theirs_rev}
+  } else if! prim.int_eq(section, 3) {
+    {section, base_rev, ours_rev, theirs_rev = list.cons(line, theirs_rev)}
+  } else {
+    cursor
+  }
+}
+
+fn step(cursor: Cursor, line: String) -> Cursor {
+  if! string_eq(line, "#base") {
+    open_section(cursor, 1)
+  } else if! string_eq(line, "#ours") {
+    open_section(cursor, 2)
+  } else if! string_eq(line, "#theirs") {
+    open_section(cursor, 3)
+  } else {
+    keep(cursor, line)
+  }
+}
+
+rec(loop) fn drain(cursor: Cursor) -> Cursor {
+  match! read_ascii_line() {
+    (.(line: String) { rec drain(step(cursor, line)) }, .(_eof: .) { cursor })
+  }
+}
+
+pub fn read_document() -> Doc {
+  let .({base_rev, ours_rev, theirs_rev}) = drain(start());
+  {base = list.reverse(base_rev), ours = list.reverse(ours_rev), theirs = list.reverse(theirs_rev)}
+}
+
+pub fn base_lines(doc: Doc) -> list.List(String) { doc.?{base} }
+
+pub fn our_lines(doc: Doc) -> list.List(String) { doc.?{ours} }
+
+pub fn their_lines(doc: Doc) -> list.List(String) { doc.?{theirs} }

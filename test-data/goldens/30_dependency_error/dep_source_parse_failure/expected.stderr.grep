@@ -1,0 +1,2 @@
+# The resolved dependency's own source fails to parse (dependency tier).
+in dependency `broken`

@@ -1,0 +1,14 @@
+module testapi/main;
+
+import elaborators(packet_identity);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn join(left: String, right: String) -> String { string_concat(left, right) }
+
+fn direct() -> String { let kept = packet_identity!(String & String, ("di", "rect\n")); kept.>join }
+
+fn ufcs() -> String { let kept = ("uf", "cs\n").>packet_identity!(String & String); kept.>join }
+
+pub fn main() -> . { print(direct()); print(ufcs()) }

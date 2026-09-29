@@ -1,0 +1,28 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(align);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/io(print);
+
+// Source `String | String` (constructed explicitly in each branch).
+// align! to `String | I32`: collapses the two `String` arms into
+// one and widens by adding the unused `| I32` arm. Both rules
+// (sum collapse + sum widening) fire in a single align! call.
+fn convert(b: Bool) -> String | I32 {
+  align!(if! b {
+    widen_sum!("widened-collapsed\n", String | String)
+  } else {
+    widen_sum!("widened-collapsed\n", String | String)
+  })
+}
+
+pub fn main() -> . {
+  let s =
+    match! convert(.t) {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(s)
+}

@@ -1,0 +1,6 @@
+package block_missing_peer_separator;
+
+build {
+  target js { out "out/js/"; }
+  target rust { out "out/rust/"; }
+}

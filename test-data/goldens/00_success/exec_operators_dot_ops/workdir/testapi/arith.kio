@@ -1,0 +1,13 @@
+module testapi/arith;
+
+import testapi(Int);
+
+host fn add(p0: Int, p1: Int) -> Int;
+
+host fn sub(p0: Int, p1: Int) -> Int;
+
+host fn mul(p0: Int, p1: Int) -> Int;
+
+host fn div(p0: Int, p1: Int) -> Int;
+
+host fn mod(p0: Int, p1: Int) -> Int;

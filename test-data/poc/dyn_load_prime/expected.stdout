@@ -1,0 +1,34 @@
+Hello, World
+quad(5) = 20
+use_poly(42) = 42
+use_add3(10) = 30
+add3(3, 4, 5) = 12
+pick(.t, 7, 9) = 7
+pick(.f, 7, 9) = 9
+scale(default_gain()) = 0.375
+divmod(17, 5) = 3 r 2
+classify(4) = small
+classify(42) = 42
+greet(3) = dyn_load_prime: the call got stuck — host fn `string_concat` expected two string arguments
+apply_cb(host_double, 21) = 42
+un_tag(mk_tag(11)) = 11
+exports:
+  guest.greet : (h{hostapi.String}) -> h{hostapi.String}
+  guest.double : (h{hostapi.I32}) -> h{hostapi.I32}
+  guest.quad : (h{hostapi.I32}) -> h{hostapi.I32}
+  guest.id_poly : [#0] (#0) -> #0
+  guest.use_poly : (h{hostapi.I32}) -> h{hostapi.I32}
+  guest.add3 : (h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}
+  guest.use_add3 : (h{hostapi.I32}) -> h{hostapi.I32}
+  guest.pick : (h{hostapi.Bool} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}
+  guest.default_gain : () -> h{hostapi.F64}
+  guest.scale : (h{hostapi.F64}) -> h{hostapi.F64}
+  guest.divmod : (h{hostapi.I32} & h{hostapi.I32}) -> (h{hostapi.I32} & h{hostapi.I32})
+  guest.classify : (h{hostapi.I32}) -> (h{hostapi.String} | h{hostapi.I32})
+  guest.apply_cb : ((h{hostapi.I32} -> h{hostapi.I32}) & h{hostapi.I32}) -> h{hostapi.I32}
+  guest.Tag.mk_tag : [#0] (#0) -> n{guest.Tag}(#0)
+  guest.Tag.un_tag : [#0] (n{guest.Tag}(#0)) -> #0
+contract (match) = ok
+contract (missing export) = dyn_load_prime: the image's surface declares no exported `triple`
+contract (signature) = dyn_load_prime: contract mismatch — export `guest.add3` declares `(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}` but the host expects `(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}`
+checked quad(5) = 20

@@ -1,0 +1,49 @@
+/// The badness model — what a line costs.
+///
+/// A line's badness is the cube of its slack, the space left bare at the right
+/// margin. Cubing is the whole reason a global optimum is worth computing: one
+/// badly loose line costs far more than several slightly loose ones, so an
+/// algorithm that can trade the two comes out ahead of one that cannot.
+///
+/// A line that runs past the margin is not a line. It scores `infinite`, a
+/// sentinel rather than a separate arm, so a candidate that overflows competes
+/// in the same `min` as every other and simply always loses.
+///
+/// Body lines are expected to approach the measure, while a paragraph's final
+/// line is conventionally allowed to end naturally. Its remaining space is
+/// therefore free. Earlier breaks still change the costs and possibilities of
+/// the suffix, so the optimization remains global with or without this rule.
+module justify/cost;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+
+/// Larger than any layout of this paragraph can cost, and small enough that two
+/// of them still add up inside `i32`.
+pub fn infinite() -> I32 { 1000000 }
+
+/// Costs saturate instead of wrapping: an overfull line poisons every total it
+/// enters without ever leaving `i32`.
+pub fn sat_add(a: I32, b: I32) -> I32 {
+  let total = add_i32(a, b);
+  if! leq_i32(infinite(), total) {
+    infinite()
+  } else {
+    total
+  }
+}
+
+pub fn fits(used: I32, column: I32) -> Bool { leq_i32(used, column) }
+
+fn cube(n: I32) -> I32 { mul_i32(mul_i32(n, n), n) }
+
+pub fn badness(used: I32, column: I32, last: Bool) -> I32 {
+  if! lt_i32(column, used) {
+    infinite()
+  } else if! last {
+    0
+  } else {
+    cube(sub_i32(column, used))
+  }
+}

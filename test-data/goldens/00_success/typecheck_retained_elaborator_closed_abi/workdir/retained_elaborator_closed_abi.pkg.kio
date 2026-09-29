@@ -1,0 +1,18 @@
+package retained_elaborator_closed_abi;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  retained_elaborator_closed_abi;
+  retained_elaborator_closed_abi/**
+}

@@ -1,0 +1,31 @@
+# Caches
+
+Pointer: read when reasoning about build/test caches or under disk pressure. This page is a **routing index** — every cache in the dev loop, what it accelerates, where it lives, and its blast radius — and it routes to the owning doc for mechanics. Nothing here is canonical: if a row and its owning doc disagree, the owning doc wins (fix the row).
+
+| Cache | Accelerates | Location | Blast radius | Clearing | Mechanics live in |
+| --- | --- | --- | --- | --- | --- |
+| Kio semantic build caches (package-check, typed-module, equiv, enriched-IR, emit/artifact, Kiodoc snippet) | warm `kio check` / `build` / `test` / `doc` | `out/.kio-cache/` per package workdir (`kio cache path` prints it) | worktree-local | `kio cache clear` at the package root; `kio cache gc` sweeps; `--no-cache` bypasses per run | [`specs/cli.md`](../../specs/cli.md) § `kio cache <subcommand>` (user contract); [`local-ci.md`](local-ci.md) § Kio-semantic caches (keying, CI isolation); [`implementation.md`](implementation.md) § Compiler performance architecture (layer inventory) |
+| Test-runner artifact cache | compiled per-golden binaries, reused across runs and sibling worktrees | `$XDG_CACHE_HOME/kio/<suite>/<target>/`, else `~/.cache/kio/…` | machine-shared | rarely — [`clear-caches`](../skills/clear-caches/SKILL.md) § Shared test-runner artifact cache is the deliberate separate step; `KIO_TEST_RUNNER_BUILD_CACHE_SIZE` bounds it, `--cache-base` pins a run worktree-local | [`ci/infra/kio-test-runner-rs/README.md`](../../ci/infra/kio-test-runner-rs/README.md) § Runner build cache and compiler wrappers; [`local-tools.md`](local-tools.md) § Compiler cache; user-facing note in [`INSTALL.md`](../../INSTALL.md) § Caches |
+| sccache | object-level `rustc` caching (Cargo builds and the Rust runner's artifact-cache misses) | `~/.cache/sccache` (or `$XDG_CACHE_HOME/sccache`) | machine-shared daemon | rarely; stop the server first, never restart it mid-build | [`local-tools.md`](local-tools.md) § Compiler cache (opt-in wiring, `SCCACHE_*` knobs, the daemon discipline) |
+| Cargo `target/` dirs | incremental Rust rebuilds | `kio-rs/target/`, `kio-rs/fuzz/target/`, `ci/infra/*/target/` (including dedicated `target/kio-corpus-tools/` subtrees) | worktree-local | [`clear-caches`](../skills/clear-caches/SKILL.md) default wipe | [`clear-caches`](../skills/clear-caches/SKILL.md) § What it clears; [`local-tools.md`](local-tools.md) § Scheduler-native Cargo serialization; [`local-ci.md`](local-ci.md) § Shared work, Cargo, and compiler admission |
+| CI scheduler bootstrap | one keyed build of the scheduler before CI fan-out | `<git-common-dir>/kio-ci-scheduler/{bin,target}/<key>/` | repository-shared across sibling worktrees | rarely; [`clear-caches`](../skills/clear-caches/SKILL.md) § Shared scheduler bootstrap cache is the deliberate separate step | [`local-ci.md`](local-ci.md) § Shared work, Cargo, and compiler admission |
+| Cargo home | crate downloads and git checkouts | `~/.cargo/registry/`, `~/.cargo/git/` | machine-shared | not wiped by the skill; re-downloads if cleared by hand | [`clear-caches`](../skills/clear-caches/SKILL.md) § Scope |
+| npm installs + tree-sitter build | JS tooling dependencies | `node_modules/` trees and `tools/tree-sitter-kio/build/` (worktree); `~/.npm` (machine download cache) | worktree-local trees; machine-shared `~/.npm` | trees: default wipe; `~/.npm`: left alone | [`clear-caches`](../skills/clear-caches/SKILL.md) § What it clears / § Scope |
+| Worktree-pinned artifact cache | a `--cache-base`-pinned hermetic run | `.kio-cache/` at the checkout root | worktree-local | default wipe | [`clear-caches`](../skills/clear-caches/SKILL.md) § What it clears |
+| Golden / POC `out/` trees | per-case build outputs (each may contain its own `out/.kio-cache/`) | `test-data/goldens/**/out/`, `test-data/poc/**/out/` | worktree-local | default wipe | [`clear-caches`](../skills/clear-caches/SKILL.md) § What it clears |
+| Docker / BuildKit | devcontainer image and layer reuse | the Docker daemon's storage root | daemon-wide | separate deliberate step | [`clear-caches`](../skills/clear-caches/SKILL.md) § Docker / BuildKit cache; [`local-tools.md`](local-tools.md) § Dev container Docker builds |
+
+Not caches: mise-provisioned toolchains (re-provisioned via `mise install --locked`, never "cleared" — [`INSTALL.md`](../../INSTALL.md), [`local-tools.md`](local-tools.md) § Toolchain provisioning policy), and GitHub CI's Cargo caching (`Swatinem/rust-cache` — CI-managed, not a local concern; [`local-tools.md`](local-tools.md) § Compiler cache).
+
+Not persistent dev-loop caches, so they get no row above: the per-compile toolchain caches a test runner's compile writes (Go's `GOCACHE`, swiftc's clang module cache), and emission-case build outputs. The runner pins each toolchain cache under its staging tempdir and discards it with the tempdir — the runner-hygiene norm keeps that machine-shared write inside the runner's cache root rather than a compiler default like `~/.cache/go-build` or `~/.cache/clang/ModuleCache`. Each emission script likewise copies its immutable `workdir/` below the harness-provided `TMPDIR`, while the orchestrator pins `--cache-base` below its own temporary root; both disappear with the run and emissions do not use the shared runner artifact cache. [`ci/checks/orchestrators/runner-cache-hermeticity.sh`](../../ci/checks/orchestrators/runner-cache-hermeticity.sh) fails if a runner toolchain cache escapes; see [`ci/infra/kio-test-runner-rs/README.md`](../../ci/infra/kio-test-runner-rs/README.md) § Runner build cache and compiler wrappers and [`test-data/emissions/README.md`](../../test-data/emissions/README.md) § Running.
+
+## Disk pressure
+
+When a build dies with `ENOSPC` / `EDQUOT`, inspect the failing filesystem before
+clearing anything. A full temporary filesystem may need a roomier `TMPDIR`;
+checkout-disk pressure does not by itself justify wiping useful warm caches.
+Follow [`local-performance.md` § Disk headroom](local-performance.md#disk-headroom)
+to distinguish retired worktrees, retained investigation artifacts and cache
+growth, then use [`clear-caches`](../skills/clear-caches/SKILL.md) for the selected
+cache scope. The blast-radius column is the safety rule: never clear a
+machine-shared or daemon-wide root as routine hygiene.

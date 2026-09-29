@@ -1,0 +1,52 @@
+input/a.md: snippet at line 20: `kio check` exited 0 but 11 was expected (via `check_exit_code=11`)
+--- assembled file (kiodoc.pkg.kio) ---
+package kiodoc;
+
+bridge {
+  kiodoc;
+}
+--- assembled file (kiodoc.kio) ---
+module kiodoc;
+
+host type S role(str);
+
+pub fn a1() -> S { "first" }
+input/a.md: snippet at line 24: `kio check` exited 0 but 12 was expected (via `check_exit_code=12`)
+--- assembled file (kiodoc.pkg.kio) ---
+package kiodoc;
+
+bridge {
+  kiodoc;
+}
+--- assembled file (kiodoc.kio) ---
+module kiodoc;
+
+host type S role(str);
+
+pub fn a2() -> S { "second" }
+input/b.md: snippet at line 19: `kio check` exited 0 but 21 was expected (via `check_exit_code=21`)
+--- assembled file (kiodoc.pkg.kio) ---
+package kiodoc;
+
+bridge {
+  kiodoc;
+}
+--- assembled file (kiodoc.kio) ---
+module kiodoc;
+
+host type S role(str);
+
+pub fn b1() -> S { "third" }
+input/b.md: snippet at line 23: `kio check` exited 0 but 22 was expected (via `check_exit_code=22`)
+--- assembled file (kiodoc.pkg.kio) ---
+package kiodoc;
+
+bridge {
+  kiodoc;
+}
+--- assembled file (kiodoc.kio) ---
+module kiodoc;
+
+host type S role(str);
+
+pub fn b2() -> S { "fourth" }

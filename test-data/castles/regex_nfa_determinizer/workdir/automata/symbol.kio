@@ -1,0 +1,28 @@
+/// The alphabet: three letters coded 0, 1, 2. Epsilon takes the code one
+/// past the alphabet rather than a negative marker, so a transition's
+/// symbol slot is always a valid index into the letter table.
+module automata/symbol;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32);
+
+pub fn code_a() -> I32 { 0 }
+
+pub fn code_b() -> I32 { 1 }
+
+pub fn code_c() -> I32 { 2 }
+
+pub fn width() -> I32 { 3 }
+
+pub fn epsilon() -> I32 { 3 }
+
+pub fn letter(code: I32) -> String {
+  if! eq_i32(code, code_a()) {
+    "a"
+  } else if! eq_i32(code, code_b()) {
+    "b"
+  } else {
+    "c"
+  }
+}

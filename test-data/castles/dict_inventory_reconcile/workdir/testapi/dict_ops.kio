@@ -1,0 +1,34 @@
+module testapi/dict_ops;
+
+import dict/dict as dict;
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32, lt_i32);
+
+fn compare_i32(target: I32, key: I32) -> dict.Ordering {
+  if! lt_i32(target, key) {
+    dict.lt()
+  } else if! eq_i32(target, key) {
+    dict.eq()
+  } else {
+    dict.gt()
+  }
+}
+
+pub fn lookup_count(d: dict.Dict(I32, I32), key: I32) -> I32 | . { dict.get(compare_i32, d, key) }
+
+pub fn get_or_i32(d: dict.Dict(I32, I32), key: I32, default: I32) -> I32 {
+  dict.get_or(compare_i32, d, key, default)
+}
+
+pub fn lookup_name(d: dict.Dict(I32, String), key: I32) -> String | . {
+  dict.get(compare_i32, d, key)
+}
+
+pub fn put_sorted_count(d: dict.Dict(I32, I32), key: I32, value: I32) -> dict.Dict(I32, I32) {
+  dict.insert(compare_i32, d, key, value)
+}
+
+pub fn put_sorted_name(d: dict.Dict(I32, String), key: I32, value: String) -> dict.Dict(I32, String) {
+  dict.insert(compare_i32, d, key, value)
+}

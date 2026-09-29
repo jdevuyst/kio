@@ -1,0 +1,141 @@
+/// The catalog: every column the three base tables and the two
+/// aggregates can produce, and what the report writer knows about each.
+///
+/// A column is a name in the catalog, never a string. The host tier has
+/// no string equality, so column identity is the integer code the catalog
+/// hands out, and `col_eq` is the only way two columns are ever compared.
+module query/schema;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import query/list as list;
+import query/value as value;
+import testapi(Bool, I32, String);
+import testapi/arith(eq_i32);
+
+pub labels Col =
+  { c_ship_id: . }
+  | { c_ship_name: . }
+  | { c_ship_flag: . }
+  | { c_ship_draft: . }
+  | { c_ship_berth: . }
+  | { c_berth_id: . }
+  | { c_berth_depth: . }
+  | { c_berth_zone: . }
+  | { c_berth_zone_id: . }
+  | { c_mf_ship: . }
+  | { c_mf_cargo: . }
+  | { c_mf_tons: . }
+  | { c_total: . }
+  | { c_count: . };
+
+pub type Col_list = list.List(Col);
+
+/// One catalog entry: the column's identity code, the title the report
+/// prints, the width it prints in, and whether it holds numbers - which
+/// is what tells the report writer to set the heading over the right-hand
+/// edge of the column, where the digits will land.
+pub labels Col_meta = {
+  , meta_code: I32
+  , meta_title: value.Value
+  , meta_width: I32
+  , meta_numeric: Bool
+  };
+
+pub labels Table_id = { t_ships: . } | { t_berths: . } | { t_manifests: . };
+
+pub fn ship_id() -> Col { {c_ship_id=}.>widen_sum!(Col) }
+
+pub fn ship_name() -> Col { {c_ship_name=}.>widen_sum!(Col) }
+
+pub fn ship_flag() -> Col { {c_ship_flag=}.>widen_sum!(Col) }
+
+pub fn ship_draft() -> Col { {c_ship_draft=}.>widen_sum!(Col) }
+
+pub fn ship_berth() -> Col { {c_ship_berth=}.>widen_sum!(Col) }
+
+pub fn berth_id() -> Col { {c_berth_id=}.>widen_sum!(Col) }
+
+pub fn berth_depth() -> Col { {c_berth_depth=}.>widen_sum!(Col) }
+
+pub fn berth_zone() -> Col { {c_berth_zone=}.>widen_sum!(Col) }
+
+pub fn berth_zone_id() -> Col { {c_berth_zone_id=}.>widen_sum!(Col) }
+
+pub fn mf_ship() -> Col { {c_mf_ship=}.>widen_sum!(Col) }
+
+pub fn mf_cargo() -> Col { {c_mf_cargo=}.>widen_sum!(Col) }
+
+pub fn mf_tons() -> Col { {c_mf_tons=}.>widen_sum!(Col) }
+
+pub fn total() -> Col { {c_total=}.>widen_sum!(Col) }
+
+pub fn count() -> Col { {c_count=}.>widen_sum!(Col) }
+
+pub fn ships_table() -> Table_id { {t_ships=}.>widen_sum!(Table_id) }
+
+pub fn berths_table() -> Table_id { {t_berths=}.>widen_sum!(Table_id) }
+
+pub fn manifests_table() -> Table_id { {t_manifests=}.>widen_sum!(Table_id) }
+
+fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -> Col_meta {
+  {
+    , meta_code = code
+    , meta_title = value.text_val(title, title_width)
+    , meta_width = width
+    , meta_numeric = numeric
+    }
+}
+
+/// The catalog itself. The declared width of a column is at least its
+/// title's width and at least the widest datum the fixtures put in it, so
+/// no cell ever overflows its column.
+pub fn col_meta(c: Col) -> Col_meta {
+  match! c {
+    (
+      , .(_c: C_ship_id) { meta(1, "s.id", 4, 4, .t) }
+      , .(_c: C_ship_name) { meta(2, "ship", 4, 9, .f) }
+      , .(_c: C_ship_flag) { meta(3, "flag", 4, 4, .f) }
+      , .(_c: C_ship_draft) { meta(4, "draft", 5, 5, .t) }
+      , .(_c: C_ship_berth) { meta(5, "s.berth", 7, 7, .t) }
+      , .(_c: C_berth_id) { meta(6, "b.id", 4, 4, .t) }
+      , .(_c: C_berth_depth) { meta(7, "depth", 5, 5, .t) }
+      , .(_c: C_berth_zone) { meta(8, "zone", 4, 6, .f) }
+      , .(_c: C_berth_zone_id) { meta(9, "b.zone", 6, 6, .t) }
+      , .(_c: C_mf_ship) { meta(10, "m.ship", 6, 6, .t) }
+      , .(_c: C_mf_cargo) { meta(11, "cargo", 5, 6, .f) }
+      , .(_c: C_mf_tons) { meta(12, "tons", 4, 5, .t) }
+      , .(_c: C_total) { meta(13, "total", 5, 6, .t) }
+      , .(_c: C_count) { meta(14, "count", 5, 5, .t) }
+      )
+  }
+}
+
+pub fn col_code(c: Col) -> I32 { col_meta(c).?{meta_code} }
+
+pub fn col_title(c: Col) -> value.Value { col_meta(c).?{meta_title} }
+
+pub fn col_width(c: Col) -> I32 { col_meta(c).?{meta_width} }
+
+pub fn col_numeric(c: Col) -> Bool { col_meta(c).?{meta_numeric} }
+
+pub fn col_name(c: Col) -> String { value.value_text(col_title(c)) }
+
+pub fn col_eq(a: Col, b: Col) -> Bool { eq_i32(col_code(a), col_code(b)) }
+
+/// The shape of each base table, in the order its columns print.
+pub fn table_cols(t: Table_id) -> Col_list {
+  match! t {
+    (
+      , .(_t: T_ships) { list.of5(ship_id(), ship_name(), ship_flag(), ship_draft(), ship_berth()) }
+      , .(_t: T_berths) { list.of4(berth_id(), berth_depth(), berth_zone(), berth_zone_id()) }
+      , .(_t: T_manifests) { list.of3(mf_ship(), mf_cargo(), mf_tons()) }
+      )
+  }
+}
+
+pub fn table_name(t: Table_id) -> String {
+  match! t {
+    (.(_t: T_ships) { "ships" }, .(_t: T_berths) { "berths" }, .(_t: T_manifests) { "manifests" })
+  }
+}

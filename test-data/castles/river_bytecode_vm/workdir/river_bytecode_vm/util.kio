@@ -1,0 +1,60 @@
+module river_bytecode_vm/util;
+
+import elab/control(if);
+import river_bytecode_vm/constants as c;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+pub fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn and(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn or(left: Bool, right: Bool) -> Bool {
+  if! left {
+    .t
+  } else {
+    right
+  }
+}
+
+pub fn side_name(side: I32) -> String {
+  if! eq_i32(side, c.east()) {
+    "east"
+  } else {
+    "west"
+  }
+}
+
+pub fn cat3(a: String, b: String, c0: String) -> String { string_concat(string_concat(a, b), c0) }
+
+pub fn cat4(a: String, b: String, c0: String, d: String) -> String {
+  string_concat(cat3(a, b, c0), d)
+}
+
+pub fn line(label: String, value: String) -> String { cat3(label, value, "\n") }
+
+pub fn int_line(label: String, value: I32) -> String { line(label, int_to_string(value)) }
+
+pub fn bool_line(label: String, value: Bool) -> String { line(label, bool_to_string(value)) }
+
+pub fn add_bool_count(total: I32, value: Bool) -> I32 {
+  if! value {
+    add_i32(total, 1)
+  } else {
+    total
+  }
+}

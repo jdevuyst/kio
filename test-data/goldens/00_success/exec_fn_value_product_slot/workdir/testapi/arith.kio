@@ -1,0 +1,5 @@
+module testapi/arith;
+
+import testapi(I32);
+
+host fn add_i32(p0: I32, p1: I32) -> I32;

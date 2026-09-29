@@ -1,0 +1,5 @@
+  fail equiv `print_twice_is_not_print_once` in effects/m: arms split into 2 normal-form groups
+    group A (arms 1): print("x"); print("x")
+    group B (arms 2): print("x")
+
+result: 1/1 equiv block failed

@@ -1,0 +1,9 @@
+module pkg;
+
+/// A chain and its node share one recursive scope.
+rec {
+  /// The transparent chain view.
+  pub type Chain = Node;
+  /// The nominal node view.
+  pub newtype Node : . | Chain { pub constructor make; pub projector read }
+}

@@ -1,0 +1,86 @@
+/// `Eval_result`: the outcome of a `prime_eval` run — a value, or stuck with a reason.
+module result;
+
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn);
+import testapi(String);
+import value(Value);
+
+// `result.kio` — the evaluator outcome types, factored out of `eval.kio`.
+//
+// A completed `prime_eval` run yields `Done(value)`. A run that exhausts its
+// budget, or that reaches an ill-formed configuration a well-typed Kio' image
+// never produces (an out-of-range variable, applying a non-closure, projecting
+// a non-product, eliminating a non-sum, a non-bool condition, a bottom value),
+// yields `Stuck` carrying the reason — so a host's failure report can say
+// *why* a call went wrong, not merely that it did. Strong normalization
+// guarantees a well-typed image always reaches `Done`.
+//
+// `Call_result` is wider and internal to the evaluator's host-call boundary.
+// It lets the host's `call` capability hand control back to the CEK machine
+// without making guest evaluation a host capability: `Ev_fold` drives an
+// interpreted loop step, `Ev_apply` applies a guest closure once (the result is
+// the host call's result), and `Ev_apply_then` applies and then re-dispatches an
+// exact host descriptor with the result — the defunctionalized continuation
+// shape strict positivity forces (a host continuation function cannot live
+// inside a runtime value). Final evaluator entry points still return only
+// `Eval_result`.
+/// Defines the successful-result arm.
+pub labels { ev_done: Value };
+
+/// Defines the stuck-result arm, carrying the reason.
+pub labels { ev_stuck: String };
+
+/// Defines the interpreted-loop fold arm: step closure and initial state.
+pub labels { ev_fold: Value & Value };
+
+/// Defines the single-application re-entry arm: the host asks the machine
+/// to apply a guest closure to an argument, and the application's result
+/// is the host call's result.
+pub labels { ev_apply: Value & Value };
+
+/// Defines the apply-then re-entry arm: apply the closure to the argument,
+/// then re-dispatch the exact host descriptor with the product of the
+/// application's result and the threaded state — the defunctionalized
+/// continuation returned by a host capability.
+pub labels { ev_apply_then: Value & Value & Host_fn & Value };
+
+/// The outcome of a `prime_eval` run: a value, or stuck with a reason.
+pub type Eval_result = Ev_done | Ev_stuck;
+
+/// The outcome of firing a host function inside the evaluator.
+pub type Call_result = Ev_done | Ev_stuck | Ev_fold | Ev_apply | Ev_apply_then;
+
+/// Builds the successful-result value.
+pub fn ev_done(v: Value) -> Eval_result { widen_sum!({ev_done = v}, Ev_done | Ev_stuck) }
+
+/// Builds the stuck result from its reason.
+pub fn ev_stuck(reason: String) -> Eval_result {
+  widen_sum!({ev_stuck = reason}, Ev_done | Ev_stuck)
+}
+
+/// The stuck result's reason.
+pub fn stuck_reason(s: Ev_stuck) -> String { Ev_stuck.get(s) }
+
+/// Builds a successful host-call result.
+pub fn call_done(v: Value) -> Call_result { widen_sum!({ev_done = v}, Call_result) }
+
+/// Builds a stuck host-call result from its reason.
+pub fn call_stuck(reason: String) -> Call_result { widen_sum!({ev_stuck = reason}, Call_result) }
+
+/// Requests that the evaluator drive an interpreted loop step.
+pub fn call_fold(step: Value, init: Value) -> Call_result {
+  widen_sum!({ev_fold = (step, init)}, Call_result)
+}
+
+/// Requests that the evaluator apply a guest closure once; the result is
+/// the host call's result.
+pub fn call_apply(f: Value, arg: Value) -> Call_result {
+  widen_sum!({ev_apply = (f, arg)}, Call_result)
+}
+
+/// Requests an application followed by a re-dispatch of `cont` with
+/// `(result & state)`.
+pub fn call_apply_then(f: Value, arg: Value, cont: Host_fn, state: Value) -> Call_result {
+  widen_sum!({ev_apply_then = (f, (arg, (cont, state)))}, Call_result)
+}

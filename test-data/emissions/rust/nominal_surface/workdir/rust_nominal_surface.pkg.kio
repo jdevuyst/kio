@@ -1,0 +1,15 @@
+package rust_nominal_surface;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  main;
+  left;
+  right
+}

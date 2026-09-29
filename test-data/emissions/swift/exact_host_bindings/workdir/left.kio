@@ -1,0 +1,9 @@
+module left;
+
+host type Shared role(i32);
+
+pub fn keep(value: Shared) -> Shared { value }
+
+pub fn literal() -> Shared { 41 }
+
+pub fn apply(step: Shared -> Shared, value: Shared) -> Shared { step(value) }

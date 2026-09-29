@@ -1,0 +1,80 @@
+/// Revalidates package bridge globs and transitive host-module completeness.
+module testapi/main;
+
+import elab/match(match);
+import loader(Export_info, Export_infos);
+import loader(Lr_diag, Lr_image);
+import loader(diag_message, un_load_outcome);
+import loader(export_info_name, image_exports, un_export_infos);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn describe(source: String) -> String {
+  match! un_load_outcome(load_package(source)) {
+    (
+      , .(_loaded: Lr_image) { "accepted"(String) }
+      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn result_line(label: String, source: String) -> String {
+  string_concat(label, string_concat(describe(source), "\n"(String)))
+}
+
+fn first_export(source: String) -> String {
+  match! un_load_outcome(load_package(source)) {
+    (
+      , .(loaded: Lr_image) {
+          match! un_export_infos(image_exports(Lr_image.get(loaded))) {
+            (
+              , .(export: Export_info, _rest: Export_infos) { export_info_name(export) }
+              , .(_empty: .) { "<empty>"(String) }
+              )
+          }
+        }
+      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn export_line(label: String, source: String) -> String {
+  string_concat(label, string_concat(first_export(source), "\n"(String)))
+}
+
+pub fn main() -> . {
+  print(result_line(
+    , "dead glob: "(String)
+    , "module present;\npub fn entry() -> . { () }\npackage guest;\nbridge { "
+      "missing/first/**; missing/second/**; }\n"(String)
+    ));
+  print(result_line(
+    , "transitive hidden host: "(String)
+    , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
+      "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
+      "entry() -> . { helper() }\npackage guest;\nbridge { main; }\n"(String)
+    ));
+  print(result_line(
+    , "stable hidden host: "(String)
+    , "module alpha;\nhost type Early role(i32);\nmodule zeta;\nhost type Later "
+      "role(i32);\nmodule main;\nimport zeta(Later);\nimport alpha as a;\npub fn "
+      "entry() -> . { () }\npackage guest;\nbridge { main; }\n"(String)
+    ));
+  print(result_line(
+    , "accepted control: "(String)
+    , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
+      "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
+      "entry() -> . { helper() }\npackage guest;\nbridge { main; host; }\n"(String)
+    ));
+  print(export_line(
+    , "manifest without bridge: "(String)
+    , "module main;\npub fn entry() -> . { () }\npackage guest;\n"(String)
+    ));
+  print(export_line(
+    , "empty bridge: "(String)
+    , "module main;\npub fn entry() -> . { () }\npackage guest;\nbridge {}\n"(String)
+    ));
+  print(export_line("no manifest: "(String), "module main;\npub fn entry() -> . { () }\n"(String)))
+}

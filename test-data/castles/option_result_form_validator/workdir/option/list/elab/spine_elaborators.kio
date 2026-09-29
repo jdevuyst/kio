@@ -1,0 +1,2281 @@
+/// Spine-oriented product and sum elaborators for reorder, narrow, widen, flatten, fit, and one-arm extraction.
+module option/list/elab/spine_elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import option/list/elab/elaborator_util(
+  , Elaborator_result
+  , Matched_slot
+  , Matched_slot_tail
+  , Maybe_matched_slot
+  , Maybe_target_slot_take
+  , Maybe_type_take
+  , Optional_type
+  , Route_list
+  , Route_result
+  , Slot
+  , Slot_list
+  , Target_slot
+  , Target_slot_list
+  , Target_slot_take
+  , Term_list
+  , Term_mapper
+  , Type_list
+  , Type_take
+  , build_product_from_slots
+  , build_sum_from_routes
+  , build_widen_product_from_slots
+  , err
+  , finish_elaborator_result
+  , first_product_type
+  , first_sum_type
+  , flatten_product_to
+  , flatten_sum_to
+  , inject_at_suffix
+  , ok
+  , pick_first_slot
+  , product_slots
+  , product_spine
+  , right_fold_product
+  , right_fold_sum
+  , right_fold_term_product_from_reversed
+  , route_result_present
+  , route_source_arms_collapse
+  , route_source_arms_unique
+  , slot_cons
+  , slot_nil
+  , slot_term
+  , sum_spine
+  , take_first_matching
+  , take_first_target_matching
+  , take_first_type_matching
+  , target_slot_cons
+  , target_slot_nil
+  , target_slot_prepend_reverse
+  , target_slot_suffix
+  , target_slot_type
+  , target_slots
+  , term_cons
+  , term_nil
+  , type_cons
+  , type_nil
+  , type_prepend_reverse
+  , type_reverse
+  );
+import option/list/elab/testapi(String);
+
+type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+type Maybe_function_view = Function_view | .;
+
+pure fn some_function_view(ct: __Comptime__, view: Function_view) -> Maybe_function_view {
+  __left__(Function_view, ., view)
+}
+
+pure fn no_function_view(ct: __Comptime__) -> Maybe_function_view {
+  __right__(Function_view, ., ())
+}
+
+pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
+  __either__(
+    , .
+    , Type_view_tail1
+    , Maybe_function_view
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> Maybe_function_view { no_function_view(ct) }
+    , .(tail1: Type_view_tail1) -> Maybe_function_view {
+        __either__(
+          , .
+          , Type_view_tail2
+          , Maybe_function_view
+          , tail1
+          , .(_bottom: .) -> Maybe_function_view { no_function_view(ct) }
+          , .(tail2: Type_view_tail2) -> Maybe_function_view {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , Maybe_function_view
+                , tail2
+                , .(_product: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+                , .(tail3: Type_view_tail3) -> Maybe_function_view {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , Maybe_function_view
+                      , tail3
+                      , .(_sum: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+                      , .(tail4: Type_view_tail4) -> Maybe_function_view {
+                          __either__(
+                            , Function_view
+                            , Type_view_tail5
+                            , Maybe_function_view
+                            , tail4
+                            , .(view: Function_view) -> Maybe_function_view {
+                                some_function_view(ct, view)
+                              }
+                            , .(_tail5: Type_view_tail5) -> Maybe_function_view {
+                                no_function_view(ct)
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __fst__(__Type__, __Type_arity__ & __Type__, view)
+}
+
+fn function_arity(view: Function_view) -> __Type_arity__ {
+  __fst__(__Type_arity__, __Type__, __snd__(__Type__, __Type_arity__ & __Type__, view))
+}
+
+pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __snd__(__Type_arity__, __Type__, __snd__(__Type__, __Type_arity__ & __Type__, view))
+}
+
+type Adapter_result = Term_mapper | __Diagnostic_text__;
+
+pure fn adapter_ok(ct: __Comptime__, mapper: Term_mapper) -> Adapter_result {
+  __left__(Term_mapper, __Diagnostic_text__, mapper)
+}
+
+pure fn adapter_err(ct: __Comptime__, message: __Diagnostic_text__) -> Adapter_result {
+  __right__(Term_mapper, __Diagnostic_text__, message)
+}
+
+pure fn adapter_result_ok(ct: __Comptime__, result: Adapter_result) -> Comptime_bool {
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Comptime_bool
+    , result
+    , .(_mapper: Term_mapper) -> Comptime_bool { .t }
+    , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+    )
+}
+
+type Fit_recur = (Type_pair & Type_pair) -> Adapter_result;
+
+type Mapper_route = __Type__ & Term_mapper;
+
+rec newtype Mapper_route_list : . | (Mapper_route & Mapper_route_list) {
+  pub constructor mk_mapper_route_list;
+  pub projector un_mapper_route_list
+  }
+
+pure fn mapper_route_nil() -> Mapper_route_list {
+  Mapper_route_list.mk_mapper_route_list(__left__(., Mapper_route & Mapper_route_list, ()))
+}
+
+pure fn mapper_route_cons(ct: __Comptime__, head: Mapper_route, tail: Mapper_route_list) -> Mapper_route_list {
+  Mapper_route_list.mk_mapper_route_list(__right__(
+    , .
+    , Mapper_route & Mapper_route_list
+    , (head, tail)
+    ))
+}
+
+type Mapper_route_reverse_state = Mapper_route_list & Mapper_route_list;
+
+pure fn mapper_route_reverse_source(state: Mapper_route_reverse_state) -> Mapper_route_list {
+  __fst__(Mapper_route_list, Mapper_route_list, state)
+}
+
+pure fn mapper_route_reverse_acc(state: Mapper_route_reverse_state) -> Mapper_route_list {
+  __snd__(Mapper_route_list, Mapper_route_list, state)
+}
+
+type Mapper_route_reverse_next = Type_list & Mapper_route_reverse_state;
+
+type Mapper_route_reverse_step = Mapper_route_list | Mapper_route_reverse_next;
+
+pure fn mapper_route_reverse_step(
+  , ct: __Comptime__
+  , fuel: Type_list
+  , state: Mapper_route_reverse_state
+  ) -> Mapper_route_reverse_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Mapper_route_reverse_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Mapper_route_reverse_step {
+        __left__(Mapper_route_list, Mapper_route_reverse_next, mapper_route_reverse_acc(state))
+      }
+    , .(type_cell: __Type__ & Type_list) -> Mapper_route_reverse_step {
+        __either__(
+          , .
+          , Mapper_route & Mapper_route_list
+          , Mapper_route_reverse_step
+          , Mapper_route_list.un_mapper_route_list(mapper_route_reverse_source(state))
+          , .(_missing: .) -> Mapper_route_reverse_step {
+              __left__(
+                , Mapper_route_list
+                , Mapper_route_reverse_next
+                , mapper_route_reverse_acc(state)
+                )
+            }
+          , .(route_cell: Mapper_route & Mapper_route_list) -> Mapper_route_reverse_step {
+              __right__(
+                , Mapper_route_list
+                , Mapper_route_reverse_next
+                , (
+                    , __snd__(__Type__, Type_list, type_cell)
+                    , (
+                        , __snd__(Mapper_route, Mapper_route_list, route_cell)
+                        , mapper_route_cons(
+                            , ct
+                            , __fst__(Mapper_route, Mapper_route_list, route_cell)
+                            , mapper_route_reverse_acc(state)
+                            )
+                        )
+                    )
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn mapper_route_reverse_by_types(ct: __Comptime__, types: Type_list, xs: Mapper_route_list) -> Mapper_route_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Mapper_route_reverse_state
+    , Mapper_route_list
+    , types
+    , (xs, mapper_route_nil())
+    , .(
+        , loop_recur: (Type_list & Mapper_route_reverse_state) -> Mapper_route_list
+        , loop_fuel: Type_list
+        , loop_state: Mapper_route_reverse_state
+        ) -> Mapper_route_list {
+        let loop_step_fn =
+          .(step_fuel: Type_list, step_state: Mapper_route_reverse_state) -> Mapper_route_reverse_step {
+            mapper_route_reverse_step(ct, step_fuel, step_state)
+          };
+        __either__(
+          , Mapper_route_list
+          , Type_list & Mapper_route_reverse_state
+          , Mapper_route_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Mapper_route_list) -> Mapper_route_list { loop_done }
+          , .(loop_next: Type_list & Mapper_route_reverse_state) -> Mapper_route_list {
+              loop_recur(
+                , __fst__(Type_list, Mapper_route_reverse_state, loop_next)
+                , __snd__(Type_list, Mapper_route_reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn mapper_route_source(ct: __Comptime__, route: Mapper_route) -> __Type__ {
+  __fst__(__Type__, Term_mapper, route)
+}
+
+pure fn mapper_route_mapper(ct: __Comptime__, route: Mapper_route) -> Term_mapper {
+  __snd__(__Type__, Term_mapper, route)
+}
+
+pure fn matched_slot_value(ct: __Comptime__, taken: Matched_slot) -> Slot {
+  __fst__(Slot, Matched_slot_tail, taken)
+}
+
+pure fn matched_slot_rest_types(ct: __Comptime__, taken: Matched_slot) -> Type_list {
+  __fst__(Type_list, Slot_list, __snd__(Slot, Matched_slot_tail, taken))
+}
+
+pure fn matched_slot_rest_slots(ct: __Comptime__, taken: Matched_slot) -> Slot_list {
+  __snd__(Type_list, Slot_list, __snd__(Slot, Matched_slot_tail, taken))
+}
+
+type Product_mapper_state = Mapper_route_list & Type_list & Slot_list & Type_list & Term_list;
+
+pure fn product_mapper_routes(state: Product_mapper_state) -> Mapper_route_list {
+  __fst__(Mapper_route_list, Type_list & Slot_list & Type_list & Term_list, state)
+}
+
+pure fn product_mapper_route_sources(state: Product_mapper_state) -> Type_list {
+  __fst__(
+    , Type_list
+    , Slot_list & Type_list & Term_list
+    , __snd__(Mapper_route_list, Type_list & Slot_list & Type_list & Term_list, state)
+    )
+}
+
+pure fn product_mapper_slots(state: Product_mapper_state) -> Slot_list {
+  __fst__(
+    , Slot_list
+    , Type_list & Term_list
+    , __snd__(
+        , Type_list
+        , Slot_list & Type_list & Term_list
+        , __snd__(Mapper_route_list, Type_list & Slot_list & Type_list & Term_list, state)
+        )
+    )
+}
+
+pure fn product_mapper_types_rev(state: Product_mapper_state) -> Type_list {
+  __fst__(
+    , Type_list
+    , Term_list
+    , __snd__(
+        , Slot_list
+        , Type_list & Term_list
+        , __snd__(
+            , Type_list
+            , Slot_list & Type_list & Term_list
+            , __snd__(Mapper_route_list, Type_list & Slot_list & Type_list & Term_list, state)
+            )
+        )
+    )
+}
+
+pure fn product_mapper_terms_rev(state: Product_mapper_state) -> Term_list {
+  __snd__(
+    , Type_list
+    , Term_list
+    , __snd__(
+        , Slot_list
+        , Type_list & Term_list
+        , __snd__(
+            , Type_list
+            , Slot_list & Type_list & Term_list
+            , __snd__(Mapper_route_list, Type_list & Slot_list & Type_list & Term_list, state)
+            )
+        )
+    )
+}
+
+type Product_mapper_next = Type_list & Product_mapper_state;
+
+type Product_mapper_step = Elaborator_result | Product_mapper_next;
+
+pure fn build_product_from_mapper_routes_step(
+  , ct: __Comptime__
+  , fuel: Type_list
+  , state: Product_mapper_state
+  ) -> Product_mapper_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Product_mapper_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Product_mapper_step {
+        __either__(
+          , .
+          , Mapper_route & Mapper_route_list
+          , Product_mapper_step
+          , Mapper_route_list.un_mapper_route_list(product_mapper_routes(state))
+          , .(_routes_done: .) -> Product_mapper_step {
+              __left__(
+                , Elaborator_result
+                , Product_mapper_next
+                , ok(
+                    , ct
+                    , right_fold_term_product_from_reversed(
+                        , ct
+                        , product_mapper_types_rev(state)
+                        , product_mapper_terms_rev(state)
+                        )
+                    )
+                )
+            }
+          , .(_extra_route: Mapper_route & Mapper_route_list) -> Product_mapper_step {
+              __left__(
+                , Elaborator_result
+                , Product_mapper_next
+                , err(ct, "recursive product route count mismatch")
+                )
+            }
+          )
+      }
+    , .(target_cell: __Type__ & Type_list) -> Product_mapper_step {
+        __either__(
+          , .
+          , Mapper_route & Mapper_route_list
+          , Product_mapper_step
+          , Mapper_route_list.un_mapper_route_list(product_mapper_routes(state))
+          , .(_missing_route: .) -> Product_mapper_step {
+              __left__(
+                , Elaborator_result
+                , Product_mapper_next
+                , err(ct, "recursive product route count mismatch")
+                )
+            }
+          , .(route_cell: Mapper_route & Mapper_route_list) -> Product_mapper_step {
+              let route = __fst__(Mapper_route, Mapper_route_list, route_cell);
+              __either__(
+                , Matched_slot
+                , .
+                , Product_mapper_step
+                , take_first_matching(
+                    , ct
+                    , mapper_route_source(ct, route)
+                    , product_mapper_route_sources(state)
+                    , product_mapper_slots(state)
+                    )
+                , .(taken: Matched_slot) -> Product_mapper_step {
+                    __right__(
+                      , Elaborator_result
+                      , Product_mapper_next
+                      , (
+                          , __snd__(__Type__, Type_list, target_cell)
+                          , (
+                              , __snd__(Mapper_route, Mapper_route_list, route_cell)
+                              , (
+                                  , matched_slot_rest_types(ct, taken)
+                                  , (
+                                      , matched_slot_rest_slots(ct, taken)
+                                      , (
+                                          , type_cons(
+                                              , ct
+                                              , mapper_route_source(ct, route)
+                                              , product_mapper_types_rev(state)
+                                              )
+                                          , term_cons(
+                                              , ct
+                                              , mapper_route_mapper(ct, route)(slot_term(
+                                                  , ct
+                                                  , matched_slot_value(ct, taken)
+                                                  ))
+                                              , product_mapper_terms_rev(state)
+                                              )
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      )
+                  }
+                , .(_missing: .) -> Product_mapper_step {
+                    __left__(
+                      , Elaborator_result
+                      , Product_mapper_next
+                      , err(ct, "recursive product route lost its source slot")
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn build_product_from_mapper_routes(
+  , ct: __Comptime__
+  , routes: Mapper_route_list
+  , target_spine: Type_list
+  , source_spine: Type_list
+  , source_slots: Slot_list
+  ) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Product_mapper_state
+    , Elaborator_result
+    , target_spine
+    , (routes, (source_spine, (source_slots, (type_nil(), term_nil()))))
+    , .(
+        , loop_recur: (Type_list & Product_mapper_state) -> Elaborator_result
+        , loop_fuel: Type_list
+        , loop_state: Product_mapper_state
+        ) -> Elaborator_result {
+        __either__(
+          , Elaborator_result
+          , Type_list & Product_mapper_state
+          , Elaborator_result
+          , build_product_from_mapper_routes_step(ct, loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: Type_list & Product_mapper_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(Type_list, Product_mapper_state, loop_next)
+                , __snd__(Type_list, Product_mapper_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+rec newtype Mapper_list : . | (Term_mapper & Mapper_list) {
+  pub constructor mk_mapper_list;
+  pub projector un_mapper_list
+  }
+
+pure fn mapper_nil() -> Mapper_list {
+  Mapper_list.mk_mapper_list(__left__(., Term_mapper & Mapper_list, ()))
+}
+
+pure fn mapper_cons(ct: __Comptime__, head: Term_mapper, tail: Mapper_list) -> Mapper_list {
+  Mapper_list.mk_mapper_list(__right__(., Term_mapper & Mapper_list, (head, tail)))
+}
+
+type Mapper_reverse_state = Mapper_list & Mapper_list;
+
+pure fn mapper_reverse_source(state: Mapper_reverse_state) -> Mapper_list {
+  __fst__(Mapper_list, Mapper_list, state)
+}
+
+pure fn mapper_reverse_acc(state: Mapper_reverse_state) -> Mapper_list {
+  __snd__(Mapper_list, Mapper_list, state)
+}
+
+type Mapper_reverse_next = Type_list & Mapper_reverse_state;
+
+type Mapper_reverse_step = Mapper_list | Mapper_reverse_next;
+
+pure fn mapper_reverse_step(ct: __Comptime__, fuel: Type_list, state: Mapper_reverse_state) -> Mapper_reverse_step {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Mapper_reverse_step
+    , Type_list.un_type_list(fuel)
+    , .(_done: .) -> Mapper_reverse_step {
+        __left__(Mapper_list, Mapper_reverse_next, mapper_reverse_acc(state))
+      }
+    , .(type_cell: __Type__ & Type_list) -> Mapper_reverse_step {
+        __either__(
+          , .
+          , Term_mapper & Mapper_list
+          , Mapper_reverse_step
+          , Mapper_list.un_mapper_list(mapper_reverse_source(state))
+          , .(_missing: .) -> Mapper_reverse_step {
+              __left__(Mapper_list, Mapper_reverse_next, mapper_reverse_acc(state))
+            }
+          , .(mapper_cell: Term_mapper & Mapper_list) -> Mapper_reverse_step {
+              __right__(
+                , Mapper_list
+                , Mapper_reverse_next
+                , (
+                    , __snd__(__Type__, Type_list, type_cell)
+                    , (
+                        , __snd__(Term_mapper, Mapper_list, mapper_cell)
+                        , mapper_cons(
+                            , ct
+                            , __fst__(Term_mapper, Mapper_list, mapper_cell)
+                            , mapper_reverse_acc(state)
+                            )
+                        )
+                    )
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn mapper_reverse_by_types(ct: __Comptime__, types: Type_list, xs: Mapper_list) -> Mapper_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Mapper_reverse_state
+    , Mapper_list
+    , types
+    , (xs, mapper_nil())
+    , .(
+        , loop_recur: (Type_list & Mapper_reverse_state) -> Mapper_list
+        , loop_fuel: Type_list
+        , loop_state: Mapper_reverse_state
+        ) -> Mapper_list {
+        let loop_step_fn =
+          .(step_fuel: Type_list, step_state: Mapper_reverse_state) -> Mapper_reverse_step {
+            mapper_reverse_step(ct, step_fuel, step_state)
+          };
+        __either__(
+          , Mapper_list
+          , Type_list & Mapper_reverse_state
+          , Mapper_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Mapper_list) -> Mapper_list { loop_done }
+          , .(loop_next: Type_list & Mapper_reverse_state) -> Mapper_list {
+              loop_recur(
+                , __fst__(Type_list, Mapper_reverse_state, loop_next)
+                , __snd__(Type_list, Mapper_reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Sum_mapper_state = __Type__ & Term_mapper;
+
+pure fn sum_mapper_type(ct: __Comptime__, state: Sum_mapper_state) -> __Type__ {
+  __fst__(__Type__, Term_mapper, state)
+}
+
+pure fn sum_mapper_mapper(ct: __Comptime__, state: Sum_mapper_state) -> Term_mapper {
+  __snd__(__Type__, Term_mapper, state)
+}
+
+type Sum_dispatch_state = Mapper_list & Sum_mapper_state;
+
+pure fn sum_dispatch_routes(ct: __Comptime__, state: Sum_dispatch_state) -> Mapper_list {
+  __fst__(Mapper_list, Sum_mapper_state, state)
+}
+
+pure fn sum_dispatch_state(ct: __Comptime__, state: Sum_dispatch_state) -> Sum_mapper_state {
+  __snd__(Mapper_list, Sum_mapper_state, state)
+}
+
+type Sum_dispatch_result = Term_mapper | __Diagnostic_text__;
+
+pure fn sum_dispatch_ok(ct: __Comptime__, mapper: Term_mapper) -> Sum_dispatch_result {
+  __left__(Term_mapper, __Diagnostic_text__, mapper)
+}
+
+pure fn sum_dispatch_err(ct: __Comptime__, message: __Diagnostic_text__) -> Sum_dispatch_result {
+  __right__(Term_mapper, __Diagnostic_text__, message)
+}
+
+type Sum_dispatch_next = Type_list & Sum_dispatch_state;
+
+type Sum_dispatch_step = Sum_dispatch_result | Sum_dispatch_next;
+
+pure fn extend_sum_dispatch(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , head: __Type__
+  , route_mapper: Term_mapper
+  , previous: Sum_mapper_state
+  ) -> Sum_mapper_state {
+  let residual_type = sum_mapper_type(ct, previous);
+  let sum_type = __type_sum__(ct, head, residual_type);
+  let previous_mapper = sum_mapper_mapper(ct, previous);
+  (
+    , sum_type
+    , .(scrutinee: __Checked_term__) -> __Checked_term__ {
+        __intrinsic_either__(
+          , ct
+          , sum_type
+          , target_type
+          , scrutinee
+          , .(left_value: __Checked_term__) -> __Checked_term__ { route_mapper(left_value) }
+          , .(right_value: __Checked_term__) -> __Checked_term__ { previous_mapper(right_value) }
+          )
+      }
+    )
+}
+
+pure fn finish_sum_dispatch(ct: __Comptime__, state: Sum_dispatch_state) -> Sum_dispatch_result {
+  __either__(
+    , .
+    , Term_mapper & Mapper_list
+    , Sum_dispatch_result
+    , Mapper_list.un_mapper_list(sum_dispatch_routes(ct, state))
+    , .(_done: .) -> Sum_dispatch_result {
+        sum_dispatch_ok(ct, sum_mapper_mapper(ct, sum_dispatch_state(ct, state)))
+      }
+    , .(_extra: Term_mapper & Mapper_list) -> Sum_dispatch_result {
+        sum_dispatch_err(ct, "sum mapper route count mismatch")
+      }
+    )
+}
+
+pure fn build_sum_dispatcher_from_mappers(
+  , ct: __Comptime__
+  , target_type: __Type__
+  , source_spine: Type_list
+  , routes: Mapper_list
+  ) -> Sum_dispatch_result {
+  __either__(
+    , .
+    , __Type__ & Type_list
+    , Sum_dispatch_result
+    , Type_list.un_type_list(type_reverse(ct, source_spine))
+    , .(_no_source: .) -> Sum_dispatch_result { sum_dispatch_err(ct, "sum source spine is empty") }
+    , .(source_cell: __Type__ & Type_list) -> Sum_dispatch_result {
+        __either__(
+          , .
+          , Term_mapper & Mapper_list
+          , Sum_dispatch_result
+          , Mapper_list.un_mapper_list(mapper_reverse_by_types(ct, source_spine, routes))
+          , .(_no_route: .) -> Sum_dispatch_result {
+              sum_dispatch_err(ct, "sum mapper route list is empty")
+            }
+          , .(route_cell: Term_mapper & Mapper_list) -> Sum_dispatch_result {
+              __structural_recur__(
+                , ct
+                , Type_list
+                , Sum_dispatch_state
+                , Sum_dispatch_result
+                , __snd__(__Type__, Type_list, source_cell)
+                , (
+                    , __snd__(Term_mapper, Mapper_list, route_cell)
+                    , (
+                        , __fst__(__Type__, Type_list, source_cell)
+                        , __fst__(Term_mapper, Mapper_list, route_cell)
+                        )
+                    )
+                , .(
+                    , loop_recur: (Type_list & Sum_dispatch_state) -> Sum_dispatch_result
+                    , loop_fuel: Type_list
+                    , loop_state: Sum_dispatch_state
+                    ) -> Sum_dispatch_result {
+                    let loop_step_fn =
+                      .(fuel: Type_list, state: Sum_dispatch_state) -> Sum_dispatch_step {
+                        __either__(
+                          , .
+                          , __Type__ & Type_list
+                          , Sum_dispatch_step
+                          , Type_list.un_type_list(fuel)
+                          , .(_done: .) -> Sum_dispatch_step {
+                              __left__(
+                                , Sum_dispatch_result
+                                , Sum_dispatch_next
+                                , finish_sum_dispatch(ct, state)
+                                )
+                            }
+                          , .(source_head: __Type__ & Type_list) -> Sum_dispatch_step {
+                              __either__(
+                                , .
+                                , Term_mapper & Mapper_list
+                                , Sum_dispatch_step
+                                , Mapper_list.un_mapper_list(sum_dispatch_routes(ct, state))
+                                , .(_missing_route: .) -> Sum_dispatch_step {
+                                    __left__(
+                                      , Sum_dispatch_result
+                                      , Sum_dispatch_next
+                                      , sum_dispatch_err(ct, "sum mapper route count mismatch")
+                                      )
+                                  }
+                                , .(route_head: Term_mapper & Mapper_list) -> Sum_dispatch_step {
+                                    __right__(
+                                      , Sum_dispatch_result
+                                      , Sum_dispatch_next
+                                      , (
+                                          , __snd__(__Type__, Type_list, source_head)
+                                          , (
+                                              , __snd__(Term_mapper, Mapper_list, route_head)
+                                              , extend_sum_dispatch(
+                                                  , ct
+                                                  , target_type
+                                                  , __fst__(__Type__, Type_list, source_head)
+                                                  , __fst__(Term_mapper, Mapper_list, route_head)
+                                                  , sum_dispatch_state(ct, state)
+                                                  )
+                                              )
+                                          )
+                                      )
+                                  }
+                                )
+                            }
+                          )
+                      };
+                    __either__(
+                      , Sum_dispatch_result
+                      , Type_list & Sum_dispatch_state
+                      , Sum_dispatch_result
+                      , loop_step_fn(loop_fuel, loop_state)
+                      , .(loop_done: Sum_dispatch_result) -> Sum_dispatch_result { loop_done }
+                      , .(loop_next: Type_list & Sum_dispatch_state) -> Sum_dispatch_result {
+                          loop_recur(
+                            , __fst__(Type_list, Sum_dispatch_state, loop_next)
+                            , __snd__(Type_list, Sum_dispatch_state, loop_next)
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn identity_mapper(ct: __Comptime__, source: __Type__) -> Term_mapper {
+  .(value: __Checked_term__) -> __Checked_term__ { value }
+}
+
+pure fn mapper_result_to_elaborator(
+  , ct: __Comptime__
+  , result: Adapter_result
+  , value: __Checked_term__
+  ) -> Elaborator_result {
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Elaborator_result
+    , result
+    , .(mapper: Term_mapper) -> Elaborator_result { ok(ct, mapper(value)) }
+    , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+    )
+}
+
+type Product_candidate = __Type__ & Type_list & Term_mapper;
+
+type Product_candidate_result = Product_candidate | __Diagnostic_text__;
+
+pure fn product_candidate_ok(
+  , ct: __Comptime__
+  , source: __Type__
+  , rest: Type_list
+  , mapper: Term_mapper
+  ) -> Product_candidate_result {
+  __left__(Product_candidate, __Diagnostic_text__, (source, (rest, mapper)))
+}
+
+pure fn product_candidate_err(ct: __Comptime__, message: __Diagnostic_text__) -> Product_candidate_result {
+  __right__(Product_candidate, __Diagnostic_text__, message)
+}
+
+pure fn product_candidate_source(ct: __Comptime__, candidate: Product_candidate) -> __Type__ {
+  __fst__(__Type__, Type_list & Term_mapper, candidate)
+}
+
+pure fn product_candidate_rest(ct: __Comptime__, candidate: Product_candidate) -> Type_list {
+  __fst__(Type_list, Term_mapper, __snd__(__Type__, Type_list & Term_mapper, candidate))
+}
+
+pure fn product_candidate_mapper(ct: __Comptime__, candidate: Product_candidate) -> Term_mapper {
+  __snd__(Type_list, Term_mapper, __snd__(__Type__, Type_list & Term_mapper, candidate))
+}
+
+type Product_candidate_state = Type_list;
+
+type Product_candidate_fuel = __Type__ & Type_list;
+
+pure fn product_candidate_target_fuel(ct: __Comptime__, fuel: Product_candidate_fuel) -> __Type__ {
+  __fst__(__Type__, Type_list, fuel)
+}
+
+pure fn product_candidate_sources_fuel(ct: __Comptime__, fuel: Product_candidate_fuel) -> Type_list {
+  __snd__(__Type__, Type_list, fuel)
+}
+
+type Product_candidate_next = Product_candidate_fuel & Product_candidate_state;
+
+type Product_candidate_step = Product_candidate_result | Product_candidate_next;
+
+pure fn find_recursive_product_candidate(
+  , ct: __Comptime__
+  , recur: Fit_recur
+  , target: __Type__
+  , sources: Type_list
+  ) -> Product_candidate_result {
+  __structural_recur__(
+    , ct
+    , Product_candidate_fuel
+    , Product_candidate_state
+    , Product_candidate_result
+    , (target, sources)
+    , type_nil()
+    , .(
+        , loop_recur: (Product_candidate_fuel & Product_candidate_state) -> Product_candidate_result
+        , loop_fuel: Product_candidate_fuel
+        , loop_state: Product_candidate_state
+        ) -> Product_candidate_result {
+        let loop_step_fn =
+          .(fuel: Product_candidate_fuel, prefix_rev: Product_candidate_state) -> Product_candidate_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Product_candidate_step
+              , Type_list.un_type_list(product_candidate_sources_fuel(ct, fuel))
+              , .(_done: .) -> Product_candidate_step {
+                  __left__(
+                    , Product_candidate_result
+                    , Product_candidate_next
+                    , product_candidate_err(ct, "no recursive product source slot fits target slot")
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Product_candidate_step {
+                  let candidate = __fst__(__Type__, Type_list, cell);
+                  __either__(
+                    , Term_mapper
+                    , __Diagnostic_text__
+                    , Product_candidate_step
+                    , recur(
+                        , (candidate, product_candidate_target_fuel(ct, fuel))
+                        , (candidate, product_candidate_target_fuel(ct, fuel))
+                        )
+                    , .(mapper: Term_mapper) -> Product_candidate_step {
+                        __left__(
+                          , Product_candidate_result
+                          , Product_candidate_next
+                          , product_candidate_ok(
+                              , ct
+                              , candidate
+                              , type_prepend_reverse(
+                                  , ct
+                                  , prefix_rev
+                                  , __snd__(__Type__, Type_list, cell)
+                                  )
+                              , mapper
+                              )
+                          )
+                      }
+                    , .(_message: __Diagnostic_text__) -> Product_candidate_step {
+                        __right__(
+                          , Product_candidate_result
+                          , Product_candidate_next
+                          , (
+                              , (
+                                  , product_candidate_target_fuel(ct, fuel)
+                                  , __snd__(__Type__, Type_list, cell)
+                                  )
+                              , type_cons(ct, candidate, prefix_rev)
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Product_candidate_result
+          , Product_candidate_next
+          , Product_candidate_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Product_candidate_result) -> Product_candidate_result { loop_done }
+          , .(loop_next: Product_candidate_next) -> Product_candidate_result {
+              loop_recur(
+                , __fst__(Product_candidate_fuel, Product_candidate_state, loop_next)
+                , __snd__(Product_candidate_fuel, Product_candidate_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Product_route_state = Type_list & Mapper_route_list & Type_list;
+
+pure fn product_route_sources(state: Product_route_state) -> Type_list {
+  __fst__(Type_list, Mapper_route_list & Type_list, state)
+}
+
+pure fn product_route_routes(state: Product_route_state) -> Mapper_route_list {
+  __fst__(Mapper_route_list, Type_list, __snd__(Type_list, Mapper_route_list & Type_list, state))
+}
+
+pure fn product_route_types_rev(state: Product_route_state) -> Type_list {
+  __snd__(Mapper_route_list, Type_list, __snd__(Type_list, Mapper_route_list & Type_list, state))
+}
+
+type Product_route_result = Mapper_route_list | __Diagnostic_text__;
+
+type Product_route_attempt = . -> Product_route_result;
+
+pure fn product_routes_ok(ct: __Comptime__, routes: Mapper_route_list) -> Product_route_result {
+  __left__(Mapper_route_list, __Diagnostic_text__, routes)
+}
+
+pure fn product_routes_err(ct: __Comptime__, message: __Diagnostic_text__) -> Product_route_result {
+  __right__(Mapper_route_list, __Diagnostic_text__, message)
+}
+
+type Product_route_next = Type_list & Product_route_state;
+
+type Product_route_step = Product_route_result | Product_route_next;
+
+pure fn select_product_routes(
+  , ct: __Comptime__
+  , recur: Fit_recur
+  , source_spine: Type_list
+  , target_spine: Type_list
+  ) -> Product_route_result {
+  let attempt =
+    __structural_recur__(
+      , ct
+      , Type_list
+      , Product_route_state
+      , Product_route_attempt
+      , target_spine
+      , (source_spine, (mapper_route_nil(), type_nil()))
+      , .(
+          , loop_recur: (Type_list & Product_route_state) -> Product_route_attempt
+          , loop_fuel: Type_list
+          , loop_state: Product_route_state
+          ) -> Product_route_attempt {
+          // Nested fitting descends the captured type-pair callback, independently
+          // of this route walk's list measure. Run it after this helper frame ends;
+          // the captured route callback still checks every remaining-list tail.
+          .() -> Product_route_result {
+            let loop_step_fn =
+              .(fuel: Type_list, state: Product_route_state) -> Product_route_step {
+                __either__(
+                  , .
+                  , __Type__ & Type_list
+                  , Product_route_step
+                  , Type_list.un_type_list(fuel)
+                  , .(_done: .) -> Product_route_step {
+                      __left__(
+                        , Product_route_result
+                        , Product_route_next
+                        , product_routes_ok(
+                            , ct
+                            , mapper_route_reverse_by_types(
+                                , ct
+                                , product_route_types_rev(state)
+                                , product_route_routes(state)
+                                )
+                            )
+                        )
+                    }
+                  , .(cell: __Type__ & Type_list) -> Product_route_step {
+                      let target = __fst__(__Type__, Type_list, cell);
+                      __either__(
+                        , Type_take
+                        , .
+                        , Product_route_step
+                        , take_first_type_matching(ct, target, product_route_sources(state))
+                        , .(taken: Type_take) -> Product_route_step {
+                            __right__(
+                              , Product_route_result
+                              , Product_route_next
+                              , (
+                                  , __snd__(__Type__, Type_list, cell)
+                                  , (
+                                      , __snd__(__Type__, Type_list, taken)
+                                      , (
+                                          , mapper_route_cons(
+                                              , ct
+                                              , (
+                                                  , __fst__(__Type__, Type_list, taken)
+                                                  , identity_mapper(ct, target)
+                                                  )
+                                              , product_route_routes(state)
+                                              )
+                                          , type_cons(ct, target, product_route_types_rev(state))
+                                          )
+                                      )
+                                  )
+                              )
+                          }
+                        , .(_missing_exact: .) -> Product_route_step {
+                            __either__(
+                              , Product_candidate
+                              , __Diagnostic_text__
+                              , Product_route_step
+                              , find_recursive_product_candidate(
+                                  , ct
+                                  , recur
+                                  , target
+                                  , product_route_sources(state)
+                                  )
+                              , .(candidate: Product_candidate) -> Product_route_step {
+                                  __right__(
+                                    , Product_route_result
+                                    , Product_route_next
+                                    , (
+                                        , __snd__(__Type__, Type_list, cell)
+                                        , (
+                                            , product_candidate_rest(ct, candidate)
+                                            , (
+                                                , mapper_route_cons(
+                                                    , ct
+                                                    , (
+                                                        , product_candidate_source(ct, candidate)
+                                                        , product_candidate_mapper(ct, candidate)
+                                                        )
+                                                    , product_route_routes(state)
+                                                    )
+                                                , type_cons(
+                                                    , ct
+                                                    , target
+                                                    , product_route_types_rev(state)
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                }
+                              , .(message: __Diagnostic_text__) -> Product_route_step {
+                                  __left__(
+                                    , Product_route_result
+                                    , Product_route_next
+                                    , product_routes_err(ct, message)
+                                    )
+                                }
+                              )
+                          }
+                        )
+                    }
+                  )
+              };
+            __either__(
+              , Product_route_result
+              , Type_list & Product_route_state
+              , Product_route_result
+              , loop_step_fn(loop_fuel, loop_state)
+              , .(loop_done: Product_route_result) -> Product_route_result { loop_done }
+              , .(loop_next: Type_list & Product_route_state) -> Product_route_result {
+                  loop_recur(
+                    , __fst__(Type_list, Product_route_state, loop_next)
+                    , __snd__(Type_list, Product_route_state, loop_next)
+                    )()
+                }
+              )
+          }
+        }
+      );
+  attempt()
+}
+
+type Sum_candidate = Type_list & Term_mapper;
+
+type Sum_candidate_result = Sum_candidate | __Diagnostic_text__;
+
+pure fn sum_candidate_ok(ct: __Comptime__, suffix: Type_list, mapper: Term_mapper) -> Sum_candidate_result {
+  __left__(Sum_candidate, __Diagnostic_text__, (suffix, mapper))
+}
+
+pure fn sum_candidate_err(ct: __Comptime__, message: __Diagnostic_text__) -> Sum_candidate_result {
+  __right__(Sum_candidate, __Diagnostic_text__, message)
+}
+
+pure fn sum_candidate_suffix(ct: __Comptime__, candidate: Sum_candidate) -> Type_list {
+  __fst__(Type_list, Term_mapper, candidate)
+}
+
+pure fn sum_candidate_mapper(ct: __Comptime__, candidate: Sum_candidate) -> Term_mapper {
+  __snd__(Type_list, Term_mapper, candidate)
+}
+
+type Sum_candidate_next = Target_slot_list & Target_slot_list;
+
+type Sum_candidate_step = Sum_candidate_result | Sum_candidate_next;
+
+pure fn find_recursive_sum_candidate(
+  , ct: __Comptime__
+  , recur: Fit_recur
+  , source: __Type__
+  , targets: Target_slot_list
+  ) -> Sum_candidate_result {
+  __structural_recur__(
+    , ct
+    , Target_slot_list
+    , Target_slot_list
+    , Sum_candidate_result
+    , targets
+    , target_slot_nil()
+    , .(
+        , loop_recur: (Target_slot_list & Target_slot_list) -> Sum_candidate_result
+        , loop_fuel: Target_slot_list
+        , loop_state: Target_slot_list
+        ) -> Sum_candidate_result {
+        let loop_step_fn =
+          .(fuel: Target_slot_list, prefix_rev: Target_slot_list) -> Sum_candidate_step {
+            __either__(
+              , .
+              , Target_slot & Target_slot_list
+              , Sum_candidate_step
+              , Target_slot_list.un_target_slot_list(fuel)
+              , .(_done: .) -> Sum_candidate_step {
+                  __left__(
+                    , Sum_candidate_result
+                    , Sum_candidate_next
+                    , sum_candidate_err(ct, "no recursive target sum arm accepts source arm")
+                    )
+                }
+              , .(cell: Target_slot & Target_slot_list) -> Sum_candidate_step {
+                  let target_slot = __fst__(Target_slot, Target_slot_list, cell);
+                  let target = target_slot_type(ct, target_slot);
+                  __either__(
+                    , Term_mapper
+                    , __Diagnostic_text__
+                    , Sum_candidate_step
+                    , recur((source, target), (source, target))
+                    , .(mapper: Term_mapper) -> Sum_candidate_step {
+                        __left__(
+                          , Sum_candidate_result
+                          , Sum_candidate_next
+                          , sum_candidate_ok(ct, target_slot_suffix(ct, target_slot), mapper)
+                          )
+                      }
+                    , .(_message: __Diagnostic_text__) -> Sum_candidate_step {
+                        __right__(
+                          , Sum_candidate_result
+                          , Sum_candidate_next
+                          , (
+                              , __snd__(Target_slot, Target_slot_list, cell)
+                              , target_slot_cons(ct, target_slot, prefix_rev)
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Sum_candidate_result
+          , Target_slot_list & Target_slot_list
+          , Sum_candidate_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Sum_candidate_result) -> Sum_candidate_result { loop_done }
+          , .(loop_next: Target_slot_list & Target_slot_list) -> Sum_candidate_result {
+              loop_recur(
+                , __fst__(Target_slot_list, Target_slot_list, loop_next)
+                , __snd__(Target_slot_list, Target_slot_list, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Sum_route_result = Mapper_list | __Diagnostic_text__;
+
+pure fn sum_routes_ok(ct: __Comptime__, routes: Mapper_list) -> Sum_route_result {
+  __left__(Mapper_list, __Diagnostic_text__, routes)
+}
+
+pure fn sum_routes_err(ct: __Comptime__, message: __Diagnostic_text__) -> Sum_route_result {
+  __right__(Mapper_list, __Diagnostic_text__, message)
+}
+
+type Sum_route_state = Mapper_list & Type_list;
+
+pure fn sum_route_routes_rev(state: Sum_route_state) -> Mapper_list {
+  __fst__(Mapper_list, Type_list, state)
+}
+
+pure fn sum_route_types_rev(state: Sum_route_state) -> Type_list {
+  __snd__(Mapper_list, Type_list, state)
+}
+
+type Sum_route_next = Type_list & Sum_route_state;
+
+type Sum_route_step = Sum_route_result | Sum_route_next;
+
+pure fn select_sum_routes(
+  , ct: __Comptime__
+  , recur: Fit_recur
+  , source_spine: Type_list
+  , target_type: __Type__
+  , target_spine: Type_list
+  ) -> Sum_route_result {
+  let targets = target_slots(ct, target_spine);
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Sum_route_state
+    , Sum_route_result
+    , source_spine
+    , (mapper_nil(), type_nil())
+    , .(
+        , loop_recur: (Type_list & Sum_route_state) -> Sum_route_result
+        , loop_fuel: Type_list
+        , loop_state: Sum_route_state
+        ) -> Sum_route_result {
+        let loop_step_fn =
+          .(fuel: Type_list, state: Sum_route_state) -> Sum_route_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Sum_route_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Sum_route_step {
+                  __left__(
+                    , Sum_route_result
+                    , Sum_route_next
+                    , sum_routes_ok(
+                        , ct
+                        , mapper_reverse_by_types(
+                            , ct
+                            , sum_route_types_rev(state)
+                            , sum_route_routes_rev(state)
+                            )
+                        )
+                    )
+                }
+              , .(cell: __Type__ & Type_list) -> Sum_route_step {
+                  let source = __fst__(__Type__, Type_list, cell);
+                  __if_then_else__(
+                    , __type_equal__(ct, source, __type_bottom__(ct))
+                    , .() -> Sum_route_step {
+                        __right__(
+                          , Sum_route_result
+                          , Sum_route_next
+                          , (
+                              , __snd__(__Type__, Type_list, cell)
+                              , (
+                                  , mapper_cons(
+                                      , ct
+                                      , .(value: __Checked_term__) -> __Checked_term__ {
+                                          __intrinsic_absurd__(ct, value, target_type)
+                                        }
+                                      , sum_route_routes_rev(state)
+                                      )
+                                  , type_cons(ct, source, sum_route_types_rev(state))
+                                  )
+                              )
+                          )
+                      }
+                    , .() -> Sum_route_step {
+                        __either__(
+                          , Target_slot_take
+                          , .
+                          , Sum_route_step
+                          , take_first_target_matching(ct, source, targets)
+                          , .(taken: Target_slot_take) -> Sum_route_step {
+                              let suffix =
+                                target_slot_suffix(
+                                  , ct
+                                  , __fst__(Target_slot, Target_slot_list, taken)
+                                  );
+                              __right__(
+                                , Sum_route_result
+                                , Sum_route_next
+                                , (
+                                    , __snd__(__Type__, Type_list, cell)
+                                    , (
+                                        , mapper_cons(
+                                            , ct
+                                            , .(value: __Checked_term__) -> __Checked_term__ {
+                                                inject_at_suffix(ct, target_spine, suffix, value)
+                                              }
+                                            , sum_route_routes_rev(state)
+                                            )
+                                        , type_cons(ct, source, sum_route_types_rev(state))
+                                        )
+                                    )
+                                )
+                            }
+                          , .(_missing_exact: .) -> Sum_route_step {
+                              __either__(
+                                , Sum_candidate
+                                , __Diagnostic_text__
+                                , Sum_route_step
+                                , find_recursive_sum_candidate(ct, recur, source, targets)
+                                , .(candidate: Sum_candidate) -> Sum_route_step {
+                                    let suffix = sum_candidate_suffix(ct, candidate);
+                                    let mapper = sum_candidate_mapper(ct, candidate);
+                                    __right__(
+                                      , Sum_route_result
+                                      , Sum_route_next
+                                      , (
+                                          , __snd__(__Type__, Type_list, cell)
+                                          , (
+                                              , mapper_cons(
+                                                  , ct
+                                                  , .(value: __Checked_term__) -> __Checked_term__ {
+                                                      inject_at_suffix(
+                                                        , ct
+                                                        , target_spine
+                                                        , suffix
+                                                        , mapper(value)
+                                                        )
+                                                    }
+                                                  , sum_route_routes_rev(state)
+                                                  )
+                                              , type_cons(ct, source, sum_route_types_rev(state))
+                                              )
+                                          )
+                                      )
+                                  }
+                                , .(message: __Diagnostic_text__) -> Sum_route_step {
+                                    __left__(
+                                      , Sum_route_result
+                                      , Sum_route_next
+                                      , sum_routes_err(ct, message)
+                                      )
+                                  }
+                                )
+                            }
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Sum_route_result
+          , Type_list & Sum_route_state
+          , Sum_route_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Sum_route_result) -> Sum_route_result { loop_done }
+          , .(loop_next: Type_list & Sum_route_state) -> Sum_route_result {
+              loop_recur(
+                , __fst__(Type_list, Sum_route_state, loop_next)
+                , __snd__(Type_list, Sum_route_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn product_mapper(ct: __Comptime__, recur: Fit_recur, source: __Type__, target: __Type__) -> Adapter_result {
+  let source_spine = product_spine(ct, source);
+  let target_spine = product_spine(ct, target);
+  __either__(
+    , Mapper_route_list
+    , __Diagnostic_text__
+    , Adapter_result
+    , select_product_routes(ct, recur, source_spine, target_spine)
+    , .(routes: Mapper_route_list) -> Adapter_result {
+        adapter_ok(
+          , ct
+          , .(value: __Checked_term__) -> __Checked_term__ {
+              __either__(
+                , __Checked_term__
+                , __Diagnostic_text__
+                , __Checked_term__
+                , build_product_from_mapper_routes(
+                    , ct
+                    , routes
+                    , target_spine
+                    , source_spine
+                    , product_slots(ct, source, value)
+                    )
+                , .(term: __Checked_term__) -> __Checked_term__ { term }
+                , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
+                )
+            }
+          )
+      }
+    , .(message: __Diagnostic_text__) -> Adapter_result { adapter_err(ct, message) }
+    )
+}
+
+pure fn sum_mapper(ct: __Comptime__, recur: Fit_recur, source: __Type__, target: __Type__) -> Adapter_result {
+  let source_spine = sum_spine(ct, source);
+  let target_spine = sum_spine(ct, target);
+  __either__(
+    , Mapper_list
+    , __Diagnostic_text__
+    , Adapter_result
+    , select_sum_routes(ct, recur, source_spine, target, target_spine)
+    , .(routes: Mapper_list) -> Adapter_result {
+        __either__(
+          , Term_mapper
+          , __Diagnostic_text__
+          , Adapter_result
+          , build_sum_dispatcher_from_mappers(ct, target, source_spine, routes)
+          , .(mapper: Term_mapper) -> Adapter_result { adapter_ok(ct, mapper) }
+          , .(message: __Diagnostic_text__) -> Adapter_result { adapter_err(ct, message) }
+          )
+      }
+    , .(message: __Diagnostic_text__) -> Adapter_result { adapter_err(ct, message) }
+    )
+}
+
+pure fn function_mapper(
+  , ct: __Comptime__
+  , recur: Fit_recur
+  , source: __Type__
+  , target: __Type__
+  , source_view: Function_view
+  , target_view: Function_view
+  ) -> Adapter_result {
+  let source_param = function_param(ct, source_view);
+  let source_ret = function_result(ct, source_view);
+  let target_param = function_param(ct, target_view);
+  let target_ret = function_result(ct, target_view);
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Adapter_result
+    , recur((target_param, source_param), (target_param, source_param))
+    , .(param_mapper: Term_mapper) -> Adapter_result {
+        __either__(
+          , Term_mapper
+          , __Diagnostic_text__
+          , Adapter_result
+          , recur((source_ret, target_ret), (source_ret, target_ret))
+          , .(ret_mapper: Term_mapper) -> Adapter_result {
+              adapter_ok(
+                , ct
+                , .(value: __Checked_term__) -> __Checked_term__ {
+                    __term_let__(
+                      , ct
+                      , source
+                      , value
+                      , .(fn_value: __Checked_term__) -> __Checked_term__ {
+                          __term_fn__(
+                            , ct
+                            , target
+                            , .(arg_packet: __Checked_term__) -> __Checked_term__ {
+                                ret_mapper(__term_call__(
+                                  , ct
+                                  , source
+                                  , fn_value
+                                  , param_mapper(arg_packet)
+                                  ))
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          , .(message: __Diagnostic_text__) -> Adapter_result { adapter_err(ct, message) }
+          )
+      }
+    , .(message: __Diagnostic_text__) -> Adapter_result { adapter_err(ct, message) }
+    )
+}
+
+pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, _fuel: Type_pair, pair: Type_pair) -> Adapter_result {
+  let source = __fst__(__Type__, __Type__, pair);
+  let target = __snd__(__Type__, __Type__, pair);
+  __if_then_else__(
+    , __type_equal__(ct, source, target)
+    , .() -> Adapter_result { adapter_ok(ct, identity_mapper(ct, source)) }
+    , .() -> Adapter_result {
+        __if_then_else__(
+          , __type_equal__(ct, source, __type_bottom__(ct))
+          , .() -> Adapter_result {
+              adapter_ok(
+                , ct
+                , .(value: __Checked_term__) -> __Checked_term__ {
+                    __intrinsic_absurd__(ct, value, target)
+                  }
+                )
+            }
+          , .() -> Adapter_result {
+              __either__(
+                , Function_view
+                , .
+                , Adapter_result
+                , function_view(ct, source)
+                , .(source_view: Function_view) -> Adapter_result {
+                    __either__(
+                      , Function_view
+                      , .
+                      , Adapter_result
+                      , function_view(ct, target)
+                      , .(target_view: Function_view) -> Adapter_result {
+                          function_mapper(ct, recur, source, target, source_view, target_view)
+                        }
+                      , .(_target_not_function: .) -> Adapter_result {
+                          adapter_err(ct, "fit POC cannot coerce a function to a non-function")
+                        }
+                      )
+                  }
+                , .(_source_not_function: .) -> Adapter_result {
+                    __if_then_else__(
+                      , __if_then_else__(
+                          , __type_is_sum_root__(ct, target)
+                          , .() -> Comptime_bool { .t }
+                          , .() -> Comptime_bool { __type_is_sum_root__(ct, source) }
+                          )
+                      , .() -> Adapter_result { sum_mapper(ct, recur, source, target) }
+                      , .() -> Adapter_result {
+                          __if_then_else__(
+                            , __if_then_else__(
+                                , __type_is_product_root__(ct, target)
+                                , .() -> Comptime_bool { .t }
+                                , .() -> Comptime_bool { __type_is_product_root__(ct, source) }
+                                )
+                            , .() -> Adapter_result { product_mapper(ct, recur, source, target) }
+                            , .() -> Adapter_result {
+                                adapter_err(ct, "fit POC found no compatible structural path")
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn fit_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__) -> Adapter_result {
+  __structural_recur__(
+    , ct
+    , Type_pair
+    , Type_pair
+    , Adapter_result
+    , (source, target)
+    , (source, target)
+    , .(recur: Fit_recur, fuel: Type_pair, state: Type_pair) -> Adapter_result {
+        fit_recur_step(ct, recur, fuel, state)
+      }
+    )
+}
+
+/// Reports whether `fit` can construct an adapter between two reflected types.
+pub pure fn fit_accepts(ct: __Comptime__, source: __Type__, target: __Type__) -> Comptime_bool {
+  adapter_result_ok(ct, fit_mapper_result(ct, source, target))
+}
+
+/// Applies `fit` when possible and otherwise returns the original checked term.
+pub pure fn fit_or_raw(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  ) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , __Checked_term__
+    , mapper_result_to_elaborator(ct, fit_mapper_result(ct, source, target), value)
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
+    )
+}
+
+pure fn spine_identity_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , _target: __Type__
+  ) -> __Checked_term__ | __Diagnostic_text__ {
+  __if_then_else__(
+    , __type_equal__(ct, right_fold_product(ct, product_spine(ct, source)), source)
+    , .() -> __Checked_term__ | __Diagnostic_text__ { ok(ct, value) }
+    , .() -> __Checked_term__ | __Diagnostic_text__ {
+        __right__(__Checked_term__, __Diagnostic_text__, "product spine utility failed")
+      }
+    )
+}
+
+pure fn spine_identity_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        spine_identity_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { spine_identity_impl(ct, source, value, source) }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn spine_identity_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, spine_identity_result(ct, source, value, target))
+}
+
+/// Validates the product-spine round trip and returns the original value.
+pub elab spine_identity : [Source] Source -> [Target] Target { impl spine_identity_checked }
+
+pure fn reorder_prod_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  build_product_from_slots(
+    , ct
+    , product_spine(ct, target)
+    , product_spine(ct, source)
+    , product_slots(ct, source, value)
+    , .t
+    )
+}
+
+pure fn reorder_prod_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        reorder_prod_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn reorder_prod_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, reorder_prod_result(ct, source, value, target))
+}
+
+/// Reorders product slots to match the requested target product.
+pub elab reorder_prod : [Source] Source -> [Target] Target { impl reorder_prod_checked }
+
+pure fn reorder_sum_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  let source_spine = sum_spine(ct, source);
+  let target_spine = sum_spine(ct, target);
+  __either__(
+    , Route_list
+    , __Diagnostic_text__
+    , Elaborator_result
+    , route_source_arms_unique(ct, source_spine, target_slots(ct, target_spine))
+    , .(routes: Route_list) -> Elaborator_result {
+        build_sum_from_routes(ct, source_spine, target, target_spine, routes, value)
+      }
+    , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+    )
+}
+
+pure fn reorder_sum_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        reorder_sum_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn reorder_sum_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, reorder_sum_result(ct, source, value, target))
+}
+
+/// Reorders sum arms to match the requested target sum.
+pub elab reorder_sum : [Source] Source -> [Target] Target { impl reorder_sum_checked }
+
+pure fn narrow_prod_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  build_product_from_slots(
+    , ct
+    , product_spine(ct, target)
+    , product_spine(ct, source)
+    , product_slots(ct, source, value)
+    , .f
+    )
+}
+
+pure fn narrow_prod_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        narrow_prod_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { narrow_prod_impl(ct, source, value, source) }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn narrow_prod_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, narrow_prod_result(ct, source, value, target))
+}
+
+/// Drops product slots not present in the requested target product.
+pub elab narrow_prod : [Source] Source -> [Target] Target { impl narrow_prod_checked }
+
+pure fn type_list_contains(ct: __Comptime__, needle: __Type__, haystack: Type_list) -> Comptime_bool {
+  __either__(
+    , Type_take
+    , .
+    , Comptime_bool
+    , take_first_type_matching(ct, needle, haystack)
+    , .(_take: Type_take) -> Comptime_bool { .t }
+    , .(_missing: .) -> Comptime_bool { .f }
+    )
+}
+
+type Unique_types_state = Type_list;
+
+type Unique_types_next = Type_list & Unique_types_state;
+
+type Unique_types_step = Type_list | Unique_types_next;
+
+pure fn unique_types(ct: __Comptime__, xs: Type_list) -> Type_list {
+  __structural_recur__(
+    , ct
+    , Type_list
+    , Unique_types_state
+    , Type_list
+    , xs
+    , type_nil()
+    , .(
+        , loop_recur: (Type_list & Unique_types_state) -> Type_list
+        , loop_fuel: Type_list
+        , loop_state: Unique_types_state
+        ) -> Type_list {
+        let loop_step_fn =
+          .(fuel: Type_list, acc_rev: Unique_types_state) -> Unique_types_step {
+            __either__(
+              , .
+              , __Type__ & Type_list
+              , Unique_types_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Unique_types_step {
+                  __left__(Type_list, Unique_types_next, type_reverse(ct, acc_rev))
+                }
+              , .(cell: __Type__ & Type_list) -> Unique_types_step {
+                  let head = __fst__(__Type__, Type_list, cell);
+                  __if_then_else__(
+                    , type_list_contains(ct, head, acc_rev)
+                    , .() -> Unique_types_step {
+                        __right__(
+                          , Type_list
+                          , Unique_types_next
+                          , (__snd__(__Type__, Type_list, cell), acc_rev)
+                          )
+                      }
+                    , .() -> Unique_types_step {
+                        __right__(
+                          , Type_list
+                          , Unique_types_next
+                          , (__snd__(__Type__, Type_list, cell), type_cons(ct, head, acc_rev))
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Type_list
+          , Type_list & Unique_types_state
+          , Type_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Type_list) -> Type_list { loop_done }
+          , .(loop_next: Type_list & Unique_types_state) -> Type_list {
+              loop_recur(
+                , __fst__(Type_list, Unique_types_state, loop_next)
+                , __snd__(Type_list, Unique_types_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn narrow_sum_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  let source_spine = sum_spine(ct, source);
+  let target_spine = sum_spine(ct, target);
+  __if_then_else__(
+    , route_result_present(
+        , ct
+        , route_source_arms_unique(ct, target_spine, target_slots(ct, source_spine))
+        )
+    , .() -> Elaborator_result {
+        __either__(
+          , Route_list
+          , __Diagnostic_text__
+          , Elaborator_result
+          , route_source_arms_collapse(ct, source_spine, target_slots(ct, target_spine))
+          , .(routes: Route_list) -> Elaborator_result {
+              build_sum_from_routes(ct, source_spine, target, target_spine, routes, value)
+            }
+          , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+          )
+      }
+    , .() -> Elaborator_result { err(ct, "target sum arm is not provided by source") }
+    )
+}
+
+pure fn narrow_sum_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        narrow_sum_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result {
+        narrow_sum_impl(
+          , ct
+          , source
+          , value
+          , right_fold_sum(ct, unique_types(ct, sum_spine(ct, source)))
+          )
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn narrow_sum_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, narrow_sum_result(ct, source, value, target))
+}
+
+/// Narrows a sum to compatible target arms.
+pub elab narrow_sum : [Source] Source -> [Target] Target { impl narrow_sum_checked }
+
+pure fn widen_prod_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  build_widen_product_from_slots(
+    , ct
+    , product_spine(ct, target)
+    , product_spine(ct, source)
+    , product_slots(ct, source, value)
+    )
+}
+
+pure fn widen_prod_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        widen_prod_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn widen_prod_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, widen_prod_result(ct, source, value, target))
+}
+
+/// Builds a wider product target from compatible source slots.
+pub elab widen_prod : [Source] Source -> [Target] Target { impl widen_prod_checked }
+
+pure fn widen_sum_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result {
+  let source_spine = sum_spine(ct, source);
+  let target_spine = sum_spine(ct, target);
+  __either__(
+    , Route_list
+    , __Diagnostic_text__
+    , Elaborator_result
+    , route_source_arms_unique(ct, source_spine, target_slots(ct, target_spine))
+    , .(routes: Route_list) -> Elaborator_result {
+        build_sum_from_routes(ct, source_spine, target, target_spine, routes, value)
+      }
+    , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+    )
+}
+
+pure fn widen_sum_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        widen_sum_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { widen_sum_impl(ct, source, value, source) }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn widen_sum_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, widen_sum_result(ct, source, value, target))
+}
+
+/// Injects a sum value into a compatible wider target sum.
+pub elab widen_sum : [Source] Source -> [Target] Target { impl widen_sum_checked }
+
+pure fn flatten_prod_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result { flatten_product_to(ct, source, target, value) }
+
+pure fn flatten_prod_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        flatten_prod_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn flatten_prod_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, flatten_prod_result(ct, source, value, target))
+}
+
+/// Flattens nested product structure to the requested product target.
+pub elab flatten_prod : [Source] Source -> [Target] Target { impl flatten_prod_checked }
+
+pure fn flatten_sum_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> Elaborator_result { flatten_sum_to(ct, source, target, value) }
+
+pure fn flatten_sum_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        flatten_sum_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn flatten_sum_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, flatten_sum_result(ct, source, value, target))
+}
+
+/// Flattens nested sum structure to the requested sum target.
+pub elab flatten_sum : [Source] Source -> [Target] Target { impl flatten_sum_checked }
+
+pure fn fit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  mapper_result_to_elaborator(ct, fit_mapper_result(ct, source, target), value)
+}
+
+pure fn fit_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { fit_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn fit_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, fit_result(ct, source, value, target)) }
+
+/// Composes compatible structural adaptations across product, sum, and function boundaries.
+pub elab fit : [Source] Source -> [Target] Target { impl fit_checked }
+
+pure fn one_prod_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  pick_first_slot(ct, target, product_spine(ct, source), product_slots(ct, source, value))
+}
+
+pure fn one_prod_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result {
+        one_prod_impl(ct, source, value, target_type)
+      }
+    , .() -> Elaborator_result {
+        __either__(
+          , __Type__
+          , .
+          , Elaborator_result
+          , first_product_type(ct, source, value)
+          , .(target_type: __Type__) -> Elaborator_result {
+              one_prod_impl(ct, source, value, target_type)
+            }
+          , .() -> Elaborator_result { err(ct, "elaborator could not infer a target type") }
+          )
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn one_prod_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, one_prod_result(ct, source, value, target)) }
+
+/// Extracts one product slot, inferring the slot type when possible.
+pub elab one_prod : [Source] Source -> [Target] Target { impl one_prod_checked }
+
+pure fn one_sum_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  let source_spine = sum_spine(ct, source);
+  let target_spine = sum_spine(ct, target);
+  __if_then_else__(
+    , __type_is_sum_root__(ct, target)
+    , .() -> Elaborator_result { err(ct, "one_sum target must not be a top-level sum") }
+    , .() -> Elaborator_result {
+        __either__(
+          , Route_list
+          , __Diagnostic_text__
+          , Elaborator_result
+          , route_source_arms_collapse(ct, source_spine, target_slots(ct, target_spine))
+          , .(routes: Route_list) -> Elaborator_result {
+              build_sum_from_routes(ct, source_spine, target, target_spine, routes, value)
+            }
+          , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+          )
+      }
+    )
+}
+
+pure fn one_sum_result(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { one_sum_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result {
+        __either__(
+          , __Type__
+          , .
+          , Elaborator_result
+          , first_sum_type(ct, source, value)
+          , .(target_type: __Type__) -> Elaborator_result {
+              one_sum_impl(ct, source, value, target_type)
+            }
+          , .() -> Elaborator_result { err(ct, "elaborator could not infer a target type") }
+          )
+      }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn one_sum_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, one_sum_result(ct, source, value, target)) }
+
+/// Extracts one non-sum branch from a sum, inferring the branch type when possible.
+pub elab one_sum : [Source] Source -> [Target] Target { impl one_sum_checked }

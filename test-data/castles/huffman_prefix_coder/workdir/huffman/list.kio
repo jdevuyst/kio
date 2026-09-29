@@ -1,0 +1,89 @@
+/// The one collection the coder is built on. The host tier supplies no array
+/// type, so the message, the node queue, the build log, the code table, and
+/// every bit string in this package are instantiations of this cons list.
+module huffman/list;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32);
+import testapi/iter(loop);
+
+/// An anonymous sum cannot mention itself, so the newtype ties the knot.
+pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; pub projector un_list }
+
+pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, tail: List(A)) -> List(A) {
+  List.mk_list(widen_sum!((head, tail), . | (A & List(A))))
+}
+
+pub fn of1[A](a: A) -> List(A) { cons(a, nil(A, ())) }
+
+fn of2[A](a: A, b: A) -> List(A) { cons(a, of1(b)) }
+
+pub fn of3[A](a: A, b: A, c: A) -> List(A) { cons(a, of2(b, c)) }
+
+pub fn of4[A](a: A, b: A, c: A, d: A) -> List(A) { cons(a, of3(b, c, d)) }
+
+pub fn of5[A](a: A, b: A, c: A, d: A, e: A) -> List(A) { cons(a, of4(b, c, d, e)) }
+
+pub fn of6[A](a: A, b: A, c: A, d: A, e: A, f: A) -> List(A) { cons(a, of5(b, c, d, e, f)) }
+
+pub fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.un_list {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+/// Push every element of `xs` onto `acc` in order, which leaves `acc` holding
+/// them reversed. The encoder relies on exactly that: it accumulates the bit
+/// stream backwards and reverses once at the end, so appending a codeword is
+/// this walk rather than a quadratic `append`.
+pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
+
+rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
+  match! xs.>List.un_list {
+    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
+
+pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { rec fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
+  }
+}
+
+pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) -> . {
+  match! xs.>List.un_list {
+    (.(head: A, rest: List(A)) { action(head); rec for_each(rest, action) }, .(_empty: .) { () })
+  }
+}
+
+rec(loop) fn keep_onto[A](xs: List(A), pick: A -> Bool, acc: List(A)) -> List(A) {
+  match! xs.>List.un_list {
+    (
+      , .(head: A, rest: List(A)) {
+          if! pick(head) {
+            rec keep_onto(rest, pick, cons(head, acc))
+          } else {
+            rec keep_onto(rest, pick, acc)
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn keep[A](xs: List(A), pick: A -> Bool) -> List(A) { reverse(keep_onto(xs, pick, nil(A, ()))) }

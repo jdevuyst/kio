@@ -1,0 +1,3 @@
+module provider/value;
+
+pub fn item() -> . { () }

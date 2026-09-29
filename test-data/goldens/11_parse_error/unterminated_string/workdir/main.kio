@@ -1,0 +1,7 @@
+module unterminated_string/main;
+
+
+// String literal opens but never closes before the end of the line.
+// The lexer rejects this with a parse error (exit 11) — the only
+// way out is for the user to add the missing quote.
+fn main() -> . { print("hello }

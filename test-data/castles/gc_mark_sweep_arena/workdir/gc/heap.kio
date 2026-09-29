@@ -1,0 +1,123 @@
+/// The arena and the objects packed into it.
+///
+/// Cells are a flat `Array(I32)`. Objects are laid out contiguously
+/// from address 0 with no gaps between them:
+///
+///   [tag] [field count] [field 0] ... [field n-1]
+///
+/// so the object list needs no side table -- stepping over an object's
+/// size lands exactly on the next header. The arena's length is its
+/// allocation top, which is why the collector hands cells back by
+/// popping them off the end rather than tracking a bump pointer that
+/// could fall out of step with the array.
+module gc/heap;
+
+import elab/control(if);
+import gc/num(and, int_eq, int_lt);
+import gc/slot(Slot, slot_of);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_len, array_make_filled, array_set);
+import testapi/iter(loop);
+
+literal header_cells = 2;
+
+pub literal tag_frame = 1;
+
+pub literal tag_pair = 2;
+
+pub literal tag_vec = 3;
+
+pub literal tag_box = 4;
+
+/// A heap image: the arena plus the roots the collector starts from.
+/// Both are host arrays, so every phase rewrites them in place and the
+/// image value itself never has to be rebuilt.
+pub labels Image = { heap_cells: Array(I32), heap_roots: Array(I32) };
+
+pub fn top(cells: Array(I32)) -> I32 { array_len(cells) }
+
+pub fn tag_at(cells: Array(I32), addr: I32) -> I32 { array_get(cells, addr) }
+
+pub fn field_count(cells: Array(I32), addr: I32) -> I32 { array_get(cells, add_i32(addr, 1)) }
+
+pub fn object_size(cells: Array(I32), addr: I32) -> I32 {
+  add_i32(header_cells, field_count(cells, addr))
+}
+
+fn next_object(cells: Array(I32), addr: I32) -> I32 { add_i32(addr, object_size(cells, addr)) }
+
+pub fn field_addr(addr: I32, index: I32) -> I32 { add_i32(add_i32(addr, header_cells), index) }
+
+pub fn field_slot(cells: Array(I32), addr: I32, index: I32) -> Slot {
+  slot_of(array_get(cells, field_addr(addr, index)))
+}
+
+pub fn in_arena(cells: Array(I32), addr: I32) -> Bool {
+  and(leq_i32(0, addr), int_lt(addr, top(cells)))
+}
+
+pub fn tag_name(tag: I32) -> String {
+  if! int_eq(tag, tag_frame) {
+    "frame"
+  } else if! int_eq(tag, tag_pair) {
+    "pair"
+  } else if! int_eq(tag, tag_vec) {
+    "vec"
+  } else if! int_eq(tag, tag_box) {
+    "box"
+  } else {
+    "unknown"
+  }
+}
+
+rec(loop) fn fold_from[S](cells: Array(I32), step: (S & I32) -> S, addr: I32, acc: S) -> S {
+  if! int_lt(addr, top(cells)) {
+    rec fold_from(cells, step, next_object(cells, addr), step(acc, addr))
+  } else {
+    acc
+  }
+}
+
+/// Fold over the object list, handing `step` each object's header
+/// address in address order. Every phase walks this same list, so the
+/// walk is written once and a phase supplies only what it does at each
+/// object.
+pub fn fold_objects[S](cells: Array(I32), step: (S & I32) -> S, init: S) -> S {
+  fold_from(cells, step, 0, init)
+}
+
+rec(loop) fn fold_field_from[S](
+  , cells: Array(I32)
+  , addr: I32
+  , step: (S & I32) -> S
+  , index: I32
+  , count: I32
+  , acc: S
+  ) -> S {
+  if! int_lt(index, count) {
+    rec fold_field_from(cells, addr, step, add_i32(index, 1), count, step(acc, index))
+  } else {
+    acc
+  }
+}
+
+/// The same idea one level down: fold over one object's fields, handing
+/// `step` each field's index. The index rather than the slot, because a
+/// phase that rewrites a field needs to address it.
+pub fn fold_fields[S](cells: Array(I32), addr: I32, step: (S & I32) -> S, init: S) -> S {
+  fold_field_from(cells, addr, step, 0, field_count(cells, addr), init)
+}
+
+pub fn object_count(cells: Array(I32)) -> I32 {
+  fold_objects(cells, .(total, _addr) { add_i32(total, 1) }, 0)
+}
+
+/// One flag per cell, true exactly where an object header starts. The
+/// verifier needs it to reject a pointer that lands in the middle of an
+/// object, which a plain bounds check would wave through.
+pub fn header_map(cells: Array(I32)) -> Array(Bool) {
+  let headers = array_make_filled(top(cells), .f);
+  fold_objects(cells, .(_unit, addr) { array_set(headers, addr, .t) }, ());
+  headers
+}

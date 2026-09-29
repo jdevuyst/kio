@@ -1,0 +1,114 @@
+module circuit_netlist_eval/gates;
+
+import circuit_netlist_eval/bool_logic as logic;
+import circuit_netlist_eval/domain(
+  , State
+  , {checksum}
+  , {enable}
+  , {fanout_ok}
+  , {fanout_probe}
+  , {gate_ab_and}
+  , {gate_bc_or}
+  , {gate_enable_a}
+  , {gate_mask}
+  , {gate_xor}
+  , {pin_a}
+  , {pin_b}
+  , {pin_c}
+  , {probe_alarm}
+  , {probe_carry}
+  , {stage}
+  , {truth_ok}
+  , {warning_count}
+  );
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub fn and_gate(a: Bool, b: Bool) -> Bool { logic.b_and(a, b) }
+
+pub fn or_gate(a: Bool, b: Bool) -> Bool { logic.b_or(a, b) }
+
+pub fn xor_gate(a: Bool, b: Bool) -> Bool { logic.b_xor(a, b) }
+
+fn carry_probe(s: State) -> Bool {
+  logic.b_or(s.?{gate_ab_and}, logic.b_and(s.?{pin_a}, s.?{pin_c}))
+}
+
+fn alarm_probe(s: State) -> Bool {
+  logic.b_and(s.?{enable}, logic.b_or(s.?{gate_xor}, logic.b_not(s.?{gate_mask})))
+}
+
+fn checksum_part(left: I32, right: I32) -> I32 { arith.add_i32(left, right) }
+
+fn signal_checksum(s: State, carry: Bool, alarm: Bool) -> I32 {
+  checksum_part(
+    , logic.bit_weight(s.?{pin_a}, 1)
+    , checksum_part(
+        , logic.bit_weight(s.?{pin_b}, 2)
+        , checksum_part(
+            , logic.bit_weight(s.?{pin_c}, 4)
+            , checksum_part(
+                , logic.bit_weight(s.?{enable}, 8)
+                , checksum_part(
+                    , logic.bit_weight(s.?{gate_ab_and}, 16)
+                    , checksum_part(
+                        , logic.bit_weight(s.?{gate_bc_or}, 32)
+                        , checksum_part(
+                            , logic.bit_weight(s.?{gate_enable_a}, 64)
+                            , checksum_part(
+                                , logic.bit_weight(s.?{gate_xor}, 128)
+                                , checksum_part(
+                                    , logic.bit_weight(s.?{gate_mask}, 256)
+                                    , checksum_part(
+                                        , logic.bit_weight(carry, 512)
+                                        , logic.bit_weight(alarm, 1024)
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+pub fn eval_gate_layer(s: State) -> State {
+  s.!{
+    , stage = 1
+    , gate_ab_and = and_gate(s.?{pin_a}, s.?{pin_b})
+    , gate_bc_or = or_gate(s.?{pin_b}, s.?{pin_c})
+    , gate_enable_a = and_gate(s.?{enable}, s.?{pin_a})
+    }
+}
+
+pub fn eval_fanout_layer(s: State) -> State {
+  s.!{
+    , stage = 2
+    , gate_xor = xor_gate(s.?{gate_bc_or}, s.?{gate_enable_a})
+    , gate_mask = or_gate(s.?{gate_ab_and}, s.?{pin_c})
+    , fanout_probe = s.?{gate_bc_or}
+    }
+}
+
+pub fn eval_probe_layer(s: State) -> State {
+  let carry = carry_probe(s);
+  let alarm = alarm_probe(s);
+  let fanout_consistent = logic.b_eq(s.?{fanout_probe}, s.?{gate_bc_or});
+  let xor_consistent = logic.b_eq(s.?{gate_xor}, xor_gate(s.?{gate_bc_or}, s.?{gate_enable_a}));
+  let mask_consistent = logic.b_eq(s.?{gate_mask}, or_gate(s.?{gate_ab_and}, s.?{pin_c}));
+  let truth_consistent = logic.b_and(xor_consistent, mask_consistent);
+  s.!{
+    , stage = 3
+    , probe_carry = carry
+    , probe_alarm = alarm
+    , checksum = signal_checksum(s, carry, alarm)
+    , fanout_ok = fanout_consistent
+    , truth_ok = truth_consistent
+    , warning_count = arith.add_i32(
+        , logic.warning_bit(fanout_consistent)
+        , logic.warning_bit(truth_consistent)
+        )
+    }
+}

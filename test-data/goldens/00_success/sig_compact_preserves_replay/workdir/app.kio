@@ -1,0 +1,7 @@
+module app;
+
+import core(Id);
+
+host fn boot() -> .;
+
+pub fn wrap(x: Id) -> Id { x }

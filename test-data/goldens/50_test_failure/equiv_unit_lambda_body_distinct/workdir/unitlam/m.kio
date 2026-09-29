@@ -1,0 +1,6 @@
+module unitlam/m;
+
+equiv unit_lam_body() {
+  .(y: .) { y };
+  .(y: .) { () }
+}

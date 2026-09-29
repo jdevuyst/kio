@@ -1,0 +1,15 @@
+module right;
+
+import host/b(Value, ping);
+
+pub newtype Box : Value { pub constructor mk_box; pub projector un_box }
+
+pub type Box_alias = Box;
+
+pub fn literal() -> Value { "right"(Value) }
+
+pub fn call() -> Value { ping() }
+
+pub fn echo(x: Value) -> Value { x }
+
+pub fn echo_box(x: Box_alias) -> Box_alias { x }

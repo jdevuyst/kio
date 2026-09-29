@@ -1,0 +1,6 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/helper(greet);
+
+pub fn main() -> . { greet("hello from helper"(String)) }

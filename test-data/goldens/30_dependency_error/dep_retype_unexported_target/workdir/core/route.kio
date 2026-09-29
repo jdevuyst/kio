@@ -1,0 +1,4 @@
+module core/route;
+
+import core/store as origin;
+import core/store(Token);

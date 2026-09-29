@@ -1,0 +1,108 @@
+module derive_memo_wide_candidate_set/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+import testapi(String);
+
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+
+pub newtype Atom0 : String { pub constructor mk_atom0; pub projector un_atom0 }
+
+pub newtype Atom1 : String { pub constructor mk_atom1; pub projector un_atom1 }
+
+pub newtype Atom2 : String { pub constructor mk_atom2; pub projector un_atom2 }
+
+pub newtype Atom3 : String { pub constructor mk_atom3; pub projector un_atom3 }
+
+pub newtype Atom4 : String { pub constructor mk_atom4; pub projector un_atom4 }
+
+pub newtype Atom5 : String { pub constructor mk_atom5; pub projector un_atom5 }
+
+fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+
+fn render_atom0() -> Render(Atom0) { Render.mk_render(.(a) { Atom0.un_atom0(a) }) }
+
+fn render_atom1() -> Render(Atom1) { Render.mk_render(.(a) { Atom1.un_atom1(a) }) }
+
+fn render_atom2() -> Render(Atom2) { Render.mk_render(.(a) { Atom2.un_atom2(a) }) }
+
+fn render_atom3() -> Render(Atom3) { Render.mk_render(.(a) { Atom3.un_atom3(a) }) }
+
+fn render_atom4() -> Render(Atom4) { Render.mk_render(.(a) { Atom4.un_atom4(a) }) }
+
+fn render_atom5() -> Render(Atom5) { Render.mk_render(.(a) { Atom5.un_atom5(a) }) }
+
+fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
+  Render.mk_render(.(p) { Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p))) })
+}
+
+fn derived0() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
+  derive!(
+    , (
+        , render_atom0
+        , render_atom1
+        , render_atom2
+        , render_atom3
+        , render_atom4
+        , render_atom5
+        , render_pair
+        , render_cell_string
+        )
+    , Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String)))))
+    )
+}
+
+fn derived1() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
+  derive!(
+    , (
+        , render_atom0
+        , render_atom1
+        , render_atom2
+        , render_atom3
+        , render_atom4
+        , render_atom5
+        , render_pair
+        , render_cell_string
+        )
+    , Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String)))))
+    )
+}
+
+fn derived2() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
+  derive!(
+    , (
+        , render_atom0
+        , render_atom1
+        , render_atom2
+        , render_atom3
+        , render_atom4
+        , render_atom5
+        , render_pair
+        , render_cell_string
+        )
+    , Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String)))))
+    )
+}
+
+fn derived3() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
+  derive!(
+    , (
+        , render_atom0
+        , render_atom1
+        , render_atom2
+        , render_atom3
+        , render_atom4
+        , render_atom5
+        , render_pair
+        , render_cell_string
+        )
+    , Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String)))))
+    )
+}
+
+pub fn main() -> . { () }

@@ -1,0 +1,33 @@
+E-graph equality saturation
+congruence
+  original=((x+0)+y) cost=5
+  parents-equal-before=false
+  after-rewrite child-equal=true parents-equal=false
+  rebuild-merges=1 parents-equal=true
+  status=saturated rounds=1
+  extracted=(x+y) cost=3 alternatives=2 nodes=6 classes=4
+  values=3,1,2 source-agrees=true
+factoring
+  original=((x*2)+(x*3)) cost=7
+  status=exhausted rounds=1
+  extracted=(x*(2+3)) cost=5 alternatives=2 nodes=8 classes=7
+  values=-10,0,15 source-agrees=true
+  status=saturated rounds=2
+  extracted=(x*5) cost=3 alternatives=2 nodes=9 classes=7
+  values=-10,0,15 source-agrees=true
+  fixed-point-recheck=saturated rounds=1 unchanged=true
+identities
+  original=((x*1)+(y*0)) cost=7
+  status=saturated rounds=2
+  extracted=x cost=1 alternatives=3 nodes=7 classes=4
+  values=-2,0,3 source-agrees=true
+constant arithmetic
+  original=((2+3)*4) cost=5
+  status=saturated rounds=3
+  extracted=20 cost=1 alternatives=2 nodes=7 classes=5
+  values=20,20,20 source-agrees=true
+already saturated
+  original=(x+y) cost=3
+  status=saturated rounds=1
+  extracted=(x+y) cost=3 alternatives=1 nodes=3 classes=3
+  values=3,1,2 source-agrees=true

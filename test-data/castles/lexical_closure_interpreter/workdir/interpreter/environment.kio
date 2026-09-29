@@ -1,0 +1,30 @@
+module interpreter/environment;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import interpreter/values as values;
+import list/core as lists;
+import testapi(Bool, String);
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub fn empty() -> values.Environment { lists.nil() }
+
+pub fn extend(name: String, value: values.Value, environment: values.Environment) -> values.Environment {
+  lists.cons((name, value), environment)
+}
+
+pub rec(loop) fn lookup(name: String, environment: values.Environment) -> String | values.Value {
+  match! lists.uncons(environment) {
+    .(binding: String & values.Value, remaining: values.Environment) {
+      let .(key, value) = binding;
+      if! text.string_eq(name, key) {
+        value.>widen_sum!(String | values.Value)
+      } else {
+        rec lookup(name, remaining)
+      }
+    };
+    .() { text.string_concat("unbound variable: ", name).>widen_sum!(String | values.Value) }
+  }
+}

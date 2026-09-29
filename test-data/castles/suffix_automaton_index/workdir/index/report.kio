@@ -1,0 +1,65 @@
+module index/report;
+
+import elab/control(if);
+import index/analysis as analysis;
+import index/automaton as sam;
+import index/numbers as num;
+import index/scan as scan;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as n;
+import testapi/array as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+
+fn integer(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+
+rec(loop) fn show_symbols(symbols: Array(I32), position: I32) -> . {
+  if! num.less(position, a.array_len(symbols)) {
+    if! num.equal(position, 0) {
+      ()
+    } else {
+      io.print(" ")
+    };
+    integer(a.array_get(symbols, position));
+    rec show_symbols(symbols, n.add_i32(position, 1))
+  } else {
+    ()
+  }
+}
+
+pub fn heading(name: String, source: Array(I32), index: sam.Index) -> . {
+  io.print(name);
+  io.print(" [");
+  show_symbols(source, 0);
+  io.print("]\n  states=");
+  integer(a.array_len(index.?{sam.states}));
+  io.print(" clones=");
+  integer(index.?{sam.clones});
+  io.print(" independent clone rows=");
+  integer(analysis.divergent_clones(index));
+  io.print("\n  distinct substrings=");
+  integer(analysis.distinct(index));
+  io.print(" longest repeated length=");
+  integer(analysis.longest_repeated(index));
+  let audit = scan.verify(source, index);
+  io.print("\n  direct scan: intervals=");
+  integer(audit.?{scan.intervals});
+  io.print(" count mismatches=");
+  integer(audit.?{scan.mismatches});
+  io.print(" distinct=");
+  integer(audit.?{scan.unique});
+  io.print(" repeated=");
+  integer(audit.?{scan.repeated});
+  io.print("\n")
+}
+
+pub fn query(source: Array(I32), index: sam.Index, symbols: Array(I32)) -> . {
+  io.print("  query [");
+  show_symbols(symbols, 0);
+  io.print("] index=");
+  integer(analysis.occurrences(index, symbols));
+  io.print(" scan=");
+  integer(scan.occurrences(source, symbols));
+  io.print("\n")
+}

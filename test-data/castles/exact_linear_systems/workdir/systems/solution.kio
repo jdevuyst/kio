@@ -1,0 +1,75 @@
+module systems/solution;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as c;
+import list/list as l;
+import list_host as integers;
+import systems/matrix as m;
+import systems/rational as q;
+import systems/reduce as reduction;
+import testapi(Bool, I32);
+
+pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List(I32) };
+
+pub labels Outcome = { solved: Family } | { inconsistent: q.Rational };
+
+fn is_free(column: I32, pivots: c.List(I32)) -> Bool {
+  if! l.elem(integers.eq_i32, column, pivots) {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn particular(reduced: m.Matrix, pivots: c.List(I32), variables: I32) -> m.Row {
+  l.map(
+    , .(column) {
+        match! l.index_of(integers.eq_i32, column, pivots) {
+          .(row: I32) { m.at(m.row_at(reduced, row), variables) };
+          .() { q.zero() }
+        }
+      }
+    , m.indices(variables)
+    )
+}
+
+fn direction(reduced: m.Matrix, pivots: c.List(I32), variables: I32, free: I32) -> m.Row {
+  l.map(
+    , .(column) {
+        match! l.index_of(integers.eq_i32, column, pivots) {
+          .(row: I32) { q.negate(m.at(m.row_at(reduced, row), free)) };
+          .() {
+            if! integers.eq_i32(column, free) {
+              q.integer(1)
+            } else {
+              q.zero()
+            }
+          }
+        }
+      }
+    , m.indices(variables)
+    )
+}
+
+pub fn solve(result: reduction.Reduction, variables: I32) -> Outcome {
+  let reduced = result.?{reduction.reduced};
+  let pivots = result.?{reduction.pivots};
+  match! l.find(.(row) { reduction.contradictory(row, variables) }, reduced) {
+    .(row: m.Row) { {inconsistent = m.at(row, variables)}.>widen_sum! };
+    .() {
+      let free_columns = l.filter(.(column) { is_free(column, pivots) }, m.indices(variables));
+      let family =
+        {
+          , particular = particular(reduced, pivots, variables)
+          , directions = l.map(
+              , .(free) { direction(reduced, pivots, variables, free) }
+              , free_columns
+              )
+          , free_columns
+          };
+      {solved = family}.>widen_sum!
+    }
+  }
+}

@@ -1,0 +1,7 @@
+module main;
+
+fn identity[A](value: A) -> A { value }
+
+fn consume[T](_value: T) -> . { () }
+
+fn rejected() -> . { consume(identity) }

@@ -1,0 +1,121 @@
+/// Cell addresses and the fixed 4x4 geometry.
+///
+/// An address is a nominal `(row & col)` pair rather than a packed integer:
+/// this host tier has no division, so `row * cols + col` could be built but
+/// never taken apart again.
+module sheet/addr;
+
+import elab/control(if);
+import elab/match(match);
+import sheet/list(List, cons, nil, one);
+import sheet/list(append);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub newtype Addr : I32 & I32 { pub constructor at; pub projector parts }
+
+pub fn make_addr(row: I32, col: I32) -> Addr { Addr.at((row, col)) }
+
+pub fn row_of(a: Addr) -> I32 { let .(row: I32, _col: I32) = a.>Addr.parts; row }
+
+pub fn col_of(a: Addr) -> I32 { let .(_row: I32, col: I32) = a.>Addr.parts; col }
+
+pub fn addr_eq(a: Addr, b: Addr) -> Bool {
+  if! eq_i32(row_of(a), row_of(b)) {
+    eq_i32(col_of(a), col_of(b))
+  } else {
+    .f
+  }
+}
+
+pub fn rows() -> I32 { 4 }
+
+pub fn cols() -> I32 { 4 }
+
+pub fn cell_count() -> I32 { 16 }
+
+pub fn in_grid(a: Addr) -> Bool {
+  if! lt_i32(row_of(a), 0) {
+    .f
+  } else if! leq_i32(rows(), row_of(a)) {
+    .f
+  } else if! lt_i32(col_of(a), 0) {
+    .f
+  } else {
+    lt_i32(col_of(a), cols())
+  }
+}
+
+pub fn col_letter(col: I32) -> String {
+  if! eq_i32(col, 0) {
+    "A"
+  } else if! eq_i32(col, 1) {
+    "B"
+  } else if! eq_i32(col, 2) {
+    "C"
+  } else if! eq_i32(col, 3) {
+    "D"
+  } else {
+    "?"
+  }
+}
+
+/// `(0, 1)` prints as `B1`.
+pub fn addr_name(a: Addr) -> String {
+  string_concat(col_letter(col_of(a)), int_to_string(add_i32(row_of(a), 1)))
+}
+
+/// Every address, row-major. The canonical order: the grid renders in it, the
+/// ready queue is seeded in it, a dirty set is reported in it — nothing
+/// downstream has to sort.
+rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
+  if! lt_i32(row, 0) {
+    acc
+  } else if! lt_i32(col, 0) {
+    rec addrs_onto(sub_i32(row, 1), sub_i32(cols(), 1), acc)
+  } else {
+    rec addrs_onto(row, sub_i32(col, 1), cons(make_addr(row, col), acc))
+  }
+}
+
+pub fn all_addrs() -> List(Addr) {
+  addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil(Addr, ()))
+}
+
+pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
+  match! xs.>List.unpack {
+    (
+      , .(head: Addr, rest: List(Addr)) {
+          if! addr_eq(head, a) {
+            .t
+          } else {
+            rec mem(rest, a)
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}
+
+/// Precedent sets are built with this, so a formula naming the same cell
+/// twice still counts as one graph edge.
+pub fn add_unique(xs: List(Addr), a: Addr) -> List(Addr) {
+  if! mem(xs, a) {
+    xs
+  } else {
+    append(xs, one(a))
+  }
+}
+
+/// Union `ys` into `xs`, keeping the order the two lists already have.
+pub rec(loop) fn add_all(xs: List(Addr), ys: List(Addr)) -> List(Addr) {
+  match! ys.>List.unpack {
+    (
+      , .(head: Addr, rest: List(Addr)) { rec add_all(add_unique(xs, head), rest) }
+      , .(_empty: .) { xs }
+      )
+  }
+}

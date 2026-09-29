@@ -1,0 +1,68 @@
+/// The fixture reader: everything this package learns about the world comes
+/// through here.
+///
+/// The training corpus arrives one word per line, with a blank line closing
+/// each phrase and the sentinel `END` closing the corpus. The host tier can
+/// compare and concatenate whole strings but offers no string slicing, so the
+/// fixture supplies already-tokenized words.
+module ballad/fixture;
+
+import ballad/list(List, cons, nil, reverse);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/fmt(string_to_int);
+import testapi/io(read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// The line that closes the training corpus.
+fn sentinel() -> String { "END" }
+
+fn is_blank(s: String) -> Bool { string_eq(s, "") }
+
+/// Read one header line as a base-10 integer, falling back on EOF or on
+/// unparseable text. The checked-in fixture is well formed, so the fallback
+/// only guards a short or malformed one.
+pub fn read_int(fallback: I32) -> I32 {
+  match! read_ascii_line() {
+    (
+      , .(s: String) {
+          match! string_to_int(s) {
+            (.(n: I32) { n }, .(_bad: .) { fallback })
+          }
+        }
+      , .(_eof: .) { fallback }
+      )
+  }
+}
+
+/// Close the phrase under construction. `words` is accumulated backwards, so
+/// a non-empty phrase is reversed on the way out; a blank run of lines closes
+/// nothing.
+fn close_phrase(words: List(String), acc: List(List(String))) -> List(List(String)) {
+  match! words.>List.un_list {
+    (.(_head: String, _rest: List(String)) { cons(reverse(words), acc) }, .(_empty: .) { acc })
+  }
+}
+
+rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(List(String)) {
+  match! read_ascii_line() {
+    (
+      , .(s: String) {
+          if! string_eq(s, sentinel()) {
+            reverse(close_phrase(words, acc))
+          } else if! is_blank(s) {
+            rec read_onto(nil(String, ()), close_phrase(words, acc))
+          } else {
+            rec read_onto(cons(s, words), acc)
+          }
+        }
+      , .(_eof: .) { reverse(close_phrase(words, acc)) }
+      )
+  }
+}
+
+/// The training corpus: one phrase per blank-line-delimited group, each a
+/// list of words in reading order.
+pub fn read_phrases() -> List(List(String)) { read_onto(nil(String, ()), nil(List(String), ())) }

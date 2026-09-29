@@ -1,0 +1,7 @@
+module testapi/main;
+
+import graph_routes/render(summary);
+import graph_routes/search(run);
+import testapi/io(print);
+
+pub fn main() -> . { print(summary(run())) }

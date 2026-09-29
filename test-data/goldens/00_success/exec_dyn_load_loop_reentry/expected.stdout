@@ -1,0 +1,2 @@
+sum_to(5) == 15: PASS
+grid_sum(4) == 65: PASS

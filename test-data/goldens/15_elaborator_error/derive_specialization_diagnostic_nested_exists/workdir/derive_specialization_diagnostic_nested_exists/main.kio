@@ -1,0 +1,18 @@
+module derive_specialization_diagnostic_nested_exists/main;
+
+import elab/derive(derive);
+import testapi(I32, Int);
+
+host fn zero_i32() -> I32;
+
+host fn zero_int() -> Int;
+
+fn base() -> I32 { zero_i32() }
+
+fn later(value: Int) -> I32 { zero_i32() }
+
+fn unused[Unused]() -> Int { zero_int() }
+
+fn bad() -> I32 { derive!((base, later, unused), I32) }
+
+pub fn main() -> . { () }

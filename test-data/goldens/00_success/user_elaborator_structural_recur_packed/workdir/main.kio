@@ -1,0 +1,9 @@
+module main;
+
+import elab(flattened_direct, packed_bare_hof, packed_indirect);
+
+fn direct_witness() -> . { flattened_direct!(()) }
+
+fn indirect_witness() -> . { packed_indirect!(()) }
+
+fn bare_hof_witness() -> . { packed_bare_hof!(()) }

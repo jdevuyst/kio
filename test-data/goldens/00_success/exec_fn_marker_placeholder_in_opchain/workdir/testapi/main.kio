@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+op _ & _ { impl add_i32 }
+
+pub op _ ## _ { impl mul_i32 }
+
+fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
+
+pub fn main() -> . {
+  // Formatting preserves numbered references used as operator operands.
+  let .(amp_lambda: I32 -> I32) = .x. { x1 & 100 };
+  let .(hash_lambda: I32 -> I32) = .x. { x1 ## 100 };
+  print(i32_to_string(apply(amp_lambda, 1)));
+  print("\n");
+  print(i32_to_string(apply(hash_lambda, 3)))
+}

@@ -1,0 +1,96 @@
+/// Rows, tables, and relations.
+///
+/// A cell binds a column to a datum, a row is the association list of its
+/// cells, a table is a list of rows, and a relation is a table together
+/// with the column list that names its shape. Every operator in the
+/// engine consumes relations and produces one, so the shape of an
+/// intermediate result travels with its rows.
+module query/row;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import query/list as list;
+import query/schema as schema;
+import query/value as value;
+import testapi(Bool, I32, String);
+import testapi/iter(loop);
+
+pub labels Cell = { cell_col: schema.Col, cell_val: value.Value };
+
+pub type Row = list.List(Cell);
+
+pub type Table = list.List(Row);
+
+pub labels Relation = { rel_cols: schema.Col_list, rel_rows: Table };
+
+pub labels Maybe_value = { some_value: value.Value } | { no_value: . };
+
+pub fn cell(c: schema.Col, v: value.Value) -> Cell { {cell_col = c, cell_val = v} }
+
+pub fn cell_col_of(c: Cell) -> schema.Col { c.?{cell_col} }
+
+pub fn cell_val_of(c: Cell) -> value.Value { c.?{cell_val} }
+
+pub fn relation(cols: schema.Col_list, rows: Table) -> Relation {
+  {rel_cols = cols, rel_rows = rows}
+}
+
+pub fn rel_cols_of(r: Relation) -> schema.Col_list { r.?{rel_cols} }
+
+pub fn rel_rows_of(r: Relation) -> Table { r.?{rel_rows} }
+
+fn some_value(v: value.Value) -> Maybe_value { {some_value = v}.>widen_sum!(Maybe_value) }
+
+fn no_value() -> Maybe_value { {no_value=}.>widen_sum!(Maybe_value) }
+
+/// The association-list lookup every operator is built on: walk the
+/// row's cells until one carries the wanted column.
+pub rec(loop) fn row_get(row: Row, c: schema.Col) -> Maybe_value {
+  match! row.>list.List.un_list {
+    (
+      , .(head: Cell, rest: Row) {
+          if! schema.col_eq(cell_col_of(head), c) {
+            some_value(cell_val_of(head))
+          } else {
+            rec row_get(rest, c)
+          }
+        }
+      , .(_empty: .) { no_value() }
+      )
+  }
+}
+
+/// The integer reading of a column in a row. An absent column and a text
+/// datum both answer `no_int`, so every comparison in the engine has
+/// exactly one shape to handle.
+pub fn row_int(row: Row, c: schema.Col) -> value.Maybe_int {
+  match! row_get(row, c) {
+    (.(v: Some_value) { value.value_int(v.?{some_value}) }, .(_none: No_value) { value.no_int() })
+  }
+}
+
+/// The datum a projection or a report reads out of a row. A column the
+/// row does not carry renders as `?`: the engine shows the hole rather
+/// than inventing a value for it.
+pub fn row_cell(row: Row, c: schema.Col) -> value.Value {
+  match! row_get(row, c) {
+    (.(v: Some_value) { v.?{some_value} }, .(_none: No_value) { value.text_val("?", 1) })
+  }
+}
+
+/// A joined row is the concatenation of its two sides. The catalog gives
+/// every base table its own column names, so no cell is ever shadowed.
+pub fn row_merge(left: Row, right: Row) -> Row { list.append(left, right) }
+
+/// Restrict a row to the named columns, in the order they were named.
+pub rec(loop) fn project_row(cols: schema.Col_list, row: Row) -> Row {
+  match! cols.>list.List.un_list {
+    (
+      , .(c: schema.Col, rest: schema.Col_list) {
+          list.cons(cell(c, row_cell(row, c)), rec(cont) project_row(rest, row))
+        }
+      , .(_empty: .) { list.nil(Cell, ()) }
+      )
+  }
+}

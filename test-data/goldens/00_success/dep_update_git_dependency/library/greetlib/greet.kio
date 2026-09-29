@@ -1,0 +1,8 @@
+module greet;
+
+// Commit-A behavior: return the FIRST of two like-typed values. The
+// run.sh advances `main` to a commit B whose `marker` returns the SECOND
+// instead (a distinct tree, hence a distinct deterministic SHA). The
+// consumer pins commit A first, then `kio dep update` re-pins to B; the
+// build+run proves the re-pin changed which commit's `marker` is used.
+pub fn marker[A](before: A, _after: A) -> A { before }

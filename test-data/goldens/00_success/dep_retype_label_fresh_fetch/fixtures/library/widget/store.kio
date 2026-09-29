@@ -1,0 +1,7 @@
+module store;
+
+pub labels { foo: . };
+
+pub labels Later = { foo: _ };
+
+pub fn accept_later(value: Later) -> . { value.?{foo} }

@@ -1,0 +1,194 @@
+/// Everything the program prints.
+///
+/// The transcript is meant to be read on its own: the buildings, the events in
+/// the order the sweep visits them, the sweep itself with the active multiset
+/// laid open at every step, the key points, and the two areas with their
+/// verdict. A reader who never opens the source should be able to check the
+/// answer against the transcript by eye.
+module skyline/report;
+
+import elab/control(if);
+import elab/match(match);
+import skyline/city as city;
+import skyline/events as events;
+import skyline/list as lst;
+import skyline/multiset as ms;
+import skyline/sweep as sweep;
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_len);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+/// The host offers one string primitive and this module does nothing but glue
+/// strings together, so it binds concatenation to an infix chain. The right
+/// slot is recursive, so `a ++ b ++ c` folds right — concatenation is
+/// associative, so the grouping is invisible.
+op _ ++ __ { impl cat }
+
+fn line(text: String) -> . { print(text ++ "\n") }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+/// Right-align a number in a two-character field. Every coordinate and height
+/// in the city is one or two digits, so a single leading space squares the
+/// columns up — the host surface carries no string-length primitive to pad
+/// with, and none is needed.
+fn num2(n: I32) -> String {
+  if! leq_i32(n, 9) {
+    " " ++ num(n)
+  } else {
+    num(n)
+  }
+}
+
+pub fn print_header() -> . { line("skyline_silhouette v1") }
+
+fn building_row(b: city.Building) -> String {
+  let span = "[" ++ num2(city.left_of(b)) ++ "," ++ num2(city.right_of(b)) ++ ")";
+  "  " ++ city.name_of(b) ++ "  " ++ span ++ "  h=" ++ num2(city.height_of(b))
+}
+
+rec(loop) fn each_building(bs: lst.List(city.Building)) -> . {
+  match! bs.>lst.List.un_list {
+    (
+      , .(b: city.Building, rest: lst.List(city.Building)) {
+          line(building_row(b));
+          rec each_building(rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_buildings(bs: lst.List(city.Building)) -> . {
+  line("");
+  line("buildings (" ++ num(lst.length(bs)) ++ ")  span [left,right), height");
+  each_building(bs)
+}
+
+fn event_row(e: events.Event) -> String {
+  let edge = "  " ++ num2(events.at_of(e)) ++ "  " ++ events.tag_of(e);
+  edge ++ "  " ++ events.owner_of(e) ++ "  h=" ++ num2(events.level_of(e))
+}
+
+rec(loop) fn each_event(es: lst.List(events.Event)) -> . {
+  match! es.>lst.List.un_list {
+    (
+      , .(e: events.Event, rest: lst.List(events.Event)) {
+          line(event_row(e));
+          rec each_event(rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_events(es: lst.List(events.Event)) -> . {
+  line("");
+  line("events (" ++ num(lst.length(es)) ++ ")  in sweep order");
+  each_event(es)
+}
+
+/// The active multiset, tallest roof first.
+rec(loop) fn each_height(xs: ms.Active, acc: String, first: Bool) -> String {
+  match! xs.>lst.List.un_list {
+    (
+      , .(h: I32, rest: ms.Active) {
+          let .(gap: String) =
+            if! first {
+              ""
+            } else {
+              ","
+            };
+          rec each_height(rest, acc ++ gap ++ num(h), .f)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn show_held(xs: ms.Active) -> String { "[" ++ each_height(xs, "", .t) ++ "]" }
+
+fn mark(emitted: Bool) -> String {
+  if! emitted {
+    "key"
+  } else {
+    "---"
+  }
+}
+
+fn step_row(s: sweep.Step) -> String {
+  let edge = "  " ++ num2(sweep.pos_of(s)) ++ "  " ++ sweep.tag_of(s);
+  let peak = "  top=" ++ num2(sweep.top_of(s)) ++ "  " ++ mark(sweep.emitted_of(s));
+  edge ++ peak ++ "  " ++ show_held(sweep.held_of(s))
+}
+
+rec(loop) fn each_step(steps: lst.List(sweep.Step)) -> . {
+  match! steps.>lst.List.un_list {
+    (
+      , .(s: sweep.Step, rest: lst.List(sweep.Step)) { line(step_row(s)); rec each_step(rest) }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn print_sweep(steps: lst.List(sweep.Step)) -> . {
+  line("");
+  line("sweep  position, edge, resulting height, key point?, active heights");
+  each_step(steps)
+}
+
+fn show_point(p: sweep.Point) -> String {
+  "(" ++ num(sweep.x_of(p)) ++ "," ++ num(sweep.y_of(p)) ++ ")"
+}
+
+rec(loop) fn each_point(ps: lst.List(sweep.Point), acc: String, first: Bool) -> String {
+  match! ps.>lst.List.un_list {
+    (
+      , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+          let .(gap: String) =
+            if! first {
+              ""
+            } else {
+              " "
+            };
+          rec each_point(rest, acc ++ gap ++ show_point(p), .f)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn print_skyline(ps: lst.List(sweep.Point)) -> . {
+  line("");
+  line("skyline (" ++ num(lst.length(ps)) ++ " key points)");
+  line("  " ++ each_point(ps, "", .t))
+}
+
+rec(loop) fn each_column(grid: Array(I32), col: I32, acc: String) -> String {
+  if! leq_i32(array_len(grid), col) {
+    acc
+  } else {
+    rec each_column(grid, add_i32(col, 1), acc ++ " " ++ num(array_get(grid, col)))
+  }
+}
+
+/// The two areas and the two verdicts. `areas agree` is the load-bearing check
+/// — the sweep's answer against the raster's. `points advance` catches the one
+/// mistake the areas cannot see: a key point emitted twice at one position
+/// spans no width, so it costs no area, but it means the silhouette dipped and
+/// bounced back through an edge two buildings share.
+pub fn print_area(grid: Array(I32), swept: I32, painted: I32, same: Bool, forward: Bool) -> . {
+  line("");
+  line("area");
+  line("  columns (" ++ num(array_len(grid)) ++ "):" ++ each_column(grid, 0, ""));
+  line("  from key points: " ++ num(swept));
+  line("  from raster:     " ++ num(painted));
+  line("  areas agree:     " ++ bool_to_string(same));
+  line("  points advance:  " ++ bool_to_string(forward))
+}

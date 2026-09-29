@@ -1,0 +1,5 @@
+module provider;
+
+host type Provider_value;
+
+host fn provider_identity(value: Provider_value) -> Provider_value;

@@ -1,0 +1,6 @@
+module pkg;
+
+/// Brackets `[` and `]` are literal code.
+/// Quoted `` [`missing`] `` and `` [`@signature missing`] `` are examples.
+/// The real [`identity`] reference still resolves.
+pub fn identity(x: .) -> . { x }

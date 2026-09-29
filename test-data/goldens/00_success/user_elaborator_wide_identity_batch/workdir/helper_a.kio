@@ -1,0 +1,69 @@
+module helper_a;
+
+import __comptime__;
+
+pure fn step0[A](value: A) -> A { value }
+
+pure fn step1[A](value: A) -> A { step0(value) }
+
+pure fn step2[A](value: A) -> A { step1(value) }
+
+pure fn step3[A](value: A) -> A { step2(value) }
+
+pure fn step4[A](value: A) -> A { step3(value) }
+
+pure fn step5[A](value: A) -> A { step4(value) }
+
+pure fn step6[A](value: A) -> A { step5(value) }
+
+pure fn step7[A](value: A) -> A { step6(value) }
+
+pure fn step8[A](value: A) -> A { step7(value) }
+
+pure fn step9[A](value: A) -> A { step8(value) }
+
+pure fn step10[A](value: A) -> A { step9(value) }
+
+pure fn step11[A](value: A) -> A { step10(value) }
+
+pure fn step12[A](value: A) -> A { step11(value) }
+
+pure fn step13[A](value: A) -> A { step12(value) }
+
+pure fn step14[A](value: A) -> A { step13(value) }
+
+pure fn step15[A](value: A) -> A { step14(value) }
+
+pure fn step16[A](value: A) -> A { step15(value) }
+
+pure fn step17[A](value: A) -> A { step16(value) }
+
+pure fn step18[A](value: A) -> A { step17(value) }
+
+pure fn step19[A](value: A) -> A { step18(value) }
+
+pure fn step20[A](value: A) -> A { step19(value) }
+
+pure fn step21[A](value: A) -> A { step20(value) }
+
+pure fn step22[A](value: A) -> A { step21(value) }
+
+pure fn step23[A](value: A) -> A { step22(value) }
+
+pure fn step24[A](value: A) -> A { step23(value) }
+
+pure fn step25[A](value: A) -> A { step24(value) }
+
+pure fn step26[A](value: A) -> A { step25(value) }
+
+pure fn step27[A](value: A) -> A { step26(value) }
+
+pure fn step28[A](value: A) -> A { step27(value) }
+
+pure fn step29[A](value: A) -> A { step28(value) }
+
+pure fn step30[A](value: A) -> A { step29(value) }
+
+pub pure fn retain_a(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ {
+  step30(value)
+}

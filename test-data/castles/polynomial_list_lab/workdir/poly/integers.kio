@@ -1,0 +1,74 @@
+/// Exact-division helpers for the fixed host-arithmetic fixtures.
+module poly/integers;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
+import testapi/iter(loop);
+
+fn negate(a: I32) -> I32 { sub_i32(0, a) }
+
+pub fn abs(a: I32) -> I32 {
+  if! lt_i32(a, 0) {
+    negate(a)
+  } else {
+    a
+  }
+}
+
+fn signs_differ(a: I32, b: I32) -> Bool {
+  if! lt_i32(a, 0) {
+    if! lt_i32(b, 0) {
+      .f
+    } else {
+      .t
+    }
+  } else {
+    lt_i32(b, 0)
+  }
+}
+
+// The fixture calls pass strictly positive magnitudes. Each turn removes one whole
+// `b` from `a`; when less than `b` is left, the division was exact exactly when
+// nothing is left.
+rec(loop) fn subtract_out(n: I32, a: I32, b: I32) -> I32 | . {
+  if! lt_i32(a, b) {
+    if! eq_i32(a, 0) {
+      widen_sum!(n, I32 | .)
+    } else {
+      widen_sum!((), I32 | .)
+    }
+  } else {
+    rec subtract_out(add_i32(n, 1), sub_i32(a, b), b)
+  }
+}
+
+/// For the small fixture values, `exact_div(a, b)` is `a / b` when `b` divides `a`
+/// with no remainder, and `()` otherwise — including `b = 0`. The host supplies no
+/// division and no modulo, so the quotient is counted out by repeated subtraction of
+/// magnitudes and the sign is reapplied afterwards. Inexact is a domain answer here,
+/// never a rounding decision.
+pub fn exact_div(a: I32, b: I32) -> I32 | . {
+  if! eq_i32(b, 0) {
+    widen_sum!((), I32 | .)
+  } else {
+    let flip = signs_differ(a, b);
+    let magnitude = subtract_out(0, abs(a), abs(b));
+    match! magnitude {
+      (
+        , .(k: I32) {
+            let signed =
+              if! flip {
+                negate(k)
+              } else {
+                k
+              };
+            widen_sum!(signed, I32 | .)
+          }
+        , .(_inexact: .) { widen_sum!((), I32 | .) }
+        )
+    }
+  }
+}

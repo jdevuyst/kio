@@ -1,0 +1,6 @@
+module widget/feature/selective;
+
+import widget/feature/store(identity);
+import widget/feature/target(Token);
+
+pub(widget/feature) fn keep(value: Token) -> Token { identity(value) }

@@ -1,0 +1,37 @@
+module main;
+
+import elab/algebraic_elaborators(align);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// R-Widen-Sum: `A → A | B`. The source `A`'s payload is unchanged
+// by the widening — `align!` only adds an unreachable target arm
+// `B`. Payload-preserving because no slot of `A`'s payload is
+// dropped or duplicated.
+fn widen(a: A) -> A | B { align!(a) }
+
+// R-Collapse-Sum: `A | A → A`. Two like-typed source arms collapse
+// onto one target arm. The payload (the `A` value) survives
+// unchanged through `__either__(s, id, id)`. Like-typed
+// identification, not projection — no payload component is dropped.
+fn collapse(s: A | A) -> A { align!(s) }
+
+// R-Widen-Sum and R-Collapse-Sum composed in a single coercion:
+// `A | A | B → A | B | C`. The two source `A` arms collapse
+// onto the target's single `A`; the source `B` arm matches the
+// target's `B`; the target's `C` arm is widening slack.
+fn widen_and_collapse(s: A | A | B) -> A | B | C { align!(s) }
+
+// R-Comm + payload preservation across distinct sum-arm
+// payloads: `(A & B) | (B & A) → (A & B)`. The source's two arms
+// are products with the same multiset of slot types; R-Comm
+// rearranges the second arm to match the first, then
+// R-Collapse-Sum identifies the now-like arms. Each arm's payload
+// survives — `(a, b)` from arm 1 and `(b', a')` from arm 2 both
+// become `(a, b)` / `(a', b')` shaped — the slot-order swap is
+// in-place at the product axis, no projection.
+fn rearrange_then_collapse(s: (A & B) | (B & A)) -> A & B { align!(s) }

@@ -1,0 +1,27 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn nil() -> String { "" }
+
+// Dict-style cons: each entry contributes key and value to the
+// accumulator. The fold composes "<k1>=<v1>;<k2>=<v2>;…" inline.
+fn cons((k: String, v: String), acc: String) -> String {
+  k.>string_concat("=").>string_concat(v).>string_concat(";").>string_concat(acc)
+}
+
+fn entry(key: String, value: String) -> String & String { (key, value) }
+
+op _ => _ { impl entry }
+
+varop [% %] { foldr cons nil }
+
+pub fn main() -> . {
+  print([% "a" => "1", "b" => "2", "c" => "3" %]);
+  print("\n");
+  print([% "solo" => "0" %]);
+  print("\n");
+  print([% %])
+}

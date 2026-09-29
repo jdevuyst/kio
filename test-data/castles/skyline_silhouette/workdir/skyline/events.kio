@@ -1,0 +1,125 @@
+/// The edge events, and the order the sweep must visit them in.
+///
+/// Every building contributes two events: its left edge, which admits the
+/// building's height to the active multiset, and its right edge, which
+/// withdraws one occurrence of it. Getting the *order* of those events right is
+/// most of the algorithm — `event_leq` is where the degenerate cases are won or
+/// lost.
+module skyline/events;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import skyline/city as city;
+import skyline/list as lst;
+import skyline/logic as logic;
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/iter(loop);
+
+/// Which edge of a building an event stands on.
+pub labels Kind = { enter: . } | { leave: . };
+
+pub fn enter_kind() -> Kind { {enter=}.>widen_sum!(Kind) }
+
+pub fn leave_kind() -> Kind { {leave=}.>widen_sum!(Kind) }
+
+pub fn is_enter(k: Kind) -> Bool {
+  match! k {
+    (.(_e: Enter) { .t }, .(_l: Leave) { .f })
+  }
+}
+
+pub fn kind_name(k: Kind) -> String {
+  match! k {
+    (.(_e: Enter) { "enter" }, .(_l: Leave) { "leave" })
+  }
+}
+
+/// One edge of one building: the position it stands at, which edge it is, how
+/// tall its building is, and which building it belongs to.
+pub labels Event = { at: I32, edge: Kind, level: I32, owner: String };
+
+pub fn event(at: I32, edge: Kind, level: I32, owner: String) -> Event { {at, edge, level, owner} }
+
+pub fn at_of(e: Event) -> I32 { e.?{at} }
+
+pub fn edge_of(e: Event) -> Kind { e.?{edge} }
+
+pub fn level_of(e: Event) -> I32 { e.?{level} }
+
+pub fn owner_of(e: Event) -> String { e.?{owner} }
+
+/// The edge's name, for the trace.
+pub fn tag_of(e: Event) -> String { kind_name(edge_of(e)) }
+
+fn left_edge(b: city.Building) -> Event {
+  event(city.left_of(b), enter_kind(), city.height_of(b), city.name_of(b))
+}
+
+fn right_edge(b: city.Building) -> Event {
+  event(city.right_of(b), leave_kind(), city.height_of(b), city.name_of(b))
+}
+
+/// The sweep order, and the three tie-breaks that make it correct.
+///
+/// Events sort by position first. At one position, every left edge is taken
+/// before every right edge — that is what stops the skyline from dipping
+/// through an edge two equally tall buildings share, because the arriving
+/// height is already in the multiset before the departing one is withdrawn.
+///
+/// The two remaining ties keep a single position from emitting two key points.
+/// Among left edges the taller one goes first, so the tallest height is
+/// installed before any shorter arrival can raise the peak on its own. Among
+/// right edges the shorter one goes first, so every departure that cannot
+/// lower the peak happens before the one that can.
+pub fn event_leq(a: Event, b: Event) -> Bool {
+  if! logic.eq(at_of(a), at_of(b)) {
+    let a_enters = is_enter(edge_of(a));
+    let b_enters = is_enter(edge_of(b));
+    if! logic.and(a_enters, b_enters) {
+      leq_i32(level_of(b), level_of(a))
+    } else if! logic.or(a_enters, b_enters) {
+      a_enters
+    } else {
+      leq_i32(level_of(a), level_of(b))
+    }
+  } else {
+    leq_i32(at_of(a), at_of(b))
+  }
+}
+
+/// Ordered insert: `e` lands in front of the first event it precedes.
+pub rec(loop) fn insert(e: Event, es: lst.List(Event)) -> lst.List(Event) {
+  match! es.>lst.List.un_list {
+    (
+      , .(head: Event, rest: lst.List(Event)) {
+          if! event_leq(e, head) {
+            lst.cons(e, lst.cons(head, rest))
+          } else {
+            lst.cons(head, rec(cont) insert(e, rest))
+          }
+        }
+      , .(_empty: .) { lst.cons(e, lst.nil(Event, ())) }
+      )
+  }
+}
+
+rec(loop) {
+  /// Both edges of every building, insertion-sorted into one sweep order.
+  pub fn schedule(bs: lst.List(city.Building)) -> lst.List(Event) {
+    rec collect(bs, lst.nil(Event, ()))
+  };
+  fn collect(bs: lst.List(city.Building), acc: lst.List(Event)) -> lst.List(Event) {
+    match! bs.>lst.List.un_list {
+      (
+        , .(b: city.Building, rest: lst.List(city.Building)) {
+            let opened = insert(left_edge(b), acc);
+            let closed = insert(right_edge(b), opened);
+            rec collect(rest, closed)
+          }
+        , .(_empty: .) { acc }
+        )
+    }
+  }
+}

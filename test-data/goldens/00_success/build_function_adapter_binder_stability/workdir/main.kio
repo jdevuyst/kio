@@ -1,0 +1,17 @@
+module main;
+
+type Lens[S][A] = (S -> A) & ((A & S) -> S);
+
+fn fst_lens[A][B]() -> Lens(A & B, A) {
+  let view = .((value: A, _other: B)) -> A { value };
+  let set = .(new_value: A, (_old_value: A, other: B)) -> A & B { (new_value, other) };
+  (view, set)
+}
+
+fn id_lens[A]() -> Lens(A, A) {
+  let view = .(value: A) -> A { value };
+  let set = .(new_value: A, _old_value: A) -> A { new_value };
+  (view, set)
+}
+
+pub fn main() -> . { () }

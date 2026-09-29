@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/io(print);
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+fn label[A](value: Box(A)) -> String { "matched\n" }
+
+fn handle(value: Box(I32) | Box(String)) -> String {
+  match! value {
+    .[A](boxed: Box(A)) { () }
+  }
+}
+
+pub fn main() -> . {
+  print(handle(widen_sum!(Box.box(42))));
+  print(handle(widen_sum!(Box.box("text"))))
+}

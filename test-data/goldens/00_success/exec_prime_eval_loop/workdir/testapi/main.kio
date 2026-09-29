@@ -1,0 +1,101 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// A minimal higher-order-host-fn guest the dyn-load-prime differential runs
+// through dyn_load_prime's interpreter. `loop`'s `step` is an interpreted closure,
+// so the interpreter must marshal it to the host's loop driver and re-enter
+// per iteration — the focused regression for higher-order host fns. Running
+// `main` through `prime_eval` must agree with compile-and-run.
+fn line(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+// Sum 1 + 2 + … + n with `loop` over an `(i, acc)` state. The step is a
+// closure `loop` calls each iteration; the interpreter marshals it to the
+// host's loop driver, which re-enters the interpreter to run it.
+fn sum_to(n: I32) -> I32 {
+  loop(
+    , .(st: I32 & I32) {
+        match! st {
+          .(i: I32, acc: I32) {
+            if! leq_i32(i, 0(I32)) {
+              widen_sum!(acc, (I32 & I32) | I32)
+            } else {
+              widen_sum!((sub_i32(i, 1(I32)), add_i32(acc, i)), (I32 & I32) | I32)
+            }
+          }
+        }
+      }
+    , (n, 0(I32))
+    )
+}
+
+// Sum `row * 2` over rows n, n-1, …, 1 — a second `loop`-with-closure, with a
+// host `mul_i32` inside the step, so the bridged step does real host work each
+// re-entry.
+fn double_then_sum(n: I32) -> I32 {
+  loop(
+    , .(st: I32 & I32) {
+        match! st {
+          .(i: I32, acc: I32) {
+            if! leq_i32(i, 0(I32)) {
+              widen_sum!(acc, (I32 & I32) | I32)
+            } else {
+              widen_sum!((sub_i32(i, 1(I32)), add_i32(acc, mul_i32(i, 2(I32)))), (I32 & I32) | I32)
+            }
+          }
+        }
+      }
+    , (n, 0(I32))
+    )
+}
+
+fn row_sum(row: I32) -> I32 {
+  loop(
+    , .(st: I32 & I32) {
+        match! st {
+          .(col: I32, acc: I32) {
+            if! leq_i32(col, 0(I32)) {
+              widen_sum!(acc, (I32 & I32) | I32)
+            } else {
+              widen_sum!((sub_i32(col, 1(I32)), add_i32(acc, mul_i32(row, col))), (I32 & I32) | I32)
+            }
+          }
+        }
+      }
+    , (row, 0(I32))
+    )
+}
+
+fn grid_sum(n: I32) -> I32 {
+  loop(
+    , .(st: I32 & I32) {
+        match! st {
+          .(row: I32, acc: I32) {
+            if! leq_i32(row, 0(I32)) {
+              widen_sum!(acc, (I32 & I32) | I32)
+            } else {
+              widen_sum!((sub_i32(row, 1(I32)), add_i32(acc, row_sum(row))), (I32 & I32) | I32)
+            }
+          }
+        }
+      }
+    , (n, 0(I32))
+    )
+}
+
+pub fn main() -> . {
+  line("sum_to(5) = "(String), sum_to(5(I32)));
+  line("sum_to(10) = "(String), sum_to(10(I32)));
+  line("double_then_sum(4) = "(String), double_then_sum(4(I32)));
+  line("grid_sum(4) = "(String), grid_sum(4(I32)))
+}

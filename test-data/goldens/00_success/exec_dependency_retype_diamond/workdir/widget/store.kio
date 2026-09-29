@@ -1,0 +1,12 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+import testapi as _rehost_hegfhdhegbhagj;
+
+pub type I32 = _rehost_hegfhdhegbhagj.I32;
+
+pub type Tag = _rehost_gdgphcgfcphdhegphcgf.Tag;
+
+pub fn make_tag(n: I32) -> Tag { Tag.mk(n) }
+
+pub fn tag_val(t: Tag) -> I32 { Tag.un(t) }

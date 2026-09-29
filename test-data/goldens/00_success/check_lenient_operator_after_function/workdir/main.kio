@@ -1,0 +1,7 @@
+module main;
+
+fn op(left: ., right: .) -> . { left }
+
+op ( _ ? _ ) { impl op }
+
+pub fn run() -> . { () ? () }

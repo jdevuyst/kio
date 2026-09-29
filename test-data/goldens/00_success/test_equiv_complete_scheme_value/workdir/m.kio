@@ -1,0 +1,8 @@
+module m;
+
+fn id[A](value: A) -> A { value }
+
+equiv complete_scheme_value() {
+  id;
+  id
+}

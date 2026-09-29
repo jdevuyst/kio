@@ -1,0 +1,5 @@
+module testapi/main;
+
+host fn staged[A](value: A)[B](unit: .) -> .;
+
+pub fn main() -> . { staged(., (), ., ()) }

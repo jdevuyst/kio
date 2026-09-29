@@ -1,0 +1,38 @@
+module testapi/main;
+
+import fold/fixtures as fixtures;
+import fold/reconstruct as reconstruct;
+import fold/report as report;
+import fold/solver as solver;
+import testapi(I32, String);
+import testapi/array as array;
+import testapi/io as io;
+
+fn audit_examples() -> . {
+  report.inspect("crossed-pairs", fixtures.crossing_choice(), fixtures.crossed_partners(), 1, 2);
+  let incompatible = array.array_make_filled(4, -1);
+  fixtures.pair(incompatible, 0, 3);
+  report.inspect("incompatible-bases", fixtures.unpairable(), incompatible, 1, 1);
+  let adjacent = array.array_make_filled(2, -1);
+  fixtures.pair(adjacent, 0, 1);
+  report.inspect("short-loop", fixtures.adjacent(), adjacent, 2, 1);
+  let valid = reconstruct.partners(solver.solve(fixtures.hairpin(), 2));
+  let asymmetric = array.array_clone(valid);
+  array.array_set(asymmetric, 6, -1);
+  report.inspect("one-sided-pair", fixtures.hairpin(), asymmetric, 2, 2);
+  report.inspect("wrong-score", fixtures.hairpin(), valid, 2, 3)
+}
+
+pub fn main() -> . {
+  io.print("RNA pairing combinatorial toy; not biological prediction\n");
+  io.print("AU/UA/GC/CG pairs score one; min-loop counts enclosed positions\n");
+  report.run("empty", fixtures.empty(), 2, 0);
+  report.run("unpairable", fixtures.unpairable(), 2, 0);
+  report.run("hairpin", fixtures.hairpin(), 2, 2);
+  report.run("crossing-choice", fixtures.crossing_choice(), 1, 1);
+  report.run("nested", fixtures.nested(), 2, 4);
+  report.run("separate-stems", fixtures.separate_stems(), 2, 4);
+  report.run("competing-blocks", fixtures.competing_blocks(), 2, 3);
+  report.run("loop-restricted", fixtures.hairpin(), 5, 1);
+  audit_examples()
+}

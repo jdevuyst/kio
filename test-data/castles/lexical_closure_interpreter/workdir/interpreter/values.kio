@@ -1,0 +1,29 @@
+module interpreter/values;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import interpreter/syntax as ast;
+import list/core as lists;
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+pub rec labels Value = { number: I32 } | { closure: String & ast.Expr & lists.List(String & Value) };
+
+pub type Environment = lists.List(String & Value);
+
+pub fn integer(n: I32) -> Value { {number = n}.>widen_sum!(Value) }
+
+pub fn capture(parameter: String, body: ast.Expr, environment: Environment) -> Value {
+  {closure = (parameter, body, environment)}.>widen_sum!(Value)
+}
+
+pub fn render(value: Value) -> String {
+  match! value {
+    .(n: Number) { fmt.int_to_string(n.?{number}) };
+    .(f: Closure) {
+      let .(parameter, _body, _environment) = f.?{closure};
+      text.string_concat("<closure ", text.string_concat(parameter, ">"))
+    }
+  }
+}

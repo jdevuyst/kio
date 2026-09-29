@@ -1,0 +1,19 @@
+module testapi/main;
+
+import mathlib/combinator(const_first);
+import mathlib/pair(Pair, dup, first);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through the host-free `mathlib` dependency,
+// pulled in by the local `path` dependency in `mathlib.dep.kio` and
+// re-rooted under the `mathlib/` prefix. `dup` builds a `Pair(String)`
+// (a generic `pub type` from the dependency), `first` projects it back,
+// and `const_first` (from the dependency's second module) drops a
+// second argument — exercising re-rooted generic exports across the
+// package edge.
+pub fn greeting() -> String {
+  const_first(first(dup("dependency works\n"(String))), "discarded\n"(String))
+}
+
+pub fn main() -> . { print(greeting()) }

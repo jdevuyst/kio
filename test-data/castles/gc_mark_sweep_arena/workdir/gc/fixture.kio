@@ -1,0 +1,87 @@
+/// The heap image the collector runs against: a snapshot of a small
+/// interpreter's arena, mid-execution. It is built the way a linker
+/// builds an image -- allocate every object in address order with its
+/// pointer fields left as holes, then patch the pointers once every
+/// address is known -- so no address is written down by hand.
+///
+/// The graph is chosen to be awkward for a collector:
+///
+///   - `left` and `back` point at each other, so a tracer that recursed
+///     into the heap would not terminate;
+///   - `dropped`, `stale` and `orphan` are unreachable, and the first
+///     two point at each other, so reference counting alone would never
+///     free the island;
+///   - `shared` is reached three ways -- through `left`, through `right`
+///     and straight from the second root -- so the tracer meets it more
+///     than once and must not trace it twice;
+///   - `shared` and `orphan` carry immediates only;
+///   - the dead objects sit at the bottom, the middle and near the top,
+///     so compaction has to move every survivor except the first.
+module gc/fixture;
+
+import gc/heap(Image, field_addr, tag_box, tag_frame, tag_pair, tag_vec, {heap_cells}, {heap_roots});
+import gc/slot(imm_cell, ptr_cell);
+import testapi(Array, I32);
+import testapi/array(array_len, array_make_empty, array_push, array_set);
+
+/// A pointer field that is not linked yet. Every hole is overwritten by
+/// `link` before the image is handed out.
+fn hole() -> I32 { imm_cell(0) }
+
+fn alloc1(cells: Array(I32), tag: I32, f0: I32) -> I32 {
+  let addr = array_len(cells);
+  array_push(cells, tag);
+  array_push(cells, 1);
+  array_push(cells, f0);
+  addr
+}
+
+fn alloc2(cells: Array(I32), tag: I32, f0: I32, f1: I32) -> I32 {
+  let addr = array_len(cells);
+  array_push(cells, tag);
+  array_push(cells, 2);
+  array_push(cells, f0);
+  array_push(cells, f1);
+  addr
+}
+
+fn alloc3(cells: Array(I32), tag: I32, f0: I32, f1: I32, f2: I32) -> I32 {
+  let addr = array_len(cells);
+  array_push(cells, tag);
+  array_push(cells, 3);
+  array_push(cells, f0);
+  array_push(cells, f1);
+  array_push(cells, f2);
+  addr
+}
+
+fn link(cells: Array(I32), addr: I32, index: I32, target: I32) -> . {
+  array_set(cells, field_addr(addr, index), ptr_cell(target))
+}
+
+pub fn build_image() -> Image {
+  let cells = array_make_empty(I32, ());
+  let active = alloc3(cells, tag_frame, hole(), hole(), imm_cell(7));
+  let dropped = alloc2(cells, tag_frame, hole(), imm_cell(99));
+  let left = alloc2(cells, tag_pair, hole(), hole());
+  let right = alloc2(cells, tag_pair, hole(), imm_cell(5));
+  let stale = alloc2(cells, tag_pair, hole(), hole());
+  let shared = alloc3(cells, tag_vec, imm_cell(3), imm_cell(4), imm_cell(5));
+  let back = alloc1(cells, tag_box, hole());
+  let orphan = alloc2(cells, tag_vec, imm_cell(11), imm_cell(22));
+  let temp = alloc1(cells, tag_box, hole());
+  link(cells, active, 0, left);
+  link(cells, active, 1, right);
+  link(cells, dropped, 0, stale);
+  link(cells, left, 0, shared);
+  link(cells, left, 1, back);
+  link(cells, right, 0, shared);
+  link(cells, stale, 0, dropped);
+  link(cells, stale, 1, orphan);
+  link(cells, back, 0, left);
+  link(cells, temp, 0, shared);
+  let roots = array_make_empty(I32, ());
+  array_push(roots, active);
+  array_push(roots, temp);
+  {heap_cells = cells, heap_roots = roots}
+}

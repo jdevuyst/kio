@@ -1,0 +1,16 @@
+{
+  "name": "kio-highlight-agreement",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "private": true,
+  "description": "Cross-tokenizer agreement check for Kio.",
+  "type": "module",
+  "scripts": {
+    "test": "node check.mjs"
+  },
+  "dependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.2.0",
+    "web-tree-sitter": "^0.26.0"
+  }
+}

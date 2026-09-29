@@ -1,0 +1,19 @@
+package user_elaborator_target_placeholder_needs_context;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  user_elaborator_target_placeholder_needs_context;
+  user_elaborator_target_placeholder_needs_context/**;
+  elaborators
+}

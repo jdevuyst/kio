@@ -1,0 +1,44 @@
+module fold/bases;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub fn compatible(a: String, b: String) -> Bool {
+  if! text.string_eq(a, "A") {
+    text.string_eq(b, "U")
+  } else if! text.string_eq(a, "U") {
+    text.string_eq(b, "A")
+  } else if! text.string_eq(a, "G") {
+    text.string_eq(b, "C")
+  } else if! text.string_eq(a, "C") {
+    text.string_eq(b, "G")
+  } else {
+    .f
+  }
+}
+
+pub fn pair_allowed(sequence: Array(String), i: I32, j: I32, min_loop: I32) -> Bool {
+  if! arith.leq_i32(arith.add_i32(i, arith.add_i32(min_loop, 1)), j) {
+    compatible(array.array_get(sequence, i), array.array_get(sequence, j))
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn join_from(sequence: Array(String), i: I32, acc: String) -> String {
+  if! arith.leq_i32(array.array_len(sequence), i) {
+    acc
+  } else {
+    rec join_from(
+      , sequence
+      , arith.add_i32(i, 1)
+      , text.string_concat(acc, array.array_get(sequence, i))
+      )
+  }
+}
+
+pub fn join(sequence: Array(String)) -> String { join_from(sequence, 0, "") }

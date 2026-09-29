@@ -1,0 +1,5 @@
+module m1;
+
+import hostapi(I32);
+
+pub fn ping() -> I32 { 1 }

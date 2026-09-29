@@ -1,0 +1,81 @@
+module main;
+
+import elab/match(match);
+
+fn f(x: I32) -> I32 {
+  // before let
+  let y =
+    // between = and value
+    x;
+  // before body (let body that isn't another let)
+  match! y {
+    .() {
+      // inside case body
+      x
+    }
+  }
+}
+
+fn g(z: I32) -> I32 {
+  let w =
+    f(
+      // before first arg
+      , z
+      // before second arg (a literal)
+      , 0
+      );
+  w
+}
+
+fn id[A](x: A) -> A { x }
+
+fn h() -> I32 {
+  id(
+    // before the type arg
+    , I32
+    // before the value arg
+    , 1
+    )
+}
+
+labels Show = { f: I32, g: I32 };
+
+fn k() -> I32 & I32 {
+  let pair =
+    (
+      // first tuple element
+      , 1
+      // second tuple element
+      , 2
+      );
+  let _tagged =
+    {
+      // before label f
+      , f = 1
+      // before label g
+      , g = 2
+      };
+  pair
+}
+
+newtype Box[A][B] : A & B { constructor mk_box; projector get_box }
+
+fn type_arg_comments() -> . {
+  let _ =
+    mk_box(
+      // type arg a
+      , I32
+      // type arg b
+      , String
+      , 1
+      , ""
+      );
+  ()
+}
+
+labels Sigil = {
+  // label f
+  , f: _
+  // label g
+  , g: _
+  };

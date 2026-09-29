@@ -1,0 +1,2 @@
+newtype `Hidden` must be at least as visible as elaborator `expose`
+give newtype `Hidden` visibility equal to or wider than elaborator `expose`

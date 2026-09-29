@@ -1,0 +1,148 @@
+/// Turning the engine's state into the transcript.
+///
+/// This host tier has no `string_len`, so the grid cannot measure the text
+/// it is about to print. It computes each column's width from the value
+/// instead — the printed width of an integer is a fact about the integer —
+/// and pads to it.
+module sheet/render;
+
+import elab/control(if);
+import elab/match(match);
+import sheet/addr(Addr, addr_name, all_addrs, col_letter, cols, make_addr, rows);
+import sheet/cells(Content, Sheet, Value, Values, content_at, fold_content);
+import sheet/cells(fold_value, value_at);
+import sheet/formula(Expr, render_expr);
+import sheet/list(List, is_empty);
+import sheet/recalc(Edit, edit_addr, fold_edit);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+rec(loop) fn decades(n: I32, bound: I32, acc: I32) -> I32 {
+  if! lt_i32(n, bound) {
+    acc
+  } else if! leq_i32(10, acc) {
+    acc
+  } else {
+    rec decades(n, mul_i32(bound, 10), add_i32(acc, 1))
+  }
+}
+
+/// How wide `int_to_string(n)` prints, counted rather than measured.
+fn int_width(n: I32) -> I32 {
+  if! lt_i32(n, 0) {
+    add_i32(1, decades(sub_i32(0, n), 10, 1))
+  } else {
+    decades(n, 10, 1)
+  }
+}
+
+rec(loop) fn spaces(n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec spaces(sub_i32(n, 1), cat(acc, " "))
+  }
+}
+
+fn pad(text: String, width: I32, field: I32) -> String {
+  cat(spaces(sub_i32(field, width), ""), text)
+}
+
+pub fn render_value(v: Value) -> String {
+  fold_value(v, .(n: I32) { int_to_string(n) }, ".", "#CYCLE")
+}
+
+fn value_width(v: Value) -> I32 { fold_value(v, .(n: I32) { int_width(n) }, 1, 6) }
+
+pub fn render_content(c: Content) -> String {
+  fold_content(c, "-", .(n: I32) { int_to_string(n) }, .(e: Expr) { render_expr(e) })
+}
+
+pub fn render_edit(e: Edit) -> String {
+  cat3(
+    , addr_name(edit_addr(e))
+    , " = "
+    , fold_edit(e, .(n: I32) { int_to_string(n) }, .(x: Expr) { render_expr(x) }, "<cleared>")
+    )
+}
+
+fn field() -> I32 { 7 }
+
+rec(loop) fn header_onto(col: I32, acc: String) -> String {
+  if! leq_i32(cols(), col) {
+    acc
+  } else {
+    rec header_onto(add_i32(col, 1), cat(acc, pad(col_letter(col), 1, field())))
+  }
+}
+
+rec(loop) fn row_onto(vals: Values, row: I32, col: I32, acc: String) -> String {
+  if! leq_i32(cols(), col) {
+    acc
+  } else {
+    let v = value_at(vals, make_addr(row, col));
+    rec row_onto(
+      , vals
+      , row
+      , add_i32(col, 1)
+      , cat(acc, pad(render_value(v), value_width(v), field()))
+      )
+  }
+}
+
+rec(loop) fn grid_onto(vals: Values, row: I32, acc: String) -> String {
+  if! leq_i32(rows(), row) {
+    acc
+  } else {
+    let number = add_i32(row, 1);
+    let label = pad(int_to_string(number), int_width(number), 2);
+    let line = cat3(label, row_onto(vals, row, 0, ""), "\n");
+    rec grid_onto(vals, add_i32(row, 1), cat(acc, line))
+  }
+}
+
+/// The sheet as a grid of values, one row per line, `#CYCLE` where the cell
+/// is caught in or fed by a reference cycle and `.` where it is empty.
+pub fn grid(vals: Values) -> String {
+  cat3("  ", header_onto(0, ""), cat("\n", grid_onto(vals, 0, "")))
+}
+
+rec(loop) fn names_onto(xs: List(Addr), sep: String, acc: String) -> String {
+  match! xs.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) { rec names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+pub fn addr_list(xs: List(Addr)) -> String {
+  if! is_empty(xs) {
+    "(none)"
+  } else {
+    names_onto(xs, "", "")
+  }
+}
+
+rec(loop) fn listing_onto(s: Sheet, todo: List(Addr), acc: String) -> String {
+  match! todo.>List.unpack {
+    (
+      , .(a: Addr, rest: List(Addr)) {
+          let line =
+            cat3(cat("  ", addr_name(a)), " = ", cat(render_content(content_at(s, a)), "\n"));
+          rec listing_onto(s, rest, cat(acc, line))
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// What the user typed, cell by cell, in address order.
+pub fn cell_listing(s: Sheet) -> String { listing_onto(s, all_addrs(), "") }

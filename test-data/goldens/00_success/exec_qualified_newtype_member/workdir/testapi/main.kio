@@ -1,0 +1,17 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/types as t;
+
+// `<alias>.<TypeName>.<member>` resolves a newtype member
+// reached through a qualified-import alias. `t.Celsius.mk_celsius`
+// constructs a `Celsius`; `t.Celsius.to_int` projects back out.
+// Sub-module access (`<alias>.<sub>.<fn>`) is rejected by
+// design — qualified imports bind one module's surface, not a
+// tree of sub-modules.
+pub fn main() -> . {
+  let temp = t.Celsius.mk_celsius(25(I32));
+  print(int_to_string(t.Celsius.to_int(temp)))
+}

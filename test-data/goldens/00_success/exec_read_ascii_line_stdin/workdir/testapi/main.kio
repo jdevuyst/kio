@@ -1,0 +1,38 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string, string_to_int);
+import testapi/io(print, read_ascii_line);
+import testapi/text(string_concat);
+
+fn render_line(line: String | .) -> String {
+  match! line {
+    (.(s: String) { s }, .(_eof: .) { "<eof>" })
+  }
+}
+
+fn render_int_line(line: String | .) -> String {
+  match! line {
+    (
+      , .(s: String) {
+          match! string_to_int(s) {
+            (.(n: Int) { int_to_string(add(n, 1)) }, .(_bad: .) { "bad-int" })
+          }
+        }
+      , .(_eof: .) { "<eof>" }
+      )
+  }
+}
+
+fn pipe(a: String, b: String) -> String { string_concat(a, string_concat("|", b)) }
+
+pub fn main() -> . {
+  let l1 = render_int_line(read_ascii_line());
+  let l2 = render_int_line(read_ascii_line());
+  let l3 = render_line(read_ascii_line());
+  let l4 = render_line(read_ascii_line());
+  let l5 = render_line(read_ascii_line());
+  print(string_concat(pipe(pipe(pipe(pipe(l1, l2), l3), l4), l5), "\n"))
+}

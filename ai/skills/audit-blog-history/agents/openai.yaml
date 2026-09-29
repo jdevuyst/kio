@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit Blog History"
+  short_description: "Check blog claims against current Kio"
+  default_prompt: "Use $audit-blog-history to verify that chronological blog claims remain true or are explicitly retracted."

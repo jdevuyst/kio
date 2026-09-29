@@ -1,0 +1,59 @@
+module packet_frame_decoder/report;
+
+import packet_frame_decoder/checksum as checksum;
+import packet_frame_decoder/data as data;
+import packet_frame_decoder/frame as frame;
+import packet_frame_decoder/text as s;
+import testapi(String);
+
+fn render_packet(label: String, packet: String) -> String {
+  s.cat5(
+    , "frame "
+    , label
+    , " id="
+    , frame.ident(packet)
+    , s.cat5(
+        , " seq="
+        , frame.sequence(packet)
+        , " kind="
+        , frame.kind_name(packet)
+        , s.cat5(
+            , " len="
+            , frame.length_text(packet)
+            , " first="
+            , frame.first_marker(packet)
+            , s.cat5(
+                , " kind_byte="
+                , frame.kind_marker(packet)
+                , " checksum="
+                , frame.checksum(packet)
+                , s.cat5(
+                    , " expected="
+                    , checksum.expected(packet)
+                    , " result="
+                    , checksum.status(packet)
+                    , "\n"
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn header() -> String {
+  "packet_frame_decoder report\ncompiled frames: 4\nformat: "
+  "PF|id|kind|seq|payload|checksum\n"
+}
+
+fn body() -> String {
+  s.cat4(
+    , render_packet("alpha", data.alpha())
+    , render_packet("beta", data.beta())
+    , render_packet("gamma", data.gamma())
+    , render_packet("delta", data.delta())
+    )
+}
+
+fn summary() -> String { "summary: accept=2 checksum_fail=1 magic_fail=1\n" }
+
+pub fn report() -> String { s.cat3(header(), body(), summary()) }

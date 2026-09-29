@@ -1,0 +1,27 @@
+module api;
+
+import __intrinsics__;
+
+host fn stop(value: .) -> !;
+
+host fn discard(value: !) -> .;
+
+host fn inspect(value: . & !) -> .;
+
+host fn branch(value: .) -> . | !;
+
+pub newtype Never : ! { pub constructor mk_never; pub projector un_never }
+
+pub newtype Unit_never : . & ! { pub constructor mk_unit_never; pub projector un_unit_never }
+
+pub fn stop_public(value: .) -> ! { stop(value) }
+
+pub fn discard_public(value: !) -> . { discard(value) }
+
+pub fn inspect_public(value: . & !) -> . { inspect(value) }
+
+pub fn branch_public(value: .) -> . | ! { branch(value) }
+
+pub fn absurd_public(value: !) -> . { __absurd__(., value) }
+
+pub fn main() -> . { () }

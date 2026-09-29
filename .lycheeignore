@@ -1,0 +1,4 @@
+# Serves browsers only; plain HTTP clients time out rather than get a
+# response. The URL is the canonical NO_COLOR reference and is cited
+# deliberately in specs/diagnostics.md.
+no-color\.org

@@ -1,0 +1,90 @@
+/// Checks that every visible type contract closes over exact dependencies.
+module testapi/main;
+
+import elab/match(match);
+import loader(Diag, Image, Load_outcome, Lr_diag, Lr_image);
+import loader(contract_check, contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn describe(outcome: Load_outcome) -> String {
+  match! un_load_outcome(outcome) {
+    (
+      , .(_loaded: Lr_image) { "(loaded)"(String) }
+      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn line(label: String, source: String) -> String {
+  string_concat(label, string_concat(describe(load_package(source)), "\n"(String)))
+}
+
+fn checked_image(image: Image, name: String, signature: String) -> String {
+  let contract = contract_cons(mk_expect(name, signature), contract_nil());
+  match! contract_check(image, contract) {
+    (.(diag: Diag) { diag_message(diag) }, .(_matched: .) { "ok"(String) })
+  }
+}
+
+fn contract_line(label: String, source: String, name: String, signature: String) -> String {
+  let result =
+    match! un_load_outcome(load_package(source)) {
+      (
+        , .(loaded: Lr_image) { checked_image(Lr_image.get(loaded), name, signature) }
+        , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+        )
+    };
+  string_concat(label, string_concat(result, "\n"(String)))
+}
+
+pub fn main() -> . {
+  print(line(
+    , "private alias in export: "(String)
+    , "module guest;\ntype Secret = .;\npub fn expose(value: Secret) -> . { () }\n"
+      "package guest;\nbridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "unbridged alias in export: "(String)
+    , "module provider;\npub type Public = .;\nmodule guest;\nimport "
+      "provider(Public);\npub fn expose(value: Public) -> . { () }\npackage "
+      "guest;\nbridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "phantom alias argument: "(String)
+    , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
+      "projector un_hidden; };\nmodule aliases;\npub type Drop[A] = .;\nmodule "
+      "guest;\nimport hidden(Hidden);\nimport aliases(Drop);\npub fn expose(value: "
+      "Drop(Hidden)) -> . { () }\npackage guest;\nbridge { guest; aliases; }\n"(String)
+    ));
+  print(line(
+    , "private identity-forwarding alias in export: "(String)
+    , "module guest;\npub type Base[A] = A;\ntype Secret[A] = Base(A);\npub fn "
+      "expose(value: Secret(.)) -> . { () }\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(line(
+    , "unbridged identity-forwarding alias in export: "(String)
+    , "module base;\npub type Base[A] = A;\nmodule provider;\nimport base(Base);\n"
+      "pub type Public[A] = Base(A);\nmodule guest;\nimport provider(Public);\npub "
+      "fn expose(value: Public(.)) -> . { () }\npackage guest;\nbridge { guest; "
+      "base; }\n"(String)
+    ));
+  print(line(
+    , "chained identity-forwarding aliases: "(String)
+    , "module guest;\npub type Base[A] = A;\ntype Secret[A] = Base(A);\npub type "
+      "Public[A] = Secret(A);\npub fn expose(value: Public(.)) -> . { () }\n"
+      "package guest;\nbridge { guest; }\n"(String)
+    ));
+  print(contract_line(
+    , "public bridged identity-forwarding aliases: "(String)
+    , "module base;\nhost type Value;\nmodule first;\nimport base(Value);\npub type "
+      "First = Value;\nmodule second;\nimport first(First);\npub type Second = "
+      "First;\nmodule guest;\nimport second(Second);\npub fn expose(value: Second) "
+      "-> Second { value }\npackage guest;\nbridge { base; first; second; guest; "
+      "}\n"(String)
+    , "expose"(String)
+    , "(h{base.Value}) -> h{base.Value}"(String)
+    ))
+}

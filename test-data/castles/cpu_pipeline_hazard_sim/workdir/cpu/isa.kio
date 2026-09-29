@@ -1,0 +1,170 @@
+/// The instruction set: nine opcodes over eight registers and eight
+/// words of memory.
+///
+///   ADD/SUB/MUL rd, rs, rt   rd <- rs (op) rt
+///   LOADI       rd, imm      rd <- imm
+///   LOAD        rd, [addr]   rd <- mem[addr]
+///   STORE       rs, [addr]   mem[addr] <- rs
+///   BEQ         rs, rt, tgt  branch to tgt when rs == rt
+///   NOP                      nothing
+///   HALT                     stop fetching
+///
+/// Every instruction is one record with the same five fields; the opcode
+/// is a label-generated sum, and the fields an opcode does not use are
+/// zero. `kind_of` is the one place that says, per opcode, which fields
+/// are live -- the hazard unit, the datapath and the disassembler all
+/// read their answers off it rather than re-deriving them from the sum.
+module cpu/isa;
+
+import cpu/num(and, cat, cat3, int_eq, or);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+
+pub labels Opcode =
+  { add: . }
+  | { sub: . }
+  | { mul: . }
+  | { loadi: . }
+  | { load: . }
+  | { store: . }
+  | { beq: . }
+  | { nop: . }
+  | { halt: . };
+
+pub labels Instr = { code: Opcode, rd: I32, rs: I32, rt: I32, imm: I32 };
+
+/// What the pipeline needs to know about an opcode without looking at it
+/// again: which register fields it reads, whether it writes `rd`, which
+/// memory port it uses, and whether it stops the front end.
+labels Kind = {
+  , uses_rs: Bool
+  , uses_rt: Bool
+  , has_dest: Bool
+  , memory_load: Bool
+  , memory_store: Bool
+  , seals: Bool
+  };
+
+fn kind(rs_live: Bool, rt_live: Bool, dest_live: Bool, loads: Bool, stores: Bool, stops: Bool) -> Kind {
+  {
+    , uses_rs = rs_live
+    , uses_rt = rt_live
+    , has_dest = dest_live
+    , memory_load = loads
+    , memory_store = stores
+    , seals = stops
+    }
+}
+
+fn kind_of(inst: Instr) -> Kind {
+  let code = inst.?{code};
+  match! code {
+    (
+      , .(_a: Add) { kind(.t, .t, .t, .f, .f, .f) }
+      , .(_s: Sub) { kind(.t, .t, .t, .f, .f, .f) }
+      , .(_m: Mul) { kind(.t, .t, .t, .f, .f, .f) }
+      , .(_li: Loadi) { kind(.f, .f, .t, .f, .f, .f) }
+      , .(_ld: Load) { kind(.f, .f, .t, .t, .f, .f) }
+      , .(_st: Store) { kind(.t, .f, .f, .f, .t, .f) }
+      , .(_b: Beq) { kind(.t, .t, .f, .f, .f, .f) }
+      , .(_n: Nop) { kind(.f, .f, .f, .f, .f, .f) }
+      , .(_h: Halt) { kind(.f, .f, .f, .f, .f, .t) }
+      )
+  }
+}
+
+fn instr(code_value: Opcode, d: I32, s: I32, t: I32, immediate: I32) -> Instr {
+  {code = code_value, rd = d, rs = s, rt = t, imm = immediate}
+}
+
+pub fn i_add(d: I32, s: I32, t: I32) -> Instr { instr({add=}.>widen_sum!(Opcode), d, s, t, 0) }
+
+pub fn i_sub(d: I32, s: I32, t: I32) -> Instr { instr({sub=}.>widen_sum!(Opcode), d, s, t, 0) }
+
+pub fn i_mul(d: I32, s: I32, t: I32) -> Instr { instr({mul=}.>widen_sum!(Opcode), d, s, t, 0) }
+
+pub fn i_loadi(d: I32, value: I32) -> Instr { instr({loadi=}.>widen_sum!(Opcode), d, 0, 0, value) }
+
+pub fn i_load(d: I32, addr: I32) -> Instr { instr({load=}.>widen_sum!(Opcode), d, 0, 0, addr) }
+
+pub fn i_store(s: I32, addr: I32) -> Instr { instr({store=}.>widen_sum!(Opcode), 0, s, 0, addr) }
+
+pub fn i_beq(s: I32, t: I32, target: I32) -> Instr {
+  instr({beq=}.>widen_sum!(Opcode), 0, s, t, target)
+}
+
+pub fn i_nop() -> Instr { instr({nop=}.>widen_sum!(Opcode), 0, 0, 0, 0) }
+
+pub fn i_halt() -> Instr { instr({halt=}.>widen_sum!(Opcode), 0, 0, 0, 0) }
+
+/// The register this instruction writes back, if it writes one at all.
+/// The hazard unit compares consumers against exactly this.
+pub fn dest_of(inst: Instr) -> I32 | . {
+  if! kind_of(inst).?{has_dest} {
+    widen_sum!(inst.?{rd}, I32 | .)
+  } else {
+    widen_sum!((), I32 | .)
+  }
+}
+
+/// Does `inst` read register `r`? Only the fields the opcode actually
+/// uses count -- a LOADI whose unused `rs` field happens to be 0 must not
+/// look like a reader of r0.
+pub fn reads_reg(inst: Instr, r: I32) -> Bool {
+  let live = kind_of(inst);
+  or(and(live.?{uses_rs}, int_eq(inst.?{rs}, r)), and(live.?{uses_rt}, int_eq(inst.?{rt}, r)))
+}
+
+pub fn writes_reg(inst: Instr, r: I32) -> Bool {
+  match! dest_of(inst) {
+    (.(d: I32) { int_eq(d, r) }, .(_none: .) { .f })
+  }
+}
+
+pub fn is_load(inst: Instr) -> Bool { kind_of(inst).?{memory_load} }
+
+pub fn is_store(inst: Instr) -> Bool { kind_of(inst).?{memory_store} }
+
+pub fn is_halt(inst: Instr) -> Bool { kind_of(inst).?{seals} }
+
+pub fn reg_text(r: I32) -> String { cat("r", int_to_string(r)) }
+
+pub fn slot_text(index: I32) -> String { cat("i", int_to_string(index)) }
+
+fn addr_text(addr: I32) -> String { cat3("[", int_to_string(addr), "]") }
+
+fn three_regs(inst: Instr) -> String {
+  cat3(cat(reg_text(inst.?{rd}), ", "), cat(reg_text(inst.?{rs}), ", "), reg_text(inst.?{rt}))
+}
+
+/// Disassembly. The mnemonics that take operands are padded to the width
+/// of the widest one, so the operand column lines up without measuring a
+/// string -- which the host env cannot do. NOP and HALT take none, so they
+/// are written bare rather than padded out to a trailing blank.
+pub fn instr_text(inst: Instr) -> String {
+  let code = inst.?{code};
+  match! code {
+    (
+      , .(_a: Add) { cat("ADD   ", three_regs(inst)) }
+      , .(_s: Sub) { cat("SUB   ", three_regs(inst)) }
+      , .(_m: Mul) { cat("MUL   ", three_regs(inst)) }
+      , .(_li: Loadi) {
+          cat3("LOADI ", cat(reg_text(inst.?{rd}), ", "), int_to_string(inst.?{imm}))
+        }
+      , .(_ld: Load) { cat3("LOAD  ", cat(reg_text(inst.?{rd}), ", "), addr_text(inst.?{imm})) }
+      , .(_st: Store) { cat3("STORE ", cat(reg_text(inst.?{rs}), ", "), addr_text(inst.?{imm})) }
+      , .(_b: Beq) {
+          cat3(
+            , cat("BEQ   ", cat(reg_text(inst.?{rs}), ", "))
+            , cat(reg_text(inst.?{rt}), ", ")
+            , slot_text(inst.?{imm})
+            )
+        }
+      , .(_n: Nop) { "NOP" }
+      , .(_h: Halt) { "HALT" }
+      )
+  }
+}

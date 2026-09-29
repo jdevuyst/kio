@@ -1,0 +1,81 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Elaborator_result = __Checked_term__ | __Diagnostic_text__;
+
+pub type Target_request = __Type__ | .;
+
+pure fn finish_elaborator_result(ct: __Comptime__, result: Elaborator_result) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , __Checked_term__
+    , result
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(message: __Diagnostic_text__) -> __Checked_term__ { __elab_error__(ct, message) }
+    )
+}
+
+pure fn run(ct: __Comptime__, k: . -> Elaborator_result, value: __Checked_term__) -> Elaborator_result {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , __Checked_term__
+    , Elaborator_result
+    , __type_unit__(ct)
+    , value
+    , .(
+        , _loop_recur: (__Type__ & __Checked_term__) -> Elaborator_result
+        , _loop_fuel: __Type__
+        , loop_state: __Checked_term__
+        ) -> Elaborator_result { k(()) }
+    )
+}
+
+pure fn reenter(ct: __Comptime__, value: __Checked_term__) -> Elaborator_result {
+  run(
+    , ct
+    , .(_unit: .) -> Elaborator_result {
+        let ignored =
+          run(
+            , ct
+            , .(_again: .) -> Elaborator_result {
+                __right__(__Checked_term__, __Diagnostic_text__, "unreachable")
+              }
+            , value
+            );
+        __right__(__Checked_term__, __Diagnostic_text__, "unreachable")
+      }
+    , value
+    )
+}
+
+pure fn reentrant_impl(
+  , ct: __Comptime__
+  , _source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(_target: __Type__) -> Elaborator_result { reenter(ct, value) }
+    , .() -> Elaborator_result {
+        __right__(__Checked_term__, __Diagnostic_text__, "elaborator needs a target")
+      }
+    )
+}
+
+pub pure fn reentrant_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> __Checked_term__ { finish_elaborator_result(ct, reentrant_impl(ct, source, value, target)) }
+
+pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked }

@@ -1,0 +1,5 @@
+module feature/selective;
+
+import feature/store(Token, identity);
+
+pub(feature) fn keep(value: Token) -> Token { identity(value) }

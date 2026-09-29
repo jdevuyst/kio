@@ -1,0 +1,1563 @@
+================================================================================
+structural semicolons_op_edges
+================================================================================
+module source; op _ + _ { ; impl add; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_varop_edges
+================================================================================
+module source; varop [+ +] { ; finalize done; foldl join empty; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+structural semicolons_elab_edges
+================================================================================
+module source; elab make: . { ; captures(helper); impl run; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (separator_dot)
+    (elaborator_body
+      (bracket_lbrace)
+      (separator_semicolon)
+      (elaborator_captures_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (plain_value_path
+          (identifier))
+        (bracket_rparen))
+      (separator_semicolon)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (callable_path
+          (entity_name_function)))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_newtype_runs
+================================================================================
+module source; newtype Box: . { ;; constructor box;; projector unbox;; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (operator_builtin)
+    (separator_dot)
+    (newtype_body
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (newtype_member
+        (keyword_constructor)
+        (entity_name_function))
+      (separator_semicolon)
+      (separator_semicolon)
+      (newtype_member
+        (keyword_projector)
+        (entity_name_function))
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_newtype_empty_runs
+================================================================================
+module source; newtype Box: . { ;; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (operator_builtin)
+    (separator_dot)
+    (newtype_body
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_bridge_edges
+================================================================================
+package source; bridge { ; api/**; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (separator_semicolon)
+      (bridge_glob
+        (identifier)
+        (operator_run))
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolons_bridge_empty
+================================================================================
+package source; bridge {}
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_build_runs
+================================================================================
+package source; build { ;; target rust { ;; out "out";; }; docs { ; md "guide.md"; }; cache ();; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (target_name
+          (identifier))
+        (bracket_lbrace)
+        (separator_semicolon)
+        (separator_semicolon)
+        (config_field
+          (identifier)
+          (string_literal))
+        (separator_semicolon)
+        (separator_semicolon)
+        (bracket_rbrace))
+      (separator_semicolon)
+      (docs_block
+        (keyword_declaration)
+        (bracket_lbrace)
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (separator_semicolon)
+      (cache_declaration
+        (keyword_declaration)
+        (unit_expression
+          (bracket_lparen)
+          (bracket_rparen)))
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_build_empty_runs
+================================================================================
+package source; build { ;; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_source_runs
+================================================================================
+dependency helper; source { ;; path "../helper";; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (dependency_file
+    (keyword_dependency)
+    (identifier)
+    (separator_semicolon)
+    (source_block
+      (keyword_source)
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolons_resolved_runs
+================================================================================
+lock helper; resolved { ;; git "https://example.com/helper";; ref "main"; commit "abc"; sig "digest";; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (lock_file
+    (keyword_lock)
+    (identifier)
+    (separator_semicolon)
+    (resolved_block
+      (keyword_resolved)
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (separator_semicolon)
+      (separator_semicolon)
+      (bracket_rbrace))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolons_rec_callable_edges
+================================================================================
+module source; rec(loop) { ; fn first() { () }; fn second() { () }; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (recursive_function_group
+    (keyword_rec)
+    (recursive_capability
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen))
+    (bracket_lbrace)
+    (separator_semicolon)
+    (function_definition
+      (fn_decl_head
+        (keyword_fn)
+        (entity_name_function)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (bracket_rparen))))
+      (expression_block
+        (bracket_lbrace)
+        (unit_expression
+          (bracket_lparen)
+          (bracket_rparen))
+        (bracket_rbrace)))
+    (separator_semicolon)
+    (function_definition
+      (fn_decl_head
+        (keyword_fn)
+        (entity_name_function)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (bracket_rparen))))
+      (expression_block
+        (bracket_lbrace)
+        (unit_expression
+          (bracket_lparen)
+          (bracket_rparen))
+        (bracket_rbrace)))
+    (separator_semicolon)
+    (bracket_rbrace))
+  (separator_semicolon))
+
+================================================================================
+structural semicolons_rec_type_edges
+================================================================================
+module source; rec { ; type A = .; newtype B: . { ; constructor b; }; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_rec_group
+    (keyword_rec)
+    (bracket_lbrace)
+    (separator_semicolon)
+    (type_alias_decl_head
+      (keyword_type)
+      (entity_name_type)
+      (operator_builtin)
+      (separator_dot))
+    (separator_semicolon)
+    (newtype_decl_head
+      (keyword_newtype)
+      (entity_name_type)
+      (operator_builtin)
+      (separator_dot)
+      (newtype_body
+        (bracket_lbrace)
+        (separator_semicolon)
+        (newtype_member
+          (keyword_constructor)
+          (entity_name_function))
+        (separator_semicolon)
+        (bracket_rbrace)))
+    (separator_semicolon)
+    (bracket_rbrace))
+  (separator_semicolon))
+
+================================================================================
+structural semicolons_signature_edges
+================================================================================
+signature app v(1); v(1) { ; with { ; module api { ; host type T; pub fn fetch() -> T; }; }; breaking { ; add { ; module fresh { pub fn added() -> . }; }; modify { ; api.fetch; }; remove { ; api.old; module gone { ; old; older; }; }; }; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (separator_semicolon)
+      (signature_with_block
+        (keyword_with)
+        (bracket_lbrace)
+        (separator_semicolon)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (separator_semicolon)
+            (host_decl
+              (keyword_host)
+              (host_type_head
+                (keyword_type)
+                (entity_name_type)))
+            (separator_semicolon)
+            (fn_decl_head
+              (keyword_pub)
+              (keyword_fn)
+              (entity_name_function)
+              (fn_signature
+                (value_param_group
+                  (bracket_lparen)
+                  (bracket_rparen)))
+              (operator_arrow_type)
+              (type_path
+                (entity_name_type)))
+            (separator_semicolon)
+            (bracket_rbrace)))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (separator_semicolon)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (separator_semicolon)
+        (signature_add_block
+          (keyword_add)
+          (bracket_lbrace)
+          (separator_semicolon)
+          (signature_module_section
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (variant_block
+              (bracket_lbrace)
+              (fn_decl_head
+                (keyword_pub)
+                (keyword_fn)
+                (entity_name_function)
+                (fn_signature
+                  (value_param_group
+                    (bracket_lparen)
+                    (bracket_rparen)))
+                (operator_arrow_type)
+                (separator_dot))
+              (bracket_rbrace)))
+          (separator_semicolon)
+          (bracket_rbrace))
+        (separator_semicolon)
+        (signature_modify_block
+          (keyword_modify)
+          (bracket_lbrace)
+          (separator_semicolon)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (bracket_rbrace))
+        (separator_semicolon)
+        (signature_remove_block
+          (keyword_remove)
+          (bracket_lbrace)
+          (separator_semicolon)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (signature_remove_module
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (bracket_lbrace)
+            (separator_semicolon)
+            (identifier)
+            (separator_semicolon)
+            (identifier)
+            (separator_semicolon)
+            (bracket_rbrace))
+          (separator_semicolon)
+          (bracket_rbrace))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+structural semicolons_signature_import_empty
+================================================================================
+signature app v(1); v(1) { with { module imports { import helper as h }; module empty {} }; breaking { remove { api.old } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_with_block
+        (keyword_with)
+        (bracket_lbrace)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (import_decl
+              (keyword_import)
+              (module_path
+                (entity_name_module))
+              (keyword_declaration)
+              (entity_name_module))
+            (bracket_rbrace)))
+        (separator_semicolon)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (bracket_rbrace)))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_remove_block
+          (keyword_remove)
+          (bracket_lbrace)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_signature_nested_last_declarations
+================================================================================
+signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub newtype Box: . {pub constructor box; pub projector unbox} } } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_add_block
+          (keyword_add)
+          (bracket_lbrace)
+          (signature_module_section
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (variant_block
+              (bracket_lbrace)
+              (host_decl
+                (keyword_host)
+                (host_type_head
+                  (keyword_type)
+                  (entity_name_type)))
+              (separator_semicolon)
+              (type_alias_decl_head
+                (keyword_pub)
+                (keyword_type)
+                (entity_name_type)
+                (operator_builtin)
+                (separator_dot))
+              (separator_semicolon)
+              (newtype_decl_head
+                (keyword_pub)
+                (keyword_newtype)
+                (entity_name_type)
+                (operator_builtin)
+                (separator_dot)
+                (newtype_body
+                  (bracket_lbrace)
+                  (newtype_member
+                    (keyword_pub)
+                    (keyword_constructor)
+                    (entity_name_function))
+                  (separator_semicolon)
+                  (newtype_member
+                    (keyword_pub)
+                    (keyword_projector)
+                    (entity_name_function))
+                  (bracket_rbrace)))
+              (bracket_rbrace)))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_outer_same_line_newtype
+================================================================================
+module source;
+newtype Box: . { constructor box } fn after() { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (newtype_decl_head
+    (keyword_newtype)
+    (entity_name_type)
+    (operator_builtin)
+    (separator_dot)
+    (newtype_body
+      (bracket_lbrace)
+      (newtype_member
+        (keyword_constructor)
+        (entity_name_function))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_outer_suffix_comment
+================================================================================
+module source; fn first() { () } // before suffix
+; // after suffix
+fn after() { () };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace)))
+  (comment_line)
+  (separator_semicolon)
+  (comment_line)
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+structural semicolons_nonbraced_owned_terminator
+================================================================================
+module source; host type Text { owned };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (host_decl
+    (keyword_host)
+    (host_type_head
+      (keyword_type)
+      (entity_name_type)
+      (owned_block
+        (bracket_lbrace)
+        (keyword_declaration)
+        (bracket_rbrace))
+      (separator_semicolon))))
+
+================================================================================
+structural semicolons_nonbraced_labels_terminator
+================================================================================
+module source; labels L = {left: .} | {right: .};
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (labels_decl_head
+    (keyword_labels)
+    (entity_name_type)
+    (operator_builtin)
+    (labels_arms
+      (labels_block
+        (bracket_lbrace)
+        (label_entry
+          (entity_name_label)
+          (operator_builtin)
+          (separator_dot))
+        (bracket_rbrace))
+      (operator_builtin)
+      (labels_block
+        (bracket_lbrace)
+        (label_entry
+          (entity_name_label)
+          (operator_builtin)
+          (separator_dot))
+        (bracket_rbrace)))
+    (separator_semicolon)))
+
+================================================================================
+structural semicolons_unchanged_expression_and_comma
+================================================================================
+module source; fn run() { ;; let .(left, right) = pair;;; .x. { (x1, left, right); }; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (separator_semicolon)
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (separator_dot)
+        (local_pattern_tuple
+          (bracket_lparen)
+          (local_binding_pattern
+            (identifier))
+          (separator_comma)
+          (local_binding_pattern
+            (identifier))
+          (bracket_rparen))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (separator_semicolon)
+      (separator_semicolon)
+      (placeholder_expression
+        (separator_dot)
+        (variable_parameter)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (expression_path
+              (identifier))
+            (separator_comma)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (separator_semicolon)
+          (bracket_rbrace)))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_op_repeated
+================================================================================
+module source; op _ + _ { ;; impl add }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (ERROR
+        (separator_semicolon))
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_varop_missing
+================================================================================
+module source; varop [+ +] { foldl join empty finalize done }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (callable_path
+        (entity_name_function))
+      (MISSING bracket_rbrace)))
+  (identifier)
+  (identifier)
+  (bracket_rbrace))
+
+================================================================================
+structural semicolons_varop_repeated
+================================================================================
+module source; varop [+ +] { foldl join empty;; finalize done }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (callable_path
+        (entity_name_function))
+      (ERROR
+        (separator_semicolon))
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_elab_missing
+================================================================================
+module source; elab make: . { captures(helper) impl run }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (identifier)
+  (ERROR
+    (identifier)
+    (operator_builtin)
+    (separator_dot)
+    (bracket_lbrace)
+    (elaborator_captures_clause
+      (keyword_declaration)
+      (bracket_lparen)
+      (plain_value_path
+        (identifier))
+      (bracket_rparen))
+    (entity_name_label)
+    (entity_name_label))
+  (bracket_rbrace))
+
+================================================================================
+structural semicolons_elab_repeated
+================================================================================
+module source; elab make: . { captures(helper);; impl run }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (separator_dot)
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_captures_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (plain_value_path
+          (identifier))
+        (bracket_rparen))
+      (ERROR
+        (separator_semicolon))
+      (separator_semicolon)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (callable_path
+          (entity_name_function)))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_bridge_semicolon_only
+================================================================================
+package source; bridge { ; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (ERROR
+        (separator_semicolon))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_bridge_repeated
+================================================================================
+package source; bridge { api/**;; other/** }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (bridge_block
+      (keyword_bridge)
+      (bracket_lbrace)
+      (bridge_glob
+        (identifier)
+        (operator_run))
+      (ERROR
+        (separator_semicolon))
+      (separator_semicolon)
+      (bridge_glob
+        (identifier)
+        (operator_run))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_rec_callable_missing
+================================================================================
+module source; rec(loop) { fn first() { () } fn second() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen)))
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (unowned_function
+        (unowned_function_head
+          (keyword_fn)
+          (entity_name_function)
+          (fn_signature
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_rec_callable_repeated
+================================================================================
+module source; rec(loop) { fn first() { () };; fn second() { () } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (recursive_function_group
+    (keyword_rec)
+    (recursive_capability
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen))
+    (bracket_lbrace)
+    (function_definition
+      (fn_decl_head
+        (keyword_fn)
+        (entity_name_function)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (bracket_rparen))))
+      (expression_block
+        (bracket_lbrace)
+        (unit_expression
+          (bracket_lparen)
+          (bracket_rparen))
+        (bracket_rbrace)))
+    (ERROR
+      (separator_semicolon))
+    (separator_semicolon)
+    (function_definition
+      (fn_decl_head
+        (keyword_fn)
+        (entity_name_function)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (bracket_rparen))))
+      (expression_block
+        (bracket_lbrace)
+        (unit_expression
+          (bracket_lparen)
+          (bracket_rparen))
+        (bracket_rbrace)))
+    (bracket_rbrace)))
+
+================================================================================
+structural semicolons_rec_type_missing
+================================================================================
+module source; rec { newtype A: . {constructor a} newtype B: . {constructor b} }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (incomplete_recursive_call_expression
+    (keyword_rec)
+    (ERROR
+      (bracket_lbrace)
+      (newtype_decl_head
+        (keyword_newtype)
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (newtype_body
+          (bracket_lbrace)
+          (newtype_member
+            (keyword_constructor)
+            (entity_name_function))
+          (bracket_rbrace)))
+      (entity_name_label))
+    (entity_name_function))
+  (operator_builtin)
+  (separator_dot)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (ERROR
+        (identifier))
+      (bracket_rbrace)))
+  (bracket_rbrace))
+
+================================================================================
+structural semicolons_rec_type_repeated
+================================================================================
+module source; rec { type A = .;; type B = . }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_rec_group
+    (keyword_rec)
+    (bracket_lbrace)
+    (type_alias_decl_head
+      (keyword_type)
+      (entity_name_type)
+      (operator_builtin)
+      (separator_dot))
+    (ERROR
+      (separator_semicolon))
+    (separator_semicolon)
+    (type_alias_decl_head
+      (keyword_type)
+      (entity_name_type)
+      (operator_builtin)
+      (separator_dot))
+    (bracket_rbrace)))
+
+================================================================================
+structural semicolons_build_missing
+================================================================================
+package source; build { docs { md "guide.md" } target rust { out "out" } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (docs_block
+        (keyword_declaration)
+        (bracket_lbrace)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (bracket_rbrace))
+      (ERROR
+        (entity_name_label)
+        (entity_name_label)
+        (bracket_lbrace)
+        (entity_name_label)
+        (string_literal))
+      (bracket_rbrace)))
+  (ERROR
+    (bracket_rbrace)))
+
+================================================================================
+structural semicolons_docs_missing
+================================================================================
+package source; build { docs { md "guide.md" html "guide.html" } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (docs_block
+        (keyword_declaration)
+        (bracket_lbrace)
+        (config_field
+          (keyword_declaration)
+          (string_literal))
+        (ERROR
+          (entity_name_label)
+          (string_literal))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_source_missing
+================================================================================
+dependency helper; source { git "https://example.com/helper" ref "main" }
+--------------------------------------------------------------------------------
+
+(source_file
+  (dependency_file
+    (keyword_dependency)
+    (identifier)
+    (separator_semicolon)
+    (source_block
+      (keyword_source)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (string_literal))
+      (ERROR
+        (entity_name_label)
+        (string_literal))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_signature_sections_missing
+================================================================================
+signature app v(1); v(1) { with { module api { host type T } } breaking { remove { api.old } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon))
+  (ERROR
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (bracket_lbrace)
+    (signature_with_block
+      (keyword_with)
+      (bracket_lbrace)
+      (signature_module_section
+        (keyword_module)
+        (module_path
+          (entity_name_module))
+        (variant_block
+          (bracket_lbrace)
+          (host_decl
+            (keyword_host)
+            (host_type_head
+              (keyword_type)
+              (entity_name_type)))
+          (bracket_rbrace)))
+      (bracket_rbrace))
+    (entity_name_label)
+    (bracket_lbrace)
+    (entity_name_label)
+    (bracket_lbrace)
+    (entity_name_label)
+    (separator_dot)
+    (entity_name_label))
+  (bracket_rbrace)
+  (bracket_rbrace)
+  (bracket_rbrace))
+
+================================================================================
+structural semicolons_signature_sections_repeated
+================================================================================
+signature app v(1); v(1) { with { module api { host type T } };; breaking { remove { api.old } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_with_block
+        (keyword_with)
+        (bracket_lbrace)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (host_decl
+              (keyword_host)
+              (host_type_head
+                (keyword_type)
+                (entity_name_type)))
+            (bracket_rbrace)))
+        (bracket_rbrace))
+      (ERROR
+        (separator_semicolon))
+      (separator_semicolon)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_remove_block
+          (keyword_remove)
+          (bracket_lbrace)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+structural semicolons_signature_module_missing
+================================================================================
+signature app v(1); v(1) { breaking { add { module api { newtype A: . {constructor a} newtype B: . {constructor b} } } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_add_block
+          (keyword_add)
+          (bracket_lbrace)
+          (signature_module_section
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (variant_block
+              (bracket_lbrace)
+              (newtype_decl_head
+                (keyword_newtype)
+                (entity_name_type)
+                (operator_builtin)
+                (separator_dot)
+                (newtype_body
+                  (bracket_lbrace)
+                  (newtype_member
+                    (keyword_constructor)
+                    (entity_name_function))
+                  (bracket_rbrace)))
+              (ERROR
+                (entity_name_label)
+                (uppercase_identifier)
+                (bracket_lbrace)
+                (entity_name_label)
+                (entity_name_label))
+              (bracket_rbrace)))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace)))
+  (bracket_rbrace))
+
+================================================================================
+structural semicolons_signature_import_after_declaration
+================================================================================
+signature app v(1); v(1) { with { module api { host type T; import helper as h } }; breaking { remove { api.old } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_with_block
+        (keyword_with)
+        (bracket_lbrace)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (host_decl
+              (keyword_host)
+              (host_type_head
+                (keyword_type)
+                (entity_name_type)))
+            (separator_semicolon)
+            (ERROR
+              (identifier)
+              (entity_name_label)
+              (entity_name_label)
+              (entity_name_label))
+            (bracket_rbrace)))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_remove_block
+          (keyword_remove)
+          (bracket_lbrace)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))

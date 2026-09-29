@@ -1,0 +1,6 @@
+module elaborator_type_mentions_host/main;
+
+import elaborator_type_mentions_host(I32);
+import elaborator_type_mentions_host/elaborators(checked);
+
+fn keep(value: I32) -> I32 { checked!(value) }

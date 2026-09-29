@@ -1,0 +1,48 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi(String);
+
+// Build a term-level fn that receives a packet
+// `((String & String) -> String) & String & String` and applies the
+// product-domain concat arrow to the pair of strings. The concat arrow
+// slot is ABI arity 1 (a single product), but the host `string_concat`
+// the user supplies at the call is positional ABI arity 2 — so the
+// emitted package must spread the product back into the host fn's two
+// args. This is the minimal shape of the elab POC's `show!` renderer.
+pub pure fn apply_pair_impl(
+  , ct: __Comptime__
+  , _string_type: __Type__
+  , _source: __Type__
+  , _value: __Checked_term__
+  , _target: __Type__ | .
+  ) -> __Checked_term__ {
+  let string_type = __reflect_type__(ct, String);
+  let concat_type = __reflect_type__(ct, (String & String) -> String);
+  let strings_type = __reflect_type__(ct, String & String);
+  let packet_type = __type_product__(ct, concat_type, strings_type);
+  let fn_type =
+    __type_arrow__(
+      , ct
+      , packet_type
+      , __type_arity_succ__(ct, __type_arity_succ__(ct, __type_arity_zero__(ct)))
+      , string_type
+      );
+  __term_fn__(
+    , ct
+    , fn_type
+    , .(packet: __Checked_term__) -> __Checked_term__ {
+        let concat_fn = __intrinsic_fst__(ct, packet_type, packet);
+        let strings = __intrinsic_snd__(ct, packet_type, packet);
+        let left = __intrinsic_fst__(ct, strings_type, strings);
+        let right = __intrinsic_snd__(ct, strings_type, strings);
+        __term_call__(ct, concat_type, concat_fn, __intrinsic_pair__(ct, left, right))
+      }
+    )
+}
+
+/// Returns a fn that concatenates a supplied pair of host strings using
+/// a supplied product-domain concat arrow.
+pub elab apply_pair : [Source] Source -> [Target] Target { captures String; impl apply_pair_impl }

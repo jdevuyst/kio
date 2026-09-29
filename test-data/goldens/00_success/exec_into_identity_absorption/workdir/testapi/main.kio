@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into);
+import testapi(String);
+import testapi/io(print);
+
+// `into!` identity absorption: `A & . ↔ A` and `A | ! ↔ A` in
+// either direction. `()` is the product identity (inserting carries
+// no information, dropping is always safe); `!` is the sum identity
+// (the bottom branch is uninhabited, so dropping it is total).
+//
+// Two coercions exercised:
+//   - drop_unit  : (String & .)  → String
+//   - drop_bottom: (String | !)   → String
+fn drop_unit(p: String & .) -> String { into!(p) }
+
+fn drop_bottom(s: String | !) -> String { into!(s) }
+
+pub fn main() -> . {
+  // `A & . → A`: build a `(String, ())` pair, then peel the unit.
+  let pair = ("unit-absorbed\n", ());
+  print(drop_unit(pair));
+  // `A | ! → A`: inject into the left arm of `(String | !)` (the
+  // `!` arm has no inhabitants), then drop the bottom branch.
+  let summed = into!("bottom-absorbed\n", String | !);
+  print(drop_bottom(summed))
+}

@@ -1,0 +1,3 @@
+module main;
+
+fn open() -> . { let .(whole: (left: _, right: _)) = rhs; left }

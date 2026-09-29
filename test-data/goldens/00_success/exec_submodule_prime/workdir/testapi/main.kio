@@ -1,0 +1,11 @@
+module testapi/main;
+
+import lib(identity);
+import lib/combine(keep_first);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let a = identity(String, "submodule under kio-prime: ok\n"(String));
+  print(keep_first(String, a, "unused"(String)))
+}

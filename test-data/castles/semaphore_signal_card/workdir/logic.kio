@@ -1,0 +1,38 @@
+module logic;
+
+import elab/control(if);
+import testapi(Bool);
+
+pub fn not(flag: Bool) -> Bool {
+  if! flag {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn xor(a: Bool, b: Bool) -> Bool {
+  if! a {
+    not(b)
+  } else {
+    b
+  }
+}
+
+pub fn same(a: Bool, b: Bool) -> Bool { not(xor(a, b)) }

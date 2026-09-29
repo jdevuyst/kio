@@ -1,0 +1,22 @@
+signature blib v(3);
+
+/// v1: first + second
+v(1) {
+  nonbreaking {
+    add {
+      module greet {
+        pub fn first[A](x: A, _y: A) -> A;
+        pub fn second[A](_x: A, y: A) -> A
+      }
+    }
+  }
+}
+
+/// v2: drop second (breaking)
+v(2) {
+  breaking {
+    remove {
+      greet.second
+    }
+  }
+}

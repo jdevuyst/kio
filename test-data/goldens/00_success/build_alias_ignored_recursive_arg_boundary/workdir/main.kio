@@ -1,0 +1,7 @@
+module main;
+
+pub type Const[A] = .;
+
+pub rec newtype Token : Const(Token) { pub constructor mk_token; pub projector un_token }
+
+pub fn keep(t: Token) -> Token { t }

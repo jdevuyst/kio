@@ -1,0 +1,4 @@
+module op_conflicts_with_use_op_import;
+
+// Shared host type for both operator implementations.
+host type A role(i32);

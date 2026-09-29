@@ -1,0 +1,80 @@
+module packet_frame_decoder/checksum;
+
+import elab/control(if);
+import packet_frame_decoder/frame as frame;
+import testapi(Bool, String);
+import testapi/text as text;
+
+fn expected_for_alpha(packet: String) -> String {
+  if! text.string_eq(frame.kind(packet), "D") {
+    if! text.string_eq(frame.payload(packet), "PING") {
+      "326"
+    } else {
+      "???"
+    }
+  } else {
+    "???"
+  }
+}
+
+fn expected_for_beta(packet: String) -> String {
+  if! text.string_eq(frame.kind(packet), "A") {
+    if! text.string_eq(frame.payload(packet), "PONG") {
+      "329"
+    } else {
+      "???"
+    }
+  } else {
+    "???"
+  }
+}
+
+fn expected_for_gamma(packet: String) -> String {
+  if! text.string_eq(frame.kind(packet), "D") {
+    if! text.string_eq(frame.payload(packet), "DROP") {
+      "320"
+    } else {
+      "???"
+    }
+  } else {
+    "???"
+  }
+}
+
+fn expected_for_delta(packet: String) -> String {
+  if! text.string_eq(frame.kind(packet), "H") {
+    if! text.string_eq(frame.payload(packet), "PING") {
+      "999"
+    } else {
+      "???"
+    }
+  } else {
+    "???"
+  }
+}
+
+pub fn expected(packet: String) -> String {
+  if! text.string_eq(frame.ident(packet), "A1") {
+    expected_for_alpha(packet)
+  } else if! text.string_eq(frame.ident(packet), "B2") {
+    expected_for_beta(packet)
+  } else if! text.string_eq(frame.ident(packet), "C3") {
+    expected_for_gamma(packet)
+  } else if! text.string_eq(frame.ident(packet), "D4") {
+    expected_for_delta(packet)
+  } else {
+    "???"
+  }
+}
+
+pub fn status(packet: String) -> String {
+  if! text.string_eq(frame.magic(packet), "PF") {
+    if! text.string_eq(frame.checksum(packet), expected(packet)) {
+      "ACCEPT"
+    } else {
+      "CHECKSUM_FAIL"
+    }
+  } else {
+    "MAGIC_FAIL"
+  }
+}

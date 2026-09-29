@@ -1,0 +1,78 @@
+/// The fixture process table: when each process arrives, and what it runs.
+///
+/// The four programs are chosen so the pagers' work is visible. Between them
+/// they name nine distinct pages for four frames, every process revisits a
+/// page it touched earlier, and the arrivals are staggered so the ready queue
+/// fills while the first arrivals are away servicing their faults.
+module os/fixture;
+
+import os/proc as proc;
+import testapi(Array, I32);
+import testapi/array(array_make_empty, array_push);
+
+pub fn arrivals() -> Array(I32) {
+  let a = array_make_empty(I32, ());
+  array_push(a, 0);
+  array_push(a, 1);
+  array_push(a, 2);
+  array_push(a, 6);
+  a
+}
+
+/// Reads a page, computes, reads a second page, and comes back to the first —
+/// the classic re-reference the reference bit is supposed to protect.
+fn program_p0() -> Array(proc.Phase) {
+  let prog = array_make_empty(proc.Phase, ());
+  array_push(prog, proc.touch_phase(1));
+  array_push(prog, proc.compute_phase(2));
+  array_push(prog, proc.touch_phase(0));
+  array_push(prog, proc.compute_phase(1));
+  array_push(prog, proc.touch_phase(1));
+  array_push(prog, proc.touch_phase(2));
+  array_push(prog, proc.compute_phase(2));
+  prog
+}
+
+/// A long compute burst that outlives its quantum, framed by page reads.
+fn program_p1() -> Array(proc.Phase) {
+  let prog = array_make_empty(proc.Phase, ());
+  array_push(prog, proc.touch_phase(1));
+  array_push(prog, proc.compute_phase(3));
+  array_push(prog, proc.touch_phase(2));
+  array_push(prog, proc.touch_phase(1));
+  array_push(prog, proc.compute_phase(1));
+  prog
+}
+
+/// Compute-led, so it is the one process that gets useful work done before it
+/// touches memory at all.
+fn program_p2() -> Array(proc.Phase) {
+  let prog = array_make_empty(proc.Phase, ());
+  array_push(prog, proc.compute_phase(2));
+  array_push(prog, proc.touch_phase(0));
+  array_push(prog, proc.touch_phase(3));
+  array_push(prog, proc.compute_phase(1));
+  array_push(prog, proc.touch_phase(0));
+  array_push(prog, proc.compute_phase(2));
+  array_push(prog, proc.touch_phase(3));
+  prog
+}
+
+/// The late arrival, which meets a memory that is already full.
+fn program_p3() -> Array(proc.Phase) {
+  let prog = array_make_empty(proc.Phase, ());
+  array_push(prog, proc.touch_phase(2));
+  array_push(prog, proc.compute_phase(4));
+  array_push(prog, proc.touch_phase(2));
+  array_push(prog, proc.touch_phase(0));
+  prog
+}
+
+pub fn programs() -> Array(Array(proc.Phase)) {
+  let all = array_make_empty(Array(proc.Phase), ());
+  array_push(all, program_p0());
+  array_push(all, program_p1());
+  array_push(all, program_p2());
+  array_push(all, program_p3());
+  all
+}

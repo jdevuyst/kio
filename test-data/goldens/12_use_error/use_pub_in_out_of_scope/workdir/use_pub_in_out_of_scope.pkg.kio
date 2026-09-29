@@ -1,0 +1,18 @@
+package use_pub_in_out_of_scope;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  helper/submod;
+  main
+}

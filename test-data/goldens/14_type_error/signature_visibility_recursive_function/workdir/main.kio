@@ -1,0 +1,7 @@
+module main;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+newtype Hidden : . { constructor mk; projector un }
+
+pub rec(loop) fn expose(value: Hidden) -> Hidden { value }

@@ -1,0 +1,37 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// Exercise the `let <U> x = e;` parser-level sugar against a
+// curried CPS projector.
+//
+// `Boxed_string` is an existential-bearing newtype. The projector
+// `Boxed_string.un_boxed_string` has the curried CPS form
+//
+//   ([], v: Boxed_string) -> [R](k: [U](U & String) -> R) -> R
+//
+// so the outer call `Boxed_string.un_boxed_string(b)` returns a
+// polymorphic CPS function. The let-sugar `let <U> pair = e;`
+// desugars at parse time to `e(_, .[U](pair) { rest })`, applying
+// the CPS function to a continuation. The leading `_` lets the
+// typer infer the result type from the continuation's body.
+//
+// The CPS function checks the continuation against its expected
+// polymorphic function type, so the unannotated `pair` parameter is
+// bound at `U & String` before the body is checked. The explicit
+// `__snd__` type arguments then select the string component.
+newtype Boxed_string <U> : U & String {
+  pub constructor mk_boxed_string;
+  pub projector un_boxed_string;
+  };
+
+fn box_string(s: String) -> Boxed_string { Boxed_string.mk_boxed_string((s, s)) }
+
+fn extract_string(b: Boxed_string) -> String {
+  Boxed_string.un_boxed_string(b)(_, .[U](pair) { __snd__(U, String, pair) })
+}
+
+pub fn main() -> . { let b = box_string("let-unpack-sugar-ok\n"); print(extract_string(b)) }

@@ -1,0 +1,36 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A brand-using monad: `box_pure` and `box_bind` operate over the
+// kind-`*→*` brand `Box` applied to a carrier (`Box(A)`).
+// `box_bind`'s signature `[A] [B] (Box(A) & (A -> Box(B))) -> Box(B)`
+// is the canonical bind shape the do-block looks for.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// `Box.mk_box` / `Box.un_box` are the brand-crossing members —
+// runtime identities for this canonical brand. `box_pure` lifts a
+// payload into the brand; `box_bind` peels its `m` argument and
+// hands the unwrapped value to the continuation.
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Interleaved bind-let and pure-let statements over the
+// HKT-spelling monad. Each `let x <- e;` elaborates to a
+// `box_bind` call; the pure `let suffix = …;` interleaves
+// without inserting a bind step. The final peel at the print
+// site is `Box.un_box(String, run())`.
+fn run() -> Box(String) {
+  do! box_bind {
+    let greeting <- box_pure("hello, ");
+    let suffix = "world\n";
+    let full <- box_pure(string_concat(greeting, suffix));
+    box_pure(full)
+  }
+}
+
+pub fn main() -> . { print(Box.un_box(run())) }

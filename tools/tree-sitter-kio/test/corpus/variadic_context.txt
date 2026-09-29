@@ -1,0 +1,306 @@
+================================================================================
+varop declarations preserve variadic callable names
+================================================================================
+module variadic/context;
+fn variadic(value: .) -> . { value }
+fn uses() -> . {
+  let bare = variadic;
+  let qualified = helper.variadic;
+  variadic(());
+  helper.variadic(())
+}
+varop [* *] { foldr helper.variadic variadic; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module)
+      (module_path_sep)
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (expression_path
+          (identifier)
+          (separator_dot)
+          (identifier)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace)))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_star_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+incomplete legacy variadic head retains identifier roles
+================================================================================
+op variadic _
+neighbor
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (slot)
+  (identifier))
+
+================================================================================
+incomplete import head does not absorb the following declaration
+================================================================================
+import app
+fn neighbor() -> . { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (incomplete_import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+incomplete fixed operator head does not absorb the following declaration
+================================================================================
+op _
+fn neighbor() -> . { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (incomplete_op_decl
+    (keyword_op)
+    (slot))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+left modes and finalizer heads do not classify callable names as keywords
+================================================================================
+varop [< <] { foldl foldl helpers.finalize; finalize foldr; };
+varop [! !] { foldl1 helpers.foldr1 finalize; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (callable_path
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
+
+================================================================================
+complete imported grammars retain fixed groups and split variadic heads
+================================================================================
+import syntax(op, import, variadic, {entry}, op _ "=" _, op _ ( ~ _ ~ ), op _ ? _ : ___, varop [< <]);
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (separator_comma)
+    (import_label_item
+      (bracket_lbrace)
+      (entity_name_label)
+      (bracket_rbrace))
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (string_literal)
+      (slot))
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_run)
+        (slot)
+        (operator_run)
+        (bracket_rparen)))
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (operator_run)
+      (slot)
+      (operator_builtin)
+      (slot))
+    (separator_comma)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (variadic_open)
+        (variadic_head_gap
+          (head_whitespace))
+        (variadic_close)))
+    (bracket_rparen)
+    (separator_semicolon)))
+
+================================================================================
+bare contextual words remain identifiers
+================================================================================
+op import variadic foldl foldr foldl1 foldr1 finalize
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (ERROR
+    (entity_name_module)
+    (identifier)
+    (entity_name_label)
+    (entity_name_label)
+    (entity_name_label)
+    (entity_name_label)))

@@ -1,0 +1,5 @@
+module scope/facade;
+
+import origin({visible});
+
+pub(scope) type {view} = {visible};

@@ -1,0 +1,13 @@
+module main;
+
+type Pair[A][B] = A & B;
+
+type Triple[A][B][C] = A & B & C;
+
+type Sum[A][B] = A | B;
+
+type Sum3[A][B][C] = A | B | C;
+
+type Bottom = !;
+
+type Unit = .;

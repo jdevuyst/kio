@@ -1,0 +1,47 @@
+network: reverse-edge rerouting
+  augment 1: 0->1->2->3 amount=1 cancelled=0
+  augment 2: 0->2-cancel->1->3 amount=1 cancelled=1
+  link 0->1 flow=1/1
+  link 1->2 flow=0/1
+  link 2->3 flow=1/1
+  link 0->2 flow=1/1
+  link 1->3 flow=1/1
+  source side={0} flow=2 cut=2
+  capacity bounds: true
+  reverse pairs: true
+  conservation: true
+  minimum-cut certificate: true
+  independent expected value: true
+cancellation witness: true
+reject negative residual: true
+reject broken reverse pair: true
+reject unconserved feasible edge flows: true
+reject exaggerated value: true
+original witness remains valid: true
+network: parallel links and shared bottleneck
+  augment 1: 0->1->2 amount=2 cancelled=0
+  augment 2: 0->1->2 amount=2 cancelled=0
+  augment 3: 0->2 amount=1 cancelled=0
+  link 0->1 flow=2/2
+  link 0->1 flow=2/3
+  link 1->2 flow=4/4
+  link 1->0 flow=0/1
+  link 0->2 flow=1/1
+  source side={0,1} flow=5 cut=5
+  capacity bounds: true
+  reverse pairs: true
+  conservation: true
+  minimum-cut certificate: true
+  independent expected value: true
+network: unreachable sink and zero-capacity bridge
+  link 0->1 flow=0/3
+  link 1->2 flow=0/2
+  link 2->1 flow=0/1
+  link 3->4 flow=0/5
+  link 0->3 flow=0/0
+  source side={0,1,2} flow=0 cut=0
+  capacity bounds: true
+  reverse pairs: true
+  conservation: true
+  minimum-cut certificate: true
+  independent expected value: true

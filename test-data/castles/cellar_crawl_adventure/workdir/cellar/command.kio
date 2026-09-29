@@ -1,0 +1,85 @@
+/// The command language.
+///
+/// A command is a verb plus, for the four verbs that take one, an object. This
+/// host surface has no string slicing, so `take lantern` cannot be split off a
+/// single line: the object arrives on the *next* line, and the verb is what
+/// decides whether one is read at all. Parsing therefore happens in two steps —
+/// classify the verb, then pull an object only if that verb wants one — which
+/// is also why a mistyped verb never swallows the command after it.
+module cellar/command;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+import testapi/text(string_eq);
+
+pub labels Verb =
+  { go_verb: . }
+  | { take_verb: . }
+  | { drop_verb: . }
+  | { unlock_verb: . }
+  | { look_verb: . }
+  | { bag_verb: . }
+  | { quit_verb: . }
+  | { bad_verb: String };
+
+pub labels Command =
+  { go_cmd: String }
+  | { take_cmd: String }
+  | { drop_cmd: String }
+  | { unlock_cmd: String }
+  | { look_cmd: . }
+  | { bag_cmd: . }
+  | { quit_cmd: . }
+  | { unknown_cmd: String };
+
+pub fn verb_of(word: String) -> Verb {
+  if! string_eq(word, "go") {
+    {go_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "take") {
+    {take_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "drop") {
+    {drop_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "unlock") {
+    {unlock_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "look") {
+    {look_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "inventory") {
+    {bag_verb=}.>widen_sum!(Verb)
+  } else if! string_eq(word, "quit") {
+    {quit_verb=}.>widen_sum!(Verb)
+  } else {
+    {bad_verb = word}.>widen_sum!(Verb)
+  }
+}
+
+pub fn verb_takes_object(v: Verb) -> Bool {
+  match! v {
+    (
+      , .(_g: Go_verb) { .t }
+      , .(_t: Take_verb) { .t }
+      , .(_d: Drop_verb) { .t }
+      , .(_u: Unlock_verb) { .t }
+      , .(_l: Look_verb) { .f }
+      , .(_b: Bag_verb) { .f }
+      , .(_q: Quit_verb) { .f }
+      , .(_x: Bad_verb) { .f }
+      )
+  }
+}
+
+pub fn command_of(v: Verb, object: String) -> Command {
+  match! v {
+    (
+      , .(_g: Go_verb) { widen_sum!({go_cmd = object}, Command) }
+      , .(_t: Take_verb) { widen_sum!({take_cmd = object}, Command) }
+      , .(_d: Drop_verb) { widen_sum!({drop_cmd = object}, Command) }
+      , .(_u: Unlock_verb) { widen_sum!({unlock_cmd = object}, Command) }
+      , .(_l: Look_verb) { widen_sum!({look_cmd=}, Command) }
+      , .(_b: Bag_verb) { widen_sum!({bag_cmd=}, Command) }
+      , .(_q: Quit_verb) { widen_sum!({quit_cmd=}, Command) }
+      , .(x: Bad_verb) { widen_sum!({unknown_cmd = x.?{bad_verb}}, Command) }
+      )
+  }
+}

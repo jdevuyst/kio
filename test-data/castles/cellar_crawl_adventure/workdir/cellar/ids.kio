@@ -1,0 +1,145 @@
+/// The three nominal identities the cellar is built from — rooms, directions
+/// and items — together with the integer equality everything else leans on.
+///
+/// This package's host surface is the bare-compute tier: it supplies
+/// arithmetic but no integer comparison whatsoever. Equality is recovered from
+/// the two primitives that do exist. `int_to_string` renders an `I32` to its
+/// one decimal spelling, and `string_eq` compares spellings, so comparing the
+/// spellings decides the numbers.
+module cellar/ids;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/text(string_eq);
+
+/// Decimal rendering is injective on `I32` — one value, one spelling — so
+/// equal spellings mean equal values.
+pub fn int_eq(a: I32, b: I32) -> Bool { string_eq(int_to_string(a), int_to_string(b)) }
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn not(a: Bool) -> Bool {
+  if! a {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub newtype Room_id : I32 { constructor of_index; projector index }
+
+pub newtype Dir_id : I32 { constructor of_code; projector code }
+
+pub newtype Item_id : I32 { constructor of_tag; projector tag }
+
+pub fn room_eq(a: Room_id, b: Room_id) -> Bool { int_eq(Room_id.index(a), Room_id.index(b)) }
+
+pub fn dir_eq(a: Dir_id, b: Dir_id) -> Bool { int_eq(Dir_id.code(a), Dir_id.code(b)) }
+
+pub fn item_eq(a: Item_id, b: Item_id) -> Bool { int_eq(Item_id.tag(a), Item_id.tag(b)) }
+
+pub fn stair_foot() -> Room_id { Room_id.of_index(0) }
+
+pub fn barrel_hall() -> Room_id { Room_id.of_index(1) }
+
+pub fn cooperage() -> Room_id { Room_id.of_index(2) }
+
+pub fn tasting_nook() -> Room_id { Room_id.of_index(3) }
+
+pub fn racking_floor() -> Room_id { Room_id.of_index(4) }
+
+pub fn unlit_cellar() -> Room_id { Room_id.of_index(5) }
+
+pub fn reserve_vault() -> Room_id { Room_id.of_index(6) }
+
+pub fn north() -> Dir_id { Dir_id.of_code(0) }
+
+pub fn south() -> Dir_id { Dir_id.of_code(1) }
+
+pub fn east() -> Dir_id { Dir_id.of_code(2) }
+
+pub fn west() -> Dir_id { Dir_id.of_code(3) }
+
+pub fn up() -> Dir_id { Dir_id.of_code(4) }
+
+pub fn down() -> Dir_id { Dir_id.of_code(5) }
+
+pub fn lantern() -> Item_id { Item_id.of_tag(0) }
+
+pub fn brass_key() -> Item_id { Item_id.of_tag(1) }
+
+pub fn cork() -> Item_id { Item_id.of_tag(2) }
+
+pub fn bottle() -> Item_id { Item_id.of_tag(3) }
+
+/// The player's whole direction vocabulary. A word outside it is `()`, which
+/// the engine turns into a refusal rather than a failure.
+pub fn direction_of(word: String) -> Dir_id | . {
+  if! string_eq(word, "north") {
+    widen_sum!(north(), Dir_id | .)
+  } else if! string_eq(word, "south") {
+    widen_sum!(south(), Dir_id | .)
+  } else if! string_eq(word, "east") {
+    widen_sum!(east(), Dir_id | .)
+  } else if! string_eq(word, "west") {
+    widen_sum!(west(), Dir_id | .)
+  } else if! string_eq(word, "up") {
+    widen_sum!(up(), Dir_id | .)
+  } else if! string_eq(word, "down") {
+    widen_sum!(down(), Dir_id | .)
+  } else {
+    widen_sum!((), Dir_id | .)
+  }
+}
+
+/// The player's whole noun vocabulary: one word per item.
+pub fn item_of(word: String) -> Item_id | . {
+  if! string_eq(word, "lantern") {
+    widen_sum!(lantern(), Item_id | .)
+  } else if! string_eq(word, "key") {
+    widen_sum!(brass_key(), Item_id | .)
+  } else if! string_eq(word, "cork") {
+    widen_sum!(cork(), Item_id | .)
+  } else if! string_eq(word, "bottle") {
+    widen_sum!(bottle(), Item_id | .)
+  } else {
+    widen_sum!((), Item_id | .)
+  }
+}
+
+pub fn direction_name(d: Dir_id) -> String {
+  if! dir_eq(d, north()) {
+    "north"
+  } else if! dir_eq(d, south()) {
+    "south"
+  } else if! dir_eq(d, east()) {
+    "east"
+  } else if! dir_eq(d, west()) {
+    "west"
+  } else if! dir_eq(d, up()) {
+    "up"
+  } else {
+    "down"
+  }
+}
+
+/// The bare noun phrase. The report module supplies the article.
+pub fn item_name(i: Item_id) -> String {
+  if! item_eq(i, lantern()) {
+    "lantern"
+  } else if! item_eq(i, brass_key()) {
+    "brass key"
+  } else if! item_eq(i, cork()) {
+    "cork"
+  } else {
+    "dusty bottle"
+  }
+}

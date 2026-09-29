@@ -1,0 +1,11 @@
+module build_comptime_absurd_fn_return/main;
+
+import __comptime__;
+
+type Term_mapper = __Checked_term__ -> __Checked_term__;
+
+fn proof_mapper(ct: __Comptime__) -> Term_mapper {
+  .(term: __Checked_term__) -> __Checked_term__ { term }
+}
+
+pub fn main() -> . { () }

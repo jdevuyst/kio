@@ -1,0 +1,5 @@
+len("") = 0
+len("abc") = 3
+len("hello, world") = 12
+len(concat) = 6
+len("kio") matches len("abc") = yes

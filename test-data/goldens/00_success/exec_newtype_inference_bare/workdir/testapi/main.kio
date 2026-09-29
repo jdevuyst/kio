@@ -1,0 +1,43 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A recursive non-canonical polymorphic newtype: payload
+// `. | (A & List(A))` does not equal the bare type parameter, so the
+// brand crossing is a real mediation, not an identity. The element type
+// is matched out of one `List` instantiation and flows into a freshly
+// built one, so two distinct instantiations of the same newtype must
+// unify under inference rather than by spelling.
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Map the head of a `List(A)` through `f` into a singleton `List(B)`,
+// or `nil(B, ())` when empty. Polymorphic in both `A` and `B`; the result
+// `List(B)` must unify against the `B`-typed payload `push` builds.
+fn map_head[A][B](xs: List(A), f: A -> B) -> List(B) {
+  match! xs.>List.un_list {
+    (.(x: A, _rest: List(A)) { push(f(x), nil(B, ())) }, .(_empty: .) { nil(B, ()) })
+  }
+}
+
+// Project the head of a `List(String)`, or a default when empty.
+fn head_or(xs: List(String), dflt: String) -> String {
+  match! xs.>List.un_list {
+    (.(x: String, _rest: List(String)) { x }, .(_empty: .) { dflt })
+  }
+}
+
+fn use_list() -> String {
+  let xs = push("infer", push("tail", nil(String, ())));
+  let mapped = map_head(xs, .(s: String) { string_concat(s, " bare: ok") });
+  head_or(mapped, "empty")
+}
+
+pub fn main() -> . { print(string_concat(use_list(), "\n")) }

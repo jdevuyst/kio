@@ -1,0 +1,10 @@
+module main;
+
+varop [* *] { foldr push empty }
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+rec(loop) {
+  fn empty() -> . { () };
+  fn push(left: ., right: .) -> . { left }
+}

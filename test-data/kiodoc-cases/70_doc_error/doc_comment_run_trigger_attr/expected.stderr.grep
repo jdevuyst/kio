@@ -1,0 +1,4 @@
+# Bare run-trigger flag.
+unknown bare attribute `stdout` on a `kio` fence in doc-comment
+# Key-value run-trigger attribute, rejected the same way.
+unknown key-value attribute `run_exit_code` on a `kio` fence in doc-comment

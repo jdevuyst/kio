@@ -1,0 +1,56 @@
+module main;
+
+import elab/spine_elaborators(fit);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// WK-FitLeaf — structural equality short-circuit. Source = target,
+// no glue synthesized.
+fn leaf_identity(a: A) -> A { fit!(a) }
+
+// WK-FitNarrowBeforeWiden — narrow first, then widen. Source
+// `(A & B)` narrows to `A` (drop B), then widens into the target
+// sum `(A | C)`. The composition is fit!'s defining feature.
+fn narrow_then_widen(p: A & B) -> A | C { fit!(p) }
+
+// WK-FitProd — recurse on product slots pairwise. Source spine is
+// the 2-slot `[(A & B), C]` (left-nested `(A & B) & C` survives
+// canonicalization, unlike right-nested chains which flatten);
+// target is the 2-slot `[A, C]`. Per-slot recursion: slot 0's
+// inner `fit!(A & B, A)` narrows the inner product; slot 1 is
+// identity (`C ≡ C`). fit! handles cross-level reshaping no axis-
+// specific can reach alone.
+fn recurse_into_product(p: (A & B) & C) -> A & C { fit!(p) }
+
+// WK-FitSum — recurse on sum arms pairwise. Source and target
+// have the same arm count; per-arm recursion narrows a product
+// payload (`(A & B) | C → A | C`).
+fn recurse_into_sum(s: (A & B) | C) -> A | C { fit!(s) }
+
+// WK-FitFnFn — function-arrow walk. Parameter recurses
+// contravariantly (target's narrower `A` widens into source's
+// wider `(A | B)`), return is identity (`()` on both sides). The
+// receiver is bound once via a let in the elaboration.
+fn function_param_walk(f: (A | B) -> .) -> A -> . { fit!(f) }
+
+// WK-FitFnFn covariant return. Parameter is `A` on both sides
+// (identity); return narrows `(A & B)` to `A` via the leaf engine.
+fn function_return_walk(f: A -> A & B) -> A -> A { fit!(f) }
+
+// WK-FitStrictInitial — `!` source elaborates via `__absurd__`,
+// any target type accepted. The vacuous initial-object morphism.
+fn bottom_source(b: !) -> A & B & C { fit!(b) }
+
+// WK-FitStrictInitial reached through a function-return walk.
+// Source returns `!` (a panicking function); fit! elaborates the
+// adapter so the call-site sees a return of any target type.
+// Load-bearing recursive case: the inner `walk(call, !, A | B)`
+// fires WK-FitStrictInitial.
+fn bottom_via_function_return(panic_fn: A -> !) -> A -> A | B { fit!(panic_fn) }
+
+// UFCS spelling — same engine, postfix form.
+fn ufcs(p: A & B) -> A { p.>fit! }

@@ -1,0 +1,8 @@
+module testapi/types;
+
+// The lambda stored by this newtype naturally names both product components.
+// Its host-facing function uses the same two canonical product slots.
+pub newtype Pick_first : [A] (A & A) -> A {
+  pub constructor mk_pick_first;
+  pub projector pick_first
+  }

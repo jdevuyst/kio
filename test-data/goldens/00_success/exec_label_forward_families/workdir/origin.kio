@@ -1,0 +1,5 @@
+module origin;
+
+import testapi(String);
+
+pub labels { item[A]: A, pack[A] <U> : A & U & (U -> String) };

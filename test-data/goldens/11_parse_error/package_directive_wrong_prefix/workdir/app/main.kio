@@ -1,0 +1,3 @@
+module app/main;
+
+pub fn main() -> . { () }

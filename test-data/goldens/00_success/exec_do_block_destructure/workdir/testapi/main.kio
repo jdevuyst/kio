@@ -1,0 +1,30 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `Box(_)` plus a per-monad bind, exercised by both bind-statement
+// and pure-let destructuring forms.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Destructuring `let (a: A, b: B) <- e;` inside a do-block: the
+// bound value is `Box(String & String)`, and the pattern binds the
+// two product slots to `head` and `tail`. The pure-let
+// `let (left: String, right: String) = ("do ", "destructure ok\n");`
+// then destructures a non-monadic tuple literal at do-block scope,
+// chaining the four bound names into the final box_pure call.
+fn run() -> Box(String) {
+  do! box_bind {
+    let .(head: String, tail: String) <- box_pure(("do ", "destructure"));
+    let .(left: String, right: String) = (string_concat(head, tail), " ok\n");
+    box_pure(string_concat(left, right))
+  }
+}
+
+pub fn main() -> . { print(Box.un_box(run())) }

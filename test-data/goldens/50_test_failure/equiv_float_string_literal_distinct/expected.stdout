@@ -1,0 +1,8 @@
+  fail equiv `float_lit` in lit/m: arms split into 2 normal-form groups
+    group A (arms 1): 1.5(F64)
+    group B (arms 2): 2.5(F64)
+  fail equiv `string_lit` in lit/m: arms split into 2 normal-form groups
+    group A (arms 1): "first"
+    group B (arms 2): "second"
+
+result: 2/2 equiv blocks failed

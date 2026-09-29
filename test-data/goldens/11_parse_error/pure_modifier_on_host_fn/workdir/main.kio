@@ -1,0 +1,3 @@
+module main;
+
+pure host fn tick() -> .;

@@ -1,0 +1,9 @@
+module derive_empty_candidates_no_rule/main;
+
+import elab/derive(derive);
+
+newtype Token : . { constructor make_token; projector read_token }
+
+fn bad() -> Token { derive!((), Token) }
+
+pub fn main() -> . { () }

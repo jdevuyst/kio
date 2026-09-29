@@ -1,0 +1,11 @@
+call_chain(3) = 4
+use_binder(1) = 10
+call_via_let(6) = 7
+call_via_alias(9) = 10
+call_mono_chain(5) = 7
+call_residual(11) = 11
+call_bottom_head() = 9
+call_rank_head() = 9
+call_partial_consecutive(13) = 13
+call_lambda_stages(21) = 21
+call_member_values(23) = 23

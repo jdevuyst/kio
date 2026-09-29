@@ -1,0 +1,105 @@
+/// Physical memory: the frame table, the page table, and the CLOCK
+/// (second-chance) replacement policy.
+///
+/// A page is named by the pair `(pid, vp)`. The page table is one flat column
+/// of `proc_count * pages_per_proc` entries, each holding the frame its page
+/// occupies or `nothing` when the page is not resident; the frame table is the
+/// same relation read the other way, plus the reference bit CLOCK consults.
+///
+/// Frames are not reclaimed when a process retires. The pages of a finished
+/// process stay resident, with their reference bits, until the hand reaches
+/// them like any other page — so the final frame table is the raw state the
+/// policy left behind, not a tidied one.
+module os/memory;
+
+import elab/control(if);
+import os/config as config;
+import os/num as num;
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+import testapi/iter(loop);
+
+pub labels Mem = { ptable: Array(I32), owner: Array(I32), vpage: Array(I32), refbit: Array(Bool) };
+
+pub fn new_mem() -> Mem {
+  let pages = mul_i32(config.proc_count(), config.pages_per_proc());
+  let frames = config.frame_count();
+  {
+    , ptable = array_make_filled(pages, config.nothing())
+    , owner = array_make_filled(frames, config.nothing())
+    , vpage = array_make_filled(frames, config.nothing())
+    , refbit = array_make_filled(frames, .f)
+    }
+}
+
+fn page_slot(pid: I32, vp: I32) -> I32 { add_i32(mul_i32(pid, config.pages_per_proc()), vp) }
+
+/// The frame holding `(pid, vp)`, or `nothing` when the page is not resident.
+pub fn frame_of(m: Mem, pid: I32, vp: I32) -> I32 { array_get(m.?{ptable}, page_slot(pid, vp)) }
+
+pub fn owner_of(m: Mem, frame: I32) -> I32 { array_get(m.?{owner}, frame) }
+
+pub fn vpage_of(m: Mem, frame: I32) -> I32 { array_get(m.?{vpage}, frame) }
+
+pub fn refbit_of(m: Mem, frame: I32) -> Bool { array_get(m.?{refbit}, frame) }
+
+/// Record a reference. The bit is the page's second chance: the hand will pass
+/// over the frame once, spending the bit, before it will consider evicting it.
+pub fn set_ref(m: Mem, frame: I32) -> . { array_set(m.?{refbit}, frame, .t) }
+
+fn clear_ref(m: Mem, frame: I32) -> . { array_set(m.?{refbit}, frame, .f) }
+
+/// The hand sweeps the frames in a circle. The tier has no remainder operator,
+/// so it wraps by comparison rather than by `mod`.
+fn advance(hand: I32) -> I32 {
+  let next = add_i32(hand, 1);
+  if! num.geq(next, config.frame_count()) {
+    0
+  } else {
+    next
+  }
+}
+
+/// Walk the hand to the frame CLOCK would evict: the first free frame, or the
+/// first occupied one whose reference bit is already clear, spending the second
+/// chance of every frame passed on the way.
+///
+/// `steps` is exhausted only when every frame was occupied and referenced. In
+/// that case the sweep just cleared all `frame_count` bits and the hand is back
+/// where it started, on a frame whose bit is now clear — so the frame under it
+/// is the victim, and the base case is the answer rather than a fallback.
+rec(loop) fn clock_scan(m: Mem, hand: I32, steps: I32) -> I32 {
+  if! leq_i32(steps, 0) {
+    hand
+  } else if! num.lt(owner_of(m, hand), 0) {
+    hand
+  } else if! refbit_of(m, hand) {
+    clear_ref(m, hand);
+    rec clock_scan(m, advance(hand), sub_i32(steps, 1))
+  } else {
+    hand
+  }
+}
+
+/// Bring `(pid, vp)` into memory, evicting whatever the hand settles on.
+///
+/// Yields the frame the page landed in, the process and page that frame gave
+/// up (`nothing` twice when the frame was free), and where the hand now rests —
+/// one past the frame just filled, so a page is never the next thing considered
+/// for eviction.
+pub fn load_page(m: Mem, pid: I32, vp: I32, hand: I32) -> I32 & I32 & I32 & I32 {
+  let frame = clock_scan(m, hand, config.frame_count());
+  let victim_pid = owner_of(m, frame);
+  let victim_vp = vpage_of(m, frame);
+  if! num.geq(victim_pid, 0) {
+    array_set(m.?{ptable}, page_slot(victim_pid, victim_vp), config.nothing())
+  } else {
+    ()
+  };
+  array_set(m.?{owner}, frame, pid);
+  array_set(m.?{vpage}, frame, vp);
+  array_set(m.?{ptable}, page_slot(pid, vp), frame);
+  set_ref(m, frame);
+  (frame, victim_pid, victim_vp, advance(frame))
+}

@@ -1,0 +1,19 @@
+/// os_scheduler_sim — a preemptive round-robin scheduler over demand-paged
+/// memory.
+///
+/// Four processes arrive on a staggered schedule and run burst programs of
+/// compute phases and page references. The scheduler (`os/sched`) gives the
+/// head of its ready queue one quantum at a time; a reference to a page that is
+/// not resident traps into the pager (`os/memory`), which takes a frame by the
+/// CLOCK second-chance policy and blocks the process while the page is fetched.
+/// The two subsystems meet there: paging decides who the scheduler can run, and
+/// the schedule decides which pages get a second chance.
+///
+/// The program prints the machine and the fixture, a trace of the opening
+/// ticks, what each process cost, the system totals, and the frame table the
+/// policy left behind.
+module testapi/main;
+
+import os/report as report;
+
+pub fn main() -> . { report.run() }

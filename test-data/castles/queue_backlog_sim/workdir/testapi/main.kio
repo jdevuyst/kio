@@ -1,0 +1,6 @@
+module testapi/main;
+
+import queue_backlog_sim/report(print_report);
+import queue_backlog_sim/sim(run);
+
+pub fn main() -> . { print_report(run()) }

@@ -1,0 +1,3 @@
+module decoy;
+
+host type Shared role(i32);

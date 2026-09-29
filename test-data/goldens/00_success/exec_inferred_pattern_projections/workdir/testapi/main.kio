@@ -1,0 +1,74 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+
+newtype Quad : String & String & String & String { constructor make; projector unpack }
+
+newtype Pack <U> : (U -> String) & U & U { constructor make; projector unpack }
+
+fn three(value: String & String & String) -> . {
+  let .(first, second, third) = value;
+  io.print(first);
+  io.print(second);
+  io.print(third);
+  io.print("\n")
+}
+
+fn four(value: Quad) -> . {
+  let .(first, second, third, fourth) = value.>Quad.unpack;
+  io.print(first);
+  io.print(second);
+  io.print(third);
+  io.print(fourth);
+  io.print("\n")
+}
+
+fn nested(value: (String & String) & String & String) -> . {
+  let .(pair: (first, second: String), third, fourth) = value;
+  io.print(first);
+  io.print(second);
+  io.print(third);
+  io.print(fourth);
+  io.print("\n")
+}
+
+fn typed(value: String & String & String) -> . {
+  let .(first: String, second: String, third: String) = value;
+  io.print(first);
+  io.print(second);
+  io.print(third);
+  io.print("\n")
+}
+
+fn invoke(f: (String & String & String) -> .) -> . { f("l", "a", "mbda") }
+
+fn existential(value: Pack) -> . {
+  let .(<Hidden> payload) = value.>Pack.unpack;
+  let .(show, first, second) = payload;
+  io.print(show(first));
+  io.print(show(second));
+  io.print("\n")
+}
+
+fn wildcards(value: String & String & String & String) -> . {
+  let .(first, _, third, _) = value;
+  io.print(first);
+  io.print(third);
+  io.print("\n")
+}
+
+pub fn main() -> . {
+  three("a", "b", "c");
+  four(Quad.make("a", "b", "c", "d"));
+  nested(("n", "e"), "s", "t");
+  typed("type", "d", "!");
+  invoke(.((first, second, third)) {
+    io.print(first);
+    io.print(second);
+    io.print(third);
+    io.print("\n")
+  });
+  existential(Pack.make(.(value: String) { value }, "ex", "ex"));
+  wildcards("a", "b", "c", "d")
+}

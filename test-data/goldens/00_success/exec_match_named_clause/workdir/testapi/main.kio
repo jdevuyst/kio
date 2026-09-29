@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Match clauses are arbitrary expressions of function type, not a
+// dedicated construct. Idiomatically a clause is a lambda literal at
+// the dispatch site, but any name that resolves to a function works
+// too — the typer reads the function's parameter type as the
+// dispatch pattern regardless of whether the function was minted
+// inline or named separately. This golden exercises the named-
+// function clause path: each clause references a previously-defined
+// top-level fn by name.
+fn show_int(n: I32) -> . { print(int_to_string(n)) }
+
+fn show_string(s: String) -> . { print(s) }
+
+fn handle(v: I32 | String) -> . {
+  match! v {
+    (show_int, show_string)
+  }
+}
+
+pub fn main() -> . { handle(widen_sum!("matched right\n")) }

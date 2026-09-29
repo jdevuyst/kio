@@ -1,0 +1,7 @@
+module main;
+
+fn consume[A][B](left: A, right: B) -> . { () }
+
+fn outer[B](value: B) -> . { consume(B, ., value, ()) }
+
+pub fn main() -> . { outer(., ()) }

@@ -1,0 +1,5 @@
+module testapi/arith;
+
+import testapi(String);
+
+host fn apply_poly(f: [T] T -> T) -> String;

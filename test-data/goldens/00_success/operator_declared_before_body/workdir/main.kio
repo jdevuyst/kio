@@ -1,0 +1,9 @@
+module main;
+
+fn keep(a: ., b: .) -> . { a }
+
+op _ + _ { impl keep }
+
+fn shadow(keep: .) -> . { keep + () }
+
+pub fn main() -> . { shadow(()) }

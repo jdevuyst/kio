@@ -1,0 +1,30 @@
+package app;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {}
+package app;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {}

@@ -1,0 +1,17 @@
+module host/m;
+
+import elab/control(scope);
+import host(bar, foo);
+
+equiv passes() {
+  scope! {
+    let x = ();
+    x
+  };
+  ()
+}
+
+equiv fails() {
+  foo();
+  bar()
+}

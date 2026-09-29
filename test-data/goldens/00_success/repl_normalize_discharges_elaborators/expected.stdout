@@ -1,0 +1,15 @@
+  pass equiv `pair_has_i32_matches_true` in rne/main
+  pass equiv `reordered_pair_has_i32_matches_true` in rne/main
+  pass equiv `reflected_unit_matches_constructor` in rne/main
+
+result: 3/3 equiv blocks passed
+kio repl — the module inspector
+loaded: rne/main
+type `:help` for commands, `:quit` to leave
+__left__(())
+__left__(())
+import elab/type_of as _q0;
+
+_q0.Type_rep.mk_type_rep(__left__(_q0.Rep_unit.mk_rep_unit(())))
+<closure rne/closure.make_marker(value)>
+bye

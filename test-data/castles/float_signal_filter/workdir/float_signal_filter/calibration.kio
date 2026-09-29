@@ -1,0 +1,17 @@
+module float_signal_filter/calibration;
+
+import testapi(F64);
+import testapi/arith(mul_f64, sub_f64);
+
+fn calibrate_sample(value: F64) -> F64 { sub_f64(mul_f64(value, 1.5(F64)), 0.5(F64)) }
+
+pub fn calibrated_stream(stream: F64 & F64 & F64 & F64 & F64) -> F64 & F64 & F64 & F64 & F64 {
+  let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = stream;
+  (
+    , calibrate_sample(s0)
+    , calibrate_sample(s1)
+    , calibrate_sample(s2)
+    , calibrate_sample(s3)
+    , calibrate_sample(s4)
+    )
+}

@@ -1,0 +1,9 @@
+module owalias/m;
+
+import __intrinsics__;
+
+import owalias/n(A);
+
+pub type Bag = A;
+
+pub fn absurd_bag(p: !) -> Bag { __absurd__(Bag, p) }

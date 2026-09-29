@@ -1,0 +1,14 @@
+package rust_invalid_namespace_value;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/";
+    namespace "9lives"
+  }
+}
+
+bridge {
+  main
+}

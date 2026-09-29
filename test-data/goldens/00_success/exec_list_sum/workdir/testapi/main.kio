@@ -1,0 +1,41 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Sum of an `Int` list via `loop`. The named `sum` combinator;
+// distinct from `exec_host_loop_fold`'s `fold`-with-`add` whose
+// subject is the host-loop pattern.
+fn sum_step(state: I32 & List(I32)) -> (I32 & List(I32)) | I32 {
+  match! state {
+    .(acc: I32, xs: List(I32)) {
+      match! xs.>List.un_list {
+        (
+          , .(x: I32, rest: List(I32)) {
+              widen_sum!((add_i32(acc, x), rest), (I32 & List(I32)) | I32)
+            }
+          , .(_empty: .) { widen_sum!(acc, (I32 & List(I32)) | I32) }
+          )
+      }
+    }
+  }
+}
+
+fn sum(xs: List(I32)) -> I32 { loop(.(state: I32 & List(I32)) { sum_step(state) }, (0, xs)) }
+
+pub fn main() -> . {
+  let xs = push(1, push(2, push(3, push(4, push(5, nil(I32, ()))))));
+  print(int_to_string(sum(xs)));
+  print("\n")
+}

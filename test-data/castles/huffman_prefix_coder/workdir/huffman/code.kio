@@ -1,0 +1,95 @@
+/// Code assignment: one walk of the finished tree hands every leaf the path
+/// that reaches it.
+///
+/// Descending left appends a 0 and descending right a 1, so a leaf's codeword is
+/// its root path. No distinct leaf path can be a prefix of another: the
+/// prefix-free property follows directly from the leaves being leaves. The
+/// separate Kraft check verifies the recorded length accounting and completeness.
+module huffman/code;
+
+import elab/control(if);
+import elab/match(match);
+import huffman/list(List, cons, len, nil, of1, reverse);
+import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
+import huffman/tree(Leaf_symbol, Leaf_weight);
+import huffman/tree(Node, {fork_left}, {fork_right}, {leaf_symbol}, {leaf_weight});
+import testapi(Bool, I32);
+import testapi/arith(lt_i32);
+import testapi/iter(loop);
+
+/// A codeword, and the encoded message, are both just bits: 0 or 1 per element.
+pub type Bits = List(I32);
+
+pub labels Entry = { entry_symbol: I32, entry_freq: I32, entry_bits: Bits, entry_len: I32 };
+
+fn entry(symbol: I32, freq: I32, bits: Bits) -> Entry {
+  {entry_symbol = symbol, entry_freq = freq, entry_bits = bits, entry_len = len(bits)}
+}
+
+/// The prefix is carried down reversed — a walk pushes onto its front — so a
+/// leaf reverses it once to read the codeword off in root-to-leaf order.
+///
+/// Descending into the left subtree is not a tail call: its result is the
+/// accumulator the right subtree continues from.
+rec(loop) fn collect(node: Node, prefix: Bits, acc: List(Entry)) -> List(Entry) {
+  match! node.>Node.un_node {
+    (
+      , .(symbol: Leaf_symbol, weight: Leaf_weight) {
+          cons(entry(symbol.?{leaf_symbol}, weight.?{leaf_weight}, reverse(prefix)), acc)
+        }
+      , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
+          let after_left = rec(cont) collect(left.?{fork_left}, cons(0, prefix), acc);
+          rec collect(right.?{fork_right}, cons(1, prefix), after_left)
+        }
+      )
+  }
+}
+
+fn before(a: Entry, b: Entry) -> Bool { lt_i32(a.?{entry_symbol}, b.?{entry_symbol}) }
+
+rec(loop) fn insert_by_symbol(row: Entry, rows: List(Entry)) -> List(Entry) {
+  match! rows.>List.un_list {
+    (
+      , .(head: Entry, rest: List(Entry)) {
+          if! before(row, head) {
+            cons(row, rows)
+          } else {
+            cons(head, rec(cont) insert_by_symbol(row, rest))
+          }
+        }
+      , .(_empty: .) { of1(row) }
+      )
+  }
+}
+
+rec(loop) fn sort_onto(rows: List(Entry), acc: List(Entry)) -> List(Entry) {
+  match! rows.>List.un_list {
+    (
+      , .(head: Entry, rest: List(Entry)) { rec sort_onto(rest, insert_by_symbol(head, acc)) }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+/// The code table, in symbol order so it reads against the frequency table.
+pub fn code_table(root: Node) -> List(Entry) {
+  sort_onto(collect(root, nil(I32, ()), nil(Entry, ())), nil(Entry, ()))
+}
+
+pub rec(loop) fn bits_for(rows: List(Entry), symbol: I32, fallback: Bits) -> Bits {
+  match! rows.>List.un_list {
+    (
+      , .(head: Entry, rest: List(Entry)) {
+          let at = head.?{entry_symbol};
+          if! lt_i32(at, symbol) {
+            rec bits_for(rest, symbol, fallback)
+          } else if! lt_i32(symbol, at) {
+            fallback
+          } else {
+            head.?{entry_bits}
+          }
+        }
+      , .(_empty: .) { fallback }
+      )
+  }
+}

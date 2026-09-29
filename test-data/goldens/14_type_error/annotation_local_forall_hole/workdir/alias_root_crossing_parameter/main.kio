@@ -1,0 +1,7 @@
+module main;
+
+type Wrap[Slot] = [Alias_bound] Slot -> Alias_bound;
+
+fn consume(wrapper: Wrap(.) -> .) -> . { () }
+
+fn partial() -> . { consume(.(function: Wrap(_)) { () }) }

@@ -1,0 +1,23 @@
+module tumta/main;
+
+// Surface-Kio coverage of `_`-marked type-arg slots at call
+// sites: the typer treats each `_` as an elided positional
+// type-arg the same way as the fully-elided form. Exercises
+// both inference paths in one call — `__left__`'s first
+// binder is solved by value-arg unification, the second by the
+// return type — the same dual-path setup the sibling Kio'
+// golden `typecheck_return_type_inference` uses for its
+// elided-form variant.
+//
+// `_` in call-arg position is surface sugar only (per
+// `specs/prime.md` § 41, Kio' has no inference), so this
+// case is non-Kio' (no IS_KIO_PRIME marker).
+import __intrinsics__;
+
+import tumta(String);
+
+// `__left__ : [A][B](x: A) -> (a | B)`. Two positional
+// `_` slots in front of `x` stand in for the two type-args; the
+// typer solves `[A] = .` from `x`'s type and `[B] = String`
+// from the return type.
+fn mk_left_str_marked(x: .) -> . | String { __left__(_, _, x) }

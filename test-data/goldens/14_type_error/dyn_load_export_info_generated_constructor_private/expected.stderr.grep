@@ -1,0 +1,3 @@
+newtype `Export_info` has no accessible member `mk`
+newtype member `Export_info\.seal_export_info` is not visible from module `testapi/main`
+newtype member `Export_info\.open_export_info` is not visible from module `testapi/main`

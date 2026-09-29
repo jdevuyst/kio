@@ -1,0 +1,30 @@
+module testapi/main;
+
+import core/store as target;
+import testapi(String);
+import testapi/io(print);
+import widget/store as source;
+
+pub fn main() -> . {
+  let later =
+    (
+      , target.Seed.mk("later-seed\n")
+      , {source.branch = .(_next: source.Later(String) -> String) { "later-branch\n" }}
+      );
+  print(source.later_seed(later));
+  print(source.later_branch(later, .(_row: source.Later(String)) { "unused" }));
+  let first =
+    (
+      , target.Seed.mk("first-seed\n")
+      , {source.left = .(_next: source.Second(String) -> String) { "first-left\n" }}
+      );
+  let second =
+    (
+      , target.Seed.mk("second-seed\n")
+      , {source.right = .(_next: source.First(String) -> String) { "second-right\n" }}
+      );
+  print(source.first_seed(first));
+  print(source.first_left(first, .(_row: source.Second(String)) { "unused" }));
+  print(source.second_seed(second));
+  print(source.second_right(second, .(_row: source.First(String)) { "unused" }))
+}

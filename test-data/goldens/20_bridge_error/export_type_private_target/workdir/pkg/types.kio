@@ -1,0 +1,3 @@
+module pkg/types;
+
+pub newtype Secret : . { pub constructor mk_secret; pub projector un_secret }

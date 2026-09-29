@@ -1,0 +1,114 @@
+module csv_reconcile/model;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+
+pub labels Ledger = {
+  , balance: I32
+  , credits: I32
+  , debits: I32
+  , checks: I32
+  , errors: I32
+  , started: Bool
+  };
+
+pub type State = Balance & Credits & Debits & Checks & Errors & Started;
+
+pub fn make_state(
+  , new_balance: I32
+  , new_credits: I32
+  , new_debits: I32
+  , new_checks: I32
+  , new_errors: I32
+  , new_started: Bool
+  ) -> State {
+  {
+    , balance = new_balance
+    , credits = new_credits
+    , debits = new_debits
+    , checks = new_checks
+    , errors = new_errors
+    , started = new_started
+    }
+}
+
+pub fn init() -> State { make_state(0, 0, 0, 0, 0, .f) }
+
+pub fn get_balance(state: State) -> I32 { state.?{balance} }
+
+pub fn get_credits(state: State) -> I32 { state.?{credits} }
+
+pub fn get_debits(state: State) -> I32 { state.?{debits} }
+
+pub fn get_checks(state: State) -> I32 { state.?{checks} }
+
+pub fn get_errors(state: State) -> I32 { state.?{errors} }
+
+pub fn is_started(state: State) -> Bool { state.?{started} }
+
+pub fn begin(_state: State) -> State { make_state(0, 0, 0, 0, 0, .t) }
+
+pub fn add_error(state: State) -> State {
+  make_state(
+    , get_balance(state)
+    , get_credits(state)
+    , get_debits(state)
+    , get_checks(state)
+    , arith.add_i32(get_errors(state), 1)
+    , is_started(state)
+    )
+}
+
+pub fn add_credit(state: State, amount: I32) -> State {
+  make_state(
+    , arith.add_i32(get_balance(state), amount)
+    , arith.add_i32(get_credits(state), amount)
+    , get_debits(state)
+    , get_checks(state)
+    , get_errors(state)
+    , is_started(state)
+    )
+}
+
+pub fn debit_allowed(state: State, amount: I32) -> Bool {
+  if! arith.lt_i32(get_balance(state), amount) {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn apply_debit(state: State, amount: I32) -> State {
+  if! debit_allowed(state, amount) {
+    make_state(
+      , arith.sub_i32(get_balance(state), amount)
+      , get_credits(state)
+      , arith.add_i32(get_debits(state), amount)
+      , get_checks(state)
+      , get_errors(state)
+      , is_started(state)
+      )
+  } else {
+    add_error(state)
+  }
+}
+
+pub fn record_check(state: State) -> State {
+  make_state(
+    , get_balance(state)
+    , get_credits(state)
+    , get_debits(state)
+    , arith.add_i32(get_checks(state), 1)
+    , get_errors(state)
+    , is_started(state)
+    )
+}
+
+pub fn status(state: State) -> String {
+  if! arith.lt_i32(0, get_errors(state)) {
+    "needs-review"
+  } else {
+    "ok"
+  }
+}

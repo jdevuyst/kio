@@ -1,0 +1,56 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+
+pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+
+pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+
+fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
+  Render.mk_render(
+    , Pair(A, B)
+    , .(p) {
+        let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
+        let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
+        string_concat(left, right)
+      }
+    )
+}
+
+// A brand-generic combinator: it derives a `Render(Pair(a, a))`
+// instance for an arbitrary element type `a`, given a `Render(a)`. The
+// goal `Render(Pair(A, A))` has the enclosing binder `[A]` unbound; the
+// resolver treats it as a rigid logic variable and the synthesized
+// derivation `render_pair(a, a, get_elem(), get_elem())` is polymorphic
+// in `a` — the function compiles to a single generic body.
+fn paired_render[A](get_elem: . -> Render(A)) -> Render(Pair(A, A)) {
+  derive!((render_pair, get_elem), Render(Pair(A, A)))
+}
+
+fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+
+// Instantiate the combinator at `A = Cell(String)`.
+fn run() -> String {
+  let inst = paired_render(render_cell_string);
+  let value =
+    Pair.mk_pair(
+      , Cell(String)
+      , Cell(String)
+      , __pair__(
+          , Cell(String)
+          , Cell(String)
+          , Cell.mk_cell("derive! poly:"(String))
+          , Cell.mk_cell(" ok\n"(String))
+          )
+      );
+  Render.render(inst)(value)
+}
+
+pub fn main() -> . { print(run()) }

@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_prod, one_prod);
+import testapi(Bool, I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `narrow_prod!` drops slots from a product. The middle `Bool`
+// factor is discarded; the `String` (slot 0) and `I32` (slot 2)
+// pass through at their source-order positions. Target multiset
+// `{String, I32}` ⊆ source's `{String, Bool, I32}`.
+fn project(p: String & Bool & I32) -> String & I32 { narrow_prod!(p) }
+
+pub fn main() -> . {
+  let kept = project(("narrow_prod: kept ", .t, 7));
+  // The kept pair is `(String & I32)` — pick each slot with
+  // `one_prod!` and print.
+  let s = one_prod!(kept, String);
+  let n = one_prod!(kept, I32);
+  print(string_concat(s, string_concat(int_to_string(n), "\n")))
+}

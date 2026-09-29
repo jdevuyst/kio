@@ -1,0 +1,119 @@
+/// Line-level longest-common-subsequence alignment of two documents by
+/// dynamic programming.
+///
+/// `L(i, j)` is the LCS length of `left[i..]` against `right[j..]`. The
+/// suffix orientation is what lets the traceback run forward, from the
+/// head of both documents toward their ends, which is the order the merge
+/// wants to emit regions in.
+///
+/// The table is a list of rows and a row is a list of cells: this tier has
+/// no host array, so the shape of the recursion is the shape of the data.
+/// `L(i, j)` reads the row below it (`L(i + 1, _)`) and its own next column
+/// (`L(i, j + 1)`), so rows are built from the last one up and each row is
+/// built from its right edge inward — the cell a step needs is always the
+/// head of a list the step already holds.
+module diff3/lcs;
+
+import diff3/list as list;
+import diff3/prim as prim;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+
+/// One aligned line pair: an index into the base document and the index of
+/// the same line in the other document.
+pub type Match = I32 & I32;
+
+pub fn base_at(pair: Match) -> I32 {
+  match! pair {
+    .(base: I32, _other: I32) { base }
+  }
+}
+
+pub fn other_at(pair: Match) -> I32 {
+  match! pair {
+    .(_base: I32, other: I32) { other }
+  }
+}
+
+/// A solved alignment: both documents, the table, and the two lengths.
+pub labels Dp = {
+  , left: list.List(String)
+  , right: list.List(String)
+  , table: list.List(list.List(I32))
+  , left_len: I32
+  , right_len: I32
+  };
+
+/// Row `i` of the table, given row `i + 1` (`below`) as a suffix starting
+/// at the current column. Recursing to the right first means `rest` is the
+/// part of row `i` this cell depends on.
+rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(I32)) -> list.List(I32) {
+  match! list.List.unpack(right) {
+    (
+      , .(other: String, right_rest: list.List(String)) {
+          let below_rest = list.tail(below);
+          let rest = rec(cont) build_row(line, right_rest, below_rest);
+          let skip_left = list.head_or(below, 0);
+          let diagonal = list.head_or(below_rest, 0);
+          let skip_right = list.head_or(rest, 0);
+          if! string_eq(line, other) {
+            list.cons(add_i32(diagonal, 1), rest)
+          } else {
+            list.cons(prim.int_max(skip_left, skip_right), rest)
+          }
+        }
+      , .(_empty: .) { list.one(0) }
+      )
+  }
+}
+
+rec(loop) fn build_rows(left: list.List(String), right: list.List(String), floor: list.List(I32)) -> list.List(list.List(I32)) {
+  match! list.List.unpack(left) {
+    (
+      , .(line: String, left_rest: list.List(String)) {
+          let below = rec(cont) build_rows(left_rest, right, floor);
+          list.cons(build_row(line, right, list.head_or(below, floor)), below)
+        }
+      , .(_empty: .) { list.one(floor) }
+      )
+  }
+}
+
+pub fn align(left: list.List(String), right: list.List(String)) -> Dp {
+  let cols = list.len(right);
+  {
+    , left
+    , right
+    , table = build_rows(left, right, list.zeros(add_i32(cols, 1)))
+    , left_len = list.len(left)
+    , right_len = cols
+    }
+}
+
+fn cell(dp: Dp, row: I32, col: I32) -> I32 {
+  list.nth_or(list.nth_or(dp.?{table}, row, list.nil(I32, ())), col, 0)
+}
+
+pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
+
+/// Walk the solved table from `(0, 0)` to the far corner, emitting a pair
+/// for every aligned line. When the two lines agree the LCS always has an
+/// optimal solution that takes the match, so the traceback never needs to
+/// look back.
+rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List(Match)) -> list.List(Match) {
+  if! prim.or(leq_i32(dp.?{left_len}, row), leq_i32(dp.?{right_len}, col)) {
+    list.reverse(acc)
+  } else if! string_eq(list.nth_or(dp.?{left}, row, ""), list.nth_or(dp.?{right}, col, "")) {
+    rec trace(dp, add_i32(row, 1), add_i32(col, 1), list.cons((row, col), acc))
+  } else if! leq_i32(cell(dp, row, add_i32(col, 1)), cell(dp, add_i32(row, 1), col)) {
+    rec trace(dp, add_i32(row, 1), col, acc)
+  } else {
+    rec trace(dp, row, add_i32(col, 1), acc)
+  }
+}
+
+pub fn matches(dp: Dp) -> list.List(Match) { trace(dp, 0, 0, list.nil(Match, ())) }

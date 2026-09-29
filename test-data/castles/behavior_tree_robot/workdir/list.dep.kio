@@ -1,0 +1,7 @@
+dependency list;
+
+source {
+  path "../../../poc/list/workdir/list.pkg.kio"
+}
+
+rehost list/list to list_host;

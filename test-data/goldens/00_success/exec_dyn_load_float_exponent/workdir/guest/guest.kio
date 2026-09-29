@@ -1,0 +1,5 @@
+module guest;
+
+import hostapi(F64, add_f64);
+
+pub fn tiny() -> F64 { add_f64(1.5e-3, 2.5e2) }

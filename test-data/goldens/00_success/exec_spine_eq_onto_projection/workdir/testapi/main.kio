@@ -1,0 +1,15 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_prod);
+import testapi(I32, String);
+import testapi/io(print);
+
+// Spine equivalent of `exec_onto_projection`. The original used
+// algebraic `onto!` to drop source factors absent from the target.
+// `narrow_prod!` is the direct spine analogue — target multiset
+// `{String}` ⊆ source multiset `{String, I32, I32}` (counting
+// multiplicity). The String slot is retained at its source-order
+// position; the two I32 slots drop.
+fn project_string(p: String & I32 & I32) -> String { narrow_prod!(p) }
+
+pub fn main() -> . { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }

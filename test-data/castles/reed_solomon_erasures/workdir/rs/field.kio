@@ -1,0 +1,47 @@
+module rs/field;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import list_host as integers;
+import testapi(Bool, I32);
+import testapi/arith as a;
+import testapi/iter(loop);
+
+pub fn valid(value: I32) -> Bool {
+  if! a.lt_i32(value, 0) {
+    .f
+  } else {
+    a.lt_i32(value, 17)
+  }
+}
+
+pub fn equal(x: I32, y: I32) -> Bool { integers.eq_i32(x, y) }
+
+pub fn add(x: I32, y: I32) -> I32 { a.mod_i32(a.add_i32(x, y), 17) }
+
+pub fn subtract(x: I32, y: I32) -> I32 { a.mod_i32(a.add_i32(a.sub_i32(x, y), 17), 17) }
+
+pub fn multiply(x: I32, y: I32) -> I32 { a.mod_i32(a.mul_i32(x, y), 17) }
+
+rec(loop) fn power_walk(base: I32, exponent: I32, product: I32) -> I32 {
+  if! a.leq_i32(exponent, 0) {
+    product
+  } else {
+    let next = if! equal(a.mod_i32(exponent, 2), 0) {
+      product
+    } else {
+      multiply(product, base)
+    };
+    rec power_walk(multiply(base, base), a.div_i32(exponent, 2), next)
+  }
+}
+
+pub fn power(base: I32, exponent: I32) -> I32 { power_walk(base, exponent, 1) }
+
+pub fn inverse(value: I32) -> I32 | . {
+  if! equal(value, 0) {
+    ().>widen_sum!
+  } else {
+    power(value, 15).>widen_sum!
+  }
+}

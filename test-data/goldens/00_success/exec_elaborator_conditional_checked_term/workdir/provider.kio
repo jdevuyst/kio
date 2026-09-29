@@ -1,0 +1,14 @@
+module provider;
+
+import __comptime__;
+import elab/control(if);
+
+pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ {
+  if! .t(Comptime_bool) {
+    __term_unit__(ct)
+  } else {
+    __term_unit__(ct)
+  }
+}
+
+pub elab choose : . -> . { impl choose_impl }

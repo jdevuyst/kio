@@ -1,0 +1,8 @@
+[package]
+name = "module-alias-scope-host"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+build_rust_module_alias_scope_collision = { path = "../workdir/out/rust" }

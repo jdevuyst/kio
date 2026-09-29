@@ -1,0 +1,5 @@
+module rne/other;
+
+import elab/type_of(Type_rep, type_of);
+
+pub fn rep_of_unit() -> Type_rep { type_of!(., ()) }

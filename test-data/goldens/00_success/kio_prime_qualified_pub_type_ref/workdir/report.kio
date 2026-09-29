@@ -1,0 +1,5 @@
+module report;
+
+import scale as scale;
+
+pub fn echo(k: scale.Kelvin) -> scale.Kelvin { k }

@@ -1,0 +1,18 @@
+package typed_let_partial_pattern_no_unification;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  typed_let_partial_pattern_no_unification;
+  typed_let_partial_pattern_no_unification/**
+}

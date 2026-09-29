@@ -1,0 +1,119 @@
+cpu_pipeline_hazard_sim
+a five-stage in-order pipeline: IF ID EX MEM WB, one instruction per stage
+`--` in a stage column means the stage is empty that cycle: filling, draining,
+a bubble a stall pushed in, or a slot a taken branch squashed
+
+-- program --
+i0    LOADI r1, 6
+i1    LOADI r2, 7
+i2    ADD   r3, r1, r2
+i3    MUL   r4, r3, r2
+i4    STORE r4, [2]
+i5    LOAD  r5, [2]
+i6    SUB   r6, r5, r1
+i7    BEQ   r6, r4, i14
+i8    ADD   r7, r6, r1
+i9    MUL   r3, r7, r2
+i10   BEQ   r7, r4, i13
+i11   SUB   r6, r3, r1
+i12   STORE r6, [5]
+i13   NOP
+i14   STORE r7, [4]
+i15   HALT
+i16   LOADI r7, -1
+
+-- run 1: forwarding disabled --
+cyc |  IF  ID  EX MEM  WB | event
+  1 |  i0  --  --  --  -- |
+  2 |  i1  i0  --  --  -- |
+  3 |  i2  i1  i0  --  -- |
+  4 |  i3  i2  i1  i0  -- | stall: RAW on r2
+  5 |  i3  i2  --  i1  i0 | stall: RAW on r2
+  6 |  i3  i2  --  --  i1 |
+  7 |  i4  i3  i2  --  -- | stall: RAW on r3
+  8 |  i4  i3  --  i2  -- | stall: RAW on r3
+  9 |  i4  i3  --  --  i2 |
+ 10 |  i5  i4  i3  --  -- | stall: RAW on r4
+ 11 |  i5  i4  --  i3  -- | stall: RAW on r4
+ 12 |  i5  i4  --  --  i3 |
+ 13 |  i6  i5  i4  --  -- |
+ 14 |  i7  i6  i5  i4  -- | stall: RAW on r5
+ 15 |  i7  i6  --  i5  i4 | stall: RAW on r5
+ 16 |  i7  i6  --  --  i5 |
+ 17 |  i8  i7  i6  --  -- | stall: RAW on r6
+ 18 |  i8  i7  --  i6  -- | stall: RAW on r6
+ 19 |  i8  i7  --  --  i6 |
+ 20 |  i9  i8  i7  --  -- |
+ 21 | i10  i9  i8  i7  -- | stall: RAW on r7
+ 22 | i10  i9  --  i8  i7 | stall: RAW on r7
+ 23 | i10  i9  --  --  i8 |
+ 24 | i11 i10  i9  --  -- |
+ 25 | i12 i11 i10  i9  -- | branch taken -> i13, squash i11 i12
+ 26 |  --  --  -- i10  i9 |
+ 27 | i13  --  --  -- i10 |
+ 28 | i14 i13  --  --  -- |
+ 29 | i15 i14 i13  --  -- |
+ 30 |  -- i15 i14 i13  -- |
+ 31 |  --  -- i15 i14 i13 |
+ 32 |  --  --  -- i15 i14 |
+ 33 |  --  --  --  -- i15 |
+
+cycles: 33
+instructions retired: 14
+stall cycles: 12
+bubbles (EX idle): 19
+squashed instructions: 2
+forwards: 0 (EX/MEM 0, MEM/WB 0)
+ipc (permille): 424
+audit (cycles - retired == bubbles): 19 == 19
+
+-- run 2: forwarding enabled --
+cyc |  IF  ID  EX MEM  WB | event
+  1 |  i0  --  --  --  -- |
+  2 |  i1  i0  --  --  -- |
+  3 |  i2  i1  i0  --  -- |
+  4 |  i3  i2  i1  i0  -- |
+  5 |  i4  i3  i2  i1  i0 |
+  6 |  i5  i4  i3  i2  i1 |
+  7 |  i6  i5  i4  i3  i2 |
+  8 |  i7  i6  i5  i4  i3 | stall: load-use on r5
+  9 |  i7  i6  --  i5  i4 |
+ 10 |  i8  i7  i6  --  i5 |
+ 11 |  i9  i8  i7  i6  -- |
+ 12 | i10  i9  i8  i7  i6 |
+ 13 | i11 i10  i9  i8  i7 |
+ 14 | i12 i11 i10  i9  i8 | branch taken -> i13, squash i11 i12
+ 15 |  --  --  -- i10  i9 |
+ 16 | i13  --  --  -- i10 |
+ 17 | i14 i13  --  --  -- |
+ 18 | i15 i14 i13  --  -- |
+ 19 |  -- i15 i14 i13  -- |
+ 20 |  --  -- i15 i14 i13 |
+ 21 |  --  --  -- i15 i14 |
+ 22 |  --  --  --  -- i15 |
+
+cycles: 22
+instructions retired: 14
+stall cycles: 1
+bubbles (EX idle): 8
+squashed instructions: 2
+forwards: 10 (EX/MEM 5, MEM/WB 5)
+ipc (permille): 636
+audit (cycles - retired == bubbles): 8 == 8
+
+-- architectural results --
+forwarding decides when a value is available, never what it is,
+so the two runs have to land on the same registers and the same memory
+regs (forwarding off): r0=0 r1=6 r2=7 r3=637 r4=91 r5=91 r6=85 r7=91
+regs (forwarding on) : r0=0 r1=6 r2=7 r3=637 r4=91 r5=91 r6=85 r7=91
+mem  (forwarding off): [0]=0 [1]=0 [2]=91 [3]=0 [4]=91 [5]=0 [6]=0 [7]=0
+mem  (forwarding on) : [0]=0 [1]=0 [2]=91 [3]=0 [4]=91 [5]=0 [6]=0 [7]=0
+registers identical: yes
+memory identical: yes
+results identical: yes
+
+-- headline --
+cycles: 33 -> 22
+cycles saved by forwarding: 11
+stall cycles: 12 -> 1
+ipc (permille): 424 -> 636

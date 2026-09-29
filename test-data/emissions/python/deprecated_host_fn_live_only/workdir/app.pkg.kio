@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api
+}

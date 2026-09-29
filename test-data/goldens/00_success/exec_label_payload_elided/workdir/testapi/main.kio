@@ -1,0 +1,38 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Label payloads are fixed at the `labels` declaration site:
+// the payload is fixed at the `labels` declaration site and is read
+// off the generated nominal type in type position. Multi-label
+// construction composes the same way: `{celsius = ..., label = ...}`
+// inhabits `Celsius & Label`.
+labels { celsius: I32, label: String };
+
+fn make_celsius(temp: I32) -> Celsius { {celsius = temp} }
+
+// Multi-label construction denotes `Celsius & Label`, with each
+// label's payload (`I32` / `String`) read off the `labels`
+// declaration above.
+fn make_record(temp: I32, name: String) -> Celsius & Label { {celsius = temp, label = name} }
+
+// Project the `label` half out of a multi-label record. `r` is
+// `Celsius & Label`; `match!` destructures the product into
+// the two conjuncts and we return the `label` arm.
+fn project_label(r: Celsius & Label) -> Label {
+  match! r {
+    .(_c: Celsius, l: Label) { l }
+  }
+}
+
+pub fn main() -> . {
+  let a = make_celsius(25);
+  let r = make_record(20, "outside");
+  print(int_to_string(Celsius.get(a)));
+  print("\n");
+  print(Label.get(project_label(r)));
+  print("\n")
+}

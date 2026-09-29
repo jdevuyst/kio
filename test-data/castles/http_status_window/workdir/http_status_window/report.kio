@@ -1,0 +1,56 @@
+module http_status_window/report;
+
+import http_status_window/render as render;
+import http_status_window/strings as s;
+import http_status_window/window as window;
+import testapi(String);
+import testapi/fmt as fmt;
+
+fn status_chain() -> String {
+  s.cat7(window.status00(), "/", window.status01(), "/", window.status02(), "/", window.status03())
+}
+
+fn family_chain() -> String {
+  s.cat7(
+    , window.family_label(window.status00())
+    , "/"
+    , window.family_label(window.status01())
+    , "/"
+    , window.family_label(window.status02())
+    , "/"
+    , window.family_label(window.status03())
+    )
+}
+
+fn header() -> String {
+  s.cat7(
+    , "source-bytes="
+    , fmt.i32_to_string(window.raw_length())
+    , " rows="
+    , fmt.int_to_string(window.row_count())
+    , " first-ok="
+    , fmt.bool_to_string(window.first_status_ok())
+    , "\n"
+    )
+}
+
+fn entries() -> String {
+  s.cat4(
+    , render.entry(window.entry00())
+    , render.entry(window.entry01())
+    , render.entry(window.entry02())
+    , render.entry(window.entry03())
+    )
+}
+
+pub fn build() -> String {
+  s.cat7(
+    , "HTTP status window\n"
+    , header()
+    , s.cat3("status-chain=", status_chain(), "\n")
+    , s.cat3("family-chain=", family_chain(), "\n")
+    , "entries:\n"
+    , entries()
+    , ""
+    )
+}

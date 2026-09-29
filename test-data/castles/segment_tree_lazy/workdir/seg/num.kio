@@ -1,0 +1,72 @@
+/// The integer and boolean vocabulary the rest of the package is written
+/// against. The host env supplies exactly one integer comparison, `leq_i32`,
+/// and no division at all, so equality, strict order, and truncated division
+/// are all derived here, once.
+module seg/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+pub fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// Strict in both arguments, like any Kio call: a guard that must not
+/// evaluate its second operand uses `if` instead.
+pub fn and(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+/// `a == b` by the antisymmetry of a total order.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// `a < b` as the negation of `b <= a`.
+pub fn int_lt(a: I32, b: I32) -> Bool { not(leq_i32(b, a)) }
+
+pub fn int_min(a: I32, b: I32) -> I32 {
+  if! leq_i32(a, b) {
+    a
+  } else {
+    b
+  }
+}
+
+/// The largest power-of-two multiple `p` with `p * d <= n`, doubling up from
+/// `p`. The caller establishes `d <= n`, so starting at `p = 1` is sound.
+rec(loop) fn grow(p: I32, d: I32, n: I32) -> I32 {
+  let next = mul_i32(p, 2);
+  if! leq_i32(mul_i32(next, d), n) {
+    rec grow(next, d, n)
+  } else {
+    p
+  }
+}
+
+/// Peel off the largest power-of-two multiple of `d` that still fits and bank
+/// it in the quotient. Every round at least halves the remainder, so this
+/// terminates without ever needing a division primitive.
+rec(loop) fn div_from(n: I32, d: I32, q: I32) -> I32 {
+  if! int_lt(n, d) {
+    q
+  } else {
+    let p = grow(1, d, n);
+    rec div_from(sub_i32(n, mul_i32(p, d)), d, add_i32(q, p))
+  }
+}
+
+/// Truncated division for `n >= 0` and `d > 0`. The host env has no
+/// `div_i32`, and a segment tree needs a midpoint at every split.
+pub fn idiv(n: I32, d: I32) -> I32 { div_from(n, d, 0) }
+
+/// `n / 2`, the midpoint arithmetic the tree descends on.
+pub fn half(n: I32) -> I32 { idiv(n, 2) }

@@ -1,0 +1,15 @@
+package structural_family_nominal_collision;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "KioCarrier_H6170690050726f64756374__api_"
+  }
+}
+
+bridge {
+  api;
+  main
+}

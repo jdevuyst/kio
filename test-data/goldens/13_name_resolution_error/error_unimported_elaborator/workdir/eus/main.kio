@@ -1,0 +1,9 @@
+module eus/main;
+
+import eus(String);
+
+// `widen_prod!` is called without importing the imported elaborator, so
+// the call site is an unresolved-name error (exit 13).
+fn extend(p: String & String) -> String & String & . { widen_prod!(p) }
+
+pub fn main() -> . { let _ = extend(("a", "b")); () }

@@ -1,0 +1,107 @@
+module symbolic_units/algebra;
+
+import elab/control(if);
+import elab/match(match);
+import symbolic_units/model as model;
+import symbolic_units/model(
+  , Expr
+  , Kilogram
+  , Meter
+  , Pow
+  , Product
+  , Quotient
+  , Score
+  , Second
+  , Summary
+  , {kilogram_exp}
+  , {meter_exp}
+  , {second_exp}
+  );
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+fn add_summary(left: Summary, right: Summary) -> Summary {
+  let .({meter_exp as lm, second_exp as ls, kilogram_exp as lk}) = left;
+  let .({meter_exp as rm, second_exp as rs, kilogram_exp as rk}) = right;
+  model.summary(arith.add_i32(lm, rm), arith.add_i32(ls, rs), arith.add_i32(lk, rk))
+}
+
+fn subtract_summary(left: Summary, right: Summary) -> Summary {
+  let .({meter_exp as lm, second_exp as ls, kilogram_exp as lk}) = left;
+  let .({meter_exp as rm, second_exp as rs, kilogram_exp as rk}) = right;
+  model.summary(arith.sub_i32(lm, rm), arith.sub_i32(ls, rs), arith.sub_i32(lk, rk))
+}
+
+fn scale_summary(value: Summary, factor: I32) -> Summary {
+  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  model.summary(arith.mul_i32(m, factor), arith.mul_i32(s, factor), arith.mul_i32(k, factor))
+}
+
+pub rec(loop) fn reduce(value: Expr) -> Summary {
+  match! Expr.get(value) {
+    (
+      , .(_m: Meter) { model.summary(1, 0, 0) }
+      , .(_s: Second) { model.summary(0, 1, 0) }
+      , .(_k: Kilogram) { model.summary(0, 0, 1) }
+      , .(node: Product) {
+          match! Product.get(node) {
+            .(left: Expr, right: Expr) {
+              add_summary(rec(cont) reduce(left), rec(cont) reduce(right))
+            }
+          }
+        }
+      , .(node: Quotient) {
+          match! Quotient.get(node) {
+            .(left: Expr, right: Expr) {
+              subtract_summary(rec(cont) reduce(left), rec(cont) reduce(right))
+            }
+          }
+        }
+      , .(node: Pow) {
+          match! Pow.get(node) {
+            .(base: Expr, exponent: I32) { scale_summary(rec(cont) reduce(base), exponent) }
+          }
+        }
+      )
+  }
+}
+
+fn abs_i32(value: I32) -> I32 {
+  if! arith.lt_i32(value, 0) {
+    arith.sub_i32(0, value)
+  } else {
+    value
+  }
+}
+
+rec(loop) fn weighted_count(count: I32, weight: I32, acc: I32) -> I32 {
+  if! arith.leq_i32(count, 0) {
+    acc
+  } else {
+    rec weighted_count(arith.sub_i32(count, 1), weight, arith.add_i32(acc, weight))
+  }
+}
+
+fn weighted_abs(value: I32, weight: I32) -> I32 { weighted_count(abs_i32(value), weight, 0) }
+
+pub fn score(value: Summary) -> Score {
+  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  Score.mk_score(arith.add_i32(
+    , arith.add_i32(weighted_abs(m, 7), weighted_abs(s, 5))
+    , weighted_abs(k, 11)
+    ))
+}
+
+pub fn balanced(value: Summary) -> Bool {
+  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  if! arith.eq_i32(m, 0) {
+    if! arith.eq_i32(s, 0) {
+      arith.eq_i32(k, 0)
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}

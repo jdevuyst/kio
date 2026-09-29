@@ -1,0 +1,3 @@
+module main;
+
+pure rec fn never() -> . { never() }

@@ -1,0 +1,15 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+host type Str role(str);
+
+pub fn pick(c: Bool, a: Str, b: Str) -> Str {
+  if! c {
+    a
+  } else {
+    b
+  }
+}

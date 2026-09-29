@@ -1,0 +1,3 @@
+module pure_fn_mentions_host;
+
+host type String role(str);

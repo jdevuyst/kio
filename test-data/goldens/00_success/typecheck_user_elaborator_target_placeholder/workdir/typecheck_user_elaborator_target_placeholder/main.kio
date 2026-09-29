@@ -1,0 +1,10 @@
+module typecheck_user_elaborator_target_placeholder/main;
+
+import elaborators(id_default, id_user, left_user);
+import typecheck_user_elaborator_target_placeholder(String);
+
+fn expected_target(s: String) -> String { id_user!(s, _) }
+
+fn default_target(s: String) -> String { let selected = id_default!(s, _); selected }
+
+fn unit_value_with_unit_sum_target() -> . | String { left_user!((), . | String) }

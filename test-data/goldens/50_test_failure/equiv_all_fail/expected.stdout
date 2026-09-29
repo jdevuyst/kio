@@ -1,0 +1,8 @@
+  fail equiv `first_block` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): x(())
+    group B (arms 2): y(())
+  fail equiv `second_block` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): x(())
+    group B (arms 2): y(())
+
+result: 2/2 equiv blocks failed

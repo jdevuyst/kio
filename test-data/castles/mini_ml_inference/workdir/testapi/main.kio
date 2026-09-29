@@ -1,0 +1,57 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import ml/infer as infer;
+import ml/input as input;
+import ml/parser as parser;
+import ml/syntax as ast;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn report(tokens: lists.List(String)) -> String {
+  match! parser.parse(tokens) {
+    .(expr: ast.Expr) { infer.report(expr) };
+    .(error: String) { text.string_concat("parse error ", error) }
+  }
+}
+
+rec(loop) fn cases(remaining: I32, completed: I32) -> . {
+  if! arith.leq_i32(remaining, 0) {
+    io.print(text.string_concat(
+      , "completed "
+      , text.string_concat(fmt.int_to_string(completed), " cases\n")
+      ))
+  } else match! io.read_ascii_line() {
+    .(name: String) {
+      match! input.frame() {
+        .(tokens: lists.List(String)) {
+          io.print(text.string_concat(
+            , name
+            , text.string_concat(": ", text.string_concat(report(tokens), "\n"))
+            ));
+          rec cases(arith.sub_i32(remaining, 1), arith.add_i32(completed, 1))
+        };
+        .(error: String) {
+          io.print(text.string_concat("input error: ", text.string_concat(error, "\n")))
+        }
+      }
+    };
+    .() { io.print("input error: missing case name\n") }
+  }
+}
+
+pub fn main() -> . {
+  io.print("Mini ML inference workbench\n");
+  match! input.count() {
+    .(n: I32) { cases(n, 0) };
+    .(error: String) {
+      io.print(text.string_concat("input error: ", text.string_concat(error, "\n")))
+    }
+  }
+}

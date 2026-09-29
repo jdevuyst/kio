@@ -1,0 +1,10 @@
+module mutual;
+
+rec {
+  pub labels { left[A]: (Right(A) -> A) -> A };
+  pub labels { right[A]: (Left(A) -> A) -> A }
+}
+
+pub fn read_left[A](value: Left(A), next: Right(A) -> A) -> A { value.?{left}(next) }
+
+pub fn read_right[A](value: Right(A), next: Left(A) -> A) -> A { value.?{right}(next) }

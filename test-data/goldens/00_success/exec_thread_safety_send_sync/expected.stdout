@@ -1,0 +1,3 @@
+5
+Rc<dyn X>
+thread-safety-send-sync-ok

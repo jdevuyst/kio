@@ -1,0 +1,189 @@
+module lab/replica;
+
+import dict/dict as dict;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import lab/clock as clock;
+import list/core as core;
+import list/list as lists;
+import result/result as result;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+pub labels Version = { value: I32, stamp: clock.Clock };
+
+pub labels Message = { key: I32, payload: Version };
+
+pub labels Replica = {
+  , node: clock.Node
+  , observed: clock.Clock
+  , records: dict.Dict(I32, core.List(Version))
+  };
+
+pub labels Fault =
+  { missing: I32 }
+  | { conflict: I32 }
+  | { not_conflicted: I32 }
+  | { choice_absent: I32 };
+
+pub type Change = Replica & Message;
+
+pub fn key_order(a: I32, b: I32) -> dict.Ordering {
+  if! arith.lt_i32(a, b) {
+    dict.lt()
+  } else if! arith.eq_i32(a, b) {
+    dict.eq()
+  } else {
+    dict.gt()
+  }
+}
+
+pub fn empty(node: clock.Node) -> Replica {
+  {node, observed = clock.zero(), records = dict.empty()}
+}
+
+pub fn versions(replica: Replica, key: I32) -> core.List(Version) {
+  dict.get_or(key_order, replica.?{records}, key, core.nil())
+}
+
+rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
+  match! core.uncons(retained) {
+    .(head: Version, tail: core.List(Version)) {
+      if! clock.lexical_before(incoming.?{stamp}, head.?{stamp}) {
+        core.cons(incoming, retained)
+      } else {
+        core.cons(head, rec(cont) insert_ordered(incoming, tail))
+      }
+    };
+    .(_empty: .) { core.singleton(incoming) }
+  }
+}
+
+fn merge(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
+  let obsolete =
+    lists.foldl(
+      , .(found: Bool, old: Version) {
+          if! found {
+            .t
+          } else {
+            clock.leq(incoming.?{stamp}, old.?{stamp})
+          }
+        }
+      , .f
+      , retained
+      );
+  if! obsolete {
+    retained
+  } else {
+    let survivors = lists.filter(
+      , .(old: Version) {
+          if! clock.leq(old.?{stamp}, incoming.?{stamp}) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , retained
+      );
+    insert_ordered(incoming, survivors)
+  }
+}
+
+pub fn deliver(replica: Replica, message: Message) -> Replica {
+  let incoming = message.?{payload};
+  let retained = merge(incoming, versions(replica, message.?{key}));
+  {
+    , node = replica.?{node}
+    , observed = clock.join(replica.?{observed}, incoming.?{stamp})
+    , records = dict.insert(key_order, replica.?{records}, message.?{key}, retained)
+    }
+}
+
+pub fn replay(replica: Replica, messages: core.List(Message)) -> Replica {
+  lists.foldl(deliver, replica, messages)
+}
+
+pub fn write(replica: Replica, key: I32, value: I32) -> Change {
+  let stamp = clock.tick(replica.?{node}, replica.?{observed});
+  let message = {key, payload = {value, stamp}};
+  (deliver(replica, message), message)
+}
+
+pub fn read(replica: Replica, key: I32) -> result.Result(I32, Fault) {
+  match! core.uncons(versions(replica, key)) {
+    .(head: Version, tail: core.List(Version)) {
+      if! lists.null(tail) {
+        result.ok(head.?{value})
+      } else {
+        result.err({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum!(Fault))
+      }
+    };
+    .(_empty: .) { result.err({missing = key}.>widen_sum!(Fault)) }
+  }
+}
+
+fn choose(replica: Replica, key: I32, choice: I32) -> result.Result(I32, Fault) {
+  let retained = versions(replica, key);
+  if! lists.null(retained) {
+    result.err({missing = key}.>widen_sum!(Fault))
+  } else if! arith.lt_i32(lists.length(retained), 2) {
+    result.err({not_conflicted = key}.>widen_sum!(Fault))
+  } else match! lists.find(.(v: Version) { arith.eq_i32(choice, v.?{value}) }, retained) {
+    .(v: Version) { result.ok(v.?{value}) };
+    .(_absent: .) { result.err({choice_absent = choice}.>widen_sum!(Fault)) }
+  }
+}
+
+pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result(Change, Fault) {
+  result.map(.(selected: I32) { write(replica, key, selected) }, choose(replica, key, choice))
+}
+
+fn same_version(x: Version, y: Version) -> Bool {
+  if! arith.eq_i32(x.?{value}, y.?{value}) {
+    clock.equal(x.?{stamp}, y.?{stamp})
+  } else {
+    .f
+  }
+}
+
+fn same_versions(xs: core.List(Version), ys: core.List(Version)) -> Bool {
+  if! arith.eq_i32(lists.length(xs), lists.length(ys)) {
+    lists.foldl(
+      , .(same: Bool, v: Version) {
+          if! same {
+            lists.elem(same_version, v, ys)
+          } else {
+            .f
+          }
+        }
+      , .t
+      , xs
+      )
+  } else {
+    .f
+  }
+}
+
+pub fn converged(x: Replica, y: Replica) -> Bool {
+  if! clock.equal(x.?{observed}, y.?{observed}) {
+    if! arith.eq_i32(dict.size(x.?{records}), dict.size(y.?{records})) {
+      dict.fold_asc(
+        , x.?{records}
+        , .t
+        , .(same: Bool, key: I32, retained: core.List(Version)) {
+            if! same {
+              same_versions(retained, versions(y, key))
+            } else {
+              .f
+            }
+          }
+        )
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}

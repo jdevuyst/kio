@@ -1,0 +1,98 @@
+module main;
+
+import control(if);
+
+host type Text role(str);
+
+host type Owned_text role(str) { owned };
+
+host type Token;
+
+host type Unused role(bool);
+
+host fn borrow_text(value: Text) -> Text;
+
+host fn own_text(value: Owned_text) -> Owned_text;
+
+host fn host_identity_flag(flag: Unused) -> Unused;
+
+pub fn roundtrip_text(value: Text) -> Text { borrow_text(value) }
+
+pub fn roundtrip_text_literal() -> Text { borrow_text("direct literal") }
+
+pub fn roundtrip_owned_text(value: Owned_text) -> Owned_text { own_text(value) }
+
+pub fn roundtrip_owned_text_literal() -> Owned_text { own_text("direct owned literal") }
+
+pub fn apply_text(step: Text -> Text, value: Text) -> Text { step(value) }
+
+pub fn apply_stored_text((step: Text -> Text, value: Text)) -> Text { step(value) }
+
+pub fn text_identity() -> Text -> Text { .(value: Text) { value } }
+
+pub fn keep_token(value: Token) -> Token { value }
+
+pub fn text_literal() -> Text { "literal" }
+
+pub fn owned_text_literal() -> Owned_text { "owned literal" }
+
+fn identity_flag(flag: Unused) -> Unused { flag }
+
+pub fn choose(flag: Unused, yes: Token, no: Token) -> Token {
+  if! flag {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_call(flag: Unused, yes: Token, no: Token) -> Token {
+  if! identity_flag(flag) {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_host_call(flag: Unused, yes: Token, no: Token) -> Token {
+  if! host_identity_flag(flag) {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_let(flag: Unused, yes: Token, no: Token) -> Token {
+  let copied = flag;
+  if! copied {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_literal(yes: Token, no: Token) -> Token {
+  if! .t {
+    yes
+  } else {
+    no
+  }
+}
+
+pub fn choose_closure(flag: Unused, yes: Token, no: Token) -> Token {
+  .(condition: Unused) {
+    if! condition {
+      yes
+    } else {
+      no
+    }
+  }(flag)
+}
+
+pub fn choose_destructured((flag: Unused, yes: Token), no: Token) -> Token {
+  if! flag {
+    yes
+  } else {
+    no
+  }
+}

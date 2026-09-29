@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(ease);
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+newtype A : String { pub constructor mk_a; pub projector un_a }
+
+newtype B : String { pub constructor mk_b; pub projector un_b }
+
+// Source: `(A | B) -> .`. The function's parameter was widened
+// from `A` to `A | B` in the provider. The call site still wants to call
+// it with an `A`, so `ease!` wraps the function back to `A -> .`.
+// The variance walk swaps source/target at the contravariant leaf
+// `(A, A | B)`; the leaf `ease!` engine fires `R-Widen-Sum` to lift
+// the call-site `A` value into the source's wider `A | B` parameter.
+fn foo(x: A | B) -> . {
+  print(match! x {
+    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+  })
+}
+
+pub fn main() -> . {
+  let narrow_call = ease!(foo, A -> .);
+  narrow_call(A.mk_a("ease! param widened ok\n"))
+}

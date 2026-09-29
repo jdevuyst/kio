@@ -1,0 +1,9 @@
+module errspan/main;
+
+import errspan(Foo);
+
+fn id(x: Foo) -> Foo { x }
+
+fn use_id(y: Foo) -> Foo { id(y) }
+
+fn wrong(z: Foo) -> Foo { id }

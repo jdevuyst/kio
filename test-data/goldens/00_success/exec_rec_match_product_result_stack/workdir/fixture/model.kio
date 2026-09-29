@@ -1,0 +1,7 @@
+module fixture/model;
+
+import testapi(I32);
+
+pub labels Choice = { again: . } | { done: . };
+
+pub labels Report = { first: I32, second: I32 };

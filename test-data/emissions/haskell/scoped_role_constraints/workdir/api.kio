@@ -1,0 +1,19 @@
+module api;
+
+import producer as p;
+import producer(Count);
+import producer(literal);
+
+fn apply(thunk: . -> Count) -> Count { thunk(()) }
+
+pub fn direct() -> Count { p.literal() }
+
+pub fn by_unqualified() -> Count { literal() }
+
+pub fn by_value() -> Count { apply(p.literal) }
+
+pub fn by_partial() -> Count { let part = p.staged(()); part(()) }
+
+pub fn by_closure() -> Count { apply(.(ignored: .) -> Count { p.literal() }) }
+
+pub fn safe() -> . { () }

@@ -1,0 +1,5 @@
+module main;
+
+host type String role(str);
+
+pub fn main() -> . { () }

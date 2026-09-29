@@ -1,0 +1,9 @@
+module main;
+
+newtype Marker : . { constructor mark; projector unmark }
+
+fn from_marker[A](_marker: Marker) -> A -> A { .(value: A) -> A { value } }
+
+fn view[S][A](get: S -> A, value: S) -> A { get(value) }
+
+fn run[T](marker: Marker, value: T) -> T { view(marker.>from_marker, value) }

@@ -1,0 +1,130 @@
+module testapi/main;
+
+import library/core(
+  , Option
+  , and_then
+  , apply
+  , bind
+  , from_option
+  , map
+  , none
+  , option
+  , or_else
+  , some
+  , then
+  );
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/option(
+  , cat_options
+  , filter
+  , is_none
+  , is_some
+  , join_options
+  , map_option
+  , op _ <?> _
+  , op _ ?? _
+  , op _ ||? _
+  , op __ ?> _
+  );
+import list/core(List, cons, nil);
+import list/list(varop [* *]);
+import testapi(Bool, I32, String);
+import testapi/arith(add, leq_i32, mul);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+}
+
+fn show_opt[A](label: String, m: Option(A), render: A -> String) -> . {
+  show(
+    , label
+    , option(
+        , "none"
+        , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
+        , m
+        )
+    )
+}
+
+fn show_opt_i32(label: String, m: Option(I32)) -> . { show_opt(label, m, int_to_string) }
+
+fn render_sum(value: I32 | .) -> String {
+  match! value {
+    (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
+  }
+}
+
+fn inc(n: I32) -> I32 { add(n, 1) }
+
+fn dbl(n: I32) -> I32 { mul(n, 2) }
+
+fn opt_list() -> List(Option(I32)) {
+  cons(some(1), cons(none(), cons(some(2), cons(none(), cons(some(3), nil())))))
+}
+
+fn int_list() -> List(I32) { [* 1, 2, 3, 4 *] }
+
+fn small_times_ten(n: I32) -> Option(I32) {
+  filter(.(_m: I32) -> Bool { leq_i32(n, 3) }, some(mul(n, 10)))
+}
+
+pub fn main() -> . {
+  let m = some(7);
+  let z = none(I32, ());
+  show_opt_i32("some(7)", m);
+  show_opt_i32("none", z);
+  show("from_option(0, some(7))", int_to_string(from_option(0, m)));
+  show("from_option(0, none)", int_to_string(from_option(0, z)));
+  show("is_some(some(7))", bool_to_string(is_some(m)));
+  show("is_none(none)", bool_to_string(is_none(z)));
+  show_opt_i32("map(inc, some(7))", map(inc, m));
+  show_opt_i32("map(inc, none)", map(inc, z));
+  show_opt_i32("bind(some(7), \\n. some(n*2))", bind(m, .(n: I32) -> Option(I32) { some(dbl(n)) }));
+  show_opt_i32("apply(some(inc), some(7))", apply(some(inc), m));
+  show_opt_i32("then(some(7), some(99))", then(m, some(99)));
+  show_opt_i32("or_else(none, some(5))", or_else(z, some(5)));
+  show_opt_i32("filter(<=3, some(2))", filter(.(n: I32) -> Bool { leq_i32(n, 3) }, some(2)));
+  show_opt_i32("filter(<=3, some(9))", filter(.(n: I32) -> Bool { leq_i32(n, 3) }, some(9)));
+  show("some(7) ?? 0", int_to_string(m ?? 0));
+  show("none ?? 0", int_to_string(z ?? 0));
+  let next = .(n: I32) -> Option(I32) { some(inc(n)) };
+  show_opt_i32("some(7) ?> \\n. some(n+1)", m ?> next);
+  show_opt_i32("none ||? some(5)", z ||? some(5));
+  show_opt_i32("some(7) <?> dbl", m <?> dbl);
+  show("some(7) <?> dbl ?? 0", int_to_string((m <?> dbl) ?? 0));
+  show(
+    , "cat_options([some 1, none, some 2, none, some 3])"
+    , int_to_string(cat_options(opt_list(), 0, add))
+    );
+  show(
+    , "map_option(small*10, [1, 2, 3, 4])"
+    , int_to_string(map_option(small_times_ten, int_list(), 0, add))
+    );
+  show(
+    , "join_options(show, [some 1, none, some 2, none, some 3])"
+    , join_options(
+        , .(n: I32) -> String { string_concat("[", string_concat(int_to_string(n), "]")) }
+        , ""
+        , opt_list()
+        )
+    );
+  let render_unit = .(_unit: .) -> String { "unit" };
+  show_opt("some(Unit)", some(()), render_unit);
+  show_opt("none(Unit)", none(., ()), render_unit);
+  show_opt("some(nested number)", some(widen_sum!(7, I32 | .)), render_sum);
+  show_opt("some(nested unit)", some(widen_sum!((), I32 | .)), render_sum);
+  show_opt("none(nested)", none(I32 | ., ()), render_sum);
+  let .(unit_options: List(Option(.))) = [* some(()), none(., ()) *];
+  show(
+    , "cat_options(canonical Unit list)"
+    , int_to_string(cat_options(unit_options, 0, .(count: I32, _unit: .) { add(count, 1) }))
+    );
+  show(
+    , "cat_options(canonical empty list)"
+    , int_to_string(cat_options(nil(Option(I32), ()), 0, add))
+    )
+}

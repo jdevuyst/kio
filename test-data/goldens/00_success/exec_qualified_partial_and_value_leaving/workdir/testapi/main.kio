@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/helper as h;
+import testapi/helper(logged);
+import testapi/io(print);
+
+// Partial calls and type-only applications produce function values. Both
+// unqualified and qualified effectful values delay their effect until
+// application, while an empty first value group is applied before retaining
+// later groups.
+pub fn main() -> . {
+  let p = h.join("partial-"(String));
+  print(p("ok\n"(String)));
+  let f = h.id(String);
+  print(f("x\n"(String)));
+  let direct_logged = logged(String);
+  print("direct-created\n"(String));
+  direct_logged("d\n"(String));
+  let qualified_logged = h.logged(String);
+  print("qualified-created\n"(String));
+  qualified_logged("q\n"(String));
+  let staged = h.staged(String, ());
+  staged("z\n"(String))
+}

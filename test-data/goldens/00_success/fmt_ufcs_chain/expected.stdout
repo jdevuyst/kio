@@ -1,0 +1,92 @@
+module main;
+
+fn flat_short() -> . { let r = receiver.>f(x).>g(y).>h(z); r }
+
+fn bare_zero_arg() -> . { let r = receiver.>bare; r }
+
+fn bare_forms() -> . {
+  receiver.>call;
+  receiver.>>call;
+  call.<receiver;
+  call.<<receiver;
+  receiver.>T.member;
+  receiver.>>T.member;
+  T.member.<receiver;
+  T.member.<<receiver;
+  receiver.>transform!;
+  receiver.>>transform!;
+  transform!.<receiver;
+  transform!.<<receiver;
+  receiver.>call(());
+  call(()).<receiver;
+  ()
+}
+
+fn wide_chain() -> . {
+  let r =
+    some_long_receiver_expression_value
+      .>first_step_with_a_long_name(arg_one, arg_two)
+      .>second_step_with_a_long_name(arg_three)
+      .>final_step_with_a_long_name(arg_four);
+  r
+}
+
+fn wide_args_in_segment() -> . {
+  let r =
+    receiver
+      .>one(x)
+      .>two(
+        , arg_one_with_a_long_name
+        , arg_two_with_a_long_name
+        , arg_three_with_a_long_name
+        , arg_four_with_a_long_name
+        )
+      .>three(y);
+  r
+}
+module main;
+
+fn flat_short() -> . { let r = receiver.>f(x).>g(y).>h(z); r }
+
+fn bare_zero_arg() -> . { let r = receiver.>bare; r }
+
+fn bare_forms() -> . {
+  receiver.>call;
+  receiver.>>call;
+  call.<receiver;
+  call.<<receiver;
+  receiver.>T.member;
+  receiver.>>T.member;
+  T.member.<receiver;
+  T.member.<<receiver;
+  receiver.>transform!;
+  receiver.>>transform!;
+  transform!.<receiver;
+  transform!.<<receiver;
+  receiver.>call(());
+  call(()).<receiver;
+  ()
+}
+
+fn wide_chain() -> . {
+  let r =
+    some_long_receiver_expression_value
+      .>first_step_with_a_long_name(arg_one, arg_two)
+      .>second_step_with_a_long_name(arg_three)
+      .>final_step_with_a_long_name(arg_four);
+  r
+}
+
+fn wide_args_in_segment() -> . {
+  let r =
+    receiver
+      .>one(x)
+      .>two(
+        , arg_one_with_a_long_name
+        , arg_two_with_a_long_name
+        , arg_three_with_a_long_name
+        , arg_four_with_a_long_name
+        )
+      .>three(y);
+  r
+}

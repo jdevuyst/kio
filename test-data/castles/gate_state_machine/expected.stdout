@@ -1,0 +1,4 @@
+gate_state_machine
+transcript=SVPBCxxLvTER
+final=closed tick=12 attempts=5 denied=4 opens=2 alarms=1 lockout=0 energy=21
+invariant=ok true

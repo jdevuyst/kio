@@ -1,0 +1,8 @@
+package app;
+
+build {
+  target js { out "out/js/"; };
+  target ts { out "out/ts/"; }
+}
+
+bridge {}

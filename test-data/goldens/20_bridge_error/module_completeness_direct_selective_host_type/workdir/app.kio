@@ -1,0 +1,5 @@
+module app;
+
+import cap(Raw);
+
+pub fn run(x: Raw) -> . { () }

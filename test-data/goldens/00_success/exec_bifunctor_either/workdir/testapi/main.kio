@@ -1,0 +1,85 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `Either[E][A]` as `E | A`: the canonical "one of two shapes" sum.
+// It is an arity-2 newtype, so its kind is `*→*→*` — a two-argument
+// type constructor, exactly what a `Bifunctor[**F]` dictionary's
+// kind-`*→*→*` brand slot expects.
+pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_either }
+
+// A `Bifunctor[**F]` dictionary with a polymorphic-function payload.
+// The brand binder `[**F]` is abstract and applied with *two*
+// arguments — `F(A, C)` for the input carrier, `F(B, D)` for the
+// result — so this newtype exercises arity-2 abstract higher-kinded
+// brand application directly. `bimap` maps the left arm `A -> B` and
+// the right arm `C -> D` simultaneously. The `[A][B][C][D]` binders
+// flow to the inherent projector method as generic type-params; the
+// dictionary instance below is the `Either` interpretation.
+pub newtype Bifunctor[**F] : [A][B][C][D] ((A -> B) & (C -> D) & F(A, C)) -> F(B, D) {
+  pub constructor mk_bifunctor;
+  pub projector bimap
+  }
+
+// `Either`'s bifunctor instance. The body unwraps via
+// `Either.un_either`, case-splits on the `A | C` payload, applies the
+// left function `lf` to a `left` (error) arm and the right function
+// `rf` to a `right` (value) arm, and re-wraps the result via
+// `Either.mk_either`.
+fn either_bifunctor() -> Bifunctor(Either) {
+  Bifunctor.mk_bifunctor(
+    , Either
+    , .[A][B][C][D](lf, rf, val) {
+        __either__(
+          , A
+          , C
+          , Either(B, D)
+          , Either.un_either(A, C, val)
+          , .(a) { Either.mk_either(B, D, __left__(B, D, lf(a))) }
+          , .(c) { Either.mk_either(B, D, __right__(B, D, rf(c))) }
+          )
+      }
+    )
+}
+
+// Bimap a single `Either(String, String)` through the instance — the
+// left function prefixes the error arm, the right function prefixes
+// the value arm — then peel the result back to a `String` regardless
+// of which arm survived. Both arms run through the abstract `F(A, C)`
+// carrier crossing, so this exercises the bimap on either input shape.
+fn run_bimap(bf: Bifunctor(Either), value: Either(String, String)) -> String {
+  let mapped =
+    Bifunctor.bimap(Either, bf)(
+      , String
+      , String
+      , String
+      , String
+      , .(e) { string_concat("err: "(String), e) }
+      , .(v) { string_concat("hello "(String), v) }
+      , value
+      );
+  __either__(
+    , String
+    , String
+    , String
+    , Either.un_either(String, String, mapped)
+    , .(err) { string_concat(err, "\n"(String)) }
+    , .(s) { string_concat(s, "\n"(String)) }
+    )
+}
+
+// Bimap both a `right`-arm and a `left`-arm carrier through the same
+// instance and concatenate the two observable results, so the test
+// demonstrates that `bimap` re-keys each arm independently.
+fn use_bifunctor() -> String {
+  let bf = either_bifunctor();
+  let right_value = Either.mk_either(String, String, __right__(String, String, "world"(String)));
+  let left_value = Either.mk_either(String, String, __left__(String, String, "oops"(String)));
+  string_concat(run_bimap(bf, right_value), run_bimap(bf, left_value))
+}
+
+pub fn main() -> . { print(use_bifunctor()) }

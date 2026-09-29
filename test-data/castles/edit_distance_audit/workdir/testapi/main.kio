@@ -1,0 +1,5 @@
+module testapi/main;
+
+import edit_distance_audit/audit(run);
+
+pub fn main() -> . { run() }

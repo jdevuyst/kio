@@ -1,0 +1,5 @@
+module api;
+
+import hidden as hidden;
+
+pub fn main() -> . { hidden.touch(()) }

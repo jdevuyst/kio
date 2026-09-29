@@ -1,0 +1,15 @@
+module widget/mutual;
+
+import core/mutual as _rehost_gdgphcgfcpgnhfhehfgbgm;
+
+pub type Left[A] = _rehost_gdgphcgfcpgnhfhehfgbgm.Left(A);
+
+pub type Right[A] = _rehost_gdgphcgfcpgnhfhehfgbgm.Right(A);
+
+pub type {left} = {_rehost_gdgphcgfcpgnhfhehfgbgm.left};
+
+pub type {right} = {_rehost_gdgphcgfcpgnhfhehfgbgm.right};
+
+pub fn read_left[A](value: Left(A), next: Right(A) -> A) -> A { value.?{left}(next) }
+
+pub fn read_right[A](value: Right(A), next: Left(A) -> A) -> A { value.?{right}(next) }

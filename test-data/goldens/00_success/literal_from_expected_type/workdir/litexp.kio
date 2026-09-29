@@ -1,0 +1,5 @@
+module litexp;
+
+host type I32 role(i32);
+
+host type I64 role(i64);

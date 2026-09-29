@@ -1,0 +1,6 @@
+warm cache log:
+kiodoc-cache: hit <key>
+kiodoc-cache: hit <key>
+edit cache log:
+kiodoc-cache: hit <key>
+kiodoc-cache: miss <key> (no entry)

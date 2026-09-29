@@ -1,0 +1,151 @@
+/// The rules. One command in, one new state and one outcome out.
+///
+/// This is where the graph's gates are enforced: a locked edge needs its door
+/// opened first, and an unlit room turns away anyone without a light. Nothing
+/// here prints, and nothing here fails — every way the cellar can say no is an
+/// arm of `Outcome`.
+module cellar/engine;
+
+import cellar/command as command;
+import cellar/ids as ids;
+import cellar/outcome as outcome;
+import cellar/state as state;
+import cellar/world as world;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, String);
+
+/// One turn's result: the state the cellar is left in, and what to tell the
+/// player about it.
+pub type Turn = state.Game & outcome.Outcome;
+
+/// The player will not walk *into* an unlit room without a light and cannot
+/// read one from inside, but can always feel a way back out of it — which is
+/// what keeps a lantern dropped in the dark from sealing the cellar shut.
+fn blind_here(g: state.Game) -> Bool {
+  ids.and(world.is_dark(state.room_of(g)), ids.not(state.carrying(g, ids.lantern())))
+}
+
+fn enter(g: state.Game, to: ids.Room_id) -> Turn {
+  if! ids.and(world.is_dark(to), ids.not(state.carrying(g, ids.lantern()))) {
+    (g, outcome.dark_ahead())
+  } else {
+    (state.walk_to(g, to), outcome.saw_room())
+  }
+}
+
+fn through_lock(g: state.Game, d: ids.Dir_id, to: ids.Room_id, key: ids.Item_id) -> Turn {
+  if! state.door_open(g, state.room_of(g), d) {
+    enter(g, to)
+  } else {
+    (g, outcome.way_locked(key))
+  }
+}
+
+fn step(g: state.Game, d: ids.Dir_id) -> Turn {
+  match! world.exit_of(state.room_of(g), d) {
+    (
+      , .(o: world.Open_to) { enter(g, o.?{world.open_to}) }
+      , .(t: world.Locked_to, k: world.Locked_by) {
+          through_lock(g, d, t.?{world.locked_to}, k.?{world.locked_by})
+        }
+      , .(_w: world.No_way) { (g, outcome.no_exit()) }
+      )
+  }
+}
+
+fn do_go(g: state.Game, word: String) -> Turn {
+  match! ids.direction_of(word) {
+    (.(d: ids.Dir_id) { step(g, d) }, .(_unknown: .) { (g, outcome.not_a_direction(word)) })
+  }
+}
+
+fn lift(g: state.Game, i: ids.Item_id, word: String) -> Turn {
+  if! state.carrying(g, i) {
+    (g, outcome.already_held(i))
+  } else if! state.item_lies_in(g, i, state.room_of(g)) {
+    (state.hold(g, i), outcome.took(i))
+  } else {
+    (g, outcome.nothing_named(word))
+  }
+}
+
+fn do_take(g: state.Game, word: String) -> Turn {
+  match! ids.item_of(word) {
+    (.(i: ids.Item_id) { lift(g, i, word) }, .(_unknown: .) { (g, outcome.nothing_named(word)) })
+  }
+}
+
+fn lay_down(g: state.Game, i: ids.Item_id, word: String) -> Turn {
+  if! state.carrying(g, i) {
+    (state.leave_here(g, i), outcome.dropped(i))
+  } else {
+    (g, outcome.not_held(word))
+  }
+}
+
+fn do_drop(g: state.Game, word: String) -> Turn {
+  match! ids.item_of(word) {
+    (.(i: ids.Item_id) { lay_down(g, i, word) }, .(_unknown: .) { (g, outcome.not_held(word)) })
+  }
+}
+
+fn turn_key(g: state.Game, d: ids.Dir_id, key: ids.Item_id) -> Turn {
+  if! state.door_open(g, state.room_of(g), d) {
+    (g, outcome.nothing_to_unlock())
+  } else if! state.carrying(g, key) {
+    (state.open_door(g, state.room_of(g), d), outcome.lock_opened())
+  } else {
+    (g, outcome.lock_needs(key))
+  }
+}
+
+fn unlock_way(g: state.Game, d: ids.Dir_id) -> Turn {
+  match! world.exit_of(state.room_of(g), d) {
+    (
+      , .(_o: world.Open_to) { (g, outcome.nothing_to_unlock()) }
+      , .(_t: world.Locked_to, k: world.Locked_by) { turn_key(g, d, k.?{world.locked_by}) }
+      , .(_w: world.No_way) { (g, outcome.nothing_to_unlock()) }
+      )
+  }
+}
+
+fn do_unlock(g: state.Game, word: String) -> Turn {
+  match! ids.direction_of(word) {
+    (.(d: ids.Dir_id) { unlock_way(g, d) }, .(_unknown: .) { (g, outcome.not_a_direction(word)) })
+  }
+}
+
+fn do_look(g: state.Game) -> Turn {
+  if! blind_here(g) {
+    (g, outcome.too_dark_to_see())
+  } else {
+    (g, outcome.saw_room())
+  }
+}
+
+fn dispatch(g: state.Game, c: command.Command) -> Turn {
+  match! c {
+    (
+      , .(x: command.Go_cmd) { do_go(g, x.?{command.go_cmd}) }
+      , .(x: command.Take_cmd) { do_take(g, x.?{command.take_cmd}) }
+      , .(x: command.Drop_cmd) { do_drop(g, x.?{command.drop_cmd}) }
+      , .(x: command.Unlock_cmd) { do_unlock(g, x.?{command.unlock_cmd}) }
+      , .(_l: command.Look_cmd) { do_look(g) }
+      , .(_b: command.Bag_cmd) { (g, outcome.held_items()) }
+      , .(_q: command.Quit_cmd) { (state.finish(g), outcome.left_cellar()) }
+      , .(x: command.Unknown_cmd) { (g, outcome.unknown_verb(x.?{command.unknown_cmd})) }
+      )
+  }
+}
+
+/// One turn: the clock always advances, and an outcome that got the player
+/// nowhere costs a point.
+pub fn apply(g: state.Game, c: command.Command) -> Turn {
+  let .(played: state.Game, out: outcome.Outcome) = dispatch(state.tick(g), c);
+  if! outcome.is_fumble(out) {
+    (state.fumble(played), out)
+  } else {
+    (played, out)
+  }
+}

@@ -1,0 +1,33 @@
+module app/syntax;
+
+fn private_add(left: ., _right: .) -> . { left }
+
+op _ + _ { impl private_add }
+
+pub(app) fn package_sub(left: ., _right: .) -> . { left }
+
+pub(app/syntax) op _ - _ { impl package_sub }
+
+pub fn public_mul(left: ., _right: .) -> . { left }
+
+pub op _ * _ { impl public_mul }
+
+fn private_empty() -> . { () }
+
+fn private_push(_head: ., tail: .) -> . { tail }
+
+varop [* *] { foldr private_push private_empty }
+
+pub(app) fn package_empty() -> . { () }
+
+pub(app) fn package_push(_head: ., tail: .) -> . { tail }
+
+pub(app) varop [% %] { foldr package_push package_empty }
+
+pub fn public_empty() -> . { () }
+
+pub fn public_push(_head: ., tail: .) -> . { tail }
+
+pub fn public_finish(value: .) -> . { value }
+
+pub varop [! !] { foldr public_push public_empty; finalize public_finish }

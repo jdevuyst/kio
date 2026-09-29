@@ -1,0 +1,10 @@
+module testapi/normalize;
+
+import elab/match(match);
+import testapi/model(Expr, Leaf, Pair);
+
+pub fn normalize(value: Expr) -> Expr {
+  match! Expr.get(value) {
+    (.(_leaf: Leaf) { value }, .(_pair: Pair) { value })
+  }
+}

@@ -1,0 +1,5 @@
+module main;
+
+// The let RHS is synthesized before the later call is checked, so
+// the lambda parameter needs its own concrete annotation.
+fn caller() -> . { let f = .(x) { x }; f(()) }

@@ -1,0 +1,123 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(String);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// A recursive non-canonical brand: payload `. | (A & List(A))`
+// does not equal the bare type-parameter, so the brand-crossing is
+// not a runtime identity. `List` is a kind-`*→*` brand, so a
+// `Functor[*F]` instance can be instantiated for it; the instance
+// below crosses the brand through `List.cons` / `List.un_list`,
+// walking the recursive payload with `loop`.
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+// Convenience constructors over the underlying sum.
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// In-order reverse via `loop`. Used twice by `list_functor` so the
+// mapped output ends up in input order.
+fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
+  match! state {
+    .(remaining: List(A), output: List(A)) {
+      match! remaining.>List.un_list {
+        (
+          , .(x: A, rest: List(A)) {
+              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+            }
+          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+          )
+      }
+    }
+  }
+}
+
+fn reverse[A](xs: List(A)) -> List(A) {
+  loop(.(state: List(A) & List(A)) { reverse_step(state) }, (xs, nil(A, ())))
+}
+
+// `Functor[*F]` instance with the polymorphic-function payload —
+// same shape as in `exec_functor_maybe` / `exec_functor_identity`,
+// instantiated here at `List`.
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `List`'s functor instance. The body walks `xs : List(A)` with
+// `loop`, applying the user's step function `s` to each element
+// and accumulating a reversed `List(B)`. A second `loop` then
+// restores input order. The brand crossings — `xs` arriving as
+// `F(A) = List(A)` and the result leaving as `F(B) = List(B)` —
+// go through `List`'s own `cons` / `un_list` members.
+fn list_functor() -> Functor(List) {
+  Functor.mk_functor(
+    , List
+    , .[A][B](s, xs) {
+        let reversed =
+          loop(
+            , .(state: List(A) & List(B)) {
+                match! state {
+                  .(remaining: List(A), output: List(B)) {
+                    match! remaining.>List.un_list {
+                      (
+                        , .(x: A, rest: List(A)) {
+                            widen_sum!((rest, push(s(x), output)), (List(A) & List(B)) | List(B))
+                          }
+                        , .(_empty: .) { widen_sum!(output, (List(A) & List(B)) | List(B)) }
+                        )
+                    }
+                  }
+                }
+              }
+            , (xs, nil(B, ()))
+            );
+        reverse(reversed)
+      }
+    )
+}
+
+// Walk a `List(String)` and join the elements with "," followed
+// by a trailing "\n". Used to surface the mapped list as a single
+// printable line.
+fn join_step(state: List(String) & String) -> (List(String) & String) | String {
+  match! state {
+    .(remaining: List(String), acc: String) {
+      match! remaining.>List.un_list {
+        (
+          , .(x: String, rest: List(String)) {
+              let sep =
+                match! rest.>List.un_list {
+                  (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
+                };
+              widen_sum!(
+                , (rest, string_concat(acc, string_concat(x, sep)))
+                , (List(String) & String) | String
+                )
+            }
+          , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
+          )
+      }
+    }
+  }
+}
+
+fn join_list(xs: List(String)) -> String {
+  loop(.(state: List(String) & String) { join_step(state) }, (xs, ""))
+}
+
+// Build `["hello", "world"]`, lift `s + "!"` over each element via
+// the instance, print the joined result.
+fn use_instance() -> String {
+  let inst = list_functor();
+  let xs = push("hello", push("world", nil(String, ())));
+  let mapped = Functor.fmap(inst)(String, String, .(s) { string_concat(s, "!") }, xs);
+  join_list(mapped)
+}
+
+pub fn main() -> . { print(use_instance()) }

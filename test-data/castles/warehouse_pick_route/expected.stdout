@@ -1,0 +1,6 @@
+warehouse pick route
+nodes: 6
+blocked crosslink A1-rear <-> B1-rear: true
+route: Dock -> A1-rear -> B2-front -> B1-rear -> Pack
+picks: SKU-17 x3 @ A1-rear; SKU-88 x2 @ B2-front; SKU-42 x1 @ B1-rear
+travel score: 19

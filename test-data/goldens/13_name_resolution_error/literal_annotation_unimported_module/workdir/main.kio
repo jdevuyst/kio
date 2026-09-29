@@ -1,0 +1,3 @@
+module main;
+
+fn main() -> . { let value = 42(provider.Int); () }

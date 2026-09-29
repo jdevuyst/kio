@@ -1,0 +1,8 @@
+module host/m;
+
+import host(f, g);
+
+equiv lam_body() {
+  .(x: .) { f(x) };
+  .(x: .) { g(x) }
+}

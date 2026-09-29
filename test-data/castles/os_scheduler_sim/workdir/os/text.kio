@@ -1,0 +1,54 @@
+/// Column formatting.
+///
+/// The host tier can concatenate strings but cannot measure them, so a column
+/// is padded from the *value's* digit count rather than from the width of the
+/// text it renders to.
+module os/text;
+
+import elab/control(if);
+import os/num as num;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(cat(a, b), cat(c, d)) }
+
+pub fn num_text(n: I32) -> String { int_to_string(n) }
+
+pub fn bool_text(b: Bool) -> String { bool_to_string(b) }
+
+rec(loop) fn digit_count(n: I32, acc: I32) -> I32 {
+  if! leq_i32(n, 9) {
+    acc
+  } else {
+    rec digit_count(num.div(n, 10), add_i32(acc, 1))
+  }
+}
+
+/// Characters `int_to_string` will produce for `n`, counting a leading sign.
+fn width_of(n: I32) -> I32 {
+  if! num.lt(n, 0) {
+    add_i32(1, digit_count(sub_i32(0, n), 1))
+  } else {
+    digit_count(n, 1)
+  }
+}
+
+rec(loop) fn blanks(k: I32, acc: String) -> String {
+  if! leq_i32(k, 0) {
+    acc
+  } else {
+    rec blanks(sub_i32(k, 1), cat(" ", acc))
+  }
+}
+
+/// Right-align `n` in a column `width` characters wide.
+pub fn pad_num(n: I32, width: I32) -> String {
+  cat(blanks(sub_i32(width, width_of(n)), ""), int_to_string(n))
+}

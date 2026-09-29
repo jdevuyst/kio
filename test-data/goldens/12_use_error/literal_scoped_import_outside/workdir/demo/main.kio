@@ -1,0 +1,6 @@
+module demo/main;
+
+import demo/api(String);
+import demo/internal/constants(greeting);
+
+pub fn value() -> String { greeting }

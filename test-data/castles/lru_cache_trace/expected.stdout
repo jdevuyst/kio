@@ -1,0 +1,20 @@
+LRU cache trace
+capacity=3 operations=10
+
+op 1 put key=1 value=10 -> insert slot=0 clock=1
+op 2 put key=2 value=20 -> insert slot=1 clock=2
+op 3 get key=1 -> hit slot=0 value=10 clock=3
+op 4 put key=3 value=30 -> insert slot=2 clock=4
+op 5 get key=2 -> hit slot=1 value=20 clock=5
+op 6 put key=4 value=40 -> replace slot=0 evicted=1 clock=6
+op 7 get key=1 -> miss clock=7
+op 8 put key=2 value=22 -> update slot=1 clock=8
+op 9 get key=3 -> hit slot=2 value=30 clock=9
+op 10 put key=5 value=50 -> replace slot=0 evicted=4 clock=10
+
+final stats hits=3 misses=1 evictions=2 clock=10 full=true
+replacement log count=2 first=1 latest=4
+final slots
+slot 0 key=5 value=50 age=10
+slot 1 key=2 value=22 age=8
+slot 2 key=3 value=30 age=9

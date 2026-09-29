@@ -1,0 +1,132 @@
+forge_macro_assembler: the FORGE-4 macro assembler and machine
+macros: 3   programs: 9   fuel: 120 steps per program
+
+== gcd ==
+items: 18   expanded: 18   instructions: 16
+symbols: loop=0004 done=0011
+listing:
+  0000  LOADI  a, 252
+  0001  LOADI  b, 105
+  0002  EMIT   a
+  0003  EMIT   b
+  loop:
+  0004  JMPZ   b, 0011
+  0005  MOV    c, a
+  0006  MOD    c, b
+  0007  MOV    a, b
+  0008  MOV    b, c
+  0009  EMIT   b
+  0010  JMP    0004
+  done:
+  0011  EMIT   a
+  0012  LOADI  d, 252
+  0013  DIV    d, a
+  0014  EMIT   d
+  0015  HALT
+emit: 252 105 42 21 0 21 12
+registers: a=21 b=0 c=0 d=12
+stop: halted
+steps: 31/120
+stack: final 0, max 0
+
+== series ==
+items: 19   expanded: 22   instructions: 18
+symbols: top=0003 done=0010 drain=0011 tally=0016
+listing:
+  0000  LOADI  a, 5
+  0001  LOADI  c, 0
+  0002  LOADI  d, 1
+  top:
+  0003  JMPZ   a, 0010
+  0004  MOV    b, a
+  0005  MUL    b, a
+  0006  PUSH   b
+  0007  ADD    c, b
+  0008  SUB    a, d
+  0009  JMP    0003
+  done:
+  0010  LOADI  a, 5
+  drain:
+  0011  JMPZ   a, 0016
+  0012  POP    b
+  0013  EMIT   b
+  0014  SUB    a, d
+  0015  JMP    0011
+  tally:
+  0016  EMIT   c
+  0017  HALT
+emit: 1 4 9 16 25 55
+registers: a=0 b=25 c=55 d=1
+stop: halted
+steps: 68/120
+stack: final 0, max 5
+
+== spin ==
+items: 3   expanded: 3   instructions: 2
+symbols: spin=0001
+listing:
+  0000  LOADI  a, 1
+  spin:
+  0001  JMP    0001
+emit: (none)
+registers: a=1 b=0 c=0 d=0
+stop: out of fuel
+steps: 120/120
+stack: final 0, max 0
+
+== runoff ==
+items: 4   expanded: 4   instructions: 4
+symbols: (none)
+listing:
+  0000  LOADI  a, 3
+  0001  LOADI  d, 1
+  0002  SUB    a, d
+  0003  EMIT   a
+emit: 2
+registers: a=2 b=0 c=0 d=1
+stop: ran off the end
+steps: 4/120
+stack: final 0, max 0
+
+== div_zero ==
+items: 4   expanded: 4   instructions: 4
+symbols: (none)
+listing:
+  0000  LOADI  a, 10
+  0001  LOADI  b, 0
+  0002  DIV    a, b
+  0003  HALT
+emit: (none)
+registers: a=10 b=0 c=0 d=0
+stop: fault: divide by zero at 0002
+steps: 3/120
+stack: final 0, max 0
+
+== pop_empty ==
+items: 5   expanded: 5   instructions: 5
+symbols: (none)
+listing:
+  0000  LOADI  a, 5
+  0001  PUSH   a
+  0002  POP    b
+  0003  POP    c
+  0004  HALT
+emit: (none)
+registers: a=5 b=5 c=0 d=0
+stop: fault: stack underflow at 0003
+steps: 4/120
+stack: final 0, max 1
+
+== no_macro ==
+items: 3
+rejected: unknown macro `ghost`
+
+== no_label ==
+items: 2
+rejected: undefined label `nowhere`
+
+== twice ==
+items: 4
+rejected: duplicate label `start`
+
+summary: 6 assembled, 3 rejected, 230 steps executed

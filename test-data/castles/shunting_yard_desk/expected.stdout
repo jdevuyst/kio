@@ -1,0 +1,51 @@
+shunting_yard_desk
+expr 1: 2 + 3 * 4
+  rpn: 2 3 4 * +
+  value: 14
+expr 2: 2 ^ 3 ^ 2
+  rpn: 2 3 2 ^ ^
+  value: 512
+expr 3: ~ 2 ^ 2
+  rpn: 2 2 ^ ~
+  value: -4
+expr 4: ( 1 + 2 ) * ( 8 - 3 )
+  rpn: 1 2 + 8 3 - *
+  value: 15
+expr 5: 100 / 7 % 5
+  rpn: 100 7 / 5 %
+  value: 4
+expr 6: 10 - -3
+  rpn: 10 -3 -
+  value: 13
+expr 7: ~ 3 + 4
+  rpn: 3 ~ 4 +
+  value: 1
+expr 8: ( 1 + 2
+  error: unclosed-open at token 1
+expr 9: 1 + 2 )
+  error: unmatched-close at token 4
+expr 10: 5 *
+  rpn: 5 *
+  error: missing-operand at token 2
+expr 11: ( 1 + 2 ) 5
+  rpn: 1 2 + 5
+  error: extra-operand at token 6
+expr 12: 8 / 0
+  rpn: 8 0 /
+  error: divide-by-zero at token 2
+expr 13: 9 % 0
+  rpn: 9 0 %
+  error: divide-by-zero at token 2
+expr 14: 2 ^ ~ 3
+  rpn: 2 3 ~ ^
+  error: negative-exponent at token 2
+expr 15: 4 & 5
+  error: bad-token at token 2
+summary: 15 expressions, 7 ok, 8 failed
+  bad-token: 1
+  unmatched-close: 1
+  unclosed-open: 1
+  missing-operand: 1
+  extra-operand: 1
+  divide-by-zero: 2
+  negative-exponent: 1

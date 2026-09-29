@@ -1,0 +1,52 @@
+module elab;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Stage = . | . | .;
+
+pure fn stage_zero() -> Stage { __left__(., . | ., ()) }
+
+pure fn stage_one() -> Stage { __right__(., . | ., __left__(., ., ())) }
+
+pure fn stage_two() -> Stage { __right__(., . | ., __right__(., ., ())) }
+
+pure fn advance(ct: __Comptime__, recur: (__Type__ & Stage) -> __Checked_term__, stage: Stage) -> __Checked_term__ {
+  __either__(
+    , .
+    , . | .
+    , __Checked_term__
+    , stage
+    , .(_zero: .) -> __Checked_term__ { recur(__type_unit__(ct), stage_one()) }
+    , .(later: . | .) -> __Checked_term__ {
+        __either__(
+          , .
+          , .
+          , __Checked_term__
+          , later
+          , .(_one: .) -> __Checked_term__ {
+              let ignored = recur(__type_bottom__(ct), stage_two());
+              __term_unit__(ct)
+            }
+          , .(_two: .) -> __Checked_term__ { __term_unit__(ct) }
+          )
+      }
+    )
+}
+
+pure fn guarded_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  __structural_recur__(
+    , ct
+    , __Type__
+    , Stage
+    , __Checked_term__
+    , __type_product__(ct, __type_unit__(ct), __type_unit__(ct))
+    , stage_zero()
+    , .(recur: (__Type__ & Stage) -> __Checked_term__, _fuel: __Type__, stage: Stage) -> __Checked_term__ {
+        advance(ct, recur, stage)
+      }
+    )
+}
+
+pub elab guarded : [Source] Source -> . { impl guarded_impl }

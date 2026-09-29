@@ -1,0 +1,36 @@
+module m;
+
+import alias_provider(Shape);
+import helper_provider(exposed);
+import qualified_provider as q;
+
+fn a() -> . { () }
+
+fn b() -> . { () }
+
+fn alias_identity(value: Shape) -> Shape { value }
+
+equiv uses_a() {
+  a();
+  ()
+}
+
+equiv uses_b() {
+  b();
+  ()
+}
+
+equiv uses_imported_private() {
+  exposed();
+  ()
+}
+
+equiv uses_alias(value: Shape) {
+  alias_identity(value);
+  value
+}
+
+equiv uses_qualified_with_local(q: .) {
+  q.answer();
+  .t(q.Bool)
+}

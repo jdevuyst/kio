@@ -1,0 +1,9 @@
+module main;
+
+import elab/spine_elaborators(reorder_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn rearrange(x: A | B) -> A | A { reorder_sum!(x) }

@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(_String);
+import testapi/io(print);
+
+type _Alias = _String;
+
+type Ordinary = _Alias;
+
+pub newtype Box[B] : B { pub constructor mk_plain_box; pub projector un_plain_box }
+
+pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box }
+
+pub fn main() -> . {
+  print(_Box.un_box(
+    , Ordinary
+    , _Box.mk_box(
+        , _Alias
+        , Box.un_plain_box(
+            , Ordinary
+            , Box.mk_plain_box(Ordinary, "underscore type names\n"(Ordinary))
+            )
+        )
+    ))
+}

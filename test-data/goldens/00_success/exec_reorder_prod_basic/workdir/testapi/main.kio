@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod, reorder_prod);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `reorder_prod!` permutes the factors of a product. Source
+// `(String & I32)` has the same factor multiset as target
+// `(I32 & String)`, so the permutation is the cross-type swap.
+fn swap(p: String & I32) -> I32 & String { reorder_prod!(p) }
+
+pub fn main() -> . {
+  let swapped = swap(("reorder_prod\n", 42));
+  // After swap, slot 0 is I32 and slot 1 is String. Pick each via
+  // `one_prod!` (the spine palette's product-slot picker), then
+  // print to verify the runtime payload survived the permutation.
+  let n = one_prod!(swapped, I32);
+  let s = one_prod!(swapped, String);
+  print(string_concat("swapped: ", string_concat(int_to_string(n), string_concat(" ", s))))
+}

@@ -1,0 +1,2 @@
+square(7) == 49: PASS
+greet("World") == "Hi, World": PASS

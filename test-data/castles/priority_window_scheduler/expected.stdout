@@ -1,0 +1,6 @@
+priority window scheduler
+early span=1-3 score=17
+middle span=2-4 score=22
+late span=3-5 score=15
+selected=middle span=2-4 score=22
+rejected=2

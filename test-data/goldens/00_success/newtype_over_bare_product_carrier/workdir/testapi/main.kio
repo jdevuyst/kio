@@ -1,0 +1,51 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A binary `Tree(A)` and a one-hole `Zip(A)` zipper context over it.
+rec newtype Tree[A] : . | (A & Tree(A) & Tree(A)) { pub constructor mk_tree; pub projector un_tree }
+
+rec newtype Zip[A] : . | (A & Tree(A) & Zip(A)) { pub constructor mk_zip; pub projector un_zip }
+
+// A polymorphic newtype whose carrier is a **bare product of two
+// type-constructor applications** that both mention the binder `A` —
+// `Tree(A) & Zip(A)`, not wrapped in any further newtype. The carrier
+// must round-trip a product whose two factors each recurse through a
+// distinct nested type constructor (`Tree` / `Zip`). The shape is
+// otherwise unexercised by the golden corpus, so this case is its
+// regression coverage.
+newtype Done[A] : Tree(A) & Zip(A) { pub constructor mk_done; pub projector un_done }
+
+fn leaf[A]() -> Tree(A) { Tree.mk_tree(widen_sum!((), . | (A & Tree(A) & Tree(A)))) }
+
+fn node[A](v: A, l: Tree(A), r: Tree(A)) -> Tree(A) {
+  Tree.mk_tree(widen_sum!((v, l, r), . | (A & Tree(A) & Tree(A))))
+}
+
+fn top[A]() -> Zip(A) { Zip.mk_zip(widen_sum!((), . | (A & Tree(A) & Zip(A)))) }
+
+fn focus[A](t: Tree(A), z: Zip(A)) -> Done(A) { Done.mk_done((t, z)) }
+
+// Destructure the `Done` through its projector — the nested-product
+// match binder `(t, _z)` over the bare-product carrier — then read the
+// focused tree's root value.
+fn root_val(d: Done(I32)) -> I32 {
+  match! d.>Done.un_done {
+    .(t: Tree(I32), _z: Zip(I32)) {
+      match! t.>Tree.un_tree {
+        (.(v: I32, _l: Tree(I32), _r: Tree(I32)) { v }, .(_e: .) { 0 })
+      }
+    }
+  }
+}
+
+pub fn main() -> . {
+  let t = node(7, leaf(), leaf());
+  let d = focus(t, top(I32, ()));
+  print(string_concat(int_to_string(root_val(d)), "\n"))
+}

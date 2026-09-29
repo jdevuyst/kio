@@ -1,0 +1,6 @@
+module main;
+
+fn add(a: A, b: A) -> A { a }
+fn other(a: A, b: A) -> A { a }
+
+op _ + _ { impl add; };op _ + _ { impl other; };

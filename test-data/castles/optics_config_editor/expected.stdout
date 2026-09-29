@@ -1,0 +1,3 @@
+before: endpoint=api.internal retries=2 timeout=800 dark=false rollout=15 mode=stable revision=4 audit=2 score=823
+after: endpoint=api.internal retries=4 timeout=1200 dark=true rollout=35 mode=degraded:5 revision=5 audit=3 score=1250
+delta=427 timeout_ok=true rollout_ok=true

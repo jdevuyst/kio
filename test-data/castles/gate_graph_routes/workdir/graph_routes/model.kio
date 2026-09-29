@@ -1,0 +1,67 @@
+module graph_routes/model;
+
+import testapi(I32);
+
+pub labels Search_state = {
+  , round: I32
+  , cursor: I32
+  , da: I32
+  , db: I32
+  , dc: I32
+  , dd: I32
+  , de: I32
+  , df: I32
+  , dg: I32
+  , visited: I32
+  , relaxed: I32
+  , blocked: I32
+  };
+
+pub fn inf() -> I32 { 999 }
+
+pub fn initial() -> Search_state {
+  {
+    , round = 0
+    , cursor = 0
+    , da = 0
+    , db = inf()
+    , dc = inf()
+    , dd = inf()
+    , de = inf()
+    , df = inf()
+    , dg = inf()
+    , visited = 0
+    , relaxed = 0
+    , blocked = 0
+    }
+}
+
+pub fn rebuild(
+  , round_value: I32
+  , cursor_value: I32
+  , da_value: I32
+  , db_value: I32
+  , dc_value: I32
+  , dd_value: I32
+  , de_value: I32
+  , df_value: I32
+  , dg_value: I32
+  , visited_value: I32
+  , relaxed_value: I32
+  , blocked_value: I32
+  ) -> Search_state {
+  {
+    , round = round_value
+    , cursor = cursor_value
+    , da = da_value
+    , db = db_value
+    , dc = dc_value
+    , dd = dd_value
+    , de = de_value
+    , df = df_value
+    , dg = dg_value
+    , visited = visited_value
+    , relaxed = relaxed_value
+    , blocked = blocked_value
+    }
+}

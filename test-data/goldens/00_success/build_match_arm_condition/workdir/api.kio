@@ -1,0 +1,52 @@
+module api;
+
+import elab/control(if);
+import elab/match(match);
+
+host type Bool role(bool);
+
+host fn sink(value: Bool) -> .;
+
+pub fn choose(value: . | Bool, detail: . | Bool) -> Bool {
+  match! value {
+    (
+      , .(flag: Bool) {
+          match! detail {
+            (
+              , .(_present: Bool) {
+                  if! flag {
+                    .t
+                  } else {
+                    .f
+                  }
+                }
+              , .(_empty: .) { .f }
+              )
+          }
+        }
+      , .(_missing: .) { .f }
+      )
+  }
+}
+
+pub fn choose_effect(value: . | Bool, detail: . | Bool) -> . {
+  match! value {
+    (
+      , .(flag: Bool) {
+          match! detail {
+            (
+              , .(_present: Bool) { sink(flag) }
+              , .(_empty: .) {
+                  if! flag {
+                    sink(.t)
+                  } else {
+                    sink(.f)
+                  }
+                }
+              )
+          }
+        }
+      , .(_missing: .) { sink(.f) }
+      )
+  }
+}

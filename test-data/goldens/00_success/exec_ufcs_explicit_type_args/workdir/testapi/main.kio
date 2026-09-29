@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn id[A](x: A) -> A { x }
+
+fn select_first[A](first: A, second: A) -> A { first }
+
+fn select_second[A](first: A, second: A) -> A { second }
+
+fn join(left: String, right: String) -> String { string_concat(left, right) }
+
+pub fn main() -> . {
+  print("id\n".>id(String));
+  print("last\n".>>select_second(String, "ignored\n"));
+  print(select_first(String, "ignored\n").<<"first\n");
+  print(select_second(String, "ignored\n").<"last-left\n");
+  print(("pro", "duct\n").>join)
+}

@@ -1,0 +1,2 @@
+newtype member `Box\.mk` is not visible from module `outside`
+`mk` is restricted to `pub\(scope\)`

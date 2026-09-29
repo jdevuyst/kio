@@ -1,0 +1,2 @@
+openx(make(21)) = 21
+openx_let(make(21)) = 21

@@ -1,0 +1,52 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `Tree(A)` is either a leaf carrying an `A`, or a branch holding two
+// subtrees. The recursive references go through `Tree(A)` inside the
+// payload — the iso-recursive boundary the newtype mints.
+rec newtype Tree[A] : A | (Tree(A) & Tree(A)) { pub constructor mk_tree; pub projector un_tree }
+
+fn leaf[A](x: A) -> Tree(A) { Tree.mk_tree(widen_sum!(x, A | (Tree(A) & Tree(A)))) }
+
+fn branch[A](l: Tree(A), r: Tree(A)) -> Tree(A) {
+  Tree.mk_tree(widen_sum!((l, r), A | (Tree(A) & Tree(A))))
+}
+
+// Fixed-depth: read the leaf value, or `fallback` if the tree is a branch.
+// Clause order matters: the branch (Pair) pattern is strictly more
+// specific than the leaf (a) pattern, and the leaf pattern is a
+// single-slot — placing the leaf first absorbs both arms via the
+// match! dispatcher's per-clause coercion. Branch pattern first.
+fn leaf_or[A](fallback: A, t: Tree(A)) -> A {
+  match! t.>Tree.un_tree {
+    (.(_l: Tree(A), _r: Tree(A)) { fallback }, .(x: A) { x })
+  }
+}
+
+// Fixed-depth: project the left subtree of a branch, or `fallback` if leaf.
+fn left_or[A](fallback: Tree(A), t: Tree(A)) -> Tree(A) {
+  match! t.>Tree.un_tree {
+    (.(l: Tree(A), _r: Tree(A)) { l }, .(_x: A) { fallback })
+  }
+}
+
+pub fn main() -> . {
+  // Build:           branch
+  //                  /    \
+  //              branch   leaf(99)
+  //              /    \
+  //          leaf(10) leaf(20)
+  // Then read leaf(10) = root.left.left.
+  let l10 = leaf(10);
+  let l20 = leaf(20);
+  let l99 = leaf(99);
+  let inner = branch(l10, l20);
+  let root = branch(inner, l99);
+  let v = leaf_or(0, left_or(l99, left_or(l99, root)));
+  print(int_to_string(v))
+}

@@ -1,0 +1,124 @@
+module priority_dispatch/model;
+
+import testapi(Bool, I32, String);
+
+pub labels Job = {
+  , job_id: I32
+  , job_name: String
+  , job_priority: I32
+  , job_deadline: I32
+  , job_cpu: I32
+  , job_io: I32
+  , job_duration: I32
+  };
+
+pub labels Slot = { slot_tick: I32, slot_cpu: I32, slot_io: I32 };
+
+pub labels Choice = {
+  , choice_id: I32
+  , choice_name: String
+  , choice_rank: I32
+  , choice_priority: I32
+  , choice_deadline: I32
+  , choice_cpu: I32
+  , choice_io: I32
+  , choice_duration: I32
+  , choice_eligible: Bool
+  };
+
+pub labels Dispatch_state = {
+  , state_tick: I32
+  , state_ingress_done: Bool
+  , state_backup_done: Bool
+  , state_alert_done: Bool
+  , state_reconcile_done: Bool
+  , state_audit_done: Bool
+  , state_dispatched: I32
+  , state_blocked: I32
+  , state_cpu: I32
+  , state_io: I32
+  , state_duration: I32
+  , state_slack: I32
+  };
+
+pub fn job(id: I32, name: String, priority: I32, deadline: I32, cpu: I32, io: I32, duration: I32) -> Job {
+  {
+    , job_id = id
+    , job_name = name
+    , job_priority = priority
+    , job_deadline = deadline
+    , job_cpu = cpu
+    , job_io = io
+    , job_duration = duration
+    }
+}
+
+pub fn slot(tick: I32, cpu: I32, io: I32) -> Slot {
+  {slot_tick = tick, slot_cpu = cpu, slot_io = io}
+}
+
+pub fn choice(
+  , id: I32
+  , name: String
+  , rank: I32
+  , priority: I32
+  , deadline: I32
+  , cpu: I32
+  , io: I32
+  , duration: I32
+  , eligible: Bool
+  ) -> Choice {
+  {
+    , choice_id = id
+    , choice_name = name
+    , choice_rank = rank
+    , choice_priority = priority
+    , choice_deadline = deadline
+    , choice_cpu = cpu
+    , choice_io = io
+    , choice_duration = duration
+    , choice_eligible = eligible
+    }
+}
+
+pub fn dispatch_state(
+  , tick: I32
+  , ingress_done: Bool
+  , backup_done: Bool
+  , alert_done: Bool
+  , reconcile_done: Bool
+  , audit_done: Bool
+  , dispatched: I32
+  , blocked: I32
+  , cpu: I32
+  , io: I32
+  , duration: I32
+  , slack: I32
+  ) -> Dispatch_state {
+  {
+    , state_tick = tick
+    , state_ingress_done = ingress_done
+    , state_backup_done = backup_done
+    , state_alert_done = alert_done
+    , state_reconcile_done = reconcile_done
+    , state_audit_done = audit_done
+    , state_dispatched = dispatched
+    , state_blocked = blocked
+    , state_cpu = cpu
+    , state_io = io
+    , state_duration = duration
+    , state_slack = slack
+    }
+}
+
+pub fn ingress_job() -> Job { job(1, "ingress", 4, 3, 2, 1, 2) }
+
+pub fn backup_job() -> Job { job(2, "backup", 2, 5, 1, 2, 1) }
+
+pub fn alert_job() -> Job { job(3, "alert", 5, 2, 1, 1, 1) }
+
+pub fn reconcile_job() -> Job { job(4, "reconcile", 3, 4, 2, 0, 2) }
+
+pub fn audit_job() -> Job { job(5, "audit", 4, 6, 1, 2, 1) }
+
+pub fn initial_state() -> Dispatch_state { dispatch_state(0, .f, .f, .f, .f, .f, 0, 0, 0, 0, 0, 0) }

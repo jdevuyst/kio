@@ -1,0 +1,5 @@
+module sub;
+
+host type String role(str);
+
+pub fn hidden() -> . { () }

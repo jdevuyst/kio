@@ -1,0 +1,30 @@
+module api;
+
+newtype Seed : . { constructor mk_seed; projector un_seed }
+
+pub newtype Result : . { constructor mk_result; projector un_result }
+
+fn apply(thunk: . -> Result) -> Result { thunk(()) }
+
+fn staged_unit(seed: .)(later: .) -> Result { Result.mk_result(seed) }
+
+fn staged_value(seed: Seed)(later: .) -> Result { Result.mk_result(Seed.un_seed(seed)) }
+
+fn staged_three(seed: .)(middle: .)(later: .) -> Result { Result.mk_result(seed) }
+
+pub fn unit_partial() -> Result { let part = staged_unit(()); part(()) }
+
+pub fn value_partial() -> Result { apply(staged_value(Seed.mk_seed(()))) }
+
+pub fn three_partial() -> Result {
+  let middle = staged_three(());
+  let later = middle(());
+  later(())
+}
+
+pub fn main() -> . {
+  let first = unit_partial();
+  let second = value_partial();
+  let third = three_partial();
+  ()
+}

@@ -1,0 +1,5 @@
+module dep;
+
+import provider as p;
+
+pub type Phantom[A] = p.Int;

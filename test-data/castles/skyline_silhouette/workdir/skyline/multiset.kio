@@ -1,0 +1,68 @@
+/// The active heights: the roofs the sweep is currently standing under.
+///
+/// The host offers no priority queue, so the active heights are kept as a list
+/// sorted from tallest to shortest. The silhouette's current height is then
+/// simply the head, and a left or right edge is an ordered insert or a single
+/// withdrawal.
+///
+/// This is a MULTISET, not a set. Two buildings of the same height are two
+/// separate entries, and a right edge withdraws exactly one of them. Collapsing
+/// equal heights into one entry is the classic way to get this algorithm wrong:
+/// whichever of two equally tall buildings ended first would take the other
+/// one's roof down with it.
+module skyline/multiset;
+
+import elab/control(if);
+import elab/match(match);
+import skyline/list as lst;
+import skyline/logic as logic;
+import testapi(Bool, I32);
+import testapi/arith(leq_i32);
+import testapi/iter(loop);
+
+pub type Active = lst.List(I32);
+
+pub fn empty() -> Active { lst.nil(I32, ()) }
+
+/// Admit one roof. `h` lands in front of the first entry it stands at least as
+/// tall as, which keeps the list descending and puts a new tallest roof at the
+/// head.
+pub rec(loop) fn add(h: I32, xs: Active) -> Active {
+  match! xs.>lst.List.un_list {
+    (
+      , .(head: I32, rest: Active) {
+          if! leq_i32(head, h) {
+            lst.cons(h, lst.cons(head, rest))
+          } else {
+            lst.cons(head, rec(cont) add(h, rest))
+          }
+        }
+      , .(_empty: .) { lst.cons(h, lst.nil(I32, ())) }
+      )
+  }
+}
+
+/// Withdraw one roof of height `h` — the first entry that equals it, and only
+/// that entry. Every other copy of `h` stays standing.
+pub rec(loop) fn drop(h: I32, xs: Active) -> Active {
+  match! xs.>lst.List.un_list {
+    (
+      , .(head: I32, rest: Active) {
+          if! logic.eq(head, h) {
+            rest
+          } else {
+            lst.cons(head, rec(cont) drop(h, rest))
+          }
+        }
+      , .(_empty: .) { lst.nil(I32, ()) }
+      )
+  }
+}
+
+/// The silhouette's height right now: the tallest roof overhead, or ground
+/// level when the sweep stands in a gap with nothing above it.
+pub fn peak(xs: Active) -> I32 {
+  match! xs.>lst.List.un_list {
+    (.(head: I32, _rest: Active) { head }, .(_empty: .) { 0 })
+  }
+}

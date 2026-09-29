@@ -1,0 +1,8 @@
+module b;
+
+pub fn idb(x: .) -> . { x }
+
+equiv eb() {
+  idb(());
+  ()
+}

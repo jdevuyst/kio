@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/helper as h;
+
+fn call_logger(logger: String -> .) -> . { logger("via h alias value"(String)) }
+
+pub fn main() -> . { call_logger(h.greet) }

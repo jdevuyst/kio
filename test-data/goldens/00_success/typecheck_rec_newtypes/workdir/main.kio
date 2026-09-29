@@ -1,0 +1,16 @@
+module main;
+
+import __intrinsics__;
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn destruct[A](l: List(A)) -> . | (A & List(A)) { List.un_list(A, l) }
+
+rec newtype Tree : . | Tree { pub constructor mk_tree; pub projector un_tree }
+
+fn empty() -> Tree { Tree.mk_tree(__left__(., Tree, ())) }
+
+rec {
+  newtype Even : . | Odd { pub constructor mk_even; pub projector un_even };
+  newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
+}

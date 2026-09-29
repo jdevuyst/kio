@@ -1,0 +1,467 @@
+/// The evaluator: run a plan bottom-up and hand back the relation it
+/// produces, together with what the run cost.
+///
+/// Nothing here is clever. A join is a nested loop, an ordering is an
+/// insertion sort over a list, and a grouping accumulates into an
+/// association list - the point is that the cost of those choices is
+/// visible. Every scan and every comparison is counted into the `Stats`
+/// that travel alongside the relation, so the report can show that the
+/// engine really walked the data it claims to have walked.
+module query/eval;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import query/fixtures as fixtures;
+import query/list as list;
+import query/plan as plan;
+import query/row as rel;
+import query/schema as schema;
+import query/value as value;
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
+import testapi/iter(loop);
+
+/// What a run cost: base-table rows read, and comparisons attempted.
+/// A comparison is counted whenever the engine asks how two data values
+/// relate - a predicate leaf, a join-key test, a sort-key test, or a
+/// group-key probe - whether or not the row carried the column.
+pub labels Stats = { st_scanned: I32, st_compares: I32 };
+
+pub fn stats_zero() -> Stats { {st_scanned = 0, st_compares = 0} }
+
+pub fn stats_scanned(s: Stats) -> I32 { s.?{st_scanned} }
+
+pub fn stats_compares(s: Stats) -> I32 { s.?{st_compares} }
+
+fn scanned(s: Stats, n: I32) -> Stats { s.!{st_scanned = add_i32(s.?{st_scanned}, n)} }
+
+fn compared(s: Stats, n: I32) -> Stats { s.!{st_compares = add_i32(s.?{st_compares}, n)} }
+
+fn both(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+fn either(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+fn negate(a: Bool) -> Bool {
+  if! a {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn int_or_zero(m: value.Maybe_int) -> I32 {
+  match! m {
+    (.(n: value.Some_int) { value.some_int_of(n) }, .(_n: value.No_int) { 0 })
+  }
+}
+
+/// The host tier supplies `<` and `<=` and nothing above them, so `>` and
+/// `>=` are the same comparisons read from the other side.
+fn apply_op(o: plan.Cmp_op, a: I32, b: I32) -> Bool {
+  match! o {
+    (
+      , .(_o: plan.Op_eq) { eq_i32(a, b) }
+      , .(_o: plan.Op_lt) { lt_i32(a, b) }
+      , .(_o: plan.Op_leq) { leq_i32(a, b) }
+      , .(_o: plan.Op_gt) { lt_i32(b, a) }
+      , .(_o: plan.Op_geq) { leq_i32(b, a) }
+      )
+  }
+}
+
+fn test_literal(row: rel.Row, c: schema.Col, o: plan.Cmp_op, n: I32) -> Bool {
+  match! rel.row_int(row, c) {
+    (.(x: value.Some_int) { apply_op(o, value.some_int_of(x), n) }, .(_x: value.No_int) { .f })
+  }
+}
+
+fn test_columns(row: rel.Row, left: schema.Col, o: plan.Cmp_op, right: schema.Col) -> Bool {
+  match! rel.row_int(row, left) {
+    (
+      , .(x: value.Some_int) {
+          match! rel.row_int(row, right) {
+            (
+              , .(y: value.Some_int) { apply_op(o, value.some_int_of(x), value.some_int_of(y)) }
+              , .(_y: value.No_int) { .f }
+              )
+          }
+        }
+      , .(_x: value.No_int) { .f }
+      )
+  }
+}
+
+/// Predicates are total: both sides of an `and` or an `or` are evaluated
+/// before the two answers are combined. Nothing here has an effect to
+/// skip, and a predicate that always visits every leaf makes the
+/// comparison count a property of the predicate's shape rather than of
+/// the order its rows happen to arrive in.
+rec(loop) fn eval_pred(row: rel.Row, p: plan.Pred, st: Stats) -> Bool & Stats {
+  match! p.>plan.Pred.un_pred {
+    (
+      , .(c: plan.Lit_col, o: plan.Lit_op, n: plan.Lit_num) {
+          (
+            , test_literal(row, plan.lit_col_of(c), plan.lit_op_of(o), plan.lit_num_of(n))
+            , compared(st, 1)
+            )
+        }
+      , .(l: plan.Pair_left, o: plan.Pair_op, r: plan.Pair_right) {
+          (
+            , test_columns(row, plan.pair_left_of(l), plan.pair_op_of(o), plan.pair_right_of(r))
+            , compared(st, 1)
+            )
+        }
+      , .(l: plan.And_left, r: plan.And_right) {
+          let .(x: Bool, st1: Stats) = rec(cont) eval_pred(row, plan.and_left_of(l), st);
+          let .(y: Bool, st2: Stats) = rec(cont) eval_pred(row, plan.and_right_of(r), st1);
+          (both(x, y), st2)
+        }
+      , .(l: plan.Or_left, r: plan.Or_right) {
+          let .(x: Bool, st1: Stats) = rec(cont) eval_pred(row, plan.or_left_of(l), st);
+          let .(y: Bool, st2: Stats) = rec(cont) eval_pred(row, plan.or_right_of(r), st1);
+          (either(x, y), st2)
+        }
+      , .(a: plan.Not_arg) {
+          let .(x: Bool, st1: Stats) = rec(cont) eval_pred(row, plan.not_arg_of(a), st);
+          (negate(x), st1)
+        }
+      )
+  }
+}
+
+rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table & Stats {
+  match! rows.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          let .(keep: Bool, st1: Stats) = eval_pred(r, p, st);
+          let .(tail: rel.Table, st2: Stats) = rec(cont) filter_rows(rest, p, st1);
+          if! keep {
+            (list.cons(r, tail), st2)
+          } else {
+            (tail, st2)
+          }
+        }
+      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      )
+  }
+}
+
+rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> rel.Table & Stats {
+  match! rows.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          let .(tail: rel.Table, st1: Stats) = rec(cont) project_rows(cols, rest, st);
+          (list.cons(rel.project_row(cols, r), tail), st1)
+        }
+      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      )
+  }
+}
+
+fn keys_match(left: rel.Row, right: rel.Row, lkey: schema.Col, rkey: schema.Col) -> Bool {
+  match! rel.row_int(left, lkey) {
+    (
+      , .(a: value.Some_int) {
+          match! rel.row_int(right, rkey) {
+            (
+              , .(b: value.Some_int) { eq_i32(value.some_int_of(a), value.some_int_of(b)) }
+              , .(_b: value.No_int) { .f }
+              )
+          }
+        }
+      , .(_a: value.No_int) { .f }
+      )
+  }
+}
+
+/// One left row against the whole right side: every right row costs one
+/// key comparison, and the ones that match leave a merged row behind.
+rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
+  rel.Table & Stats
+   {
+  match! rs.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          let hit = keys_match(l, r, lkey, rkey);
+          let .(tail: rel.Table, st1: Stats) =
+            rec(cont) join_probe(l, rest, lkey, rkey, compared(st, 1));
+          if! hit {
+            (list.cons(rel.row_merge(l, r), tail), st1)
+          } else {
+            (tail, st1)
+          }
+        }
+      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      )
+  }
+}
+
+/// The nested-loop join: every row of the left side is offered every row
+/// of the right side, so the comparison count is exactly the product of
+/// the two sides' sizes. Matching pairs are concatenated, left cells
+/// first, and come out in left-major order.
+rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
+  rel.Table & Stats
+   {
+  match! ls.>list.List.un_list {
+    (
+      , .(l: rel.Row, rest: rel.Table) {
+          let .(hits: rel.Table, st1: Stats) = join_probe(l, rs, lkey, rkey, st);
+          let .(tail: rel.Table, st2: Stats) = rec(cont) join_rows(rest, rs, lkey, rkey, st1);
+          (list.append(hits, tail), st2)
+        }
+      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      )
+  }
+}
+
+/// Strictly before, in the requested direction. A row whose sort key is
+/// absent or textual is never strictly before anything, so it keeps its
+/// arrival position instead of being ordered against data the host cannot
+/// compare.
+fn sorts_before(a: rel.Row, b: rel.Row, key: schema.Col, d: plan.Dir) -> Bool {
+  match! rel.row_int(a, key) {
+    (
+      , .(x: value.Some_int) {
+          match! rel.row_int(b, key) {
+            (
+              , .(y: value.Some_int) {
+                  match! d {
+                    (
+                      , .(_d: plan.Dir_asc) { lt_i32(value.some_int_of(x), value.some_int_of(y)) }
+                      , .(_d: plan.Dir_desc) { lt_i32(value.some_int_of(y), value.some_int_of(x)) }
+                      )
+                  }
+                }
+              , .(_y: value.No_int) { .f }
+              )
+          }
+        }
+      , .(_x: value.No_int) { .f }
+      )
+  }
+}
+
+/// Place one row into an already-sorted list. The walk stops at the first
+/// row the newcomer strictly precedes, so a row that ties with what is
+/// already there lands after it - which is what makes the sort stable.
+/// Each step of the walk is one comparison.
+rec(loop) fn insert_row(r: rel.Row, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
+  rel.Table & Stats
+   {
+  match! sorted.>list.List.un_list {
+    (
+      , .(h: rel.Row, rest: rel.Table) {
+          let first = sorts_before(r, h, key, d);
+          let st1 = compared(st, 1);
+          if! first {
+            (list.cons(r, sorted), st1)
+          } else {
+            let .(tail: rel.Table, st2: Stats) = rec(cont) insert_row(r, key, d, rest, st1);
+            (list.cons(h, tail), st2)
+          }
+        }
+      , .(_empty: .) { (list.of1(r), st) }
+      )
+  }
+}
+
+/// Insertion sort: take the rows in arrival order and insert each into
+/// the sorted list built so far.
+rec(loop) fn sort_rows(rows: rel.Table, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
+  rel.Table & Stats
+   {
+  match! rows.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          let .(next: rel.Table, st1: Stats) = insert_row(r, key, d, sorted, st);
+          rec sort_rows(rest, key, d, next, st1)
+        }
+      , .(_empty: .) { (sorted, st) }
+      )
+  }
+}
+
+/// What a grouping accumulates per key. `GroupSum` adds a column's
+/// integer reading; `GroupCount` adds one per row.
+labels Agg = { agg_col: schema.Col } | { agg_rows: . };
+
+labels Group = { g_key: I32, g_acc: I32 };
+
+fn summing(c: schema.Col) -> Agg { {agg_col = c}.>widen_sum!(Agg) }
+
+fn counting() -> Agg { {agg_rows=}.>widen_sum!(Agg) }
+
+fn group(key: I32, acc: I32) -> Group { {g_key = key, g_acc = acc} }
+
+fn delta_of(row: rel.Row, a: Agg) -> I32 {
+  match! a {
+    (.(c: Agg_col) { int_or_zero(rel.row_int(row, c.?{agg_col})) }, .(_c: Agg_rows) { 1 })
+  }
+}
+
+/// Fold one row into the association list of buckets. A key already in
+/// the list absorbs the row; a new key is appended, which is what keeps
+/// the groups in first-seen order. The probe compares the key against
+/// every bucket it passes.
+rec(loop) fn bump(groups: list.List(Group), key: I32, delta: I32, st: Stats) ->
+  list.List(Group) & Stats
+   {
+  match! groups.>list.List.un_list {
+    (
+      , .(g: Group, rest: list.List(Group)) {
+          let st1 = compared(st, 1);
+          if! eq_i32(g.?{g_key}, key) {
+            (list.cons(group(key, add_i32(g.?{g_acc}, delta)), rest), st1)
+          } else {
+            let .(tail: list.List(Group), st2: Stats) = rec(cont) bump(rest, key, delta, st1);
+            (list.cons(g, tail), st2)
+          }
+        }
+      , .(_empty: .) { (list.of1(group(key, delta)), st) }
+      )
+  }
+}
+
+rec(loop) fn group_rows(
+  , rows: rel.Table
+  , key: schema.Col
+  , a: Agg
+  , groups: list.List(Group)
+  , st: Stats
+  ) -> list.List(Group) & Stats {
+  match! rows.>list.List.un_list {
+    (
+      , .(r: rel.Row, rest: rel.Table) {
+          let .(next: list.List(Group), st1: Stats) =
+            bump(groups, int_or_zero(rel.row_int(r, key)), delta_of(r, a), st);
+          rec group_rows(rest, key, a, next, st1)
+        }
+      , .(_empty: .) { (groups, st) }
+      )
+  }
+}
+
+rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List(Group)) -> rel.Table {
+  match! groups.>list.List.un_list {
+    (
+      , .(g: Group, rest: list.List(Group)) {
+          list.cons(
+            , list.of2(
+                , rel.cell(key, value.int_val(g.?{g_key}))
+                , rel.cell(agg, value.int_val(g.?{g_acc}))
+                )
+            , rec(cont) groups_to_table(key, agg, rest)
+            )
+        }
+      , .(_empty: .) { list.nil(rel.Row, ()) }
+      )
+  }
+}
+
+/// Run a plan. Each node evaluates its children first, then does its own
+/// work on their relations - so the tree is consumed bottom-up and the
+/// stats accumulate in the order the work actually happened.
+pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
+  match! p.>plan.Plan.un_plan {
+    (
+      , .(n: plan.Scan_table) {
+          let t = plan.scan_table_of(n);
+          let rows = fixtures.table_rows(t);
+          (rel.relation(schema.table_cols(t), rows), scanned(st, list.length(rows)))
+        }
+      , .(pr: plan.Filter_pred, src: plan.Filter_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.filter_src_of(src), st);
+          let .(rows: rel.Table, st2: Stats) =
+            filter_rows(rel.rel_rows_of(child), plan.filter_pred_of(pr), st1);
+          (rel.relation(rel.rel_cols_of(child), rows), st2)
+        }
+      , .(l: plan.Join_left, r: plan.Join_right, lk: plan.Join_lkey, rk: plan.Join_rkey) {
+          let .(lrel: rel.Relation, st1: Stats) = rec(cont) eval(plan.join_left_of(l), st);
+          let .(rrel: rel.Relation, st2: Stats) = rec(cont) eval(plan.join_right_of(r), st1);
+          let .(rows: rel.Table, st3: Stats) =
+            join_rows(
+              , rel.rel_rows_of(lrel)
+              , rel.rel_rows_of(rrel)
+              , plan.join_lkey_of(lk)
+              , plan.join_rkey_of(rk)
+              , st2
+              );
+          (rel.relation(list.append(rel.rel_cols_of(lrel), rel.rel_cols_of(rrel)), rows), st3)
+        }
+      , .(c: plan.Project_cols, src: plan.Project_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.project_src_of(src), st);
+          let cols = plan.project_cols_of(c);
+          let .(rows: rel.Table, st2: Stats) = project_rows(cols, rel.rel_rows_of(child), st1);
+          (rel.relation(cols, rows), st2)
+        }
+      , .(k: plan.Sum_key, v: plan.Sum_val, src: plan.Sum_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.sum_src_of(src), st);
+          let key = plan.sum_key_of(k);
+          let .(groups: list.List(Group), st2: Stats) =
+            group_rows(
+              , rel.rel_rows_of(child)
+              , key
+              , summing(plan.sum_val_of(v))
+              , list.nil(Group, ())
+              , st1
+              );
+          (
+            , rel.relation(
+                , list.of2(key, schema.total())
+                , groups_to_table(key, schema.total(), groups)
+                )
+            , st2
+            )
+        }
+      , .(k: plan.Count_key, src: plan.Count_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.count_src_of(src), st);
+          let key = plan.count_key_of(k);
+          let .(groups: list.List(Group), st2: Stats) =
+            group_rows(rel.rel_rows_of(child), key, counting(), list.nil(Group, ()), st1);
+          (
+            , rel.relation(
+                , list.of2(key, schema.count())
+                , groups_to_table(key, schema.count(), groups)
+                )
+            , st2
+            )
+        }
+      , .(k: plan.Order_key, d: plan.Order_dir, src: plan.Order_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.order_src_of(src), st);
+          let .(rows: rel.Table, st2: Stats) =
+            sort_rows(
+              , rel.rel_rows_of(child)
+              , plan.order_key_of(k)
+              , plan.order_dir_of(d)
+              , list.nil(rel.Row, ())
+              , st1
+              );
+          (rel.relation(rel.rel_cols_of(child), rows), st2)
+        }
+      , .(n: plan.Limit_n, src: plan.Limit_src) {
+          let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.limit_src_of(src), st);
+          (
+            , rel.relation(
+                , rel.rel_cols_of(child)
+                , list.take(plan.limit_n_of(n), rel.rel_rows_of(child))
+                )
+            , st1
+            )
+        }
+      )
+  }
+}

@@ -1,0 +1,40 @@
+/// Rendering primitives shared by the disassembler and the report.
+///
+/// The host tier this package runs against offers no string-length or
+/// slice primitive, so every column that has to line up is padded from
+/// the *number*, never from the rendered string.
+module forge/text;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(lt_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(a, cat3(b, c, d)) }
+
+pub fn num(n: I32) -> String { int_to_string(n) }
+
+/// A program address, zero-padded to four digits so the listing's address
+/// column lines up.
+pub fn addr(n: I32) -> String {
+  if! lt_i32(n, 10) {
+    cat("000", num(n))
+  } else if! lt_i32(n, 100) {
+    cat("00", num(n))
+  } else if! lt_i32(n, 1000) {
+    cat("0", num(n))
+  } else {
+    num(n)
+  }
+}
+
+/// Wrap a name in backticks, the way the rejection lines quote a symbol.
+pub fn quoted(s: String) -> String { cat3("`", s, "`") }
+
+pub fn line(s: String) -> . { print(cat(s, "\n")) }

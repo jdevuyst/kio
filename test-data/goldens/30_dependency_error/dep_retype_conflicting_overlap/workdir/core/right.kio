@@ -1,0 +1,3 @@
+module core/right;
+
+pub newtype Token : . { pub constructor make; pub projector open }

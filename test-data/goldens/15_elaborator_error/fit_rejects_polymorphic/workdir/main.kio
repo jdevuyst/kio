@@ -1,0 +1,14 @@
+module main;
+
+import elab/spine_elaborators(fit);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn foo(x: A) -> A { x }
+
+// `fit!`'s explicit target is a polymorphic function type
+// (`[A]`-binder). The walk's structural pre-condition rejects
+// `Type::Forall` on either source or target — coercing under a
+// binder needs instantiation machinery the spine engine doesn't
+// have. Same restriction the algebraic `ease!` carries.
+pub fn use_it() -> . { let _wrapped = fit!(foo, [A] A -> A); () }

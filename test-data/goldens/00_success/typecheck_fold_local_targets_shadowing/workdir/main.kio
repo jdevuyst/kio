@@ -1,0 +1,13 @@
+module main;
+
+fn empty() -> . { () }
+
+fn append(_value: ., _rest: .) -> . { () }
+
+fn finish(_value: .) -> . { () }
+
+varop [* *] { foldr append empty; finalize finish }
+
+fn shadow(empty: ., append: ., finish: .) -> . { [* (), () *] }
+
+pub fn main() -> . { shadow((), (), ()) }

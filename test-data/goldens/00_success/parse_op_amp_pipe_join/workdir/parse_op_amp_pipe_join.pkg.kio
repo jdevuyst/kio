@@ -1,0 +1,18 @@
+package parse_op_amp_pipe_join;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  parse_op_amp_pipe_join;
+  parse_op_amp_pipe_join/**
+}

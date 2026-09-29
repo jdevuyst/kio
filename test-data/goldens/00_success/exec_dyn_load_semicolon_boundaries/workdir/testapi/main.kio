@@ -1,0 +1,112 @@
+/// Exercises delimiter ownership through the public source-text loader.
+module testapi/main;
+
+import elab/match(match);
+import loader(Lr_diag, Lr_image, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show(label: String, source: String) -> . {
+  let result =
+    match! un_load_outcome(load_package(source)) {
+      (.(_image: Lr_image) { "loaded\n"(String) }, .(_diag: Lr_diag) { "rejected\n"(String) })
+    };
+  print(string_concat(label, result))
+}
+
+pub fn main() -> . {
+  show(
+    , "canonical newtype: "(String)
+    , "module a; pub newtype Box : . { pub constructor make; pub projector take "
+      "}"(String)
+    );
+  show(
+    , "newtype edge runs: "(String)
+    , "module a; newtype Box : . { ;; constructor make;;; projector take;; }"(String)
+    );
+  show(
+    , "newtype reordered members: "(String)
+    , "module a; newtype Box : . { projector take; constructor make }"(String)
+    );
+  show(
+    , "newtype redundant suffix: "(String)
+    , "module a; newtype Box : . { constructor make; projector take; }; type "
+      "Unit = .;"(String)
+    );
+  show(
+    , "recursive singleton: "(String)
+    , "module a; rec newtype Box : . | Box { constructor make; projector take "
+      "};"(String)
+    );
+  show(
+    , "function redundant suffix: "(String)
+    , "module a; pub fn first() { () }; pub fn second() { first() };"(String)
+    );
+  show(
+    , "recursive final alias: "(String)
+    , "module a; rec { newtype Box : Link { constructor make; projector take }; "
+      "type Link = . | Box }"(String)
+    );
+  show(
+    , "recursive edge separators: "(String)
+    , "module a; rec { ; type Link = . | Box; newtype Box : Link { constructor "
+      "make; projector take }; };"(String)
+    );
+  show(
+    , "bridge leading separator: "(String)
+    , "module a; pub fn run() { () } package p; bridge { ; a; }"(String)
+    );
+  show("bridge empty: "(String), "module a; fn run() { () } package p; bridge {}"(String));
+  show(
+    , "bridge peer separator: "(String)
+    , "module a; pub fn run() { () } module b; pub fn run() { () } package p; "
+      "bridge { a; b }"(String)
+    );
+  show(
+    , "bridge missing peer separator: "(String)
+    , "module a; pub fn run() { () } module b; pub fn run() { () } package p; "
+      "bridge { a b }"(String)
+    );
+  show(
+    , "newtype missing peer separator: "(String)
+    , "module a; newtype Box : . { constructor make projector take }"(String)
+    );
+  show("newtype empty: "(String), "module a; newtype Box : . {}"(String));
+  show(
+    , "newtype duplicate member: "(String)
+    , "module a; newtype Box : . { constructor make; constructor other }"(String)
+    );
+  show(
+    , "newtype repeated outer suffix: "(String)
+    , "module a; newtype Box : . { constructor make; projector take };;"(String)
+    );
+  show("function repeated outer suffix: "(String), "module a; fn run() { () };;"(String));
+  show(
+    , "recursive missing peer separator: "(String)
+    , "module a; rec { newtype Box : Link { constructor make; projector take } "
+      "type Link = . | Box }"(String)
+    );
+  show(
+    , "recursive repeated peer separator: "(String)
+    , "module a; rec { newtype Box : Link { constructor make; projector take "
+      "};; type Link = . | Box }"(String)
+    );
+  show(
+    , "recursive repeated leading separator: "(String)
+    , "module a; rec { ;; type Link = . | Box; newtype Box : Link { constructor "
+      "make; projector take } }"(String)
+    );
+  show("recursive empty: "(String), "module a; rec {}"(String));
+  show("recursive singleton group: "(String), "module a; rec { type Unit = . }"(String));
+  show(
+    , "bridge semicolon only: "(String)
+    , "module a; pub fn run() { () } package p; bridge { ; }"(String)
+    );
+  show(
+    , "bridge repeated leading separator: "(String)
+    , "module a; pub fn run() { () } package p; bridge { ;; a }"(String)
+    );
+  show("outer alias requires terminator: "(String), "module a; type Unit = ."(String))
+}

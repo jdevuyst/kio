@@ -1,0 +1,17 @@
+package build_skip_unsupported_present;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target wasm {
+    out "out/wasm/"
+  }
+}
+
+bridge {
+  main
+}

@@ -1,0 +1,8 @@
+float_signal_filter
+raw: 2 2.5 2.75 3.25 3.5
+calibrated: 2.5 3.25 3.625 4.375 4.75
+smoothed: 2.875 3.15625 3.71875 4.28125 4.5625
+level: 3.71875
+roughness: 0.2021484375
+trend: 1.6875
+score: 91

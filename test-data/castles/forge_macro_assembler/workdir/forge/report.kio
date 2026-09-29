@@ -1,0 +1,145 @@
+/// The report: one section per program, readable without the source.
+///
+/// An accepted program shows the sizes of each phase, the symbol table,
+/// the disassembled image, everything it emitted, the registers it left
+/// behind, why it stopped, and what it spent. A rejected one shows the
+/// reason assembly turned it down.
+module forge/report;
+
+import elab/control(if);
+import elab/match(match);
+import forge/assemble as asm;
+import forge/disasm as d;
+import forge/isa as i;
+import forge/isa(Reg);
+import forge/list as l;
+import forge/program as p;
+import forge/program(Duplicate_label, Image, Items, Macros, Undefined_label, Unknown_macro);
+import forge/text as t;
+import forge/vm as vm;
+import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/iter(loop);
+
+/// What the driver carries across the suite: programs assembled, programs
+/// rejected, and machine steps spent.
+pub type Tally = I32 & I32 & I32;
+
+pub fn nothing_done() -> Tally { (0, 0, 0) }
+
+rec(loop) fn joined(ws: Words, acc: String, first: Bool) -> String {
+  match! l.un_cons(ws) {
+    (
+      , .(w: I32, rest: Words) {
+          let next =
+            if! first {
+              t.num(w)
+            } else {
+              t.cat3(acc, " ", t.num(w))
+            };
+          rec joined(rest, next, .f)
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn words_text(ws: Words) -> String {
+  match! l.un_cons(ws) {
+    (.(_w: I32, _rest: Words) { joined(ws, "", .t) }, .(_empty: .) { "(none)" })
+  }
+}
+
+fn reg_text(m: Vm, name: String, r: Reg) -> String {
+  t.cat3(name, "=", t.num(vm.read_reg(m.?{vm.bank}, r)))
+}
+
+fn regs_text(m: Vm) -> String {
+  t.cat3(
+    , t.cat3(reg_text(m, "a", i.ra()), " ", reg_text(m, "b", i.rb()))
+    , " "
+    , t.cat3(reg_text(m, "c", i.rc()), " ", reg_text(m, "d", i.rd()))
+    )
+}
+
+fn stop_text(m: Vm, why: Stop) -> String {
+  match! why {
+    (
+      , .(_x: Halted) { "halted" }
+      , .(_x: Ran_off) { "ran off the end" }
+      , .(_x: Out_of_fuel) { "out of fuel" }
+      , .(x: Faulted) { t.cat4("fault: ", x.?{vm.faulted}, " at ", t.addr(m.?{vm.pc})) }
+      )
+  }
+}
+
+/// Print the header of the whole run.
+pub fn header(macros: Macros, programs: I32) -> . {
+  t.line("forge_macro_assembler: the FORGE-4 macro assembler and machine");
+  t.line(t.cat3(
+    , t.cat("macros: ", t.num(l.len(macros)))
+    , t.cat("   programs: ", t.num(programs))
+    , t.cat3("   fuel: ", t.num(vm.budget()), " steps per program")
+    ))
+}
+
+fn rejected(items: Items, why: String, tally: Tally) -> Tally {
+  let .(built: I32, turned_down: I32, spent: I32) = tally;
+  t.line(t.cat("items: ", t.num(l.len(items))));
+  t.line(t.cat("rejected: ", why));
+  (built, add_i32(turned_down, 1), spent)
+}
+
+fn accepted(items: Items, img: Image, tally: Tally) -> Tally {
+  let .(built: I32, turned_down: I32, spent: I32) = tally;
+  let code = img.?{p.code};
+  let syms = img.?{p.syms};
+  t.line(t.cat3(
+    , t.cat("items: ", t.num(l.len(items)))
+    , t.cat("   expanded: ", t.num(img.?{p.expanded}))
+    , t.cat("   instructions: ", t.num(l.len(code)))
+    ));
+  t.line(t.cat("symbols: ", d.symbols_text(syms)));
+  t.line("listing:");
+  d.listing(code, syms);
+  let .(m: Vm, why: Stop) = vm.run(code, vm.boot());
+  let used = sub_i32(vm.budget(), m.?{vm.fuel});
+  t.line(t.cat("emit: ", words_text(l.reverse(m.?{vm.out}))));
+  t.line(t.cat("registers: ", regs_text(m)));
+  t.line(t.cat("stop: ", stop_text(m, why)));
+  t.line(t.cat4("steps: ", t.num(used), "/", t.num(vm.budget())));
+  t.line(t.cat4("stack: final ", t.num(m.?{vm.depth}), ", max ", t.num(m.?{vm.high})));
+  (add_i32(built, 1), turned_down, add_i32(spent, used))
+}
+
+/// Assemble one program, run it if it assembled, and print its section.
+pub fn program(name: String, items: Items, macros: Macros, tally: Tally) -> Tally {
+  t.line("");
+  t.line(t.cat3("== ", name, " =="));
+  match! asm.build(items, macros) {
+    (
+      , .(img: Image) { accepted(items, img, tally) }
+      , .(e: Unknown_macro) {
+          rejected(items, t.cat("unknown macro ", t.quoted(e.?{p.unknown_macro})), tally)
+        }
+      , .(e: Undefined_label) {
+          rejected(items, t.cat("undefined label ", t.quoted(e.?{p.undefined_label})), tally)
+        }
+      , .(e: Duplicate_label) {
+          rejected(items, t.cat("duplicate label ", t.quoted(e.?{p.duplicate_label})), tally)
+        }
+      )
+  }
+}
+
+/// Print the closing tally.
+pub fn summary(tally: Tally) -> . {
+  let .(built: I32, turned_down: I32, spent: I32) = tally;
+  t.line("");
+  t.line(t.cat3(
+    , t.cat("summary: ", t.num(built))
+    , t.cat(" assembled, ", t.num(turned_down))
+    , t.cat3(" rejected, ", t.num(spent), " steps executed")
+    ))
+}

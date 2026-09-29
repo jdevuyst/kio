@@ -1,0 +1,21 @@
+module damb/main;
+
+import elab/derive(derive);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+fn box_monad_a() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+fn box_monad_b() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+// Two candidates both produce `Monad(Box)` and both unify with the
+// goal — resolution finds two distinct derivations, which is the
+// `derive_ambiguous` coherence violation.
+fn bad() -> Monad(Box) { derive!((box_monad_a, box_monad_b), Monad(Box)) }
+
+pub fn main() -> . { () }

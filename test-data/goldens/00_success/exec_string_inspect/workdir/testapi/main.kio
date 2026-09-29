@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_code_at, string_concat, string_len, string_slice);
+
+fn render_code(code: I32 | .) -> String {
+  match! code {
+    (.(n: I32) { int_to_string(n) }, .(_none: .) { "none" })
+  }
+}
+
+fn pipe(a: String, b: String) -> String { string_concat(a, string_concat("|", b)) }
+
+pub fn main() -> . {
+  let s = "abcdef";
+  let len = int_to_string(string_len(s));
+  let part = string_slice(s, 1, 4);
+  let first = render_code(string_code_at(s, 0));
+  let missing = render_code(string_code_at(s, 99));
+  print(string_concat(pipe(pipe(pipe(len, part), first), missing), "\n"))
+}

@@ -1,0 +1,34 @@
+signature app v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Box[A];
+        host type Str role(str);
+        pub newtype Token[A] : A { pub constructor make_token; pub projector read_token };
+        host type Unused[A];
+        pub fn echo(value: Str) -> Str;
+        host fn old(head: Str, value: Str & Box(Token(.))) -> Box(Token(.));
+        host fn open() -> Str
+      };
+      module legacy {
+        host type Gone;
+        host fn retired(value: Gone) -> Gone
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      api.Box;
+      api.Token;
+      api.Unused;
+      api.old;
+      legacy.Gone;
+      legacy.retired
+    }
+  }
+}

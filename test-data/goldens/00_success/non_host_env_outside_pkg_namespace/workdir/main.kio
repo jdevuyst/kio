@@ -1,0 +1,8 @@
+module main;
+
+// A regular module at the package root may declare a single-segment
+// name (`main`) that differs from the package name (`pkg`). The
+// `specs/package.md` § Module-Name Rules only require the declared path
+// to match the file's path relative to the package root; nothing pins a
+// module's name under the package-name namespace.
+pub fn id[A](x: A) -> A { x }

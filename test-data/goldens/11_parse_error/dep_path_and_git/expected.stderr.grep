@@ -1,0 +1,2 @@
+# A Git manifest selector must be relative to its checkout.
+manifest.*path.*relative

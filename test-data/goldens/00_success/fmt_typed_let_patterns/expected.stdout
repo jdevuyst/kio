@@ -1,0 +1,18 @@
+module fmt_typed_let_patterns/main;
+
+fn typed(n: I32) -> I32 { let .(x: I32) = n; x }
+
+fn unary(n: I32) -> I32 { let .(x: I32) = n; x }
+
+fn tuple(n: I32) -> I32 { let .(x: I32, _: .) = (n, ()); x }
+
+fn as_pattern(n: I32) -> I32 { let .(pair: (x: I32, _: .)) = (n, ()); x }
+module fmt_typed_let_patterns/main;
+
+fn typed(n: I32) -> I32 { let .(x: I32) = n; x }
+
+fn unary(n: I32) -> I32 { let .(x: I32) = n; x }
+
+fn tuple(n: I32) -> I32 { let .(x: I32, _: .) = (n, ()); x }
+
+fn as_pattern(n: I32) -> I32 { let .(pair: (x: I32, _: .)) = (n, ()); x }

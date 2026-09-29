@@ -1,0 +1,67 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(one_sum, widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_empty, array_make_filled, array_push);
+import testapi/fmt(bool_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+// Render an `Array(A)` left-to-right as comma-separated cells,
+// each rendered by the supplied `show`. Generic over the payload
+// `A`, so the same walk serves `Array(String)` and `Array(Bool)`.
+// State is `(acc, i)`; folds until `i` reaches `array_len`.
+fn render_array[A](show: A -> String, arr: Array(A)) -> String {
+  loop(
+    , String & I32
+    , String
+    , .(state: String & I32) -> (String & I32) | String {
+        match! state {
+          .(acc: String, i: I32) {
+            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+              widen_sum!(
+                , if! leq_i32(i, 0) {
+                    (show(array_get(arr, i)), add_i32(i, 1))
+                  } else {
+                    (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
+                  }
+                , (String & I32) | String
+                )
+            } else {
+              widen_sum!(acc, (String & I32) | String)
+            }
+          }
+        }
+      }
+    , ("", 0)
+    )
+}
+
+pub fn main() -> . {
+  // Array(String): Kio builds the array element-by-element and
+  // hands each value to the host via `array_push` (Kio-produced,
+  // host-consumed), then reads it back through `array_get`.
+  let names = array_make_empty(String, ());
+  array_push(names, "ada");
+  array_push(names, "alan");
+  array_push(names, "grace");
+  print(render_array(.(s: String) -> String { s }, names));
+  print("\n");
+  // Array(Bool): same Kio-produced/host-consumed direction over a
+  // different role primitive.
+  let flags = array_make_empty(Bool, ());
+  array_push(flags, leq_i32(1, 2));
+  array_push(flags, leq_i32(2, 1));
+  array_push(flags, leq_i32(3, 3));
+  print(render_array(.(b: Bool) -> String { bool_to_string(b) }, flags));
+  print("\n");
+  // Host-produced, Kio-consumed: `array_make_filled` allocates and
+  // fills the array host-side; Kio consumes it via len/get.
+  let filled = array_make_filled(4, "x");
+  print(render_array(.(s: String) -> String { s }, filled));
+  print("\n")
+}

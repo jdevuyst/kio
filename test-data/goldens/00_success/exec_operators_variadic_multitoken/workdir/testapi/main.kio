@@ -1,0 +1,20 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn nil() -> String { "[]" }
+
+fn cat(head: String, tail: String) -> String { head }
+
+varop [! !] { foldr cat nil }
+
+varop %[? ?]% { foldr cat nil }
+
+pub fn main() -> . {
+  print([! "a", "b", "c" !]);
+  print("\n");
+  print(%[? "x", "y" ?]%);
+  print("\n");
+  print([! !])
+}

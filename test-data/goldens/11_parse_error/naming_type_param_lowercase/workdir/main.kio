@@ -1,0 +1,3 @@
+module naming_type_param_lowercase/main;
+
+fn id[a](x: a) -> a { x }

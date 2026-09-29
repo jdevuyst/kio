@@ -1,0 +1,102 @@
+module tree;
+
+import chain as chain;
+import chain(Evaluation, Matrix, {cols}, {cost}, {first}, {last}, {leaves}, {rows});
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as math;
+import testapi/array as arrays;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub rec labels Tree = { leaf: I32 } | { join: Tree & Tree };
+
+pub fn leaf(index: I32) -> Tree { widen_sum!({leaf = index}) }
+
+pub fn join(left: Tree, right: Tree) -> Tree { widen_sum!({join = (left, right)}) }
+
+pub rec(loop) fn render(tree: Tree) -> String {
+  match! tree {
+    .(node: Leaf) { text.string_concat("A", fmt.int_to_string(math.add_i32(node.?{leaf}, 1))) };
+    .(node: Join) {
+      let .(left: Tree, right: Tree) = node.?{join};
+      let left_text = rec(cont) render(left);
+      let right_text = rec(cont) render(right);
+      text.string_concat(
+        , "("
+        , text.string_concat(
+            , left_text
+            , text.string_concat("*", text.string_concat(right_text, ")"))
+            )
+        )
+    }
+  }
+}
+
+fn combine(left: Evaluation, right: Evaluation) -> Evaluation | String {
+  if! chain.equal(left.?{cols}, right.?{rows}) {
+    if! chain.equal(math.add_i32(left.?{last}, 1), right.?{first}) {
+      let scalar_cost = math.mul_i32(math.mul_i32(left.?{rows}, left.?{cols}), right.?{cols});
+      widen_sum!({
+        , rows = left.?{rows}
+        , cols = right.?{cols}
+        , cost = math.add_i32(math.add_i32(left.?{cost}, right.?{cost}), scalar_cost)
+        , first = left.?{first}
+        , last = right.?{last}
+        , leaves = math.add_i32(left.?{leaves}, right.?{leaves})
+        })
+    } else {
+      widen_sum!("leaf order is not consecutive")
+    }
+  } else {
+    widen_sum!("tree dimensions do not compose")
+  }
+}
+
+pub rec(loop) fn replay(tree: Tree, matrices: Array(Matrix)) -> Evaluation | String {
+  match! tree {
+    .(node: Leaf) {
+      let index = node.?{leaf};
+      let matrix = arrays.array_get(matrices, index);
+      widen_sum!({
+        , rows = matrix.?{rows}
+        , cols = matrix.?{cols}
+        , cost = 0
+        , first = index
+        , last = index
+        , leaves = 1
+        })
+    };
+    .(node: Join) {
+      let .(left: Tree, right: Tree) = node.?{join};
+      match! rec(cont) replay(left, matrices) {
+        .(left_result: Evaluation) {
+          match! rec(cont) replay(right, matrices) {
+            .(right_result: Evaluation) { combine(left_result, right_result) };
+            .(error: String) { widen_sum!(error) }
+          }
+        };
+        .(error: String) { widen_sum!(error) }
+      }
+    }
+  }
+}
+
+pub rec(loop) fn left_fold(index: I32, count: I32, result: Tree) -> Tree {
+  if! math.leq_i32(count, index) {
+    result
+  } else {
+    rec left_fold(math.add_i32(index, 1), count, join(result, leaf(index)))
+  }
+}
+
+pub rec(loop) fn right_fold(index: I32, result: Tree) -> Tree {
+  if! math.leq_i32(index, -1) {
+    result
+  } else {
+    rec right_fold(math.sub_i32(index, 1), join(leaf(index), result))
+  }
+}

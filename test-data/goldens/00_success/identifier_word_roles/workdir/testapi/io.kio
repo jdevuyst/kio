@@ -1,0 +1,5 @@
+module testapi/io;
+
+import testapi as api;
+
+host fn print(message: api.String) -> .;

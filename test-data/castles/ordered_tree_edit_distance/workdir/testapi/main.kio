@@ -1,0 +1,31 @@
+module testapi/main;
+
+import fixtures as fixtures;
+import report as report;
+import testapi(I32, String);
+import testapi/array as array;
+import testapi/io as io;
+
+pub fn main() -> . {
+  io.print("Ordered tree edits: unit insert, delete, rename\n");
+  io.print("Node numbers in mappings are zero-based preorder positions.\n");
+  let branch = fixtures.branching(1, 2);
+  let promoted = fixtures.promoted();
+  let fork = fixtures.fork(2, 3);
+  let chain = fixtures.chain();
+  report.compare("internal deletion promotes children", branch, promoted);
+  report.compare("internal insertion adopts children", promoted, branch);
+  report.compare("sibling order", fork, fixtures.fork(3, 2));
+  report.compare("same preorder; different ancestry", chain, fork);
+  report.compare("root rename", branch, fixtures.branching(6, 2));
+  report.compare("internal rename", branch, fixtures.branching(1, 6));
+  report.compare("identical tree", branch, branch);
+  let identity = array.array_make_filled(3, 0);
+  array.array_set(identity, 1, 1);
+  array.array_set(identity, 2, 2);
+  report.control("flattening ancestry", chain, fork, identity);
+  report.control("introducing ancestry", fork, chain, identity);
+  let reversed = array.array_clone(identity);
+  array.array_swap(reversed, 1, 2);
+  report.control("reversing siblings", fork, fork, reversed)
+}

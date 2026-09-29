@@ -1,0 +1,27 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+labels { hed: String, mid: String, tal: String };
+
+// `mid` shadowed by a `let` binding — the local, not the `mid`
+// label's projector.
+fn via_let(s: String) -> String { let mid = s; mid }
+
+// `hed` shadowed by a `fn` value parameter.
+fn via_param(hed: String) -> String { hed }
+
+// `tal` shadowed by a `match!` clause value parameter.
+fn via_clause(s: String) -> String {
+  match! s {
+    .(tal: String) { tal }
+  }
+}
+
+pub fn main() -> . {
+  print(via_let("via-let\n"));
+  print(via_param("via-param\n"));
+  print(via_clause("via-clause\n"))
+}

@@ -1,0 +1,35 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(onto);
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// `onto!`-only collapse cases:
+//   - collapse_sum : (String | String) → String   (sum collapse)
+//   - collapse_pair: (String & String) → String   (projection edge case)
+//
+// Both live under `onto!` per spec § iso! / into! / onto!
+// mechanics. The sum collapse source is constructed explicitly with
+// `widen_sum!`; `if`/`else` itself returns one common arm type.
+//
+// For product collapse the spec says the kept component is the
+// kth source component of type `T` (source-order rule); we pass
+// equal payloads so the printed output is stable regardless of
+// which side an implementation picks.
+fn collapse_sum(s: String | String) -> String { onto!(s) }
+
+fn collapse_pair(p: String & String) -> String { onto!(p) }
+
+pub fn main() -> . {
+  let chosen =
+    if! .t {
+      widen_sum!("sum-collapsed\n", String | String)
+    } else {
+      widen_sum!("unreachable\n", String | String)
+    };
+  print(collapse_sum(chosen));
+  let pair = ("pair-collapsed\n", "pair-collapsed\n");
+  print(collapse_pair(pair))
+}

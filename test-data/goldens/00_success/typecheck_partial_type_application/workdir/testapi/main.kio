@@ -1,0 +1,52 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype Token : . { pub constructor mk_token; pub projector un_token }
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+fn id[A](x: A) -> A { x }
+
+fn lift[*F][A](x: F(A)) -> F(A) { x }
+
+fn make_id[A]() -> A -> A { .(x: A) { x } }
+
+fn make_hkt_id[*F][A]() -> F(A) -> F(A) { .(x: F(A)) { x } }
+
+fn apply_token_id(f: Token -> Token, x: Token) -> Token { f(x) }
+
+fn apply_box_token_id(f: Box(Token) -> Box(Token), x: Box(Token)) -> Box(Token) { f(x) }
+
+fn via_partial_type_arg(x: Token) -> Token { apply_token_id(id(Token), x) }
+
+fn via_placeholder_type_arg(x: Token) -> Token { apply_token_id(id(_), x) }
+
+fn via_zero_value_layer(x: Token) -> Token { apply_token_id(make_id(Token, ()), x) }
+
+fn via_elided_zero_value_layer(x: Token) -> Token { apply_token_id(make_id(), x) }
+
+fn via_hkt_type_args(x: Box(Token)) -> Box(Token) { apply_box_token_id(lift(Box, Token), x) }
+
+fn via_inferred_hkt_type_args(x: Box(Token)) -> Box(Token) { apply_box_token_id(lift(_, _), x) }
+
+fn via_mixed_hkt_type_args(x: Box(Token)) -> Box(Token) { apply_box_token_id(lift(Box, _), x) }
+
+fn via_inferred_hkt_zero_value_layer(x: Box(Token)) -> Box(Token) {
+  apply_box_token_id(make_hkt_id(), x)
+}
+
+pub fn main() -> . {
+  let token = Token.mk_token(());
+  let _same = via_partial_type_arg(token);
+  let _placeholder = via_placeholder_type_arg(token);
+  let _zero = via_zero_value_layer(token);
+  let _zero_elided = via_elided_zero_value_layer(token);
+  let boxed = Box.mk_box(token);
+  let _hkt = via_hkt_type_args(boxed);
+  let _hkt_inferred = via_inferred_hkt_type_args(boxed);
+  let _hkt_mixed = via_mixed_hkt_type_args(boxed);
+  let _hkt_zero_inferred = via_inferred_hkt_zero_value_layer(boxed);
+  print("ok\n")
+}

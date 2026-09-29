@@ -1,0 +1,7 @@
+module owalias/other;
+
+import owalias(String);
+
+pub newtype X : String { pub constructor mk_x; pub projector un_x }
+
+pub fn make_other() -> X { X.mk_x("other"(String)) }

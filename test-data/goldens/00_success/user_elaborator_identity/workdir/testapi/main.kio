@@ -1,0 +1,9 @@
+module testapi/main;
+
+import elaborators(id_user);
+import testapi(String);
+import testapi/io(print);
+
+fn keep(s: String) -> String { id_user!(s, String) }
+
+pub fn main() -> . { print(keep("user_elaborator_identity: ok\n")) }

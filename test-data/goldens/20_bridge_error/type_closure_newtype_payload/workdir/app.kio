@@ -1,0 +1,5 @@
+module app;
+
+import lib/types(Token);
+
+pub newtype Boxed : Token { pub constructor mk_boxed; pub projector un_boxed }

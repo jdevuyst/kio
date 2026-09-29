@@ -1,0 +1,9 @@
+module parse_err_doc_above_use/main;
+
+/// This doc-comment precedes an `import` clause, which is a parse error.
+/// `import` clauses are not documented; doc-comments must precede definitions.
+import parse_err_doc_above_use/helper(helper);
+
+import parse_err_doc_above_use(String);
+
+fn id(s: String) -> String { s }

@@ -1,0 +1,13 @@
+/// Module with a pre-existing reference.
+///
+/// References [`identity`] — adding new declarations to this module
+/// must not change whether this reference resolves.
+module docref/open_world;
+
+/// The original function. [`identity`] is always in scope regardless
+/// of what other declarations exist in this module.
+pub fn identity(x: .) -> . { x }
+
+/// A new declaration added to the same module. Adding this should not
+/// affect resolution of [`identity`] above.
+pub fn extra() -> . { () }

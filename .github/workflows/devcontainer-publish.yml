@@ -1,0 +1,129 @@
+# Publish the Kio dev container image to GHCR on a monthly schedule.
+#
+# Why a separate workflow file (not a new job in `ci.yml`)?
+#   A container-publish step isn't a `ci/all.sh` gating script and
+#   shouldn't become one — it's a deploy, not a gate; following the
+#   existing convention used by `markdown-link-check.yml`,
+#   `pr-auto-close.yml`, and `stale.yml`, publish-style workflows live
+#   in their own files. See `ai/topics/repo-layout.md` for the `ci/`
+#   bucket organization that gating jobs follow.
+#
+# The vsce package step runs HERE rather than in the Codespaces
+# prebuild because vsce v3's `package` step hangs on Codespaces
+# infrastructure (cause not pinned down — most likely some
+# combination of disk I/O, repo-traversal, and README link
+# rewriting). On a GHA ubuntu-latest runner it completes in seconds.
+# The .vsix is then COPYd into the image so Codespaces just installs
+# it via `post-attach.sh` without invoking vsce at all.
+#
+# Tag policy:
+#   - schedule / workflow_dispatch → `latest` + `sha-<short>`
+#
+# Bootstrap:
+#   `pages.yml` consumes `:latest`. Until this workflow has produced at
+#   least one image, a Pages dispatch cannot build; trigger this workflow
+#   via workflow_dispatch to bootstrap a fresh repository before
+#   deploying the website.
+
+name: Publish Dev Container
+
+on:
+  schedule:
+    # First day of each month at 06:00 UTC, matching scheduled CI.
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    name: Build and push dev container to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Build the vscode-kio .vsix on the runner (where vsce works
+      # in seconds, unlike Codespaces). The output is copied into
+      # `.devcontainer/kio.vsix` so the Dockerfile can COPY it into
+      # the image at `/opt/kio-extension/kio.vsix`. `post-attach.sh`
+      # installs from that path.
+      #
+      # `tree-sitter build --wasm` (run by `npm run build:wasm`)
+      # falls back to docker when emcc/wasi-sdk aren't on PATH;
+      # GitHub Actions runners have docker preinstalled, so this
+      # works without an Emscripten install step.
+      # The .vsix this job builds is baked into the docker image as a
+      # one-shot asset, not republished as an npm package whose cache
+      # could later poison downstream consumers.
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: node tree-sitter
+          cache: false
+      - name: Build vscode-kio .vsix
+        run: |
+          cd tools/vscode-kio
+          npm ci --no-fund --no-audit
+          npm run package
+      - name: Copy .vsix into docker build context
+        run: cp tools/vscode-kio/kio.vsix .devcontainer/kio.vsix
+
+      # `tree-sitter build --wasm` may use Docker while packaging the
+      # extension. The runner is ephemeral, and the devcontainer build
+      # restores its own cache from GHA, so drop that local state before
+      # BuildKit starts the larger multi-arch image build.
+      - name: Free packaging Docker state
+        run: docker system prune -af
+
+      # QEMU lets the amd64 GHA runner build linux/arm64 layers via
+      # binfmt emulation. Required by `docker/build-push-action`'s
+      # `platforms` multi-arch build below. The arm64 build path is
+      # significantly slower than the native amd64 path (Rust toolchain
+      # install + warmup dominate), but the publish workflow runs on a
+      # monthly cadence — infrequent enough that the added wall-clock
+      # cost beats maintaining a matrix + manifest-merge workflow
+      # against native arm64 runners.
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag derivation:
+      #   - `type=raw,value=latest` moves the floating tag CI consumes.
+      #   - `type=sha,prefix=sha-,format=short` produces an immutable,
+      #     content-addressed tag for retrospective pinning.
+      - id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
+        with:
+          images: ghcr.io/jdevuyst/kio-devcontainer
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            github_token=${{ github.token }}

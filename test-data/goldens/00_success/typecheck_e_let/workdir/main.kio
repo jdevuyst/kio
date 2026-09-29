@@ -1,0 +1,23 @@
+module main;
+
+// Single `let`: RHS is the bare variable `x`, synthesized as
+// `.` via E-Var. The bound `y` carries type `.` (no
+// annotation slot in the syntax).
+fn single_let(x: .) -> . { let y = x; y }
+
+// Sequential `let`s threading types through Γ. Each RHS is
+// synthesized in pure ⇑ mode under the Γ accumulated so far.
+fn sequential(x: .) -> . { let a = x; let b = a; let c = b; c }
+
+// RHS is itself an application: `helper(., x)` synthesizes
+// `.` via E-App, and `r` is bound at that type.
+fn helper[T](x: T) -> T { x }
+
+fn let_call_rhs(x: .) -> . { let r = helper(., x); r }
+
+// RHS is a polymorphic call that yields a non-polytype: the
+// instantiated `helper(., x)` synthesizes the monotype `.`.
+// E-Let binds `m` at `.` (no generalization happens — `.` is
+// already not polymorphic, and the rule does not synthesize a
+// scheme for it either way).
+fn let_mono_after_instantiation(x: .) -> . { let m = helper(., x); m }

@@ -1,0 +1,23 @@
+module main;
+
+import __intrinsics__;
+
+newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack }
+
+// Single-skolem open. The continuation `.[U](pair) { … }` is
+// checked against `∀U. (A & U) → A`; E-FnCheck skolemizes `[U]`
+// and types the body under the skolemized Γ. The body returns
+// `__fst__(A, U, pair) : A` — no skolem in the result, so the
+// escape check (§ 4.1) is satisfied.
+fn unpack_first[A](p: Pack(A)) -> A { Pack.un_pack(A, p)(A, .[U](pair) { __fst__(A, U, pair) }) }
+
+// Skolem reachable from multiple intrinsic call sites. Both
+// `__fst__` and `__snd__` take the skolem as a type-arg; the body
+// discards the projected values into `()` so the skolem stays
+// inside the continuation's scope.
+fn unpack_discard[A](p: Pack(A)) -> . {
+  Pack.un_pack(A, p)(
+    , .
+    , .[U](pair) { let _x = __fst__(A, U, pair); let _y = __snd__(A, U, pair); () }
+    )
+}

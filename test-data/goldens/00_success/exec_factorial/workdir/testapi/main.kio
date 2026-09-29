@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32, mul_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Iterative factorial via `loop`. State is `(remaining, acc)`:
+// each step multiplies `acc` by `remaining` and decrements
+// `remaining`; the exit case fires when `remaining == 0` and
+// returns `acc`. Recursive `n!` rephrased as a step-state walk
+// per Kio's strong-normalization constraint.
+fn fact_step(state: I32 & I32) -> (I32 & I32) | I32 {
+  match! state {
+    .(n: I32, acc: I32) {
+      if! leq_i32(n, 0) {
+        widen_sum!(acc)
+      } else {
+        widen_sum!((sub_i32(n, 1), mul_i32(acc, n)), (I32 & I32) | I32)
+      }
+    }
+  }
+}
+
+fn factorial(n: I32) -> I32 { loop(.(state: I32 & I32) { fact_step(state) }, (n, 1)) }
+
+pub fn main() -> . { print(int_to_string(factorial(10))); print("\n") }

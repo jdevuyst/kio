@@ -1,0 +1,21 @@
+module main;
+
+host type I32 role(i32);
+
+// The label `a` synthesizes a module-level type `A`, which the `[A]`
+// binders on `id` / `snd` shadow in type position. A bare binder must
+// stay a type variable through nominal-head canonicalization, not be
+// qualified to the label's `A` — the value-argument-slot accounting a
+// dot-splice callee goes through depends on it. The dot-splice form
+// (`receiver.>callee`) is load-bearing: it is the path that reaches that
+// accounting, so the same shape written as a plain call exercises a
+// different code path.
+labels { a: . };
+
+fn id[A](x: A) -> A { x }
+
+fn snd[A](x: A, y: A) -> A { y }
+
+fn through_splice(n: I32) -> I32 { let once = n.>id; once.>snd(once) }
+
+fn main() -> . { let r1 = 1(I32).>id; let r2 = through_splice(2(I32)); () }

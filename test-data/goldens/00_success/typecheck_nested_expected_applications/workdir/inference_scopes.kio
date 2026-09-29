@@ -1,0 +1,15 @@
+module inference_scopes;
+
+host type I32 role(i32);
+
+fn choose[A](left: A, _right: A) -> A { left }
+
+fn take[K][V](_key: K, _pair: K & V) -> . { () }
+
+fn composite_outer_slot() -> . { take(0, choose((1, 1), (2, 2))) }
+
+fn apply[A][B](value: A, f: A -> B) -> B { f(value) }
+
+fn same_named_nested[A][B][C](value: A, f: A -> B, g: B -> C) -> C {
+  apply(apply(value, .(x: A) -> B { f(x) }), .(x: B) -> C { g(x) })
+}

@@ -1,0 +1,12 @@
+/// A module-alias-qualified transparent re-export keeps the terminal
+/// nominal identity. `widget/store.Tag` is declared as an identity-only
+/// alias of `core/store.Tag`, so a value built by `core/store.make` threads
+/// through a `ws.Tag` annotation without minting a second nominal type.
+module testapi/main;
+
+import core/store(make, tag_val);
+import testapi(I32);
+import testapi/fmt(print_i32);
+import widget/store as ws;
+
+pub fn main() -> . { let .(t: ws.Tag) = make(7(I32)); print_i32(tag_val(t)) }

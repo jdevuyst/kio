@@ -1,0 +1,17 @@
+module main;
+
+host type I32 role(i32);
+
+pub labels { present[A]: A };
+
+pub type Option[A] = Present(A) | .;
+
+pub labels { leafopt[A]: Option(A) };
+
+pub rec labels { tree[A]: Leafopt(A) | (Tree(A) & Tree(A)) };
+
+pub labels Patch = { count: I32, root: Tree(I32) };
+
+pub labels Journal = { data: Patch, checkpoint: Patch };
+
+pub fn keep(journal: Journal) -> Journal { journal }

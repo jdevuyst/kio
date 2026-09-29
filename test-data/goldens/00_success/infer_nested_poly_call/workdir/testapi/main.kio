@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod);
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A `Lens(s, a)` is a getter paired with a setter. `fst_lens` focuses
+// the first component of a pair `a & b`, viewing `a` — its binder `b`
+// appears only in the *source* type `a & b`, never in a value-param,
+// so `fst_lens()` cannot be synthesized standalone.
+pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
+
+fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod!(l, S -> A)(x) }
+
+fn fst_lens[A][B]() -> Lens(A & B, A) {
+  let get = .((x: A, _y: B)) -> A { x };
+  let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
+  (get, put)
+}
+
+// The call under test: `fst_lens()` is a nested polymorphic call with
+// elided type-args used as a sibling of `("one", 2)`. The pair pins
+// `view.s = String & I32`; `fst_lens` is solved against the resulting
+// `Lens(String & I32, a)` slot, which also pins `view.a = String`.
+// This let-RHS is synthesized in pure synth mode (no expected type),
+// the case the nested-poly-call inference must handle.
+pub fn main() -> . {
+  let viewed = view(fst_lens(), ("one", 2));
+  print(string_concat("view(fst_lens(), (\"one\", 2)) == ", string_concat(viewed, "\n")))
+}

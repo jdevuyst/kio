@@ -1,0 +1,57 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// `Result[A][E] : A | E` — the canonical "ok or error" sum.
+// `ok` injects into the value arm, `err` into the error arm. Here the
+// value arm is deliberately exercised with a *function* payload: an
+// `I32 -> I32` closure is stored in the ok arm, then projected and
+// called. This pins a function value nested inside a sum arm.
+newtype Result[A][E] : A | E { pub constructor mk_result; pub projector un_result }
+
+fn ok[A][E](v: A) -> Result(A, E) { Result.mk_result(widen_sum!(v, A | E)) }
+
+fn err[A][E](v: E) -> Result(A, E) { Result.mk_result(widen_sum!(v, A | E)) }
+
+// `apply` takes a `Result` whose ok arm holds a function `t -> u`
+// and a `t`. On `ok(f)` it applies the stored function to `x`,
+// re-wrapping the result as `ok(f(x))`; on `err(e)` it passes the
+// error through. This projects a function out of a sum arm and calls
+// it — the higher-order nested-value case.
+fn apply[T][U][E](rf: Result(T -> U, E), x: T) -> Result(U, E) {
+  match! rf.>Result.un_result {
+    (.(f: T -> U) { ok(U, E, f(x)) }, .(g: E) { err(U, E, g) })
+  }
+}
+
+fn render(r: Result(I32, String)) -> String {
+  match! r.>Result.un_result {
+    (
+      , .(v: I32) { string_concat("ok(", string_concat(int_to_string(v), ")")) }
+      , .(m: String) { string_concat("err(\"", string_concat(m, "\")")) }
+      )
+  }
+}
+
+fn incr(n: I32) -> I32 { add_i32(n, 1) }
+
+fn triple(n: I32) -> I32 { mul_i32(n, 3) }
+
+fn show(label: String, value: String) -> . {
+  print(string_concat(label, string_concat(" == ", string_concat(value, "\n"))))
+}
+
+pub fn main() -> . {
+  show("apply(ok(incr), 4)", render(apply(I32, I32, String, ok(I32 -> I32, String, incr), 4)));
+  show("apply(ok(triple), 5)", render(apply(I32, I32, String, ok(I32 -> I32, String, triple), 5)));
+  show(
+    , "apply(err(\"nope\"), 7)"
+    , render(apply(I32, I32, String, err(I32 -> I32, String, "nope"), 7))
+    )
+}

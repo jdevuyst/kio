@@ -1,0 +1,106 @@
+module systems/input;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as c;
+import list/list as l;
+import systems/matrix as m;
+import systems/rational as q;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels System = { name: String, variables: I32, original: m.Matrix };
+
+pub labels Read_result = { loaded: System } | { input_error: String } | { finished: . };
+
+fn read_integer() -> I32 | String {
+  match! io.read_ascii_line() {
+    .(line: String) {
+      match! fmt.string_to_int(line) {
+        .(n: I32) { n.>widen_sum! };
+        .() { text.string_concat("expected integer token, received ", line).>widen_sum! }
+      }
+    };
+    .() { "unexpected end of input".>widen_sum! }
+  }
+}
+
+fn dimension() -> I32 | String {
+  match! read_integer() {
+    .(n: I32) {
+      if! a.lt_i32(n, 1) {
+        "dimensions must be between 1 and 3".>widen_sum!
+      } else if! a.lt_i32(3, n) {
+        "dimensions must be between 1 and 3".>widen_sum!
+      } else {
+        n.>widen_sum!
+      }
+    };
+    .(error: String) { error.>widen_sum! }
+  }
+}
+
+rec(loop) fn values(remaining: I32, reversed: m.Row) -> m.Row | String {
+  if! a.leq_i32(remaining, 0) {
+    l.reverse(reversed).>widen_sum!
+  } else match! read_integer() {
+    .(n: I32) {
+      if! a.lt_i32(n, -8) {
+        "entries must be between -8 and 8".>widen_sum!
+      } else if! a.lt_i32(8, n) {
+        "entries must be between -8 and 8".>widen_sum!
+      } else {
+        rec values(a.sub_i32(remaining, 1), c.cons(q.integer(n), reversed))
+      }
+    };
+    .(error: String) { error.>widen_sum! }
+  }
+}
+
+rec(loop) fn rows(flat: m.Row, width: I32, reversed: m.Matrix) -> m.Matrix {
+  if! l.null(flat) {
+    l.reverse(reversed)
+  } else {
+    rec rows(l.drop(width, flat), width, c.cons(l.take(width, flat), reversed))
+  }
+}
+
+fn contents(name: String, count: I32, variables: I32) -> Read_result {
+  let width = a.add_i32(variables, 1);
+  match! values(a.mul_i32(count, width), c.nil()) {
+    .(flat: m.Row) {
+      {loaded = {name, variables, original = rows(flat, width, c.nil())}}.>widen_sum!
+    };
+    .(error: String) { {input_error = error}.>widen_sum! }
+  }
+}
+
+fn dimensions(name: String) -> Read_result {
+  match! dimension() {
+    .(count: I32) {
+      match! dimension() {
+        .(variables: I32) { contents(name, count, variables) };
+        .(error: String) { {input_error = error}.>widen_sum! }
+      }
+    };
+    .(error: String) { {input_error = error}.>widen_sum! }
+  }
+}
+
+pub fn next() -> Read_result {
+  match! io.read_ascii_line() {
+    .(name: String) {
+      if! text.string_eq(name, "END") {
+        {finished=}.>widen_sum!
+      } else {
+        dimensions(name)
+      }
+    };
+    .() { {input_error = "missing END marker"}.>widen_sum! }
+  }
+}

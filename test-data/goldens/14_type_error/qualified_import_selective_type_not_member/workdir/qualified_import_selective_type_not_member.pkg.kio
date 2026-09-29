@@ -1,0 +1,19 @@
+package qualified_import_selective_type_not_member;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  provider;
+  proxy;
+  main
+}

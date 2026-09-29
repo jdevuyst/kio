@@ -1,0 +1,7 @@
+module main;
+
+fn keep(a: ., b: .) -> . { a }
+
+pub fn main() -> . { () + () }
+
+op _ + _ { impl keep; };

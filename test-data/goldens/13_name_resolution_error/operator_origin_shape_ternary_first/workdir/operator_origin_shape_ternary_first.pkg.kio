@@ -1,0 +1,13 @@
+package operator_origin_shape_ternary_first;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

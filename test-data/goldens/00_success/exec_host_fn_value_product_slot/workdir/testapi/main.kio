@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(Int);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Higher-order function whose function parameter takes a single
+// product argument `(A & B)`. A caller that passes a multi-arity
+// host function (`add(Int, Int)`, abi-arity 2) here forces the JS/TS
+// emitter to bridge the host fn's separate-argument calling
+// convention to this product-domain slot's single-argument one.
+fn apply_pair[A][B](f: (A & B) -> B, a: A, b: B) -> B { f((a, b)) }
+
+pub fn main() -> . { let total = apply_pair(add, 3, 4); print(int_to_string(total)) }

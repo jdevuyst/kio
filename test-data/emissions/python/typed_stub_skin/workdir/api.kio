@@ -1,0 +1,7 @@
+module api;
+
+host type String role(str);
+
+host type I32 role(i32);
+
+host fn print(s: String) -> .;

@@ -1,0 +1,5 @@
+module typed_let_partial_annotation_no_rhs_context/main;
+
+import typed_let_partial_annotation_no_rhs_context(I32);
+
+fn bad(n: I32) -> I32 { let .(f: _) = .x. { x1 }; f(n) }

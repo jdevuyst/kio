@@ -1,0 +1,23 @@
+module main;
+
+host type I32;
+
+host type N;
+
+host fn produce[T](packet: I32 & I32) -> T;
+
+fn identity[A](value: A) -> A { value }
+
+fn pass[T](result: T, left: I32, right: I32) -> T { result }
+
+fn explicit_flat(left: I32, right: I32, value: N) -> N {
+  produce([A] A -> A, (left, right), N, value)
+}
+
+fn explicit_nested(left: I32, right: I32, value: N) -> N {
+  produce([A] A -> A, (left, right))(N, value)
+}
+
+fn inferred_flat(left: I32, right: I32, value: N) -> N { pass(identity, (left, right), N, value) }
+
+fn inferred_nested(left: I32, right: I32, value: N) -> N { pass(identity, (left, right))(N, value) }

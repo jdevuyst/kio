@@ -1,0 +1,5 @@
+module store;
+
+pub newtype Token : . { constructor make; projector get }
+
+fn make_token() -> Token { Token.make(()) }

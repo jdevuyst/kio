@@ -1,0 +1,36 @@
+module api;
+
+host type String role(str);
+
+pub newtype Box[A] : A { pub constructor make_box; pub projector read_box }
+
+pub newtype Functor[*F] : F(String) { pub constructor make_functor; pub projector read_functor }
+
+pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector read_shadow }
+
+pub newtype Pack <T> : T { pub constructor make_pack; pub projector open_pack }
+
+pub rec newtype Recursive : . | Recursive {
+  pub constructor make_recursive;
+  pub projector read_recursive
+  }
+
+host fn apply_poly(f: [T] T -> T) -> String;
+
+host fn round_shadow(value: Shadow(Box(String))) -> Shadow(Box(String));
+
+host fn round_hkt[*F](value: F(String)) -> F(String);
+
+host fn round_functor(value: Functor(Box)) -> Functor(Box);
+
+pub fn poly() -> String { apply_poly(.[T](value: T) { value }) }
+
+pub fn shadow(value: Shadow(Box(String))) -> Shadow(Box(String)) { round_shadow(value) }
+
+pub fn hkt(value: Box(String)) -> Box(String) { round_hkt(Box, value) }
+
+pub fn box_functor(value: Box(String)) -> Functor(Box) { Functor.make_functor(Box, value) }
+
+pub fn functor(value: Functor(Box)) -> Functor(Box) { round_functor(value) }
+
+pub fn pack[T](value: T) -> Pack { Pack.make_pack(T, value) }

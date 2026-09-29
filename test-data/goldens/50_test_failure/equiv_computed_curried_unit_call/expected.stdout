@@ -1,0 +1,6 @@
+  pass equiv `computed_unit_call` in computed
+  fail equiv `following_group_stays_distinct` in computed: arms split into 2 normal-form groups
+    group A (arms 1): __param_y__
+    group B (arms 2): __param_z__
+
+result: 1/2 equiv block failed

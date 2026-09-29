@@ -1,0 +1,23 @@
+module guest;
+
+import hostapi(I32);
+
+pub type Poly_to[A] = [T] T -> A;
+
+pub type Duplicate[A] = A & A;
+
+pub type Drop[A][B] = B;
+
+pub fn higher[A](f: [U] U -> U, x: A) -> A { f(A, x) }
+
+fn id_local[T](x: T) -> T { x }
+
+pub fn use_higher(x: I32) -> I32 { higher(I32, id_local, x) }
+
+pub fn shadow[T](g2: [T] T -> T, y: T) -> T { g2(T, y) }
+
+pub fn accept_poly(_value: Poly_to(I32)) -> . { () }
+
+pub fn accept_duplicate(_value: Duplicate(Poly_to(I32))) -> . { () }
+
+pub fn accept_drop(_value: Drop(Poly_to(I32), Poly_to(I32))) -> . { () }

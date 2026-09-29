@@ -1,0 +1,31 @@
+module priority_window_scheduler/report;
+
+import priority_window_scheduler/model(Window, {name}, {span});
+import priority_window_scheduler/planner as planner;
+import testapi(String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+fn cat2(a: String, b: String) -> String { text.string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+pub fn window_line(window: Window) -> String {
+  cat3(
+    , window.?{name}
+    , cat3(" span=", window.?{span}, " score=")
+    , cat3(fmt.int_to_string(planner.score(window)), "", "\n")
+    )
+}
+
+pub fn selected_line(window: Window) -> String {
+  cat3(
+    , "selected="
+    , window.?{name}
+    , cat3(
+        , " span="
+        , window.?{span}
+        , cat3(" score=", fmt.int_to_string(planner.score(window)), "\n")
+        )
+    )
+}

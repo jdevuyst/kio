@@ -1,0 +1,33 @@
+module pid/report;
+
+import pid/model(
+  , Command
+  , Derivative
+  , Error
+  , Integral
+  , Measured
+  , Step
+  , {command}
+  , {derivative}
+  , {error}
+  , {integral}
+  , {measured}
+  );
+import testapi(F64, String);
+import testapi/fmt(f64_to_string);
+import testapi/io(print);
+
+fn print_value(label: String, value: F64) -> . {
+  print(label);
+  print(f64_to_string(value));
+  print("\n")
+}
+
+pub fn print_step(label: String, step: Step) -> . {
+  print(label);
+  print_value("  measured=", step.?{measured});
+  print_value("  error=", step.?{error});
+  print_value("  integral=", step.?{integral});
+  print_value("  derivative=", step.?{derivative});
+  print_value("  command=", step.?{command})
+}

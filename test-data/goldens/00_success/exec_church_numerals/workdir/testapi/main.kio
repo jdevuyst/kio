@@ -1,0 +1,35 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Church-encoded naturals on `Nat = forall A. ((A -> A) & A) -> A`.
+// `zero` / `succ` / `plus` / `mul` are pure System F polymorphism —
+// no host loop, no newtype, no `match!`, no `if`/`else`. `to_int`
+// reifies a `Nat` by instantiating at `I32` and counting via
+// `add_i32(_, 1)` from `0`.
+type Nat = [A] ((A -> A) & A) -> A;
+
+fn zero() -> Nat { .[A](_f, x) { x } }
+
+fn succ(n: Nat) -> Nat { .[A](f, x) { f(n(A, f, x)) } }
+
+fn plus(m: Nat, n: Nat) -> Nat { .[A](f, x) { m(A, f, n(A, f, x)) } }
+
+// `mul m n = ΛA. λf. λx. m A (n A f) x`. Within-layer partial
+// application is rejected, so `n A f` is wrapped as a closure
+// `.(y) { n(A, f, y) }` that re-applies all three args.
+fn mul(m: Nat, n: Nat) -> Nat { .[A](f, x) { m(A, .(y) { n(A, f, y) }, x) } }
+
+fn to_int(n: Nat) -> I32 { n(I32, .(x) { add_i32(x, 1(I32)) }, 0(I32)) }
+
+pub fn main() -> . {
+  let two = succ(succ(zero()));
+  let three = succ(succ(succ(zero())));
+  print(int_to_string(to_int(plus(two, three))));
+  print("\n"(String));
+  print(int_to_string(to_int(mul(two, three))));
+  print("\n"(String))
+}

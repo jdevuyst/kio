@@ -1,0 +1,7 @@
+module main;
+
+newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+
+fn helper(x: Foo) -> . { let _ = x; () }
+
+fn caller() -> . { helper() }

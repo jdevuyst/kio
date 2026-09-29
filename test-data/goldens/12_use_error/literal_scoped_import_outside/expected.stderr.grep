@@ -1,0 +1,3 @@
+greeting.*sealed
+pub\(demo/internal\)
+importable only within that module subtree

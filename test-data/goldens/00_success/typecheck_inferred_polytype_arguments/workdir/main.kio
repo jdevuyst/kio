@@ -1,0 +1,17 @@
+module main;
+
+fn make_poly[A](value: A) -> [B] B -> A { .[B](_ignored: B) -> A { value } }
+
+fn identity[A](value: A) -> A { value }
+
+fn consume_any[T](_value: T) -> . { () }
+
+fn consume_poly(_value: [B] B -> .) -> . { () }
+
+fn inferred_from_nested_result() -> . { consume_any(make_poly(())) }
+
+fn placeholder_from_nested_result() -> . { consume_any(_, make_poly(())) }
+
+fn inferred_from_expected_polytype() -> . { consume_poly(identity(make_poly(()))) }
+
+fn placeholder_from_expected_polytype() -> . { consume_poly(identity(_, make_poly(()))) }

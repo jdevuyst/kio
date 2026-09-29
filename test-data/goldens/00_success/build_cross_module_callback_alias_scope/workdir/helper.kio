@@ -1,0 +1,19 @@
+module helper;
+
+import adapter as adapter;
+import elab/match(match);
+
+pub type Bool = adapter.Bool;
+
+pub fn matches[A](predicate: (A & A) -> Bool, value: . | (A & A)) -> Bool {
+  match! value {
+    (
+      , .(pair: A & A) {
+          match! pair {
+            .(left: A, right: A) { predicate(left, right) }
+          }
+        }
+      , .(_empty: .) { .f }
+      )
+  }
+}

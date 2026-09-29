@@ -1,0 +1,83 @@
+module logic/report;
+
+import elab/control(if);
+import list/list as traversal;
+import logic/model as model;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+fn bit(value: Bool) -> String {
+  if! value {
+    "1"
+  } else {
+    "0"
+  }
+}
+
+fn time(at: I32) -> String {
+  text.string_concat("t=", text.string_concat(fmt.int_to_string(at), " "))
+}
+
+fn assignment(wire: I32, value: Bool) -> String {
+  text.string_concat(model.name(wire), text.string_concat("=", bit(value)))
+}
+
+pub fn header(count: I32) -> . {
+  io.print("logic: A -> slow(3); H=xor(A,slow)(1); T=transport(H,2); I=inertial(H,2)\n");
+  io.print(text.string_concat(
+    , "sources="
+    , text.string_concat(fmt.int_to_string(count), " initial A=0 slow=0 H=0 T=0 I=0\n")
+    ))
+}
+
+pub fn edge(event: model.Event) -> . {
+  io.print(text.string_concat(
+    , time(event.?{model.at})
+    , text.string_concat(assignment(event.?{model.target}, event.?{model.value}), "\n")
+    ))
+}
+
+pub fn canceled(now: I32, event: model.Event) -> . {
+  io.print(text.string_concat(
+    , time(now)
+    , text.string_concat(
+        , "cancel "
+        , text.string_concat(
+            , assignment(event.?{model.target}, event.?{model.value})
+            , text.string_concat(
+                , " due="
+                , text.string_concat(fmt.int_to_string(event.?{model.at}), "\n")
+                )
+            )
+        )
+    ))
+}
+
+fn show_wire(message: String, signal: model.Signal) -> String {
+  text.string_concat(
+    , message
+    , text.string_concat(" ", assignment(signal.?{model.wire}, signal.?{model.level}))
+    )
+}
+
+pub fn summary(state: model.State) -> . {
+  io.print(text.string_concat(
+    , "settled-at="
+    , text.string_concat(
+        , fmt.int_to_string(state.?{model.last_time})
+        , text.string_concat(
+            , " edges="
+            , text.string_concat(
+                , fmt.int_to_string(state.?{model.edges})
+                , text.string_concat(
+                    , " canceled="
+                    , text.string_concat(fmt.int_to_string(state.?{model.canceled}), "\n")
+                    )
+                )
+            )
+        )
+    ));
+  io.print(text.string_concat(traversal.foldl(show_wire, "final", state.?{model.wires}), "\n"))
+}

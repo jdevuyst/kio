@@ -1,0 +1,34 @@
+[package]
+name = "kio-ci-scheduler"
+version = "0.1.0"
+edition = "2024"
+description = "Shared CI scheduling authority for Kio. Private test artifact."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "kio_ci_scheduler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kio-ci-scheduler"
+path = "src/main.rs"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
+# Bootstrap artifacts are immutable and keyed; omit per-key debug and
+# incremental state. A consuming workspace still owns its dependency profile.
+[profile.dev]
+debug = 0
+incremental = false

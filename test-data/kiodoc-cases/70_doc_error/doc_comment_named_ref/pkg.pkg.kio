@@ -1,0 +1,13 @@
+package pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}
+
+bridge {
+  doctest/**
+}

@@ -1,0 +1,15 @@
+module testapi/helper;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// These declarations exercise later value groups, pure and effectful generic
+// function values, and an empty first value group.
+pub fn join(prefix: String)(suffix: String) -> String { string_concat(prefix, suffix) }
+
+pub fn id[A](v: A) -> A { v }
+
+pub fn logged[A](v: A) -> . { print("logged\n"(String)) }
+
+pub fn staged[A]()(v: A) -> . { print("staged\n"(String)) }

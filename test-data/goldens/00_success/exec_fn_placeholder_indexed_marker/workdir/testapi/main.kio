@@ -1,0 +1,18 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// The highest index sets arity, independently of occurrence order.
+fn apply2(f: (String & String) -> String, a: String, b: String) -> String { f(a, b) }
+
+pub fn main() -> . {
+  // The binding annotation supplies the lambda's expected
+  // parameter and result types.
+  let .(swap: (String & String) -> String) = .x. { string_concat(x2, x1) };
+  // swap("first", "second") concatenates slot 2 then slot 1:
+  // "second" + "first" = "secondfirst".
+  print(apply2(swap, "first", "second"));
+  print("\n")
+}

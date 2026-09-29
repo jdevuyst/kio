@@ -1,0 +1,33 @@
+module api;
+
+import helper as helper;
+
+host type Str role(str);
+
+host type Int role(i32);
+
+host fn host_identity[A](value: A) -> A;
+
+newtype Box[A] : A { constructor box; projector unbox }
+
+fn host_value() -> Str & Int { let choose = host_identity; (choose("host"(Str)), choose(7(Int))) }
+
+fn lambda_value() -> Str & Int {
+  let choose = .[A](value: A) -> A { host_identity(value) };
+  (choose("lambda"(Str)), choose(11(Int)))
+}
+
+fn projector_value() -> Str & Int {
+  let unbox = Box.unbox;
+  (unbox(Box.box("projector"(Str))), unbox(Box.box(13(Int))))
+}
+
+fn qualified_value() -> Str & Int {
+  let choose = helper.identity;
+  (choose("qualified"(Str)), choose(17(Int)))
+}
+
+fn qualified_projector_value() -> Str & Int {
+  let unbox = helper.Box.unbox;
+  (unbox(helper.Box.box("qualified projector"(Str))), unbox(helper.Box.box(19(Int))))
+}

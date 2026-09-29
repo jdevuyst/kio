@@ -1,0 +1,9 @@
+module surface;
+
+pub fn add[A](left: A, _right: A) -> A { left }
+
+pub op _ + _ { impl add }
+
+pub literal zero = 0;
+
+pub labels Choice = { tag: . } | { other: . };

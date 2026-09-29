@@ -1,0 +1,16 @@
+module rtiu/main;
+
+import __intrinsics__;
+
+import rtiu(String);
+
+// `[B]` does not appear in either `x: A` or the return type `A` —
+// neither value-arg unification nor return-type unification can
+// solve it, so even at a checked call position the typer rejects
+// the elided form with "cannot infer type argument for `<B>`".
+// The tuple literal at the call site (a surface-only form) keeps
+// this case non-Kio' so the prime-marker biconditional stays
+// balanced.
+fn unsolvable[A][B](x: A) -> A { x }
+
+fn user() -> String & String { unsolvable(("hi", "bye")) }

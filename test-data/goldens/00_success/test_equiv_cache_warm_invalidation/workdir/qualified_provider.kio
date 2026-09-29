@@ -1,0 +1,5 @@
+module qualified_provider;
+
+host type Bool role(bool);
+
+pub fn answer() -> Bool { .t(Bool) }

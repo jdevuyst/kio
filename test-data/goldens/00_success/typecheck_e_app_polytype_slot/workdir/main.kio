@@ -1,0 +1,27 @@
+module main;
+
+// A top-level polymorphic `fn`. Its declared scheme is the
+// polytype `∀U. U -> U`.
+fn id[U](v: U) -> U { v }
+
+// A consumer whose parameter slot is itself a polytype — a
+// rank-2 position. The parameter's expected type is the
+// polytype `∀T. T -> T`.
+fn use_id(f: [T] T -> T) -> . { f(., ()) }
+
+// The canonical E-App § 5.2 non-`fn`-literal case: the path
+// expression `id` synthesizes the polytype `∀U. (U) → U`; the
+// receiving slot expects `∀T. (T) → T`. The two polytypes are
+// alpha-equivalent, so structural equivalence on `Forall`
+// admits the call without instantiating or skolemizing.
+pub fn main() -> . { use_id(id) }
+
+// Second exemplar with two binders: `fst`'s declared scheme is
+// `∀A B. (A & B) -> A`; `use_fst`'s parameter slot expects
+// `∀X Y. (X & Y) -> X`. Same alpha-equivalence rule decides
+// admissibility.
+fn fst[A][B](x: A, y: B) -> A { x }
+
+fn use_fst(g: [X][Y] (X & Y) -> X) -> . { g(., ., (), ()) }
+
+fn main_fst() -> . { use_fst(fst) }

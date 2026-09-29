@@ -1,0 +1,5 @@
+module adapter;
+
+import testapi as api;
+
+pub type Bool = api.Bool;

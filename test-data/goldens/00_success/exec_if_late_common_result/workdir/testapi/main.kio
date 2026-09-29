@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+import testapi/io as io;
+
+labels Choice = { left: . } | { right: . };
+
+fn first[A](value: A, _witness: A) -> A { value }
+
+fn describe(choice: Choice) -> String {
+  match! choice {
+    .(_left: Left) { "left\n" };
+    .(_right: Right) { "right\n" }
+  }
+}
+
+pub fn main() -> . {
+  let select =
+    first(
+      , .(condition: Bool) {
+          if! condition {
+            widen_sum!({left=})
+          } else {
+            widen_sum!({right=})
+          }
+        }
+      , .(_condition: Bool) -> Choice { widen_sum!({left=}) }
+      );
+  io.print(describe(select(.t)));
+  io.print(describe(select(.f)))
+}

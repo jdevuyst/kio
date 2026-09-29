@@ -1,0 +1,511 @@
+name: PR Policy Check
+
+# Immediate feedback on every PR: classifies it against the
+# contribution policy (CONTRIBUTING.md), mirrors the sanctioning label
+# onto the PR, and — for contrib-lane PRs — verifies the directory
+# naming and the file-level case contract, posting an itemized comment
+# when something needs fixing. Complements pr-auto-close.yml: that
+# workflow closes unsanctioned PRs; this one reports and labels, and
+# never closes anything.
+#
+# `pull_request_target` is required: the check must label and comment
+# on PRs from forks, which needs the base-repo write token. The
+# standard risk of the trigger — running attacker-controlled PR code
+# with elevated privileges — does not apply here: the workflow has no
+# `actions/checkout` step and only calls the GitHub API via
+# `actions/github-script`. PR file paths and blob contents are only
+# string-compared in JS, never executed or expanded into a shell
+# context.
+on:  # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  # Labels and comments on a PR go through the issues API (a PR is an
+  # issue), so issues:write covers every mutation this workflow makes;
+  # pulls.listFiles needs only pull-requests:read. Least privilege on a
+  # pull_request_target token.
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  policy-check:
+    runs-on: ubuntu-latest
+    # Bot-authored PRs aren't subject to the contribution policy
+    # (mirrors pr-auto-close.yml's exemption).
+    if: ${{ github.event.pull_request.user.type != 'Bot' }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const acceptingLabel = 'accepting prs';
+            const contribLabel = 'contrib case';
+            const runLabel = 'test-contrib';
+            const contribPrefix = 'test-data/contrib/';
+            const marker = '<!-- pr-policy-check -->';
+            const pr = context.payload.pull_request;
+
+            // GitHub's pulls.listFiles returns at most 3000 files; past
+            // that the changed-file set is truncated with no signal, so
+            // an `every(in-lane)` check over a truncated list could let a
+            // file beyond the cap escape the lane guard. A real contrib
+            // case is a handful of files, so a PR at the cap is never a
+            // valid contrib PR — treat it as unsanctioned (fail closed).
+            const LISTFILES_CAP = 3000;
+
+            // Render PR-controlled text as an inline code span that can't
+            // break out of the comment markdown: strip line breaks, then
+            // fence with more backticks than any run inside (padding a
+            // space when the text touches a backtick), per the GFM
+            // code-span rules. Without this a crafted file path could
+            // inject live markdown into the bot comment.
+            function code(s) {
+              const t = String(s).replace(/[\r\n]+/g, ' ');
+              const longest = (t.match(/`+/g) || [])
+                .reduce((m, r) => Math.max(m, r.length), 0);
+              const fence = '`'.repeat(longest + 1);
+              const pad = /^`|`$/.test(t) ? ' ' : '';
+              return `${fence}${pad}${t}${pad}${fence}`;
+            }
+
+            const contributingUrl =
+              `${context.serverUrl}/${owner}/${repo}/blob/HEAD/CONTRIBUTING.md`;
+            const contractUrl =
+              `${context.serverUrl}/${owner}/${repo}/blob/HEAD/test-data/contrib/README.md`;
+
+            async function addPrLabel(name) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: pr.number, labels: [name]
+                });
+              } catch (e) {
+                core.warning(`Could not add label "${name}": ${e.message}`);
+              }
+            }
+
+            async function removePrLabel(name) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name
+                });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+            }
+
+            // One marker-tagged comment per PR, updated in place so
+            // re-pushes don't stack feedback.
+            async function findMarkerComment() {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100
+              });
+              return comments.find(c => c.body && c.body.includes(marker));
+            }
+
+            async function upsertComment(body) {
+              const existing = await findMarkerComment();
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pr.number, body
+                });
+              }
+            }
+
+            async function deleteComment() {
+              const existing = await findMarkerComment();
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner, repo, comment_id: existing.id
+                });
+              }
+            }
+
+            async function getFileText(path) {
+              try {
+                const res = await github.rest.repos.getContent({
+                  owner, repo, path, ref: pr.head.sha
+                });
+                if (Array.isArray(res.data) || res.data.type !== 'file') return null;
+                return Buffer.from(res.data.content, 'base64').toString('utf8');
+              } catch (e) {
+                if (e.status === 404) return null;
+                throw e;
+              }
+            }
+
+            // Does `path` already exist on the PR's base branch? Used to
+            // tell a new case (base has no such dir) from a follow-up
+            // (base already has it).
+            async function pathExistsOnBase(path) {
+              try {
+                await github.rest.repos.getContent({
+                  owner, repo, path, ref: pr.base.sha
+                });
+                return true;
+              } catch (e) {
+                if (e.status === 404) return false;
+                throw e;
+              }
+            }
+
+            async function listDir(path) {
+              try {
+                const res = await github.rest.repos.getContent({
+                  owner, repo, path, ref: pr.head.sha
+                });
+                return Array.isArray(res.data) ? res.data : null;
+              } catch (e) {
+                if (e.status === 404) return null;
+                throw e;
+              }
+            }
+
+            // A push (synchronize) invalidates any prior maintainer
+            // approval to run the case: strip the run label so approval
+            // never outlives the commit it was granted for. contrib-run.yml
+            // runs the case only when the label is (re-)applied, so this
+            // forces a fresh review + re-label after every push. Done
+            // before the draft guard so a push to a draft still resets it.
+            if (context.payload.action === 'synchronize') {
+              await removePrLabel(runLabel);
+            }
+
+            // Drafts are work-in-progress and exempt from the policy
+            // (mirrors pr-auto-close.yml); don't label or comment yet.
+            if (pr.draft) {
+              core.info(`PR #${pr.number} is a draft, skipping.`);
+              return;
+            }
+
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 20) {
+                      nodes {
+                        number
+                        state
+                        labels(first: 30) { nodes { name } }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            const result = await github.graphql(query, {
+              owner, repo, number: pr.number
+            });
+            const linked =
+              result.repository.pullRequest.closingIssuesReferences.nodes.map(i => ({
+                number: i.number,
+                state: i.state,
+                labels: i.labels.nodes.map(l => l.name)
+              }));
+
+            // Maintainer-invited PR: the linked issue carries the
+            // accepting-prs label, i.e. a PR was genuinely requested.
+            // Mirror the label onto the PR and pass.
+            if (linked.some(i => i.labels.includes(acceptingLabel))) {
+              await addPrLabel(acceptingLabel);
+              await deleteComment();
+              core.info(`PR #${pr.number} is maintainer-invited (issue labeled "${acceptingLabel}").`);
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+
+            if (files.length >= LISTFILES_CAP) {
+              await removePrLabel(contribLabel);
+              await deleteComment();
+              core.setFailed(
+                `PR #${pr.number} changes ${files.length}+ files, too many ` +
+                `to validate as a contrib case (a contrib case is a small, ` +
+                `self-contained program). See CONTRIBUTING.md.`);
+              return;
+            }
+
+            const touchesContrib = files.some(f =>
+              f.filename.startsWith(contribPrefix) ||
+              (f.previous_filename || '').startsWith(contribPrefix));
+
+            if (!touchesContrib) {
+              // A PR that used to be contrib-shaped may still carry the
+              // label / marker comment from an earlier run; clear them so
+              // the state matches the new verdict.
+              await removePrLabel(contribLabel);
+              await deleteComment();
+              core.setFailed(
+                `Not a sanctioned PR shape: neither a contrib-lane PR ` +
+                `(touching only ${contribPrefix}) nor linked to an issue ` +
+                `labeled "${acceptingLabel}". See CONTRIBUTING.md.`);
+              return;
+            }
+
+            // Contrib-lane candidate: verify the directory naming and
+            // the file-level case contract. Formatting canonicality and
+            // the actual build+run need a toolchain and are asserted by
+            // ci/checks/orchestrators/contrib-tests.sh, not here.
+            // failures block the check; warnings pass it but leave an
+            // advisory comment for the maintainer.
+            const failures = [];
+            const warnings = [];
+
+            const strays = files
+              .filter(f => !(f.filename.startsWith(contribPrefix) &&
+                (f.previous_filename === undefined ||
+                 f.previous_filename.startsWith(contribPrefix))))
+              .map(f => f.previous_filename && !f.previous_filename.startsWith(contribPrefix)
+                ? f.previous_filename : f.filename);
+            if (strays.length > 0) {
+              failures.push(
+                `The PR touches files outside \`${contribPrefix}\`: ` +
+                strays.map(s => code(s)).join(', ') +
+                `. A contrib PR touches only its own case directory.`);
+            }
+
+            const rels = files
+              .filter(f => f.filename.startsWith(contribPrefix))
+              .map(f => f.filename.slice(contribPrefix.length));
+            const rootFiles = rels.filter(r => !r.includes('/'));
+            if (rootFiles.length > 0) {
+              failures.push(
+                `File(s) directly under \`${contribPrefix}\`: ` +
+                rootFiles.map(s => code(s)).join(', ') +
+                `. Everything goes inside your case directory.`);
+            }
+            const caseDirs = [...new Set(
+              rels.filter(r => r.includes('/')).map(r => r.split('/')[0]))];
+            if (caseDirs.length !== 1) {
+              failures.push(caseDirs.length === 0
+                ? `No case directory found under \`${contribPrefix}\`.`
+                : `The PR touches more than one case directory: ` +
+                  caseDirs.map(d => code(d)).join(', ') + `. One case per PR.`);
+            }
+
+            if (caseDirs.length === 1) {
+              const dir = caseDirs[0];
+              const login = pr.user.login.toLowerCase();
+              const caseDirPath = `${contribPrefix}${dir}`;
+              // Case dir is lowercase <owner>-<issue#>. The owner prefix must be the
+              // PR author, so only the owner can touch their directory —
+              // this applies to new cases and follow-ups alike.
+              const nameMatch = dir.match(/^([a-z0-9][a-z0-9-]*)-([0-9]+)$/);
+              if (!nameMatch) {
+                failures.push(
+                  `Directory ${code(dir)} must be named ` +
+                  `\`<your-github-username>-<issue-number>\`, all lowercase.`);
+              } else {
+                const dirOwner = nameMatch[1];
+                const dirIssue = nameMatch[2];
+                // Only the GitHub login is case-insensitive; the directory is canonical.
+                // dirOwner is PR-controlled, so escape it in the comment.
+                if (dirOwner !== login) {
+                  failures.push(
+                    `Directory ${code(dir)} belongs to ${code(dirOwner)}; only its ` +
+                    `owner may open PRs against it (you are ${code(login)}).`);
+                }
+                // A follow-up modifies a dir that already exists on the base
+                // branch; only a *new* case must reserve an open issue via
+                // the Bug report or Contribute-a-test-case template (labelled
+                // `bug` or `contrib case`), whose number names the directory.
+                const isFollowUp = await pathExistsOnBase(caseDirPath);
+                if (!isFollowUp) {
+                  const match = linked.find(i => String(i.number) === dirIssue);
+                  if (!match) {
+                    failures.push(
+                      `Directory ${code(dir)} names issue #${dirIssue}, but the PR ` +
+                      `doesn't link it — add \`Closes #${dirIssue}\` to the PR body.`);
+                  } else {
+                    if (match.state !== 'OPEN') {
+                      failures.push(`Linked issue #${match.number} is closed; a new case slot must be an open issue.`);
+                    }
+                    if (!match.labels.includes(contribLabel) && !match.labels.includes('bug')) {
+                      failures.push(
+                        `Linked issue #${match.number} carries neither the ` +
+                        `\`${contribLabel}\` nor the \`bug\` label — file it with the ` +
+                        `"Contribute an example program or library" or "Bug report" template.`);
+                    }
+                  }
+                }
+              }
+
+              const entries = await listDir(caseDirPath);
+              if (entries === null) {
+                failures.push(`${code(caseDirPath + '/')} doesn't exist at this PR's head.`);
+              } else {
+                const has = (n) => entries.some(e => e.name === n && e.type === 'file');
+                const hasDir = (n) => entries.some(e => e.name === n && e.type === 'dir');
+
+                // File allowlist: a contrib case contains only these
+                // top-level files plus workdir/. Anything else — a stray
+                // file, an extra directory (a nested case), a symlink, a
+                // submodule — is rejected, so no untrusted content rides
+                // in alongside the .kio sources.
+                const ALLOWED_FILES = new Set([
+                  'README.md', 'run.args', 'run.sh', 'run.test-only',
+                  'expected.stdout', 'expected.exit',
+                  'expected.stderr', 'expected.stderr.ignore', 'expected.stderr.grep',
+                  'input.stdin', 'IS_KIO_PRIME', 'KNOWN_FAILING',
+                ]);
+                for (const e of entries) {
+                  if (e.type === 'dir') {
+                    if (e.name !== 'workdir') {
+                      failures.push(`Unexpected directory ${code(e.name + '/')}; a contrib case has only its top-level files and \`workdir/\`.`);
+                    }
+                  } else if (e.type === 'file') {
+                    if (!ALLOWED_FILES.has(e.name)) {
+                      failures.push(`Unexpected file ${code(e.name)}; allowed: README.md, run.args, run.sh, run.test-only, expected.stdout, expected.exit, one expected.stderr* policy, input.stdin, IS_KIO_PRIME, KNOWN_FAILING.`);
+                    }
+                  } else {
+                    failures.push(`Unexpected ${e.type} entry ${code(e.name)}; a contrib case contains only regular files and \`workdir/\`.`);
+                  }
+                }
+
+                for (const required of ['README.md', 'expected.stdout', 'expected.exit']) {
+                  if (!has(required)) failures.push(`Missing \`${required}\`.`);
+                }
+                const execFiles = ['run.args', 'run.sh', 'run.test-only'].filter(n => has(n));
+                if (execFiles.length !== 1) {
+                  failures.push(`Exactly one execution file is required (\`run.args\`, \`run.sh\`, or \`run.test-only\`); found ${execFiles.length}.`);
+                }
+                if (has('run.sh')) {
+                  warnings.push(
+                    `This case ships a \`run.sh\`, which runs arbitrary shell in CI. ` +
+                    `A maintainer should read it before applying the \`${runLabel}\` ` +
+                    `label to run the case.`);
+                }
+                if (has('KNOWN_FAILING')) {
+                  warnings.push(
+                    `This is a bug reproducer (\`KNOWN_FAILING\`): it's expected to ` +
+                    `fail until a maintainer fixes the underlying bug, and the CI gate ` +
+                    `stays green in the meantime.`);
+                }
+                const stderrPolicies = ['expected.stderr', 'expected.stderr.ignore', 'expected.stderr.grep']
+                  .filter(n => has(n));
+                if (stderrPolicies.length !== 1) {
+                  failures.push(
+                    `Exactly one stderr-policy file is required ` +
+                    `(\`expected.stderr\`, \`expected.stderr.ignore\`, or ` +
+                    `\`expected.stderr.grep\`); found ${stderrPolicies.length}.`);
+                }
+                if (has('expected.exit')) {
+                  const exitText = await getFileText(`${caseDirPath}/expected.exit`);
+                  if (exitText === null || exitText.replace(/\s/g, '') !== '0') {
+                    failures.push(`\`expected.exit\` must contain exactly \`0\` — the desired successful outcome (a \`KNOWN_FAILING\` case records the exit it should reach once fixed).`);
+                  }
+                }
+                // A run.test-only library has no runner, so its stdout is
+                // never diffed; require it empty so a mis-set golden can't
+                // slip through unchecked (mirrors contrib-tests.sh).
+                if (has('run.test-only') && has('expected.stdout')) {
+                  const stdoutText = await getFileText(`${caseDirPath}/expected.stdout`);
+                  if (stdoutText !== null && stdoutText !== '') {
+                    failures.push(`A \`run.test-only\` case is a library with no runner, so its \`expected.stdout\` is never diffed — it must be empty.`);
+                  }
+                }
+                if (!hasDir('workdir')) {
+                  failures.push(`Missing \`workdir/\` (the Kio package).`);
+                } else {
+                  const workdirEntry = entries.find(e => e.name === 'workdir');
+                  const tree = await github.rest.git.getTree({
+                    owner, repo, tree_sha: workdirEntry.sha, recursive: 'true'
+                  });
+                  if (tree.data.truncated) {
+                    failures.push(`\`workdir/\` is too large to validate.`);
+                  } else {
+                    // A submodule is a gitlink (tree entry type 'commit'),
+                    // not a blob, so reject it explicitly — the blob sweep
+                    // below would otherwise skip it.
+                    for (const g of tree.data.tree.filter(t => t.type === 'commit')) {
+                      failures.push(`Submodules are not accepted: ${code('workdir/' + g.path)}.`);
+                    }
+                    const blobs = tree.data.tree.filter(t => t.type === 'blob');
+                    if (!blobs.some(b => !b.path.includes('/') && b.path.endsWith('.pkg.kio'))) {
+                      failures.push(`\`workdir/\` has no \`<pkg>.pkg.kio\` at its top level.`);
+                    }
+                    // Under workdir/, only .kio sources are allowed. This
+                    // rejects symlinks, dependencies, and any nested
+                    // expected.exit (a nested case) in one pass.
+                    for (const b of blobs) {
+                      if (b.mode === '120000') {
+                        failures.push(`Symlinks are not accepted: ${code('workdir/' + b.path)}.`);
+                      } else if (b.path.endsWith('.dep.kio')) {
+                        failures.push(`Dependencies are not accepted (contrib cases are self-contained): ${code('workdir/' + b.path)}.`);
+                      } else if (!b.path.endsWith('.kio')) {
+                        failures.push(`Only \`.kio\` files are allowed under \`workdir/\`: ${code('workdir/' + b.path)}.`);
+                      }
+                    }
+                    // One pass over the .kio sources: does the program read
+                    // stdin (input.stdin required then), and does it declare
+                    // an equiv law (required for a run.test-only library)?
+                    let readsStdin = false;
+                    let hasEquiv = false;
+                    for (const b of blobs.filter(b => b.mode !== '120000' && b.path.endsWith('.kio'))) {
+                      const blob = await github.rest.git.getBlob({ owner, repo, file_sha: b.sha });
+                      const text = Buffer.from(blob.data.content, blob.data.encoding).toString('utf8');
+                      if (/read_ascii_line\s*\(/.test(text)) readsStdin = true;
+                      if (/^[ \t]*equiv[ \t]/m.test(text)) hasEquiv = true;
+                    }
+                    if (has('run.test-only') && !hasEquiv) {
+                      failures.push(`A \`run.test-only\` case is a library and must declare at least one \`equiv\` law for \`kio test\` to discharge.`);
+                    }
+                    if (readsStdin && !has('input.stdin')) {
+                      failures.push(`The program reads stdin (\`read_ascii_line()\`) but the case ships no \`input.stdin\` fixture.`);
+                    }
+                  }
+                }
+              }
+            }
+
+            if (failures.length === 0) {
+              await addPrLabel(contribLabel);
+              if (warnings.length === 0) {
+                await deleteComment();
+                core.info(`PR #${pr.number} is a valid contrib-lane PR.`);
+                return;
+              }
+              // Valid, but with advisories (e.g. ships a run.sh): pass the
+              // check and keep an advisory comment so a maintainer sees it
+              // before deciding to run the case.
+              const advisory =
+                `${marker}\n` +
+                `This looks like a valid contributed case. ` +
+                `A note before running it:\n\n` +
+                warnings.map(w => `- ${w}`).join('\n') + `\n\n` +
+                `Nothing for the contributor to fix — this is a heads-up ` +
+                `for the maintainer.`;
+              await upsertComment(advisory);
+              core.info(`PR #${pr.number} is a valid contrib-lane PR (${warnings.length} advisory note(s)).`);
+              return;
+            }
+
+            await removePrLabel(contribLabel);
+            const body =
+              `${marker}\n` +
+              `This PR looks like a contributed case, but it ` +
+              `doesn't meet the case contract yet:\n\n` +
+              failures.map(f => `- ${f}`).join('\n') + `\n\n` +
+              `The contract is described in ` +
+              `[test-data/contrib/README.md](${contractUrl}) and ` +
+              `[CONTRIBUTING.md](${contributingUrl}) § Contribute an ` +
+              `example program or library. Push fixes to this branch ` +
+              `and the check re-runs.\n\n` +
+              `(Formatting canonicality and the actual build+run are ` +
+              `verified by the test harness before merge, not by this ` +
+              `check.)`;
+            await upsertComment(body);
+            core.setFailed(
+              `Contrib-lane PR #${pr.number} fails ${failures.length} ` +
+              `requirement(s); see the PR comment.`);

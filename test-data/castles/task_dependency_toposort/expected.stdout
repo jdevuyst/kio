@@ -1,0 +1,18 @@
+task dependency toposort
+tasks: 7
+completed: 7
+rounds: 7
+ready-at-stop: 0
+blocked-at-stop: 0
+peak-ready: 3
+peak-blocked: 6
+cycle-risk: false
+effort-score: 27
+order:
+  -> fetch_sources
+  -> inspect_schema
+  -> compile_core
+  -> emit_js
+  -> emit_rust
+  -> package_bundle
+  -> release_notes

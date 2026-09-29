@@ -1,0 +1,11 @@
+module outer;
+
+import __comptime__;
+import inner(effect_call);
+
+pub pure fn outer_impl(ct: __Comptime__) -> __Checked_term__ {
+  let ignored = effect_call!();
+  __term_unit__(ct)
+}
+
+pub elab outer : . -> . { impl outer_impl }

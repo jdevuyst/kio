@@ -1,0 +1,8 @@
+module elaborator_type_mentions_host/elaborators;
+
+import __comptime__;
+import elaborator_type_mentions_host(I32);
+
+pub pure fn checked_impl(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ { value }
+
+pub elab checked : I32 -> I32 { impl checked_impl }

@@ -1,0 +1,16 @@
+module m;
+
+import elab/control(scope);
+
+equiv simple() {
+  ();
+  ()
+}
+
+equiv let_binding() {
+  scope! {
+    let x = ();
+    x
+  };
+  ()
+}

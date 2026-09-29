@@ -1,0 +1,5 @@
+module main;
+
+import w1/store(make_a, make_b);
+
+pub fn main() -> . { let _a = make_a(); let _b = make_b(); () }

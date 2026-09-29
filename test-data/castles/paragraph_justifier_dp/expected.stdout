@@ -1,0 +1,71 @@
+paragraph_justifier_dp v1
+column: 16
+gap: 1
+words: 13
+
+metrics:
+   0  typesetting  11
+   1  is            2
+   2  the           3
+   3  art           3
+   4  of            2
+   5  breaking      8
+   6  a             1
+   7  paragraph     9
+   8  into          4
+   9  lines         5
+  10  that          4
+  11  read          4
+  12  evenly        6
+
+greedy (first-fit):
+  breaks: 0 2 5 7 9 12 13
+  +----------------+
+  |typesetting is  |  words  0.. 2  used 14  slack  2  badness     8
+  |the art of      |  words  2.. 5  used 10  slack  6  badness   216
+  |breaking a      |  words  5.. 7  used 10  slack  6  badness   216
+  |paragraph into  |  words  7.. 9  used 14  slack  2  badness     8
+  |lines that read |  words  9..12  used 15  slack  1  badness     1
+  |evenly          |  words 12..13  used  6  slack 10  badness     0
+  +----------------+
+  total badness: 449
+
+dp table:
+   j     best     back   fits
+   0        0        -      -
+   1      125        0      1
+   2        8        0      2
+   3     1125        1      2
+   4      341        1      3
+   5      152        1      4
+   6      466        4      3
+   7      368        5      3
+   8      591        6      2
+   9      376        7      3
+  10      807        8      2
+  11      592        9      3
+  12      377        9      3
+  13      377       12      3
+
+optimal (dp):
+  breaks: 0 1 5 7 9 12 13
+  +----------------+
+  |typesetting     |  words  0.. 1  used 11  slack  5  badness   125
+  |is the art of   |  words  1.. 5  used 13  slack  3  badness    27
+  |breaking a      |  words  5.. 7  used 10  slack  6  badness   216
+  |paragraph into  |  words  7.. 9  used 14  slack  2  badness     8
+  |lines that read |  words  9..12  used 15  slack  1  badness     1
+  |evenly          |  words 12..13  used  6  slack 10  badness     0
+  +----------------+
+  total badness: 377
+
+verify:
+  dp best[n]: 377
+  re-summed layout: 377
+  agree: true
+
+comparison:
+  greedy total: 449
+  optimal total: 377
+  delta: 72
+  optimal <= greedy: true

@@ -1,0 +1,3 @@
+module model;
+
+pub newtype Box[A] : A { pub constructor box; pub projector unbox }

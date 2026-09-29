@@ -1,0 +1,12 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_prod);
+import testapi(I32, String);
+import testapi/io(print);
+
+// UFCS form `x.>narrow_prod!(T)` — the receiver `x` is the source,
+// the trailing type-arg gives the target. Reads as "take p, then
+// narrow_prod! to String." Equivalent to `narrow_prod!(p, String)`.
+fn first(p: String & I32) -> String { p.>narrow_prod!(String) }
+
+pub fn main() -> . { print(first(("narrow_prod via UFCS\n", 0))) }

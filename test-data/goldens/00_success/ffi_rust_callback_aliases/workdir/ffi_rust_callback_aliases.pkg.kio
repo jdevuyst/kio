@@ -1,0 +1,17 @@
+package ffi_rust_callback_aliases;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  };
+
+  target kio-prime {
+    out "out/kio-prime/"
+  }
+}
+
+bridge {
+  testapi/**
+}

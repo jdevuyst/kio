@@ -1,0 +1,2 @@
+error: type mismatch: (expected `\.`, found `A`|expected `A`, found `\.`)
+consume_unit\(\.\[A\]\(inner\) \{ inner \}\(\., value\)\)

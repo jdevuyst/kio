@@ -1,0 +1,72 @@
+module store/commands;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import store/history as history;
+import store/transactions as tx;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+pub labels Command = { opcode: String, key: String, argument: String };
+
+pub labels Read = { parsed: Command } | { end: . } | { malformed: String };
+
+pub fn read() -> Read {
+  match! io.read_ascii_line() {
+    .(opcode: String) {
+      match! io.read_ascii_line() {
+        .(key: String) {
+          match! io.read_ascii_line() {
+            .(argument: String) { widen_sum!({parsed = {opcode, key, argument}}, Read) };
+            .() { widen_sum!({malformed = "missing argument line"}, Read) }
+          }
+        };
+        .() { widen_sum!({malformed = "missing key line"}, Read) }
+      }
+    };
+    .() { widen_sum!({end=}, Read) }
+  }
+}
+
+pub fn apply(s: tx.State, c: Command) -> tx.Reply {
+  let op = c.?{opcode};
+  let key = c.?{key};
+  if! text.string_eq(op, "BEGIN") {
+    tx.begin(s)
+  } else if! text.string_eq(op, "PUT") {
+    match! fmt.string_to_int(c.?{argument}) {
+      .(value: I32) { tx.put(s, key, value) };
+      .() { tx.rejected(s, text.string_concat("invalid integer ", c.?{argument})) }
+    }
+  } else if! text.string_eq(op, "DELETE") {
+    tx.delete(s, key)
+  } else if! text.string_eq(op, "SAVE") {
+    tx.save(s, key)
+  } else if! text.string_eq(op, "ROLLBACK") {
+    tx.rollback(s, key)
+  } else if! text.string_eq(op, "RELEASE") {
+    tx.release(s, key)
+  } else if! text.string_eq(op, "COMMIT") {
+    tx.commit(s)
+  } else if! text.string_eq(op, "ABORT") {
+    tx.abort(s)
+  } else if! text.string_eq(op, "GET") {
+    tx.accepted(
+      , s
+      , text.string_concat(
+          , "get "
+          , text.string_concat(
+              , key
+              , text.string_concat("=", history.show_value(history.get(s.?{tx.working}, key)))
+              )
+          )
+      )
+  } else if! text.string_eq(op, "SNAPSHOT") {
+    tx.accepted(s, text.string_concat("snapshot ", key))
+  } else {
+    tx.rejected(s, text.string_concat("unknown operation ", op))
+  }
+}

@@ -1,0 +1,5 @@
+module parse_err_four_slashes/main;
+
+
+//// A four-slash run is a lex error, not a section ruler.
+fn id(s: String) -> String { s }

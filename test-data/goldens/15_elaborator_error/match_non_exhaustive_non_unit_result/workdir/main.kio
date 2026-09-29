@@ -1,0 +1,11 @@
+module main;
+
+import elab/match(match);
+import testapi(Int);
+import testapi(String);
+
+fn incomplete(v: String | Int) -> String {
+  match! v {
+    .(s: String) { s }
+  }
+}

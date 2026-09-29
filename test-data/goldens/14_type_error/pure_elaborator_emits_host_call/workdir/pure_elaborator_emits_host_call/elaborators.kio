@@ -1,0 +1,19 @@
+module pure_elaborator_emits_host_call/elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import pure_elaborator_emits_host_call(I32, id_i32);
+
+pub pure fn apply_impl(
+  , ct: __Comptime__
+  , _i32_type: __Type__
+  , captured_id_i32: __Checked_term__
+  , _source: __Type__
+  , value: __Checked_term__
+  , _target: __Type__ | .
+  ) -> __Checked_term__ {
+  __term_call__(ct, __reflect_type__(ct, I32 -> I32), captured_id_i32, value)
+}
+
+pub elab apply : [Source] Source -> [Target] Target { captures (I32, id_i32); impl apply_impl }

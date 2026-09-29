@@ -1,0 +1,4 @@
+host a._c
+host a_.c
+module a.b_c
+module a/b.c

@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn run_callback(callback: String -> ., value: String) -> . { callback(value) }
+
+pub fn main() -> . { run_callback(.(value) { print(value) }, "forward flow\n"(String)) }

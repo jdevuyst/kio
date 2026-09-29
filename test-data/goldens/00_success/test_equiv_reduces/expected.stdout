@@ -1,0 +1,7 @@
+  pass equiv `beta_zero_arity` in host/m
+  pass equiv `beta_via_call` in host/m
+  pass equiv `fn_unfold` in host/m
+  pass equiv `alpha_under_lambda` in host/m
+  pass equiv `stuck_residual` in host/m
+
+result: 5/5 equiv blocks passed

@@ -1,0 +1,93 @@
+module edit_distance_audit/dp;
+
+import edit_distance_audit/math as math;
+import edit_distance_audit/render as render;
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/io as io;
+import testapi/iter(loop);
+
+pub rec(loop) fn seed_row_at(index: I32, last: I32, row: Array(I32)) -> Array(I32) {
+  if! arith.leq_i32(index, last) {
+    array.array_set(row, index, index);
+    rec seed_row_at(arith.add_i32(index, 1), last, row)
+  } else {
+    row
+  }
+}
+
+pub fn seed_row(last: I32) -> Array(I32) {
+  let row = array.array_make_filled(I32, arith.add_i32(last, 1), 0);
+  seed_row_at(0, last, row)
+}
+
+fn substitution_cost(left_token: I32, right_token: I32) -> I32 {
+  if! math.i32_eq(left_token, right_token) {
+    0
+  } else {
+    1
+  }
+}
+
+fn cell_cost(prev: Array(I32), curr: Array(I32), left_token: I32, right_token: I32, index: I32) -> I32 {
+  let delete_cost = arith.add_i32(array.array_get(prev, index), 1);
+  let insert_cost = arith.add_i32(array.array_get(curr, arith.sub_i32(index, 1)), 1);
+  let replace_base = array.array_get(prev, arith.sub_i32(index, 1));
+  let replace_cost = arith.add_i32(replace_base, substitution_cost(left_token, right_token));
+  math.min3(delete_cost, insert_cost, replace_cost)
+}
+
+pub rec(loop) fn fill_row_at(
+  , index: I32
+  , last: I32
+  , prev: Array(I32)
+  , curr: Array(I32)
+  , left_token: I32
+  , right: Array(I32)
+  ) -> Array(I32) {
+  if! arith.leq_i32(index, last) {
+    let right_token = array.array_get(right, arith.sub_i32(index, 1));
+    let cost = cell_cost(prev, curr, left_token, right_token, index);
+    array.array_set(curr, index, cost);
+    rec fill_row_at(arith.add_i32(index, 1), last, prev, curr, left_token, right)
+  } else {
+    curr
+  }
+}
+
+pub fn build_row(index: I32, prev: Array(I32), left: Array(I32), right: Array(I32), right_len: I32) -> Array(I32) {
+  let curr = array.array_make_filled(I32, arith.add_i32(right_len, 1), 0);
+  array.array_set(curr, 0, index);
+  let left_token = array.array_get(left, arith.sub_i32(index, 1));
+  fill_row_at(1, right_len, prev, curr, left_token, right)
+}
+
+pub rec(loop) fn walk_rows(
+  , index: I32
+  , left_len: I32
+  , right_len: I32
+  , left: Array(I32)
+  , right: Array(I32)
+  , prev: Array(I32)
+  , matrix_checksum: I32
+  ) -> I32 {
+  if! arith.leq_i32(index, left_len) {
+    let row = build_row(index, prev, left, right, right_len);
+    let checksum = render.print_row(index, row, right_len);
+    let next_checksum = arith.add_i32(arith.mul_i32(matrix_checksum, 31), checksum);
+    rec walk_rows(arith.add_i32(index, 1), left_len, right_len, left, right, row, next_checksum)
+  } else {
+    io.print("matrix_checksum=");
+    render.print_i32(matrix_checksum);
+    io.print("\n");
+    array.array_get(prev, right_len)
+  }
+}
+
+pub fn distance(left: Array(I32), right: Array(I32), left_len: I32, right_len: I32) -> I32 {
+  let first_row = seed_row(right_len);
+  let first_checksum = render.print_row(0, first_row, right_len);
+  walk_rows(1, left_len, right_len, left, right, first_row, first_checksum)
+}

@@ -1,0 +1,3 @@
+module decoy;
+
+host type Count role(i32);

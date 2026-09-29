@@ -1,0 +1,114 @@
+/// Phase one: read the whole program before running any of it.
+///
+/// The source is one token per line, so a keyword that takes arguments reads
+/// them off the lines that follow. `repeat` is the only compound form, and it
+/// is parsed by a recursive descent that returns at its matching `end` — which
+/// is why the result is a tree, and why the interpreter never has to scan for a
+/// delimiter while it runs.
+///
+/// The parser is total. A keyword it does not know, a `pen` or `turn` word it
+/// does not know, and an `end` with no `repeat` open all become `unknown`
+/// commands carrying the offending word, so a malformed program is reported in
+/// the echo rather than silently dropped. A numeric argument that will not
+/// parse reads as `0`.
+module turtle/parse;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as list;
+import list/list(reverse);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, lt_i32);
+import testapi/fmt(string_to_int);
+import testapi/io(read_ascii_line);
+import testapi/iter(loop);
+import testapi/text(string_eq);
+import turtle/command as cmd;
+import turtle/num as num;
+
+/// The next line, or the empty word at end of input.
+pub fn read_word() -> String {
+  match! read_ascii_line() {
+    (.(s: String) { s }, .(_eof: .) { "" })
+  }
+}
+
+/// The next line as a base-10 integer.
+pub fn read_number() -> I32 {
+  match! string_to_int(read_word()) {
+    (.(n: I32) { n }, .(_bad: .) { 0 })
+  }
+}
+
+fn parse_pen(word: String) -> cmd.Command {
+  if! string_eq(word, "down") {
+    cmd.pen(.t)
+  } else if! string_eq(word, "up") {
+    cmd.pen(.f)
+  } else {
+    cmd.unknown(word)
+  }
+}
+
+fn parse_turn(word: String) -> cmd.Command {
+  if! string_eq(word, "right") {
+    cmd.turn(.t)
+  } else if! string_eq(word, "left") {
+    cmd.turn(.f)
+  } else {
+    cmd.unknown(word)
+  }
+}
+
+/// Every command but `repeat` and `end`: take the keyword's arguments from the
+/// following lines and build the node. `goto`'s two arguments are read into
+/// named bindings so the source fixes their order rather than leaning on the
+/// order the arguments of a call happen to be evaluated in.
+fn parse_simple(kw: String) -> cmd.Command {
+  if! string_eq(kw, "pen") {
+    parse_pen(read_word())
+  } else if! string_eq(kw, "move") {
+    cmd.move(read_number())
+  } else if! string_eq(kw, "turn") {
+    parse_turn(read_word())
+  } else if! string_eq(kw, "goto") {
+    let x = read_number();
+    let y = read_number();
+    cmd.goto(x, y)
+  } else if! string_eq(kw, "mark") {
+    cmd.mark(read_number())
+  } else {
+    cmd.unknown(kw)
+  }
+}
+
+rec(loop) {
+  /// Parse the program: the block that runs to end of input.
+  pub fn parse_program() -> list.List(cmd.Command) { rec parse_block(0, list.nil(cmd.Command, ())) };
+  /// Read commands until this block's terminator, accumulating them head-first.
+  /// `depth` is 0 for the program itself and one more inside each enclosing
+  /// `repeat`: only a nested block is closed by `end`, so a stray `end` at the
+  /// top level falls through to `parse_simple` and is reported as unknown
+  /// instead of silently truncating the program.
+  ///
+  /// The descent into a `repeat` body is the one call that is not in tail
+  /// position: its result has to come back to be consed onto this block.
+  fn parse_block(depth: I32, acc: list.List(cmd.Command)) -> list.List(cmd.Command) {
+    match! read_ascii_line() {
+      (
+        , .(kw: String) {
+            if! num.and(string_eq(kw, "end"), lt_i32(0, depth)) {
+              reverse(acc)
+            } else if! string_eq(kw, "repeat") {
+              let n = read_number();
+              let body = rec(cont) parse_block(add_i32(depth, 1), list.nil(cmd.Command, ()));
+              rec parse_block(depth, list.cons(cmd.repeat(n, body), acc))
+            } else {
+              rec parse_block(depth, list.cons(parse_simple(kw), acc))
+            }
+          }
+        , .(_eof: .) { reverse(acc) }
+        )
+    }
+  }
+}

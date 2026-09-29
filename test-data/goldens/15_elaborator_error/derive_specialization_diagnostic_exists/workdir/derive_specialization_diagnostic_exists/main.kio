@@ -1,0 +1,14 @@
+module derive_specialization_diagnostic_exists/main;
+
+import elab/derive(derive);
+import testapi(I32);
+
+host fn zero() -> I32;
+
+fn base() -> I32 { zero() }
+
+fn unused[Unused]() -> I32 { zero() }
+
+fn bad() -> I32 { derive!((base, unused), I32) }
+
+pub fn main() -> . { () }

@@ -1,0 +1,17 @@
+module main;
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// `f` takes two value params with surface arity 2; its type is
+// `Function(Product(A, B), Unit)`. The call-site dual of §4a (a
+// single-positional-arg call passing the whole product) requires
+// the arg to be of type `A & B`. Passing only an `A`-typed arg is
+// a structural mismatch: the call's right-fold builds `Product(x)`
+// of type `A`, which does not match the function's `Product(A, B)`
+// param. Per §4b, this is rejected — "within-layer partial
+// application is rejected" — so `f(x)` errors at type-check.
+fn f(x: A, y: B) -> . { () }
+
+fn caller(x: A) -> . { f(x) }

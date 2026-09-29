@@ -1,0 +1,30 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(fit);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A source function that handles the wider `(String | I32)` input.
+fn handle_either(x: String | I32) -> . {
+  let s =
+    match! x {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print(s)
+}
+
+// `fit!`'s function-arrow walk: source `(String | I32) -> .`,
+// target `String -> .`. The walk is contravariant on the
+// parameter — the target's narrower `String` widens (via widen_sum!
+// inside fit!) into the source's wider `(String | I32)`. The return
+// is `()` on both sides (identity). fit! elaborates a wrapper that
+// takes a String at the call site and invokes the source's wider
+// handler.
+fn adapt(f: (String | I32) -> .) -> String -> . { fit!(f) }
+
+pub fn main() -> . {
+  let narrowed = adapt(handle_either);
+  narrowed("fit fn-param widened: handled\n")
+}

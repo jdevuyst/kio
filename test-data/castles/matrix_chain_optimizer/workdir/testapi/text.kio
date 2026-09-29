@@ -1,0 +1,7 @@
+module testapi/text;
+
+import testapi(Bool, String);
+
+host fn string_concat(left: String, right: String) -> String;
+
+host fn string_eq(left: String, right: String) -> Bool;

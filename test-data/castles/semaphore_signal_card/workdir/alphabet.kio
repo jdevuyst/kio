@@ -1,0 +1,45 @@
+module alphabet;
+
+import testapi(Bool, String);
+
+// The three Bool facts are recorded, not derived from the bearings: this host
+// offers no string comparison, so a letter cannot inspect its own arm strings.
+pub labels Card = {
+  , glyph: String
+  , left: String
+  , right: String
+  , mnemonic: String
+  , crossed: Bool
+  , vowel: Bool
+  , high: Bool
+  };
+
+fn card(
+  , glyph: String
+  , left: String
+  , right: String
+  , mnemonic: String
+  , crossed: Bool
+  , vowel: Bool
+  , high: Bool
+  ) -> Card { {glyph, left, right, mnemonic, crossed, vowel, high} }
+
+pub fn a() -> Card { card("A", "S", "SE", "left arm at rest, right low", .f, .t, .f) }
+
+pub fn e() -> Card { card("E", "NW", "S", "left arm high, right at rest", .f, .t, .t) }
+
+pub fn h() -> Card { card("H", "SW", "SE", "both arms low, a wide V", .f, .f, .f) }
+
+pub fn l() -> Card { card("L", "N", "SE", "left straight up, right low", .f, .f, .t) }
+
+pub fn m() -> Card { card("M", "NE", "SE", "left arm reaches over the body", .t, .f, .t) }
+
+pub fn o() -> Card { card("O", "SW", "E", "left low, right straight out", .f, .t, .f) }
+
+pub fn p() -> Card { card("P", "W", "E", "both arms straight out", .f, .f, .f) }
+
+pub fn r() -> Card { card("R", "N", "E", "left straight up, right out", .f, .f, .t) }
+
+pub fn s() -> Card { card("S", "NE", "E", "left arm reaches over, high", .t, .f, .t) }
+
+pub fn t() -> Card { card("T", "SW", "NE", "left low, right high", .f, .f, .t) }

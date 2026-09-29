@@ -1,0 +1,6 @@
+module user_elaborator_structural_recur_reentrant/main;
+
+import elaborators(reentrant);
+import user_elaborator_structural_recur_reentrant(String);
+
+fn trigger(s: String) -> String { reentrant!(s, String) }

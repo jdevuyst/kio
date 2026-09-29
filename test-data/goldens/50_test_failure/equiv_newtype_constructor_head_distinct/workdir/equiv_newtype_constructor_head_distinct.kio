@@ -1,0 +1,14 @@
+module equiv_newtype_constructor_head_distinct;
+
+host type T;
+
+host fn observe[A](value: A) -> .;
+
+newtype Left : T { constructor wrap; projector unwrap }
+
+newtype Right : T { constructor wrap; projector unwrap }
+
+equiv constructor_head_distinct(value: T) {
+  observe(Left.wrap(value));
+  observe(Right.wrap(value))
+}

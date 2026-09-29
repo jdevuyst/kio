@@ -1,0 +1,9 @@
+HTTP status window
+source-bytes=100 rows=4 first-ok=true
+status-chain=200/503/304/404
+family-chain=success/server_error/redirect/client_error
+entries:
+  00 GET /alpha -> 200 success bytes=0532
+  01 POST /order -> 503 server_error bytes=0000
+  02 GET /cache -> 304 redirect bytes=0128
+  03 HEAD /login -> 404 client_error bytes=0042

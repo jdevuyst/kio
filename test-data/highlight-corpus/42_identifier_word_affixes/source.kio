@@ -1,0 +1,14 @@
+module source;
+
+type Http_client2_ = .;
+
+fn _http2_client3__[A](_value2_: A) -> A { _value2_ }
+
+fn words(_arg2_: Http_client2_) {
+    let _local2__ = _http2_client3__(_arg2_);
+    _local2__
+}
+
+fn references(value: __Type__) {
+    (__term__, __call__(value), __elab__!(value))
+}

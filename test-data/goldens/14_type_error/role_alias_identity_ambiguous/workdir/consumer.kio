@@ -1,0 +1,17 @@
+module consumer;
+
+import elab/control(if);
+import first as first;
+import second as second;
+
+type First_bool = first.Bool;
+
+type Second_bool = second.Bool;
+
+fn choose(condition: First_bool) -> First_bool {
+  if! condition {
+    .t(First_bool)
+  } else {
+    .f(First_bool)
+  }
+}

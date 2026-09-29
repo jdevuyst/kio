@@ -1,0 +1,791 @@
+// Elaborator worked example — NOT a drop-in library.
+//
+// Its subject is the elaborator mechanism itself — the spine, row,
+// tuple, and algebraic elaborators, `derive`, `match`, `show`, and the
+// reflected-type vocabulary — which it wires together and exercises
+// end-to-end as `main`. The library pieces a user would copy live in
+// the sibling modules; this entry module exists to demonstrate them,
+// not to be reused verbatim.
+/// Demonstrative entry point that drives every POC elaborator
+/// end-to-end: it builds sample data, runs the spine / row / tuple /
+/// algebraic elaborators, `derive`, `match`, and `show` over it, and
+/// prints the results as `main`.
+module elab/main;
+
+import __intrinsics__;
+
+import library/algebraic_elaborators(align, atom, ease, into, iso, onto);
+import library/derive(derive);
+import library/lookup(Lookup_bool, contains, lookup);
+import library/match(match);
+import library/row_elaborators(get, mk, op _ * __, set);
+import library/show(show);
+import library/spine_elaborators(
+  , fit
+  , flatten_prod
+  , flatten_sum
+  , narrow_prod
+  , narrow_sum
+  , one_prod
+  , one_sum
+  , reorder_prod
+  , reorder_sum
+  , spine_identity
+  , widen_prod
+  , widen_sum
+  );
+import library/tuple_elaborators(
+  , concat
+  , distinct
+  , flatten
+  , group
+  , head
+  , last
+  , map
+  , split
+  , tail
+  , zip
+  );
+import library/type_of(
+  , Rep_unit
+  , Type_rep
+  , Type_rep_tail1
+  , rep_bottom
+  , rep_function
+  , rep_opaque
+  , rep_product
+  , rep_sum
+  , rep_unit
+  , type_of
+  );
+import testapi(Bool, I32, String);
+import testapi/fmt(bool_to_string, i32_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+newtype Witness[A] : . { constructor mk_witness; projector un_witness }
+
+newtype Derived_base : . { constructor mk_derived_base; projector un_derived_base }
+
+newtype Derived_wrap[A] : . { constructor mk_derived_wrap; projector un_derived_wrap }
+
+newtype Derived_poly[A] : . { constructor mk_derived_poly; projector un_derived_poly }
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+newtype Identity[A] : A { constructor mk_id; projector un_id }
+
+newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { constructor mk_functor; projector fmap }
+
+type Show_host_converters = (String -> String) & (I32 -> String) & (Bool -> String);
+
+labels { foo: I32, bar: String, flag: Bool };
+
+fn derive_string_rule() -> String { "derive explicit: ok\n" }
+
+fn derive_expected_rule() -> String { "derive expected: ok\n" }
+
+fn derive_unit_rule() -> . { () }
+
+fn derive_unit_parameter_rule(_unit: .) -> String { "derive unit parameter: ok\n" }
+
+fn derive_witness_rule[A]() -> Witness(A) { Witness.mk_witness(A, ()) }
+
+fn derive_base_rule() -> Derived_base { Derived_base.mk_derived_base(()) }
+
+fn derive_wrap_rule(_base: Derived_base) -> Derived_wrap(Derived_base) {
+  Derived_wrap.mk_derived_wrap(Derived_base, ())
+}
+
+fn derive_poly_rule[A](_witness: Witness(A)) -> Derived_poly(Witness(A)) {
+  Derived_poly.mk_derived_poly(Witness(A), ())
+}
+
+fn box_functor() -> Functor(Box) {
+  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+}
+
+fn identity_functor() -> Functor(Identity) {
+  Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
+}
+
+fn witness_message(_witness: Witness(String)) -> String { "derive polymorphic: ok\n" }
+
+fn recursive_message(_wrapped: Derived_wrap(Derived_base)) -> String { "derive recursive: ok\n" }
+
+fn poly_recursive_message(_derived: Derived_poly(Witness(String))) -> String {
+  "derive polymorphic recursive: ok\n"
+}
+
+fn derive_explicit_case() -> String { derive!((derive_unit_rule, derive_string_rule), String) }
+
+fn derive_expected_case() -> String { derive!((derive_unit_rule, derive_expected_rule)) }
+
+fn derive_polymorphic_case() -> String {
+  witness_message(derive!((derive_unit_rule, derive_witness_rule)))
+}
+
+fn derive_recursive_case() -> String {
+  recursive_message(derive!((derive_wrap_rule, derive_base_rule)))
+}
+
+fn derive_polymorphic_recursive_case() -> String {
+  poly_recursive_message(derive!((derive_poly_rule, derive_witness_rule)))
+}
+
+fn derived_identity_functor() -> Functor(Identity) { derive!((box_functor, identity_functor)) }
+
+fn derive_functor_case() -> String {
+  let functor = derived_identity_functor();
+  let branded = Identity.mk_id("derive functor: ok\n");
+  let mapped = Functor.fmap(functor)(String, String, .(value) { value }, branded);
+  Identity.un_id(mapped)
+}
+
+fn keep_spine(s: String) -> String { spine_identity!(s, String) }
+
+fn reorder_prod_case(s: String) -> String { __fst__(String, ., reorder_prod!(((), s), String & .)) }
+
+fn narrow_prod_case(s: String) -> String { narrow_prod!(((), s), String) }
+
+fn widen_prod_case(s: String) -> String {
+  __fst__(String, . & String, widen_prod!(s, String & . & String))
+}
+
+fn one_prod_case(s: String) -> String { one_prod!(((), s), String) }
+
+fn one_prod_default_case(s: String) -> String { one_prod!((s, ())) }
+
+fn flatten_prod_case(s: String) -> String {
+  __fst__(String, . & ., flatten_prod!(((s, ()), ()), String & . & .))
+}
+
+fn widen_sum_case(s: String) -> String {
+  __either__(
+    , .
+    , String
+    , String
+    , widen_sum!(s, . | String)
+    , .(_empty: .) -> String { "widen_sum failed\n" }
+    , .(value: String) -> String { value }
+    )
+}
+
+fn reorder_sum_case(s: String) -> String {
+  __either__(
+    , String
+    , .
+    , String
+    , reorder_sum!(__right__(., String, s), String | .)
+    , .(value: String) -> String { value }
+    , .(_empty: .) -> String { "reorder_sum failed\n" }
+    )
+}
+
+fn narrow_sum_case(s: String) -> String { narrow_sum!(__right__(String, String, s), String) }
+
+fn one_sum_case(s: String) -> String { one_sum!(__left__(String, String, s), String) }
+
+fn one_sum_default_case(s: String) -> String { one_sum!(__right__(String, String, s)) }
+
+fn flatten_sum_case(s: String) -> String {
+  __either__(
+    , String
+    , . | .
+    , String
+    , flatten_sum!(__left__(String | ., ., __left__(String, ., s)), String | . | .)
+    , .(value: String) -> String { value }
+    , .(_rest: . | .) -> String { "flatten_sum failed\n" }
+    )
+}
+
+fn fit_case(s: String) -> String {
+  __either__(
+    , String
+    , .
+    , String
+    , fit!(s, String | .)
+    , .(value: String) -> String { value }
+    , .(_empty: .) -> String { "fit failed\n" }
+    )
+}
+
+fn iso_case(s: String) -> String { __fst__(String, ., iso!(((), s), String & .)) }
+
+fn into_case(s: String) -> String { __fst__(String, String, into!(s, String & String)) }
+
+fn onto_case(s: String) -> String { onto!((s, ()), String) }
+
+fn iso_unit_absorb_case(s: String) -> String { iso!((s, ()), String) }
+
+fn into_sum_widen_case(s: String) -> String {
+  __either__(
+    , String
+    , .
+    , String
+    , into!(s, String | .)
+    , .(value: String) -> String { value }
+    , .(_empty: .) -> String { "into sum failed\n" }
+    )
+}
+
+fn onto_duplicate_collapse_case(s: String) -> String { onto!((s, s), String) }
+
+fn iso_distribute_case(s: String) -> String {
+  __either__(
+    , String & .
+    , String & String
+    , String
+    , iso!((s, __left__(., String, ())), (String & .) | (String & String))
+    , .(left: String & .) -> String { __fst__(String, ., left) }
+    , .(right: String & String) -> String { __fst__(String, String, right) }
+    )
+}
+
+fn align_case(s: String) -> String {
+  __either__(
+    , String
+    , .
+    , String
+    , align!(s, String | .)
+    , .(value: String) -> String { value }
+    , .(_empty: .) -> String { "align failed\n" }
+    )
+}
+
+fn ease_case(s: String) -> String { ease!((s, ()), String) }
+
+fn atom_case(s: String) -> String { atom!(((), s), String) }
+
+fn keep_algebraic(s: String) -> String {
+  atom_case(ease_case(align_case(onto_duplicate_collapse_case(onto_case(into_sum_widen_case(into_case(iso_distribute_case(iso_unit_absorb_case(iso_case(s))))))))))
+}
+
+fn string_clause(value: String) -> String { value }
+
+fn unit_clause(_empty: .) -> String { "match right: ok\n" }
+
+fn keep_match(s: String) -> String {
+  match! __left__(String, ., s) {
+    (string_clause, unit_clause)
+  }
+}
+
+fn match_right_case() -> String {
+  match! __right__(String, ., ()) {
+    (string_clause, unit_clause)
+  }
+}
+
+fn match_infer_left_case() -> String {
+  match! __left__(String, ., "match infer left: ok\n") {
+    (string_clause, unit_clause)
+  }
+}
+
+fn match_infer_right_case() -> String {
+  match! __right__(String, ., ()) {
+    (string_clause, unit_clause)
+  }
+}
+
+fn match_polymorphic_clause_case() -> String {
+  match! "ignored" {
+    .[A](_value: A) { "match polymorphic: ok\n" }
+  }
+}
+
+fn contains_elaborator_case() -> String {
+  let value = widen_sum!(Foo.mk(1), Foo | (Bar & Flag));
+  __either__(
+    , .
+    , .
+    , String
+    , value.>contains!(Foo)
+    , .(_yes: .) -> String { "contains elaborator: ok\n" }
+    , .(_no: .) -> String { "contains elaborator failed\n" }
+    )
+}
+
+fn type_of_case() -> String {
+  __either__(
+    , Rep_unit
+    , Type_rep_tail1
+    , String
+    , Type_rep.un_type_rep(type_of!(., ()))
+    , .(_unit: Rep_unit) -> String { "type reflection: ok\n" }
+    , .(_tail: Type_rep_tail1) -> String { "type reflection failed\n" }
+    )
+}
+
+fn tuple_elaborators_case() -> String { concat!((((), "tuple elaborators: ok\n"), ()), _) }
+
+fn row_elaborators_case() -> String {
+  let row = mk!((Bar.mk("row elaborators: ok\n"), (Flag.mk(.t), Foo.mk(41))), Foo & Bar & Flag);
+  let updated = row.>set!((Foo.mk, 42), Foo & Bar & Flag);
+  updated.>get!(Bar.get)
+}
+
+fn string_to_string(value: String) -> String { value }
+
+fn show_host_converters() -> Show_host_converters {
+  (string_to_string, (i32_to_string, bool_to_string))
+}
+
+fn show_case() -> String {
+  string_concat(show!(("show", (42, .t)))(string_concat, show_host_converters()), "\n")
+}
+
+equiv spine_identity_law[A](value: A) {
+  spine_identity!(value, A);
+  value
+}
+
+equiv reorder_prod_law[A][B](a: A, b: B) {
+  reorder_prod!((a, b), B & A);
+  (b, a)
+}
+
+equiv reorder_sum_left_law[A][B](a: A) {
+  reorder_sum!(__left__(A, B, a), B | A);
+  __right__(B, A, a)
+}
+
+equiv narrow_prod_law[A][B](a: A, b: B) {
+  narrow_prod!((a, b), A);
+  a
+}
+
+equiv narrow_prod_default_law[A][B](a: A, b: B) {
+  narrow_prod!((a, b));
+  (a, b)
+}
+
+equiv narrow_sum_left_law[A](a: A) {
+  narrow_sum!(__left__(A, A, a), A);
+  a
+}
+
+equiv narrow_sum_right_law[A](a: A) {
+  narrow_sum!(__right__(A, A, a), A);
+  a
+}
+
+equiv narrow_sum_default_law[A][B](a: A) {
+  narrow_sum!(__left__(A, B, a));
+  __left__(A, B, a)
+}
+
+equiv narrow_sum_drops_bottom_law[A](a: A) {
+  narrow_sum!(__left__(A, !, a), A);
+  a
+}
+
+equiv widen_prod_law[A](a: A) {
+  widen_prod!(a, A & . & A);
+  (a, ((), a))
+}
+
+equiv widen_sum_law[A][B](a: A) {
+  widen_sum!(a, B | A);
+  __right__(B, A, a)
+}
+
+equiv widen_sum_default_law[A](a: A) {
+  widen_sum!(a);
+  a
+}
+
+equiv flatten_prod_law[A][B][C](a: A, b: B, c: C) {
+  flatten_prod!(((a, b), c), A & B & C);
+  (a, (b, c))
+}
+
+equiv flatten_prod_multistep_law[A][B][C][D](a: A, b: B, c: C, d: D) {
+  flatten_prod!((((a, b), c), d), A & B & C & D);
+  (a, (b, (c, d)))
+}
+
+equiv flatten_sum_law[A][B][C](b: B) {
+  flatten_sum!(__left__(A | B, C, __right__(A, B, b)), A | B | C);
+  __right__(A, B | C, __left__(B, C, b))
+}
+
+equiv flatten_sum_multistep_law[A][B][C][D](b: B) {
+  flatten_sum!(__left__((A | B) | C, D, __left__(A | B, C, __right__(A, B, b))), A | B | C | D);
+  __right__(A, B | C | D, __left__(B, C | D, b))
+}
+
+equiv one_prod_law[A][B](a: A, b: B) {
+  one_prod!((b, a), A);
+  a
+}
+
+equiv one_prod_default_law[A][B](a: A, b: B) {
+  one_prod!((a, b));
+  a
+}
+
+equiv one_sum_left_law[A](a: A) {
+  one_sum!(__left__(A, A, a), A);
+  a
+}
+
+equiv one_sum_right_law[A](a: A) {
+  one_sum!(__right__(A, A, a), A);
+  a
+}
+
+equiv one_sum_default_law[A](a: A) {
+  one_sum!(__left__(A, A, a));
+  a
+}
+
+equiv one_sum_ignores_bottom_law[A](a: A) {
+  one_sum!(__left__(A, !, a), A);
+  a
+}
+
+equiv fit_widen_sum_law[A][B](a: A) {
+  fit!(a, A | B);
+  __left__(A, B, a)
+}
+
+equiv fit_recursive_product_law[A][B][C](a: A, b: B, c: C) {
+  fit!(((a, b), c), A & C);
+  (a, c)
+}
+
+equiv fit_recursive_sum_law[A][B][C](a: A, b: B) {
+  fit!(__left__(A & B, C, (a, b)), A | C);
+  __left__(A, C, a)
+}
+
+equiv fit_function_param_law[A][B](f: (A | B) -> ., a: A) {
+  fit!(f, A -> .)(a);
+  f(__left__(A, B, a))
+}
+
+equiv fit_function_return_law[A][B](f: A -> A & B, a: A) {
+  fit!(f, A -> A)(a);
+  __fst__(A, B, f(a))
+}
+
+equiv fit_bottom_law[A](impossible: !) {
+  fit!(impossible, A);
+  __absurd__(A, impossible)
+}
+
+equiv iso_reorder_law[A][B](a: A, b: B) {
+  iso!((a, b), B & A);
+  (b, a)
+}
+
+equiv iso_distribute_law[A][B][C](a: A, b: B) {
+  iso!((a, __left__(B, C, b)), (A & B) | (A & C));
+  __left__(A & B, A & C, (a, b))
+}
+
+equiv iso_undistribute_law[A][B][C](a: A, b: B) {
+  iso!(__left__(A & B, A & C, (a, b)), A & (B | C));
+  (a, __left__(B, C, b))
+}
+
+equiv into_duplicate_law[A](a: A) {
+  into!(a, A & A);
+  (a, a)
+}
+
+equiv into_like_typed_source_order_law[A][B](first: A, b: B, second: A) {
+  into!((first, (b, second)), A & A & B);
+  (first, (second, b))
+}
+
+equiv onto_project_law[A][B](a: A, b: B) {
+  onto!((a, b), A);
+  a
+}
+
+equiv align_sum_law[A][B](a: A) {
+  align!(a, A | B);
+  __left__(A, B, a)
+}
+
+equiv ease_project_law[A][B](a: A, b: B) {
+  ease!((a, b), A);
+  a
+}
+
+equiv atom_project_law[A][B](a: A, b: B) {
+  atom!((a, b), A);
+  a
+}
+
+equiv match_left_law[A][B](a: A) {
+  match! __left__(A, B, a) {
+    (.(x: A) { x }, .(_y: B) { a })
+  };
+  a
+}
+
+equiv match_right_law[A][B](b: B) {
+  match! __right__(A, B, b) {
+    (.(_x: A) { b }, .(y: B) { y })
+  };
+  b
+}
+
+equiv match_product_packet_law[A][B](a: A, b: B) {
+  match!((a, b)) {
+    .(x: A, _y: B) { x }
+  };
+  a
+}
+
+equiv match_reordered_packet_law[A][B](a: A, b: B) {
+  match!((a, b)) {
+    .(_y: B, x: A) { x }
+  };
+  a
+}
+
+equiv match_recursive_packet_law[A][B][C](a: A, b: B, c: C) {
+  match!(((a, b), c)) {
+    .(_x: A, z: C) { z }
+  };
+  c
+}
+
+equiv lookup_present_label_law(a: I32) {
+  lookup!(widen_sum!(Foo.mk(a), Foo | (Bar & Flag)), Foo);
+  __left__(Foo, ., Foo.mk(a))
+}
+
+equiv lookup_absent_label_law(a: I32) {
+  lookup!(widen_sum!(Foo.mk(a), Foo | Bar), Flag);
+  __right__(Flag, ., ())
+}
+
+equiv lookup_multi_label_branch_law(b: String, flag: Bool) {
+  lookup!(widen_sum!((Bar.mk(b), Flag.mk(flag)), Foo | (Bar & Flag)), Flag);
+  __left__(Flag, ., Flag.mk(flag))
+}
+
+equiv contains_present_label_law(a: I32) {
+  contains!(widen_sum!(Foo.mk(a), Foo | (Bar & Flag)), Foo);
+  __left__(., ., ())
+}
+
+equiv contains_absent_label_law(a: I32) {
+  contains!(widen_sum!(Foo.mk(a), Foo | Bar), Flag);
+  __right__(., ., ())
+}
+
+equiv contains_multi_label_branch_law(b: String, flag: Bool) {
+  contains!(widen_sum!((Bar.mk(b), Flag.mk(flag)), Foo | (Bar & Flag)), Flag);
+  __left__(., ., ())
+}
+
+equiv tuple_concat_law[A][B][C][D](a: A, b: B, c: C, d: D) {
+  concat!(((a, b), (c, d)), A & B & C & D);
+  (a, (b, (c, d)))
+}
+
+equiv tuple_flatten_law[A][B][C](a: A, b: B, c: C) {
+  flatten!(((a, b), c), A & B & C);
+  (a, (b, c))
+}
+
+equiv tuple_group_law[A][B][C][D](a: A, b: B, c: C, d: D) {
+  group!((a, (b, (c, d))), (A & B) & C & D);
+  ((a, b), (c, d))
+}
+
+equiv tuple_head_law[A][B][C](a: A, b: B, c: C) {
+  head!((a, (b, c)), A);
+  a
+}
+
+equiv tuple_tail_law[A][B][C](a: A, b: B, c: C) {
+  tail!((a, (b, c)), B & C);
+  (b, c)
+}
+
+equiv tuple_last_law[A][B][C](a: A, b: B, c: C) {
+  last!((a, (b, c)), C);
+  c
+}
+
+equiv tuple_split_law[A][B][C][D](a: A, b: B, c: C, d: D) {
+  split!((a, (b, (c, d))), (A & B) & C & D);
+  ((a, b), (c, d))
+}
+
+equiv tuple_zip_law[A][B][C][D](a: A, b: B, c: C, d: D) {
+  zip!((a, b), (c, d), (A & C) & B & D);
+  ((a, c), (b, d))
+}
+
+equiv tuple_map_law[A][B][C][D](f: A -> C, g: B -> D, a: A, b: B) {
+  map!((f, g), (a, b), C & D);
+  (f(a), g(b))
+}
+
+equiv tuple_distinct_law[A][B](first: A, b: B, second: A) {
+  distinct!((first, (b, second)), A & B);
+  (first, b)
+}
+
+equiv row_mk_identity_default_law(a: I32, b: String) {
+  mk!((Foo.mk(a), Bar.mk(b)));
+  (Foo.mk(a), Bar.mk(b))
+}
+
+equiv row_mk_target_reorder_law(a: I32, b: String) {
+  mk!((Bar.mk(b), Foo.mk(a)), Foo & Bar);
+  (Foo.mk(a), Bar.mk(b))
+}
+
+equiv row_set_single_update_law(old: I32, new: I32, b: String) {
+  (Foo.mk(old), Bar.mk(b)).>set!((Foo.mk, new));
+  (Foo.mk(new), Bar.mk(b))
+}
+
+equiv row_set_multi_update_law(a: I32, old_b: String, new_b: String, old_flag: Bool, new_flag: Bool) {
+  (Foo.mk(a), (Bar.mk(old_b), Flag.mk(old_flag))).>set!((Bar.mk, new_b) * (Flag.mk, new_flag));
+  (Foo.mk(a), (Bar.mk(new_b), Flag.mk(new_flag)))
+}
+
+equiv row_set_upsert_law(a: I32, b: String) {
+  Foo.mk(a).>set!((Bar.mk, b));
+  (Bar.mk(b), Foo.mk(a))
+}
+
+equiv row_set_target_reorder_law(a: I32, b: String) {
+  Foo.mk(a).>set!((Bar.mk, b), Foo & Bar);
+  (Foo.mk(a), Bar.mk(b))
+}
+
+equiv row_get_single_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>get!(Foo.get);
+  a
+}
+
+equiv row_get_multi_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>get!(Foo.get * Bar.get);
+  (a, b)
+}
+
+equiv row_get_selector_order_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>get!(Bar.get * Foo.get);
+  (b, a)
+}
+
+equiv row_get_exact_target_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>get!(Bar.get * Foo.get, String & I32);
+  (b, a)
+}
+
+equiv derive_explicit_law() {
+  derive!((derive_unit_rule, derive_string_rule), String);
+  derive_string_rule()
+}
+
+equiv derive_expected_law() {
+  derive!((derive_unit_rule, derive_expected_rule), String);
+  derive_expected_rule()
+}
+
+equiv derive_explicit_unit_law() {
+  derive!(derive_unit_rule, .);
+  derive_unit_rule()
+}
+
+equiv derive_unit_parameter_law() {
+  derive!(derive_unit_parameter_rule, String);
+  derive_unit_parameter_rule(())
+}
+
+equiv derive_polymorphic_law() {
+  Witness.un_witness(String, derive!((derive_unit_rule, derive_witness_rule), Witness(String)));
+  ()
+}
+
+equiv derive_recursive_law() {
+  Derived_wrap.un_derived_wrap(
+    , Derived_base
+    , derive!((derive_wrap_rule, derive_base_rule), Derived_wrap(Derived_base))
+    );
+  ()
+}
+
+equiv derive_polymorphic_recursive_law() {
+  Derived_poly.un_derived_poly(
+    , Witness(String)
+    , derive!((derive_poly_rule, derive_witness_rule), Derived_poly(Witness(String)))
+    );
+  ()
+}
+
+equiv derive_functor_law() {
+  Identity.un_id(
+    , String
+    , Functor.fmap(derive!((box_functor, identity_functor), Functor(Identity)))(
+        , String
+        , String
+        , .(value) { value }
+        , Identity.mk_id("derive functor: ok\n")
+        )
+    );
+  "derive functor: ok\n"
+}
+
+equiv type_of_unit_law() {
+  type_of!(., ());
+  rep_unit()
+}
+
+equiv type_of_bottom_law() {
+  type_of!(!, ());
+  rep_bottom()
+}
+
+equiv type_of_product_law() {
+  type_of!(. & ., ());
+  rep_product(rep_unit(), rep_unit())
+}
+
+equiv type_of_sum_law() {
+  type_of!(. | !, ());
+  rep_sum(rep_unit(), rep_bottom())
+}
+
+equiv type_of_function_law() {
+  type_of!(. -> ., ());
+  rep_function(rep_unit(), rep_unit())
+}
+
+equiv type_of_opaque_law() {
+  type_of!(Type_rep, ());
+  rep_opaque()
+}
+
+/// Runs every elaborator-demonstration case and prints its result.
+pub fn main() -> . {
+  print(keep_match(keep_algebraic(keep_spine(fit_case(flatten_sum_case(one_sum_default_case(one_sum_case(narrow_sum_case(reorder_sum_case(widen_sum_case(flatten_prod_case(one_prod_default_case(one_prod_case(widen_prod_case(narrow_prod_case(reorder_prod_case("elaborators: ok\n")))))))))))))))));
+  print(match_right_case());
+  print(match_infer_left_case());
+  print(match_infer_right_case());
+  print(match_polymorphic_clause_case());
+  print(contains_elaborator_case());
+  print(tuple_elaborators_case());
+  print(row_elaborators_case());
+  print(derive_explicit_case());
+  print(derive_expected_case());
+  print(derive_polymorphic_case());
+  print(derive_recursive_case());
+  print(derive_polymorphic_recursive_case());
+  print(derive_functor_case());
+  print(type_of_case());
+  print(show_case())
+}

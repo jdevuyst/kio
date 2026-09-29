@@ -1,0 +1,2 @@
+placeholder lambda `\.x\.` must contain at least one unshadowed `xN` reference
+add a numbered reference, or write an explicit `\.\(\) \{ \.\.\. \}` lambda

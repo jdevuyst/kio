@@ -1,0 +1,56 @@
+module wide;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+
+pub labels Row = { alpha: I32, bravo: I32, charlie: I32, delta: I32, echo: I32 };
+
+pub type Cells = Alpha & Bravo & Charlie & Delta & Echo;
+
+pub type Grid = Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells;
+
+pub fn row(n: I32) -> Cells { {alpha = n, bravo = n, charlie = n, delta = n, echo = n} }
+
+pub fn grid() -> Grid {
+  (row(1), row(2), row(3), row(4), row(5), row(6), row(7), row(8), row(9), row(10))
+}
+
+fn row_total(r: Cells) -> I32 {
+  add_i32(r.?{alpha}, add_i32(r.?{bravo}, add_i32(r.?{charlie}, add_i32(r.?{delta}, r.?{echo}))))
+}
+
+pub fn grid_total(
+  , a: Cells
+  , b: Cells
+  , c: Cells
+  , d: Cells
+  , e: Cells
+  , f: Cells
+  , g: Cells
+  , h: Cells
+  , i: Cells
+  , j: Cells
+  ) -> I32 {
+  add_i32(
+    , row_total(a)
+    , add_i32(
+        , row_total(b)
+        , add_i32(
+            , row_total(c)
+            , add_i32(
+                , row_total(d)
+                , add_i32(
+                    , row_total(e)
+                    , add_i32(
+                        , row_total(f)
+                        , add_i32(
+                            , row_total(g)
+                            , add_i32(row_total(h), add_i32(row_total(i), row_total(j)))
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}

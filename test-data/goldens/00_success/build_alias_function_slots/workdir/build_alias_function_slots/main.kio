@@ -1,0 +1,32 @@
+module build_alias_function_slots/main;
+
+import __intrinsics__;
+
+import build_alias_function_slots(I32);
+
+type Mapper = I32 -> I32;
+
+type Mapper_pair = Mapper & Mapper;
+
+type Maybe_mapper = Mapper | .;
+
+fn id_i32(x: I32) -> I32 { x }
+
+fn pair() -> Mapper_pair { __pair__(Mapper, Mapper, id_i32, id_i32) }
+
+fn first(p: Mapper_pair) -> Mapper { __fst__(Mapper, Mapper, p) }
+
+fn left() -> Maybe_mapper { __left__(Mapper, ., id_i32) }
+
+fn choose(m: Maybe_mapper, fallback: Mapper) -> Mapper {
+  __either__(
+    , Mapper
+    , .
+    , Mapper
+    , m
+    , .(mapper: Mapper) -> Mapper { mapper }
+    , .(_unit: .) -> Mapper { fallback }
+    )
+}
+
+pub fn main() -> . { () }

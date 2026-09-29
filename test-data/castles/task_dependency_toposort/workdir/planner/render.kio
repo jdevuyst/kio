@@ -1,0 +1,61 @@
+module planner/render;
+
+import planner/scheduler(
+  , Plan_result
+  , result_cycle_risk
+  , result_peak_blocked
+  , result_peak_ready
+  , result_rounds
+  , result_state
+  , result_stop_blocked
+  , result_stop_ready
+  );
+import planner/state(completed, effort, order);
+import planner/tasks(total);
+import testapi(Bool, I32, String);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+fn line(label: String, value: String) -> String { string_concat(string_concat(label, value), "\n") }
+
+fn line_i32(label: String, value: I32) -> String { line(label, int_to_string(value)) }
+
+fn line_bool(label: String, value: Bool) -> String { line(label, bool_to_string(value)) }
+
+fn counts(result: Plan_result) -> String {
+  string_concat(
+    , line_i32("tasks: ", total())
+    , string_concat(
+        , line_i32("completed: ", completed(result_state(result)))
+        , string_concat(
+            , line_i32("rounds: ", result_rounds(result))
+            , string_concat(
+                , line_i32("ready-at-stop: ", result_stop_ready(result))
+                , string_concat(
+                    , line_i32("blocked-at-stop: ", result_stop_blocked(result))
+                    , string_concat(
+                        , line_i32("peak-ready: ", result_peak_ready(result))
+                        , line_i32("peak-blocked: ", result_peak_blocked(result))
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+pub fn summary(result: Plan_result) -> String {
+  string_concat(
+    , "task dependency toposort\n"
+    , string_concat(
+        , counts(result)
+        , string_concat(
+            , line_bool("cycle-risk: ", result_cycle_risk(result))
+            , string_concat(
+                , line_i32("effort-score: ", effort(result_state(result)))
+                , order(result_state(result))
+                )
+            )
+        )
+    )
+}

@@ -1,0 +1,52 @@
+/// The lexical vocabulary: what one input line can be, and where it sat.
+///
+/// `Bad` is not a defensive afterthought — a line that is neither an operator
+/// symbol nor an integer is a real thing a reader can type, and the calculator
+/// answers it with a fault value rather than a crash. Keeping it a token arm
+/// is what lets the transcript echo the offending text back.
+module desk/token;
+
+import desk/op(Op, symbol);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+
+pub labels Token = { num: I32 } | { oper: Op } | { lparen: . } | { rparen: . } | { bad: String };
+
+/// A token together with its 1-based position in the expression. Every fault
+/// the calculator can report names one of these positions, so the position
+/// travels with the token from the lexer all the way into the RPN queue.
+pub labels Placed = { tok: Token, at: I32 };
+
+pub fn num_token(n: I32) -> Token { {num = n}.>widen_sum!(Token) }
+
+pub fn oper_token(op: Op) -> Token { {oper = op}.>widen_sum!(Token) }
+
+pub fn lparen_token() -> Token { {lparen=}.>widen_sum!(Token) }
+
+pub fn rparen_token() -> Token { {rparen=}.>widen_sum!(Token) }
+
+pub fn bad_token(text: String) -> Token { {bad = text}.>widen_sum!(Token) }
+
+pub fn place(t: Token, at: I32) -> Placed { {tok = t, at} }
+
+pub fn tok_of(p: Placed) -> Token { p.?{tok} }
+
+pub fn at_of(p: Placed) -> I32 { p.?{at} }
+
+/// How a token prints in the echoed infix line. A `Bad` token echoes the raw
+/// text it was read from, so the reader sees exactly what the calculator saw.
+fn token_text(t: Token) -> String {
+  match! t {
+    (
+      , .(n: Num) { int_to_string(n.?{num}) }
+      , .(o: Oper) { symbol(o.?{oper}) }
+      , .(_l: Lparen) { "(" }
+      , .(_r: Rparen) { ")" }
+      , .(b: Bad) { b.?{bad} }
+      )
+  }
+}
+
+pub fn placed_text(p: Placed) -> String { token_text(tok_of(p)) }

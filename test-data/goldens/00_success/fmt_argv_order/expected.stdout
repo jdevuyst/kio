@@ -1,0 +1,21 @@
+explicit files
+z.kio
+a.kio
+mixed selections
+z.kio
+d/a.kio
+d/inner/m.kio
+d/z.kio
+a.kio
+rewrite
+z.kio
+d/a.kio
+d/inner/m.kio
+d/z.kio
+a.kio
+implicit walk
+a.kio
+d/a.kio
+d/inner/m.kio
+d/z.kio
+z.kio

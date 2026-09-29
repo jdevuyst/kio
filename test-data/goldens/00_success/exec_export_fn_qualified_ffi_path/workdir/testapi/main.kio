@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/boxlib(Box);
+import testapi/io(print);
+import testapi/token(Token);
+
+pub fn boxify(token: Token) -> Box(Token) { Box.mk_box(token) }
+
+pub fn main() -> . {
+  let token = Token.mk_token("exported-function qualified ffi path\n");
+  print(Token.un_token(Box.un_box(boxify(token))))
+}

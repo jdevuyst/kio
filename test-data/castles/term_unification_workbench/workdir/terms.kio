@@ -1,0 +1,121 @@
+module terms;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as traversal;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+pub labels { variable: I32 };
+
+pub rec newtype Term : Variable | (I32 & lists.List(Term)) {
+  pub constructor wrap;
+  pub projector unwrap
+  }
+
+pub fn variable(id: I32) -> Term { Term.wrap({variable = id}.>widen_sum!) }
+
+pub fn node(symbol: I32, arguments: lists.List(Term)) -> Term {
+  Term.wrap((symbol, arguments).>widen_sum!)
+}
+
+pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil()) }
+
+rec(loop) {
+  pub fn render(term: Term) -> String {
+    match! term.>Term.unwrap {
+      .(v: Variable) { string_concat("v", fmt.int_to_string(v.?{variable})) };
+      .(symbol: I32, arguments: lists.List(Term)) {
+        string_concat(
+          , "f"
+          , string_concat(
+              , fmt.int_to_string(symbol)
+              , string_concat("(", string_concat(rec(cont) render_arguments(arguments), ")"))
+              )
+          )
+      }
+    }
+  };
+  fn render_arguments(arguments: lists.List(Term)) -> String {
+    match! lists.uncons(arguments) {
+      .(first: Term, rest: lists.List(Term)) {
+        let shown = rec(cont) render(first);
+        if! traversal.null(rest) {
+          shown
+        } else {
+          string_concat(shown, string_concat(",", rec(cont) render_arguments(rest)))
+        }
+      };
+      .(_empty: .) { "" }
+    }
+  }
+}
+
+rec(loop) fn occurs_in(id: I32, pending: lists.List(Term)) -> Bool {
+  match! lists.uncons(pending) {
+    .(first: Term, rest: lists.List(Term)) {
+      match! first.>Term.unwrap {
+        .(v: Variable) {
+          if! arith.eq_i32(id, v.?{variable}) {
+            .t
+          } else {
+            rec occurs_in(id, rest)
+          }
+        };
+        .(_symbol: I32, arguments: lists.List(Term)) {
+          rec occurs_in(id, traversal.append(arguments, rest))
+        }
+      }
+    };
+    .(_empty: .) { .f }
+  }
+}
+
+pub fn occurs(id: I32, term: Term) -> Bool { occurs_in(id, lists.singleton(term)) }
+
+rec(loop) {
+  pub fn equal(left: Term, right: Term) -> Bool {
+    match! left.>Term.unwrap {
+      .(v: Variable) {
+        match! right.>Term.unwrap {
+          .(w: Variable) { arith.eq_i32(v.?{variable}, w.?{variable}) };
+          .(_symbol: I32, _arguments: lists.List(Term)) { .f }
+        }
+      };
+      .(symbol: I32, arguments: lists.List(Term)) {
+        match! right.>Term.unwrap {
+          .(_v: Variable) { .f };
+          .(other: I32, other_arguments: lists.List(Term)) {
+            if! arith.eq_i32(symbol, other) {
+              rec equal_arguments(arguments, other_arguments)
+            } else {
+              .f
+            }
+          }
+        }
+      }
+    }
+  };
+  fn equal_arguments(left: lists.List(Term), right: lists.List(Term)) -> Bool {
+    match! lists.uncons(left) {
+      .(first: Term, rest: lists.List(Term)) {
+        match! lists.uncons(right) {
+          .(other: Term, others: lists.List(Term)) {
+            if! rec(cont) equal(first, other) {
+              rec equal_arguments(rest, others)
+            } else {
+              .f
+            }
+          };
+          .(_empty: .) { .f }
+        }
+      };
+      .(_empty: .) { traversal.null(right) }
+    }
+  }
+}

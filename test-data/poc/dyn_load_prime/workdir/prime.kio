@@ -1,0 +1,436 @@
+/// The runtime Kio' term AST that `prime_eval` walks: ordinary Kio types are erased, while exact host descriptors remain where evaluation needs them.
+module prime;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_fn, Host_type);
+import list/core(List, cons, nil, uncons);
+import testapi(I32, String);
+
+// `prime.kio` — the term AST `prime_eval` evaluates.
+//
+// Kio' (see `specs/prime.md`) is a Church-style fragment of System F-ω.
+// Under the erased runtime every value is the universal representation
+// `value.kio` defines, so the evaluator never inspects an ordinary Kio type.
+// This module therefore drops the type-arguments, kinds, and binder annotations
+// that drive typechecking. Exact validated `Host_type` and `Host_fn` descriptors
+// remain on the literal, conditional, and host-function nodes that need them at
+// the host boundary. What remains is exactly what the tree-walker needs.
+//
+// The families, mirroring `specs/prime.md` § Value construction and
+// elimination, § Branching intrinsic, § Bottom-elimination intrinsic,
+// and the System-F core (lambda / application / let / variable):
+//
+//   - variable reference        (a de Bruijn index into the env)
+//   - lambda                    (one parameter; body captures the env)
+//   - application
+//   - let binding
+//   - `__pair__` / `__fst__` / `__snd__`            (products)
+//   - `__left__` / `__right__` / `__either__`       (sums)
+//   - `__if_then_else__`                            (branching)
+//   - `__absurd__`                                  (bottom elimination)
+//   - the unit value `()`
+//   - a literal (carries its raw source text + exact host-type descriptor)
+//   - a host-fn reference (carries its exact declaration descriptor as a value)
+//
+// The host-fn node is **not** a call: a host fn is a *value* the loader
+// seeds into the guest's environment, and a guest's call to it is an
+// ordinary application node. This node only constructs that seeded value —
+// it carries the host fn's exact descriptor (`value.kio` § `V_hostfn`,
+// `eval.kio`) plus a private evaluator runtime-stage schedule. The schedule is
+// derived from a separate, unchanged public value-group inventory: it
+// interleaves one zero-slot stage per erased `forall` with those declared
+// groups. Each ordinary application supplies one runtime-stage packet; the
+// host callback fires only after the final stage.
+//
+// `newtype` constructor / projector pairs are **not** a term family:
+// under erasure a non-existential wrap/unwrap is the identity on the
+// value, so the surface frontend's elaboration leaves the payload term
+// in place and `prime_eval` never sees a wrap node. (The existential
+// CPS projector reduces to ordinary lambda / application, already
+// covered.)
+
+// =====================================================================
+// Nat — a de Bruijn index, as a pure unary natural
+// =====================================================================
+//
+// A variable names its binder by counting lambda / let frames outward
+// from the use site. Encoding the index structurally (rather than as a
+// host `I32`) keeps variable lookup a pure, total spine walk over the
+// environment — no host arithmetic in the evaluator's hot path, and the
+// lookup terminates by construction on a well-formed term.
+/// A de Bruijn index encoded as a unary natural: zero, or the successor of a smaller index.
+pub rec labels { nat: . | Nat };
+
+/// The index `0` — names the nearest enclosing binder.
+pub fn nz() -> Nat { {nat = widen_sum!((), . | Nat)} }
+
+/// The successor index — names one binder further out than `n`.
+pub fn ns(n: Nat) -> Nat { {nat = widen_sum!(n, . | Nat)} }
+
+/// One-step destructor on a `Nat`: `()` at zero, or the predecessor.
+pub fn un_nat(n: Nat) -> . | Nat { Nat.get(n) }
+
+// =====================================================================
+// Group_slots — ordered application-stage slot counts
+// =====================================================================
+/// An ordered list of slot counts. A public host contract uses it as an
+/// inventory with one entry per declared value group. A private evaluator
+/// schedule additionally interleaves one zero-slot entry per erased `forall`.
+/// Zero therefore denotes either an erased binder stage or a declared Unit
+/// group; positive counts denote declared non-Unit groups.
+pub rec labels { group_slots: . | (I32 & Group_slots) };
+
+/// No remaining application stages.
+pub fn group_slots_nil() -> Group_slots { {group_slots = widen_sum!((), . | (I32 & Group_slots))} }
+
+/// Prepends one application stage's resolved slot count.
+pub fn group_slots_cons(slots: I32, rest: Group_slots) -> Group_slots {
+  {group_slots = widen_sum!((slots, rest), . | (I32 & Group_slots))}
+}
+
+/// Splits the next application-stage slot count from the remaining stages.
+pub fn un_group_slots(groups: Group_slots) -> . | (I32 & Group_slots) { Group_slots.get(groups) }
+
+// =====================================================================
+// Lit — a literal's raw source text paired with its exact host type
+// =====================================================================
+//
+// A Kio' literal pins a host-typed value with a mandatory `(Type)`
+// annotation (`5(I32)`, `"hi"(String)`, `.t(Bool)`, `562.406(F64)`;
+// `specs/prime.md` § Host declarations). The interpreter parses **neither**
+// the value nor the type: it carries the literal's raw source text and the
+// annotation's exact resolved `Host_type` descriptor. The host constructs
+// the scalar from those two ordinary values (`testapi/scalar.kio` §
+// `make_scalar`); role metadata admits the literal but never chooses its
+// representation.
+/// A literal: its raw source text paired with its exact host-type descriptor.
+pub type Lit = String & Host_type;
+
+/// Builds a literal payload from source text and an exact host-type descriptor.
+pub fn mk_lit(text: String, host_type: Host_type) -> Lit { (text, host_type) }
+
+/// The literal's raw source text.
+pub fn lit_text(l: Lit) -> String {
+  match! l {
+    .(t: String, _ty: Host_type) { t }
+  }
+}
+
+/// The literal's exact host-type descriptor.
+pub fn lit_type(l: Lit) -> Host_type {
+  match! l {
+    .(_t: String, ty: Host_type) { ty }
+  }
+}
+
+// =====================================================================
+// Term — the erased Kio' term, one labeled arm per node family
+// =====================================================================
+//
+// `Terms` is a generic term vector (the smart-constructor helpers and the
+// argument lists callers build use it). Both recursive shapes use explicit
+// type-recursive scopes. Each arm's payload is the sub-terms that
+// node carries — products of `Term` for the structural nodes, a `Lit`
+// (`text & Host_type`) leaf for a literal, and an exact `Host_fn` descriptor
+// plus its remaining `Group_slots` for a host-fn reference.
+//
+// The arm layout (positionally, inside the sum):
+//
+//   T_var     Nat                        variable, by de Bruijn index
+//   T_lam     Term                       lambda body (one implicit param)
+//   T_app     Term & Term                (function, argument)
+//   T_let     Term & Term                (rhs, body)         body sees rhs at 0
+//   T_pair    Term & Term                __pair__(a, b)
+//   T_fst     Term                       __fst__(p)
+//   T_snd     Term                       __snd__(p)
+//   T_left    Term                       __left__(a)
+//   T_right   Term                       __right__(b)
+//   T_either  Term & Term & Term         __either__(scrut, f, g)
+//   T_ite     Host_type & Term & Term & Term
+//                                        __if_then_else__(c, then-thunk, else-thunk)
+//   T_absurd  Term                       __absurd__(x)
+//   T_unit    ()                         the unit value ()
+//   T_lit     Lit                        a literal (raw text & exact host type)
+//   T_hostfn  Host_fn & Group_slots      an exact private-runtime-staged host-fn reference
+/// Defines the variable-reference term arm (a de Bruijn index).
+pub labels { t_var: Nat };
+
+/// Defines the unit-value term arm.
+pub labels { t_unit: . };
+
+/// Defines the literal term arm (raw text & exact host-type descriptor).
+pub labels { t_lit: Lit };
+
+/// Defines the host-fn-reference term arm: its exact declaration descriptor
+/// and remaining `Group_slots`.
+pub labels { t_hostfn: Host_fn & Group_slots };
+
+rec {
+  /// Defines the lambda term arm (one parameter; the payload is the body).
+  pub labels { t_lam: Term };
+  /// Defines the application term arm (function then argument).
+  pub labels { t_app: Term & Term };
+  /// Defines the let-binding term arm (right-hand side then body).
+  pub labels { t_let: Term & Term };
+  /// Defines the pair-construction term arm.
+  pub labels { t_pair: Term & Term };
+  /// Defines the first-projection term arm.
+  pub labels { t_fst: Term };
+  /// Defines the second-projection term arm.
+  pub labels { t_snd: Term };
+  /// Defines the left-injection term arm.
+  pub labels { t_left: Term };
+  /// Defines the right-injection term arm.
+  pub labels { t_right: Term };
+  /// Defines the sum-elimination term arm (scrutinee, left handler, right handler).
+  pub labels { t_either: Term & Term & Term };
+  /// Defines the branching term arm (exact Boolean `Host_type`, condition,
+  /// then-branch, else-branch).
+  pub labels { t_ite: Host_type & Term & Term & Term };
+  /// Defines the bottom-elimination term arm.
+  pub labels { t_absurd: Term };
+  /// The erased Kio' term — a nominal knot over the closed sum of every
+  /// runtime-bearing node family.
+  pub labels { term: | T_var
+  | T_lam
+  | T_app
+  | T_let
+  | T_pair
+  | T_fst
+  | T_snd
+  | T_left
+  | T_right
+  | T_either
+  | T_ite
+  | T_absurd
+  | T_unit
+  | T_lit
+  | T_hostfn }
+}
+
+/// The bare node-family sum inside a `Term` — the widen target the smart
+/// constructors inject into before wrapping with the `Term` newtype.
+pub type Term_node =
+  | T_var
+  | T_lam
+  | T_app
+  | T_let
+  | T_pair
+  | T_fst
+  | T_snd
+  | T_left
+  | T_right
+  | T_either
+  | T_ite
+  | T_absurd
+  | T_unit
+  | T_lit
+  | T_hostfn
+  ;
+
+/// One-step destructor on a `Term`: projects out the node-family sum for dispatch.
+pub fn un_term(t: Term) -> Term_node { Term.get(t) }
+
+/// A cons-list of `Term`s — the argument vector a host-call term applies.
+pub labels { terms: List(Term) };
+
+/// The empty term vector.
+pub fn tnil() -> Terms { {terms = nil(Term, ())} }
+
+/// Prepends one term to a term vector.
+pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(tail))} }
+
+/// One-step destructor on a term vector.
+pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
+  match! uncons(Terms.get(ts)) {
+    (
+      , .(h: Term, t: List(Term)) { widen_sum!((h, {terms = t}), . | (Term & Terms)) }
+      , .(_e: .) { widen_sum!((), . | (Term & Terms)) }
+      )
+  }
+}
+
+// =====================================================================
+// Smart constructors — build a `Term` without naming the bare sum
+// =====================================================================
+//
+// Each wraps a node payload into the right arm of the `Term` sum, so a
+// construction site reads
+// `app(lam(var(nz())), unit())` rather than the raw `widen_sum!` tower.
+/// Builds a variable-reference term from a de Bruijn index.
+pub fn var(i: Nat) -> Term { {term = widen_sum!({t_var = i}, Term_node)} }
+
+/// Builds a lambda term from its body.
+pub fn lam(body: Term) -> Term { {term = widen_sum!({t_lam = body}, Term_node)} }
+
+/// Builds an application term from a function and an argument.
+pub fn app(f: Term, a: Term) -> Term { {term = widen_sum!({t_app = (f, a)}, Term_node)} }
+
+/// Builds a let-binding term from a right-hand side and a body.
+pub fn let_(rhs: Term, body: Term) -> Term { {term = widen_sum!({t_let = (rhs, body)}, Term_node)} }
+
+/// Builds a pair-construction term.
+pub fn pair(a: Term, b: Term) -> Term { {term = widen_sum!({t_pair = (a, b)}, Term_node)} }
+
+/// Builds a first-projection term.
+pub fn fst(p: Term) -> Term { {term = widen_sum!({t_fst = p}, Term_node)} }
+
+/// Builds a second-projection term.
+pub fn snd(p: Term) -> Term { {term = widen_sum!({t_snd = p}, Term_node)} }
+
+/// Builds a left-injection term.
+pub fn left(a: Term) -> Term { {term = widen_sum!({t_left = a}, Term_node)} }
+
+/// Builds a right-injection term.
+pub fn right(b: Term) -> Term { {term = widen_sum!({t_right = b}, Term_node)} }
+
+/// Builds a sum-elimination term from a scrutinee and the two handlers.
+pub fn either(s: Term, f: Term, g: Term) -> Term {
+  {term = widen_sum!({t_either = (s, f, g)}, Term_node)}
+}
+
+/// Builds a branching term from its exact Boolean `Host_type`, condition, and
+/// two thunk expressions retained as ordinary terms.
+pub fn ite(bool_type: Host_type, c: Term, t: Term, e: Term) -> Term {
+  {term = widen_sum!({t_ite = (bool_type, (c, (t, e)))}, Term_node)}
+}
+
+/// Builds a bottom-elimination term.
+pub fn absurd(x: Term) -> Term { {term = widen_sum!({t_absurd = x}, Term_node)} }
+
+/// The unit-value term.
+pub fn unit() -> Term { {term = widen_sum!({t_unit=}, Term_node)} }
+
+/// Builds a literal term from its raw text and exact host-type descriptor.
+pub fn lit(text: String, host_type: Host_type) -> Term {
+  {term = widen_sum!({t_lit = mk_lit(text, host_type)}, Term_node)}
+}
+
+/// Builds a host-fn-reference term from its exact declaration descriptor and
+/// remaining `Group_slots`.
+pub fn hostfn_ref(descriptor: Host_fn, groups: Group_slots) -> Term {
+  {term = widen_sum!({t_hostfn = (descriptor, groups)}, Term_node)}
+}
+
+// =====================================================================
+// AST round-trip laws (`equiv`)
+// =====================================================================
+//
+// `kio test` discharges these by partial evaluation with opaque atoms
+// for the value parameters. They pin the term-AST algebra: each smart
+// constructor followed by the matching destructor recovers the node's
+// payload in the expected arm. All are host-free and reduce to a Kio'
+// normal form. Together with the value-model laws in `value.kio` they
+// fix the data the evaluator consumes; the evaluator's own behaviour
+// (which folds the host `loop`, opaque to the partial evaluator) is
+// exercised by the differential runner.
+
+// --- Nat (de Bruijn index) ---
+
+// `un_nat(nz()) ≡ ()` (the zero arm).
+equiv un_nat_zero() {
+  un_nat(nz());
+  widen_sum!((), . | Nat)
+}
+
+// `un_nat(ns(n)) ≡ n` (the successor arm).
+equiv un_nat_succ(n: Nat) {
+  un_nat(ns(n));
+  widen_sum!(n, . | Nat)
+}
+
+// --- Lit accessors ---
+//
+// `Lit` is a bare `String & Host_type` product, so each accessor projects
+// the corresponding component directly.
+equiv lit_text_round(t: String, ty: Host_type) {
+  lit_text(mk_lit(t, ty));
+  t
+}
+
+equiv lit_type_round(t: String, ty: Host_type) {
+  lit_type(mk_lit(t, ty));
+  ty
+}
+
+// --- Term smart-constructor round-trips: un_term . constructor ---
+//
+// One law per distinct arm payload shape — the round-trip is the same
+// `labels`-machinery for every arm of a given shape, so a representative
+// per shape pins the constructor/projector pairing without re-paying the
+// 15-arm `widen_sum!` normalization for each near-duplicate. The
+// covered shapes: a `Nat` payload (`var`), a single `Term` (`lam`,
+// standing for `fst` / `snd` / `left` / `right` / `absurd`), two `Term`s
+// (`app`, standing for `let` / `pair`), three `Term`s (`either`), the
+// descriptor-bearing conditional, the nullary unit arm, a `Lit` leaf
+// (`lit`), and the exact `Host_fn` host-fn-reference arm.
+equiv un_var(i: Nat) {
+  un_term(var(i));
+  widen_sum!({t_var = i}, Term_node)
+}
+
+equiv un_lam(b: Term) {
+  un_term(lam(b));
+  widen_sum!({t_lam = b}, Term_node)
+}
+
+equiv un_app(f: Term, a: Term) {
+  un_term(app(f, a));
+  widen_sum!({t_app = (f, a)}, Term_node)
+}
+
+equiv un_either(s: Term, f: Term, g: Term) {
+  un_term(either(s, f, g));
+  widen_sum!({t_either = (s, f, g)}, Term_node)
+}
+
+equiv un_ite(ty: Host_type, c: Term, t: Term, e: Term) {
+  un_term(ite(ty, c, t, e));
+  widen_sum!({t_ite = (ty, (c, (t, e)))}, Term_node)
+}
+
+equiv un_unit_term() {
+  un_term(unit());
+  widen_sum!({t_unit=}, Term_node)
+}
+
+equiv un_lit(t: String, ty: Host_type) {
+  un_term(lit(t, ty));
+  widen_sum!({t_lit = mk_lit(t, ty)}, Term_node)
+}
+
+equiv un_hostfn_ref(descriptor: Host_fn, groups: Group_slots) {
+  un_term(hostfn_ref(descriptor, groups));
+  widen_sum!({t_hostfn = (descriptor, groups)}, Term_node)
+}
+
+equiv un_group_slots_cons(slots: I32, rest: Group_slots) {
+  un_group_slots(group_slots_cons(slots, rest));
+  widen_sum!((slots, rest), . | (I32 & Group_slots))
+}
+
+equiv un_group_slots_nil() {
+  un_group_slots(group_slots_nil());
+  widen_sum!((), . | (I32 & Group_slots))
+}
+
+// --- Terms (argument vector) ---
+equiv un_terms_cons_head(h: Term, t: Terms) {
+  match! un_terms(tcons(h, t)) {
+    (.(h2: Term, _t2: Terms) { h2 }, .(_e: .) { unit() })
+  };
+  h
+}
+
+equiv un_terms_cons_tail(h: Term, t: Terms) {
+  match! un_terms(tcons(h, t)) {
+    (.(_h2: Term, t2: Terms) { Terms.get(t2) }, .(_e: .) { nil(Term, ()) })
+  };
+  Terms.get(t)
+}
+
+equiv un_terms_nil() {
+  un_terms(tnil());
+  widen_sum!((), . | (Term & Terms))
+}

@@ -1,0 +1,5 @@
+module support/lib;
+
+import testapi(String);
+
+pub fn emit(s: String) -> String { s }

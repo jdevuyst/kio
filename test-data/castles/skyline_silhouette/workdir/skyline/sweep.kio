@@ -1,0 +1,110 @@
+/// The sweep line.
+///
+/// The sweep walks the sorted events from left to right carrying the active
+/// multiset, and emits a key point exactly when an event CHANGES the tallest
+/// active roof. That test is the whole silhouette: an event that leaves the
+/// peak where it was changes nothing a viewer could see, however much it
+/// changed the multiset underneath — a buried building arriving, a building
+/// ending while an equally tall one still stands, a shared edge handed from one
+/// roof to the next.
+module skyline/sweep;
+
+import elab/control(if);
+import elab/match(match);
+import skyline/events as events;
+import skyline/list as lst;
+import skyline/logic as logic;
+import skyline/multiset as ms;
+import testapi(Bool, I32, String);
+import testapi/iter(loop);
+
+/// One row of the trace: where the event fired, which edge it was, the active
+/// multiset once it had been applied, the silhouette height that followed, and
+/// whether that height differed from the one before it.
+pub labels Step = { pos: I32, tag: String, held: ms.Active, top: I32, emitted: Bool };
+
+/// A key point: the silhouette steps to height `y` at `x` and stays there until
+/// the next key point.
+pub labels Point = { x: I32, y: I32 };
+
+/// What one sweep produced: the trace, and the key points read off it.
+pub type Trace = lst.List(Step) & lst.List(Point);
+
+fn step(pos: I32, tag: String, held: ms.Active, top: I32, emitted: Bool) -> Step {
+  {pos, tag, held, top, emitted}
+}
+
+fn point(x: I32, y: I32) -> Point { {x, y} }
+
+pub fn pos_of(s: Step) -> I32 { s.?{pos} }
+
+pub fn tag_of(s: Step) -> String { s.?{tag} }
+
+pub fn held_of(s: Step) -> ms.Active { s.?{held} }
+
+pub fn top_of(s: Step) -> I32 { s.?{top} }
+
+pub fn emitted_of(s: Step) -> Bool { s.?{emitted} }
+
+pub fn x_of(p: Point) -> I32 { p.?{x} }
+
+pub fn y_of(p: Point) -> I32 { p.?{y} }
+
+pub fn steps_of(t: Trace) -> lst.List(Step) {
+  match! t {
+    .(s: lst.List(Step), _p: lst.List(Point)) { s }
+  }
+}
+
+pub fn points_of(t: Trace) -> lst.List(Point) {
+  match! t {
+    .(_s: lst.List(Step), p: lst.List(Point)) { p }
+  }
+}
+
+/// A left edge admits its building's roof; a right edge withdraws one roof of
+/// that height — and only one.
+fn apply(e: events.Event, held: ms.Active) -> ms.Active {
+  if! events.is_enter(events.edge_of(e)) {
+    ms.add(events.level_of(e), held)
+  } else {
+    ms.drop(events.level_of(e), held)
+  }
+}
+
+/// Both accumulators were built by consing, so both come out backwards.
+fn finish(steps: lst.List(Step), points: lst.List(Point)) -> Trace {
+  (lst.reverse(steps), lst.reverse(points))
+}
+
+rec(loop) {
+  pub fn run(es: lst.List(events.Event)) -> Trace {
+    rec walk(es, ms.empty(), 0, lst.nil(Step, ()), lst.nil(Point, ()))
+  };
+  fn walk(
+    , es: lst.List(events.Event)
+    , held: ms.Active
+    , previous: I32
+    , steps: lst.List(Step)
+    , points: lst.List(Point)
+    ) -> Trace {
+    match! es.>lst.List.un_list {
+      (
+        , .(e: events.Event, rest: lst.List(events.Event)) {
+            let next = apply(e, held);
+            let top = ms.peak(next);
+            let changed = logic.not(logic.eq(top, previous));
+            let row = step(events.at_of(e), events.tag_of(e), next, top, changed);
+            let marked =
+              if! changed {
+                lst.cons(point(events.at_of(e), top), points)
+              } else {
+                points
+              };
+            rec walk(rest, next, top, lst.cons(row, steps), marked)
+          }
+        , .(_empty: .) { finish(steps, points) }
+        )
+    }
+  }
+}

@@ -1,0 +1,2 @@
+error: (type mismatch: expected `Foo`, found `\.`|arity mismatch: callee takes one or more arguments \(param type `Foo`\); none given)
+fn caller\(\) -> \. \{ helper\(\) \}

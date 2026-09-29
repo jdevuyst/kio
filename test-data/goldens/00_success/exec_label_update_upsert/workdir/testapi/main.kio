@@ -1,0 +1,13 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+labels { foo: I32, bar: String };
+
+pub fn main() -> . {
+  let updated = {foo = 1}.!{foo = 2, bar = "x"};
+  print(int_to_string(updated.?{foo}));
+  print(updated.?{bar})
+}

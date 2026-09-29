@@ -1,0 +1,9 @@
+dependency w2;
+
+source {
+  path "../library/w2/w2.pkg.kio"
+}
+
+rehost w2/store to testapi;
+
+retype w2/store to core/store;

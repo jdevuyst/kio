@@ -1,0 +1,20 @@
+package mbs;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  mbs;
+  mbs/**;
+  elab/testapi
+}

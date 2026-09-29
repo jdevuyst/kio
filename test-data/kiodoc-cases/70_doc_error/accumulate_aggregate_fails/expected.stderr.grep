@@ -1,0 +1,4 @@
+^input\.md: accumulating harness `dup`: `kio check` exited 13 validating the aggregate of 2 members$
+^--- kio check diagnostic ---$
+error: duplicate top-level declaration `helper`
+^--- assembled file \(kiodoc\.kio\) ---$

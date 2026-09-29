@@ -1,0 +1,219 @@
+module polygon/geometry;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as num;
+import testapi/array as arr;
+import testapi/iter(loop);
+
+pub type Point = I32 & I32;
+
+pub type Triangle = I32 & I32 & I32;
+
+pub fn both(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn either(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn equal(a: I32, b: I32) -> Bool { both(num.leq_i32(a, b), num.leq_i32(b, a)) }
+
+pub fn less(a: I32, b: I32) -> Bool {
+  if! num.leq_i32(b, a) {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn next(i: I32, n: I32) -> I32 {
+  if! equal(num.add_i32(i, 1), n) {
+    0
+  } else {
+    num.add_i32(i, 1)
+  }
+}
+
+pub fn previous(i: I32, n: I32) -> I32 {
+  if! equal(i, 0) {
+    num.sub_i32(n, 1)
+  } else {
+    num.sub_i32(i, 1)
+  }
+}
+
+pub fn cross(a: Point, b: Point, c: Point) -> I32 {
+  let .(ax, ay) = a;
+  let .(bx, by) = b;
+  let .(cx, cy) = c;
+  num.sub_i32(
+    , num.mul_i32(num.sub_i32(bx, ax), num.sub_i32(cy, ay))
+    , num.mul_i32(num.sub_i32(by, ay), num.sub_i32(cx, ax))
+    )
+}
+
+rec(loop) fn area_walk(points: Array(Point), i: I32, total: I32) -> I32 {
+  let n = arr.array_len(points);
+  if! equal(i, n) {
+    total
+  } else {
+    let .(ax, ay) = arr.array_get(points, i);
+    let .(bx, by) = arr.array_get(points, next(i, n));
+    rec area_walk(
+      , points
+      , num.add_i32(i, 1)
+      , num.add_i32(total, num.sub_i32(num.mul_i32(ax, by), num.mul_i32(ay, bx)))
+      )
+  }
+}
+
+pub fn area2(points: Array(Point)) -> I32 { area_walk(points, 0, 0) }
+
+rec(loop) fn reverse_walk(points: Array(Point), i: I32, j: I32) -> . {
+  if! less(i, j) {
+    arr.array_swap(points, i, j);
+    rec reverse_walk(points, num.add_i32(i, 1), num.sub_i32(j, 1))
+  } else {
+    ()
+  }
+}
+
+pub fn normalized(points: Array(Point)) -> Array(Point) {
+  let result = arr.array_clone(points);
+  if! less(area2(result), 0) {
+    reverse_walk(result, 0, num.sub_i32(arr.array_len(result), 1))
+  } else {
+    ()
+  };
+  result
+}
+
+fn between(a: I32, b: I32, value: I32) -> Bool {
+  either(
+    , both(num.leq_i32(a, value), num.leq_i32(value, b))
+    , both(num.leq_i32(b, value), num.leq_i32(value, a))
+    )
+}
+
+fn on_segment(a: Point, b: Point, p: Point) -> Bool {
+  let .(ax, ay) = a;
+  let .(bx, by) = b;
+  let .(px, py) = p;
+  both(equal(cross(a, b, p), 0), both(between(ax, bx, px), between(ay, by, py)))
+}
+
+fn opposite(a: I32, b: I32) -> Bool {
+  either(both(less(a, 0), less(0, b)), both(less(b, 0), less(0, a)))
+}
+
+fn intersects(a: Point, b: Point, c: Point, d: Point) -> Bool {
+  either(
+    , both(opposite(cross(a, b, c), cross(a, b, d)), opposite(cross(c, d, a), cross(c, d, b)))
+    , either(
+        , either(on_segment(a, b, c), on_segment(a, b, d))
+        , either(on_segment(c, d, a), on_segment(c, d, b))
+        )
+    )
+}
+
+rec(loop) fn coordinate_check(points: Array(Point), i: I32) -> Bool {
+  if! equal(i, arr.array_len(points)) {
+    .t
+  } else {
+    let .(x, y) = arr.array_get(points, i);
+    if! both(
+      , both(num.leq_i32(-20, x), num.leq_i32(x, 20))
+      , both(num.leq_i32(-20, y), num.leq_i32(y, 20))
+      ) {
+      rec coordinate_check(points, num.add_i32(i, 1))
+    } else {
+      .f
+    }
+  }
+}
+
+rec(loop) fn duplicate_check(points: Array(Point), i: I32, j: I32) -> Bool {
+  let n = arr.array_len(points);
+  if! equal(i, n) {
+    .f
+  } else if! equal(j, n) {
+    rec duplicate_check(points, num.add_i32(i, 1), num.add_i32(i, 2))
+  } else {
+    let .(ax, ay) = arr.array_get(points, i);
+    let .(bx, by) = arr.array_get(points, j);
+    if! both(equal(ax, bx), equal(ay, by)) {
+      .t
+    } else {
+      rec duplicate_check(points, i, num.add_i32(j, 1))
+    }
+  }
+}
+
+rec(loop) fn collinear_check(points: Array(Point), i: I32) -> Bool {
+  let n = arr.array_len(points);
+  if! equal(i, n) {
+    .f
+  } else if! equal(
+    , cross(
+        , arr.array_get(points, previous(i, n))
+        , arr.array_get(points, i)
+        , arr.array_get(points, next(i, n))
+        )
+    , 0
+    ) {
+    .t
+  } else {
+    rec collinear_check(points, num.add_i32(i, 1))
+  }
+}
+
+rec(loop) fn crossing_check(points: Array(Point), i: I32, j: I32) -> Bool {
+  let n = arr.array_len(points);
+  if! equal(i, n) {
+    .f
+  } else if! num.leq_i32(n, j) {
+    rec crossing_check(points, num.add_i32(i, 1), num.add_i32(i, 2))
+  } else if! either(equal(j, next(i, n)), equal(i, next(j, n))) {
+    rec crossing_check(points, i, num.add_i32(j, 1))
+  } else if! intersects(
+    , arr.array_get(points, i)
+    , arr.array_get(points, next(i, n))
+    , arr.array_get(points, j)
+    , arr.array_get(points, next(j, n))
+    ) {
+    .t
+  } else {
+    rec crossing_check(points, i, num.add_i32(j, 1))
+  }
+}
+
+pub fn validate(points: Array(Point)) -> String {
+  let n = arr.array_len(points);
+  if! either(less(n, 3), less(12, n)) {
+    "vertex count outside 3..12"
+  } else if! coordinate_check(points, 0) {
+    if! duplicate_check(points, 0, 1) {
+      "duplicate vertex"
+    } else if! collinear_check(points, 0) {
+      "collinear corner"
+    } else if! crossing_check(points, 0, 1) {
+      "intersecting boundary"
+    } else if! equal(area2(points), 0) {
+      "zero area"
+    } else {
+      ""
+    }
+  } else {
+    "coordinate outside -20..20"
+  }
+}

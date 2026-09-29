@@ -1,0 +1,25 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+
+// `Pr` is a label-minted newtype wrapping the product `(I32 & String)`.
+// `Tagged = Pr | .` is a sum whose first arm is that newtype-over-a-
+// product. Crossing the FFI as an exported-fn parameter must preserve that
+// typed product payload so the host can read both of its fields.
+pub labels { pr: I32 & String };
+
+pub type Tagged = Pr | .;
+
+// Out boundary: build the `Pr` arm of the sum.
+pub fn pack(n: I32, s: String) -> Tagged { widen_sum!({pr = (n, s)}, Tagged) }
+
+// In boundary: take the sum (the FFI In conversion of a
+// sum-over-a-newtype-over-a-product), returning the product's first field
+// from the `Pr` arm or the default for the unit arm.
+pub fn first_or(dflt: I32, t: Tagged) -> I32 {
+  match! t {
+    (.(p: Pr) { __fst__(I32, String, Pr.get(p)) }, .(u: .) { dflt })
+  }
+}

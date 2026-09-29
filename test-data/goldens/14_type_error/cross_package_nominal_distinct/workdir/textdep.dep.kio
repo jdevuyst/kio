@@ -1,0 +1,5 @@
+dependency textdep;
+
+source {
+  path "../depsrc/workdir/textdep.pkg.kio"
+}

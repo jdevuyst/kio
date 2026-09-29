@@ -1,0 +1,5 @@
+module main;
+
+newtype Box : . { constructor mk; projector get }
+
+elab demo : . -> . { impl Box.mk }

@@ -1,0 +1,154 @@
+module gate/machine;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+labels Machine = {
+  , tick: I32
+  , phase: I32
+  , attempts: I32
+  , denied: I32
+  , open_count: I32
+  , alarm_count: I32
+  , lockout: I32
+  , energy: I32
+  , log: String
+  };
+
+fn bool_and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+fn join2(a: String, b: String) -> String { string_concat(a, b) }
+
+fn join3(a: String, b: String, c: String) -> String { join2(join2(a, b), c) }
+
+fn join5(a: String, b: String, c: String, d: String, e: String) -> String {
+  join2(join3(a, b, c), join2(d, e))
+}
+
+fn phase_name(phase: I32) -> String {
+  if! eq_i32(phase, 0) {
+    "closed"
+  } else if! eq_i32(phase, 1) {
+    "opening"
+  } else if! eq_i32(phase, 2) {
+    "open"
+  } else if! eq_i32(phase, 3) {
+    "blocked"
+  } else if! eq_i32(phase, 4) {
+    "locked"
+  } else {
+    "alarm"
+  }
+}
+
+fn make_machine(
+  , tick: I32
+  , phase: I32
+  , attempts: I32
+  , denied: I32
+  , open_count: I32
+  , alarm_count: I32
+  , lockout: I32
+  , energy: I32
+  , log: String
+  ) -> Machine { {tick, phase, attempts, denied, open_count, alarm_count, lockout, energy, log} }
+
+fn initial() -> Machine { make_machine(0, 0, 0, 0, 0, 0, 0, 0, "") }
+
+fn next_state(
+  , machine: Machine
+  , event: String
+  , phase: I32
+  , attempts_delta: I32
+  , denied_delta: I32
+  , open_delta: I32
+  , alarm_delta: I32
+  , lockout: I32
+  , energy_delta: I32
+  ) -> Machine {
+  make_machine(
+    , add_i32(machine.?{tick}, 1)
+    , phase
+    , add_i32(machine.?{attempts}, attempts_delta)
+    , add_i32(machine.?{denied}, denied_delta)
+    , add_i32(machine.?{open_count}, open_delta)
+    , add_i32(machine.?{alarm_count}, alarm_delta)
+    , lockout
+    , add_i32(machine.?{energy}, energy_delta)
+    , string_concat(machine.?{log}, event)
+    )
+}
+
+fn step(machine: Machine) -> Machine {
+  let tick = machine.?{tick};
+  if! eq_i32(tick, 0) {
+    next_state(machine, "S", 0, 0, 0, 0, 0, 0, 1)
+  } else if! eq_i32(tick, 1) {
+    next_state(machine, "V", 1, 1, 0, 0, 0, 0, 3)
+  } else if! eq_i32(tick, 2) {
+    next_state(machine, "P", 2, 0, 0, 1, 0, 0, 2)
+  } else if! eq_i32(tick, 3) {
+    next_state(machine, "B", 3, 0, 0, 0, 1, 0, 4)
+  } else if! eq_i32(tick, 4) {
+    next_state(machine, "C", 0, 0, 0, 0, 0, 0, 1)
+  } else if! eq_i32(tick, 5) {
+    next_state(machine, "x", 0, 1, 1, 0, 0, 0, 1)
+  } else if! eq_i32(tick, 6) {
+    next_state(machine, "x", 0, 1, 1, 0, 0, 0, 1)
+  } else if! eq_i32(tick, 7) {
+    next_state(machine, "L", 4, 1, 1, 0, 0, 2, 2)
+  } else if! eq_i32(tick, 8) {
+    next_state(machine, "v", 4, 1, 1, 0, 0, 1, 1)
+  } else if! eq_i32(tick, 9) {
+    next_state(machine, "T", 0, 0, 0, 0, 0, 0, 1)
+  } else if! eq_i32(tick, 10) {
+    next_state(machine, "E", 2, 0, 0, 1, 0, 0, 3)
+  } else {
+    next_state(machine, "R", 0, 0, 0, 0, 0, 0, 1)
+  }
+}
+
+rec(loop) fn drive(machine: Machine) -> Machine {
+  if! lt_i32(machine.?{tick}, 12) {
+    rec drive(step(machine))
+  } else {
+    machine
+  }
+}
+
+fn invariant(machine: Machine) -> Bool {
+  bool_and(
+    , leq_i32(machine.?{denied}, machine.?{attempts})
+    , leq_i32(machine.?{open_count}, machine.?{tick})
+    )
+}
+
+fn print_summary(machine: Machine) -> . {
+  print("gate_state_machine\n");
+  print(join3("transcript=", machine.?{log}, "\n"));
+  print(join5(
+    , "final="
+    , phase_name(machine.?{phase})
+    , " tick="
+    , int_to_string(machine.?{tick})
+    , " attempts="
+    ));
+  print(join3(int_to_string(machine.?{attempts}), " denied=", int_to_string(machine.?{denied})));
+  print(join3(" opens=", int_to_string(machine.?{open_count}), " alarms="));
+  print(join3(int_to_string(machine.?{alarm_count}), " lockout=", int_to_string(machine.?{lockout})));
+  print(join3(" energy=", int_to_string(machine.?{energy}), "\n"));
+  print(join3("invariant=ok ", bool_to_string(invariant(machine)), "\n"))
+}
+
+pub fn run() -> . { print_summary(drive(initial())) }

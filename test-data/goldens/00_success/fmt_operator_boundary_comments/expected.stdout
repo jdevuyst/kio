@@ -1,0 +1,14 @@
+module operator_comments;
+
+pure fn pick(x: ., y: .) -> . { x }
+
+op _ <+> _ { impl pick }
+
+fn example() -> . {
+  .() {
+    // inside operand
+    ()
+  }()
+  // before operator
+    <+> ()
+}

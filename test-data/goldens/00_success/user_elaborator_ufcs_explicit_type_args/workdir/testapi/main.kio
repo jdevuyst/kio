@@ -1,0 +1,29 @@
+module testapi/main;
+
+import elaborators(id_user);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn join(left: String, right: String) -> String { string_concat(left, right) }
+
+fn keep_first(s: String) -> String { s.>id_user!(String) }
+
+fn keep_last(s: String) -> String { s.>>id_user!(String) }
+
+fn keep_left(s: String) -> String { id_user!(String).<<s }
+
+fn keep_right(s: String) -> String { id_user!(String).<s }
+
+fn keep_product(p: String & String) -> String {
+  let kept = p.>id_user!(String & String);
+  kept.>join
+}
+
+pub fn main() -> . {
+  print(keep_first("first\n"));
+  print(keep_last("last\n"));
+  print(keep_left("left\n"));
+  print(keep_right("right\n"));
+  print(keep_product(("pro", "duct\n")))
+}

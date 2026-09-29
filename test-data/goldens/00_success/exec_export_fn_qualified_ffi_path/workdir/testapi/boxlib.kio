@@ -1,0 +1,7 @@
+module testapi/boxlib;
+
+// An actual `Token` passed to `Box` comes from the caller; this same-leaf
+// declaration must not capture it when `Box(Token)` expands in this module.
+newtype Token : . { constructor mk_token; projector un_token }
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }

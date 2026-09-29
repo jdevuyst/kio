@@ -1,0 +1,20 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn condition() -> Bool { print("condition\n"(String)); .f(Bool) }
+
+fn make_then_thunk() -> . -> . {
+  print("then factory\n"(String));
+  .() -> . { print("then invoke\n"(String)) }
+}
+
+fn make_else_thunk() -> . -> . {
+  print("else factory\n"(String));
+  .() -> . { print("else invoke\n"(String)) }
+}
+
+pub fn main() -> . { __if_then_else__(., condition(), make_then_thunk(), make_else_thunk()) }

@@ -1,0 +1,197 @@
+module store/transactions;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as cells;
+import list/list as lists;
+import store/history as history;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Savepoint = { name: String, saved: history.Snapshot };
+
+pub labels State = {
+  , committed: history.Snapshot
+  , working: history.Snapshot
+  , active: Bool
+  , points: cells.List(Savepoint)
+  , clock: I32
+  , commits: I32
+  };
+
+pub labels Reply = { updated: State, message: String, successful: Bool };
+
+pub fn initial() -> State {
+  {
+    , committed = history.empty()
+    , working = history.empty()
+    , active = .f
+    , points = cells.nil()
+    , clock = 0
+    , commits = 0
+    }
+}
+
+pub fn accepted(state: State, message: String) -> Reply {
+  {updated = state, message, successful = .t}
+}
+
+pub fn rejected(state: State, message: String) -> Reply {
+  {updated = state, message, successful = .f}
+}
+
+pub rec(loop) fn seek(name: String, points: cells.List(Savepoint)) ->
+  (Savepoint & cells.List(Savepoint)) | .
+   {
+  match! cells.uncons(points) {
+    .(point: Savepoint, rest: cells.List(Savepoint)) {
+      if! text.string_eq(point.?{name}, name) {
+        widen_sum!((point, rest), (Savepoint & cells.List(Savepoint)) | .)
+      } else {
+        rec seek(name, rest)
+      }
+    };
+    .() { widen_sum!((), (Savepoint & cells.List(Savepoint)) | .) }
+  }
+}
+
+pub fn begin(s: State) -> Reply {
+  if! s.?{active} {
+    rejected(s, "transaction already active")
+  } else {
+    accepted(s.!{active = .t}, "begin")
+  }
+}
+
+pub fn put(s: State, key: String, value: I32) -> Reply {
+  if! s.?{active} {
+    let next = arith.add_i32(s.?{clock}, 1);
+    let root = history.write(s.?{working}, key, widen_sum!(value, I32 | .), next);
+    accepted(
+      , s.!{working = root, clock = next}
+      , text.string_concat(
+          , "put "
+          , text.string_concat(key, text.string_concat("=", fmt.int_to_string(value)))
+          )
+      )
+  } else {
+    rejected(s, "put requires a transaction")
+  }
+}
+
+pub fn delete(s: State, key: String) -> Reply {
+  if! s.?{active} {
+    match! history.get(s.?{working}, key) {
+      .(_value: I32) {
+        let next = arith.add_i32(s.?{clock}, 1);
+        let root = history.write(s.?{working}, key, widen_sum!((), I32 | .), next);
+        accepted(s.!{working = root, clock = next}, text.string_concat("delete ", key))
+      };
+      .() { rejected(s, text.string_concat("missing key ", key)) }
+    }
+  } else {
+    rejected(s, "delete requires a transaction")
+  }
+}
+
+pub fn save(s: State, name: String) -> Reply {
+  if! s.?{active} {
+    match! seek(name, s.?{points}) {
+      .(_existing: Savepoint, _rest: cells.List(Savepoint)) {
+        rejected(s, text.string_concat("duplicate savepoint ", name))
+      };
+      .() {
+        let point = {name, saved = s.?{working}};
+        accepted(s.!{points = cells.cons(point, s.?{points})}, text.string_concat("save ", name))
+      }
+    }
+  } else {
+    rejected(s, "save requires a transaction")
+  }
+}
+
+pub fn rollback(s: State, name: String) -> Reply {
+  if! s.?{active} {
+    match! seek(name, s.?{points}) {
+      .(point: Savepoint, older: cells.List(Savepoint)) {
+        accepted(
+          , s.!{working = point.?{saved}, points = cells.cons(point, older)}
+          , text.string_concat("rollback ", name)
+          )
+      };
+      .() { rejected(s, text.string_concat("missing savepoint ", name)) }
+    }
+  } else {
+    rejected(s, "rollback requires a transaction")
+  }
+}
+
+pub fn release(s: State, name: String) -> Reply {
+  if! s.?{active} {
+    match! seek(name, s.?{points}) {
+      .(_point: Savepoint, older: cells.List(Savepoint)) {
+        accepted(s.!{points = older}, text.string_concat("release ", name))
+      };
+      .() { rejected(s, text.string_concat("missing savepoint ", name)) }
+    }
+  } else {
+    rejected(s, "release requires a transaction")
+  }
+}
+
+pub fn commit(s: State) -> Reply {
+  if! s.?{active} {
+    let count = arith.add_i32(s.?{commits}, 1);
+    accepted(
+      , s.!{committed = s.?{working}, active = .f, points = cells.nil(), commits = count}
+      , text.string_concat("commit ", fmt.int_to_string(count))
+      )
+  } else {
+    rejected(s, "commit requires a transaction")
+  }
+}
+
+pub fn abort(s: State) -> Reply {
+  if! s.?{active} {
+    accepted(s.!{working = s.?{committed}, active = .f, points = cells.nil()}, "abort")
+  } else {
+    rejected(s, "abort requires a transaction")
+  }
+}
+
+fn point_signature(point: Savepoint) -> String {
+  text.string_concat(point.?{name}, text.string_concat("=", history.signature(point.?{saved})))
+}
+
+pub fn signature(s: State) -> String {
+  let mode =
+    if! s.?{active} {
+      "active"
+    } else {
+      "idle"
+    };
+  text.string_concat(
+    , mode
+    , text.string_concat(
+        , text.string_concat("/", fmt.int_to_string(s.?{clock}))
+        , text.string_concat(
+            , text.string_concat("/", fmt.int_to_string(s.?{commits}))
+            , text.string_concat(
+                , text.string_concat("/base=", history.signature(s.?{committed}))
+                , text.string_concat(
+                    , text.string_concat("/work=", history.signature(s.?{working}))
+                    , text.string_concat("/points=", lists.to_string(point_signature, s.?{points}))
+                    )
+                )
+            )
+        )
+    )
+}
+
+pub fn point_names(s: State) -> String {
+  lists.to_string(.(point: Savepoint) { point.?{name} }, s.?{points})
+}

@@ -1,0 +1,85 @@
+module systems/matrix;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as c;
+import list/list as l;
+import systems/rational as q;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/iter(loop);
+
+pub type Row = c.List(q.Rational);
+
+pub type Matrix = c.List(Row);
+
+pub fn at(row: Row, index: I32) -> q.Rational {
+  match! l.at(index, row) {
+    .(value: q.Rational) { value };
+    .() { q.zero() }
+  }
+}
+
+pub fn row_at(matrix: Matrix, index: I32) -> Row {
+  match! l.at(index, matrix) {
+    .(row: Row) { row };
+    .() { c.nil() }
+  }
+}
+
+pub fn replace[A](values: c.List(A), index: I32, value: A) -> c.List(A) {
+  l.append(l.take(index, values), c.cons(value, l.drop(a.add_i32(index, 1), values)))
+}
+
+pub fn swap(matrix: Matrix, first: I32, second: I32) -> Matrix {
+  let x = row_at(matrix, first);
+  let y = row_at(matrix, second);
+  replace(replace(matrix, first, y), second, x)
+}
+
+pub fn scale(row: Row, divisor: q.Rational) -> Row {
+  l.map(.(value) { q.divide(value, divisor) }, row)
+}
+
+rec(loop) fn subtract_walk(row: Row, pivot: Row, factor: q.Rational, result: Row) -> Row {
+  match! c.uncons(row) {
+    .(value: q.Rational, rest: Row) {
+      let difference = q.subtract(value, q.multiply(factor, at(pivot, 0)));
+      rec subtract_walk(rest, c.tail(pivot), factor, c.cons(difference, result))
+    };
+    .() { l.reverse(result) }
+  }
+}
+
+pub fn subtract_multiple(row: Row, pivot: Row, factor: q.Rational) -> Row {
+  subtract_walk(row, pivot, factor, c.nil())
+}
+
+rec(loop) fn dot_walk(left: Row, right: Row, total: q.Rational) -> q.Rational {
+  match! c.uncons(left) {
+    .(value: q.Rational, rest: Row) {
+      rec dot_walk(rest, c.tail(right), q.add(total, q.multiply(value, at(right, 0))))
+    };
+    .() { total }
+  }
+}
+
+pub fn dot(left: Row, right: Row) -> q.Rational { dot_walk(left, right, q.zero()) }
+
+pub fn all_zero(row: Row) -> Bool {
+  l.foldl(
+    , .(ok, value) {
+        if! ok {
+          q.is_zero(value)
+        } else {
+          .f
+        }
+      }
+    , .t
+    , row
+    )
+}
+
+pub fn show(row: Row) -> String { l.to_string(q.show, row) }
+
+pub fn indices(count: I32) -> c.List(I32) { l.iterate(count, .(n) { a.add_i32(n, 1) }, 0) }

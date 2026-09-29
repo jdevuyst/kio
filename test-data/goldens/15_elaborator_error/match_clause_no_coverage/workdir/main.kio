@@ -1,0 +1,12 @@
+module main;
+
+import elab/match(match);
+
+labels { value: ., other: . };
+
+fn run(input: Value) -> . {
+  match! input {
+    .(_other: Other) { () };
+    .(_value: Value) { () }
+  }
+}

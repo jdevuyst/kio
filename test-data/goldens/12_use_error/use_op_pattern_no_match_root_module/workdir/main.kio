@@ -1,0 +1,8 @@
+module main;
+
+// `??` is not declared in `arith` — this is an import error (exit 12):
+// the root module's exported-operator surface has `_ + _`
+// only.
+import arith(op _ ??);
+
+pub fn main() -> . { () }

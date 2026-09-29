@@ -1,0 +1,8 @@
+module host/m;
+
+import host(f, g);
+
+equiv neq_stuck() {
+  f(());
+  g(())
+}

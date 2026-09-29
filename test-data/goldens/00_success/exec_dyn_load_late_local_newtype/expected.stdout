@@ -1,0 +1,5 @@
+host fn before newtype: dyn_load_prime: malformed host function `guest.consume`: dyn_load_prime: cannot resolve exact type `Later`: no type binding has that spelling
+alias before newtype: dyn_load_prime: public type alias `guest.Before`: dyn_load_prime: cannot resolve exact type `Later`: no type binding has that spelling
+self-recursive newtype: (loaded)
+mutually recursive newtypes: (loaded)
+later provider newtype: (loaded)

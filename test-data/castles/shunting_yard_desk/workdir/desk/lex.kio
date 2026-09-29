@@ -1,0 +1,40 @@
+/// One pre-tokenized input lexeme, one token.
+///
+/// The stdin fixture supplies one lexeme per line. `classify` maps operator and
+/// parenthesis spellings first, then asks `string_to_int` about the remaining
+/// text, before the resulting token stream reaches the shunting-yard pass. Thus
+/// `-` classifies as subtraction while `-3` classifies as an integer.
+module desk/lex;
+
+import desk/op(as_binary, as_unary);
+import desk/op(divide_op, minus_op, modulo_op, negate_op, plus_op, power_op, times_op);
+import desk/token(Token, bad_token, lparen_token, num_token, oper_token, rparen_token);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/fmt(string_to_int);
+import testapi/text(string_eq);
+
+pub fn classify(line: String) -> Token {
+  if! string_eq(line, "+") {
+    oper_token(as_binary(plus_op()))
+  } else if! string_eq(line, "-") {
+    oper_token(as_binary(minus_op()))
+  } else if! string_eq(line, "*") {
+    oper_token(as_binary(times_op()))
+  } else if! string_eq(line, "/") {
+    oper_token(as_binary(divide_op()))
+  } else if! string_eq(line, "%") {
+    oper_token(as_binary(modulo_op()))
+  } else if! string_eq(line, "^") {
+    oper_token(as_binary(power_op()))
+  } else if! string_eq(line, "~") {
+    oper_token(as_unary(negate_op()))
+  } else if! string_eq(line, "(") {
+    lparen_token()
+  } else if! string_eq(line, ")") {
+    rparen_token()
+  } else match! string_to_int(line) {
+    (.(n: I32) { num_token(n) }, .(_unreadable: .) { bad_token(line) })
+  }
+}

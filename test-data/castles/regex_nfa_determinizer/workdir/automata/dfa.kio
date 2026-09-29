@@ -1,0 +1,41 @@
+/// A deterministic automaton: `count` states, one start, a set of accepting
+/// states, and a flat row-major transition table indexed
+/// `state * width() + symbol`.
+///
+/// The table is *total* — a pattern that never mentions a letter still
+/// sends it somewhere, to the dead state the subset construction mints for
+/// the empty set. Totality is what lets the refinement compare whole rows
+/// without a missing-move case, and what makes recognition a walk that can
+/// never get stuck.
+module automata/dfa;
+
+import automata/seq(Ints, List, member, nth_or);
+import automata/symbol(width);
+import elab/match(match);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, mul_i32);
+import testapi/iter(loop);
+
+pub labels Dfa = { dfa_count: I32, dfa_start: I32, dfa_accepts: Ints, dfa_table: Ints };
+
+pub fn make(dfa_count: I32, dfa_start: I32, dfa_accepts: Ints, dfa_table: Ints) -> Dfa {
+  {dfa_count, dfa_start, dfa_accepts, dfa_table}
+}
+
+pub fn count(d: Dfa) -> I32 { d.?{dfa_count} }
+
+pub fn start(d: Dfa) -> I32 { d.?{dfa_start} }
+
+pub fn step(d: Dfa, state: I32, sym: I32) -> I32 {
+  nth_or(d.?{dfa_table}, add_i32(mul_i32(state, width()), sym), 0)
+}
+
+pub fn is_accepting(d: Dfa, state: I32) -> Bool { member(state, d.?{dfa_accepts}) }
+
+rec(loop) fn walk(d: Dfa, word: Ints, state: I32) -> I32 {
+  match! word.>List.unpack {
+    (.(sym: I32, rest: Ints) { rec walk(d, rest, step(d, state, sym)) }, .(_empty: .) { state })
+  }
+}
+
+pub fn recognizes(d: Dfa, word: Ints) -> Bool { is_accepting(d, walk(d, word, start(d))) }

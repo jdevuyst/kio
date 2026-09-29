@@ -1,0 +1,7 @@
+module use_op_pattern_no_match/main;
+
+// `??` is not declared in helper — this should produce a
+// import error (exit 12).
+import use_op_pattern_no_match/helper(op _ ??);
+
+pub fn main() -> . { () }

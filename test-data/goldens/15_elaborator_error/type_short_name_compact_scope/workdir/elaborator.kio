@@ -1,0 +1,17 @@
+module elaborator;
+
+import __comptime__;
+import model as m;
+import model as verbose;
+import model(Box);
+
+type Target_request = __Type__ | .;
+
+pure fn reject_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , _value: __Checked_term__
+  , _target: Target_request
+  ) -> __Checked_term__ { __elab_error__(ct, __type_short_name__(ct, source)) }
+
+pub elab reject : [Source] Source -> [Target] Target { impl reject_impl }

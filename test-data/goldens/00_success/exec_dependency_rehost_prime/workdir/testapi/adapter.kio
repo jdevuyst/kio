@@ -1,0 +1,5 @@
+module testapi/adapter;
+
+import testapi as api;
+
+pub type I32 = api.I32;

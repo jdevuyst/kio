@@ -1,0 +1,146 @@
+module store/session;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as cells;
+import list/list as lists;
+import store/audit as audit;
+import store/commands as commands;
+import store/history as history;
+import store/transactions as tx;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+labels Session = {
+  , database: tx.State
+  , frozen: cells.List(audit.Frozen)
+  , operations: I32
+  , rejected: I32
+  , failures: I32
+  };
+
+fn print_reply(number: I32, reply: tx.Reply, ok: Bool) -> . {
+  let state = reply.?{tx.updated};
+  let prefix =
+    if! reply.?{tx.successful} {
+      " OK "
+    } else {
+      " ERROR "
+    };
+  io.print(text.string_concat(
+    , fmt.int_to_string(number)
+    , text.string_concat(
+        , text.string_concat(prefix, reply.?{tx.message})
+        , text.string_concat(
+            , text.string_concat(
+                , " | revision="
+                , fmt.int_to_string(state.?{tx.working}.?{history.head})
+                )
+            , text.string_concat(
+                , text.string_concat(" values=", history.view(state.?{tx.working}))
+                , text.string_concat(
+                    , text.string_concat(" savepoints=", tx.point_names(state))
+                    , text.string_concat(" audit=", text.string_concat(audit.status(ok), "\n"))
+                    )
+                )
+            )
+        )
+    ))
+}
+
+fn execute(session: Session, command: commands.Command) -> Session {
+  let before = session.?{database};
+  let reply = commands.apply(before, command);
+  let after = reply.?{tx.updated};
+  let number = arith.add_i32(session.?{operations}, 1);
+  let frozen =
+    if! text.string_eq(command.?{commands.opcode}, "SNAPSHOT") {
+      cells.cons(audit.freeze(command.?{commands.key}, after.?{tx.working}), session.?{frozen})
+    } else {
+      session.?{frozen}
+    };
+  let ok =
+    if! audit.transition_ok(before, command, reply) {
+      audit.all_frozen_ok(frozen)
+    } else {
+      .f
+    };
+  let rejected =
+    if! reply.?{tx.successful} {
+      session.?{rejected}
+    } else {
+      arith.add_i32(session.?{rejected}, 1)
+    };
+  let failures =
+    if! ok {
+      session.?{failures}
+    } else {
+      arith.add_i32(session.?{failures}, 1)
+    };
+  print_reply(number, reply, ok);
+  {database = after, frozen, operations = number, rejected, failures}
+}
+
+rec(loop) fn print_snapshots(frozen: cells.List(audit.Frozen)) -> . {
+  match! cells.uncons(frozen) {
+    .(item: audit.Frozen, rest: cells.List(audit.Frozen)) {
+      audit.print_frozen(item);
+      rec print_snapshots(rest)
+    };
+    .() { () }
+  }
+}
+
+fn finish(session: Session) -> . {
+  let state = session.?{database};
+  print_snapshots(lists.reverse(session.?{frozen}));
+  io.print(text.string_concat(
+    , text.string_concat("summary operations=", fmt.int_to_string(session.?{operations}))
+    , text.string_concat(
+        , text.string_concat(" rejected=", fmt.int_to_string(session.?{rejected}))
+        , text.string_concat(
+            , text.string_concat(" commits=", fmt.int_to_string(state.?{tx.commits}))
+            , text.string_concat(
+                , text.string_concat(" allocated-revisions=", fmt.int_to_string(state.?{tx.clock}))
+                , text.string_concat(
+                    , " audit-failures="
+                    , text.string_concat(fmt.int_to_string(session.?{failures}), "\n")
+                    )
+                )
+            )
+        )
+    ));
+  io.print(text.string_concat(
+    , "committed values="
+    , text.string_concat(history.view(state.?{tx.committed}), "\n")
+    ))
+}
+
+rec(loop) fn consume(session: Session) -> . {
+  match! commands.read() {
+    .(read: commands.Parsed) { rec consume(execute(session, read.?{commands.parsed})) };
+    .(bad: commands.Malformed) {
+      io.print(text.string_concat(
+        , "input error: "
+        , text.string_concat(bad.?{commands.malformed}, "\n")
+        ));
+      finish(session)
+    };
+    .(_end: commands.End) { finish(session) }
+  }
+}
+
+pub fn run() -> . {
+  io.print("persistent transaction store\n");
+  consume({
+    , database = tx.initial()
+    , frozen = cells.nil()
+    , operations = 0
+    , rejected = 0
+    , failures = 0
+    })
+}

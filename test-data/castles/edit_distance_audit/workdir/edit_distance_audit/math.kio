@@ -1,0 +1,23 @@
+module edit_distance_audit/math;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub fn i32_eq(left: I32, right: I32) -> Bool {
+  if! arith.leq_i32(left, right) {
+    arith.leq_i32(right, left)
+  } else {
+    .f
+  }
+}
+
+pub fn min2(left: I32, right: I32) -> I32 {
+  if! arith.leq_i32(left, right) {
+    left
+  } else {
+    right
+  }
+}
+
+pub fn min3(first: I32, second: I32, third: I32) -> I32 { min2(min2(first, second), third) }

@@ -1,0 +1,2 @@
+role-bearing host type `Count` cannot have type parameters
+remove the type parameters or remove `role\(i32\)`

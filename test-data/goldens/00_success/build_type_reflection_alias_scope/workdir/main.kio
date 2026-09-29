@@ -1,0 +1,5 @@
+module main;
+
+import type_of(Type_rep, type_of);
+
+pub fn reflected_type_rep() -> Type_rep { type_of!(Type_rep, ()) }

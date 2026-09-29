@@ -1,0 +1,6 @@
+module impure_elab_host_captures/main;
+
+import impure_elab_host_captures(I32);
+import impure_elab_host_captures/elaborators(checked);
+
+fn keep(value: I32) -> I32 { checked!(value, I32) }

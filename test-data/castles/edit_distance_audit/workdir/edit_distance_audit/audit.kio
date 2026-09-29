@@ -1,0 +1,39 @@
+module edit_distance_audit/audit;
+
+import edit_distance_audit/dp as dp;
+import edit_distance_audit/render as render;
+import edit_distance_audit/tokens as tokens;
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/text as text;
+
+fn classify(distance: I32) -> String {
+  if! arith.leq_i32(distance, 1) {
+    "aligned"
+  } else if! arith.leq_i32(distance, 3) {
+    "minor drift"
+  } else if! arith.leq_i32(distance, 5) {
+    "review"
+  } else {
+    "major rewrite"
+  }
+}
+
+pub fn run() -> . {
+  render.print_line("edit_distance_audit");
+  let left = tokens.left_tokens();
+  let right = tokens.right_tokens();
+  let left_len = tokens.left_len();
+  let right_len = tokens.right_len();
+  render.print_lengths(left_len, right_len);
+  let distance = dp.distance(left, right, left_len, right_len);
+  let classification = classify(distance);
+  render.print_i32_metric("distance=", distance);
+  render.print_string_metric("classification=", classification);
+  render.print_bool_metric("within_review_budget=", arith.leq_i32(distance, 3));
+  render.print_bool_metric(
+    , "classification_expected="
+    , text.string_eq(classification, "minor drift")
+    )
+}

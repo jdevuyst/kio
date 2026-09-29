@@ -1,0 +1,84 @@
+/// spreadsheet_recalc — an incremental recalculation engine for a small sheet
+/// of formula cells.
+///
+/// The opening pass builds the dependency graph, finds the cells caught on a
+/// reference cycle, orders the rest topologically, and evaluates the sheet.
+/// Each edit that follows recomputes only what it can reach: the transcript
+/// prints the dirty set, the recompute order, the recomputed and skipped
+/// counts, and the sheet as it now stands.
+module testapi/main;
+
+import elab/match(match);
+import sheet/addr(Addr, cell_count, cols, rows);
+import sheet/cells(Sheet, Values);
+import sheet/list(List, len);
+import sheet/model(edit_script, initial_sheet);
+import sheet/recalc(Edit, Step, build_plan, full_eval, plan_cycle, plan_order, recalc);
+import sheet/recalc(step_dirty, step_order, step_plan, step_recomputed, step_sheet, step_skipped);
+import sheet/recalc(step_values);
+import sheet/render(addr_list, cell_listing, grid, render_edit);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+fn line(label: String, value: String) -> . { print(cat3(label, ": ", cat(value, "\n"))) }
+
+fn of_sheet(n: I32) -> String { cat3(num(n), " of ", num(cell_count())) }
+
+fn cycle_line(cells: List(Addr)) -> . { line("cycle", addr_list(cells)) }
+
+fn report(index: I32, e: Edit, st: Step) -> . {
+  print(cat3("\n== edit ", num(index), cat3(": ", render_edit(e), " ==\n")));
+  line("dirty", addr_list(step_dirty(st)));
+  line("recompute order", addr_list(step_order(st)));
+  line("recomputed", of_sheet(step_recomputed(st)));
+  line("skipped", of_sheet(step_skipped(st)));
+  cycle_line(plan_cycle(step_plan(st)));
+  print("grid:\n");
+  print(grid(step_values(st)))
+}
+
+rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) -> . {
+  match! script.>List.unpack {
+    (
+      , .(e: Edit, rest: List(Edit)) {
+          let st = recalc(s, vals, e);
+          report(index, e, st);
+          rec run_edits(step_sheet(st), step_values(st), rest, add_i32(index, 1))
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn main() -> . {
+  let s = initial_sheet();
+  let p = build_plan(s);
+  let vals = full_eval(s, p);
+  print("spreadsheet_recalc v1\n");
+  line(
+    , "sheet"
+    , cat3(
+        , num(cols())
+        , " columns x "
+        , cat3(num(rows()), " rows, ", cat(num(cell_count()), " cells"))
+        )
+    );
+  print("\ncells:\n");
+  print(cell_listing(s));
+  print("\ngrid:\n");
+  print(grid(vals));
+  cycle_line(plan_cycle(p));
+  line("topological order", addr_list(plan_order(p)));
+  line("ordered", of_sheet(len(plan_order(p))));
+  run_edits(s, vals, edit_script(), 1)
+}

@@ -1,0 +1,42 @@
+/// A tail-recursive call inside an elaborated branch must carry its
+/// continuation unchanged. Adapting it at every step grows a host call chain
+/// even though `rec(loop)` itself uses the host's iterative loop primitive.
+/// The second entry keeps a real pending continuation and makes its execution
+/// observable by advancing the report after each recursive result.
+module fixture/search;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import fixture/model(Again, Choice, Done, Report, {again}, {done}, {first}, {second});
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/iter(loop);
+
+fn choice(remaining: I32) -> Choice {
+  let .(done: Bool) = leq_i32(remaining, 0);
+  if! done {
+    widen_sum!({done=}, Choice)
+  } else {
+    widen_sum!({again=}, Choice)
+  }
+}
+
+fn report(value: I32) -> Report { {first = value, second = add_i32(value, 1)} }
+
+fn advance(value: Report) -> Report { report(add_i32(value.?{second}, 1)) }
+
+pub rec(loop) fn descend(remaining: I32) -> Report {
+  match! choice(remaining) {
+    (.(_again: Again) { rec descend(sub_i32(remaining, 1)) }, .(_done: Done) { report(remaining) })
+  }
+}
+
+pub rec(loop) fn descend_pending(remaining: I32) -> Report {
+  let .(done: Bool) = leq_i32(remaining, 0);
+  if! done {
+    report(0)
+  } else {
+    advance(rec(cont) descend_pending(sub_i32(remaining, 1)))
+  }
+}

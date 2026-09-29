@@ -1,0 +1,35 @@
+module main;
+
+import elab/spine_elaborators(widen_prod);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// Pure diagonal — R-Diag-Prod. Source `[A]`, target `[A, A]`: both
+// target slots read source slot 0. The form is the spine palette's
+// only duplicating rule; `fit!` excludes it by name.
+fn diagonal(a: A) -> A & A { widen_prod!(a) }
+
+// Extend a 2-slot product to a 4-slot product with duplication.
+// Source `[A, A]`, target `[A, A, A, A]`: slots 0, 1 read source
+// slots 0, 1 (1-to-1, k < source-count-of-A); slots 2, 3 both read
+// source slot 0 (the first source `A`, by the "duplicate the first"
+// fallback under source-order pinning).
+fn duplicate_to_fill(p: A & A) -> A & A & A & A { widen_prod!(p) }
+
+// R-Identity-Prod-intro — the special case of synthesizing a unit
+// slot. Source `[A]`, target `[A, ()]`: slot 0 reads source `A`,
+// slot 1 is filled by a synthesized `__unit__`. The non-`()`
+// multiset requirement holds trivially.
+fn add_unit_slot(a: A) -> A & . { widen_prod!(a) }
+
+// Mixed extension — diagonal on `A` plus unit-intro on the
+// trailing `()` slot. Source `[A, B]`, target `[A, B, A, ()]`: the
+// `A` and `B` slots pass through 1-to-1, the second `A` is read
+// from source slot 0 (duplicate the first), the `()` slot is
+// synthesized.
+fn mixed_diag_and_unit(p: A & B) -> A & B & A & . { widen_prod!(p) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(a: A) -> A & A { a.>widen_prod!(A & A) }

@@ -1,0 +1,11 @@
+module w2/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type A = _rehost_gdgphcgfcphdhegphcgf.A;
+
+pub newtype B : . { pub constructor mk_b; pub projector un_b }
+
+pub fn make_a() -> A { A.mk_a(()) }
+
+pub fn make_b() -> B { B.mk_b(()) }

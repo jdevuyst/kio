@@ -1,0 +1,24 @@
+module elab;
+
+import __comptime__;
+
+pure fn inspect_apply_impl(
+  , ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , value: __Checked_term__
+  , target: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ {
+  let applied_target = __type_apply__(ct, target, __type_unit__(ct));
+  (
+    , __term_type_app__(ct, value, applied_target)
+    , __fill__(
+        , ct
+        , fills
+        , target
+        , __type_arrow__(ct, __type_unit__(ct), __type_arity_zero__(ct), __type_unit__(ct))
+        )
+    )
+}
+
+pub elab inspect_apply : [Source] Source -> [Target] Target { impl(fills) inspect_apply_impl }

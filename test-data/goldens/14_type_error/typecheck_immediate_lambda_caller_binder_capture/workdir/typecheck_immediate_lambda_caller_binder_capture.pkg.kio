@@ -1,0 +1,13 @@
+package typecheck_immediate_lambda_caller_binder_capture;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

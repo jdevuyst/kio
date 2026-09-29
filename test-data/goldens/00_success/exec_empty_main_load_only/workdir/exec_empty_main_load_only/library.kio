@@ -1,0 +1,3 @@
+module exec_empty_main_load_only/library;
+
+pub fn available() -> . { () }

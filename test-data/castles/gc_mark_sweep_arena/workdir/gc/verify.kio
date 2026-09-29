@@ -1,0 +1,138 @@
+/// The verify phase, which takes nothing the collector recorded on
+/// trust: it rebuilds the header map from the compacted arena and
+/// checks every root and every pointer against it. Landing on a header
+/// is the property checked, not merely being in range -- a pointer into
+/// the middle of an object is what a botched relocation produces, and a
+/// bounds check would wave it through.
+///
+/// Order matters: the reachability re-walk runs after the pointer check
+/// and only when it found nothing. Tracing is what follows pointers, so
+/// tracing an unvalidated heap is how a verifier turns a diagnosable
+/// fault into a crash. On an unsound heap `reachable` is absent rather
+/// than a count nobody should believe.
+module gc/verify;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import gc/heap(field_slot, fold_fields, fold_objects, header_map, in_arena);
+import gc/mark(mark_heap, {mark_bits});
+import gc/num(and, int_eq, int_lt);
+import gc/slot(Imm, Ptr, {ptr});
+import gc/sweep(sweep, {live_objects});
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32);
+import testapi/array(array_get, array_len);
+import testapi/iter(loop);
+
+/// `reachable` is absent exactly when the pointer check failed and the
+/// re-walk was refused.
+pub labels Audit = {
+  , arena_objects: I32
+  , checked_roots: I32
+  , checked_pointers: I32
+  , reachable: I32 | .
+  , expected_live: I32
+  , dangling: I32
+  };
+
+pub labels Verdict = { verified: Audit } | { broken: Audit };
+
+/// In range is not enough: the address has to start an object.
+fn lands_on_header(cells: Array(I32), headers: Array(Bool), addr: I32) -> Bool {
+  if! in_arena(cells, addr) {
+    array_get(headers, addr)
+  } else {
+    .f
+  }
+}
+
+/// Count one object's pointer fields and how many of them are unsound.
+fn check_fields(cells: Array(I32), headers: Array(Bool), addr: I32, seen: I32 & I32) -> I32 & I32 {
+  fold_fields(
+    , cells
+    , addr
+    , .(counts, index) {
+        let .(pointers: I32, bad: I32) = counts;
+        match! field_slot(cells, addr, index) {
+          (
+            , .(p: Ptr) {
+                if! lands_on_header(cells, headers, p.?{ptr}) {
+                  (add_i32(pointers, 1), bad)
+                } else {
+                  (add_i32(pointers, 1), add_i32(bad, 1))
+                }
+              }
+            , .(_immediate: Imm) { (pointers, bad) }
+            )
+        }
+      }
+    , seen
+    )
+}
+
+rec(loop) fn check_roots(
+  , cells: Array(I32)
+  , headers: Array(Bool)
+  , roots: Array(I32)
+  , index: I32
+  , bad: I32
+  ) -> I32 {
+  if! int_lt(index, array_len(roots)) {
+    let next_bad = if! lands_on_header(cells, headers, array_get(roots, index)) {
+      bad
+    } else {
+      add_i32(bad, 1)
+    };
+    rec check_roots(cells, headers, roots, add_i32(index, 1), next_bad)
+  } else {
+    bad
+  }
+}
+
+/// Re-walk the compacted arena from the relocated roots and count what
+/// the roots still reach. Safe only once every pointer is known to land
+/// on a header.
+fn reachable_objects(cells: Array(I32), roots: Array(I32)) -> I32 {
+  sweep(cells, mark_heap(cells, roots).?{mark_bits}).?{live_objects}
+}
+
+pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
+  let headers = header_map(cells);
+  let .(objects: I32, pointers: I32, field_bad: I32) =
+    fold_objects(
+      , cells
+      , .(totals, addr) {
+          let .(seen: I32, ptrs: I32, bad: I32) = totals;
+          let .(next_ptrs: I32, next_bad: I32) = check_fields(cells, headers, addr, (ptrs, bad));
+          (add_i32(seen, 1), next_ptrs, next_bad)
+        }
+      , (0, 0, 0)
+      );
+  let bad = check_roots(cells, headers, roots, 0, field_bad);
+  let sound = int_eq(bad, 0);
+  let reached =
+    if! sound {
+      widen_sum!(reachable_objects(cells, roots), I32 | .)
+    } else {
+      widen_sum!((), I32 | .)
+    };
+  let report =
+    {
+      , arena_objects = objects
+      , checked_roots = array_len(roots)
+      , checked_pointers = pointers
+      , reachable = reached
+      , expected_live = expected
+      , dangling = bad
+      };
+  let intact =
+    match! reached {
+      (.(count: I32) { int_eq(count, expected) }, .(_untraversed: .) { .f })
+    };
+  if! and(sound, intact) {
+    {verified = report}.>widen_sum!(Verdict)
+  } else {
+    {broken = report}.>widen_sum!(Verdict)
+  }
+}

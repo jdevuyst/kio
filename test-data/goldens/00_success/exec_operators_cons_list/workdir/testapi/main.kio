@@ -1,0 +1,47 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Int, String);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Cons-list of `A`: the `()` branch is the empty list, the
+// `(A & List(A))` branch is a cons cell.
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+
+// Right-recursive cons: `a :: b :: c :: nil()` desugars to
+// `push(a, push(b, push(c, nil())))`. The `__` slot at the
+// right pins the chain to the standard cons-list shape.
+op _ :: __ { impl push }
+
+fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
+  match! ys.>List.un_list {
+    (
+      , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
+      , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+      )
+  }
+}
+
+fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
+  loop(
+    , B & List(A)
+    , B
+    , .((acc: B, ys: List(A))) -> (B & List(A)) | B { step(f, acc, ys) }
+    , (seed, xs)
+    )
+}
+
+pub fn main() -> . {
+  let xs = 1 :: 2 :: 3 :: 4 :: nil(Int, ());
+  let total = fold(add, 0, xs);
+  print(int_to_string(total));
+  print("\n")
+}

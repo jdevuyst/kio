@@ -1,0 +1,7 @@
+module build_rust_label_type_arg_function/main;
+
+labels { greet: . };
+
+fn id[A](x: A) -> A { x }
+
+pub fn main() -> . { let f = id(Greet -> ., .(_g) { () }); () }

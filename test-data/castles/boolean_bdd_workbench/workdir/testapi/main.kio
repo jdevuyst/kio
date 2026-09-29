@@ -1,0 +1,107 @@
+module testapi/main;
+
+import bdd/apply as engine;
+import bdd/compile as compiler;
+import bdd/expression as expr;
+import bdd/fixtures as fixtures;
+import bdd/logic as logic;
+import bdd/query as query;
+import bdd/report as report;
+import bdd/restrict as restriction;
+import bdd/store as table;
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/io as io;
+
+fn canonical_checks(manager: engine.Manager) -> engine.Manager {
+  let .(a: engine.Manager, factored: table.Node_id) =
+    compiler.compile(manager, fixtures.factored());
+  let .(b: engine.Manager, expanded: table.Node_id) = compiler.compile(a, fixtures.expanded());
+  let .(c: engine.Manager, impossible: table.Node_id) =
+    compiler.compile(b, fixtures.contradiction());
+  let .(d: engine.Manager, certain: table.Node_id) = compiler.compile(c, fixtures.tautology());
+  let .(e: engine.Manager, true_constant: table.Node_id) = compiler.compile(d, expr.value(.t));
+  report.fact("distributivity-same-root", table.same_id(factored, expanded));
+  report.fact("contradiction-is-false", table.same_id(impossible, table.false_id()));
+  report.fact("tautology-is-true", table.same_id(certain, true_constant));
+  report.fact(
+    , "recompilation-allocates-zero"
+    , arith.eq_i32(table.size(manager.?{engine.store}), table.size(e.?{engine.store}))
+    );
+  let .(f: engine.Manager, repeated: table.Node_id) =
+    engine.apply(e, logic.conjunction_op(), factored, certain);
+  let .(g: engine.Manager, repeated_again: table.Node_id) =
+    engine.apply(f, logic.conjunction_op(), certain, factored);
+  report.fact(
+    , "apply-reuses-commuted-key"
+    , logic.and(
+        , table.same_id(repeated, repeated_again)
+        , arith.eq_i32(g.?{engine.hits}, arith.add_i32(f.?{engine.hits}, 1))
+        )
+    );
+  g
+}
+
+fn restrictions(manager: engine.Manager) -> table.Store {
+  let .(a: engine.Manager, shared: table.Node_id) = compiler.compile(manager, fixtures.shared());
+  let .(store: table.Store, z_true: table.Node_id, memo_hits: I32) =
+    restriction.restrict(a.?{engine.store}, shared, 2, .t);
+  report.diagram(
+    , "shared | z=1"
+    , store
+    , z_true
+    , .(values: I32 -> Bool) {
+        expr.evaluate(
+          , fixtures.shared()
+          , .(variable: I32) {
+              if! arith.eq_i32(variable, 2) {
+                .t
+              } else {
+                values(variable)
+              }
+            }
+          )
+      }
+    );
+  report.fact("restriction-reuses-shared-subgraph", arith.lt_i32(0, memo_hits));
+  let .(store: table.Store, z_false: table.Node_id, _hits: I32) =
+    restriction.restrict(store, shared, 2, .f);
+  report.diagram(
+    , "shared | z=0"
+    , store
+    , z_false
+    , .(values: I32 -> Bool) {
+        expr.evaluate(
+          , fixtures.shared()
+          , .(variable: I32) {
+              if! arith.eq_i32(variable, 2) {
+                .f
+              } else {
+                values(variable)
+              }
+            }
+          )
+      }
+    );
+  let .(b: engine.Manager, mux: table.Node_id) =
+    compiler.compile(a.!{engine.store}, fixtures.mux());
+  let .(store: table.Store, x_false: table.Node_id, _hits: I32) =
+    restriction.restrict(b.?{engine.store}, mux, 0, .f);
+  report.diagram("mux | x=0", store, x_false, .(values: I32 -> Bool) { values(2) });
+  let .(store: table.Store, x_true: table.Node_id, _hits: I32) =
+    restriction.restrict(store, mux, 0, .t);
+  report.diagram("mux | x=1", store, x_true, .(values: I32 -> Bool) { values(1) });
+  store
+}
+
+pub fn main() -> . {
+  io.print("Ordered reduced Boolean decision diagrams: x < y < z\n");
+  io.print("Truth rows: 000 001 010 011 100 101 110 111\n");
+  let manager = report.formulas(fixtures.cases());
+  let manager = canonical_checks(manager);
+  let store = restrictions(manager);
+  report.fact("unique-table-reuse-observed", arith.lt_i32(0, store.?{table.reused}));
+  report.fact("equal-branches-reduced", arith.lt_i32(0, store.?{table.reduced}));
+  report.fact("ordered-reduced-unique", query.valid_store(store))
+}

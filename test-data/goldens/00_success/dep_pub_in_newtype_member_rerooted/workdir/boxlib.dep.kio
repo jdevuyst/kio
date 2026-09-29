@@ -1,0 +1,5 @@
+dependency boxlib;
+
+source {
+  path "../library/boxlib/boxlib.pkg.kio"
+}

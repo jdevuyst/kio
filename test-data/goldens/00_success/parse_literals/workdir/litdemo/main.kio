@@ -1,0 +1,29 @@
+module litdemo/main;
+
+import litdemo(B, F32, F64, I128, I32, I8, S, U64);
+
+fn s_simple() -> S { "hello"(S) }
+
+fn s_escapes() -> S { "\"\\/\b\f\n\r\té"(S) }
+
+fn b_t() -> B { .t(B) }
+
+fn b_f() -> B { .f(B) }
+
+fn i8_v() -> I8 { 1(I8) }
+
+fn i32_v() -> I32 { 0(I32) }
+
+fn u64_v() -> U64 { 1000000(U64) }
+
+fn i128_v() -> I128 { 170141183460469231731687303715884105727(I128) }
+
+fn f32_v() -> F32 { 3.14(F32) }
+
+fn f64_v() -> F64 { 3.14(F64) }
+
+fn f64_exp() -> F64 { 1.5e10(F64) }
+
+fn f64_exp_n() -> F64 { 1.0e-9(F64) }
+
+fn f64_sep() -> F64 { 1234.56789(F64) }

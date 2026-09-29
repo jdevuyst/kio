@@ -1,0 +1,5 @@
+dependency queue;
+
+source {
+  path "../../../poc/queue/workdir/queue.pkg.kio"
+}

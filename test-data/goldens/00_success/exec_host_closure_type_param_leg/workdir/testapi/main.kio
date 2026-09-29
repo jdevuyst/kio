@@ -1,0 +1,27 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Apply a caller-supplied transform `g` to `x`. The parameter `g` is a
+// function typed by the type-parameters `K` / `R`, so a target that keeps
+// `K` / `R` as real generics (Rust) must convert the erased argument to
+// `K` on the way in and erase the typed result back to the body rep on the
+// way out when `g` is threaded as an erased closure value.
+fn run_fn[K][R](g: K -> R, x: K) -> R { g(x) }
+
+// Exported entry: a host hands in a closure `f: K -> R` typed by the
+// op's own type-parameters, which `run_fn` consumes as a value. On Rust
+// the exported method keeps `K` / `R` as generics, so the boundary wrapper
+// must downcast the erased parameter to `K` (`from_any::<K>`) before
+// calling the host closure and re-erase its `R` result (`as_any`). Passing
+// the parameter through unconverted is the bug this golden pins.
+pub fn apply_via[K][R](f: K -> R, x: K) -> R { run_fn(f, x) }
+
+pub fn main() -> . {
+  // Drive the same polymorphic helper from inside the package, at the
+  // concrete `String -> String` instantiation, so the run exercises the
+  // erased closure-value threading end to end.
+  let shout = .(s: String) -> String { s };
+  print(run_fn(shout, "host-closure-type-param-leg\n"(String)))
+}

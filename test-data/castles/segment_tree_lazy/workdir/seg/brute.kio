@@ -1,0 +1,97 @@
+/// The reference implementation: a plain array, no tree, no tags. Every
+/// operation does the obvious thing one element at a time -- a range-add
+/// really does write every cell in the range.
+///
+/// It is *obviously* correct, which is the entire point: the segment tree's
+/// answers are checked against this one, operation by operation. One unit of
+/// work here is one element read or written.
+module seg/brute;
+
+import elab/control(if);
+import seg/meter(Meter, bump_work, new_meter, work);
+import seg/num(int_eq, int_min);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_clone, array_get, array_len, array_set);
+import testapi/iter(loop);
+
+/// Larger than any range sum this package can reach, so it survives every
+/// `int_min` as the identity for the minimum.
+literal unreachable_high = 1000000;
+
+pub labels Brute = { cells: Array(I32), touched: Meter };
+
+/// The reference owns its own copy of the fixture, so the two structures
+/// cannot alias and quietly agree.
+pub fn build_brute(src: Array(I32)) -> Brute { {cells = array_clone(src), touched = new_meter()} }
+
+pub fn brute_cells(base: Brute) -> Array(I32) { base.?{cells} }
+
+pub fn touches(base: Brute) -> I32 { work(base.?{touched}) }
+
+fn touch(base: Brute) -> . { bump_work(base.?{touched}) }
+
+fn read_cell(base: Brute, i: I32) -> I32 { touch(base); array_get(brute_cells(base), i) }
+
+fn write_cell(base: Brute, i: I32, v: I32) -> . { touch(base); array_set(brute_cells(base), i, v) }
+
+/// Read-modify-write of one cell, charged as the single element touch it
+/// is.
+fn bump_cell(base: Brute, i: I32, x: I32) -> . {
+  touch(base);
+  let cells = brute_cells(base);
+  array_set(cells, i, add_i32(array_get(cells, i), x))
+}
+
+rec(loop) fn add_from(base: Brute, i: I32, r: I32, x: I32) -> . {
+  if! leq_i32(i, r) {
+    bump_cell(base, i, x);
+    rec add_from(base, add_i32(i, 1), r, x)
+  } else {
+    ()
+  }
+}
+
+rec(loop) fn sum_from(base: Brute, i: I32, r: I32, acc: I32) -> I32 {
+  if! leq_i32(i, r) {
+    rec sum_from(base, add_i32(i, 1), r, add_i32(acc, read_cell(base, i)))
+  } else {
+    acc
+  }
+}
+
+rec(loop) fn min_from(base: Brute, i: I32, r: I32, best: I32) -> I32 {
+  if! leq_i32(i, r) {
+    rec min_from(base, add_i32(i, 1), r, int_min(best, read_cell(base, i)))
+  } else {
+    best
+  }
+}
+
+pub fn brute_range_add(base: Brute, l: I32, r: I32, x: I32) -> . { add_from(base, l, r, x) }
+
+pub fn brute_sum(base: Brute, l: I32, r: I32) -> I32 { sum_from(base, l, r, 0) }
+
+pub fn brute_min(base: Brute, l: I32, r: I32) -> I32 { min_from(base, l, r, unreachable_high) }
+
+pub fn brute_point_set(base: Brute, i: I32, v: I32) -> . { write_cell(base, i, v) }
+
+rec(loop) fn same_from(a: Array(I32), b: Array(I32), i: I32, n: I32) -> Bool {
+  if! leq_i32(n, i) {
+    .t
+  } else if! int_eq(array_get(a, i), array_get(b, i)) {
+    rec same_from(a, b, add_i32(i, 1), n)
+  } else {
+    .f
+  }
+}
+
+/// Element-wise equality of two arrays: the final check that the settled
+/// tree and the reference array hold the same data.
+pub fn same_cells(a: Array(I32), b: Array(I32)) -> Bool {
+  if! int_eq(array_len(a), array_len(b)) {
+    same_from(a, b, 0, array_len(a))
+  } else {
+    .f
+  }
+}

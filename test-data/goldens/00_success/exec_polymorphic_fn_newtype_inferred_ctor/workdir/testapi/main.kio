@@ -1,0 +1,19 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype Box[A] : A { constructor mk_box; projector un_box }
+
+newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { constructor mk_functor; projector fmap }
+
+fn box_functor() -> Functor(Box) {
+  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+}
+
+pub fn main() -> . {
+  let functor = box_functor();
+  let value = Box.mk_box("inferred ctor ok\n"(String));
+  let mapped = Functor.fmap(functor)(String, String, .(s) { s }, value);
+  print(Box.un_box(mapped))
+}

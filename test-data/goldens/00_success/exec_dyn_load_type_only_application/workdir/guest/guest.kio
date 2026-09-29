@@ -1,0 +1,19 @@
+module guest;
+
+import hostapi(I32, add_i32);
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn id[A](x: A) -> A { x }
+
+fn call1(f: I32 -> I32, x: I32) -> I32 { f(x) }
+
+fn call_box(f: I32 -> Box(I32), x: I32) -> Box(I32) { f(x) }
+
+fn zero[A]() -> I32 { 0(I32) }
+
+pub fn via_id(x: I32) -> I32 { call1(id(I32), x) }
+
+pub fn via_unit_group(x: I32) -> I32 { add_i32(zero(I32, ()), x) }
+
+pub fn via_ctor(x: I32) -> I32 { Box.un_box(call_box(Box.mk_box(I32), add_i32(x, 1))) }

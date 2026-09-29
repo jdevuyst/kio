@@ -1,0 +1,205 @@
+module form/report;
+
+import elab/control(if);
+import option/core(Option, none, option, some);
+import result/result(Result, err, fold, ok);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, lt_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/text(string_concat);
+
+labels Form = {
+  , email: Option(String)
+  , age: Option(I32)
+  , country: Option(String)
+  , terms: Option(Bool)
+  , nickname: Option(String)
+  };
+
+labels Field_report = { field: String, message: String };
+
+labels Validation = { ok_report: Field_report } | { err_report: Field_report };
+
+type Validation_result = Result(Ok_report, Err_report);
+
+labels Validation_total = { passed: I32, failed: I32, details: String };
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+fn cat4(a: String, b: String, c: String, d: String) -> String { cat(cat3(a, b, c), d) }
+
+fn invite102() -> Form {
+  {
+    , email = some("ada@kio.dev")
+    , age = some(29)
+    , country = some("NL")
+    , terms = some(.t)
+    , nickname = none(String, ())
+    }
+}
+
+fn invite204() -> Form {
+  {
+    , email = none(String, ())
+    , age = some(15)
+    , country = none(String, ())
+    , terms = some(.f)
+    , nickname = some("q")
+    }
+}
+
+fn email_value(form: Form) -> Option(String) { form.?{email} }
+
+fn age_value(form: Form) -> Option(I32) { form.?{age} }
+
+fn country_value(form: Form) -> Option(String) { form.?{country} }
+
+fn terms_value(form: Form) -> Option(Bool) { form.?{terms} }
+
+fn nickname_value(form: Form) -> Option(String) { form.?{nickname} }
+
+fn field_report(field_name: String, text: String) -> Field_report {
+  {field = field_name, message = text}
+}
+
+fn pass(field_name: String, text: String) -> Validation_result {
+  ok({ok_report = field_report(field_name, text)})
+}
+
+fn fail(field_name: String, text: String) -> Validation_result {
+  err({err_report = field_report(field_name, text)})
+}
+
+fn missing(field_name: String, text: String) -> Validation_result { fail(field_name, text) }
+
+fn validate_required_text(
+  , field_name: String
+  , missing_text: String
+  , present_prefix: String
+  , value: Option(String)
+  ) -> Validation_result {
+  option(
+    , missing(field_name, missing_text)
+    , .(s: String) { pass(field_name, cat(present_prefix, s)) }
+    , value
+    )
+}
+
+fn validate_email(value: Option(String)) -> Validation_result {
+  validate_required_text("email", "missing required email", "present: ", value)
+}
+
+fn validate_country(value: Option(String)) -> Validation_result {
+  validate_required_text("country", "missing required country", "present: ", value)
+}
+
+fn validate_age_value(age: I32) -> Validation_result {
+  if! lt_i32(age, 18) {
+    fail("age", cat("too young: ", int_to_string(age)))
+  } else if! lt_i32(120, age) {
+    fail("age", cat("too large: ", int_to_string(age)))
+  } else {
+    pass("age", cat("accepted: ", int_to_string(age)))
+  }
+}
+
+fn validate_age(value: Option(I32)) -> Validation_result {
+  option(missing("age", "missing required age"), .(age: I32) { validate_age_value(age) }, value)
+}
+
+fn validate_terms_value(accepted: Bool) -> Validation_result {
+  if! accepted {
+    pass("terms", "accepted")
+  } else {
+    fail("terms", "terms not accepted")
+  }
+}
+
+fn validate_terms(value: Option(Bool)) -> Validation_result {
+  option(
+    , missing("terms", "missing terms response")
+    , .(accepted: Bool) { validate_terms_value(accepted) }
+    , value
+    )
+}
+
+fn validate_nickname(value: Option(String)) -> Validation_result {
+  option(pass("nickname", "omitted"), .(s: String) { pass("nickname", cat("present: ", s)) }, value)
+}
+
+fn empty_total() -> Validation_total { {passed = 0, failed = 0, details = ""} }
+
+fn ok_line(result: Ok_report) -> String {
+  let item = result.?{ok_report};
+  cat3("  OK ", item.?{field}, cat3(" - ", item.?{message}, "\n"))
+}
+
+fn err_line(result: Err_report) -> String {
+  let item = result.?{err_report};
+  cat3("  ERR ", item.?{field}, cat3(" - ", item.?{message}, "\n"))
+}
+
+fn add_ok(total: Validation_total, result: Ok_report) -> Validation_total {
+  {
+    , passed = add_i32(total.?{passed}, 1)
+    , failed = total.?{failed}
+    , details = cat(total.?{details}, ok_line(result))
+    }
+}
+
+fn add_err(total: Validation_total, result: Err_report) -> Validation_total {
+  {
+    , passed = total.?{passed}
+    , failed = add_i32(total.?{failed}, 1)
+    , details = cat(total.?{details}, err_line(result))
+    }
+}
+
+fn add_result(total: Validation_total, result: Validation_result) -> Validation_total {
+  fold(
+    , .(ok_value: Ok_report) { add_ok(total, ok_value) }
+    , .(err_value: Err_report) { add_err(total, err_value) }
+    , result
+    )
+}
+
+fn validate_form(form: Form) -> Validation_total {
+  let total0 = empty_total();
+  let total1 = add_result(total0, validate_email(email_value(form)));
+  let total2 = add_result(total1, validate_age(age_value(form)));
+  let total3 = add_result(total2, validate_country(country_value(form)));
+  let total4 = add_result(total3, validate_terms(terms_value(form)));
+  add_result(total4, validate_nickname(nickname_value(form)))
+}
+
+fn accepted(total: Validation_total) -> Bool { eq_i32(total.?{failed}, 0) }
+
+fn header(name: String, total: Validation_total) -> String {
+  cat4(
+    , "Submission "
+    , name
+    , "\naccepted: "
+    , cat3(bool_to_string(accepted(total)), "\npassed: ", int_to_string(total.?{passed}))
+    )
+}
+
+fn render_submission(name: String, total: Validation_total) -> String {
+  cat4(
+    , header(name, total)
+    , "\nfailed: "
+    , int_to_string(total.?{failed})
+    , cat3("\ndetails:\n", total.?{details}, "\n")
+    )
+}
+
+pub fn report() -> String {
+  let first = validate_form(invite102());
+  let second = validate_form(invite204());
+  cat3(
+    , "Option/result form validation\n\n"
+    , render_submission("invite-102", first)
+    , render_submission("invite-204", second)
+    )
+}

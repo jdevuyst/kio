@@ -1,0 +1,47 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+labels { light: ., dark: . };
+
+type Shade = Light | Dark;
+
+rec labels { tree[A][B]: . | (Shade & A & B & Tree(A, B) & Tree(A, B)) };
+
+fn light() -> Shade { widen_sum!({light=}, Light | Dark) }
+
+fn empty[A][B]() -> Tree(A, B) {
+  {tree = widen_sum!((), . | (Shade & A & B & Tree(A, B) & Tree(A, B)))}
+}
+
+fn node[A][B](key: A, value: B, left: Tree(A, B), right: Tree(A, B)) -> Tree(A, B) {
+  {tree = widen_sum!(
+    , (light(), key, value, left, right)
+    , . | (Shade & A & B & Tree(A, B) & Tree(A, B))
+    )}
+}
+
+fn un_tree[A][B](tree: Tree(A, B)) -> . | (Shade & A & B & Tree(A, B) & Tree(A, B)) {
+  Tree.get(tree)
+}
+
+fn classify[A][B](tree: Tree(A, B)) -> String {
+  match! un_tree(tree) {
+    (
+      , .(node: Shade & A & B & Tree(A, B) & Tree(A, B)) {
+          match! node {
+            .(_shade: Shade, _key: A, _value: B, _left: Tree(A, B), _right: Tree(A, B)) { "node\n" }
+          }
+        }
+      , .(_empty: .) { "empty\n" }
+      )
+  }
+}
+
+pub fn main() -> . {
+  print(classify(empty(String, String, ())));
+  print(classify(node("key", "value", empty(String, String, ()), empty(String, String, ()))))
+}

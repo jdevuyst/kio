@@ -1,0 +1,8 @@
+module op_conflicts_with_use_op_import/helper;
+
+import op_conflicts_with_use_op_import(A);
+
+pub fn helper_add(a: A, b: A) -> A { a }
+
+// This exported operator is the import's exact source identity.
+pub op _ + _ { impl helper_add }

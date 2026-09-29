@@ -1,0 +1,77 @@
+/// The 9x9 geometry: constants, index arithmetic, and the coordinate
+/// tables that stand in for the division the host does not supply.
+module sudoku/geometry;
+
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/array(array_make_filled, array_set);
+import testapi/iter(loop);
+
+pub fn size() -> I32 { 9 }
+
+fn band() -> I32 { 3 }
+
+fn cell_count() -> I32 { 81 }
+
+pub fn last_cell() -> I32 { sub_i32(cell_count(), 1) }
+
+pub fn last_digit() -> I32 { 9 }
+
+/// Slots in one "digit used" table: nine units by nine digits.
+pub fn flag_count() -> I32 { mul_i32(size(), size()) }
+
+pub fn cell_at(row: I32, col: I32) -> I32 { add_i32(mul_i32(row, size()), col) }
+
+/// Where `(unit, digit)` lives in a "digit used" table. Digits run 1..9,
+/// so the digit contributes `digit - 1`.
+pub fn flag_at(unit: I32, digit: I32) -> I32 { add_i32(mul_i32(unit, size()), sub_i32(digit, 1)) }
+
+/// `value / 3` for a row or column in 0..8. The host has no division, so
+/// the three bands are spelled as comparisons.
+fn band_of(value: I32) -> I32 {
+  if! leq_i32(value, 2) {
+    0
+  } else if! leq_i32(value, 5) {
+    1
+  } else {
+    2
+  }
+}
+
+fn box_at(row: I32, col: I32) -> I32 { add_i32(mul_i32(band_of(row), band()), band_of(col)) }
+
+/// One walk of the grid fills all three coordinate tables. The row and
+/// column travel with the cursor rather than being recovered from the
+/// cell index, which is what keeps the walk free of division.
+rec(loop) fn fill_coords(
+  , cell: I32
+  , row: I32
+  , col: I32
+  , rows: Array(I32)
+  , cols: Array(I32)
+  , boxes: Array(I32)
+  ) -> . {
+  if! leq_i32(cell, last_cell()) {
+    array_set(rows, cell, row);
+    array_set(cols, cell, col);
+    array_set(boxes, cell, box_at(row, col));
+    let next_col = add_i32(col, 1);
+    if! leq_i32(size(), next_col) {
+      rec fill_coords(add_i32(cell, 1), add_i32(row, 1), 0, rows, cols, boxes)
+    } else {
+      rec fill_coords(add_i32(cell, 1), row, next_col, rows, cols, boxes)
+    }
+  } else {
+    ()
+  }
+}
+
+/// The row, column, and box index of every cell, in that order.
+pub fn build_coords() -> Array(I32) & Array(I32) & Array(I32) {
+  let rows = array_make_filled(cell_count(), 0);
+  let cols = array_make_filled(cell_count(), 0);
+  let boxes = array_make_filled(cell_count(), 0);
+  fill_coords(0, 0, 0, rows, cols, boxes);
+  (rows, cols, boxes)
+}

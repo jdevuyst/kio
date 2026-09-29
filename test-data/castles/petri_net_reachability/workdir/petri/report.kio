@@ -1,0 +1,81 @@
+module petri/report;
+
+import elab/control(if);
+import elab/match(match);
+import petri/fixture as fixture;
+import petri/model as model;
+import petri/search as search;
+import petri/witness as witness;
+import queue/list/core as lists;
+import queue/list/list as traversal;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+fn line(label: String, value: String) -> . {
+  io.print(text.string_concat(label, text.string_concat(value, "\n")))
+}
+
+fn number(label: String, value: I32) -> . { line(label, fmt.int_to_string(value)) }
+
+fn flag(label: String, value: Bool) -> . { line(label, fmt.bool_to_string(value)) }
+
+fn rejected(net: model.Net, transition: model.Transition) -> Bool {
+  if! model.enabled(net, transition, net.?{model.initial}) {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn print_witness(net: model.Net, result: search.Search) -> . {
+  match! result.?{search.first_deadlock} {
+    .(node: search.Node) {
+      number("shortest deadlock depth: ", node.?{search.depth});
+      match! witness.reconstruct(result.?{search.visited}, node, lists.nil()) {
+        .(path: witness.Path) {
+          number("witness transitions: ", traversal.length(path));
+          line("  0: initial -> ", witness.show_marking(net.?{model.initial}));
+          let replayed = witness.replay(net, path, net.?{model.initial}, 1);
+          flag(
+            , "replay reaches unfinished deadlock: "
+            , witness.agrees(net, replayed, node.?{search.marking})
+            )
+        };
+        .() { line("witness: ", "broken predecessor chain") }
+      }
+    };
+    .() { line("witness: ", "no deadlock") }
+  }
+}
+
+pub fn run() -> . {
+  let net = fixture.locking();
+  let result = search.run(net);
+  io.print("Opposite-lock Petri net (capacity 1)\n");
+  io.print("places: left-wait left-hold left-done right-wait right-hold right-done "
+           "lock-a lock-b\n");
+  number("reachable markings: ", traversal.length(result.?{search.visited}));
+  number("enabled edges: ", result.?{search.edges});
+  number("duplicate discoveries: ", result.?{search.duplicates});
+  number("peak FIFO frontier: ", result.?{search.peak});
+  number("completed terminals: ", result.?{search.terminals});
+  number("unfinished deadlocks: ", result.?{search.deadlocks});
+  print_witness(net, result);
+  match! traversal.at(2, net.?{model.transitions}) {
+    .(finish: model.Transition) {
+      flag("finish before acquisition rejected: ", rejected(net, finish))
+    };
+    .() { line("finish check: ", "missing transition") }
+  };
+  flag("capacity overflow rejected: ", rejected(net, fixture.overflowing()));
+  let complete = search.run(fixture.already_completed());
+  number("initially completed: terminals=", complete.?{search.terminals});
+  number("initially completed: deadlocks=", complete.?{search.deadlocks});
+  let stuck_net = fixture.already_stuck();
+  let stuck = search.run(stuck_net);
+  number("initially stuck: terminals=", stuck.?{search.terminals});
+  number("initially stuck: deadlocks=", stuck.?{search.deadlocks});
+  print_witness(stuck_net, stuck)
+}

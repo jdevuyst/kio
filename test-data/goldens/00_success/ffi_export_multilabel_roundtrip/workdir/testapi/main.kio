@@ -1,0 +1,17 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(I32, String);
+import testapi/io(print);
+
+pub labels { a: I32, b: String };
+
+pub fn say(p: A & B) -> . {
+  print(B.get(match! p {
+    .(_a: A, b_slot: B) { b_slot }
+  }))
+}
+
+pub fn echo_pair(p: A & B) -> A & B { p }
+
+pub fn echo_a(value: A) -> A { value }

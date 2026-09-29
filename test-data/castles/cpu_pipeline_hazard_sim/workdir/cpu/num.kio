@@ -1,0 +1,109 @@
+/// The integer and string primitives the simulator builds everything
+/// else out of. The host env supplies exactly one integer comparison,
+/// `leq_i32`, and no division at all, so equality, strict order and
+/// quotient are derived here, once, and every other module reuses them.
+module cpu/num;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn not(value: Bool) -> Bool {
+  if! value {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// Strict in both arguments, like any Kio call. A guard whose second
+/// operand must not be evaluated -- an array index that is only in range
+/// when the first test passes -- uses `if` instead of `and`.
+pub fn and(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+pub fn or(left: Bool, right: Bool) -> Bool {
+  if! left {
+    .t
+  } else {
+    right
+  }
+}
+
+/// `a == b` by the antisymmetry of a total order.
+pub fn int_eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// `a < b` as the negation of `b <= a`.
+pub fn int_lt(a: I32, b: I32) -> Bool { not(leq_i32(b, a)) }
+
+/// The largest power-of-two multiple of `d` that still fits under `n`,
+/// returned together with that power of two. Doubling is the only way to
+/// climb without a shift operator, and it is what turns the quotient
+/// below from repeated subtraction into a logarithmic walk.
+rec(loop) fn scale_up(shifted: I32, factor: I32, n: I32) -> I32 & I32 {
+  let doubled = add_i32(shifted, shifted);
+  if! leq_i32(doubled, n) {
+    rec scale_up(doubled, add_i32(factor, factor), n)
+  } else {
+    (shifted, factor)
+  }
+}
+
+rec(loop) fn div_walk(n: I32, d: I32, quotient: I32) -> I32 {
+  if! int_lt(n, d) {
+    quotient
+  } else {
+    let .(shifted: I32, factor: I32) = scale_up(d, 1, n);
+    rec div_walk(sub_i32(n, shifted), d, add_i32(quotient, factor))
+  }
+}
+
+/// Truncating division for non-negative `n` and positive `d`. The host
+/// env has no division, so the simulator's one ratio -- instructions per
+/// cycle, scaled to permille -- is a binary long division written here.
+pub fn div(n: I32, d: I32) -> I32 { div_walk(n, d, 0) }
+
+/// The decimal width of a non-negative integer. Nothing in the host env
+/// measures a string, so every right-aligned column derives its padding
+/// from the number instead.
+pub fn digits(value: I32) -> I32 {
+  if! int_lt(value, 10) {
+    1
+  } else if! int_lt(value, 100) {
+    2
+  } else if! int_lt(value, 1000) {
+    3
+  } else {
+    4
+  }
+}
+
+pub fn cat(left_text: String, right_text: String) -> String { string_concat(left_text, right_text) }
+
+pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
+
+pub rec(loop) fn spaces(count: I32) -> String {
+  if! leq_i32(count, 0) {
+    ""
+  } else {
+    string_concat(" ", rec(cont) spaces(sub_i32(count, 1)))
+  }
+}
+
+/// A non-negative integer right-aligned in a field of `width`.
+pub fn right(value: I32, width: I32) -> String {
+  string_concat(spaces(sub_i32(width, digits(value))), int_to_string(value))
+}
+
+/// A string left-aligned in a field of `width`, given the text's width.
+pub fn left(text: String, text_width: I32, width: I32) -> String {
+  string_concat(text, spaces(sub_i32(width, text_width)))
+}

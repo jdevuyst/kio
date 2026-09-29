@@ -1,0 +1,10 @@
+module widget/feature/store;
+
+import widget/feature/target as _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe;
+import widget/feature/target(Hidden);
+
+pub(widget/feature) type Box[A] = _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe.Box(A);
+
+pub type Public[A] = _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe.Public(A);
+
+pub type Opaque = _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe.Opaque;

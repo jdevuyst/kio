@@ -1,0 +1,9 @@
+module main;
+
+fn empty() -> . { () }
+
+fn prepend(value: ., rest: .) -> . { value }
+
+varop [* *] { foldr prepend empty; };
+
+fn rejected() -> . { [* (); () *] }

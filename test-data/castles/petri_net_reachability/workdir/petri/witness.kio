@@ -1,0 +1,96 @@
+module petri/witness;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import petri/model as model;
+import petri/search as search;
+import queue/list/core as lists;
+import queue/list/list as traversal;
+import testapi(Bool, I32, String);
+import testapi/arith as arithmetic;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub type Path = lists.List(I32);
+
+pub rec(loop) fn reconstruct(nodes: lists.List(search.Node), node: search.Node, path: Path) ->
+  Path | .
+   {
+  if! arithmetic.eq_i32(node.?{search.depth}, 0) {
+    if! arithmetic.eq_i32(node.?{search.parent}, -1) {
+      path.>widen_sum!
+    } else {
+      ().>widen_sum!
+    }
+  } else match! search.find_node(nodes, node.?{search.parent}) {
+    .(parent: search.Node) {
+      if! arithmetic.eq_i32(arithmetic.add_i32(parent.?{search.depth}, 1), node.?{search.depth}) {
+        rec reconstruct(nodes, parent, lists.cons(node.?{search.via}, path))
+      } else {
+        ().>widen_sum!
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}
+
+pub fn show_marking(marking: model.Marking) -> String {
+  traversal.to_string(fmt.int_to_string, marking)
+}
+
+pub rec(loop) fn replay(net: model.Net, path: Path, marking: model.Marking, step: I32) ->
+  model.Marking | .
+   {
+  match! lists.uncons(path) {
+    .(transition_id: I32, rest: Path) {
+      match! traversal.at(transition_id, net.?{model.transitions}) {
+        .(transition: model.Transition) {
+          match! model.fire(net, transition, marking) {
+            .(next: model.Marking) {
+              io.print(text.string_concat(
+                , "  "
+                , text.string_concat(
+                    , fmt.int_to_string(step)
+                    , text.string_concat(
+                        , ": "
+                        , text.string_concat(
+                            , transition.?{model.name}
+                            , text.string_concat(
+                                , " -> "
+                                , text.string_concat(show_marking(next), "\n")
+                                )
+                            )
+                        )
+                    )
+                ));
+              rec replay(net, rest, next, arithmetic.add_i32(step, 1))
+            };
+            .() { ().>widen_sum! }
+          }
+        };
+        .() { ().>widen_sum! }
+      }
+    };
+    .() { marking.>widen_sum! }
+  }
+}
+
+pub fn agrees(net: model.Net, result: model.Marking | ., expected: model.Marking) -> Bool {
+  match! result {
+    .(marking: model.Marking) {
+      if! model.equal(marking, expected) {
+        if! model.completed(net, marking) {
+          .f
+        } else {
+          arithmetic.eq_i32(model.enabled_count(net, marking), 0)
+        }
+      } else {
+        .f
+      }
+    };
+    .() { .f }
+  }
+}

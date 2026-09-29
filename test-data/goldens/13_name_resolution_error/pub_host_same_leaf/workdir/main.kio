@@ -1,0 +1,5 @@
+module main;
+
+host fn foo() -> .;
+
+pub fn foo() -> . { () }

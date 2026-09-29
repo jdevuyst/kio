@@ -1,0 +1,9 @@
+module main;
+
+host type I32 role(i32);
+
+host fn make[A][B](value: A) -> B & .;
+
+fn same[T](_left: T, _right: T) -> . { () }
+
+fn witness() -> . { same(make(0), (1, ())) }

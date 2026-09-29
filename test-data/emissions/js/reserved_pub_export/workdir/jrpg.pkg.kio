@@ -1,0 +1,14 @@
+package jrpg;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  jrpg;
+  jrpg/**
+}

@@ -1,0 +1,19 @@
+module main;
+
+import widget/store as source;
+import zcore/store as target;
+
+equiv forwarded_constructor() {
+  target.Foo.get({source.foo=});
+  ()
+}
+
+equiv original_constructor() {
+  target.Foo.mk(()).?{source.foo};
+  ()
+}
+
+equiv later_owner() {
+  source.accept_later(target.Foo.mk(()));
+  ()
+}

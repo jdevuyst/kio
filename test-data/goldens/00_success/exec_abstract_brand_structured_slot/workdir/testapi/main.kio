@@ -1,0 +1,52 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Maybe` and `Either` as concrete type constructors.
+pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe }
+
+pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_either }
+
+// Exercises a polymorphic-fn dictionary whose stored function applies
+// the abstract arity-2 binder `F` to a STRUCTURED argument `Maybe(A)`
+// (mentioning the per-call binder A) alongside a bare binder `C`: the
+// carrier slot is `F(Maybe(A), C)`, not a flat `F(A, C)`. The abstract
+// carrier must round-trip a value whose first argument is itself a
+// concrete type-constructor application.
+pub newtype Sid[**F] : [A][C] F(Maybe(A), C) -> F(Maybe(A), C) {
+  pub constructor mk_sid;
+  pub projector run
+  }
+
+// `Either`'s instance: identity on the carrier (the value round-trips the
+// typed<->erased boundary unchanged, which is what we are testing).
+fn either_sid() -> Sid(Either) { Sid.mk_sid(Either, .[A][C](val) { val }) }
+
+fn use_sid() -> String {
+  let dict = either_sid();
+  let inner = Maybe.mk_maybe(String, __right__(., String, "structured carrier ok\n"(String)));
+  let carrier = Either.mk_either(Maybe(String), String, __left__(Maybe(String), String, inner));
+  let out = Sid.run(Either, dict)(String, String, carrier);
+  __either__(
+    , Maybe(String)
+    , String
+    , String
+    , Either.un_either(Maybe(String), String, out)
+    , .(m) {
+        __either__(
+          , .
+          , String
+          , String
+          , Maybe.un_maybe(String, m)
+          , .(u) { "empty\n"(String) }
+          , .(s) { s }
+          )
+      }
+    , .(s) { s }
+    )
+}
+
+pub fn main() -> . { print(use_sid()) }

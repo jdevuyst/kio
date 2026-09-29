@@ -1,0 +1,18 @@
+package elaborator_type_mentions_host;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  elaborator_type_mentions_host;
+  elaborator_type_mentions_host/**
+}

@@ -1,0 +1,1441 @@
+/// Algebraic coercion elaborators for DNF-level product and sum reshaping in the elaborator POC.
+module library/elab/algebraic_elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import library/elab/elaborator_util(
+  , Dnf_branch
+  , Dnf_branch_list
+  , Elaborator_result
+  , Optional_type
+  , Slot_list
+  , Term_mapper
+  , Type_list
+  , Type_pair
+  , build_product_from_slots
+  , build_widen_product_from_slots
+  , dnf_branch_slots
+  , dnf_branch_spine
+  , dnf_branch_type
+  , dnf_branches
+  , dnf_eliminate
+  , elaborator_result_ok
+  , err
+  , finish_elaborator_result
+  , materialize_dnf_branch
+  , materialize_dnf_branch_with_spine
+  , single_dnf_branch
+  , type_multiset_contains_all
+  , type_multiset_equal
+  );
+import library/elab/testapi(String);
+
+type Branch_build_flags = Comptime_bool & Comptime_bool;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+type Maybe_function_view = Function_view | .;
+
+type Ease_adapter_result = Term_mapper | __Diagnostic_text__;
+
+rec newtype Spine_list : . | (Type_list & Spine_list) {
+  constructor mk_spine_list;
+  projector un_spine_list
+  }
+
+pure fn spine_nil() -> Spine_list {
+  Spine_list.mk_spine_list(__left__(., Type_list & Spine_list, ()))
+}
+
+pure fn spine_cons(head: Type_list, tail: Spine_list) -> Spine_list {
+  Spine_list.mk_spine_list(__right__(., Type_list & Spine_list, (head, tail)))
+}
+
+type Spine_reverse_state = Spine_list;
+
+type Spine_reverse_next = Spine_list & Spine_reverse_state;
+
+type Spine_reverse_step = Spine_list | Spine_reverse_next;
+
+pure fn spine_reverse_step(fuel: Spine_list, acc: Spine_reverse_state) -> Spine_reverse_step {
+  __either__(
+    , .
+    , Type_list & Spine_list
+    , Spine_reverse_step
+    , Spine_list.un_spine_list(fuel)
+    , .(_done: .) -> Spine_reverse_step { __left__(Spine_list, Spine_reverse_next, acc) }
+    , .(cell: Type_list & Spine_list) -> Spine_reverse_step {
+        __right__(
+          , Spine_list
+          , Spine_reverse_next
+          , (
+              , __snd__(Type_list, Spine_list, cell)
+              , spine_cons(__fst__(Type_list, Spine_list, cell), acc)
+              )
+          )
+      }
+    )
+}
+
+pure fn spine_prepend_reverse(ct: __Comptime__, prefix_rev: Spine_list, tail: Spine_list) -> Spine_list {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , Spine_reverse_state
+    , Spine_list
+    , prefix_rev
+    , tail
+    , .(
+        , loop_recur: (Spine_list & Spine_reverse_state) -> Spine_list
+        , loop_fuel: Spine_list
+        , loop_state: Spine_reverse_state
+        ) -> Spine_list {
+        let loop_step_fn = spine_reverse_step;
+        __either__(
+          , Spine_list
+          , Spine_list & Spine_reverse_state
+          , Spine_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Spine_list) -> Spine_list { loop_done }
+          , .(loop_next: Spine_list & Spine_reverse_state) -> Spine_list {
+              loop_recur(
+                , __fst__(Spine_list, Spine_reverse_state, loop_next)
+                , __snd__(Spine_list, Spine_reverse_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Branch_spine_state = Spine_list;
+
+type Branch_spine_next = Dnf_branch_list & Branch_spine_state;
+
+type Branch_spine_step = Spine_list | Branch_spine_next;
+
+pure fn branch_spines(ct: __Comptime__, branches: Dnf_branch_list) -> Spine_list {
+  __structural_recur__(
+    , ct
+    , Dnf_branch_list
+    , Branch_spine_state
+    , Spine_list
+    , branches
+    , spine_nil()
+    , .(
+        , loop_recur: (Dnf_branch_list & Branch_spine_state) -> Spine_list
+        , loop_fuel: Dnf_branch_list
+        , loop_state: Branch_spine_state
+        ) -> Spine_list {
+        let loop_step_fn =
+          .(fuel: Dnf_branch_list, state: Branch_spine_state) -> Branch_spine_step {
+            __either__(
+              , .
+              , Dnf_branch & Dnf_branch_list
+              , Branch_spine_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Branch_spine_step { __left__(Spine_list, Branch_spine_next, state) }
+              , .(cell: Dnf_branch & Dnf_branch_list) -> Branch_spine_step {
+                  let branch_type = dnf_branch_type(ct, __fst__(Dnf_branch, Dnf_branch_list, cell));
+                  __right__(
+                    , Spine_list
+                    , Branch_spine_next
+                    , (
+                        , __snd__(Dnf_branch, Dnf_branch_list, cell)
+                        , spine_cons(dnf_branch_spine(ct, branch_type), state)
+                        )
+                    )
+                }
+              )
+          };
+        __either__(
+          , Spine_list
+          , Dnf_branch_list & Branch_spine_state
+          , Spine_list
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Spine_list) -> Spine_list { loop_done }
+          , .(loop_next: Dnf_branch_list & Branch_spine_state) -> Spine_list {
+              loop_recur(
+                , __fst__(Dnf_branch_list, Branch_spine_state, loop_next)
+                , __snd__(Dnf_branch_list, Branch_spine_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn flags_allow_drop(ct: __Comptime__, flags: Branch_build_flags) -> Comptime_bool {
+  __fst__(Comptime_bool, flags)
+}
+
+pure fn flags_allow_dup(ct: __Comptime__, flags: Branch_build_flags) -> Comptime_bool {
+  __snd__(Comptime_bool, flags)
+}
+
+pure fn ease_adapter_ok(ct: __Comptime__, mapper: Term_mapper) -> Ease_adapter_result {
+  __left__(Term_mapper, __Diagnostic_text__, mapper)
+}
+
+pure fn ease_adapter_err(ct: __Comptime__, message: __Diagnostic_text__) -> Ease_adapter_result {
+  __right__(Term_mapper, __Diagnostic_text__, message)
+}
+
+pure fn some_function_view(ct: __Comptime__, view: Function_view) -> Maybe_function_view {
+  __left__(Function_view, ., view)
+}
+
+pure fn no_function_view(ct: __Comptime__) -> Maybe_function_view {
+  __right__(Function_view, ., ())
+}
+
+pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
+  __either__(
+    , .
+    , Type_view_tail1
+    , Maybe_function_view
+    , __type_view__(ct, typ)
+    , .(_unit: .) -> Maybe_function_view { no_function_view(ct) }
+    , .(tail1: Type_view_tail1) -> Maybe_function_view {
+        __either__(
+          , .
+          , Type_view_tail2
+          , Maybe_function_view
+          , tail1
+          , .(_bottom: .) -> Maybe_function_view { no_function_view(ct) }
+          , .(tail2: Type_view_tail2) -> Maybe_function_view {
+              __either__(
+                , Type_pair
+                , Type_view_tail3
+                , Maybe_function_view
+                , tail2
+                , .(_product: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+                , .(tail3: Type_view_tail3) -> Maybe_function_view {
+                    __either__(
+                      , Type_pair
+                      , Type_view_tail4
+                      , Maybe_function_view
+                      , tail3
+                      , .(_sum: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+                      , .(tail4: Type_view_tail4) -> Maybe_function_view {
+                          __either__(
+                            , Function_view
+                            , Type_view_tail5
+                            , Maybe_function_view
+                            , tail4
+                            , .(view: Function_view) -> Maybe_function_view {
+                                some_function_view(ct, view)
+                              }
+                            , .(_tail5: Type_view_tail5) -> Maybe_function_view {
+                                no_function_view(ct)
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __fst__(__Type__, __Type_arity__ & __Type__, view)
+}
+
+pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
+  __snd__(__Type_arity__, __Type__, __snd__(__Type__, __Type_arity__ & __Type__, view))
+}
+
+pure fn identity_mapper(ct: __Comptime__, _source: __Type__) -> Term_mapper {
+  .(value: __Checked_term__) -> __Checked_term__ { value }
+}
+
+pure fn branch_can_land_from_factors(
+  , ct: __Comptime__
+  , source_factors: Type_list
+  , target_factors: Type_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __if_then_else__(
+    , flags_allow_dup(ct, flags)
+    , .() -> Comptime_bool { type_multiset_contains_all(ct, source_factors, target_factors) }
+    , .() -> Comptime_bool {
+        __if_then_else__(
+          , flags_allow_drop(ct, flags)
+          , .() -> Comptime_bool { type_multiset_contains_all(ct, target_factors, source_factors) }
+          , .() -> Comptime_bool { type_multiset_equal(ct, source_factors, target_factors) }
+          )
+      }
+    )
+}
+
+pure fn build_branch_value_from_parts(
+  , ct: __Comptime__
+  , source_factors: Type_list
+  , target_factors: Type_list
+  , source_slots: Slot_list
+  , flags: Branch_build_flags
+  ) -> Elaborator_result {
+  __if_then_else__(
+    , flags_allow_dup(ct, flags)
+    , .() -> Elaborator_result {
+        __if_then_else__(
+          , type_multiset_contains_all(ct, source_factors, target_factors)
+          , .() -> Elaborator_result {
+              build_widen_product_from_slots(ct, target_factors, source_factors, source_slots)
+            }
+          , .() -> Elaborator_result { err(ct, "source DNF branch would be dropped") }
+          )
+      }
+    , .() -> Elaborator_result {
+        __if_then_else__(
+          , flags_allow_drop(ct, flags)
+          , .() -> Elaborator_result {
+              build_product_from_slots(ct, target_factors, source_factors, source_slots, .f)
+            }
+          , .() -> Elaborator_result {
+              build_product_from_slots(ct, target_factors, source_factors, source_slots, .t)
+            }
+          )
+      }
+    )
+}
+
+type Maybe_spine_take = Spine_list | .;
+
+pure fn spine_take_some(rest: Spine_list) -> Maybe_spine_take { __left__(Spine_list, ., rest) }
+
+pure fn spine_take_none() -> Maybe_spine_take { __right__(Spine_list, ., ()) }
+
+type Spine_take_state = Spine_list;
+
+type Spine_take_next = Spine_list & Spine_take_state;
+
+type Spine_take_step = Maybe_spine_take | Spine_take_next;
+
+pure fn take_first_target_for_source(
+  , ct: __Comptime__
+  , source_factors: Type_list
+  , targets: Spine_list
+  , flags: Branch_build_flags
+  ) -> Maybe_spine_take {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , Spine_take_state
+    , Maybe_spine_take
+    , targets
+    , spine_nil()
+    , .(
+        , loop_recur: (Spine_list & Spine_take_state) -> Maybe_spine_take
+        , loop_fuel: Spine_list
+        , loop_state: Spine_take_state
+        ) -> Maybe_spine_take {
+        let loop_step_fn =
+          .(fuel: Spine_list, prefix_rev: Spine_take_state) -> Spine_take_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , Spine_take_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> Spine_take_step {
+                  __left__(Maybe_spine_take, Spine_take_next, spine_take_none())
+                }
+              , .(cell: Type_list & Spine_list) -> Spine_take_step {
+                  __if_then_else__(
+                    , branch_can_land_from_factors(
+                        , ct
+                        , source_factors
+                        , __fst__(Type_list, Spine_list, cell)
+                        , flags
+                        )
+                    , .() -> Spine_take_step {
+                        __left__(
+                          , Maybe_spine_take
+                          , Spine_take_next
+                          , spine_take_some(spine_prepend_reverse(
+                              , ct
+                              , prefix_rev
+                              , __snd__(Type_list, Spine_list, cell)
+                              ))
+                          )
+                      }
+                    , .() -> Spine_take_step {
+                        __right__(
+                          , Maybe_spine_take
+                          , Spine_take_next
+                          , (
+                              , __snd__(Type_list, Spine_list, cell)
+                              , spine_cons(__fst__(Type_list, Spine_list, cell), prefix_rev)
+                              )
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Maybe_spine_take
+          , Spine_list & Spine_take_state
+          , Maybe_spine_take
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Maybe_spine_take) -> Maybe_spine_take { loop_done }
+          , .(loop_next: Spine_list & Spine_take_state) -> Maybe_spine_take {
+              loop_recur(
+                , __fst__(Spine_list, Spine_take_state, loop_next)
+                , __snd__(Spine_list, Spine_take_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Consume_state = Spine_list;
+
+type Consume_next = Spine_list & Consume_state;
+
+type Consume_step = Comptime_bool | Consume_next;
+
+pure fn sources_fit_targets_consuming(
+  , ct: __Comptime__
+  , sources: Spine_list
+  , targets: Spine_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , Consume_state
+    , Comptime_bool
+    , sources
+    , targets
+    , .(
+        , loop_recur: (Spine_list & Consume_state) -> Comptime_bool
+        , loop_fuel: Spine_list
+        , loop_state: Consume_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Spine_list, available_targets: Consume_state) -> Consume_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , Consume_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> Consume_step { __left__(Comptime_bool, Consume_next, .t) }
+              , .(cell: Type_list & Spine_list) -> Consume_step {
+                  __either__(
+                    , Spine_list
+                    , .
+                    , Consume_step
+                    , take_first_target_for_source(
+                        , ct
+                        , __fst__(Type_list, Spine_list, cell)
+                        , available_targets
+                        , flags
+                        )
+                    , .(remaining_targets: Spine_list) -> Consume_step {
+                        __right__(
+                          , Comptime_bool
+                          , Consume_next
+                          , (__snd__(Type_list, Spine_list, cell), remaining_targets)
+                          )
+                      }
+                    , .(_missing: .) -> Consume_step { __left__(Comptime_bool, Consume_next, .f) }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Spine_list & Consume_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Spine_list & Consume_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Spine_list, Consume_state, loop_next)
+                , __snd__(Spine_list, Consume_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn into_branch_shape_ok(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  sources_fit_targets_consuming(
+    , ct
+    , branch_spines(ct, dnf_branches(ct, source))
+    , branch_spines(ct, dnf_branches(ct, target))
+    , flags
+    )
+}
+
+pure fn iso_branch_shape_ok(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __if_then_else__(
+    , sources_fit_targets_consuming(
+        , ct
+        , branch_spines(ct, dnf_branches(ct, source))
+        , branch_spines(ct, dnf_branches(ct, target))
+        , flags
+        )
+    , .() -> Comptime_bool {
+        sources_fit_targets_consuming(
+          , ct
+          , branch_spines(ct, dnf_branches(ct, target))
+          , branch_spines(ct, dnf_branches(ct, source))
+          , flags
+          )
+      }
+    , .() -> Comptime_bool { .f }
+    )
+}
+
+type Any_target_state = Comptime_bool;
+
+type Any_target_next = Spine_list & Any_target_state;
+
+type Any_target_step = Comptime_bool | Any_target_next;
+
+pure fn source_factors_have_target(
+  , ct: __Comptime__
+  , source_factors: Type_list
+  , targets: Spine_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , Any_target_state
+    , targets
+    , .f
+    , .(
+        , loop_recur: (Spine_list & Any_target_state) -> Comptime_bool
+        , loop_fuel: Spine_list
+        , loop_state: Any_target_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , Any_target_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> Any_target_step { __left__(Comptime_bool, Any_target_next, .f) }
+              , .(cell: Type_list & Spine_list) -> Any_target_step {
+                  __if_then_else__(
+                    , branch_can_land_from_factors(
+                        , ct
+                        , source_factors
+                        , __fst__(Type_list, Spine_list, cell)
+                        , flags
+                        )
+                    , .() -> Any_target_step { __left__(Comptime_bool, Any_target_next, .t) }
+                    , .() -> Any_target_step {
+                        __right__(
+                          , Comptime_bool
+                          , Any_target_next
+                          , (__snd__(Type_list, Spine_list, cell), .f)
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Spine_list & Any_target_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Spine_list & Any_target_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Spine_list, Any_target_state, loop_next)
+                , __snd__(Spine_list, Any_target_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn target_factors_have_source(
+  , ct: __Comptime__
+  , target_factors: Type_list
+  , sources: Spine_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , Any_target_state
+    , sources
+    , .f
+    , .(
+        , loop_recur: (Spine_list & Any_target_state) -> Comptime_bool
+        , loop_fuel: Spine_list
+        , loop_state: Any_target_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , Any_target_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> Any_target_step { __left__(Comptime_bool, Any_target_next, .f) }
+              , .(cell: Type_list & Spine_list) -> Any_target_step {
+                  __if_then_else__(
+                    , branch_can_land_from_factors(
+                        , ct
+                        , __fst__(Type_list, Spine_list, cell)
+                        , target_factors
+                        , flags
+                        )
+                    , .() -> Any_target_step { __left__(Comptime_bool, Any_target_next, .t) }
+                    , .() -> Any_target_step {
+                        __right__(
+                          , Comptime_bool
+                          , Any_target_next
+                          , (__snd__(Type_list, Spine_list, cell), .f)
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Spine_list & Any_target_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Spine_list & Any_target_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Spine_list, Any_target_state, loop_next)
+                , __snd__(Spine_list, Any_target_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type All_branch_state = Comptime_bool;
+
+type All_branch_next = Spine_list & All_branch_state;
+
+type All_branch_step = Comptime_bool | All_branch_next;
+
+pure fn all_sources_have_targets(
+  , ct: __Comptime__
+  , sources: Spine_list
+  , targets: Spine_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , All_branch_state
+    , sources
+    , .t
+    , .(
+        , loop_recur: (Spine_list & All_branch_state) -> Comptime_bool
+        , loop_fuel: Spine_list
+        , loop_state: All_branch_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , All_branch_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> All_branch_step { __left__(Comptime_bool, All_branch_next, .t) }
+              , .(cell: Type_list & Spine_list) -> All_branch_step {
+                  __if_then_else__(
+                    , source_factors_have_target(
+                        , ct
+                        , __fst__(Type_list, Spine_list, cell)
+                        , targets
+                        , flags
+                        )
+                    , .() -> All_branch_step {
+                        __right__(
+                          , Comptime_bool
+                          , All_branch_next
+                          , (__snd__(Type_list, Spine_list, cell), .t)
+                          )
+                      }
+                    , .() -> All_branch_step { __left__(Comptime_bool, All_branch_next, .f) }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Spine_list & All_branch_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Spine_list & All_branch_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Spine_list, All_branch_state, loop_next)
+                , __snd__(Spine_list, All_branch_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn all_targets_have_sources(
+  , ct: __Comptime__
+  , sources: Spine_list
+  , targets: Spine_list
+  , flags: Branch_build_flags
+  ) -> Comptime_bool {
+  __structural_recur__(
+    , ct
+    , Spine_list
+    , All_branch_state
+    , targets
+    , .t
+    , .(
+        , loop_recur: (Spine_list & All_branch_state) -> Comptime_bool
+        , loop_fuel: Spine_list
+        , loop_state: All_branch_state
+        ) -> Comptime_bool {
+        let loop_step_fn =
+          .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
+            __either__(
+              , .
+              , Type_list & Spine_list
+              , All_branch_step
+              , Spine_list.un_spine_list(fuel)
+              , .(_done: .) -> All_branch_step { __left__(Comptime_bool, All_branch_next, .t) }
+              , .(cell: Type_list & Spine_list) -> All_branch_step {
+                  __if_then_else__(
+                    , target_factors_have_source(
+                        , ct
+                        , __fst__(Type_list, Spine_list, cell)
+                        , sources
+                        , flags
+                        )
+                    , .() -> All_branch_step {
+                        __right__(
+                          , Comptime_bool
+                          , All_branch_next
+                          , (__snd__(Type_list, Spine_list, cell), .t)
+                          )
+                      }
+                    , .() -> All_branch_step { __left__(Comptime_bool, All_branch_next, .f) }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Comptime_bool
+          , Spine_list & All_branch_state
+          , Comptime_bool
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Comptime_bool) -> Comptime_bool { loop_done }
+          , .(loop_next: Spine_list & All_branch_state) -> Comptime_bool {
+              loop_recur(
+                , __fst__(Spine_list, All_branch_state, loop_next)
+                , __snd__(Spine_list, All_branch_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Search_state = Elaborator_result;
+
+type Search_next = Dnf_branch_list & Search_state;
+
+type Search_step = Elaborator_result | Search_next;
+
+pure fn choose_target_branch(
+  , ct: __Comptime__
+  , target: __Type__
+  , source_branch: __Type__
+  , source_value: __Checked_term__
+  , targets: Dnf_branch_list
+  , flags: Branch_build_flags
+  ) -> Elaborator_result {
+  let source_factors = dnf_branch_spine(ct, source_branch);
+  let source_slots = dnf_branch_slots(ct, source_branch, source_value);
+  __structural_recur__(
+    , ct
+    , Dnf_branch_list
+    , Search_state
+    , Elaborator_result
+    , targets
+    , err(ct, "no target DNF branch matches source branch")
+    , .(
+        , loop_recur: (Dnf_branch_list & Search_state) -> Elaborator_result
+        , loop_fuel: Dnf_branch_list
+        , loop_state: Search_state
+        ) -> Elaborator_result {
+        let loop_step_fn =
+          .(fuel: Dnf_branch_list, state: Search_state) -> Search_step {
+            __either__(
+              , .
+              , Dnf_branch & Dnf_branch_list
+              , Search_step
+              , Type_list.un_type_list(fuel)
+              , .(_done: .) -> Search_step { __left__(Elaborator_result, Search_next, state) }
+              , .(cell: Dnf_branch & Dnf_branch_list) -> Search_step {
+                  let target_branch = __fst__(Dnf_branch, Dnf_branch_list, cell);
+                  let target_branch_type = dnf_branch_type(ct, target_branch);
+                  let target_factors = dnf_branch_spine(ct, target_branch_type);
+                  __if_then_else__(
+                    , branch_can_land_from_factors(ct, source_factors, target_factors, flags)
+                    , .() -> Search_step {
+                        __either__(
+                          , __Checked_term__
+                          , __Diagnostic_text__
+                          , Search_step
+                          , build_branch_value_from_parts(
+                              , ct
+                              , source_factors
+                              , target_factors
+                              , source_slots
+                              , flags
+                              )
+                          , .(branch_value: __Checked_term__) -> Search_step {
+                              __either__(
+                                , __Checked_term__
+                                , __Diagnostic_text__
+                                , Search_step
+                                , materialize_dnf_branch_with_spine(
+                                    , ct
+                                    , target
+                                    , target_branch_type
+                                    , target_factors
+                                    , branch_value
+                                    )
+                                , .(term: __Checked_term__) -> Search_step {
+                                    __left__(
+                                      , Elaborator_result
+                                      , Search_next
+                                      , __left__(__Checked_term__, __Diagnostic_text__, term)
+                                      )
+                                  }
+                                , .(message: __Diagnostic_text__) -> Search_step {
+                                    __right__(
+                                      , Elaborator_result
+                                      , Search_next
+                                      , (
+                                          , __snd__(Dnf_branch, Dnf_branch_list, cell)
+                                          , err(ct, message)
+                                          )
+                                      )
+                                  }
+                                )
+                            }
+                          , .(message: __Diagnostic_text__) -> Search_step {
+                              __right__(
+                                , Elaborator_result
+                                , Search_next
+                                , (__snd__(Dnf_branch, Dnf_branch_list, cell), err(ct, message))
+                                )
+                            }
+                          )
+                      }
+                    , .() -> Search_step {
+                        __right__(
+                          , Elaborator_result
+                          , Search_next
+                          , (__snd__(Dnf_branch, Dnf_branch_list, cell), state)
+                          )
+                      }
+                    )
+                }
+              )
+          };
+        __either__(
+          , Elaborator_result
+          , Dnf_branch_list & Search_state
+          , Elaborator_result
+          , loop_step_fn(loop_fuel, loop_state)
+          , .(loop_done: Elaborator_result) -> Elaborator_result { loop_done }
+          , .(loop_next: Dnf_branch_list & Search_state) -> Elaborator_result {
+              loop_recur(
+                , __fst__(Dnf_branch_list, Search_state, loop_next)
+                , __snd__(Dnf_branch_list, Search_state, loop_next)
+                )
+            }
+          )
+      }
+    )
+}
+
+type Preflight_payload = Dnf_branch_list & Dnf_branch_list;
+
+type Preflight_result = Preflight_payload | .;
+
+pure fn preflight_sources(payload: Preflight_payload) -> Dnf_branch_list {
+  __fst__(Dnf_branch_list, Dnf_branch_list, payload)
+}
+
+pure fn preflight_targets_payload(payload: Preflight_payload) -> Dnf_branch_list {
+  __snd__(Dnf_branch_list, Dnf_branch_list, payload)
+}
+
+pure fn preflight_ok(sources: Dnf_branch_list, targets: Dnf_branch_list) -> Preflight_result {
+  __left__(Preflight_payload, ., (sources, targets))
+}
+
+pure fn preflight_err() -> Preflight_result { __right__(Preflight_payload, ., ()) }
+
+pure fn preflight_dnf(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , flags: Branch_build_flags
+  , require_all_targets: Comptime_bool
+  ) -> Preflight_result {
+  let sources = dnf_branches(ct, source);
+  let targets = dnf_branches(ct, target);
+  let source_spines = branch_spines(ct, sources);
+  let target_spines = branch_spines(ct, targets);
+  __if_then_else__(
+    , all_sources_have_targets(ct, source_spines, target_spines, flags)
+    , .() -> Preflight_result {
+        __if_then_else__(
+          , require_all_targets
+          , .() -> Preflight_result {
+              __if_then_else__(
+                , all_targets_have_sources(ct, source_spines, target_spines, flags)
+                , .() -> Preflight_result { preflight_ok(sources, targets) }
+                , .() -> Preflight_result { preflight_err() }
+                )
+            }
+          , .() -> Preflight_result { preflight_ok(sources, targets) }
+          )
+      }
+    , .() -> Preflight_result { preflight_err() }
+    )
+}
+
+pure fn preflight(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , flags: Branch_build_flags
+  , require_all_targets: Comptime_bool
+  ) -> Comptime_bool {
+  __either__(
+    , Preflight_payload
+    , .
+    , Comptime_bool
+    , preflight_dnf(ct, source, target, flags, require_all_targets)
+    , .(_payload: Preflight_payload) -> Comptime_bool { .t }
+    , .() -> Comptime_bool { .f }
+    )
+}
+
+pure fn algebraic_from_branch(
+  , ct: __Comptime__
+  , target: __Type__
+  , source_branch: __Type__
+  , source_value: __Checked_term__
+  , targets: Dnf_branch_list
+  , flags: Branch_build_flags
+  ) -> __Checked_term__ {
+  __either__(
+    , __Checked_term__
+    , __Diagnostic_text__
+    , __Checked_term__
+    , choose_target_branch(ct, target, source_branch, source_value, targets, flags)
+    , .(term: __Checked_term__) -> __Checked_term__ { term }
+    , .(_message: __Diagnostic_text__) -> __Checked_term__ { source_value }
+    )
+}
+
+pure fn algebraic_eliminate(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  , targets: Dnf_branch_list
+  , flags: Branch_build_flags
+  ) -> __Checked_term__ {
+  dnf_eliminate(
+    , ct
+    , source
+    , target
+    , value
+    , .(source_branch: __Type__, source_value: __Checked_term__) -> __Checked_term__ {
+        algebraic_from_branch(ct, target, source_branch, source_value, targets, flags)
+      }
+    )
+}
+
+pure fn algebraic_from_dnf(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  , payload: Preflight_payload
+  , flags: Branch_build_flags
+  ) -> __Checked_term__ {
+  let sources = preflight_sources(payload);
+  let targets = preflight_targets_payload(payload);
+  __either__(
+    , Dnf_branch
+    , .
+    , __Checked_term__
+    , single_dnf_branch(ct, sources)
+    , .(single_source: Dnf_branch) -> __Checked_term__ {
+        __if_then_else__(
+          , __type_equal__(ct, source, dnf_branch_type(ct, single_source))
+          , .() -> __Checked_term__ {
+              algebraic_from_branch(ct, target, single_source, value, targets, flags)
+            }
+          , .() -> __Checked_term__ {
+              algebraic_eliminate(ct, source, target, value, targets, flags)
+            }
+          )
+      }
+    , .() -> __Checked_term__ { algebraic_eliminate(ct, source, target, value, targets, flags) }
+    )
+}
+
+pure fn algebraic_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , value: __Checked_term__
+  , flags: Branch_build_flags
+  , require_all_targets: Comptime_bool
+  , failure: __Diagnostic_text__
+  ) -> Elaborator_result {
+  __either__(
+    , Preflight_payload
+    , .
+    , Elaborator_result
+    , preflight_dnf(ct, source, target, flags, require_all_targets)
+    , .(payload: Preflight_payload) -> Elaborator_result {
+        __left__(
+          , __Checked_term__
+          , __Diagnostic_text__
+          , algebraic_from_dnf(ct, source, target, value, payload, flags)
+          )
+      }
+    , .() -> Elaborator_result { err(ct, failure) }
+    )
+}
+
+type Ease_recur = (Type_pair & Type_pair) -> Ease_adapter_result;
+
+pure fn ease_leaf_mapper(
+  , ct: __Comptime__
+  , source: __Type__
+  , target: __Type__
+  , flags: Branch_build_flags
+  ) -> Ease_adapter_result {
+  __if_then_else__(
+    , preflight(ct, source, target, flags, .f)
+    , .() -> Ease_adapter_result {
+        ease_adapter_ok(
+          , ct
+          , .(value: __Checked_term__) -> __Checked_term__ {
+              __either__(
+                , __Checked_term__
+                , __Diagnostic_text__
+                , __Checked_term__
+                , algebraic_impl(
+                    , ct
+                    , source
+                    , target
+                    , value
+                    , flags
+                    , .f
+                    , "ease POC found no DNF easing"
+                    )
+                , .(term: __Checked_term__) -> __Checked_term__ { term }
+                , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
+                )
+            }
+          )
+      }
+    , .() -> Ease_adapter_result { ease_adapter_err(ct, "ease POC found no DNF easing") }
+    )
+}
+
+pure fn ease_function_mapper(
+  , ct: __Comptime__
+  , recur: Ease_recur
+  , source: __Type__
+  , target: __Type__
+  , source_view: Function_view
+  , target_view: Function_view
+  ) -> Ease_adapter_result {
+  let source_param = function_param(ct, source_view);
+  let source_ret = function_result(ct, source_view);
+  let target_param = function_param(ct, target_view);
+  let target_ret = function_result(ct, target_view);
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Ease_adapter_result
+    , recur((target_param, source_param), (target_param, source_param))
+    , .(param_mapper: Term_mapper) -> Ease_adapter_result {
+        __either__(
+          , Term_mapper
+          , __Diagnostic_text__
+          , Ease_adapter_result
+          , recur((source_ret, target_ret), (source_ret, target_ret))
+          , .(ret_mapper: Term_mapper) -> Ease_adapter_result {
+              ease_adapter_ok(
+                , ct
+                , .(value: __Checked_term__) -> __Checked_term__ {
+                    __term_let__(
+                      , ct
+                      , source
+                      , value
+                      , .(fn_value: __Checked_term__) -> __Checked_term__ {
+                          __term_fn__(
+                            , ct
+                            , target
+                            , .(arg_packet: __Checked_term__) -> __Checked_term__ {
+                                ret_mapper(__term_call__(
+                                  , ct
+                                  , source
+                                  , fn_value
+                                  , param_mapper(arg_packet)
+                                  ))
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          , .(message: __Diagnostic_text__) -> Ease_adapter_result { ease_adapter_err(ct, message) }
+          )
+      }
+    , .(message: __Diagnostic_text__) -> Ease_adapter_result { ease_adapter_err(ct, message) }
+    )
+}
+
+pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, _fuel: Type_pair, pair: Type_pair) -> Ease_adapter_result {
+  let source = __fst__(__Type__, __Type__, pair);
+  let target = __snd__(__Type__, __Type__, pair);
+  __if_then_else__(
+    , __type_equal__(ct, source, target)
+    , .() -> Ease_adapter_result { ease_adapter_ok(ct, identity_mapper(ct, source)) }
+    , .() -> Ease_adapter_result {
+        __if_then_else__(
+          , __type_equal__(ct, source, __type_bottom__(ct))
+          , .() -> Ease_adapter_result {
+              ease_adapter_ok(
+                , ct
+                , .(value: __Checked_term__) -> __Checked_term__ {
+                    __intrinsic_absurd__(ct, value, target)
+                  }
+                )
+            }
+          , .() -> Ease_adapter_result {
+              __either__(
+                , Function_view
+                , .
+                , Ease_adapter_result
+                , function_view(ct, source)
+                , .(source_view: Function_view) -> Ease_adapter_result {
+                    __either__(
+                      , Function_view
+                      , .
+                      , Ease_adapter_result
+                      , function_view(ct, target)
+                      , .(target_view: Function_view) -> Ease_adapter_result {
+                          ease_function_mapper(ct, recur, source, target, source_view, target_view)
+                        }
+                      , .(_target_not_function: .) -> Ease_adapter_result {
+                          ease_leaf_mapper(ct, source, target, (.t, .f))
+                        }
+                      )
+                  }
+                , .(_source_not_function: .) -> Ease_adapter_result {
+                    ease_leaf_mapper(ct, source, target, (.t, .f))
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn ease_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__) -> Ease_adapter_result {
+  __structural_recur__(
+    , ct
+    , Type_pair
+    , Type_pair
+    , Ease_adapter_result
+    , (source, target)
+    , (source, target)
+    , .(recur: Ease_recur, fuel: Type_pair, state: Type_pair) -> Ease_adapter_result {
+        ease_recur_step(ct, recur, fuel, state)
+      }
+    )
+}
+
+pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  __if_then_else__(
+    , iso_branch_shape_ok(ct, source, target, (.f, .f))
+    , .() -> Elaborator_result {
+        algebraic_impl(ct, source, target, value, (.f, .f), .t, "iso POC found no DNF bijection")
+      }
+    , .() -> Elaborator_result { err(ct, "iso POC found no DNF bijection") }
+    )
+}
+
+pure fn iso_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { iso_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn iso_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, iso_elaborator(ct, source, value, target)) }
+
+/// Rearranges products and sums when the source and target have a DNF bijection.
+pub elab iso : [Source] Source -> [Target] Target { impl iso_checked }
+
+pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  __if_then_else__(
+    , into_branch_shape_ok(ct, source, target, (.f, .t))
+    , .() -> Elaborator_result {
+        algebraic_impl(ct, source, target, value, (.f, .t), .f, "into POC found no DNF injection")
+      }
+    , .() -> Elaborator_result { err(ct, "into POC found no DNF injection") }
+    )
+}
+
+pure fn into_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { into_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn into_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, into_elaborator(ct, source, value, target)) }
+
+/// Injects a source shape into a larger compatible DNF target.
+pub elab into : [Source] Source -> [Target] Target { impl into_checked }
+
+pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  algebraic_impl(ct, source, target, value, (.t, .f), .t, "onto POC found no DNF surjection")
+}
+
+pure fn onto_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { onto_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn onto_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, onto_elaborator(ct, source, value, target)) }
+
+/// Projects a source shape onto a smaller compatible DNF target.
+pub elab onto : [Source] Source -> [Target] Target { impl onto_checked }
+
+pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  algebraic_impl(ct, source, target, value, (.f, .f), .f, "align POC found no DNF alignment")
+}
+
+pure fn align_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { align_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn align_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ {
+  finish_elaborator_result(ct, align_elaborator(ct, source, value, target))
+}
+
+/// Reorders compatible DNF branches without allowing injection or projection.
+pub elab align : [Source] Source -> [Target] Target { impl align_checked }
+
+pure fn ease_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  __either__(
+    , Term_mapper
+    , __Diagnostic_text__
+    , Elaborator_result
+    , ease_mapper_result(ct, source, target)
+    , .(mapper: Term_mapper) -> Elaborator_result {
+        __left__(__Checked_term__, __Diagnostic_text__, mapper(value))
+      }
+    , .(message: __Diagnostic_text__) -> Elaborator_result { err(ct, message) }
+    )
+}
+
+pure fn ease_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { ease_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn ease_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, ease_elaborator(ct, source, value, target)) }
+
+/// Performs recursive structural adaptation across products, sums, and functions.
+pub elab ease : [Source] Source -> [Target] Target { impl ease_checked }
+
+pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Elaborator_result {
+  __either__(
+    , Dnf_branch
+    , .
+    , Elaborator_result
+    , single_dnf_branch(ct, dnf_branches(ct, target))
+    , .(_target_branch: Dnf_branch) -> Elaborator_result {
+        algebraic_impl(
+          , ct
+          , source
+          , target
+          , value
+          , (.t, .f)
+          , .t
+          , "atom POC found no single-branch target"
+          )
+      }
+    , .() -> Elaborator_result { err(ct, "atom POC found no single-branch target") }
+    )
+}
+
+pure fn atom_elaborator(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> Elaborator_result {
+  __either__(
+    , __Type__
+    , .
+    , Elaborator_result
+    , target
+    , .(target_type: __Type__) -> Elaborator_result { atom_impl(ct, source, value, target_type) }
+    , .() -> Elaborator_result { err(ct, "elaborator needs an explicit or expected target type") }
+    )
+}
+
+/// Evaluates the corresponding elaborator and returns its checked core result.
+pub pure fn atom_checked(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Optional_type
+  ) -> __Checked_term__ { finish_elaborator_result(ct, atom_elaborator(ct, source, value, target)) }
+
+/// Extracts a single target atom or product branch from a larger source shape.
+pub elab atom : [Source] Source -> [Target] Target { impl atom_checked }

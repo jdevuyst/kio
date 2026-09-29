@@ -1,0 +1,3 @@
+module app/types;
+
+pub(app) newtype Hidden : . { pub(app) constructor mk; pub(app) projector un }

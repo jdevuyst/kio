@@ -1,0 +1,9 @@
+module testapi/types;
+
+// `Both` is a type alias whose expansion is the two-slot product the
+// newtype wraps. A boundary slot named through the alias must cross as
+// that expansion's structural shape, not opaquely — the crossing is
+// identical to writing `A & B` inline.
+pub type Both[A][B] = A & B;
+
+pub newtype Pair[A][B] : Both(A, B) { pub constructor mk_pair; pub projector un_pair }

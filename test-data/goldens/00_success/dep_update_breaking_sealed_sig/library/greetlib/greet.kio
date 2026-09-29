@@ -1,0 +1,5 @@
+module greet;
+
+pub fn first[A](x: A, _y: A) -> A { x }
+
+pub fn second[A](_x: A, y: A) -> A { y }

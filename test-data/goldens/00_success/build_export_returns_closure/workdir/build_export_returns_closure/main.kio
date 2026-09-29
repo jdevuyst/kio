@@ -1,0 +1,5 @@
+module build_export_returns_closure/main;
+
+import build_export_returns_closure(I32, add_i32);
+
+pub fn make_adder(delta: I32) -> I32 -> I32 { .(n: I32) { add_i32(n, delta) } }

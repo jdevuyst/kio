@@ -1,0 +1,6 @@
+module main;
+
+import origin(Item, {item});
+import origin({item});
+
+fn tagged() -> Item { {item=} }

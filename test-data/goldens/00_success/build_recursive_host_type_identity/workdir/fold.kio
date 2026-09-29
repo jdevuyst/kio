@@ -1,0 +1,23 @@
+module fold;
+
+import elab/control(if);
+import testapi(Array, Bool, I32);
+import testapi/iter(loop);
+
+labels Array_state = { cells: Array(I32) };
+
+rec(loop) fn keep_array_once(done: Bool, state: Array_state) -> Array_state {
+  if! done {
+    state
+  } else {
+    rec keep_array_once(.t, state)
+  }
+}
+
+rec(loop) fn fold_once[S](done: Bool, cells: Array(I32), step: (S & I32) -> S, index: I32, acc: S) -> S {
+  if! done {
+    acc
+  } else {
+    rec fold_once(.t, cells, step, index, step(acc, index))
+  }
+}

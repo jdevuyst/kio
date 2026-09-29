@@ -1,0 +1,5 @@
+module pure_modifier_on_elab/main;
+
+import pure_modifier_on_elab/elaborators(checked);
+
+pure fn keep(value: .) -> . { checked!(value, .) }

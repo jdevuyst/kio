@@ -1,0 +1,7 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}
+
+retype widget/store.Node to core/store.Node;

@@ -1,0 +1,12 @@
+module inspect;
+
+import __comptime__;
+
+pure fn inspect_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , _value: __Checked_term__
+  , _target: __Type__
+  ) -> __Checked_term__ { __elab_error__(ct, __type_display__(ct, source)) }
+
+pub elab inspect : [Source] Source -> [Target] Target { impl inspect_impl }

@@ -1,0 +1,48 @@
+module packet_checksum_classifier/rules;
+
+import elab/control(if);
+import packet_checksum_classifier/scanner as scan;
+import testapi(Bool, String);
+import testapi/text as text;
+
+fn is_packet(frame: String) -> Bool { text.string_eq(scan.prefix(frame), "PKT") }
+
+fn is_valid_a(frame: String) -> Bool {
+  if! text.string_eq(scan.ident(frame), "A17") {
+    text.string_eq(scan.checksum(frame), "08")
+  } else {
+    .f
+  }
+}
+
+fn is_warn_b(frame: String) -> Bool {
+  if! text.string_eq(scan.ident(frame), "B04") {
+    text.string_eq(scan.checksum(frame), "03")
+  } else {
+    .f
+  }
+}
+
+fn is_reject_c(frame: String) -> Bool {
+  if! text.string_eq(scan.ident(frame), "C99") {
+    text.string_eq(scan.checksum(frame), "12")
+  } else {
+    .f
+  }
+}
+
+pub fn class_for(frame: String) -> String {
+  if! is_packet(frame) {
+    if! is_valid_a(frame) {
+      "valid"
+    } else if! is_warn_b(frame) {
+      "warn"
+    } else if! is_reject_c(frame) {
+      "reject"
+    } else {
+      "reject"
+    }
+  } else {
+    "invalid-prefix"
+  }
+}

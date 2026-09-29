@@ -1,0 +1,23 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(fit);
+import testapi(I32, String);
+import testapi/io(print);
+
+// Spine equivalent of `exec_ease_widen_and_project`. The original
+// used algebraic `ease!` to compose product projection and sum
+// widening; `fit!` covers it directly via spine recursion. Source
+// `(String & I32)` first projects to `String` (narrow_prod!),
+// then widens into the target sum (widen_sum!) — composition order
+// is fit!'s narrow-before-widen discipline.
+fn project_and_widen(p: String & I32) -> String | I32 { fit!(p) }
+
+pub fn main() -> . {
+  let r = project_and_widen(("projected-and-widened\n", 0));
+  let s =
+    match! r {
+      (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
+    };
+  print(s)
+}

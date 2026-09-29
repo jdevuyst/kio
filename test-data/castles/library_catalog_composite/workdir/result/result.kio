@@ -1,0 +1,323 @@
+/// Ready-to-use right-biased Result library with constructors, folds, mapping, binding, recovery, and operators.
+module result/result;
+
+import result/elab/match(match);
+import result/elab/spine_elaborators(widen_sum);
+
+// `Result(T, E)` is exactly the structural sum `T | E` — success on the
+// left, error on the right (Rust's convention). There is no nominal
+// wrapper: a `Result(T, E)` *is* a `T | E`, so `match!`, the spine palette,
+// and `widen_sum!` / `narrow_sum!` compose with these functions without any
+// unwrapping ceremony. The module just provides the *named* surface —
+// `ok`, `err`, `fold`, `map`, `bind`, … — a reader of Rust- or OCaml-style
+// code expects.
+
+// =====================================================================
+// The type
+// =====================================================================
+/// Right-biased success-or-error sum with success in the left arm and error in the right arm.
+pub type Result[T][E] = T | E;
+
+/// A pure two-state truth value, so the predicates below return a
+/// proper boolean without reaching for a host `Bool`. The two arms are
+/// labeled so `match!` can tell them apart (a bare `. | .` could not).
+pub labels { btrue: ., bfalse: . };
+
+/// Boolean-like result type used by pure predicates in this module.
+pub type Bool = Btrue | Bfalse;
+
+/// Builds the true branch of the module-local boolean shape.
+pub fn yes() -> Bool { widen_sum!({btrue=}, Btrue | Bfalse) }
+
+/// Builds the false branch of the module-local boolean shape.
+pub fn no() -> Bool { widen_sum!({bfalse=}, Btrue | Bfalse) }
+
+/// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
+/// labels inside this module — a consumer never has to name `Btrue` /
+/// `Bfalse` to branch on a predicate's result.
+pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
+  match! b {
+    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
+  }
+}
+
+// =====================================================================
+// Constructors
+// =====================================================================
+/// Injects a success payload into the left arm of a `Result`.
+pub fn ok[T][E](v: T) -> Result(T, E) { widen_sum!(v, T | E) }
+
+/// Injects an error payload into the right arm of a `Result`.
+pub fn err[T][E](x: E) -> Result(T, E) { widen_sum!(x, T | E) }
+
+// =====================================================================
+// The eliminator
+// =====================================================================
+//
+// Every consumer below routes through `fold`, so this two-arm `match!` is
+// the only place the sum is taken apart.
+/// Eliminates a `Result` by dispatching to the success or error handler.
+pub fn fold[T][E][R](on_ok: T -> R, on_err: E -> R, result: Result(T, E)) -> R {
+  match! result {
+    (.(v: T) { on_ok(v) }, .(x: E) { on_err(x) })
+  }
+}
+
+// =====================================================================
+// Predicates
+// =====================================================================
+/// Reports whether a result is in the success arm.
+pub fn is_ok[T][E](result: Result(T, E)) -> Bool {
+  fold(.(_v: T) { yes() }, .(_x: E) { no() }, result)
+}
+
+/// Reports whether a result is in the error arm.
+pub fn is_err[T][E](result: Result(T, E)) -> Bool {
+  fold(.(_v: T) { no() }, .(_x: E) { yes() }, result)
+}
+
+// =====================================================================
+// Functor / bifunctor
+// =====================================================================
+/// Transforms success payloads and passes errors through unchanged.
+pub fn map[T][E][U](f: T -> U, result: Result(T, E)) -> Result(U, E) {
+  fold(.(v: T) { ok(_, E, f(v)) }, .(x: E) { err(U, _, x) }, result)
+}
+
+/// Maps the error payload while leaving successes untouched.
+pub fn map_err[T][E][G](f: E -> G, result: Result(T, E)) -> Result(T, G) {
+  fold(.(v: T) { ok(_, G, v) }, .(x: E) { err(T, _, f(x)) }, result)
+}
+
+/// Maps both success and error payloads in one pass.
+pub fn bimap[T][E][U][G](f: T -> U, h: E -> G, result: Result(T, E)) -> Result(U, G) {
+  fold(.(v: T) { ok(_, G, f(v)) }, .(x: E) { err(U, _, h(x)) }, result)
+}
+
+// =====================================================================
+// Monad in the success slot (right-biased, Rust convention)
+// =====================================================================
+/// Sequences a fallible computation, short-circuiting on the first error.
+pub fn bind[T][E][U](result: Result(T, E), k: T -> Result(U, E)) -> Result(U, E) {
+  fold(.(v: T) { k(v) }, .(x: E) { err(U, _, x) }, result)
+}
+
+/// Applies a wrapped function to a wrapped value, propagating errors.
+pub fn apply[T][E][U](rf: Result(T -> U, E), result: Result(T, E)) -> Result(U, E) {
+  bind(rf, .(f: T -> U) { map(f, result) })
+}
+
+// =====================================================================
+// Recovery
+// =====================================================================
+/// Keeps the current success value, falling back only on error.
+pub fn or_else[T][E](result: Result(T, E), alt: Result(T, E)) -> Result(T, E) {
+  fold(.(v: T) { ok(_, E, v) }, .(_x: E) { alt }, result)
+}
+
+/// Extracts the success payload or returns the provided default.
+pub fn unwrap_or[T][E](default: T, result: Result(T, E)) -> T {
+  fold(.(v: T) { v }, .(_x: E) { default }, result)
+}
+
+/// Extracts the error payload or returns the provided default.
+pub fn unwrap_err_or[T][E](default: E, result: Result(T, E)) -> E {
+  fold(.(_v: T) { default }, .(x: E) { x }, result)
+}
+
+// =====================================================================
+// Bridge
+// =====================================================================
+/// Exchanges the success and error arms of a `Result`.
+pub fn swap[T][E](result: Result(T, E)) -> Result(E, T) {
+  fold(.(v: T) { err(E, _, v) }, .(x: E) { ok(_, T, x) }, result)
+}
+
+// =====================================================================
+// Operator DSL
+// =====================================================================
+//
+// `%>` and `??` need their operands flipped: `map` takes `(f, result)` but
+// the operator reads `(result, f)`, and likewise `unwrap_or` vs `??`. These
+// thin wrappers give the operators their receiver-first reading.
+/// Maps over a result with the result argument first, as required by the operator binding.
+pub fn flip_map[T][E][U](result: Result(T, E), f: T -> U) -> Result(U, E) { map(f, result) }
+
+/// Recovers with the result argument first, as required by the operator binding.
+pub fn recover[T][E](result: Result(T, E), default: T) -> T { unwrap_or(default, result) }
+
+/// Sequences a successful `Result` into the next fallible computation.
+pub op _ ?> _ { impl bind }
+
+/// Maps a function over the success side of a `Result`.
+pub op _ %> _ { impl flip_map }
+
+/// Recovers a bare value from a `Result` with a default on error.
+pub op _ ?? _ { impl recover }
+
+/// Applies a `Result`-wrapped function to a `Result`-wrapped value.
+pub op _ <*> _ { impl apply }
+
+// =====================================================================
+// Algebraic laws (`equiv`)
+// =====================================================================
+//
+// A bare `Result(T, E)` parameter is an opaque sum atom the reducer cannot
+// dispatch on — `match!` on it is stuck — so the laws that walk the sum are
+// stated on the two concrete spines `ok(x)` and `err(y)`. That pair *is* the
+// universal statement: a `Result` is one of those two shapes, so the arm-wise
+// laws cover every inhabitant. Laws whose left side already injects a known
+// arm discharge directly. The identity laws use a monomorphic identity lambda
+// at each use site, since a polymorphic `id` can't be passed first-class
+// without type arguments.
+
+// ---- Constructor / eliminator round-trips ----
+equiv fold_ok_is_ok[T][E](x: T) {
+  fold(.(v: T) { ok(_, E, v) }, .(w: E) { err(T, _, w) }, ok(_, E, x));
+  ok(_, E, x)
+}
+
+equiv fold_err_is_err[T][E](y: E) {
+  fold(.(v: T) { ok(_, E, v) }, .(w: E) { err(T, _, w) }, err(T, _, y));
+  err(T, _, y)
+}
+
+// ---- Functor identity: map(id, r) ≡ r ----
+equiv map_id_ok[T][E](x: T) {
+  map(.(v: T) { v }, ok(_, E, x));
+  ok(_, E, x)
+}
+
+equiv map_id_err[T][E](y: E) {
+  map(.(v: T) { v }, err(T, _, y));
+  err(T, _, y)
+}
+
+// ---- Functor composition: map(g, map(f, r)) ≡ map(g . f, r) ----
+equiv map_compose_ok[T][E][U][W](f: T -> U, g: U -> W, x: T) {
+  map(g, map(f, ok(_, E, x)));
+  map(.(v: T) { g(f(v)) }, ok(_, E, x))
+}
+
+equiv map_compose_err[T][E][U][W](f: T -> U, g: U -> W, y: E) {
+  map(g, map(f, err(T, _, y)));
+  map(.(v: T) { g(f(v)) }, err(T, _, y))
+}
+
+// ---- map_err identity / composition on the error slot ----
+equiv map_err_id_ok[T][E](x: T) {
+  map_err(.(w: E) { w }, ok(_, E, x));
+  ok(_, E, x)
+}
+
+equiv map_err_id_err[T][E](y: E) {
+  map_err(.(w: E) { w }, err(T, _, y));
+  err(T, _, y)
+}
+
+// ---- Bifunctor identity: bimap(id, id, r) ≡ r ----
+equiv bimap_id_ok[T][E](x: T) {
+  bimap(.(v: T) { v }, .(w: E) { w }, ok(_, E, x));
+  ok(_, E, x)
+}
+
+equiv bimap_id_err[T][E](y: E) {
+  bimap(.(v: T) { v }, .(w: E) { w }, err(T, _, y));
+  err(T, _, y)
+}
+
+// ---- Bifunctor composition ----
+// bimap(f1 . f2, g1 . g2, r) ≡ bimap(f1, g1, bimap(f2, g2, r))
+equiv bimap_compose_ok[T][E][U][W][P][Q](f2: T -> U, f1: U -> W, g2: E -> P, g1: P -> Q, x: T) {
+  bimap(.(v: T) { f1(f2(v)) }, .(z: E) { g1(g2(z)) }, ok(_, E, x));
+  bimap(f1, g1, bimap(f2, g2, ok(_, E, x)))
+}
+
+equiv bimap_compose_err[T][E][U][W][P][Q](f2: T -> U, f1: U -> W, g2: E -> P, g1: P -> Q, y: E) {
+  bimap(.(v: T) { f1(f2(v)) }, .(z: E) { g1(g2(z)) }, err(T, _, y));
+  bimap(f1, g1, bimap(f2, g2, err(T, _, y)))
+}
+
+// ---- bimap agrees with map / map_err on each arm ----
+equiv bimap_is_map_on_ok[T][E][U][G](f: T -> U, h: E -> G, x: T) {
+  bimap(f, h, ok(_, E, x));
+  map_err(h, map(f, ok(_, E, x)))
+}
+
+equiv bimap_is_map_on_err[T][E][U][G](f: T -> U, h: E -> G, y: E) {
+  bimap(f, h, err(T, _, y));
+  map_err(h, map(f, err(T, _, y)))
+}
+
+// ---- Monad left identity: bind(ok(x), k) ≡ k(x) ----
+equiv bind_left_identity[T][E][U](k: T -> Result(U, E), x: T) {
+  bind(ok(_, E, x), k);
+  k(x)
+}
+
+// ---- Monad right identity, stated per concrete spine ----
+equiv bind_right_identity_ok[T][E](x: T) {
+  bind(ok(_, E, x), .(v: T) { ok(_, E, v) });
+  ok(_, E, x)
+}
+
+equiv bind_right_identity_err[T][E](y: E) {
+  bind(err(T, _, y), .(v: T) { ok(_, E, v) });
+  err(T, _, y)
+}
+
+// ---- Monad associativity, stated per concrete spine ----
+// bind(bind(r, f), g) ≡ bind(r, λx. bind(f(x), g))
+equiv bind_assoc_ok[T][E][U][W](f: T -> Result(U, E), g: U -> Result(W, E), x: T) {
+  bind(bind(ok(_, E, x), f), g);
+  bind(ok(_, E, x), .(v: T) { bind(f(v), g) })
+}
+
+equiv bind_assoc_err[T][E][U][W](f: T -> Result(U, E), g: U -> Result(W, E), y: E) {
+  bind(bind(err(T, _, y), f), g);
+  bind(err(T, _, y), .(v: T) { bind(f(v), g) })
+}
+
+// ---- swap is an involution: swap(swap(r)) ≡ r ----
+equiv swap_involution_ok[T][E](x: T) {
+  swap(swap(ok(_, E, x)));
+  ok(_, E, x)
+}
+
+equiv swap_involution_err[T][E](y: E) {
+  swap(swap(err(T, _, y)));
+  err(T, _, y)
+}
+
+// ---- Recovery: or_else keeps ok, falls through on err ----
+equiv or_else_ok[T][E](x: T, alt: Result(T, E)) {
+  or_else(ok(_, E, x), alt);
+  ok(_, E, x)
+}
+
+equiv or_else_err[T][E](y: E, alt: Result(T, E)) {
+  or_else(err(T, _, y), alt);
+  alt
+}
+
+// ---- unwrap_or / unwrap_err_or per spine ----
+equiv unwrap_or_ok[T][E](x: T, d: T) {
+  unwrap_or(d, ok(_, E, x));
+  x
+}
+
+equiv unwrap_or_err[T][E](y: E, d: T) {
+  unwrap_or(d, err(T, _, y));
+  d
+}
+
+// ---- bool_to eliminates the predicates' boolean correctly ----
+equiv is_ok_of_ok[T][E][A](x: T, on_true: A, on_false: A) {
+  bool_to(on_true, on_false, is_ok(ok(_, E, x)));
+  on_true
+}
+
+equiv is_ok_of_err[T][E][A](y: E, on_true: A, on_false: A) {
+  bool_to(on_true, on_false, is_ok(err(T, _, y)));
+  on_false
+}

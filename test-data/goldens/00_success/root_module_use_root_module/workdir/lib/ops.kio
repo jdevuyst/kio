@@ -1,0 +1,3 @@
+module lib/ops;
+
+pub fn keep_first[A](x: A, y: A) -> A { x }

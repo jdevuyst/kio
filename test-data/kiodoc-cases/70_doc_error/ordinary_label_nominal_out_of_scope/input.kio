@@ -1,0 +1,4 @@
+/// See [`Foo`].
+module pkg;
+
+import pkg/provider({foo});

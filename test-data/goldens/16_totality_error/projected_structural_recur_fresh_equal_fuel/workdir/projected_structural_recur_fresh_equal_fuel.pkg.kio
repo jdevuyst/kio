@@ -1,0 +1,18 @@
+package projected_structural_recur_fresh_equal_fuel;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  elab
+}

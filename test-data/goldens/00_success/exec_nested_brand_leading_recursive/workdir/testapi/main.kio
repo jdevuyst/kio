@@ -1,0 +1,73 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Tree[E][A] : . | (E & A & Tree(E, A))` — a recursive arity-2
+// type constructor: the leaf arm `()`, the branch arm
+// `(E & A & Tree(E, A))` carrying a label `E`, a value `A`, and a
+// recursive subtree. Both type-parameters thread through the
+// recursive use *in the same positions* — `e` stays leading, `a`
+// stays trailing.
+pub rec newtype Tree[E][A] : . | (E & A & Tree(E, A)) {
+  pub constructor mk_tree;
+  pub projector un_tree
+  }
+
+// `Wrap[X] : Tree(X, String)` — an arity-1 type constructor whose
+// carrier nests the recursive arity-2 `Tree`, fixing the *trailing*
+// arm to `String` and binding the varying parameter `x` to `Tree`'s
+// *leading* arm `e`. The varying binder therefore reaches a *leading*
+// argument of a *recursive* inner type constructor — the shape under
+// test: a carrier whose abstract parameter lands in the leading slot
+// of a recursive nested constructor.
+pub newtype Wrap[X] : Tree(X, String) { pub constructor mk_wrap; pub projector un_wrap }
+
+// A dictionary whose polymorphic-function payload simply hands an
+// applied carrier `f(A)` straight back: `[A](f(A)) -> f(A)`. The value
+// crosses the dictionary boundary on the way in and is recovered on
+// the way out. Instantiated at `Wrap`, that round-trips a whole
+// `Wrap`-wrapped tree through the abstract carrier at runtime,
+// exercising the recursive leading-slot nesting end-to-end.
+pub newtype Cross[*F] : [A] F(A) -> F(A) { pub constructor mk_cross; pub projector cross }
+
+fn wrap_cross() -> Cross(Wrap) { Cross.mk_cross(Wrap, .[A](m) { m }) }
+
+// Build a one-branch tree `branch(label, "v", leaf)`, wrap it, send it
+// across the identity dictionary, peel both wrapper layers, and read
+// the root label back. Crossing the dictionary round-trips the
+// `Wrap`-wrapped value — including the recursive subtree slot — at
+// runtime.
+fn round_trip(label: String) -> String {
+  let leaf = Tree.mk_tree(String, String, __left__(., String & String & Tree(String, String), ()));
+  let branch =
+    Tree.mk_tree(
+      , String
+      , String
+      , __right__(
+          , .
+          , String & String & Tree(String, String)
+          , __pair__(
+              , String
+              , String & Tree(String, String)
+              , label
+              , __pair__(String, Tree(String, String), "v"(String), leaf)
+              )
+          )
+      );
+  let wrapped = Wrap.mk_wrap(String, branch);
+  let crossed = Cross.cross(Wrap, wrap_cross())(String, wrapped);
+  let out = Wrap.un_wrap(String, crossed);
+  __either__(
+    , .
+    , String & String & Tree(String, String)
+    , String
+    , Tree.un_tree(String, String, out)
+    , .(u) { "leaf: unexpected\n"(String) }
+    , .(node) { __fst__(String, String & Tree(String, String), node) }
+    )
+}
+
+pub fn main() -> . { print(round_trip("leading nested brand ok\n"(String))) }

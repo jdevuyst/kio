@@ -1,0 +1,42 @@
+module build_recursive_newtype_boundary/main;
+
+import __intrinsics__;
+
+import build_recursive_newtype_boundary(I32);
+
+rec {
+  pub newtype Tree : I32 | Forest { pub constructor mk_tree; pub projector un_tree };
+  pub newtype Forest : . | (Tree & Forest) { pub constructor mk_forest; pub projector un_forest }
+}
+
+pub fn leaf(n: I32) -> Tree { Tree.mk_tree(__left__(I32, Forest, n)) }
+
+pub fn node(f: Forest) -> Tree { Tree.mk_tree(__right__(I32, Forest, f)) }
+
+pub fn empty() -> Forest { Forest.mk_forest(__left__(., Tree & Forest, ())) }
+
+pub fn graft(t: Tree, f: Forest) -> Forest { Forest.mk_forest(__right__(., Tree & Forest, (t, f))) }
+
+// Walk into the forest's first tree and return its leaf value, or the
+// default when the forest is empty or the first tree is itself a node.
+pub fn first_leaf(d: I32, f: Forest) -> I32 {
+  __either__(
+    , .
+    , Tree & Forest
+    , I32
+    , Forest.un_forest(f)
+    , .(_e: .) -> I32 { d }
+    , .(cell: Tree & Forest) -> I32 {
+        __either__(
+          , I32
+          , Forest
+          , I32
+          , Tree.un_tree(__fst__(Tree, Forest, cell))
+          , .(n: I32) -> I32 { n }
+          , .(_sub: Forest) -> I32 { d }
+          )
+      }
+    )
+}
+
+pub fn main() -> . { () }

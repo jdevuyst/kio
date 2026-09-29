@@ -1,0 +1,7 @@
+module host;
+
+host type Bool role(bool);
+
+host fn foo() -> .;
+
+host fn bar() -> .;

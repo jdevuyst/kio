@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+
+pub labels { a: String };
+
+// `[A]` is a scheme binder; `x : A` is the rigid type variable, NOT the
+// label-generated newtype `A`. `x.?{a}` projects a field from a rigid
+// variable, which has no fields — a type error. Before the binder-aware
+// alias context reached the field-access slot path, the binder `A` was
+// mis-qualified to the label newtype and `x.?{a}` type-checked, then the
+// emitted body erased `x` (a downcast that panics at runtime). The
+// non-shadowing form `extract[B](x: B)` correctly rejects this already.
+pub fn extract[A](x: A) -> String { x.?{a} }

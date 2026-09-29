@@ -1,0 +1,18 @@
+module main;
+
+import elab/sequence(do);
+
+pub newtype Box[A] : A { constructor mk_box; projector un_box }
+
+fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
+
+fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(value)) }
+
+host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
+
+fn partial() -> Box(.) {
+  do! box_bind {
+    let .(function: [Do_bound] _) <- boxed_polymorphic(());
+    box_pure(())
+  }
+}

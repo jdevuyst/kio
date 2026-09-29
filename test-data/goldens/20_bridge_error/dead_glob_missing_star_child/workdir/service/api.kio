@@ -1,0 +1,3 @@
+module service/api;
+
+pub fn ping() -> . { () }

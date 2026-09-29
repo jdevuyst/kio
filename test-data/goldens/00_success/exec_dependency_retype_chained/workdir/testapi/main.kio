@@ -1,0 +1,16 @@
+/// A chained `retype` (A→B, B→C) reconciles to the chain's origin.
+/// `w1.dep.kio` retypes `w1/store` onto `w2/store`, and
+/// `w2.dep.kio` retypes `w2/store` onto `core/store`. `w2`'s own `Tag` is
+/// gone after its retype (replaced by a re-import of `core`'s), so binding
+/// `w1`'s `Tag` to `w2`'s would leave a constructor resolving through a
+/// transparent alias. Materialization flattens the chain to its origin —
+/// `w1`'s `Tag` binds straight to `core/store` — so `make1`'s result (the
+/// one shared `core.store.Tag`) threads into `core`'s `tag_val`.
+module testapi/main;
+
+import core/store(tag_val);
+import testapi(I32);
+import testapi/fmt(print_i32);
+import w1/store(make1);
+
+pub fn main() -> . { let t = make1(7(I32)); print_i32(tag_val(t)) }

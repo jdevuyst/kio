@@ -1,0 +1,82 @@
+spreadsheet_recalc v1
+sheet: 4 columns x 4 rows, 16 cells
+
+cells:
+  A1 = 5
+  B1 = 3
+  C1 = 8
+  D1 = SUM(A1:C1)
+  A2 = 2
+  B2 = (A1 + B1)
+  C2 = (B2 * A2)
+  D2 = MAX(A1:C2)
+  A3 = (D1 - D2)
+  B3 = IF(A3, C1, A2)
+  C3 = (D3 + 1)
+  D3 = (C3 + 2)
+  A4 = (C3 * 2)
+  B4 = SUM(A1:D1)
+  C4 = -
+  D4 = (B4 + C4)
+
+grid:
+        A      B      C      D
+ 1      5      3      8     16
+ 2      2      8     16     16
+ 3      0      2 #CYCLE #CYCLE
+ 4 #CYCLE     32      .     32
+cycle: C3 D3
+topological order: A1 B1 C1 A2 A4 C4 B2 D1 C2 B4 D2 D4 A3 B3
+ordered: 14 of 16
+
+== edit 1: A1 = 9 ==
+dirty: A1 D1 B2 C2 D2 A3 B3 B4 D4
+recompute order: A1 B2 D1 C2 B4 D2 D4 A3 B3
+recomputed: 9 of 16
+skipped: 7 of 16
+cycle: C3 D3
+grid:
+        A      B      C      D
+ 1      9      3      8     20
+ 2      2     12     24     24
+ 3     -4      8 #CYCLE #CYCLE
+ 4 #CYCLE     40      .     40
+
+== edit 2: D3 = (B3 + 4) ==
+dirty: C3 D3 A4
+recompute order: D3 C3 A4
+recomputed: 3 of 16
+skipped: 13 of 16
+cycle: (none)
+grid:
+        A      B      C      D
+ 1      9      3      8     20
+ 2      2     12     24     24
+ 3     -4      8     13     12
+ 4     26     40      .     40
+
+== edit 3: B4 = <cleared> ==
+dirty: B4 D4
+recompute order: B4 D4
+recomputed: 2 of 16
+skipped: 14 of 16
+cycle: (none)
+grid:
+        A      B      C      D
+ 1      9      3      8     20
+ 2      2     12     24     24
+ 3     -4      8     13     12
+ 4     26      .      .      0
+
+== edit 4: A3 = (B3 + 1) ==
+dirty: A3 B3 C3 D3 A4
+recompute order: A3 B3 D3 C3 A4
+recomputed: 5 of 16
+skipped: 11 of 16
+cycle: A3 B3
+grid:
+        A      B      C      D
+ 1      9      3      8     20
+ 2      2     12     24     24
+ 3 #CYCLE #CYCLE #CYCLE #CYCLE
+ 4 #CYCLE      .      .      0

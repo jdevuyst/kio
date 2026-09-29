@@ -1,0 +1,62 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// The canonical brand-eligible arity-1 newtype.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A polymorphic monad dictionary. The payload is a polymorphic
+// function preserving the canonical bind shape
+// `[A] [B] (F(A) & (A -> F(B))) -> F(B)`. Construction takes a
+// polymorphic .-literal; projection yields a value whose
+// polymorphism survives the projection, so the dictionary's `bind`
+// is usable as a `do`-block receiver via a path expression. The
+// Rust target erases the Forall binders at the storage boundary and
+// re-instantiates them via up/downcast adapters at the generic
+// projector method.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// A `pure` dictionary: lifts a bare `A` into the brand `F(A)`.
+// Abstract brand-crossing in a brand-generic body (`pipeline`
+// below) routes through a threaded instance like this one — there
+// is no brand-crossing primitive over an opaque `F`, so the lift
+// dispatches through the instance's own `lift` member.
+pub newtype Pure[*F] : [A] A -> F(A) { pub constructor mk_pure; pub projector lift }
+
+// The Box instances. `box_monad`'s `bind` peels via `Box.un_box`
+// and hands the unwrapped value to the continuation; `box_pure`
+// lifts via `Box.mk_box`. Both are polymorphic in their carrier
+// type-params and operate uniformly across instantiations.
+fn box_monad() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+fn box_pure() -> Pure(Box) { Pure.mk_pure(.[A](x) { Box.mk_box(x) }) }
+
+// Generic-over-monad pipeline: takes a `Monad(F)` dictionary, a
+// `Pure(F)` dictionary, and a seed in the branded position, then
+// threads a couple of bind steps through them. The `do` block's
+// receiver is the path expression `Monad.bind(F, monad)`. Every
+// abstract brand crossing lifts through `Pure.lift(F, pur)` — the
+// brand-generic body never touches a concrete constructor.
+fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
+  do! Monad.bind(monad) {
+    let greeting <- seed;
+    let punct = "! "(String);
+    let body <- Pure.lift(pur)(string_concat(greeting, punct));
+    Pure.lift(pur)(string_concat(body, "world\n"(String)))
+  }
+}
+
+fn run() -> String {
+  let monad = box_monad();
+  let pur = box_pure();
+  let lifted = Box.mk_box("hello"(String));
+  Box.un_box(pipeline(monad, pur, lifted))
+}
+
+pub fn main() -> . { print(run()) }

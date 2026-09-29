@@ -1,0 +1,2 @@
+type `lib/types.Token` is reachable from the package's host contract surface
+module `lib/types` is not selected by any bridge glob

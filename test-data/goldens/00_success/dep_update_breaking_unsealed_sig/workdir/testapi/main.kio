@@ -1,0 +1,14 @@
+module testapi/main;
+
+import greetlib/greet(first);
+import testapi(String);
+import testapi/io(print);
+
+// Thread a host `String` through the git dependency's `first` export
+// (kept across every commit in these cases, so the consumer stays valid
+// through the re-pin). The subject under test is `kio dep update`'s
+// contract-honesty gate; this build+run only confirms the re-pinned
+// dependency still materializes and the consumer links against it.
+pub fn greeting() -> String { first("git dependency works\n"(String), "discarded\n"(String)) }
+
+pub fn main() -> . { print(greeting()) }

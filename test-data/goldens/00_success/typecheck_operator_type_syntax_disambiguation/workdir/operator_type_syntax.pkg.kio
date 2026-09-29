@@ -1,0 +1,18 @@
+package operator_type_syntax;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  operator_type_syntax;
+  operator_type_syntax/**
+}

@@ -1,0 +1,33 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add, mul);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Regular `+` so the inner-slot tests have something to chain.
+op _ + _ { impl add }
+
+// Strict bracket-binary: inner slot is atom-only, so a chain
+// inside requires explicit parens.
+fn idx_strict(a: Int, b: Int) -> Int { add(a, b) }
+
+op _ %% _ %% { impl idx_strict }
+
+// Lenient bracket-binary: same shape but with the `( … )` opt-in
+// around the inner sub-pattern, so the inner slot admits a chain
+// without parens.
+fn idx_lenient(a: Int, b: Int) -> Int { mul(a, b) }
+
+op _ ( ?? _ ?? ) { impl idx_lenient }
+
+pub fn main() -> . {
+  // Strict: needs explicit parens around the inner chain.
+  let s = int_to_string(7 %% (2 + 3) %%);
+  // Lenient: no parens needed around the inner chain.
+  let t = int_to_string(7 ?? 2 + 3 ??);
+  print(s);
+  print("\n");
+  print(t);
+  print("\n")
+}

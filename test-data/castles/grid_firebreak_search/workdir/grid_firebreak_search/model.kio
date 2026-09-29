@@ -1,0 +1,12 @@
+module grid_firebreak_search/model;
+
+import testapi(Array, I32);
+
+pub labels Plan = {
+  , selected: Array(I32)
+  , score: I32
+  , spend: I32
+  , blocked: I32
+  , frontier_count: I32
+  , candidate_count: I32
+  };

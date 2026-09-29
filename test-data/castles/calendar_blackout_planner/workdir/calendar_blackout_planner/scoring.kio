@@ -1,0 +1,30 @@
+module calendar_blackout_planner/scoring;
+
+import calendar_blackout_planner/model(Window, {frozen}, {priority}, {support_load});
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+
+pub fn score(window: Window) -> I32 {
+  if! window.?{frozen} {
+    0
+  } else {
+    arith.sub_i32(arith.mul_i32(window.?{priority}, 9), arith.mul_i32(window.?{support_load}, 2))
+  }
+}
+
+pub fn status(window: Window) -> String {
+  if! window.?{frozen} {
+    "frozen"
+  } else {
+    "release"
+  }
+}
+
+pub fn better(left: Window, right: Window) -> Window {
+  if! arith.lt_i32(score(left), score(right)) {
+    right
+  } else {
+    left
+  }
+}

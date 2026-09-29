@@ -1,0 +1,5 @@
+The full-depth quoted-continuation workload is excessively expensive to
+interpret. 00_success/exec_rec_quoted_operands dynamically exercises this
+same shared recursive-condition body at a compact depth, alongside discard,
+sharing, reordering and nested-condition semantics. This case retains the
+deep compiled-backend and Prime roundtrip stress coverage.

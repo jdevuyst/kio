@@ -1,0 +1,13 @@
+package unit_value_not_type_argument;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

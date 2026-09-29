@@ -1,0 +1,87 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(widen_sum);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+// Capacity of the knapsack.
+fn cap() -> I32 { 10 }
+
+// Number of items.
+fn item_count() -> I32 { 4 }
+
+// Item table: weights and values, parallel arrays indexed 0..3.
+// Items: (w=2, v=3), (w=3, v=4), (w=4, v=5), (w=5, v=6). Optimum
+// for cap=10 is items 0+1+3 (w=2+3+5=10, v=3+4+6=13).
+fn weights() -> Array(I32) {
+  let a = array_make_empty(I32, ());
+  array_push(a, 2);
+  array_push(a, 3);
+  array_push(a, 4);
+  array_push(a, 5);
+  a
+}
+
+fn values() -> Array(I32) {
+  let a = array_make_empty(I32, ());
+  array_push(a, 3);
+  array_push(a, 4);
+  array_push(a, 5);
+  array_push(a, 6);
+  a
+}
+
+// Pointwise maximum of two I32s, built from `leq_i32` since the
+// host vocabulary has no `max` primitive.
+fn max(a: I32, b: I32) -> I32 {
+  if! leq_i32(a, b) {
+    b
+  } else {
+    a
+  }
+}
+
+// Inner DP step: walks capacity `c` from `cap` down to `w` (the
+// current item's weight), updating `dp[c] = max(dp[c], dp[c-w] + v)`.
+// State is `c`. Exit value is `()` — the work is the array mutation.
+fn dp_step(dp: Array(I32), w: I32, v: I32, c: I32) -> I32 | . {
+  if! leq_i32(w, c) {
+    // c >= w: this item fits at capacity c. Compare keep vs take.
+    let keep = array_get(dp, c);
+    let take = add_i32(array_get(dp, sub_i32(c, w)), v);
+    array_set(dp, c, max(keep, take));
+    widen_sum!(sub_i32(c, 1))
+  } else {
+    widen_sum!(())
+  }
+}
+
+// Outer item-walk step: for each item `i` in `0..item_count()`,
+// runs the inner DP step from `cap` down to `weights[i]`. State
+// is `i`. Exit value is `()`.
+fn item_step(dp: Array(I32), ws: Array(I32), vs: Array(I32), i: I32) -> I32 | . {
+  if! leq_i32(i, sub_i32(item_count(), 1)) {
+    let w = array_get(ws, i);
+    let v = array_get(vs, i);
+    let _ = loop(I32, ., .(c: I32) { dp_step(dp, w, v, c) }, cap());
+    widen_sum!(add_i32(i, 1))
+  } else {
+    widen_sum!(())
+  }
+}
+
+pub fn main() -> . {
+  // DP table indexed 0..=cap; dp[c] is the best value achievable
+  // with capacity c using the items processed so far.
+  let dp = array_make_filled(add_i32(cap(), 1), 0);
+  let ws = weights();
+  let vs = values();
+  let _ = loop(I32, ., .(i: I32) { item_step(dp, ws, vs, i) }, 0);
+  print(int_to_string(array_get(dp, cap())));
+  print("\n")
+}

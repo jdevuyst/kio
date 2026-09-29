@@ -1,0 +1,25 @@
+module testapi/main;
+
+import lru/cache as cache;
+import lru/report as report;
+import testapi(I32, String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let c = cache.new_cache();
+  print(report.header());
+  print(cache.put(c, 1, 1, 10));
+  print(cache.put(c, 2, 2, 20));
+  print(cache.get(c, 3, 1));
+  print(cache.put(c, 4, 3, 30));
+  print(cache.get(c, 5, 2));
+  print(cache.put(c, 6, 4, 40));
+  print(cache.get(c, 7, 1));
+  print(cache.put(c, 8, 2, 22));
+  print(cache.get(c, 9, 3));
+  print(cache.put(c, 10, 5, 50));
+  print("\n");
+  print(report.stats(c));
+  print(report.replacements(c));
+  print(report.final_table(c))
+}

@@ -1,0 +1,7 @@
+module feature/selective;
+
+import feature/store(Box, Public);
+
+fn boxed() -> . { Box.unpack(., Box.pack(., ())) }
+
+fn wrapped() -> . { Public.value(., Public.wrap(., ())) }

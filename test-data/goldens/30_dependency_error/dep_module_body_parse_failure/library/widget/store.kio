@@ -1,0 +1,5 @@
+module store;
+
+pub fn wrap(x: .) -> . { x }
+
+pub fn broken(x: .) -> . { ( }

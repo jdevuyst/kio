@@ -1,0 +1,60 @@
+huffman prefix coder
+
+message: 21 symbols over an alphabet of 6 glyphs
+  amanaplanacanalpanama
+
+frequency table
+  code  glyph  count
+     0      a     10
+     1      c      1
+     2      l      2
+     3      m      2
+     4      n      4
+     5      p      2
+
+node order: ascending (weight, key)
+  a leaf's key is its symbol code; the k-th merged node takes
+  key 6 + k, so an equal weight always breaks toward the leaf
+
+initial queue
+  c(1) l(2) m(2) p(2) n(4) a(10)
+
+build steps: take the two front nodes, merge, re-insert
+   1  c(1) + l(2) -> *6(3)
+   2  m(2) + p(2) -> *7(4)
+   3  *6(3) + n(4) -> *8(7)
+   4  *7(4) + *8(7) -> *9(11)
+   5  a(10) + *9(11) -> *10(21)
+
+code table: 0 descends left, 1 descends right
+  glyph  count  length  code
+      a     10       1  0
+      c      1       4  1100
+      l      2       4  1101
+      m      2       3  100
+      n      4       3  111
+      p      2       3  101
+
+encoded message: 46 bits
+  0100011101011101011101100011101101101011101000
+
+decode: walk the tree bit by bit, back to symbols
+  decoded symbols: 21
+  round trip: OK, the decoded message is the original
+
+compression report
+  symbols coded: 21
+  alphabet size: 6
+  fixed-width bits per symbol: 3
+  baseline bits: 63
+  huffman bits: 46
+  saved bits: 17
+  saved: 269 permille
+  cost per symbol: 2190 milli-bits
+
+kraft check: sum of 2^-length over every codeword
+  longest codeword: 4 bits
+  scale (2 ^ longest): 16
+  codewords: 6
+  sum of scaled terms: 16
+  verdict: the code lengths satisfy Kraft equality

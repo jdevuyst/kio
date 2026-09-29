@@ -1,0 +1,15 @@
+package pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "docs";
+    md_out "out/docs-md/";
+    html "out/docs/"
+  }
+}
+
+bridge {
+  api/**
+}

@@ -1,0 +1,1579 @@
+/// Loads a guest that uses same-leaf host declarations from two modules and
+/// checks exact identities through canonicalization, preflight, and execution.
+module testapi/main;
+
+import defaults(eval_default);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import eval(prime_apply);
+import host_descriptor(Conflicting_host_function, Conflicting_host_type, Host_fn, Host_type);
+import host_descriptor(Found_host_function, Found_host_type);
+import host_descriptor(Host_function_lookup, Host_type_lookup);
+import host_descriptor(Host_types);
+import host_descriptor(Missing_host_function, Missing_host_type);
+import host_descriptor(base_kind, higher_kind, i32_role, i64_role, str_role);
+import host_descriptor(find_host_function, find_host_type, host_fn_eq, host_id_eq, host_id_render);
+import host_descriptor(host_functions_cons, host_functions_nil, host_types_cons, host_types_nil);
+import host_descriptor(host_type_eq, host_type_id);
+import host_descriptor(mk_host_fn, mk_host_id, mk_role_host_type, mk_roleless_host_type);
+import host_descriptor(param_kinds_cons, param_kinds_nil);
+import hostrec(make_lit_default, serve_default, test_bool_default);
+import imageio(read_image_stdin);
+import loader(
+  , Contract
+  , Diag
+  , Export_info
+  , Export_infos
+  , Host_adapter
+  , Host_fn_binding
+  , Host_fn_bindings
+  );
+import loader(Hostfn, Hostfns, Image, Loaded, Lr_diag, Lr_image, Surface);
+import loader(contract_check, contract_cons, contract_nil, diag_message);
+import loader(export_info_name, export_info_sig, export_term, mk_expect);
+import loader(host_contract_functions, host_contract_types, image_host_requirements);
+import loader(host_fn_binding_descriptor, host_fn_binding_groups, un_host_fn_bindings);
+import loader(host_fn_bindings_cons, host_fn_bindings_nil);
+import loader(image_exports, image_hostfns, instantiate, mk_host_adapter, mk_host_fn_binding);
+import loader(un_export_infos, un_hostfns, un_load_outcome);
+import loader({apply}, {hostfn_in}, {i32_in}, {i32_out}, {lookup}, {pair_in}, {str_out}, {unit_in});
+import loader/scan(load_package);
+import prime(Group_slots, Term, group_slots_cons, group_slots_nil, un_group_slots);
+import result(Call_result, call_done, call_stuck);
+import result(Ev_done, Ev_stuck);
+import testapi(Bool, I32, Scalar, String);
+import testapi/arith(eq_i32, sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/scalar(make_scalar, scalar_as_i32, scalar_as_str, scalar_of_i32, scalar_of_str);
+import testapi/text(string_concat);
+import testapi/text(string_eq);
+import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
+import value(un_value, value_to_scalar, vhost, vhostfn_fresh, vproduct, vunit);
+
+fn describe_host_type_lookup(result: Host_type_lookup) -> String {
+  match! result {
+    (
+      , .(_missing: Missing_host_type) { "missing"(String) }
+      , .(_found: Found_host_type) { "found"(String) }
+      , .(_conflict: Conflicting_host_type) { "conflict"(String) }
+      )
+  }
+}
+
+fn describe_host_function_lookup(result: Host_function_lookup) -> String {
+  match! result {
+    (
+      , .(_missing: Missing_host_function) { "missing"(String) }
+      , .(_found: Found_host_function) { "found"(String) }
+      , .(_conflict: Conflicting_host_function) { "conflict"(String) }
+      )
+  }
+}
+
+fn describe_duplicate_image(source: String) -> String {
+  match! un_load_outcome(load_package(source)) {
+    (
+      , .(_loaded: Lr_image) { "accepted"(String) }
+      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn print_duplicate_image_results() -> . {
+  print(string_concat(
+    , "duplicate module identity: "(String)
+    , string_concat(describe_duplicate_image("module same;\nmodule same;\n"(String)), "\n"(String))
+    ));
+  print(string_concat(
+    , "duplicate host declaration identity: "(String)
+    , string_concat(
+        , describe_duplicate_image("module same;\nhost type Value role(i32);\nhost type Value role(i32);\n"(String))
+        , "\n"(String)
+        )
+    ))
+}
+
+fn print_malformed_host_descriptor_results() -> . {
+  print(string_concat(
+    , "malformed host type binder: "(String)
+    , string_concat(
+        , describe_duplicate_image("module same;\nhost type Box[A;\n"(String))
+        , "\n"(String)
+        )
+    ))
+}
+
+fn source_result_line(label: String, source: String) -> String {
+  string_concat(label, string_concat(describe_duplicate_image(source), "\n"(String)))
+}
+
+fn print_source_derivation_results() -> . {
+  print(source_result_line(
+    , "later local host type in literal: "(String)
+    , "module later_literal;\nimport __intrinsics__;\npub fn literal() -> . { let "
+      "n = 1(Number); () }\nhost type Number role(i32);\n"(String)
+    ));
+  print(source_result_line(
+    , "later local host type in host function signature: "(String)
+    , "module later_host_signature;\nhost fn consume(x: Number) -> .;\nhost type "
+      "Number role(i32);\n"(String)
+    ));
+  print(source_result_line(
+    , "alias reaching later local host type: "(String)
+    , "module later_alias;\ntype Number_alias = Number;\nhost fn consume(x: "
+      "Number_alias) -> .;\nhost type Number role(i32);\n"(String)
+    ));
+  print(source_result_line(
+    , "earlier local host function: "(String)
+    , "module earlier_function;\nhost fn ping() -> .;\npub fn call() -> . { "
+      "ping() }\n"(String)
+    ));
+  print(source_result_line(
+    , "later local host function: "(String)
+    , "module later_function;\npub fn call() -> . { ping() }\nhost fn ping() -> "
+      ".;\n"(String)
+    ));
+  print(source_result_line(
+    , "missing host return arrow: "(String)
+    , "module malformed;\nhost fn missing();\n"(String)
+    ));
+  print(source_result_line(
+    , "unterminated declaration type binders: "(String)
+    , "module bad;\npub fn broken[A)() -> . { () }\n"(String)
+    ));
+  print(source_result_line(
+    , "unterminated lambda type binders: "(String)
+    , "module bad;\npub fn broken() -> . { .[A)() { () } }\n"(String)
+    ));
+  print(source_result_line(
+    , "lambda without value parameter group: "(String)
+    , "module bad;\npub fn broken() -> . { .[A] { () } }\n"(String)
+    ));
+  print(source_result_line(
+    , "bare transparent alias: "(String)
+    , "module alias_bare;\ntype Pair[A][B] = A & B;\nhost fn rejected(x: Pair) -> "
+      ".;\n"(String)
+    ));
+  print(source_result_line(
+    , "local undersaturated transparent alias: "(String)
+    , "module alias_partial;\nnewtype Higher[*F] : . { constructor mk_higher; "
+      "projector un_higher; };\ntype Pair[A][B] = A & B;\nhost fn rejected(x: "
+      "Higher(Pair(.))) -> .;\n"(String)
+    ));
+  print(source_result_line(
+    , "selective undersaturated transparent alias: "(String)
+    , "module selective_decoy;\npub type Pair[A] = A;\nmodule selective_provider;\n"
+      "pub type Pair[A][B] = A & B;\nmodule selective_consumer;\nimport "
+      "selective_provider(Pair);\nimport selective_decoy as decoy;\nnewtype "
+      "Higher[*F] : . { constructor mk_higher; projector un_higher; };\nhost fn "
+      "rejected(x: Higher(Pair(.))) -> .;\n"(String)
+    ));
+  print(source_result_line(
+    , "qualified undersaturated transparent alias: "(String)
+    , "module qualified_provider;\npub type Pair[A][B] = A & B;\nmodule "
+      "qualified_consumer;\nimport qualified_provider as provider;\ntype Pair[A] "
+      "= A;\nnewtype Higher[*F] : . { constructor mk_higher; projector "
+      "un_higher; };\nhost fn rejected(x: Higher(provider.Pair(.))) -> .;\n"(String)
+    ));
+  print(source_result_line(
+    , "saturated transparent alias: "(String)
+    , "module alias_saturated;\npub type Pair[A][B] = A & B;\nhost fn accepted(x: "
+      "Pair(., .)) -> .;\n"(String)
+    ));
+  print(source_result_line(
+    , "partially applied newtype: "(String)
+    , "module nominal_partial;\npub newtype Higher[*F] : . { constructor "
+      "mk_higher; projector un_higher; };\npub newtype Pair[A][B] : A & B { pub "
+      "constructor mk_pair; pub projector un_pair; };\nhost fn accepted(x: "
+      "Higher(Pair(.))) -> .;\npackage nominal_partial;\nbridge { "
+      "nominal_partial; }\n"(String)
+    ));
+  print(source_result_line(
+    , "opaque nominal with private payload: "(String)
+    , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
+      "un_hidden; };\npub newtype Box : Hidden { constructor mk_box; projector "
+      "un_box; };\npub fn keep(value: Box) -> Box { value }\npackage guest;\n"
+      "bridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "opaque self-shadowing nominal header: "(String)
+    , "module guest;\npub newtype A[A] : . { constructor mk_a; projector un_a; "
+      "};\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "construct-only self-shadowing nominal header: "(String)
+    , "module guest;\npub newtype B[B] : . { pub constructor mk_b; projector "
+      "un_b; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "inspect-only self-shadowing nominal header: "(String)
+    , "module guest;\npub newtype C[C] : . { constructor mk_c; pub projector "
+      "un_c; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "public-member self-shadowing nominal header: "(String)
+    , "module guest;\npub newtype D[D] : . { pub constructor mk_d; pub projector "
+      "un_d; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "ambient-decoy self-shadowing nominal header: "(String)
+    , "module guest;\nnewtype Zzcps_n : . { constructor mk_decoy; projector "
+      "un_decoy; };\npub newtype E[E] : . { pub constructor mk_e; pub projector "
+      "un_e; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "malformed opaque nominal header: "(String)
+    , "module guest;\npub newtype Box[A B] : . { constructor mk_box; projector "
+      "un_box; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "private nominal in export signature: "(String)
+    , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
+      "un_hidden; };\npub fn expose(value: Hidden) -> Hidden { value }\npackage "
+      "guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "scoped nominal in export signature: "(String)
+    , "module guest;\npub(guest) newtype Hidden : . { constructor mk_hidden; "
+      "projector un_hidden; };\npub fn expose(value: Hidden) -> Hidden { value }\n"
+      "package guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "unbridged nominal in export signature: "(String)
+    , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
+      "projector un_hidden; };\nmodule guest;\nimport hidden(Hidden);\npub fn "
+      "expose(value: Hidden) -> Hidden { value }\npackage guest;\nbridge { guest; "
+      "}\n"(String)
+    ));
+  print(source_result_line(
+    , "private nominal in member signature: "(String)
+    , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
+      "un_hidden; };\npub newtype Box : Hidden { pub constructor mk_box; pub "
+      "projector un_box; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "scoped nominal in member signature: "(String)
+    , "module guest;\npub(guest) newtype Hidden : . { constructor mk_hidden; "
+      "projector un_hidden; };\npub newtype Box : Hidden { pub constructor "
+      "mk_box; pub projector un_box; };\npackage guest;\nbridge { guest; }\n"(String)
+    ));
+  print(source_result_line(
+    , "unbridged nominal in member signature: "(String)
+    , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
+      "projector un_hidden; };\nmodule guest;\nimport hidden(Hidden);\npub newtype "
+      "Box : Hidden { pub constructor mk_box; pub projector un_box; };\npackage "
+      "guest;\nbridge { guest; }\n"(String)
+    ));
+  ()
+}
+
+fn binding_has_group(binding: Host_fn_binding, expected: I32) -> Bool {
+  match! un_group_slots(host_fn_binding_groups(binding)) {
+    (
+      , .(actual: I32, rest: Group_slots) {
+          if! eq_i32(actual, expected) {
+            match! un_group_slots(rest) {
+              (.(_more: I32, _tail: Group_slots) { .f(Bool) }, .(_empty: .) { .t(Bool) })
+            }
+          } else {
+            .f(Bool)
+          }
+        }
+      , .(_empty: .) { .f(Bool) }
+      )
+  }
+}
+
+fn bindings_match_group(bindings: Host_fn_bindings, descriptor: Host_fn, expected: I32) -> Bool {
+  loop(
+    , .(remaining: Host_fn_bindings) {
+        match! un_host_fn_bindings(remaining) {
+          (
+            , .(binding: Host_fn_binding, rest: Host_fn_bindings) {
+                if! host_fn_eq(host_fn_binding_descriptor(binding), descriptor) {
+                  widen_sum!(binding_has_group(binding, expected), Host_fn_bindings | Bool)
+                } else {
+                  widen_sum!(rest, Host_fn_bindings | Bool)
+                }
+              }
+            , .(_empty: .) { widen_sum!(.f(Bool), Host_fn_bindings | Bool) }
+            )
+        }
+      }
+    , bindings
+    )
+}
+
+fn group_shape_result() -> String {
+  let source =
+    "module shape;\nhost type A;\nhost type B;\nhost type C;\npub type Unit_alias "
+    "= .;\nhost fn one(x: A & B) -> .;\nhost fn two(x: A, y: B) -> .;\nhost fn "
+    "zero(x: Unit_alias) -> .;\nhost fn left(x: (A & B) & C) -> .;\nhost fn "
+    "right(x: A & (B & C)) -> .;\n"(String);
+  match! un_load_outcome(load_package(source)) {
+    (
+      , .(loaded: Lr_image) {
+          let bindings = host_contract_functions(image_host_requirements(Lr_image.get(loaded)));
+          let one =
+            mk_host_fn(
+              , mk_host_id("shape"(String), "one"(String))
+              , "(h{shape.A} & h{shape.B}) -> ."(String)
+              );
+          let two =
+            mk_host_fn(
+              , mk_host_id("shape"(String), "two"(String))
+              , "(h{shape.A} & h{shape.B}) -> ."(String)
+              );
+          let zero = mk_host_fn(mk_host_id("shape"(String), "zero"(String)), "() -> ."(String));
+          let left =
+            mk_host_fn(
+              , mk_host_id("shape"(String), "left"(String))
+              , "((h{shape.A} & h{shape.B}) & h{shape.C}) -> ."(String)
+              );
+          let right =
+            mk_host_fn(
+              , mk_host_id("shape"(String), "right"(String))
+              , "(h{shape.A} & (h{shape.B} & h{shape.C})) -> ."(String)
+              );
+          if! bindings_match_group(bindings, one, 2(I32)) {
+            if! bindings_match_group(bindings, two, 2(I32)) {
+              if! bindings_match_group(bindings, left, 2(I32)) {
+                if! bindings_match_group(bindings, right, 3(I32)) {
+                  if! bindings_match_group(bindings, zero, 0(I32)) {
+                    "host group shapes: two / two / two / three / zero\n"(String)
+                  } else {
+                    "host group shapes: wrong zero group\n"(String)
+                  }
+                } else {
+                  "host group shapes: wrong right-nested product group\n"(String)
+                }
+              } else {
+                "host group shapes: wrong left-nested product group\n"(String)
+              }
+            } else {
+              "host group shapes: wrong two-parameter group\n"(String)
+            }
+          } else {
+            "host group shapes: wrong product-parameter group\n"(String)
+          }
+        }
+      , .(diag: Lr_diag) {
+          string_concat(
+            , "host group shapes: load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(diag)), "\n"(String))
+            )
+        }
+      )
+  }
+}
+
+fn print_descriptor_lookup_results() -> . {
+  let type_id = mk_host_id("host/a"(String), "Value"(String));
+  let i32_type = mk_role_host_type(type_id, i32_role());
+  let i32_type_duplicate =
+    mk_role_host_type(mk_host_id("host/a"(String), "Value"(String)), i32_role());
+  let i64_type = mk_role_host_type(type_id, i64_role());
+  let unrelated_module_type =
+    mk_role_host_type(mk_host_id("host/b"(String), "Value"(String)), i64_role());
+  let unrelated_local_type =
+    mk_role_host_type(mk_host_id("host/a"(String), "Other"(String)), i64_role());
+  let kinded_id = mk_host_id("host/a"(String), "Container"(String));
+  let forward_kinds =
+    param_kinds_cons(base_kind(), param_kinds_cons(higher_kind(base_kind()), param_kinds_nil()));
+  let reverse_kinds =
+    param_kinds_cons(higher_kind(base_kind()), param_kinds_cons(base_kind(), param_kinds_nil()));
+  let forward_type = mk_roleless_host_type(kinded_id, forward_kinds);
+  let reverse_type = mk_roleless_host_type(kinded_id, reverse_kinds);
+  let fn_id = mk_host_id("host/a"(String), "ping"(String));
+  let string_fn = mk_host_fn(fn_id, "(String) -> String"(String));
+  let string_fn_duplicate =
+    mk_host_fn(mk_host_id("host/a"(String), "ping"(String)), "(String) -> String"(String));
+  let bool_fn = mk_host_fn(fn_id, "(Bool) -> Bool"(String));
+  let unrelated_module_fn =
+    mk_host_fn(mk_host_id("host/b"(String), "ping"(String)), "() -> ."(String));
+  let unrelated_local_fn =
+    mk_host_fn(mk_host_id("host/a"(String), "other"(String)), "() -> ."(String));
+  print(string_concat(
+    , "host type lookup (missing): "(String)
+    , string_concat(
+        , describe_host_type_lookup(find_host_type(
+            , host_types_cons(
+                , unrelated_module_type
+                , host_types_cons(unrelated_local_type, host_types_nil())
+                )
+            , type_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host type lookup (single): "(String)
+    , string_concat(
+        , describe_host_type_lookup(find_host_type(
+            , host_types_cons(i32_type, host_types_nil())
+            , type_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host type lookup (identical duplicate): "(String)
+    , string_concat(
+        , describe_host_type_lookup(find_host_type(
+            , host_types_cons(i32_type, host_types_cons(i32_type_duplicate, host_types_nil()))
+            , type_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host type lookup (conflicting role): "(String)
+    , string_concat(
+        , describe_host_type_lookup(find_host_type(
+            , host_types_cons(i32_type, host_types_cons(i64_type, host_types_nil()))
+            , type_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host type lookup (reordered kinds): "(String)
+    , string_concat(
+        , describe_host_type_lookup(find_host_type(
+            , host_types_cons(forward_type, host_types_cons(reverse_type, host_types_nil()))
+            , kinded_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host function lookup (missing): "(String)
+    , string_concat(
+        , describe_host_function_lookup(find_host_function(
+            , host_functions_cons(
+                , unrelated_module_fn
+                , host_functions_cons(unrelated_local_fn, host_functions_nil())
+                )
+            , fn_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host function lookup (single): "(String)
+    , string_concat(
+        , describe_host_function_lookup(find_host_function(
+            , host_functions_cons(string_fn, host_functions_nil())
+            , fn_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host function lookup (identical duplicate): "(String)
+    , string_concat(
+        , describe_host_function_lookup(find_host_function(
+            , host_functions_cons(
+                , string_fn
+                , host_functions_cons(string_fn_duplicate, host_functions_nil())
+                )
+            , fn_id
+            ))
+        , "\n"(String)
+        )
+    ));
+  print(string_concat(
+    , "host function lookup (conflicting signature): "(String)
+    , string_concat(
+        , describe_host_function_lookup(find_host_function(
+            , host_functions_cons(string_fn, host_functions_cons(bool_fn, host_functions_nil()))
+            , fn_id
+            ))
+        , "\n"(String)
+        )
+    ))
+}
+
+fn describe_host_functions(hostfns: Hostfns) -> String {
+  match! un_hostfns(hostfns) {
+    (
+      , .(_first: Hostfn, rest: Hostfns) {
+          match! un_hostfns(rest) {
+            (
+              , .(_second: Hostfn, _tail: Hostfns) { "host function identities: distinct\n" }
+              , .(_end: .) { "host function identities: collapsed\n" }
+              )
+          }
+        }
+      , .(_end: .) { "host function identities: missing\n" }
+      )
+  }
+}
+
+fn find_export_sig(exports: Export_infos, name: String) -> String {
+  loop(
+    , .(rem: Export_infos) {
+        match! un_export_infos(rem) {
+          (
+            , .(e: Export_info, rest: Export_infos) {
+                if! string_eq(export_info_name(e), name) {
+                  widen_sum!(export_info_sig(e), Export_infos | String)
+                } else {
+                  widen_sum!(rest, Export_infos | String)
+                }
+              }
+            , .(_end: .) { widen_sum!("<missing>"(String), Export_infos | String) }
+            )
+        }
+      }
+    , exports
+    )
+}
+
+fn describe_host_type_contracts(im: Image) -> String {
+  let exports = image_exports(im);
+  let left = find_export_sig(exports, "left.literal"(String));
+  let right = find_export_sig(exports, "right.literal"(String));
+  if! string_eq(left, right) {
+    "host type contract identities: collapsed\n"(String)
+  } else {
+    "host type contract identities: distinct\n"(String)
+  }
+}
+
+fn contract_status(im: Image, contract: Contract) -> String {
+  match! contract_check(im, contract) {
+    (.(_rejected: Diag) { "rejected"(String) }, .(_accepted: .) { "accepted"(String) })
+  }
+}
+
+fn canonical_export_contract() -> Contract {
+  contract_cons(
+    , mk_expect("left.echo_alias"(String), "(h{host/a.Value}) -> h{host/a.Value}"(String))
+    , contract_cons(
+        , mk_expect("left.Box.mk_box"(String), "(h{host/a.Value}) -> n{left.Box}"(String))
+        , contract_cons(
+            , mk_expect("left.Box.un_box"(String), "(n{left.Box}) -> h{host/a.Value}"(String))
+            , contract_cons(
+                , mk_expect("right.echo"(String), "(h{host/b.Value}) -> h{host/b.Value}"(String))
+                , contract_cons(
+                    , mk_expect(
+                        , "right.Box.mk_box"(String)
+                        , "(h{host/b.Value}) -> n{right.Box}"(String)
+                        )
+                    , contract_cons(
+                        , mk_expect(
+                            , "right.Box.un_box"(String)
+                            , "(n{right.Box}) -> h{host/b.Value}"(String)
+                            )
+                        , contract_nil()
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn wrong_same_leaf_contract() -> Contract {
+  contract_cons(
+    , mk_expect("left.echo_alias"(String), "(h{host/b.Value}) -> h{host/b.Value}"(String))
+    , contract_nil()
+    )
+}
+
+fn describe_canonical_export_contracts(im: Image) -> String {
+  let exports = image_exports(im);
+  let qualified = find_export_sig(exports, "left.echo_qualified"(String));
+  let selective = find_export_sig(exports, "left.echo_selective"(String));
+  let alias = find_export_sig(exports, "left.echo_alias"(String));
+  let other = find_export_sig(exports, "right.echo"(String));
+  let left_ctor = find_export_sig(exports, "left.Box.mk_box"(String));
+  let right_ctor = find_export_sig(exports, "right.Box.mk_box"(String));
+  let left_box = find_export_sig(exports, "left.echo_box"(String));
+  let right_box = find_export_sig(exports, "right.echo_box"(String));
+  let implicit_unit = find_export_sig(exports, "left.implicit_unit"(String));
+  let same_identity =
+    if! string_eq(qualified, selective) {
+      if! string_eq(selective, alias) {
+        "equal"(String)
+      } else {
+        "different"(String)
+      }
+    } else {
+      "different"(String)
+    };
+  let same_leaf =
+    if! string_eq(alias, other) {
+      "collapsed"(String)
+    } else {
+      "distinct"(String)
+    };
+  let member_identity =
+    if! string_eq(left_ctor, right_ctor) {
+      "collapsed"(String)
+    } else {
+      "distinct"(String)
+    };
+  let exact_nominals =
+    if! string_eq(left_box, "(n{left.Box}) -> n{left.Box}"(String)) {
+      if! string_eq(right_box, "(n{right.Box}) -> n{right.Box}"(String)) {
+        "exact"(String)
+      } else {
+        "wrong"(String)
+      }
+    } else {
+      "wrong"(String)
+    };
+  let default_result =
+    if! string_eq(implicit_unit, "() -> ."(String)) {
+      "unit"(String)
+    } else {
+      "wrong"(String)
+    };
+  string_concat(
+    , "canonical export identities: "(String)
+    , string_concat(
+        , same_identity
+        , string_concat(
+            , " / "(String)
+            , string_concat(
+                , same_leaf
+                , string_concat(
+                    , " / members "(String)
+                    , string_concat(
+                        , member_identity
+                        , string_concat(
+                            , " / nominals "(String)
+                            , string_concat(
+                                , exact_nominals
+                                , string_concat(
+                                    , " / default "(String)
+                                    , string_concat(
+                                        , default_result
+                                        , string_concat(
+                                            , "\ncanonical contract: "(String)
+                                            , string_concat(
+                                                , contract_status(im, canonical_export_contract())
+                                                , string_concat(
+                                                    , "\ncanonical wrong identity: "(String)
+                                                    , string_concat(
+                                                        , contract_status(
+                                                            , im
+                                                            , wrong_same_leaf_contract()
+                                                            )
+                                                        , "\n"(String)
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn capture_literal_annotation(lit: String & Host_type) -> Value {
+  match! lit {
+    .(_text: String, ty: Host_type) { vhost(scalar_of_str(host_id_render(host_type_id(ty)))) }
+  }
+}
+
+fn literal_annotation(im: Image, name: String) -> String {
+  match! export_term(im, name) {
+    (
+      , .(term: Term) {
+          match! eval_default(term) {
+            (
+              , .(fn_value: Ev_done) {
+                  match! prime_apply(
+                    , serve_default
+                    , capture_literal_annotation
+                    , test_bool_default
+                    , Ev_done.get(fn_value)
+                    , vunit()
+                    ) {
+                    (
+                      , .(answer: Ev_done) {
+                          match! value_to_scalar(Ev_done.get(answer)) {
+                            (
+                              , .(scalar: Scalar) {
+                                  match! scalar_as_str(scalar) {
+                                    (
+                                      , .(ty: String) { ty }
+                                      , .(_not_string: .) { "<not a string>"(String) }
+                                      )
+                                  }
+                                }
+                              , .(_not_scalar: .) { "<not a scalar>"(String) }
+                              )
+                          }
+                        }
+                      , .(_stuck: Ev_stuck) { "<application stuck>"(String) }
+                      )
+                  }
+                }
+              , .(_stuck: Ev_stuck) { "<export stuck>"(String) }
+              )
+          }
+        }
+      , .(_absent: .) { "<missing export>"(String) }
+      )
+  }
+}
+
+fn describe_literal_annotations(im: Image) -> String {
+  let left = literal_annotation(im, "left.literal"(String));
+  let right = literal_annotation(im, "right.literal"(String));
+  if! string_eq(left, right) {
+    "literal host type identities: collapsed\n"(String)
+  } else {
+    "literal host type identities: distinct\n"(String)
+  }
+}
+
+fn ordinary_i32_literal_representation() -> String {
+  let descriptor = mk_role_host_type(mk_host_id("testapi"(String), "I32"(String)), i32_role());
+  match! value_to_scalar(make_lit_default("17"(String), descriptor)) {
+    (
+      , .(scalar: Scalar) {
+          match! scalar_as_i32(scalar) {
+            (.(value: I32) { "i32"(String) }, .(_wrong: .) { "not-i32"(String) })
+          }
+        }
+      , .(_missing: .) { "not-scalar"(String) }
+      )
+  }
+}
+
+fn text_i32_literal_representation() -> String {
+  let descriptor = mk_role_host_type(mk_host_id("textapi"(String), "I32"(String)), i32_role());
+  match! value_to_scalar(make_lit_default("17"(String), descriptor)) {
+    (
+      , .(scalar: Scalar) {
+          match! scalar_as_str(scalar) {
+            (.(value: String) { "string"(String) }, .(_wrong: .) { "not-string"(String) })
+          }
+        }
+      , .(_missing: .) { "not-scalar"(String) }
+      )
+  }
+}
+
+fn describe_same_leaf_literal_representations() -> String {
+  string_concat(
+    , "same-leaf literal representations: "(String)
+    , string_concat(
+        , ordinary_i32_literal_representation()
+        , string_concat(
+            , " / "(String)
+            , string_concat(text_i32_literal_representation(), "\n"(String))
+            )
+        )
+    )
+}
+
+fn value_as_string(value: Value) -> String {
+  match! value_to_scalar(value) {
+    (
+      , .(scalar: Scalar) {
+          match! scalar_as_str(scalar) {
+            (.(text: String) { text }, .(_not_string: .) { "<not-string>"(String) })
+          }
+        }
+      , .(_not_scalar: .) { "<not-scalar>"(String) }
+      )
+  }
+}
+
+fn flattened_triplet(value: Value) -> String {
+  match! un_value(value) {
+    (
+      , .(first_pair: V_product) {
+          match! V_product.get(first_pair) {
+            .(first: Value, tail: Value) {
+              match! un_value(tail) {
+                (
+                  , .(second_pair: V_product) {
+                      match! V_product.get(second_pair) {
+                        .(second: Value, third: Value) {
+                          string_concat(
+                            , value_as_string(first)
+                            , string_concat(value_as_string(second), value_as_string(third))
+                            )
+                        }
+                      }
+                    }
+                  , .(_closure: V_closure) { "<bad-domain>"(String) }
+                  , .(_sum: V_sum) { "<bad-domain>"(String) }
+                  , .(_unit: V_unit) { "<bad-domain>"(String) }
+                  , .(_host: V_host) { "<bad-domain>"(String) }
+                  , .(_hostfn: V_hostfn) { "<bad-domain>"(String) }
+                  )
+              }
+            }
+          }
+        }
+      , .(_closure: V_closure) { "<bad-domain>"(String) }
+      , .(_sum: V_sum) { "<bad-domain>"(String) }
+      , .(_unit: V_unit) { "<bad-domain>"(String) }
+      , .(_host: V_host) { "<bad-domain>"(String) }
+      , .(_hostfn: V_hostfn) { "<bad-domain>"(String) }
+      )
+  }
+}
+
+fn value_is_i32(value: Value, expected: I32) -> Bool {
+  match! value_to_scalar(value) {
+    (
+      , .(scalar: Scalar) {
+          match! scalar_as_i32(scalar) {
+            (.(actual: I32) { eq_i32(actual, expected) }, .(_not_i32: .) { .f(Bool) })
+          }
+        }
+      , .(_not_scalar: .) { .f(Bool) }
+      )
+  }
+}
+
+fn staged_domain_matches(value: Value) -> Bool {
+  match! un_value(value) {
+    (
+      , .(first_pair: V_product) {
+          match! V_product.get(first_pair) {
+            .(first: Value, tail: Value) {
+              if! value_is_i32(first, 5(I32)) {
+                match! un_value(tail) {
+                  (
+                    , .(second_pair: V_product) {
+                        match! V_product.get(second_pair) {
+                          .(second: Value, third: Value) {
+                            if! value_is_i32(second, 6(I32)) {
+                              value_is_i32(third, 7(I32))
+                            } else {
+                              .f(Bool)
+                            }
+                          }
+                        }
+                      }
+                    , .(_closure: V_closure) { .f(Bool) }
+                    , .(_sum: V_sum) { .f(Bool) }
+                    , .(_unit: V_unit) { .f(Bool) }
+                    , .(_host: V_host) { .f(Bool) }
+                    , .(_hostfn: V_hostfn) { .f(Bool) }
+                    )
+                }
+              } else {
+                .f(Bool)
+              }
+            }
+          }
+        }
+      , .(_closure: V_closure) { .f(Bool) }
+      , .(_sum: V_sum) { .f(Bool) }
+      , .(_unit: V_unit) { .f(Bool) }
+      , .(_host: V_host) { .f(Bool) }
+      , .(_hostfn: V_hostfn) { .f(Bool) }
+      )
+  }
+}
+
+fn curried_descriptor() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/callbacks"(String), "curried"(String))
+    , "(h{testapi.String} & h{testapi.String}) -> (h{testapi.String}) -> "
+      "h{testapi.String}"(String)
+    )
+}
+
+fn capture_curried_call(call: Host_fn & Value) -> Call_result {
+  match! call {
+    .(descriptor: Host_fn, domain: Value) {
+      if! host_fn_eq(descriptor, curried_descriptor()) {
+        if! string_eq(flattened_triplet(domain), "abc"(String)) {
+          call_done(vhost(scalar_of_str("flattened"(String))))
+        } else {
+          call_stuck("curried callback received the wrong domain shape"(String))
+        }
+      } else {
+        call_stuck("curried callback received the wrong exact descriptor"(String))
+      }
+    }
+  }
+}
+
+fn describe_curried_host_groups() -> String {
+  let descriptor = curried_descriptor();
+  let groups = group_slots_cons(2(I32), group_slots_cons(1(I32), group_slots_nil()));
+  let first_group = vproduct(vhost(scalar_of_str("a"(String))), vhost(scalar_of_str("b"(String))));
+  match! prime_apply(
+    , capture_curried_call
+    , make_lit_default
+    , test_bool_default
+    , vhostfn_fresh(descriptor, groups)
+    , first_group
+    ) {
+    (
+      , .(partial: Ev_done) {
+          match! prime_apply(
+            , capture_curried_call
+            , make_lit_default
+            , test_bool_default
+            , Ev_done.get(partial)
+            , vhost(scalar_of_str("c"(String)))
+            ) {
+            (
+              , .(answer: Ev_done) {
+                  string_concat(
+                    , "curried host groups: "(String)
+                    , string_concat(value_as_string(Ev_done.get(answer)), "\n"(String))
+                    )
+                }
+              , .(_stuck: Ev_stuck) { "curried host groups: second application stuck\n"(String) }
+              )
+          }
+        }
+      , .(_stuck: Ev_stuck) { "curried host groups: first application fired\n"(String) }
+      )
+  }
+}
+
+fn host_a_type() -> Host_type {
+  mk_role_host_type(mk_host_id("host/a"(String), "Value"(String)), i32_role())
+}
+
+fn host_a_type_mismatch() -> Host_type {
+  mk_role_host_type(mk_host_id("host/a"(String), "Value"(String)), i64_role())
+}
+
+fn host_b_type() -> Host_type {
+  mk_role_host_type(mk_host_id("host/b"(String), "Value"(String)), str_role())
+}
+
+fn make_exact_literal(text: String, host_type: Host_type) -> Value {
+  let id = host_type_id(host_type);
+  if! host_id_eq(id, mk_host_id("host/a"(String), "Value"(String))) {
+    vhost(make_scalar(text, "I32"(String)))
+  } else if! host_id_eq(id, mk_host_id("host/b"(String), "Value"(String))) {
+    vhost(make_scalar(text, "String"(String)))
+  } else {
+    make_lit_default(text, host_type)
+  }
+}
+
+fn host_a_ping() -> Host_fn {
+  mk_host_fn(mk_host_id("host/a"(String), "ping"(String)), "() -> h{host/a.Value}"(String))
+}
+
+fn host_a_staged() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("host/a"(String), "staged"(String))
+    , "[#0] (#0 & #0) -> [#1] (#1) -> #1"(String)
+    )
+}
+
+fn host_a_ping_mismatch() -> Host_fn {
+  mk_host_fn(mk_host_id("host/a"(String), "ping"(String)), "() -> h{host/b.Value}"(String))
+}
+
+fn host_b_ping() -> Host_fn {
+  mk_host_fn(mk_host_id("host/b"(String), "ping"(String)), "() -> h{host/b.Value}"(String))
+}
+
+fn host_b_unused() -> Host_fn {
+  mk_host_fn(mk_host_id("host/b"(String), "unused"(String)), "() -> h{host/b.Value}"(String))
+}
+
+fn polymorphic_identity() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/main"(String), "polymorphic_identity"(String))
+    , "[#0] (#0) -> #0"(String)
+    )
+}
+
+fn polymorphic_result() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/main"(String), "polymorphic_result"(String))
+    , "() -> [R] (R) -> R"(String)
+    )
+}
+
+fn function_result() -> Host_fn {
+  mk_host_fn(mk_host_id("testapi/main"(String), "function_result"(String)), "() -> () -> ."(String))
+}
+
+fn repeated_binders() -> Host_fn {
+  mk_host_fn(
+    , mk_host_id("testapi/main"(String), "repeated_binders"(String))
+    , "[A,,,B] (A & B) -> A"(String)
+    )
+}
+
+fn empty_binders() -> Host_fn {
+  mk_host_fn(mk_host_id("testapi/main"(String), "empty_binders"(String)), "[] () -> ."(String))
+}
+
+fn zero_group_binding(descriptor: Host_fn) -> Host_fn_binding {
+  mk_host_fn_binding(descriptor, group_slots_cons(0(I32), group_slots_nil()))
+}
+
+fn staged_binding() -> Host_fn_binding {
+  mk_host_fn_binding(
+    , host_a_staged()
+    , group_slots_cons(2(I32), group_slots_cons(1(I32), group_slots_nil()))
+    )
+}
+
+fn exact_host_types() -> Host_types {
+  host_types_cons(host_a_type(), host_types_cons(host_b_type(), host_types_nil()))
+}
+
+fn host_b_functions() -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , zero_group_binding(host_b_ping())
+    , host_fn_bindings_cons(zero_group_binding(host_b_unused()), host_fn_bindings_nil())
+    )
+}
+
+fn host_a_functions(tail: Host_fn_bindings) -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , zero_group_binding(host_a_ping())
+    , host_fn_bindings_cons(staged_binding(), tail)
+    )
+}
+
+fn exact_host_functions() -> Host_fn_bindings { host_a_functions(host_b_functions()) }
+
+fn exact_adapter_functions() -> Host_fn_bindings {
+  host_fn_bindings_cons(
+    , mk_host_fn_binding(polymorphic_identity(), group_slots_cons(1(I32), group_slots_nil()))
+    , host_fn_bindings_cons(
+        , zero_group_binding(polymorphic_result())
+        , host_fn_bindings_cons(
+            , zero_group_binding(function_result())
+            , host_fn_bindings_cons(
+                , mk_host_fn_binding(
+                    , repeated_binders()
+                    , group_slots_cons(2(I32), group_slots_nil())
+                    )
+                , host_fn_bindings_cons(zero_group_binding(empty_binders()), exact_host_functions())
+                )
+            )
+        )
+    )
+}
+
+fn exact_adapter() -> Host_adapter {
+  mk_host_adapter(exact_host_types(), exact_adapter_functions())
+}
+
+fn adapter_missing_type() -> Host_adapter {
+  mk_host_adapter(host_types_cons(host_b_type(), host_types_nil()), exact_host_functions())
+}
+
+fn adapter_missing_function() -> Host_adapter {
+  mk_host_adapter(
+    , exact_host_types()
+    , host_a_functions(host_fn_bindings_cons(
+        , zero_group_binding(host_b_ping())
+        , host_fn_bindings_nil()
+        ))
+    )
+}
+
+fn adapter_mismatched_type() -> Host_adapter {
+  mk_host_adapter(
+    , host_types_cons(host_a_type_mismatch(), host_types_cons(host_b_type(), host_types_nil()))
+    , exact_host_functions()
+    )
+}
+
+fn adapter_conflicting_type() -> Host_adapter {
+  mk_host_adapter(
+    , host_types_cons(
+        , host_a_type()
+        , host_types_cons(host_a_type_mismatch(), host_types_cons(host_b_type(), host_types_nil()))
+        )
+    , exact_host_functions()
+    )
+}
+
+fn adapter_mismatched_function() -> Host_adapter {
+  mk_host_adapter(
+    , exact_host_types()
+    , host_fn_bindings_cons(
+        , zero_group_binding(host_a_ping_mismatch())
+        , host_fn_bindings_cons(staged_binding(), host_b_functions())
+        )
+    )
+}
+
+fn adapter_conflicting_function() -> Host_adapter {
+  mk_host_adapter(
+    , exact_host_types()
+    , host_fn_bindings_cons(
+        , zero_group_binding(host_a_ping())
+        , host_fn_bindings_cons(
+            , zero_group_binding(host_a_ping_mismatch())
+            , host_fn_bindings_cons(staged_binding(), host_b_functions())
+            )
+        )
+    )
+}
+
+fn adapter_mismatched_groups() -> Host_adapter {
+  mk_host_adapter(
+    , exact_host_types()
+    , host_fn_bindings_cons(
+        , mk_host_fn_binding(host_a_ping(), group_slots_cons(1(I32), group_slots_nil()))
+        , host_fn_bindings_cons(staged_binding(), host_b_functions())
+        )
+    )
+}
+
+fn adapter_invalid_groups() -> Host_adapter {
+  mk_host_adapter(
+    , exact_host_types()
+    , host_fn_bindings_cons(
+        , mk_host_fn_binding(
+            , host_a_ping()
+            , group_slots_cons(sub_i32(0(I32), 1(I32)), group_slots_nil())
+            )
+        , host_fn_bindings_cons(staged_binding(), host_b_functions())
+        )
+    )
+}
+
+fn adapter_with_surplus() -> Host_adapter {
+  let extra_type =
+    mk_roleless_host_type(
+      , mk_host_id("unrelated"(String), "Box"(String))
+      , param_kinds_cons(base_kind(), param_kinds_nil())
+      );
+  let extra_fn = mk_host_fn(mk_host_id("unrelated"(String), "noop"(String)), "() -> ."(String));
+  mk_host_adapter(
+    , host_types_cons(extra_type, exact_host_types())
+    , host_fn_bindings_cons(zero_group_binding(extra_fn), exact_host_functions())
+    )
+}
+
+fn serve_exact_callbacks(call: Host_fn & Value) -> Call_result {
+  match! call {
+    .(descriptor: Host_fn, domain: Value) {
+      if! host_fn_eq(descriptor, host_a_ping()) {
+        call_done(vhost(scalar_of_i32(41(I32))))
+      } else if! host_fn_eq(descriptor, host_a_staged()) {
+        if! staged_domain_matches(domain) {
+          call_done(vhost(scalar_of_i32(18(I32))))
+        } else {
+          call_stuck("unexpected staged callback domain"(String))
+        }
+      } else if! host_fn_eq(descriptor, host_b_ping()) {
+        call_done(vhost(scalar_of_str("bee"(String))))
+      } else if! host_fn_eq(descriptor, polymorphic_identity()) {
+        if! value_is_i32(domain, 7(I32)) {
+          call_done(domain)
+        } else {
+          call_stuck("polymorphic callback did not receive the scalar value"(String))
+        }
+      } else if! host_fn_eq(descriptor, polymorphic_result()) {
+        call_done(vunit())
+      } else if! host_fn_eq(descriptor, function_result()) {
+        call_done(vunit())
+      } else if! host_fn_eq(descriptor, repeated_binders()) {
+        call_done(vhost(scalar_of_i32(29(I32))))
+      } else {
+        call_stuck("unexpected exact host callback"(String))
+      }
+    }
+  }
+}
+
+fn describe_instantiation(adapter: Host_adapter, im: Image) -> String {
+  match! instantiate(adapter, serve_exact_callbacks, make_exact_literal, test_bool_default, im) {
+    (.(_loaded: Loaded) { "accepted"(String) }, .(diag: Diag) { diag_message(diag) })
+  }
+}
+
+fn preflight_line(label: String, adapter: Host_adapter, im: Image) -> String {
+  string_concat(label, string_concat(describe_instantiation(adapter, im), "\n"(String)))
+}
+
+fn describe_preflight_results(im: Image) -> String {
+  string_concat(
+    , preflight_line("preflight missing: "(String), adapter_missing_type(), im)
+    , string_concat(
+        , preflight_line("preflight missing function: "(String), adapter_missing_function(), im)
+        , string_concat(
+            , preflight_line("preflight mismatch: "(String), adapter_mismatched_type(), im)
+            , string_concat(
+                , preflight_line("preflight conflict: "(String), adapter_conflicting_type(), im)
+                , string_concat(
+                    , preflight_line(
+                        , "preflight function mismatch: "(String)
+                        , adapter_mismatched_function()
+                        , im
+                        )
+                    , string_concat(
+                        , preflight_line(
+                            , "preflight function conflict: "(String)
+                            , adapter_conflicting_function()
+                            , im
+                            )
+                        , string_concat(
+                            , preflight_line(
+                                , "preflight group mismatch: "(String)
+                                , adapter_mismatched_groups()
+                                , im
+                                )
+                            , string_concat(
+                                , preflight_line(
+                                    , "preflight invalid groups: "(String)
+                                    , adapter_invalid_groups()
+                                    , im
+                                    )
+                                , preflight_line(
+                                    , "preflight surplus: "(String)
+                                    , adapter_with_surplus()
+                                    , im
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn call_zero_i32[P](surface: Surface(P), name: String) -> String {
+  match! surface.?{lookup}(name) {
+    (
+      , .(callee: P) {
+          match! surface.?{apply}((callee, surface.?{unit_in})) {
+            (
+              , .(answer: P) {
+                  match! surface.?{i32_out}(answer) {
+                    (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn call_zero_string[P](surface: Surface(P), name: String) -> String {
+  match! surface.?{lookup}(name) {
+    (
+      , .(callee: P) {
+          match! surface.?{apply}((callee, surface.?{unit_in})) {
+            (
+              , .(answer: P) {
+                  match! surface.?{str_out}(answer) {
+                    (.(s: String) { s }, .(diag: Diag) { diag_message(diag) })
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn apply_named[P](surface: Surface(P), name: String, argument: P) -> P | Diag {
+  match! surface.?{lookup}(name) {
+    (
+      , .(callee: P) { surface.?{apply}((callee, argument)) }
+      , .(diag: Diag) { widen_sum!(diag, P | Diag) }
+      )
+  }
+}
+
+fn call_polymorphic_identity[P](surface: Surface(P)) -> String {
+  match! surface.?{hostfn_in}(polymorphic_identity()) {
+    (
+      , .(callback: P) {
+          match! apply_named(surface, "left.call_polymorphic_identity"(String), callback) {
+            (
+              , .(answer: P) {
+                  match! surface.?{i32_out}(answer) {
+                    (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn describe_injected_descriptor[P](surface: Surface(P), descriptor: Host_fn) -> String {
+  match! surface.?{hostfn_in}(descriptor) {
+    (.(_callback: P) { "accepted"(String) }, .(diag: Diag) { diag_message(diag) })
+  }
+}
+
+fn call_repeated_binders[P](surface: Surface(P)) -> String {
+  match! surface.?{hostfn_in}(repeated_binders()) {
+    (
+      , .(callback: P) {
+          match! surface.?{apply}((callback, surface.?{unit_in})) {
+            (
+              , .(after_a: P) {
+                  match! surface.?{apply}((after_a, surface.?{unit_in})) {
+                    (
+                      , .(after_b: P) {
+                          let pair =
+                            surface.?{pair_in}((
+                              , surface.?{i32_in}(11(I32))
+                              , surface.?{i32_in}(13(I32))
+                              ));
+                          match! surface.?{apply}((after_b, pair)) {
+                            (
+                              , .(answer: P) {
+                                  match! surface.?{i32_out}(answer) {
+                                    (
+                                      , .(n: I32) { int_to_string(n) }
+                                      , .(diag: Diag) { diag_message(diag) }
+                                      )
+                                  }
+                                }
+                              , .(diag: Diag) { diag_message(diag) }
+                              )
+                          }
+                        }
+                      , .(diag: Diag) { diag_message(diag) }
+                      )
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn describe_hostfn_in_edge_results[P](surface: Surface(P)) -> String {
+  string_concat(
+    , "hostfn polymorphic result: "(String)
+    , string_concat(
+        , describe_injected_descriptor(surface, polymorphic_result())
+        , string_concat(
+            , "\nhostfn function result: "(String)
+            , string_concat(
+                , describe_injected_descriptor(surface, function_result())
+                , string_concat(
+                    , "\nhostfn repeated binders: "(String)
+                    , string_concat(
+                        , call_repeated_binders(surface)
+                        , string_concat(
+                            , "\nhostfn empty binders: "(String)
+                            , string_concat(
+                                , describe_injected_descriptor(surface, empty_binders())
+                                , "\n"(String)
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}
+
+fn call_box_roundtrip[P](surface: Surface(P), value: I32) -> String {
+  let box_result = apply_named(surface, "left.Box.mk_box"(String), surface.?{i32_in}(value));
+  match! box_result {
+    (
+      , .(boxed: P) {
+          match! apply_named(surface, "left.echo_box"(String), boxed) {
+            (
+              , .(echoed: P) {
+                  match! apply_named(surface, "left.Box.un_box"(String), echoed) {
+                    (
+                      , .(unboxed: P) {
+                          match! surface.?{i32_out}(unboxed) {
+                            (
+                              , .(answer: I32) { int_to_string(answer) }
+                              , .(diag: Diag) { diag_message(diag) }
+                              )
+                          }
+                        }
+                      , .(diag: Diag) { diag_message(diag) }
+                      )
+                  }
+                }
+              , .(diag: Diag) { diag_message(diag) }
+              )
+          }
+        }
+      , .(diag: Diag) { diag_message(diag) }
+      )
+  }
+}
+
+fn describe_exact_callback_results(im: Image) -> String {
+  match! instantiate(
+    , exact_adapter()
+    , serve_exact_callbacks
+    , make_exact_literal
+    , test_bool_default
+    , im
+    ) {
+    (
+      , .(loaded: Loaded) {
+          Loaded.get(loaded)(.[P](surface: Surface(P)) {
+            string_concat(
+              , string_concat(
+                  , "same-leaf callback results: "(String)
+                  , string_concat(
+                      , call_zero_i32(surface, "left.call"(String))
+                      , string_concat(
+                          , " / "(String)
+                          , string_concat(
+                              , call_zero_string(surface, "right.call"(String))
+                              , "\n"(String)
+                              )
+                          )
+                      )
+                  )
+              , string_concat(
+                  , "source-derived staged callbacks: "(String)
+                  , string_concat(
+                      , call_zero_i32(surface, "left.staged"(String))
+                      , string_concat(
+                          , " / "(String)
+                          , string_concat(
+                              , call_zero_i32(surface, "left.staged_alias"(String))
+                              , string_concat(
+                                  , "\nsurface polymorphic callback: "(String)
+                                  , string_concat(
+                                      , call_polymorphic_identity(surface)
+                                      , string_concat(
+                                          , "\n"(String)
+                                          , string_concat(
+                                              , describe_hostfn_in_edge_results(surface)
+                                              , string_concat(
+                                                  , "canonicalized nominal body: "(String)
+                                                  , string_concat(
+                                                      , call_box_roundtrip(surface, 23(I32))
+                                                      , "\n"(String)
+                                                      )
+                                                  )
+                                              )
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      )
+                  )
+              )
+          })
+        }
+      , .(diag: Diag) {
+          string_concat(
+            , "same-leaf callback results: instantiate failed: "(String)
+            , string_concat(diag_message(diag), "\n"(String))
+            )
+        }
+      )
+  }
+}
+
+fn source_host_type_matches(source: String, expected: Host_type) -> Bool {
+  match! un_load_outcome(load_package(source)) {
+    (
+      , .(loaded: Lr_image) {
+          match! find_host_type(
+            , host_contract_types(image_host_requirements(Lr_image.get(loaded)))
+            , host_type_id(expected)
+            ) {
+            (
+              , .(_missing: Missing_host_type) { .f(Bool) }
+              , .(found: Found_host_type) { host_type_eq(Found_host_type.get(found), expected) }
+              , .(_conflict: Conflicting_host_type) { .f(Bool) }
+              )
+          }
+        }
+      , .(_diag: Lr_diag) { .f(Bool) }
+      )
+  }
+}
+
+fn owned_descriptor_result() -> String {
+  let role_neutral =
+    source_host_type_matches(
+      , "module owned;\nhost type Text role(str) { owned };\n"(String)
+      , mk_role_host_type(mk_host_id("owned"(String), "Text"(String)), str_role())
+      );
+  let roleless_neutral =
+    source_host_type_matches(
+      , "module owned;\nhost type Box[A] { owned };\n"(String)
+      , mk_roleless_host_type(
+          , mk_host_id("owned"(String), "Box"(String))
+          , param_kinds_cons(base_kind(), param_kinds_nil())
+          )
+      );
+  if! role_neutral {
+    if! roleless_neutral {
+      "owned descriptor identity: role-neutral / roleless-neutral\n"(String)
+    } else {
+      "owned descriptor identity: role-neutral / roleless-changed\n"(String)
+    }
+  } else if! roleless_neutral {
+    "owned descriptor identity: role-changed / roleless-neutral\n"(String)
+  } else {
+    "owned descriptor identity: role-changed / roleless-changed\n"(String)
+  }
+}
+
+pub fn main() -> . {
+  print_duplicate_image_results();
+  print_malformed_host_descriptor_results();
+  print_source_derivation_results();
+  print(group_shape_result());
+  print_descriptor_lookup_results();
+  match! un_load_outcome(load_package(read_image_stdin())) {
+    (
+      , .(loaded: Lr_image) {
+          let image = Lr_image.get(loaded);
+          print(describe_host_functions(image_hostfns(image)));
+          print(describe_host_type_contracts(image));
+          print(describe_canonical_export_contracts(image));
+          print(describe_literal_annotations(image));
+          print(describe_same_leaf_literal_representations());
+          print(describe_curried_host_groups());
+          print(describe_preflight_results(image));
+          print(describe_exact_callback_results(image));
+          print(owned_descriptor_result())
+        }
+      , .(failed: Lr_diag) {
+          print(string_concat(
+            , "load failed: "(String)
+            , string_concat(diag_message(Lr_diag.get(failed)), "\n"(String))
+            ))
+        }
+      )
+  }
+}

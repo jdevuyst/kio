@@ -1,0 +1,8 @@
+module main;
+
+import dep as d;
+import types as types;
+
+type Actual = types.Other;
+
+fn call(value: types.Actual) -> d.Flag { d.id(value) }

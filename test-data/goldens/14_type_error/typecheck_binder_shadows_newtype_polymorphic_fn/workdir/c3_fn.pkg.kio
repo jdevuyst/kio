@@ -1,0 +1,13 @@
+package c3_fn;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  m
+}

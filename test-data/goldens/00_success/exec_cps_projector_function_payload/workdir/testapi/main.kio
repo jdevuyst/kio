@@ -1,0 +1,32 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+type Step = I32 -> I32;
+
+labels { pack <U> : Step & U };
+
+fn make_pack(n: I32) -> Pack { Pack.mk((.(x: I32) -> I32 { add_i32(x, 1) }, n)) }
+
+fn marked_pack(n: I32) -> Pack { print("R"(String)); make_pack(n) }
+
+fn marked_continuation(_unit: .) -> [U] (Step & U) -> I32 {
+  print("C"(String));
+  .[U](_payload: Step & U) -> I32 { print("P"(String)); 7 }
+}
+
+fn unpack[U](step: Step, _payload: U) -> I32 { step(41) }
+
+fn run(v: Pack) -> I32 { Pack.get(v)(unpack) }
+
+fn run_in_order() -> I32 { Pack.get(marked_pack(0))(marked_continuation(())) }
+
+pub fn main() -> . {
+  print(i32_to_string(run(make_pack(0))));
+  print("\n"(String));
+  print(i32_to_string(run_in_order()));
+  print("\n"(String))
+}

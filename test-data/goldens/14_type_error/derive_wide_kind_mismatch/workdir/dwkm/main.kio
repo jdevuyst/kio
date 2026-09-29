@@ -1,0 +1,58 @@
+module dwkm/main;
+
+import elab/derive(derive);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Wrap0[A] : A { pub constructor mk_wrap0; pub projector un_wrap0 }
+
+pub newtype Wrap1[A] : A { pub constructor mk_wrap1; pub projector un_wrap1 }
+
+pub newtype Wrap2[A] : A { pub constructor mk_wrap2; pub projector un_wrap2 }
+
+pub newtype Wrap3[A] : A { pub constructor mk_wrap3; pub projector un_wrap3 }
+
+pub newtype Wrap4[A] : A { pub constructor mk_wrap4; pub projector un_wrap4 }
+
+pub newtype Wrap5[A] : A { pub constructor mk_wrap5; pub projector un_wrap5 }
+
+pub newtype Flat : . { pub constructor mk_flat; pub projector un_flat }
+
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+fn box_monad() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+fn wrap0_monad() -> Monad(Wrap0) { Monad.mk_monad(.[A][B](m, k) { k(Wrap0.un_wrap0(m)) }) }
+
+fn wrap1_monad() -> Monad(Wrap1) { Monad.mk_monad(.[A][B](m, k) { k(Wrap1.un_wrap1(m)) }) }
+
+fn wrap2_monad() -> Monad(Wrap2) { Monad.mk_monad(.[A][B](m, k) { k(Wrap2.un_wrap2(m)) }) }
+
+fn wrap3_monad() -> Monad(Wrap3) { Monad.mk_monad(.[A][B](m, k) { k(Wrap3.un_wrap3(m)) }) }
+
+fn wrap4_monad() -> Monad(Wrap4) { Monad.mk_monad(.[A][B](m, k) { k(Wrap4.un_wrap4(m)) }) }
+
+fn wrap5_monad() -> Monad(Wrap5) { Monad.mk_monad(.[A][B](m, k) { k(Wrap5.un_wrap5(m)) }) }
+
+fn flat_monad() -> Monad(Flat) { Monad.mk_monad(.[A][B](m, k) { k(m) }) }
+
+fn bad() -> Monad(Box) {
+  derive!(
+    , (
+        , wrap0_monad
+        , wrap1_monad
+        , wrap2_monad
+        , flat_monad
+        , wrap3_monad
+        , box_monad
+        , wrap4_monad
+        , wrap5_monad
+        )
+    , Monad(Box)
+    )
+}
+
+pub fn main() -> . { () }

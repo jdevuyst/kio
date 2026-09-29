@@ -1,0 +1,5 @@
+  fail equiv `lam_body` in host/m: arms split into 2 normal-form groups
+    group A (arms 1): .(x) { f(x) }
+    group B (arms 2): .(x) { g(x) }
+
+result: 1/1 equiv block failed

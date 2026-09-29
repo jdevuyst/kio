@@ -1,0 +1,5 @@
+module lib/types;
+
+import testapi as testapi;
+
+pub type I32 = testapi.I32;

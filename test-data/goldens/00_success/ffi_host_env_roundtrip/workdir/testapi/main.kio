@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(mul_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+
+pub fn main() -> . { let n = mul_i32(21, 2); print(i32_to_string(n)); print("\n"(String)) }

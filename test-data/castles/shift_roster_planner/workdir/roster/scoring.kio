@@ -1,0 +1,225 @@
+module roster/scoring;
+
+import elab/control(if);
+import roster/scenario as scenario;
+import roster/types(
+  , Scorecard
+  , Shift
+  , {day}
+  , {demand}
+  , {fairness_penalty}
+  , {preference_penalty}
+  , {preference}
+  , {rest_conflicts}
+  , {same_day_conflicts}
+  , {skill_shortfalls}
+  , {skill}
+  , {slot}
+  , {total_score}
+  , {worker}
+  );
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+fn bool_score(value: Bool, yes: I32, no: I32) -> I32 {
+  if! value {
+    yes
+  } else {
+    no
+  }
+}
+
+fn both(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+fn same_worker(left: Shift, right: Shift) -> Bool { eq_i32(left.?{worker}, right.?{worker}) }
+
+fn same_day(left: Shift, right: Shift) -> Bool { eq_i32(left.?{day}, right.?{day}) }
+
+fn different_slot(left: Shift, right: Shift) -> Bool {
+  if! eq_i32(left.?{slot}, right.?{slot}) {
+    .f
+  } else {
+    .t
+  }
+}
+
+fn same_day_conflict(left: Shift, right: Shift) -> Bool {
+  both(both(same_worker(left, right), same_day(left, right)), different_slot(left, right))
+}
+
+fn next_day(left: Shift, right: Shift) -> Bool { eq_i32(add_i32(left.?{day}, 1), right.?{day}) }
+
+fn night_to_morning(left: Shift, right: Shift) -> Bool {
+  both(eq_i32(left.?{slot}, 2), eq_i32(right.?{slot}, 0))
+}
+
+fn rest_conflict(left: Shift, right: Shift) -> Bool {
+  both(both(same_worker(left, right), next_day(left, right)), night_to_morning(left, right))
+}
+
+fn has_front_skill(worker_id: I32) -> Bool {
+  if! eq_i32(worker_id, 0) {
+    .t
+  } else if! eq_i32(worker_id, 1) {
+    .t
+  } else if! eq_i32(worker_id, 2) {
+    .t
+  } else {
+    .t
+  }
+}
+
+fn has_meds_skill(worker_id: I32) -> Bool {
+  if! eq_i32(worker_id, 0) {
+    .f
+  } else if! eq_i32(worker_id, 1) {
+    .t
+  } else if! eq_i32(worker_id, 2) {
+    .t
+  } else {
+    .f
+  }
+}
+
+fn has_lead_skill(worker_id: I32) -> Bool {
+  if! eq_i32(worker_id, 0) {
+    .t
+  } else if! eq_i32(worker_id, 1) {
+    .f
+  } else if! eq_i32(worker_id, 2) {
+    .t
+  } else {
+    .f
+  }
+}
+
+fn worker_has_skill(worker_id: I32, skill_id: I32) -> Bool {
+  if! eq_i32(skill_id, 0) {
+    has_front_skill(worker_id)
+  } else if! eq_i32(skill_id, 1) {
+    has_meds_skill(worker_id)
+  } else {
+    has_lead_skill(worker_id)
+  }
+}
+
+fn skill_shortfall_for(s: Shift) -> I32 {
+  bool_score(worker_has_skill(s.?{worker}, s.?{skill}), 0, s.?{demand})
+}
+
+fn preference_penalty_for(s: Shift) -> I32 {
+  if! eq_i32(s.?{preference}, 0) {
+    0
+  } else if! eq_i32(s.?{preference}, 1) {
+    1
+  } else {
+    3
+  }
+}
+
+pub rec(loop) fn sum_skill_shortfalls(index: I32, acc: I32) -> I32 {
+  if! lt_i32(index, scenario.shift_count()) {
+    let item = scenario.shift_at(index);
+    rec sum_skill_shortfalls(add_i32(index, 1), add_i32(acc, skill_shortfall_for(item)))
+  } else {
+    acc
+  }
+}
+
+pub rec(loop) fn sum_preference_penalties(index: I32, acc: I32) -> I32 {
+  if! lt_i32(index, scenario.shift_count()) {
+    let item = scenario.shift_at(index);
+    rec sum_preference_penalties(add_i32(index, 1), add_i32(acc, preference_penalty_for(item)))
+  } else {
+    acc
+  }
+}
+
+rec(loop) fn pair_conflicts_from(i: I32, j: I32, same_day_acc: I32, rest_acc: I32) -> I32 & I32 {
+  if! lt_i32(j, scenario.shift_count()) {
+    let left = scenario.shift_at(i);
+    let right = scenario.shift_at(j);
+    let next_same = add_i32(same_day_acc, bool_score(same_day_conflict(left, right), 1, 0));
+    let next_rest = add_i32(rest_acc, bool_score(rest_conflict(left, right), 1, 0));
+    rec pair_conflicts_from(i, add_i32(j, 1), next_same, next_rest)
+  } else {
+    (same_day_acc, rest_acc)
+  }
+}
+
+rec(loop) fn all_pair_conflicts(i: I32, same_day_acc: I32, rest_acc: I32) -> I32 & I32 {
+  if! lt_i32(i, scenario.shift_count()) {
+    let pair_totals = pair_conflicts_from(i, add_i32(i, 1), same_day_acc, rest_acc);
+    let .(next_same: I32, next_rest: I32) = pair_totals;
+    rec all_pair_conflicts(add_i32(i, 1), next_same, next_rest)
+  } else {
+    (same_day_acc, rest_acc)
+  }
+}
+
+pub rec(loop) fn worker_load(worker_id: I32, index: I32, acc: I32) -> I32 {
+  if! lt_i32(index, scenario.shift_count()) {
+    let item = scenario.shift_at(index);
+    let delta = bool_score(eq_i32(item.?{worker}, worker_id), 1, 0);
+    rec worker_load(worker_id, add_i32(index, 1), add_i32(acc, delta))
+  } else {
+    acc
+  }
+}
+
+fn load_penalty(load: I32) -> I32 {
+  if! lt_i32(load, 2) {
+    2
+  } else if! lt_i32(3, load) {
+    mul_i32(sub_i32(load, 3), 2)
+  } else {
+    0
+  }
+}
+
+pub rec(loop) fn fairness_total(worker_id: I32, acc: I32) -> I32 {
+  if! lt_i32(worker_id, scenario.worker_count()) {
+    let load = worker_load(worker_id, 0, 0);
+    rec fairness_total(add_i32(worker_id, 1), add_i32(acc, load_penalty(load)))
+  } else {
+    acc
+  }
+}
+
+pub fn scorecard() -> Scorecard {
+  let skill_total = sum_skill_shortfalls(0, 0);
+  let preference_total = sum_preference_penalties(0, 0);
+  let pair_totals = all_pair_conflicts(0, 0, 0);
+  let .(same_total: I32, rest_total: I32) = pair_totals;
+  let fairness_total_value = fairness_total(0, 0);
+  let total =
+    add_i32(
+      , add_i32(
+          , add_i32(mul_i32(skill_total, 8), mul_i32(same_total, 10))
+          , add_i32(mul_i32(rest_total, 6), mul_i32(fairness_total_value, 4))
+          )
+      , preference_total
+      );
+  {
+    , skill_shortfalls = skill_total
+    , same_day_conflicts = same_total
+    , rest_conflicts = rest_total
+    , fairness_penalty = fairness_total_value
+    , preference_penalty = preference_total
+    , total_score = total
+    }
+}
+
+pub fn roster_is_healthy(card: Scorecard) -> Bool {
+  leq_i32(
+    , add_i32(add_i32(card.?{skill_shortfalls}, card.?{same_day_conflicts}), card.?{rest_conflicts})
+    , 2
+    )
+}

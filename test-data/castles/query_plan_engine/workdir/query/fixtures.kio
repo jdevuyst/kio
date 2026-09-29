@@ -1,0 +1,103 @@
+/// The harbor dataset: three base tables, twenty rows.
+///
+/// Every key the engine joins, groups, or orders on is an integer, and
+/// every name is display text carried beside it - a ship names its berth
+/// by id, a berth names its zone by id and carries the zone's label for
+/// the report. That split is what lets the whole engine run on a host
+/// that offers no string comparison at all.
+module query/fixtures;
+
+import elab/match(match);
+import query/list as list;
+import query/row as rel;
+import query/schema as schema;
+import query/value as value;
+import testapi(I32, String);
+
+/// Flag codes are two letters by definition, so the row builder knows
+/// their width without being told.
+fn ship(id: I32, name: String, name_w: I32, flag: String, draft: I32, berth_ref: I32) -> rel.Row {
+  list.of5(
+    , rel.cell(schema.ship_id(), value.int_val(id))
+    , rel.cell(schema.ship_name(), value.text_val(name, name_w))
+    , rel.cell(schema.ship_flag(), value.text_val(flag, 2))
+    , rel.cell(schema.ship_draft(), value.int_val(draft))
+    , rel.cell(schema.ship_berth(), value.int_val(berth_ref))
+    )
+}
+
+fn berth(id: I32, depth: I32, zone: String, zone_w: I32, zone_id: I32) -> rel.Row {
+  list.of4(
+    , rel.cell(schema.berth_id(), value.int_val(id))
+    , rel.cell(schema.berth_depth(), value.int_val(depth))
+    , rel.cell(schema.berth_zone(), value.text_val(zone, zone_w))
+    , rel.cell(schema.berth_zone_id(), value.int_val(zone_id))
+    )
+}
+
+fn manifest(ship_ref: I32, cargo: String, cargo_w: I32, tons: I32) -> rel.Row {
+  list.of3(
+    , rel.cell(schema.mf_ship(), value.int_val(ship_ref))
+    , rel.cell(schema.mf_cargo(), value.text_val(cargo, cargo_w))
+    , rel.cell(schema.mf_tons(), value.int_val(tons))
+    )
+}
+
+/// Six ships, each moored at one berth. Draft is in decimetres, as is
+/// berth depth, so the two compare directly.
+pub fn ships() -> rel.Table {
+  list.append(
+    , list.of3(
+        , ship(1, "Aurora", 6, "PA", 92, 1)
+        , ship(2, "Borealis", 8, "LR", 68, 2)
+        , ship(3, "Cygnus", 6, "NO", 115, 3)
+        )
+    , list.of3(
+        , ship(4, "Dorado", 6, "PA", 74, 2)
+        , ship(5, "Eos", 3, "GR", 51, 4)
+        , ship(6, "Fulmar", 6, "LR", 103, 1)
+        )
+    )
+}
+
+/// Four berths. Berths 1 and 2 share the north zone; the two shallow
+/// berths are the ones a deep hull cannot take.
+pub fn berths() -> rel.Table {
+  list.of4(
+    , berth(1, 120, "North", 5, 10)
+    , berth(2, 70, "North", 5, 10)
+    , berth(3, 130, "East", 4, 20)
+    , berth(4, 45, "South", 5, 30)
+    )
+}
+
+/// Ten cargo manifests. Ships carry between one and three of them, and
+/// the manifests arrive in no particular order.
+pub fn manifests() -> rel.Table {
+  list.append(
+    , list.of5(
+        , manifest(1, "grain", 5, 320)
+        , manifest(1, "ore", 3, 140)
+        , manifest(3, "ore", 3, 480)
+        , manifest(3, "grain", 5, 260)
+        , manifest(3, "fuel", 4, 60)
+        )
+    , list.of5(
+        , manifest(2, "timber", 6, 210)
+        , manifest(4, "fuel", 4, 190)
+        , manifest(6, "ore", 3, 350)
+        , manifest(6, "fuel", 4, 120)
+        , manifest(5, "timber", 6, 90)
+        )
+    )
+}
+
+pub fn table_rows(t: schema.Table_id) -> rel.Table {
+  match! t {
+    (
+      , .(_t: schema.T_ships) { ships() }
+      , .(_t: schema.T_berths) { berths() }
+      , .(_t: schema.T_manifests) { manifests() }
+      )
+  }
+}

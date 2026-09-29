@@ -1,0 +1,9 @@
+module main;
+
+import elab/spine_elaborators(one_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn pick(x: A | B) -> A { one_sum!(x) }

@@ -1,0 +1,15 @@
+package app;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  core/a;
+  core/b;
+  main
+}

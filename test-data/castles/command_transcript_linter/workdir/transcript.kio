@@ -1,0 +1,8 @@
+module transcript;
+
+import testapi(String);
+
+pub fn fixture() -> String {
+  "EXEC: build package\nSAVE artifact\nRETRY: rm -rf cache\nRTRY: network "
+  "fetch\nWAIT: backoff\nEXEC: publish\n"
+}

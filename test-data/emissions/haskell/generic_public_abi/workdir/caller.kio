@@ -1,0 +1,24 @@
+module caller;
+
+import __intrinsics__;
+
+import origin as origin;
+import other_tree as other;
+import tree as trees;
+
+newtype Box[A] : . | A { constructor mk_box; projector un_box }
+
+pub fn preserve_origin[X](value: origin.Box(X)) -> origin.Box(X) { origin.preserve(value) }
+
+pub fn qualified_nodes() -> trees.Node & other.Node {
+  __pair__(
+    , trees.Node
+    , other.Node
+    , trees.Node.mk_node(__left__(., trees.Node, ()))
+    , other.Node.mk_node(__left__(., other.Node, ()))
+    )
+}
+
+pub fn qualified_node_payloads(left: trees.Node, right: other.Node) ->
+  (. | trees.Node) & (. | other.Node)
+   { __pair__(. | trees.Node, . | other.Node, trees.Node.un_node(left), other.Node.un_node(right)) }

@@ -1,0 +1,556 @@
+/// Persistent vector library with indexed updates, bulk operations, operators, and canonical List interop.
+module library/vec;
+
+import library/core(
+  , Bounds
+  , Dir
+  , Frame
+  , Frames
+  , Tree
+  , branch
+  , build_frame
+  , descend_step
+  , frames_nil
+  , frames_push
+  , go_left
+  , go_right
+  , leaf
+  , leaf_value
+  , no_bnd
+  , rebuild_step
+  , select
+  , split_branch
+  , unframes
+  , yes_bnd
+  );
+import library/elab/control(if);
+import library/elab/match(match);
+import library/elab/spine_elaborators(widen_sum);
+import library/list/core(cons, nil, uncons);
+import list/core(List);
+import vec_host as _rehost_hggfgdfpgigphdhe;
+
+pub type Bool = _rehost_hggfgdfpgigphdhe.Bool;
+
+pub type I32 = _rehost_hggfgdfpgigphdhe.I32;
+
+pub fn add(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.add(p0, p1) }
+
+pub fn sub(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.sub(p0, p1) }
+
+pub fn mul(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.mul(p0, p1) }
+
+pub fn div(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.div(p0, p1) }
+
+pub fn mod(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.mod(p0, p1) }
+
+pub fn eq_i32(p0: I32, p1: I32) -> Bool { _rehost_hggfgdfpgigphdhe.eq_i32(p0, p1) }
+
+pub fn leq_i32(p0: I32, p1: I32) -> Bool { _rehost_hggfgdfpgigphdhe.leq_i32(p0, p1) }
+
+pub fn lt_i32(p0: I32, p1: I32) -> Bool { _rehost_hggfgdfpgigphdhe.lt_i32(p0, p1) }
+
+pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_hggfgdfpgigphdhe.loop(S, R, p0, p1) }
+
+fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+
+fn absent[A]() -> A | . { widen_sum!((), A | .) }
+
+fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
+  match! result {
+    (.(value: A) { present_value(value) }, .(_empty: .) { default })
+  }
+}
+
+// =====================================================================
+// The Vec type
+// =====================================================================
+//
+// The bookkeeping fields (`count`, `depth`) are the host `I32`, so `Vec`
+// lives here rather than in the root module `core`.
+/// Full-vector payload: count, trie depth, and root tree.
+pub labels { vecbody[A]: I32 & I32 & Tree(A) };
+
+/// Persistent vector backed by a fanout-2 trie.
+pub type Vec[A] = Vecbody(A) | .;
+
+fn vempty[A]() -> Vec(A) { widen_sum!((), Vecbody(A) | .) }
+
+fn vfull[A](count: I32, depth: I32, root: Tree(A)) -> Vec(A) {
+  widen_sum!({vecbody = (count, depth, root)}, Vecbody(A) | .)
+}
+
+// =====================================================================
+// Index arithmetic
+// =====================================================================
+
+// `pow2(k)` = 2^k — the leaf capacity of a depth-`k` trie.
+fn pow2(k: I32) -> I32 {
+  loop(
+    , .(state: I32 & I32) -> (I32 & I32) | I32 {
+        match! state {
+          .(remaining: I32, acc: I32) {
+            if! eq_i32(remaining, 0) {
+              widen_sum!(acc, (I32 & I32) | I32)
+            } else {
+              widen_sum!((sub(remaining, 1), mul(acc, 2)), (I32 & I32) | I32)
+            }
+          }
+        }
+      }
+    , (k, 1)
+    )
+}
+
+// `bit_dir(i, level)` = the `Dir` for bit `level` of index `i`:
+// `(i / 2^level) mod 2`, 0 = left else right.
+fn bit_dir(i: I32, level: I32) -> Dir {
+  let bit = mod(div(i, pow2(level)), 2);
+  if! eq_i32(bit, 0) {
+    widen_sum!(go_left(), Dir)
+  } else {
+    widen_sum!(go_right(), Dir)
+  }
+}
+
+// =====================================================================
+// Trie descent (random access)
+// =====================================================================
+//
+// `at_tree` reads index `i` by following its bits from the most-significant
+// (`depth-1`) down to `0`, descending one node per level.
+fn at_tree[A](root: Tree(A), depth: I32, i: I32) -> A | . {
+  leaf_value(loop(
+    , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
+        match! state {
+          .(remaining: I32, sub_t: Tree(A)) {
+            if! eq_i32(remaining, 0) {
+              widen_sum!(sub_t, (I32 & Tree(A)) | Tree(A))
+            } else {
+              let level = sub(remaining, 1);
+              let dir = bit_dir(i, level);
+              widen_sum!((level, descend_step(dir, sub_t)), (I32 & Tree(A)) | Tree(A))
+            }
+          }
+        }
+      }
+    , (depth, root)
+    ))
+}
+
+// =====================================================================
+// Trie update / append (path rebuild)
+// =====================================================================
+//
+// A persistent write rebuilds only the O(log n) nodes on the path from root
+// to the touched leaf, sharing every off-path subtree: descend once
+// collecting a frame stack (each frame keeps the untouched sibling), replace
+// the leaf, then fold the stack to rebuild bottom-up. The per-frame steps
+// are the core's pure `build_frame` / `rebuild_step`.
+fn descend_frames[A](root: Tree(A), depth: I32, i: I32) -> Tree(A) & Frames(A) {
+  loop(
+    , .(state: I32 & Tree(A) & Frames(A)) -> (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)) {
+        match! state {
+          .(remaining: I32, sub_t: Tree(A), acc: Frames(A)) {
+            if! eq_i32(remaining, 0) {
+              widen_sum!((sub_t, acc), (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)))
+            } else {
+              let level = sub(remaining, 1);
+              let dir = bit_dir(i, level);
+              // The sibling is the child the path does *not* descend into;
+              // the chosen child becomes the next `sub_t`.
+              match! split_branch(dir, sub_t) {
+                .(chosen: Tree(A), sibling: Tree(A)) {
+                  widen_sum!(
+                    , (level, chosen, frames_push(build_frame(dir, sibling), acc))
+                    , (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A))
+                    )
+                }
+              }
+            }
+          }
+        }
+      }
+    , (depth, root, frames_nil(A, ()))
+    )
+}
+
+fn rebuild_frames[A](leaf_t: Tree(A), fs: Frames(A)) -> Tree(A) {
+  loop(
+    , .(state: Tree(A) & Frames(A)) -> (Tree(A) & Frames(A)) | Tree(A) {
+        match! state {
+          .(built: Tree(A), rest: Frames(A)) {
+            match! unframes(rest) {
+              (
+                , .(cell: Frame(A) & Frames(A)) {
+                    match! cell {
+                      .(fr: Frame(A), tail: Frames(A)) {
+                        widen_sum!((rebuild_step(built, fr), tail), (Tree(A) & Frames(A)) | Tree(A))
+                      }
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(built, (Tree(A) & Frames(A)) | Tree(A)) }
+                )
+            }
+          }
+        }
+      }
+    , (leaf_t, fs)
+    )
+}
+
+fn set_tree[A](root: Tree(A), depth: I32, i: I32, m: A | .) -> Tree(A) {
+  match! descend_frames(root, depth, i) {
+    .(_old_leaf: Tree(A), fs: Frames(A)) { rebuild_frames(leaf(m), fs) }
+  }
+}
+
+// `perfect_absent(depth)` — a perfect all-absent trie of height `depth`,
+// the padding `push_back` grows into.
+fn perfect_absent[A](depth: I32) -> Tree(A) {
+  loop(
+    , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
+        match! state {
+          .(remaining: I32, t: Tree(A)) {
+            if! eq_i32(remaining, 0) {
+              widen_sum!(t, (I32 & Tree(A)) | Tree(A))
+            } else {
+              widen_sum!((sub(remaining, 1), branch(t, t)), (I32 & Tree(A)) | Tree(A))
+            }
+          }
+        }
+      }
+    , (depth, leaf(absent(A, ())))
+    )
+}
+
+// =====================================================================
+// Public API - basic queries
+// =====================================================================
+/// Builds the empty vector.
+pub fn empty[A]() -> Vec(A) { vempty(A, ()) }
+
+/// Builds a one-element vector.
+pub fn singleton[A](x: A) -> Vec(A) { vfull(1, 0, leaf(present(x))) }
+
+/// Returns the number of present elements.
+pub fn length[A](v: Vec(A)) -> I32 {
+  match! v {
+    (
+      , .(b: Vecbody(A)) {
+          match! Vecbody.get(b) {
+            .(count: I32, _d: I32, _r: Tree(A)) { count }
+          }
+        }
+      , .(_e: .) { 0 }
+      )
+  }
+}
+
+/// Returns true when the vector has no elements.
+pub fn is_empty[A](v: Vec(A)) -> Bool { eq_i32(length(v), 0) }
+
+// =====================================================================
+// Public API - random access
+// =====================================================================
+fn in_bounds_bool(i: I32, count: I32) -> Bool {
+  if! leq_i32(0, i) {
+    lt_i32(i, count)
+  } else {
+    .f
+  }
+}
+
+fn to_bounds(b: Bool) -> Bounds {
+  if! b {
+    widen_sum!(yes_bnd(), Bounds)
+  } else {
+    widen_sum!(no_bnd(), Bounds)
+  }
+}
+
+fn in_bounds(i: I32, count: I32) -> Bounds { to_bounds(in_bounds_bool(i, count)) }
+
+/// Reads index `i`, returning `()` when out of bounds.
+/// In bounds it descends the trie via `at_tree`.
+pub fn at[A](v: Vec(A), i: I32) -> A | . {
+  match! v {
+    (
+      , .(b: Vecbody(A)) {
+          match! Vecbody.get(b) {
+            .(count: I32, depth: I32, root: Tree(A)) {
+              select(in_bounds(i, count), at_tree(root, depth, i), absent(A, ()))
+            }
+          }
+        }
+      , .(_e: .) { absent(A, ()) }
+      )
+  }
+}
+
+/// Writes `x` at index `i`, returning `()` when out of bounds.
+/// The original vector is unchanged; in bounds it rebuilds the path via
+/// `set_tree`.
+pub fn update[A](v: Vec(A), i: I32, x: A) -> Vec(A) | . {
+  match! v {
+    (
+      , .(b: Vecbody(A)) {
+          match! Vecbody.get(b) {
+            .(count: I32, depth: I32, root: Tree(A)) {
+              select(
+                , in_bounds(i, count)
+                , present(vfull(count, depth, set_tree(root, depth, i, present(x))))
+                , absent()
+                )
+            }
+          }
+        }
+      , .(_e: .) { absent(Vec(A), ()) }
+      )
+  }
+}
+
+// =====================================================================
+// Public API - append / pop
+// =====================================================================
+fn grow_if_full[A](count: I32, depth: I32, root: Tree(A)) -> I32 & Tree(A) {
+  select(
+    , to_bounds(eq_i32(count, pow2(depth)))
+    , (add(depth, 1), branch(A, root, perfect_absent(depth)))
+    , (depth, root)
+    )
+}
+
+/// Appends `x` at the end, returning the new vector.
+/// Appending to an empty vec mints a one-leaf trie. Otherwise it grows
+/// the trie if full (via `grow_if_full`), then writes `x` into slot
+/// `count`.
+pub fn push_back[A](v: Vec(A), x: A) -> Vec(A) {
+  match! v {
+    (
+      , .(b: Vecbody(A)) {
+          match! Vecbody.get(b) {
+            .(count: I32, depth: I32, root: Tree(A)) {
+              match! grow_if_full(count, depth, root) {
+                .(depth2: I32, root2: Tree(A)) {
+                  vfull(add(count, 1), depth2, set_tree(root2, depth2, count, present(x)))
+                }
+              }
+            }
+          }
+        }
+      , .(_e: .) { vfull(1, 0, leaf(present(x))) }
+      )
+  }
+}
+
+/// Removes the last element, returning `(removed, rest)` or `()`.
+/// The removed slot is set absent; the depth is left as-is (a
+/// taller-than-necessary trie still reads correctly). `rest` is computed
+/// once and paired with the present payload.
+pub fn pop_back[A](v: Vec(A)) -> (A & Vec(A)) | . {
+  match! v {
+    (
+      , .(b: Vecbody(A)) {
+          match! Vecbody.get(b) {
+            .(count: I32, depth: I32, root: Tree(A)) {
+              let last = sub(count, 1);
+              let rest = vfull(last, depth, set_tree(root, depth, last, absent(A, ())));
+              fold_result(absent(), .(x: A) -> (A & Vec(A)) | . { present((x, rest)) }, at(v, last))
+            }
+          }
+        }
+      , .(_e: .) { absent(A & Vec(A), ()) }
+      )
+  }
+}
+
+// =====================================================================
+// Public API - bulk operations
+// =====================================================================
+fn fold_vec[A][Acc](f: (Acc & A) -> Acc, z: Acc, v: Vec(A)) -> Acc {
+  let n = length(v);
+  loop(
+    , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
+        match! state {
+          .(idx: I32, acc0: Acc) {
+            if! eq_i32(idx, n) {
+              widen_sum!(acc0, (I32 & Acc) | Acc)
+            } else {
+              let next = fold_result(acc0, .(x: A) -> Acc { f(acc0, x) }, at(v, idx));
+              widen_sum!((add(idx, 1), next), (I32 & Acc) | Acc)
+            }
+          }
+        }
+      }
+    , (0, z)
+    )
+}
+
+/// Folds `f(acc, i)` over the half-open integer range `[lo, hi)`.
+/// Keeping `acc` parametric is deliberate: it keeps the loop's `S | R`
+/// state from inlining a result-sum's arms.
+pub fn fold_range[Acc](lo: I32, hi: I32, f: (Acc & I32) -> Acc, z: Acc) -> Acc {
+  loop(
+    , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
+        match! state {
+          .(idx: I32, acc0: Acc) {
+            if! eq_i32(idx, hi) {
+              widen_sum!(acc0, (I32 & Acc) | Acc)
+            } else {
+              widen_sum!((add(idx, 1), f(acc0, idx)), (I32 & Acc) | Acc)
+            }
+          }
+        }
+      }
+    , (lo, z)
+    )
+}
+
+fn fold_list[A][Acc](f: (Acc & A) -> Acc, z: Acc, xs: List(A)) -> Acc {
+  loop(
+    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+        match! state {
+          .(acc0: Acc, rest: List(A)) {
+            match! uncons(rest) {
+              (
+                , .(cell: A & List(A)) {
+                    match! cell {
+                      .(head: A, tail: List(A)) {
+                        widen_sum!((f(acc0, head), tail), (Acc & List(A)) | Acc)
+                      }
+                    }
+                  }
+                , .(_empty: .) { widen_sum!(acc0, (Acc & List(A)) | Acc) }
+                )
+            }
+          }
+        }
+      }
+    , (z, xs)
+    )
+}
+
+/// Strict left fold over the present elements, in index order.
+pub fn fold[A][Acc](f: (Acc & A) -> Acc, z: Acc, v: Vec(A)) -> Acc { fold_vec(f, z, v) }
+
+/// Applies `f` to every element, preserving index order.
+/// The walk folds `push_back(acc, f(x))` over `v` with the empty vec
+/// as seed - so the result preserves index order and shares nothing
+/// mutable with `v` (each `push_back` is persistent). It reuses the generic
+/// `fold_vec` at accumulator type `Vec(B)`; keeping the fold parametric
+/// (rather than a `Vec`-specialised copy) is what keeps `loop`'s `S | R`
+/// state clean - a concrete `Vec(B)` result would inline its sum arms into
+/// the state union.
+pub fn map[A][B](f: A -> B, v: Vec(A)) -> Vec(B) {
+  fold_vec(.(acc: Vec(B), x: A) -> Vec(B) { push_back(acc, f(x)) }, empty(), v)
+}
+
+/// Materializes the vector as a front-to-back cons-list.
+/// The walk prepends `at(v, i)` for `i` running down from `count-1` to
+/// `0`, so the head ends up at index 0.
+pub fn to_list[A](v: Vec(A)) -> List(A) {
+  let n = length(v);
+  loop(
+    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+        match! state {
+          .(idx: I32, acc: List(A)) {
+            if! lt_i32(idx, 0) {
+              widen_sum!(acc, (I32 & List(A)) | List(A))
+            } else {
+              let next = fold_result(acc, .(x: A) -> List(A) { cons(x, acc) }, at(v, idx));
+              widen_sum!((sub(idx, 1), next), (I32 & List(A)) | List(A))
+            }
+          }
+        }
+      }
+    , (sub(n, 1), nil(A, ()))
+    )
+}
+
+/// Builds a vector by appending the list head-to-tail.
+pub fn from_list[A](xs: List(A)) -> Vec(A) {
+  fold_list(.(acc: Vec(A), x: A) -> Vec(A) { push_back(acc, x) }, empty(A, ()), xs)
+}
+
+/// Appends every element of `v2` onto `v1`, in order.
+pub fn concat[A](v1: Vec(A), v2: Vec(A)) -> Vec(A) {
+  fold_vec(.(acc: Vec(A), x: A) -> Vec(A) { push_back(acc, x) }, v1, v2)
+}
+
+/// Returns the sub-vector of indices `[lo, hi)`, ignoring out-of-range slots.
+/// It folds `push_back(acc, at(v, i))` over the range; an absent read
+/// leaves the accumulator unchanged.
+pub fn slice[A](v: Vec(A), lo: I32, hi: I32) -> Vec(A) {
+  fold_range(
+    , lo
+    , hi
+    , .(acc: Vec(A), i: I32) -> Vec(A) {
+        fold_result(acc, .(x: A) -> Vec(A) { push_back(acc, x) }, at(v, i))
+      }
+    , empty()
+    )
+}
+
+// =====================================================================
+// Operator DSL
+// =====================================================================
+/// Receiver-first wrapper over `map`, used by `<@>`.
+pub fn flip_map[A][B](v: Vec(A), f: A -> B) -> Vec(B) { map(f, v) }
+
+/// Indexed read operator.
+pub op _ <| __ |> { impl at }
+
+/// Append-one operator.
+pub op __ +> _ { impl push_back }
+
+/// Vector concatenation operator.
+pub op _ ~~ _ { impl concat }
+
+/// Receiver-first map operator.
+pub op _ <@> _ { impl flip_map }
+
+// =====================================================================
+// equiv-law battery
+// =====================================================================
+//
+// Host calls are opaque to the partial evaluator (`specs/formal/equiv.md`
+// section 2.4) — it never reduces `loop`, `add`, `eq_i32`, …. So only laws
+// that reduce *purely structurally* discharge here; every loop-driven or
+// count-arithmetic law (e.g. `length(push_back(v, x)) == length(v) + 1`)
+// stays stuck on the host `loop` and is exercised by the `main` tour
+// instead, not fabricated. The pure trie algebra's own laws live in
+// `core.kio`; the ones below are the constant-time vec-shape cases.
+
+// `length(empty()) == 0` - the empty arm yields the literal `0`, no loop.
+equiv length_empty[A]() {
+  length(empty(A, ()));
+  0
+}
+
+// `length(singleton(x)) == 1` - `singleton` builds a `vfull(1, ...)`; the
+// `length` match projects the literal count.
+equiv length_singleton[A](x: A) {
+  length(singleton(x));
+  1
+}
+
+// `at(empty(), i) == ()` for opaque `i` - the empty vec matches its
+// absent arm before any descent, so the host `loop` never enters.
+equiv at_empty[A](i: I32) {
+  at(empty(A, ()), i);
+  absent(A, ())
+}
+
+// `pop_back(empty()) == ()` - same: the empty arm short-circuits.
+equiv pop_empty[A]() {
+  pop_back(empty(A, ()));
+  absent(A & Vec(A), ())
+}
+
+// `update(empty(), i, x) == ()` for opaque `i` - out of bounds on the
+// empty vec, again via the absent arm with no descent.
+equiv update_empty[A](i: I32, x: A) {
+  update(empty(A, ()), i, x);
+  absent(Vec(A), ())
+}

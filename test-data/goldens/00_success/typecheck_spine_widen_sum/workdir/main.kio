@@ -1,0 +1,27 @@
+module main;
+
+import elab/spine_elaborators(widen_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// Atomic source lift into a two-arm target. Source multiset `{A}`
+// ⊆ target `{A, B}`; R-Widen-Sum injects into the matching `A`
+// arm. The `B` arm is unreachable from this source.
+fn lift_atom(a: A) -> A | B { widen_sum!(a) }
+
+// Multi-arm source widen. Source `[A, B]`, target `[A, B, C]` —
+// each source arm has a counterpart in the target; the new `C` arm
+// is unreachable. Multiset `{A, B}` ⊆ `{A, B, C}`.
+fn extend_sum(x: A | B) -> A | B | C { widen_sum!(x) }
+
+// R-Identity-Sum-intro — the special case of adding a `!` arm.
+// Source `[A]`, target `[A, !]`: `!` is uninhabited and the new arm
+// is statically unreachable. Multiset `{A}` ⊆ `{A, !}`.
+fn add_bottom_arm(a: A) -> A | ! { widen_sum!(a) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(a: A) -> A | B { a.>widen_sum!(A | B) }

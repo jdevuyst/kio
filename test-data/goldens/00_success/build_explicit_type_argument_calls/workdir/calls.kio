@@ -1,0 +1,17 @@
+module calls;
+
+newtype List[A] : . { constructor mk; projector get }
+
+fn nil[A]() -> List(A) { List.mk(A, ()) }
+
+fn cons[A](head: A, tail: List(A)) -> List(A) { tail }
+
+fn singleton[A](x: A) -> List(A) { cons(A, x, nil(A, ())) }
+
+fn identity[A](value: A) -> A { value }
+
+fn applied[*F][A](value: F(A)) -> F(A) { identity(F(A), value) }
+
+fn residual[A]() -> . -> List(A) { nil(A) }
+
+pub fn main() -> . { List.get(., singleton(., ())) }

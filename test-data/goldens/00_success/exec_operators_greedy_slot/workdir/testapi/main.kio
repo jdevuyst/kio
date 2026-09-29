@@ -1,0 +1,37 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn cat(a: String, b: String) -> String { a }
+
+fn cat2(a: String, b: String) -> String { a }
+
+fn apply(f: String, x: String) -> String { f }
+
+fn ann(payload: String) -> String { payload }
+
+// Right-greedy `$`: `op _ $ ___ { impl apply; };`. The greedy slot
+// admits any single-op chain on the right without explicit parens.
+op _ $ ___ { impl apply }
+
+// Plain binary operators alongside `$` to exercise cross-op
+// composition inside the greedy slot.
+op _ + _ { impl cat }
+
+op _ * _ { impl cat2 }
+
+// Prefix-greedy `$$`: `op $$ ___ { impl ann; };`. The operand admits a
+// full chain.
+op $$ ___ { impl ann }
+
+pub fn main() -> . {
+  // `f $ a + b` — greedy slot accepts a `+`-chain on the right.
+  print("f" $ "a" + "b");
+  print("\n");
+  // `f $ g $ h` — right-greedy `$` chains itself.
+  print("f" $ "g" $ "h");
+  print("\n");
+  // Prefix-greedy: `$$ a + b` parses as `ann(cat(a, b))`.
+  print($$ "a" + "b")
+}

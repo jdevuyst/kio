@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Newtype members are an unordered set: here the `projector` is
+// written before the `constructor`. The parser, the Kio' verifier,
+// and every backend accept either order; `kio fmt` canonicalizes
+// the pair to `constructor`-then-`projector` (see specs/style.md).
+newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap; };
+
+fn wrapped() -> Wrap { Wrap.mk_wrap(42(I32)) }
+
+pub fn main() -> . { print(int_to_string(Wrap.un_wrap(wrapped()))) }

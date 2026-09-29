@@ -1,0 +1,7 @@
+module testapi/explicit;
+
+import testapi(I32);
+
+pub newtype H : I32 { pub constructor mk_h; pub projector un_h }
+
+pub fn explicit_identity(value: H) -> H { value }

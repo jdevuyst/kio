@@ -1,0 +1,67 @@
+module forest;
+
+import elab/control(if);
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub labels Tree = { symbols: Array(I32), ends: Array(I32) };
+
+pub fn equal(a: I32, b: I32) -> Bool {
+  if! arith.leq_i32(a, b) {
+    arith.leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+pub fn less(a: I32, b: I32) -> Bool { arith.leq_i32(a, arith.sub_i32(b, 1)) }
+
+pub fn size(tree: Tree) -> I32 { array.array_len(tree.?{symbols}) }
+
+pub fn symbol(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{symbols}, position) }
+
+pub fn after(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{ends}, position) }
+
+pub fn empty() -> Tree {
+  {symbols = array.array_make_empty(I32, ()), ends = array.array_make_empty(I32, ())}
+}
+
+// Opening and closing a node brackets its entire preorder subtree.
+pub fn open(tree: Tree, value: I32) -> I32 {
+  let position = size(tree);
+  array.array_push(tree.?{symbols}, value);
+  array.array_push(tree.?{ends}, -1);
+  position
+}
+
+pub fn close(tree: Tree, position: I32) -> . { array.array_set(tree.?{ends}, position, size(tree)) }
+
+pub fn leaf(tree: Tree, value: I32) -> . { let position = open(tree, value); close(tree, position) }
+
+rec(loop) fn render_forest(tree: Tree, start: I32, stop: I32) -> String {
+  if! less(start, stop) {
+    let next = after(tree, start);
+    let children = if! less(arith.add_i32(start, 1), next) {
+      text.string_concat(
+        , "("
+        , text.string_concat(rec(cont) render_forest(tree, arith.add_i32(start, 1), next), ")")
+        )
+    } else {
+      ""
+    };
+    let rest = if! less(next, stop) {
+      text.string_concat(",", rec(cont) render_forest(tree, next, stop))
+    } else {
+      ""
+    };
+    text.string_concat(fmt.int_to_string(symbol(tree, start)), text.string_concat(children, rest))
+  } else {
+    ""
+  }
+}
+
+pub fn render(tree: Tree) -> String { render_forest(tree, 0, size(tree)) }

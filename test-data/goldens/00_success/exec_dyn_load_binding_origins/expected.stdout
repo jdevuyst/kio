@@ -1,0 +1,9 @@
+type conflict: dyn_load_prime: malformed image — module `consumer` introduces visible type binding `T` more than once
+type same origin: dyn_load_prime: malformed image — module `repeated` introduces visible type binding `T` more than once
+value conflict: dyn_load_prime: malformed image — module `value_consumer` introduces visible value/module-alias binding `f` more than once
+value same origin: dyn_load_prime: malformed image — module `value_repeated` introduces visible value/module-alias binding `f` more than once
+module alias conflict: dyn_load_prime: malformed image — module `alias_consumer` introduces visible value/module-alias binding `q` more than once
+module alias same origin: dyn_load_prime: malformed image — module `alias_repeated` introduces visible value/module-alias binding `q` more than once
+type alias collision: dyn_load_prime: malformed image — module `alias_collision` introduces visible type binding `T` more than once
+ordinary alias members: loaded
+compiler blocks: loaded

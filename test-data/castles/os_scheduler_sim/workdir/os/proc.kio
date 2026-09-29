@@ -1,0 +1,147 @@
+/// The process model: the burst program a process runs, and the process
+/// control block the scheduler and the accounting share.
+module os/proc;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import os/config as config;
+import os/num as num;
+import os/text as text;
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/array(array_get, array_len, array_make_filled, array_set);
+import testapi/iter(loop);
+
+/// One step of a burst program.
+///
+/// `compute` occupies the CPU for its payload's worth of ticks. `touch`
+/// references the process's virtual page `payload` exactly once: one tick when
+/// the page is resident, and a trap into the pager when it is not.
+pub labels Phase = { compute: I32 } | { touch: I32 };
+
+pub fn compute_phase(ticks: I32) -> Phase { {compute = ticks}.>widen_sum!(Phase) }
+
+pub fn touch_phase(vp: I32) -> Phase { {touch = vp}.>widen_sum!(Phase) }
+
+pub fn phase_text(p: Phase) -> String {
+  match! p {
+    (
+      , .(c: Compute) { text.cat("cpu", text.num_text(c.?{compute})) }
+      , .(t: Touch) { text.cat("read", text.num_text(t.?{touch})) }
+      )
+  }
+}
+
+/// How the trace and the tables name a process. An idle CPU has no pid, and
+/// prints as `--`; every tag is two characters wide, so the columns line up.
+pub fn pid_tag(pid: I32) -> String {
+  if! num.lt(pid, 0) {
+    "--"
+  } else {
+    text.cat("p", text.num_text(pid))
+  }
+}
+
+/// The process control block: one column per field, indexed by pid.
+///
+/// `pc` is the phase a process will run next and `rem` the ticks left in the
+/// compute phase it is part-way through. The rest is accounting: the tick a
+/// process finished on, the ticks it spent running, queued, and blocked, and
+/// the times it was switched onto the CPU, trapped, and found its page
+/// resident.
+pub labels Pcb = {
+  , arrive: Array(I32)
+  , pc: Array(I32)
+  , rem: Array(I32)
+  , finish: Array(I32)
+  , cpu_ticks: Array(I32)
+  , wait_ticks: Array(I32)
+  , block_ticks: Array(I32)
+  , switches: Array(I32)
+  , faults: Array(I32)
+  , hits: Array(I32)
+  };
+
+pub fn new_pcb(arrive: Array(I32)) -> Pcb {
+  let n = config.proc_count();
+  {
+    , arrive
+    , pc = array_make_filled(n, 0)
+    , rem = array_make_filled(n, 0)
+    , finish = array_make_filled(n, config.nothing())
+    , cpu_ticks = array_make_filled(n, 0)
+    , wait_ticks = array_make_filled(n, 0)
+    , block_ticks = array_make_filled(n, 0)
+    , switches = array_make_filled(n, 0)
+    , faults = array_make_filled(n, 0)
+    , hits = array_make_filled(n, 0)
+    }
+}
+
+fn bump(column: Array(I32), pid: I32) -> . {
+  array_set(column, pid, add_i32(array_get(column, pid), 1))
+}
+
+pub fn arrive_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{arrive}, pid) }
+
+pub fn pc_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{pc}, pid) }
+
+pub fn set_pc(p: Pcb, pid: I32, next: I32) -> . { array_set(p.?{pc}, pid, next) }
+
+pub fn rem_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{rem}, pid) }
+
+pub fn set_rem(p: Pcb, pid: I32, left: I32) -> . { array_set(p.?{rem}, pid, left) }
+
+pub fn finish_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{finish}, pid) }
+
+pub fn set_finish(p: Pcb, pid: I32, tick: I32) -> . { array_set(p.?{finish}, pid, tick) }
+
+pub fn add_cpu_tick(p: Pcb, pid: I32) -> . { bump(p.?{cpu_ticks}, pid) }
+
+pub fn add_wait_tick(p: Pcb, pid: I32) -> . { bump(p.?{wait_ticks}, pid) }
+
+pub fn add_block_tick(p: Pcb, pid: I32) -> . { bump(p.?{block_ticks}, pid) }
+
+pub fn add_switch(p: Pcb, pid: I32) -> . { bump(p.?{switches}, pid) }
+
+pub fn add_fault(p: Pcb, pid: I32) -> . { bump(p.?{faults}, pid) }
+
+pub fn add_hit(p: Pcb, pid: I32) -> . { bump(p.?{hits}, pid) }
+
+pub fn cpu_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{cpu_ticks}, pid) }
+
+pub fn wait_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{wait_ticks}, pid) }
+
+pub fn block_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{block_ticks}, pid) }
+
+pub fn switches_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{switches}, pid) }
+
+pub fn faults_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{faults}, pid) }
+
+pub fn hits_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{hits}, pid) }
+
+pub fn cpu_column(p: Pcb) -> Array(I32) { p.?{cpu_ticks} }
+
+pub fn switch_column(p: Pcb) -> Array(I32) { p.?{switches} }
+
+pub fn fault_column(p: Pcb) -> Array(I32) { p.?{faults} }
+
+pub fn hit_column(p: Pcb) -> Array(I32) { p.?{hits} }
+
+/// A process is finished once the tick it completed on has been recorded.
+pub fn is_done(p: Pcb, pid: I32) -> Bool { num.geq(finish_at(p, pid), 0) }
+
+/// Ticks the process spent in the system, its arrival through its completion,
+/// both inclusive.
+pub fn turnaround_at(p: Pcb, pid: I32) -> I32 {
+  add_i32(sub_i32(finish_at(p, pid), arrive_at(p, pid)), 1)
+}
+
+pub rec(loop) fn column_total(column: Array(I32), i: I32, acc: I32) -> I32 {
+  if! num.geq(i, array_len(column)) {
+    acc
+  } else {
+    rec column_total(column, add_i32(i, 1), add_i32(acc, array_get(column, i)))
+  }
+}

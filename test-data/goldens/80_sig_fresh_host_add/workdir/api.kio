@@ -1,0 +1,7 @@
+module api;
+
+host type H role(i32);
+
+host fn make() -> H;
+
+pub fn serve() -> H { make() }

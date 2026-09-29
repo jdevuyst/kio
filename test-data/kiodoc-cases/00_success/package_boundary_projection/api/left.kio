@@ -1,0 +1,55 @@
+module api/left;
+
+import outside(borrowed);
+
+/// Left public function uses its private [`helper`].
+pub fn make() -> . { helper() }
+
+fn helper() -> . { () }
+
+fn foo() -> . { () }
+
+pub(api) fn scoped() -> . { () }
+
+pub type Alias = .;
+
+pub literal text = "example";
+
+pub newtype Box : . { pub constructor build_box; projector read_box }
+
+pub labels Row = { field: . };
+
+pub labels { other: . };
+
+pub labels { foo: . };
+
+pub fn add(left: ., right: .) -> . { () }
+
+pub fn negate(value: .) -> . { value }
+
+pub fn subtract(left: ., right: .) -> . { () }
+
+pub op _ + _ { impl add }
+
+pub op - __ { impl negate }
+
+pub op _ - __ { impl subtract }
+
+pure fn choose_impl(value: .) -> . { value }
+
+pub elab choose : . -> . { impl choose_impl }
+
+host type Text role(str);
+
+host fn emit(value: Text) -> .;
+
+rec(loop) {
+  pub fn first(value: .) -> . { rec second(value) };
+  fn second(value: .) -> . { rec first(value) }
+}
+
+rec {
+  pub type Chain = Node;
+  pub newtype Node : . | Chain { constructor wrap; projector unwrap };
+  pub labels Markers = { mark: . }
+}

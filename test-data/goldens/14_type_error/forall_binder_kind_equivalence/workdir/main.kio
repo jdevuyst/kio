@@ -1,0 +1,9 @@
+module main;
+
+fn phantom_type[A](_value: .) -> . { () }
+
+fn phantom_constructor[*F](_value: .) -> . { () }
+
+fn same[T](_left: T, _right: T) -> . { () }
+
+fn bad() -> . { same([A] . -> ., phantom_type, phantom_constructor) }

@@ -1,0 +1,22 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/sequence(do);
+import testapi(Bool, I32, String);
+import testapi/arith(leq_i32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn chain[A][B](value: A, next: A -> B) -> B { next(value) }
+
+rec(loop) fn go(n: I32) -> I32 {
+  if! leq_i32(n, 0) {
+    41
+  } else do! chain {
+    let value <- rec(cont) go(0);
+    value
+  }
+}
+
+pub fn main() -> . { print(i32_to_string(go(1))); print("\n") }

@@ -1,0 +1,39 @@
+a1 / a2: before
+a2 / a1: after
+a2 / b1: concurrent
+b1 / b1: same
+forward A clock=[2,2,1]
+  key 10 [30@[0,0,1], 20@[0,1,0], 11@[2,0,0]]
+  key 20 [200@[0,2,0]]
+reverse B clock=[2,2,1]
+  key 10 [30@[0,0,1], 20@[0,1,0], 11@[2,0,0]]
+  key 20 [200@[0,2,0]]
+shuffled C clock=[2,2,1]
+  key 10 [30@[0,0,1], 20@[0,1,0], 11@[2,0,0]]
+  key 20 [200@[0,2,0]]
+delivery order A=B=true
+delivery order B=C=true
+whole replay is idempotent=true
+read key 10: conflict versions=3
+read key 20: value 200
+read key 99: missing key 99
+resolve unknown choice: choice absent 999
+resolve singleton: not conflicted key 20
+resolve absent key: missing key 99
+resolved A clock=[3,2,1]
+  key 10 [20@[3,2,1]]
+  key 20 [200@[0,2,0]]
+resolution reaches B=true
+resolution reaches C=true
+delayed messages cannot resurrect=true
+duplicate resolution is idempotent=true
+read key 10: value 20
+retained pre-resolution snapshot clock=[2,2,1]
+  key 10 [30@[0,0,1], 20@[0,1,0], 11@[2,0,0]]
+  key 20 [200@[0,2,0]]
+after B updates key 20 clock=[3,3,1]
+  key 10 [20@[3,2,1]]
+  key 20 [201@[3,3,1]]
+final A=B=true
+final B=C=true
+read key 20: value 201

@@ -1,0 +1,16 @@
+module m;
+
+pub labels { a: . };
+
+// `[A]` is a scheme binder. The first term `x` has the rigid binder type
+// `A`; the second term `{a = }` builds the label record whose type is the
+// concrete newtype `m.A`. The two terms have different types, so the
+// `equiv` is ill-typed and `kio check` must reject it (exit 14) — the
+// check gate guarantees an `equiv`'s terms share a type, so accepting
+// this would let `kio test` split the arms into different normal-form
+// groups (exit 50). Before the binder-aware alias context reached the
+// equiv comparison, the binder `A` and the nominal `m.A` were conflated.
+equiv bug[A](x: A) {
+  x;
+  {a=}
+}

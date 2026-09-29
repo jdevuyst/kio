@@ -1,0 +1,18 @@
+module main;
+
+import elab/algebraic_elaborators(into);
+
+// `into!` is information-preserving: it never forgets a component
+// that carries information. Product projection (`(A & B) → A`,
+// dropping `B`) is the defining capability of `onto!`, not
+// `into!`; the spec calls this out explicitly ("`into!` never
+// forgets a component that carries information — no product
+// projection, no sum narrowing — both of those belong to `onto!`
+// below"). The mirror to `15_elaborator_error/project_sum_narrowing`,
+// where `onto!` rejects the one rule it doesn't include.
+// Exit code 15 (elaborator error).
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+fn drop_component(p: A & B) -> A { into!(p) }

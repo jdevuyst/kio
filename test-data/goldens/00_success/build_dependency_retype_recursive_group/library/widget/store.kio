@@ -1,0 +1,10 @@
+module store;
+
+import __intrinsics__;
+
+rec {
+  pub newtype Even : . | Odd { pub constructor mk_even; pub projector un_even };
+  pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
+}
+
+pub fn make_even() -> Even { Even.mk_even(__left__(., Odd, ())) }

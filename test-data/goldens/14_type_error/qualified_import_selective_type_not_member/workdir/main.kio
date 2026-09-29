@@ -1,0 +1,5 @@
+module main;
+
+import proxy as p;
+
+fn bad(value: p.Tag) -> . { () }

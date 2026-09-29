@@ -1,0 +1,12 @@
+/// The package's entry module.
+///
+/// It defines the [`identity`] helper and the [`Pair`] type alias.
+module render_pkg/main;
+
+/// Returns its argument unchanged.
+///
+/// The signature is [`@signature identity`].
+pub fn identity[A](x: A) -> A { x }
+
+/// A two-component product of `A` values.
+pub type Pair[A] = A & A;

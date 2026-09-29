@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(I128, I64, String, U128, U64);
+import testapi/arith(add_i128, add_i64, add_u128, mul_u64);
+import testapi/fmt(i128_to_string, i64_to_string, u128_to_string, u64_to_string);
+import testapi/io(print);
+
+fn print_i64(n: I64) -> . { let s = i64_to_string(n); let l = print(s); print("\n"(String)) }
+
+fn print_u64(n: U64) -> . { let s = u64_to_string(n); let l = print(s); print("\n"(String)) }
+
+fn print_i128(n: I128) -> . { let s = i128_to_string(n); let l = print(s); print("\n"(String)) }
+
+fn print_u128(n: U128) -> . { let s = u128_to_string(n); let l = print(s); print("\n"(String)) }
+
+pub fn main() -> . {
+  let a = print_i64(add_i64(9000000000(I64), 1000000000(I64)));
+  let b = print_i64(add_i64(9223372036854775807(I64), 1(I64)));
+  let c = print_u64(mul_u64(4294967296(U64), 4294967296(U64)));
+  let d = print_i128(add_i128(170141183460469231731687303715884105727(I128), 1(I128)));
+  print_u128(add_u128(18446744073709551616(U128), 18446744073709551616(U128)))
+}

@@ -1,0 +1,7 @@
+module helper/reexport;
+
+// `helper/reexport` lives inside the `helper` subtree, so it may import the
+// sealed `secret` and re-export its behaviour through a public façade.
+import helper/submod(secret);
+
+pub fn reexport() -> . { secret() }

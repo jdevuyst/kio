@@ -1,0 +1,13 @@
+package use_label_braces_require_label;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  use_label_braces_require_label/**
+}

@@ -1,0 +1,30 @@
+module robot_vacuum_replay/replay;
+
+import elab/match(match);
+import robot_vacuum_replay/apply(apply_command);
+import robot_vacuum_replay/model(Vacuum, initial_vacuum);
+import robot_vacuum_replay/parse(parse_command);
+import robot_vacuum_replay/render(summary_line, transcript_line);
+import testapi(String);
+import testapi/io(print, read_ascii_line);
+import testapi/iter(loop);
+
+rec(loop) fn replay_lines(state: Vacuum) -> Vacuum {
+  match! read_ascii_line() {
+    (
+      , .(line: String) {
+          let cmd = parse_command(line);
+          let next = apply_command(state, cmd);
+          print(transcript_line(cmd, next));
+          rec replay_lines(next)
+        }
+      , .(_done: .) { state }
+      )
+  }
+}
+
+pub fn run() -> . {
+  print("robot_vacuum_replay\n");
+  let final_state = replay_lines(initial_vacuum());
+  print(summary_line(final_state))
+}

@@ -1,0 +1,172 @@
+/// The printed workbench report.
+module poly/report;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lc;
+import list/list as ll;
+import list/list(varop [* *]);
+import poly/arith as arith;
+import poly/calculus as calculus;
+import poly/core as core;
+import poly/division as division;
+import poly/division(Divided, Not_divisible, {divided}, {not_divisible});
+import poly/fixtures as fx;
+import poly/laws(Check, all_checks, passes, {claim}, {holds}, {law}, {witness});
+import poly/render as render;
+import testapi(Bool, I32, String);
+import testapi/arith(sub_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+fn say(text: String) -> . { print(render.join([* text, "\n" *])) }
+
+fn blank() -> . { say("") }
+
+fn fixture(name: String, p: core.Poly) -> . {
+  say(render.join([*
+    , "  "
+    , name
+    , " = "
+    , render.show(p)
+    , "  (deg "
+    , int_to_string(core.deg(p))
+    , ", coeffs "
+    , render.show_coeffs(p)
+    , ")"
+    *]))
+}
+
+fn operation(name: String, p: core.Poly) -> . {
+  say(render.join([* "  ", name, " = ", render.show(p) *]))
+}
+
+fn evaluation(x: I32) -> . {
+  let p = fx.p();
+  let q = fx.q();
+  say(render.join([*
+    , "  x = "
+    , int_to_string(x)
+    , "  ->  p(x) = "
+    , int_to_string(calculus.eval(p, x))
+    , ", q(x) = "
+    , int_to_string(calculus.eval(q, x))
+    , ", (p*q)(x) = "
+    , int_to_string(calculus.eval(arith.mul(p, q), x))
+    *]))
+}
+
+fn division_case(name: String, p: core.Poly, divisor: core.Poly) -> . {
+  match! division.divmod(p, divisor) {
+    (
+      , .(result: Divided) {
+          let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
+          say(render.join([*
+            , "  "
+            , name
+            , "  ->  quotient "
+            , render.show(quotient)
+            , ", remainder "
+            , render.show(remainder)
+            *]))
+        }
+      , .(refused: Not_divisible) {
+          say(render.join([* "  ", name, "  ->  not divisible: ", refused.?{not_divisible} *]))
+        }
+      )
+  }
+}
+
+fn verdict(holds: Bool) -> String {
+  if! holds {
+    "pass"
+  } else {
+    "FAIL"
+  }
+}
+
+fn law_line(c: Check) -> . {
+  say(render.join([*
+    , "  ["
+    , verdict(c.?{holds})
+    , "] "
+    , c.?{law}
+    , ":  "
+    , c.?{claim}
+    , "  ==>  "
+    , c.?{witness}
+    *]))
+}
+
+// A fold over a unit accumulator is the traversal this needs: every element is
+// visited for its printing, and nothing is carried between them.
+fn law_lines(checks: lc.List(Check)) -> . {
+  ll.foldl(.(_carry: ., c: Check) -> . { law_line(c) }, (), checks)
+}
+
+fn tally(checks: lc.List(Check)) -> . {
+  let total = ll.length(checks);
+  let held = passes(checks);
+  say(render.join([*
+    , "  5 laws, "
+    , int_to_string(total)
+    , " checks, "
+    , int_to_string(held)
+    , " pass, "
+    , int_to_string(sub_i32(total, held))
+    , " fail"
+    *]))
+}
+
+pub fn run() -> . {
+  let p = fx.p();
+  let q = fx.q();
+  let d = fx.d();
+  let e = fx.e();
+  let s = fx.s();
+  say("polynomial lab -- integer polynomials held as coefficient lists");
+  say("===============================================================");
+  blank();
+  say("fixtures  (coefficient index = degree, vector head = constant term)");
+  fixture("p", p);
+  fixture("q", q);
+  fixture("d", d);
+  fixture("e", e);
+  fixture("s", s);
+  blank();
+  say("normal form  (trailing zero coefficients are trimmed away)");
+  fixture("of_coeffs [5, -2, 3, 0, 0]", fx.padded_p());
+  fixture("p - p", arith.sub(p, p));
+  fixture("scale(q, 0)", arith.scale(q, 0));
+  blank();
+  say("operations");
+  operation("p + q", arith.add(p, q));
+  operation("p - q", arith.sub(p, q));
+  operation("q - d", arith.sub(q, d));
+  operation("scale(p, -2)", arith.scale(p, -2));
+  operation("scale(q, -1)", arith.scale(q, -1));
+  operation("p * q", arith.mul(p, q));
+  operation("d * e", arith.mul(d, e));
+  operation("d * s", arith.mul(d, s));
+  operation("p'", calculus.derivative(p));
+  operation("q'", calculus.derivative(q));
+  operation("(p * q)'", calculus.derivative(arith.mul(p, q)));
+  operation("(d * s)'", calculus.derivative(arith.mul(d, s)));
+  blank();
+  say("evaluation  (Horner's rule)");
+  evaluation(-1);
+  evaluation(2);
+  evaluation(3);
+  blank();
+  say("long division  (p = quotient * divisor + remainder)");
+  division_case("p / d", p, d);
+  division_case("s / e", s, e);
+  division_case("p / e", p, e);
+  blank();
+  say("algebraic laws");
+  let checks = all_checks();
+  law_lines(checks);
+  blank();
+  tally(checks)
+}

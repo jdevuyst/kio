@@ -1,0 +1,91 @@
+/// The cons list every sequence in the justifier is built from: the
+/// paragraph's words, the three columns of the DP table, a list of break
+/// points, a laid-out paragraph's lines. This host tier offers no array type,
+/// so the list is the only sequence there is — the DP table is a list, and it
+/// is indexed by walking.
+module justify/list;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, eq_i32);
+import testapi/iter(loop);
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
+
+pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+
+pub fn cons[A](head: A, rest: List(A)) -> List(A) {
+  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+}
+
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+
+pub fn is_empty[A](xs: List(A)) -> Bool {
+  match! xs.>List.unpack {
+    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+  }
+}
+
+/// The head, or `fallback` when there is none. Every caller in this package
+/// holds a non-empty list by construction; passing a fallback that would be
+/// obviously wrong downstream is what keeps a broken invariant loud.
+pub fn head_or[A](xs: List(A), fallback: A) -> A {
+  match! xs.>List.unpack {
+    (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
+  }
+}
+
+pub fn tail_of[A](xs: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { nil(A, ()) })
+  }
+}
+
+/// Move `src`'s head onto `acc`. The DP's outer step consumes the paragraph one
+/// word per break point and grows the reversed prefix it scans; on the step
+/// that reaches the final break there is no word left to move.
+pub fn push_head[A](src: List(A), acc: List(A)) -> List(A) {
+  match! src.>List.unpack {
+    (.(head: A, _rest: List(A)) { cons(head, acc) }, .(_empty: .) { acc })
+  }
+}
+
+/// `reverse` and `append` are both this one accumulator loop.
+rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
+  match! xs.>List.unpack {
+    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+
+pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
+
+rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
+  match! xs.>List.unpack {
+    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+  }
+}
+
+pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
+
+rec(loop) fn at_from[A](xs: List(A), cursor: I32, index: I32, fallback: A) -> A {
+  match! xs.>List.unpack {
+    (
+      , .(head: A, rest: List(A)) {
+          if! eq_i32(cursor, index) {
+            head
+          } else {
+            rec at_from(rest, add_i32(cursor, 1), index, fallback)
+          }
+        }
+      , .(_empty: .) { fallback }
+      )
+  }
+}
+
+/// Random access costs a walk. Back-pointer recovery is the only caller, and it
+/// makes one lookup per line of the finished layout.
+pub fn at[A](xs: List(A), index: I32, fallback: A) -> A { at_from(xs, 0, index, fallback) }

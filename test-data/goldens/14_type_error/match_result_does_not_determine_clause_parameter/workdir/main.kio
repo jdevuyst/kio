@@ -1,0 +1,15 @@
+module main;
+
+import elab/match(match);
+
+host type Value;
+
+host type Other;
+
+fn rejected(source: Value | Other, fallback: Value) -> . {
+  let .(_result: Value) =
+    match! source {
+      (.(value) { value }, .(_other: Other) { fallback })
+    };
+  ()
+}

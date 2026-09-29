@@ -1,0 +1,11 @@
+module testapi/arith;
+
+import testapi(I32);
+
+host fn add(p0: I32, p1: I32) -> I32;
+
+host fn sub(p0: I32, p1: I32) -> I32;
+
+host fn mul(p0: I32, p1: I32) -> I32;
+
+host fn div(p0: I32, p1: I32) -> I32;

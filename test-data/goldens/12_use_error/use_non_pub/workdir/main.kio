@@ -1,0 +1,9 @@
+module main;
+
+// `secret` is declared without `pub` in `helper`, so
+// the `use` here should fail with a use-error (exit 12). This
+// exercises the spec's "module does not export the requested `pub`
+// identifier" branch — distinct from the "unknown module" case.
+import helper(secret);
+
+fn main() -> . { secret() }

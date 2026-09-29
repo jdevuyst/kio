@@ -1,0 +1,83 @@
+module elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi(String);
+
+pub type Target_request = __Type__ | .;
+
+pure fn comptime_bool_and(ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
+  __if_then_else__(left, .() -> Comptime_bool { right }, .() -> Comptime_bool { .f })
+}
+
+pure fn comptime_bool_or(_ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
+  __if_then_else__(left, .() -> Comptime_bool { .t }, .() -> Comptime_bool { right })
+}
+
+pure fn any_product_step(ct: __Comptime__, found: Comptime_bool, typ: __Type__) -> Comptime_bool {
+  comptime_bool_or(ct, found, __type_is_product_root__(ct, typ))
+}
+
+pure fn any_product_member(ct: __Comptime__, typ: __Type__) -> Comptime_bool {
+  __type_product_spine_fold__(
+    , ct
+    , Comptime_bool
+    , typ
+    , .f
+    , .(found: Comptime_bool, member: __Type__) -> Comptime_bool {
+        any_product_step(ct, found, member)
+      }
+    )
+}
+
+pure fn forall_identity(ct: __Comptime__) -> __Type__ {
+  __type_forall__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(var: __Type_var__) -> __Type__ {
+        __type_arrow__(
+          , ct
+          , __type_var__(ct, var)
+          , __type_arity_succ__(ct, __type_arity_zero__(ct))
+          , __type_var__(ct, var)
+          )
+      }
+    )
+}
+
+pure fn forall_matches_surface(ct: __Comptime__) -> Comptime_bool {
+  __type_equal__(ct, forall_identity(ct), __reflect_type__(ct, [A] A -> A))
+}
+
+pure fn pass_checks(ct: __Comptime__, source: __Type__, target: __Type__) -> Comptime_bool {
+  comptime_bool_and(
+    , ct
+    , __type_equal__(ct, source, target)
+    , comptime_bool_and(ct, any_product_member(ct, source), forall_matches_surface(ct))
+    )
+}
+
+pub pure fn checked_impl(
+  , ct: __Comptime__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: Target_request
+  ) -> __Checked_term__ {
+  __either__(
+    , __Type__
+    , .
+    , __Checked_term__
+    , target
+    , .(target_type: __Type__) -> __Checked_term__ {
+        __if_then_else__(
+          , pass_checks(ct, source, target_type)
+          , .() -> __Checked_term__ { value }
+          , .() -> __Checked_term__ { __elab_error__(ct, "reflection surface check failed") }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, "elaborator needs a target") }
+    )
+}
+
+pub elab checked : [Source] Source -> [Target] Target { impl checked_impl }

@@ -1,0 +1,5 @@
+module host;
+
+host type A;
+
+host type B;

@@ -1,0 +1,7 @@
+/// A fn the dependency owns, taking the dependency's own `String`.
+module bdep/text;
+
+host type String role(str);
+
+/// Consumes the dependency's own `String`.
+pub fn dep_take(s: String) -> String { s }

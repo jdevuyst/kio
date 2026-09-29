@@ -1,0 +1,127 @@
+module bdd/query;
+
+import bdd/logic as logic;
+import bdd/store as table;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as lists;
+import list/list as walk;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+pub type Assignment = lists.List(I32 & Bool);
+
+pub fn assigned(values: Assignment, variable: I32) -> Bool {
+  match! walk.find(.(key: I32, _value: Bool) { arith.eq_i32(key, variable) }, values) {
+    .(_key: I32, value: Bool) { value };
+    .() { .f }
+  }
+}
+
+pub rec(loop) fn evaluate(store: table.Store, root: table.Node_id, assignment: I32 -> Bool) -> Bool {
+  match! table.lookup(store, root) {
+    .(node: table.Node) {
+      let child =
+        if! assignment(node.?{table.level}) {
+          node.?{table.high}
+        } else {
+          node.?{table.low}
+        };
+      rec evaluate(store, child, assignment)
+    };
+    .() { table.truth(root) }
+  }
+}
+
+rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment) -> Assignment | . {
+  if! table.same_id(root, table.false_id()) {
+    ().>widen_sum!
+  } else match! table.lookup(store, root) {
+    .(node: table.Node) {
+      let high = table.same_id(node.?{table.low}, table.false_id());
+      let child =
+        if! high {
+          node.?{table.high}
+        } else {
+          node.?{table.low}
+        };
+      rec choose(store, child, lists.cons((node.?{table.level}, high), values))
+    };
+    .() { values.>widen_sum! }
+  }
+}
+
+pub fn satisfying_assignment(store: table.Store, root: table.Node_id) -> Assignment | . {
+  choose(store, root, lists.nil())
+}
+
+rec(loop) fn collect(
+  , store: table.Store
+  , pending: lists.List(table.Node_id)
+  , seen: lists.List(table.Node_id)
+  ) -> lists.List(table.Node_id) {
+  match! lists.uncons(pending) {
+    .(id: table.Node_id, tail: lists.List(table.Node_id)) {
+      if! logic.or(table.terminal(id), walk.elem(table.same_id, id, seen)) {
+        rec collect(store, tail, seen)
+      } else match! table.lookup(store, id) {
+        .(node: table.Node) {
+          rec collect(
+            , store
+            , lists.cons(node.?{table.low}, lists.cons(node.?{table.high}, tail))
+            , lists.cons(id, seen)
+            )
+        };
+        .() { rec collect(store, tail, seen) }
+      }
+    };
+    .() { seen }
+  }
+}
+
+pub fn node_count(store: table.Store, root: table.Node_id) -> I32 {
+  walk.length(collect(store, lists.singleton(root), lists.nil()))
+}
+
+fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {
+  if! table.terminal(child) {
+    .t
+  } else match! table.lookup(store, child) {
+    .(node: table.Node) { arith.lt_i32(level, node.?{table.level}) };
+    .() { .f }
+  }
+}
+
+pub fn valid_store(store: table.Store) -> Bool {
+  walk.foldl(
+    , .(valid: Bool, id: table.Node_id, node: table.Node) {
+        let distinct = logic.not(table.same_id(node.?{table.low}, node.?{table.high}));
+        let ordered =
+          logic.and(
+            , valid_child(store, node.?{table.level}, node.?{table.low})
+            , valid_child(store, node.?{table.level}, node.?{table.high})
+            );
+        let peers =
+          walk.filter(
+            , .(other_id: table.Node_id, other: table.Node) {
+                logic.and(
+                  , logic.not(table.same_id(id, other_id))
+                  , logic.and(
+                      , arith.eq_i32(node.?{table.level}, other.?{table.level})
+                      , logic.and(
+                          , table.same_id(node.?{table.low}, other.?{table.low})
+                          , table.same_id(node.?{table.high}, other.?{table.high})
+                          )
+                      )
+                  )
+              }
+            , store.?{table.nodes}
+            );
+        logic.and(valid, logic.and(distinct, logic.and(ordered, walk.null(peers))))
+      }
+    , .t
+    , store.?{table.nodes}
+    )
+}

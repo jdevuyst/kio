@@ -1,0 +1,13 @@
+package mdpkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}
+
+bridge {
+  mdpkg
+}

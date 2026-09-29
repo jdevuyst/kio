@@ -1,0 +1,22 @@
+matrix-chain interior: A1=5x10 A2=10x3 A3=3x12 A4=12x5 A5=5x8
+plan ((A1*A2)*((A3*A4)*A5))
+cost=570 root-split=2
+replay=5x8 cost=570 leaves=5 order=1..5 matches-table=true
+left-fold=830 right-fold=1408
+matrix-chain tie: A1=4x4 A2=4x4 A3=4x4
+plan (A1*(A2*A3))
+cost=128 root-split=1
+replay=4x4 cost=128 leaves=3 order=1..3 matches-table=true
+left-fold=128 right-fold=128
+matrix-chain single: A1=7x9
+plan A1
+cost=0 root-split=0
+replay=7x9 cost=0 leaves=1 order=1..1 matches-table=true
+left-fold=0 right-fold=0
+matrix-chain mismatch: A1=4x6 A2=5x3
+rejected: incompatible dimensions before A2
+matrix-chain zero: A1=0x4
+rejected: dimensions must be in 1..30
+matrix-chain empty: (empty)
+rejected: chain is empty
+reversed tie replay rejected: leaf order is not consecutive

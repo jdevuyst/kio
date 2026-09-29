@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(div, mod);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn print_int(n: Int) -> . { let s = int_to_string(n); let l = print(s); print("\n"(String)) }
+
+pub fn main() -> . {
+  let a = print_int(div(17(Int), 5(Int)));
+  let b = print_int(mod(17(Int), 5(Int)));
+  let c = print_int(div(-17(Int), 5(Int)));
+  print_int(mod(-17(Int), 5(Int)))
+}

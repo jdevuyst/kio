@@ -1,0 +1,7 @@
+module testapi;
+
+host type Array[A];
+
+host type Bool role(bool);
+
+host type I32 role(i32);

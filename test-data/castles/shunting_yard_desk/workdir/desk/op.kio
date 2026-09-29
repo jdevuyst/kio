@@ -1,0 +1,105 @@
+/// The operator table — the static half of the calculator, and the only
+/// thing the shunting yard consults to decide what to pop.
+///
+/// Arity is carried by the type rather than by a side condition: an `Op` is
+/// either a `Binop` or a `Unop`, so no code has to handle "the unary case of
+/// a binary application". The yard turns on exactly that distinction — a
+/// prefix operator has no left operand, so pushing one pops nothing.
+///
+/// Precedence, tightest first:
+///
+/// ```text
+///   ^        4   right-associative
+///   ~        3   prefix, unary
+///   * / %    2   left-associative
+///   + -      1   left-associative
+/// ```
+module desk/op;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+
+pub labels Binop =
+  { plus: . }
+  | { minus: . }
+  | { times: . }
+  | { divide: . }
+  | { modulo: . }
+  | { power: . };
+
+pub labels Unop = { negate: . };
+
+pub labels Op = { binary: Binop } | { unary: Unop };
+
+pub fn plus_op() -> Binop { {plus=}.>widen_sum!(Binop) }
+
+pub fn minus_op() -> Binop { {minus=}.>widen_sum!(Binop) }
+
+pub fn times_op() -> Binop { {times=}.>widen_sum!(Binop) }
+
+pub fn divide_op() -> Binop { {divide=}.>widen_sum!(Binop) }
+
+pub fn modulo_op() -> Binop { {modulo=}.>widen_sum!(Binop) }
+
+pub fn power_op() -> Binop { {power=}.>widen_sum!(Binop) }
+
+pub fn negate_op() -> Unop { {negate=}.>widen_sum!(Unop) }
+
+pub fn as_binary(b: Binop) -> Op { {binary = b}.>widen_sum!(Op) }
+
+pub fn as_unary(u: Unop) -> Op { {unary = u}.>widen_sum!(Op) }
+
+/// One row of the operator table: how tightly the operator binds, and how it
+/// is written. Both are read off the same row, so an operator's precedence and
+/// its spelling cannot drift apart.
+labels Facts = { rank: I32, sym: String };
+
+fn binop_facts(b: Binop) -> Facts {
+  match! b {
+    (
+      , .(_p: Plus) { {rank = 1, sym = "+"} }
+      , .(_m: Minus) { {rank = 1, sym = "-"} }
+      , .(_t: Times) { {rank = 2, sym = "*"} }
+      , .(_d: Divide) { {rank = 2, sym = "/"} }
+      , .(_o: Modulo) { {rank = 2, sym = "%"} }
+      , .(_w: Power) { {rank = 4, sym = "^"} }
+      )
+  }
+}
+
+fn unop_facts(u: Unop) -> Facts {
+  match! u {
+    .(_n: Negate) { {rank = 3, sym = "~"} }
+  }
+}
+
+fn facts(op: Op) -> Facts {
+  match! op {
+    (.(b: Binary) { binop_facts(b.?{binary}) }, .(u: Unary) { unop_facts(u.?{unary}) })
+  }
+}
+
+pub fn binop_prec(b: Binop) -> I32 { binop_facts(b).?{rank} }
+
+pub fn prec(op: Op) -> I32 { facts(op).?{rank} }
+
+pub fn symbol(op: Op) -> String { facts(op).?{sym} }
+
+/// Only `^` associates to the right, which is what makes `2 ^ 3 ^ 2` mean
+/// `2 ^ (3 ^ 2)`. Associativity is a property of the operator the yard is
+/// about to *push*, and the yard only ever pushes a binary one through the pop
+/// loop — so there is no unary case to answer for, and it does not belong in
+/// the shared row above.
+pub fn binop_right_assoc(b: Binop) -> Bool {
+  match! b {
+    (
+      , .(_p: Plus) { .f }
+      , .(_m: Minus) { .f }
+      , .(_t: Times) { .f }
+      , .(_d: Divide) { .f }
+      , .(_o: Modulo) { .f }
+      , .(_w: Power) { .t }
+      )
+  }
+}

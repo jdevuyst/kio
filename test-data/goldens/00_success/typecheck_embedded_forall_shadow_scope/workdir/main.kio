@@ -1,0 +1,7 @@
+module main;
+
+type Identity[T] = T;
+
+newtype A[*F] : . { constructor mk; projector un }
+
+type Poly = Identity([A] A);

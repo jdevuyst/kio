@@ -1,0 +1,3 @@
+module pure_modifier_on_labels;
+
+host type String role(str);

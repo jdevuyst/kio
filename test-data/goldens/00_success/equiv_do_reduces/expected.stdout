@@ -1,0 +1,4 @@
+  pass equiv `do_single_expression_reduces` in host/m
+  pass equiv `do_pure_let_reduces` in host/m
+
+result: 2/2 equiv blocks passed

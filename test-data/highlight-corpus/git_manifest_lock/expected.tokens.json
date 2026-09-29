@@ -1,0 +1,22 @@
+[
+  {"start": 0, "end": 4, "kind": "keyword.declaration"},
+  {"start": 5, "end": 11, "kind": "identifier"},
+  {"start": 11, "end": 12, "kind": "punctuation.separator"},
+  {"start": 14, "end": 22, "kind": "keyword.declaration"},
+  {"start": 23, "end": 24, "kind": "punctuation.bracket"},
+  {"start": 27, "end": 30, "kind": "keyword.declaration"},
+  {"start": 31, "end": 39, "kind": "literal.string"},
+  {"start": 39, "end": 40, "kind": "punctuation.separator"},
+  {"start": 43, "end": 47, "kind": "keyword.declaration"},
+  {"start": 48, "end": 80, "kind": "literal.string"},
+  {"start": 80, "end": 81, "kind": "punctuation.separator"},
+  {"start": 84, "end": 90, "kind": "keyword.declaration"},
+  {"start": 91, "end": 96, "kind": "literal.string"},
+  {"start": 96, "end": 97, "kind": "punctuation.separator"},
+  {"start": 100, "end": 103, "kind": "keyword.declaration"},
+  {"start": 104, "end": 110, "kind": "literal.string"},
+  {"start": 110, "end": 111, "kind": "punctuation.separator"},
+  {"start": 114, "end": 117, "kind": "keyword.declaration"},
+  {"start": 118, "end": 153, "kind": "literal.string"},
+  {"start": 154, "end": 155, "kind": "punctuation.bracket"}
+]

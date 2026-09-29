@@ -1,0 +1,34 @@
+logic: A -> slow(3); H=xor(A,slow)(1); T=transport(H,2); I=inertial(H,2)
+sources=4 initial A=0 slow=0 H=0 T=0 I=0
+t=2 A=1
+t=3 A=0
+t=3 H=1
+t=4 H=0
+t=4 cancel I=1 due=5
+t=5 slow=1
+t=5 T=1
+t=6 slow=0
+t=6 T=0
+t=6 H=1
+t=7 H=0
+t=7 cancel I=1 due=8
+t=8 T=1
+t=9 T=0
+t=10 A=1
+t=11 H=1
+t=13 slow=1
+t=13 T=1
+t=13 I=1
+t=14 H=0
+t=16 A=0
+t=16 T=0
+t=16 I=0
+t=17 H=1
+t=19 slow=0
+t=19 T=1
+t=19 I=1
+t=20 H=0
+t=22 T=0
+t=22 I=0
+settled-at=22 edges=28 canceled=2
+final A=0 slow=0 H=0 T=0 I=0

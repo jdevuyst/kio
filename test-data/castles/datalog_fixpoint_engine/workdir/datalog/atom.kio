@@ -1,0 +1,101 @@
+/// Terms and atoms - the syntax the engine unifies over.
+///
+/// A *fact* is an atom whose arguments are all constants. The engine only
+/// ever stores ground atoms, so facts need no separate type: one shape
+/// serves as a stored fact, a rule head, a body goal, and a query.
+module datalog/atom;
+
+import datalog/list as list;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+import testapi/iter(loop);
+
+pub labels Term = { t_const: I32 } | { t_var: I32 };
+
+pub type Args = list.List(Term);
+
+pub labels Atom = { a_pred: I32, a_args: Args };
+
+pub type Atoms = list.List(Atom);
+
+pub fn tconst(code: I32) -> Term { {t_const = code}.>widen_sum!(Term) }
+
+pub fn tvar(code: I32) -> Term { {t_var = code}.>widen_sum!(Term) }
+
+pub fn mk_atom(pred: I32, args: Args) -> Atom { {a_pred = pred, a_args = args} }
+
+pub fn pred_of(a: Atom) -> I32 { a.?{a_pred} }
+
+pub fn args_of(a: Atom) -> Args { a.?{a_args} }
+
+pub fn atom1(pred: I32, t0: Term) -> Atom { mk_atom(pred, list.of1(t0)) }
+
+pub fn atom2(pred: I32, t0: Term, t1: Term) -> Atom { mk_atom(pred, list.of2(t0, t1)) }
+
+pub fn atom3(pred: I32, t0: Term, t1: Term, t2: Term) -> Atom {
+  mk_atom(pred, list.of3(t0, t1, t2))
+}
+
+pub fn fact1(pred: I32, c0: I32) -> Atom { atom1(pred, tconst(c0)) }
+
+pub fn fact2(pred: I32, c0: I32, c1: I32) -> Atom { atom2(pred, tconst(c0), tconst(c1)) }
+
+pub fn fact3(pred: I32, c0: I32, c1: I32, c2: I32) -> Atom {
+  atom3(pred, tconst(c0), tconst(c1), tconst(c2))
+}
+
+fn term_eq(x: Term, y: Term) -> Bool {
+  match! x {
+    (
+      , .(k: T_const) {
+          match! y {
+            (.(j: T_const) { eq_i32(k.?{t_const}, j.?{t_const}) }, .(_w: T_var) { .f })
+          }
+        }
+      , .(v: T_var) {
+          match! y {
+            (.(_j: T_const) { .f }, .(w: T_var) { eq_i32(v.?{t_var}, w.?{t_var}) })
+          }
+        }
+      )
+  }
+}
+
+rec(loop) fn args_eq(xs: Args, ys: Args) -> Bool {
+  match! xs.>list.List.un_list {
+    (
+      , .(x: Term, xrest: Args) {
+          match! ys.>list.List.un_list {
+            (
+              , .(y: Term, yrest: Args) {
+                  if! term_eq(x, y) {
+                    rec args_eq(xrest, yrest)
+                  } else {
+                    .f
+                  }
+                }
+              , .(_empty: .) { .f }
+              )
+          }
+        }
+      , .(_empty: .) { list.is_empty(ys) }
+      )
+  }
+}
+
+/// Fact insertion is set-like, and this is the only membership test the
+/// database has.
+pub fn atom_eq(x: Atom, y: Atom) -> Bool {
+  if! eq_i32(pred_of(x), pred_of(y)) {
+    args_eq(args_of(x), args_of(y))
+  } else {
+    .f
+  }
+}
+
+pub fn count_pred(db: Atoms, pred: I32) -> I32 {
+  list.count(db, .(a: Atom) { eq_i32(pred_of(a), pred) })
+}

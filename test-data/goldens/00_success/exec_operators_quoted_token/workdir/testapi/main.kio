@@ -1,0 +1,31 @@
+module testapi/main;
+
+import testapi(Int, String);
+import testapi/arith(add, sub);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// Operator-token quotation `(tok)` admits an otherwise-reserved
+// sole-token operator. `=` is reserved at the sole-token position
+// because it's the binding separator; wrapping it in `( … )`
+// distinguishes the declared operator-token from its structural
+// role. `(=)` declares a binary `=` that binds to `add`.
+op _ (=) _ { impl add }
+
+// `->` is admissible as a sole op operator-token directly — its
+// structural role (function-type arrow / return-type marker) is
+// pinned by surrounding-grammar context, not by lexical
+// reservation in `op` patterns. (`.>` is *not* admissible — it
+// appears in expression position as UFCS dispatch, so any user
+// op spelled sole-`.>` would re-introduce parse ambiguity; see
+// the `op_pattern_*_dot_arrow` parse-error goldens.)
+op _ -> _ { impl sub }
+
+pub fn main() -> . {
+  print(int_to_string(3 = 4));
+  // add(3, 4) = 7
+  print("\n");
+  print(int_to_string(20 -> 5));
+  // sub(20, 5) = 15
+  print("\n")
+}

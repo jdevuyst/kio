@@ -1,0 +1,4 @@
+flag yes  = true
+flag no   = false
+host eq   = true
+host neq  = false

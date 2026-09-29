@@ -1,0 +1,9 @@
+package pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}

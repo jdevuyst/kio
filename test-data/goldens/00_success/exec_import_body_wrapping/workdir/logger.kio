@@ -1,0 +1,7 @@
+module logger;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+pub fn log_line(s: String) -> . { print(string_concat("[wrapped] "(String), s)) }

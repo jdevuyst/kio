@@ -1,0 +1,6 @@
+[
+  {"start": 0, "end": 17, "kind": "comment.line"},
+  {"start": 18, "end": 21, "kind": "identifier"},
+  {"start": 22, "end": 33, "kind": "comment.line"},
+  {"start": 34, "end": 37, "kind": "identifier"}
+]

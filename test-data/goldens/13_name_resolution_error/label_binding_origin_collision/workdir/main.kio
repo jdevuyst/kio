@@ -1,0 +1,4 @@
+module main;
+
+import first({item});
+import second({item});

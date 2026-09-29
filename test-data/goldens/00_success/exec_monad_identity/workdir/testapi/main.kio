@@ -1,0 +1,48 @@
+module testapi/main;
+
+import elab/sequence(do);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// The canonical brand: payload exactly equals the type-parameter,
+// so crossing through `Identity.mk_id` / `Identity.un_id` is a
+// runtime identity at every target.
+pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
+
+// A `Monad[*F]` instance with a polymorphic-function payload.
+// The `bind` field is the canonical bind shape, parameterised over
+// the carrier types `[A]` and `[B]`. Projecting the instance with
+// `Monad.bind(f, monad)` gives a value whose polymorphism survives
+// — a valid `do`-block receiver against any brand `f` and any
+// payload pair `(a, b)`.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// `Identity`'s monad instance. Peel the input via `Identity.un_id`
+// (a runtime identity since the carrier *is* `a`) and hand the
+// payload to the continuation, which returns an already-branded
+// value. No re-injection step is needed in the body — `k`'s
+// return type matches the `bind` return type directly.
+fn identity_monad() -> Monad(Identity) { Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) }) }
+
+// A `do`-block over `Monad.bind(Identity, monad)`. Two binds
+// thread a `String` payload, with a pure-let middle step. The
+// block desugars to nested `Monad.bind(Identity, monad)(payload,
+// .(...) {...})` calls at the Kio' boundary.
+fn use_instance() -> String {
+  let monad = identity_monad();
+  let seed = Identity.mk_id("monad on identity"(String));
+  let result =
+    do! Monad.bind(monad) {
+      let prefix <- seed;
+      let middle = " ok"(String);
+      let trailed <- Identity.mk_id(string_concat(prefix, middle));
+      Identity.mk_id(string_concat(trailed, "\n"(String)))
+    };
+  Identity.un_id(result)
+}
+
+pub fn main() -> . { print(use_instance()) }

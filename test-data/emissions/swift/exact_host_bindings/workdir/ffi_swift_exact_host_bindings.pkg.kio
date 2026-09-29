@@ -1,0 +1,16 @@
+package ffi_swift_exact_host_bindings;
+
+build {
+  cache "out/.kio-cache/";
+
+  target swift {
+    out "out/swift/"
+  }
+}
+
+bridge {
+  left;
+  main;
+  right;
+  unused
+}

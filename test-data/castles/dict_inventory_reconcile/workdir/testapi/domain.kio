@@ -1,0 +1,115 @@
+module testapi/domain;
+
+import testapi(I32, String);
+
+pub labels Item = { item_sku: I32, item_name: String };
+
+pub labels Count = { count_sku: I32, count_qty: I32 };
+
+pub labels Adjustment = { adjust_sku: I32, adjust_delta: I32, adjust_tag: String };
+
+pub labels Line = {
+  , line_name: String
+  , line_expected: I32
+  , line_actual: I32
+  , line_delta: I32
+  , line_status: String
+  };
+
+pub labels Totals = { total_ok: I32, total_missing: I32, total_skewed: I32, total_unknown: I32 };
+
+pub labels Report = {
+  , report_bolt: Line
+  , report_gear: Line
+  , report_seal: Line
+  , report_panel: Line
+  , report_valve: Line
+  , report_unknown: Line
+  , report_totals: Totals
+  };
+
+pub fn item(sku: I32, name: String) -> Item { {item_sku = sku, item_name = name} }
+
+pub fn item_key(row: Item) -> I32 { row.?{item_sku} }
+
+pub fn item_label(row: Item) -> String { row.?{item_name} }
+
+pub fn count(sku: I32, qty: I32) -> Count { {count_sku = sku, count_qty = qty} }
+
+pub fn count_key(row: Count) -> I32 { row.?{count_sku} }
+
+pub fn count_value(row: Count) -> I32 { row.?{count_qty} }
+
+pub fn adjustment(sku: I32, delta: I32, tag: String) -> Adjustment {
+  {adjust_sku = sku, adjust_delta = delta, adjust_tag = tag}
+}
+
+pub fn adjustment_key(row: Adjustment) -> I32 { row.?{adjust_sku} }
+
+pub fn adjustment_value(row: Adjustment) -> I32 { row.?{adjust_delta} }
+
+pub fn line(name: String, expected: I32, actual: I32, delta: I32, status: String) -> Line {
+  {
+    , line_name = name
+    , line_expected = expected
+    , line_actual = actual
+    , line_delta = delta
+    , line_status = status
+    }
+}
+
+pub fn line_name_of(row: Line) -> String { row.?{line_name} }
+
+pub fn line_expected_of(row: Line) -> I32 { row.?{line_expected} }
+
+pub fn line_actual_of(row: Line) -> I32 { row.?{line_actual} }
+
+pub fn line_delta_of(row: Line) -> I32 { row.?{line_delta} }
+
+pub fn line_status_of(row: Line) -> String { row.?{line_status} }
+
+pub fn totals(ok: I32, missing: I32, skewed: I32, unknown: I32) -> Totals {
+  {total_ok = ok, total_missing = missing, total_skewed = skewed, total_unknown = unknown}
+}
+
+pub fn totals_ok(row: Totals) -> I32 { row.?{total_ok} }
+
+pub fn totals_missing(row: Totals) -> I32 { row.?{total_missing} }
+
+pub fn totals_skewed(row: Totals) -> I32 { row.?{total_skewed} }
+
+pub fn totals_unknown(row: Totals) -> I32 { row.?{total_unknown} }
+
+pub fn report(
+  , bolt: Line
+  , gear: Line
+  , seal: Line
+  , panel: Line
+  , valve: Line
+  , unknown: Line
+  , totals_value: Totals
+  ) -> Report {
+  {
+    , report_bolt = bolt
+    , report_gear = gear
+    , report_seal = seal
+    , report_panel = panel
+    , report_valve = valve
+    , report_unknown = unknown
+    , report_totals = totals_value
+    }
+}
+
+pub fn report_bolt_of(row: Report) -> Line { row.?{report_bolt} }
+
+pub fn report_gear_of(row: Report) -> Line { row.?{report_gear} }
+
+pub fn report_seal_of(row: Report) -> Line { row.?{report_seal} }
+
+pub fn report_panel_of(row: Report) -> Line { row.?{report_panel} }
+
+pub fn report_valve_of(row: Report) -> Line { row.?{report_valve} }
+
+pub fn report_unknown_of(row: Report) -> Line { row.?{report_unknown} }
+
+pub fn report_totals_of(row: Report) -> Totals { row.?{report_totals} }

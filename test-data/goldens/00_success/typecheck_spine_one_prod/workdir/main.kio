@@ -1,0 +1,32 @@
+module main;
+
+import elab/spine_elaborators(one_prod);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+// Leftmost-wins. Source spine `[A, B]`, target `A` — slot 0
+// matches and is picked. R-Project-Prod under source-order pinning.
+fn pick_left(p: A & B) -> A { one_prod!(p) }
+
+// Pick from middle of a 3-slot product. Source `[A, B, C]`, target
+// `B`. The first (and only) `B` slot is slot 1.
+fn pick_middle(p: A & B & C) -> B { one_prod!(p) }
+
+// Leftmost wins among duplicates. Source `[A, B, A]` has two `A`
+// slots; target `A` — picks slot 0 (the first source `A`) per
+// source-order pinning.
+fn pick_first_duplicate(p: A & B & A) -> A { one_prod!(p) }
+
+// Non-atomic target. T can be any compound type; the constraint
+// is just that some source slot's type equals T under spine
+// equality. Source `[A, A & B, C]`, target `A & B`: slot 1's type
+// matches the compound target exactly.
+fn non_atomic_target(p: A & (A & B) & C) -> A & B { one_prod!(p) }
+
+// UFCS spelling — same rule, postfix form. No trailing parens
+// when no explicit target type-arg is supplied.
+fn ufcs(p: A & B) -> A { p.>one_prod! }

@@ -1,0 +1,3 @@
+module main;
+
+fn a1b() -> . { () }

@@ -1,0 +1,138 @@
+module join/engine;
+
+import elab/control(if);
+import elab/match(match);
+import join/model as m;
+import list/core as core;
+import list/list as lists;
+import testapi(Bool, I32);
+import testapi/arith as a;
+import testapi/iter(loop);
+import testapi/text as text;
+
+pub fn empty() -> m.State {
+  {
+    , m.left = core.nil()
+    , m.right = core.nil()
+    , m.pairs = core.nil()
+    , m.left_watermark = 0
+    , m.right_watermark = 0
+    , m.accepted_left = 0
+    , m.accepted_right = 0
+    , m.evicted_left = 0
+    , m.evicted_right = 0
+    , m.late = 0
+    , m.regressed = 0
+    }
+}
+
+fn matches(left: m.Event, right: m.Event) -> Bool {
+  if! text.string_eq(left.?{m.key}, right.?{m.key}) {
+    if! a.leq_i32(a.sub_i32(left.?{m.time}, 2), right.?{m.time}) {
+      a.leq_i32(right.?{m.time}, a.add_i32(left.?{m.time}, 3))
+    } else {
+      .f
+    }
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn probe(
+  , event: m.Event
+  , others: core.List(m.Event)
+  , from_left: Bool
+  , pairs: core.List(m.Pair)
+  ) -> core.List(m.Pair) {
+  match! core.uncons(others) {
+    .(other: m.Event, tail: core.List(m.Event)) {
+      let .(left, right) =
+        if! from_left {
+          (event, other)
+        } else {
+          (other, event)
+        };
+      let next =
+        if! matches(left, right) {
+          core.cons({m.left_id = left.?{m.id}, m.right_id = right.?{m.id}}, pairs)
+        } else {
+          pairs
+        };
+      rec probe(event, tail, from_left, next)
+    };
+    .() { pairs }
+  }
+}
+
+fn evict(state: m.State) -> m.State {
+  let left =
+    lists.filter(
+      , .(event: m.Event) { a.leq_i32(state.?{m.right_watermark}, a.add_i32(event.?{m.time}, 3)) }
+      , state.?{m.left}
+      );
+  let right =
+    lists.filter(
+      , .(event: m.Event) { a.leq_i32(state.?{m.left_watermark}, a.add_i32(event.?{m.time}, 2)) }
+      , state.?{m.right}
+      );
+  state.!{
+    , m.left
+    , m.right
+    , m.evicted_left = a.add_i32(
+        , state.?{m.evicted_left}
+        , a.sub_i32(lists.length(state.?{m.left}), lists.length(left))
+        )
+    , m.evicted_right = a.add_i32(
+        , state.?{m.evicted_right}
+        , a.sub_i32(lists.length(state.?{m.right}), lists.length(right))
+        )
+    }
+}
+
+pub fn event(state: m.State, value: m.Event, from_left: Bool) -> m.State {
+  let watermark =
+    if! from_left {
+      state.?{m.left_watermark}
+    } else {
+      state.?{m.right_watermark}
+    };
+  if! a.lt_i32(value.?{m.time}, watermark) {
+    state.!{m.late = a.add_i32(state.?{m.late}, 1)}
+  } else {
+    let others = if! from_left {
+      state.?{m.right}
+    } else {
+      state.?{m.left}
+    };
+    let pairs = probe(value, others, from_left, state.?{m.pairs});
+    if! from_left {
+      evict(state.!{
+        , m.left = core.cons(value, state.?{m.left})
+        , m.pairs
+        , m.accepted_left = a.add_i32(state.?{m.accepted_left}, 1)
+        })
+    } else {
+      evict(state.!{
+        , m.right = core.cons(value, state.?{m.right})
+        , m.pairs
+        , m.accepted_right = a.add_i32(state.?{m.accepted_right}, 1)
+        })
+    }
+  }
+}
+
+pub fn watermark(state: m.State, value: I32, from_left: Bool) -> m.State {
+  let current =
+    if! from_left {
+      state.?{m.left_watermark}
+    } else {
+      state.?{m.right_watermark}
+    };
+  if! a.lt_i32(value, current) {
+    state.!{m.regressed = a.add_i32(state.?{m.regressed}, 1)}
+  } else if! from_left {
+    evict(state.!{m.left_watermark = value})
+  } else {
+    evict(state.!{m.right_watermark = value})
+  }
+}

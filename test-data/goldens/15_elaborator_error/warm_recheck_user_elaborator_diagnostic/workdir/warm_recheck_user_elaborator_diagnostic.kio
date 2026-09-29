@@ -1,0 +1,3 @@
+module warm_recheck_user_elaborator_diagnostic;
+
+host type String role(str);

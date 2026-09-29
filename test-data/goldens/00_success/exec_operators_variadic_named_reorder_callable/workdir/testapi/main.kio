@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn nil() -> String { "" }
+
+fn cons(v: String, k: String, acc: String) -> String {
+  k.>string_concat("=").>string_concat(v).>string_concat(";").>string_concat(acc)
+}
+
+fn cons_entry((k: String, v: String), acc: String) -> String { cons(v, k, acc) }
+
+fn entry(key: String, value: String) -> String & String { (key, value) }
+
+op _ => _ { impl entry }
+
+varop [% %] { foldr cons_entry nil }
+
+pub fn main() -> . { print([% "a" => "1", "b" => "2" %]); print("\n") }

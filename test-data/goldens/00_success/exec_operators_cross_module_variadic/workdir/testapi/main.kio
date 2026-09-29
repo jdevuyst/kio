@@ -1,0 +1,7 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/lists(varop [* *]);
+
+pub fn main() -> . { print([* "a", "b", "c" *]) }

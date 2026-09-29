@@ -1,0 +1,25 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+import testapi/types(Cell);
+import testapi/types(Pair);
+
+// Exercise every member of every exported newtype: the
+// `type` declarations in the package file commit the
+// package to making each of these reachable through the
+// package namespace, and the spec rule is "atomically" — all
+// pub members flow through together, no per-member opt-in or
+// opt-out.
+fn first_of(p: String & String) -> String {
+  match! p {
+    .(a: String, _b: String) { a }
+  }
+}
+
+pub fn main() -> . {
+  print(Cell.mk_cell("cell-ok\n").>Cell.un_cell);
+  let typed = Pair.mk_pair(("pair-ok\n", "ignored"));
+  print(first_of(typed.>Pair.un_pair))
+}

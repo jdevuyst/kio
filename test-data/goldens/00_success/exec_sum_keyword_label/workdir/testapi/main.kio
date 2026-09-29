@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// `Box` is a newtype whose name lowercases-first to the Rust keyword
+// `box`. As an arm of a structural sum at the public FFI surface it
+// supplies the minted enum's variant label. The variant declaration
+// (and its Clone / PartialEq impls) must keyword-escape the label, or
+// the emitted `pub enum Sum_<hash> { box(..), _1(..) }` is a Rust
+// syntax error and the whole crate fails to build.
+pub newtype Box : String { pub constructor mk_box; pub projector un_box }
+
+pub fn describe(x: Box | String) -> . { let _ = x; () }
+
+pub fn main() -> . { print("sum-keyword-label ok\n"(String)) }

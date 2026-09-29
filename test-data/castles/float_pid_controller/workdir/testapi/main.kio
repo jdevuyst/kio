@@ -1,0 +1,15 @@
+module testapi/main;
+
+import pid/model(First, Second, Third, Timeline, scenario, {first}, {second}, {third});
+import pid/pipeline(run);
+import pid/report(print_step);
+import testapi(String);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let timeline = run(scenario());
+  print("float pid controller\n");
+  print_step("sample 1\n", timeline.?{first});
+  print_step("sample 2\n", timeline.?{second});
+  print_step("sample 3\n", timeline.?{third})
+}

@@ -1,0 +1,5 @@
+module main;
+
+import provider as p;
+
+pub fn main() -> . { p.hidden(()) }

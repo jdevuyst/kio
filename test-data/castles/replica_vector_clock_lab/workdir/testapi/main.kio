@@ -1,0 +1,5 @@
+module testapi/main;
+
+import lab/scenario as scenario;
+
+pub fn main() -> . { scenario.run() }

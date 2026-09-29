@@ -1,0 +1,17 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `match!` derives its result type from the clauses. Both arms here
+// return `String`, so the direct result type is `String`.
+fn render(v: I32 | String) -> String {
+  match! v {
+    (.(n: I32) { int_to_string(n) }, .(s: String) { s })
+  }
+}
+
+pub fn main() -> . { print(render(widen_sum!("match! derived: ok\n"))) }

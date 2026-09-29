@@ -1,0 +1,5 @@
+module self;
+
+pub rec labels Chain[A] = { link[A]: (Chain(A) -> A) -> A };
+
+pub fn read_chain[A](value: Chain(A), next: Chain(A) -> A) -> A { value.?{link}(next) }

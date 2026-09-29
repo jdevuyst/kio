@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+// Named-form `labels T = { … }` introduces both the generated
+// newtypes (one per label) and an alias `T` over the product of
+// the entries' label-generated types. The body builds a `Pair` value via
+// the multi-label sugar `{first = …, second = …}` (which desugars
+// to a `__pair__` of the two constructor calls), then projects
+// the second label-generated component and unwraps it.
+labels Pair = { first: String, second: String };
+
+fn second_of(p: Pair) -> Second {
+  match! p {
+    .(_first_slot: First, second_slot: Second) { second_slot }
+  }
+}
+
+pub fn main() -> . {
+  let p = {first = "skipped\n", second = "shown\n"};
+  print(Second.get(second_of(p)))
+}

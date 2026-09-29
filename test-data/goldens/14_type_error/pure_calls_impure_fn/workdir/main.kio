@@ -1,0 +1,5 @@
+module main;
+
+fn impure() -> . { () }
+
+pure fn bad() -> . { impure() }

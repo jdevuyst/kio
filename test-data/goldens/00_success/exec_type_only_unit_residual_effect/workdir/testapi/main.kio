@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+newtype N : . { constructor n; projector un_n }
+
+fn delayed[A]() -> N { print("invoked\n"(String)); N.n(()) }
+
+pub fn main() -> . {
+  let pending = delayed(N);
+  print("created\n"(String));
+  let result = pending(());
+  N.un_n(result);
+  print("done\n"(String))
+}

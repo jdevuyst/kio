@@ -1,0 +1,11 @@
+module other_tree;
+
+import __intrinsics__;
+
+pub rec newtype Branch : . | Branch { constructor mk_branch; projector un_branch }
+
+pub rec newtype Node : . | Node { pub constructor mk_node; pub projector un_node }
+
+pub fn branch_wrapped() -> Branch & . {
+  __pair__(Branch, ., Branch.mk_branch(__left__(., Branch, ())), ())
+}

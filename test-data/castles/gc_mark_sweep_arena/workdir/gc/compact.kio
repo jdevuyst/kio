@@ -1,0 +1,116 @@
+/// The compact phase: a sliding collector, in three passes.
+///
+/// Every object moves down or stays put and the walk goes up, so
+/// `slide` only ever writes below the header it is about to read next:
+/// the move needs no scratch arena and clobbers no cell before copying
+/// it. Pointers still hold old addresses after the move -- the copy
+/// carried them along as data -- so `relocate` has to run afterwards,
+/// and the forwarding table has to outlive the slide.
+///
+/// The table is only ever read at a live object's address, since the
+/// mark phase guarantees no live object points at a dead one.
+/// `gc/verify` re-establishes that from scratch rather than taking this
+/// module's word for it.
+module gc/compact;
+
+import elab/control(if);
+import elab/match(match);
+import gc/heap(field_addr, field_slot, fold_fields, fold_objects, object_size, top);
+import gc/num(int_lt);
+import gc/slot(Imm, Ptr, ptr_cell, {ptr});
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_len, array_make_filled, array_pop_back, array_set);
+import testapi/iter(loop);
+
+pub labels Plan = { forward_table: Array(I32), plan_top: I32 };
+
+/// `plan_top` is where the free space begins once every survivor has
+/// moved, so it is also the arena's length after compaction.
+pub fn plan(cells: Array(I32), marks: Array(Bool)) -> Plan {
+  let forward = array_make_filled(top(cells), 0);
+  let new_top =
+    fold_objects(
+      , cells
+      , .(free, addr) {
+          if! array_get(marks, addr) {
+            array_set(forward, addr, free);
+            add_i32(free, object_size(cells, addr))
+          } else {
+            free
+          }
+        }
+      , 0
+      );
+  {forward_table = forward, plan_top = new_top}
+}
+
+rec(loop) fn copy_cells(cells: Array(I32), src: I32, dst: I32, size: I32, index: I32) -> . {
+  if! int_lt(index, size) {
+    array_set(cells, add_i32(dst, index), array_get(cells, add_i32(src, index)));
+    rec copy_cells(cells, src, dst, size, add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+fn slide(cells: Array(I32), marks: Array(Bool), forward: Array(I32)) -> . {
+  fold_objects(
+    , cells
+    , .(_unit, addr) {
+        if! array_get(marks, addr) {
+          copy_cells(cells, addr, array_get(forward, addr), object_size(cells, addr), 0)
+        } else {
+          ()
+        }
+      }
+    , ()
+    )
+}
+
+fn relocate_fields(cells: Array(I32), forward: Array(I32), addr: I32) -> . {
+  fold_fields(
+    , cells
+    , addr
+    , .(_unit, index) {
+        match! field_slot(cells, addr, index) {
+          (
+            , .(p: Ptr) {
+                array_set(cells, field_addr(addr, index), ptr_cell(array_get(forward, p.?{ptr})))
+              }
+            , .(_immediate: Imm) { () }
+            )
+        }
+      }
+    , ()
+    )
+}
+
+rec(loop) fn relocate_roots(roots: Array(I32), forward: Array(I32), index: I32) -> . {
+  if! int_lt(index, array_len(roots)) {
+    array_set(roots, index, array_get(forward, array_get(roots, index)));
+    rec relocate_roots(roots, forward, add_i32(index, 1))
+  } else {
+    ()
+  }
+}
+
+/// Hand the tail of the arena back. Popping down to the new top is what
+/// actually reclaims the cells: everything above it is either a stale
+/// copy of an object that has already moved, or a dead object nobody
+/// moved.
+rec(loop) fn shrink(cells: Array(I32), new_top: I32) -> . {
+  if! leq_i32(top(cells), new_top) {
+    ()
+  } else match! array_pop_back(cells) {
+    (.(_cell: I32) { rec shrink(cells, new_top) }, .(_empty: .) { () })
+  }
+}
+
+pub fn compact(cells: Array(I32), roots: Array(I32), marks: Array(Bool), layout: Plan) -> . {
+  let forward = layout.?{forward_table};
+  slide(cells, marks, forward);
+  shrink(cells, layout.?{plan_top});
+  fold_objects(cells, .(_unit, addr) { relocate_fields(cells, forward, addr) }, ());
+  relocate_roots(roots, forward, 0)
+}

@@ -1,0 +1,39 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Multi-group module functions, typed `String -> String -> String`.
+// Each carries two value groups, so applying one group at a time —
+// `pick(x)(y)` — must curry: each group is a separate callable layer.
+fn pick_first(a: String)(b: String) -> String { a }
+
+fn pick_second(a: String)(b: String) -> String { b }
+
+// Return a multi-group module fn *as a value*. The returned value's
+// type curries the type (`String -> String -> String`), so the
+// emitted value must curry too, or per-group application fails.
+fn get_first() -> String -> String -> String { pick_first }
+
+fn get_second() -> String -> String -> String { pick_second }
+
+// Take a multi-group fn as a *parameter* (its declared type curries),
+// applying it one group at a time. Passing a multi-group module fn here
+// exercises the fn-typed-argument path: the module-fn value flows into a
+// curried function slot, so its emitted form must curry to apply.
+fn run_curried(f: String -> String -> String) -> String {
+  f("arg-applied\n"(String))("dropped"(String))
+}
+
+pub fn main() -> . {
+  // Full per-group application of a multi-group module-fn value.
+  let first = get_first();
+  print(first("first-direct\n"(String))("dropped"(String)));
+  // Partial application: bind the first group as a value, then apply
+  // the second group's layer to it.
+  let second = get_second();
+  let pick_snd = second("dropped"(String));
+  print(pick_snd("second-partial\n"(String)));
+  // Pass a multi-group module fn straight into a curried fn slot.
+  print(run_curried(pick_first))
+}

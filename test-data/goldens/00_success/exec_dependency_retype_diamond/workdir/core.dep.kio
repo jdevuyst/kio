@@ -1,0 +1,7 @@
+dependency core;
+
+source {
+  path "../library/idlib/idlib.pkg.kio"
+}
+
+rehost core/store to testapi;

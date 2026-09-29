@@ -1,0 +1,54 @@
+module river_bytecode_vm/model;
+
+import river_bytecode_vm/constants as c;
+import testapi(I32);
+
+pub labels Snapshot_fields = {
+  , pc: I32
+  , farmer: I32
+  , wolf: I32
+  , goat: I32
+  , cabbage: I32
+  , moves: I32
+  , waits: I32
+  , alerts: I32
+  , ticks: I32
+  , checksum: I32
+  , halt_code: I32
+  };
+
+pub type Snapshot =
+  Pc & Farmer & Wolf & Goat & Cabbage & Moves & Waits & Alerts & Ticks & Checksum & Halt_code
+  ;
+
+pub fn state(
+  , pc_value: I32
+  , farmer_value: I32
+  , wolf_value: I32
+  , goat_value: I32
+  , cabbage_value: I32
+  , moves_value: I32
+  , waits_value: I32
+  , alerts_value: I32
+  , ticks_value: I32
+  , checksum_value: I32
+  , halt_value: I32
+  ) -> Snapshot {
+  {
+    , pc = pc_value
+    , farmer = farmer_value
+    , wolf = wolf_value
+    , goat = goat_value
+    , cabbage = cabbage_value
+    , moves = moves_value
+    , waits = waits_value
+    , alerts = alerts_value
+    , ticks = ticks_value
+    , checksum = checksum_value
+    , halt_code = halt_value
+    }
+}
+
+pub fn initial() -> Snapshot {
+  state(0, c.west(), c.west(), c.west(), c.west(), 0, 0, 0, 0, 19, c.halt_running())
+}

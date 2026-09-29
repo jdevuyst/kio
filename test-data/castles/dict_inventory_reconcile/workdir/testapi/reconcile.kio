@@ -1,0 +1,146 @@
+module testapi/reconcile;
+
+import dict/dict(Dict);
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, eq_i32, sub_i32);
+import testapi/dict_ops(get_or_i32, lookup_count, lookup_name);
+import testapi/domain(Line, Report, line, line_delta_of, report, totals);
+import testapi/fixtures(adjustment_dict, catalogue_dict, ledger_dict, physical_dict);
+import testapi/fmt(int_to_string);
+import testapi/text(string_concat);
+
+fn sku_label(sku: I32) -> String { string_concat("sku ", int_to_string(sku)) }
+
+fn actual_or_zero(actual: I32 | .) -> I32 {
+  match! actual {
+    (.(value: I32) { value }, .(_missing: .) { 0 })
+  }
+}
+
+fn status_for(actual: I32 | ., delta: I32) -> String {
+  match! actual {
+    (
+      , .(_value: I32) {
+          if! eq_i32(delta, 0) {
+            "OK"
+          } else {
+            "SKEW"
+          }
+        }
+      , .(_missing: .) { "MISSING" }
+      )
+  }
+}
+
+fn ok_inc(actual: I32 | ., delta: I32) -> I32 {
+  match! actual {
+    (
+      , .(_value: I32) {
+          if! eq_i32(delta, 0) {
+            1
+          } else {
+            0
+          }
+        }
+      , .(_missing: .) { 0 }
+      )
+  }
+}
+
+fn missing_inc(actual: I32 | .) -> I32 {
+  match! actual {
+    (.(_value: I32) { 0 }, .(_missing: .) { 1 })
+  }
+}
+
+fn skew_inc(actual: I32 | ., delta: I32) -> I32 {
+  match! actual {
+    (
+      , .(_value: I32) {
+          if! eq_i32(delta, 0) {
+            0
+          } else {
+            1
+          }
+        }
+      , .(_missing: .) { 0 }
+      )
+  }
+}
+
+fn reconcile_item(
+  , name: String
+  , key: I32
+  , base: Dict(I32, I32)
+  , actual: Dict(I32, I32)
+  , adjustments: Dict(I32, I32)
+  ) -> Line {
+  let expected = add_i32(get_or_i32(base, key, 0), get_or_i32(adjustments, key, 0));
+  let actual_value = lookup_count(actual, key);
+  let actual_count = actual_or_zero(actual_value);
+  let delta = sub_i32(actual_count, expected);
+  line(name, expected, actual_count, delta, status_for(actual_value, delta))
+}
+
+fn unknown_count(catalogue: Dict(I32, String), key: I32) -> I32 {
+  match! lookup_name(catalogue, key) {
+    (.(_name: String) { 0 }, .(_missing: .) { 1 })
+  }
+}
+
+fn sum5(a: I32, b: I32, c: I32, d: I32, e: I32) -> I32 {
+  add_i32(add_i32(add_i32(add_i32(a, b), c), d), e)
+}
+
+pub fn build_report() -> Report {
+  let base = ledger_dict();
+  let actual = physical_dict();
+  let adjustments = adjustment_dict();
+  let catalogue = catalogue_dict();
+  let bolt = reconcile_item("bolt", 101, base, actual, adjustments);
+  let gear = reconcile_item("gear", 102, base, actual, adjustments);
+  let seal = reconcile_item("seal", 103, base, actual, adjustments);
+  let panel = reconcile_item("panel", 104, base, actual, adjustments);
+  let valve = reconcile_item("valve", 105, base, actual, adjustments);
+  let unknown_actual = get_or_i32(actual, 106, 0);
+  let unknown = line(sku_label(106), 0, unknown_actual, unknown_actual, "UNKNOWN");
+  let bolt_actual = lookup_count(actual, 101);
+  let gear_actual = lookup_count(actual, 102);
+  let seal_actual = lookup_count(actual, 103);
+  let panel_actual = lookup_count(actual, 104);
+  let valve_actual = lookup_count(actual, 105);
+  report(
+    , bolt
+    , gear
+    , seal
+    , panel
+    , valve
+    , unknown
+    , totals(
+        , sum5(
+            , ok_inc(bolt_actual, line_delta_of(bolt))
+            , ok_inc(gear_actual, line_delta_of(gear))
+            , ok_inc(seal_actual, line_delta_of(seal))
+            , ok_inc(panel_actual, line_delta_of(panel))
+            , ok_inc(valve_actual, line_delta_of(valve))
+            )
+        , sum5(
+            , missing_inc(bolt_actual)
+            , missing_inc(gear_actual)
+            , missing_inc(seal_actual)
+            , missing_inc(panel_actual)
+            , missing_inc(valve_actual)
+            )
+        , sum5(
+            , skew_inc(bolt_actual, line_delta_of(bolt))
+            , skew_inc(gear_actual, line_delta_of(gear))
+            , skew_inc(seal_actual, line_delta_of(seal))
+            , skew_inc(panel_actual, line_delta_of(panel))
+            , skew_inc(valve_actual, line_delta_of(valve))
+            )
+        , unknown_count(catalogue, 106)
+        )
+    )
+}

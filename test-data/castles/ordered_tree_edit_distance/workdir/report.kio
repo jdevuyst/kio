@@ -1,0 +1,77 @@
+module report;
+
+import certificate as certificate;
+import distance as distance;
+import elab/control(if);
+import forest as forest;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn line(label: String, value: String) -> . {
+  io.print(text.string_concat(label, text.string_concat(value, "\n")))
+}
+
+fn number(label: String, value: I32) -> . {
+  io.print(text.string_concat(label, fmt.int_to_string(value)))
+}
+
+rec(loop) fn mapping_pairs(mapping: Array(I32), position: I32) -> . {
+  if! forest.less(position, array.array_len(mapping)) {
+    let destination = array.array_get(mapping, position);
+    if! arith.leq_i32(0, destination) {
+      number(" ", position);
+      number("->", destination)
+    } else {
+      ()
+    };
+    rec mapping_pairs(mapping, arith.add_i32(position, 1))
+  } else {
+    ()
+  }
+}
+
+pub fn compare(title: String, source: forest.Tree, target: forest.Tree) -> . {
+  line("case: ", title);
+  line("source: ", forest.render(source));
+  line("target: ", forest.render(target));
+  let solution = distance.solve(source, target);
+  line("distance: ", fmt.int_to_string(solution.?{distance.cost}));
+  io.print("mapping:");
+  mapping_pairs(solution.?{distance.mapping}, 0);
+  io.print("\n");
+  if! certificate.valid(source, target, solution.?{distance.mapping}) {
+    let counts = certificate.counts(source, target, solution.?{distance.mapping});
+    number("edits: delete=", counts.?{certificate.deleted});
+    number(" insert=", counts.?{certificate.inserted});
+    number(" rename=", counts.?{certificate.renamed});
+    number(" keep=", counts.?{certificate.kept});
+    io.print("\n");
+    line(
+      , "certificate: "
+      , if! forest.equal(certificate.cost(counts), solution.?{distance.cost}) {
+          "valid; cost agrees"
+        } else {
+          "valid; cost disagrees"
+        }
+      )
+  } else {
+    io.print("certificate: invalid mapping\n")
+  }
+}
+
+pub fn control(title: String, source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> . {
+  io.print(text.string_concat("control: ", title));
+  line(
+    , " -> "
+    , if! certificate.valid(source, target, mapping) {
+        "accepted"
+      } else {
+        "rejected"
+      }
+    )
+}

@@ -1,0 +1,3 @@
+module use_label_braces_require_label/values;
+
+pub fn item() -> . { () }

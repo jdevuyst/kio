@@ -1,0 +1,4 @@
+this value source needs a complete type before an `impl\(fills\)` elaborator can run
+main\.kio:9:34: error:
+fn rejected\(\) -> String \{ infer!\(apply\(\.\(_unit: \.\) \{ "inline" \}\)\) \}
+help: add a type argument or annotation, or complete the value in an ordinary `let` first

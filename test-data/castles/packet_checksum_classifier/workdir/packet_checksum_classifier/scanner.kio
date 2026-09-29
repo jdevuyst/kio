@@ -1,0 +1,25 @@
+module packet_checksum_classifier/scanner;
+
+import packet_checksum_classifier/source as source;
+import testapi(I32, String);
+import testapi/text as text;
+
+fn span(start: I32, end: I32) -> String { text.string_slice(source.frames(), start, end) }
+
+pub fn frame_count() -> I32 { 4 }
+
+pub fn byte_count() -> I32 { text.string_len(source.frames()) }
+
+pub fn frame1() -> String { span(0, 11) }
+
+pub fn frame2() -> String { span(11, 22) }
+
+pub fn frame3() -> String { span(22, 33) }
+
+pub fn frame4() -> String { span(33, 44) }
+
+pub fn prefix(frame: String) -> String { text.string_slice(frame, 0, 3) }
+
+pub fn ident(frame: String) -> String { text.string_slice(frame, 4, 7) }
+
+pub fn checksum(frame: String) -> String { text.string_slice(frame, 8, 10) }

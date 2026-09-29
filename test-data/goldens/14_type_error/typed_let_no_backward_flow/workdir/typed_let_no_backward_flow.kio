@@ -1,0 +1,3 @@
+module typed_let_no_backward_flow;
+
+host type I32 role(i32);

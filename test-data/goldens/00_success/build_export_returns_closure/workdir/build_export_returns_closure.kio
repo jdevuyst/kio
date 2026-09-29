@@ -1,0 +1,5 @@
+module build_export_returns_closure;
+
+host type I32 role(i32);
+
+host fn add_i32(a: I32, b: I32) -> I32;

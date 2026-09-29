@@ -1,0 +1,22 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import elaborators(Marker_bool, marker);
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn marker_bool_to_string(value: Marker_bool) -> String {
+  __either__(., ., String, value, .(yes: .) -> String { "true" }, .(no: .) -> String { "false" })
+}
+
+fn line(label: String, value: Marker_bool) -> . {
+  print(string_concat(label, string_concat(marker_bool_to_string(value), "\n")))
+}
+
+pub fn main() -> . {
+  let value = "payload";
+  line("needle String: ", marker!(value, String));
+  line("needle I32: ", marker!(value, I32))
+}

@@ -1,0 +1,8 @@
+packet checksum classifier
+frames=4
+bytes=44
+A17 checksum=08 class=valid
+B04 checksum=03 class=warn
+C99 checksum=12 class=reject
+X00 checksum=00 class=invalid-prefix
+summary valid=1 warn=1 reject=2

@@ -1,0 +1,13 @@
+ledger rule audit
+start balance=0
+credit 100 -> balance=100
+debit 25 -> balance=75
+fee 5 -> balance=70
+credit invalid amount 'abc'
+debit 40 -> balance=30
+balance check -> 30
+unknown command 'note'
+fee 3 -> balance=27
+end
+summary credits=1 debits=2 fees=2 invalid=2
+totals credit=100 debit=65 fee=8 balance=27

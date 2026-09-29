@@ -1,0 +1,12 @@
+module testapi/main;
+
+import gate_array_dp/dp(solve);
+import gate_array_dp/fixtures(service_cost, traffic_risk);
+import gate_array_dp/report(print_summary);
+
+pub fn main() -> . {
+  let traffic = traffic_risk();
+  let service = service_cost();
+  let table = solve(traffic, service);
+  print_summary(table, traffic, service)
+}

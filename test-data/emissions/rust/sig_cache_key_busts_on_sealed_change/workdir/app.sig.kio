@@ -1,0 +1,13 @@
+signature app v(1);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Str role(str);
+        pub fn echo(s: Str) -> Str;
+        host fn open() -> Str
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+module build_rust_module_alias_scope_collision/a/main;
+
+import __intrinsics__;
+
+pub type State = . | .;
+
+pub fn make() -> State { __left__(., ., ()) }
+
+pub fn consume(state: State) -> . {
+  __either__(., ., ., state, .(left: .) { left }, .(right: .) { right })
+}

@@ -1,0 +1,6 @@
+module main;
+
+import elaborator(reject);
+import model as caller;
+
+fn trigger[Box](value: caller.Box(Box)) -> . { let .(_rejected: .) = reject!(value, .); () }

@@ -1,0 +1,202 @@
+/// Dijkstra's shunting yard: infix token stream in, RPN queue out.
+///
+/// One operator stack, one output queue, one pass. The stack holds either a
+/// pending operator or a still-open parenthesis, and the whole algorithm is
+/// the rule for when a pending operator must come off:
+///
+/// - A **literal** goes straight to the output.
+/// - A **binary** operator first pops every pending operator that outranks it
+///   — strictly tighter, or equally tight and left-associative — then goes on
+///   the stack. Equal precedence with a *right*-associative incoming operator
+///   pops nothing, and that single condition is the whole reason `2 ^ 3 ^ 2`
+///   is `2 ^ (3 ^ 2)` rather than `(2 ^ 3) ^ 2`.
+/// - A **prefix** operator pops nothing at all. It has no left operand, so
+///   there is nothing for a pending operator to be tighter *than*; popping one
+///   here would strand it without its right operand, which is what turns
+///   `2 ^ ~ 3` into nonsense in a yard that treats `~` like a binary operator.
+/// - `(` is pushed as a barrier; `)` pops back to it and drops it.
+/// - At end of input the stack is drained. A barrier still on it is a
+///   parenthesis nobody closed.
+module desk/yard;
+
+import desk/list(List, cons, nil, reverse);
+import desk/num(int_eq, not);
+import desk/op(Binary, Binop, Op, Unary, binop_prec, binop_right_assoc, prec, {binary});
+import desk/outcome(Failure, bad_token_fault, fault_at, unclosed_open_fault, unmatched_close_fault);
+import desk/step(Step, app_step, lit_step);
+import desk/token(Bad, Lparen, Num, Oper, Placed, Rparen, at_of, tok_of, {num}, {oper});
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(lt_i32);
+import testapi/iter(loop);
+
+/// An operator waiting on the stack, remembering where it was written so a
+/// fault raised when it finally fires can quote the right token.
+labels Pending = { pend_op: Op, pend_at: I32 };
+
+labels Frame = { operator: Pending } | { open_paren: I32 };
+
+/// The yard's whole mutable state, threaded by value: the output built so far
+/// (head-first, reversed) and the operator stack.
+labels Carry = { c_out: List(Step), c_stack: List(Frame) };
+
+labels Prog = { going: Carry } | { stopped: Failure };
+
+labels Close = { after: Carry } | { close_failed: Failure };
+
+/// The conversion's result: an RPN queue, or the fault that stopped it.
+pub labels Built = { rpn: List(Step) } | { rpn_failed: Failure };
+
+fn carry(out: List(Step), stack: List(Frame)) -> Carry { {c_out = out, c_stack = stack} }
+
+fn going(c: Carry) -> Prog { {going = c}.>widen_sum!(Prog) }
+
+fn stopped(f: Failure) -> Prog { {stopped = f}.>widen_sum!(Prog) }
+
+fn close_ok(c: Carry) -> Close { {after = c}.>widen_sum!(Close) }
+
+fn close_fail(f: Failure) -> Close { {close_failed = f}.>widen_sum!(Close) }
+
+fn ok_built(queue: List(Step)) -> Built { {rpn = queue}.>widen_sum!(Built) }
+
+fn fail_built(f: Failure) -> Built { {rpn_failed = f}.>widen_sum!(Built) }
+
+fn op_frame(op: Op, spot: I32) -> Frame {
+  {operator = {pend_op = op, pend_at = spot}}.>widen_sum!(Frame)
+}
+
+fn open_frame(spot: I32) -> Frame { {open_paren = spot}.>widen_sum!(Frame) }
+
+fn frame_step(held: Pending) -> Step { app_step(held.?{pend_op}, held.?{pend_at}) }
+
+/// Must the operator already on the stack come off before `incoming` goes on?
+/// Yes when it binds strictly tighter, and yes on a tie only when `incoming`
+/// associates to the left. A tie with a right-associative `incoming` leaves
+/// the held operator in place, which is exactly how `^` chains rightward.
+fn outranks(held: Op, incoming: Binop) -> Bool {
+  let held_prec = prec(held);
+  let incoming_prec = binop_prec(incoming);
+  if! lt_i32(incoming_prec, held_prec) {
+    .t
+  } else if! int_eq(incoming_prec, held_prec) {
+    not(binop_right_assoc(incoming))
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn pop_greater(incoming: Binop, out: List(Step), stack: List(Frame)) -> Carry {
+  match! stack.>List.un_list {
+    (
+      , .(top: Frame, rest: List(Frame)) {
+          match! top {
+            (
+              , .(o: Operator) {
+                  let held = o.?{operator};
+                  if! outranks(held.?{pend_op}, incoming) {
+                    rec pop_greater(incoming, cons(frame_step(held), out), rest)
+                  } else {
+                    carry(out, stack)
+                  }
+                }
+              , .(_barrier: Open_paren) { carry(out, stack) }
+              )
+          }
+        }
+      , .(_empty: .) { carry(out, stack) }
+      )
+  }
+}
+
+/// Pop back to the nearest `(` and drop it. Running out of stack first means
+/// the `)` at `spot` closes nothing.
+rec(loop) fn pop_to_paren(spot: I32, out: List(Step), stack: List(Frame)) -> Close {
+  match! stack.>List.un_list {
+    (
+      , .(top: Frame, rest: List(Frame)) {
+          match! top {
+            (
+              , .(o: Operator) {
+                  rec pop_to_paren(spot, cons(frame_step(o.?{operator}), out), rest)
+                }
+              , .(_barrier: Open_paren) { close_ok(carry(out, rest)) }
+              )
+          }
+        }
+      , .(_empty: .) { close_fail(fault_at(unmatched_close_fault(), spot)) }
+      )
+  }
+}
+
+/// Flush the stack at end of input. A barrier still on it is an unclosed `(`,
+/// and the fault quotes the position of that parenthesis, not of the end.
+rec(loop) fn drain(out: List(Step), stack: List(Frame)) -> Built {
+  match! stack.>List.un_list {
+    (
+      , .(top: Frame, rest: List(Frame)) {
+          match! top {
+            (
+              , .(o: Operator) { rec drain(cons(frame_step(o.?{operator}), out), rest) }
+              , .(b: Open_paren) { fail_built(fault_at(unclosed_open_fault(), b.?{open_paren})) }
+              )
+          }
+        }
+      , .(_empty: .) { ok_built(reverse(out)) }
+      )
+  }
+}
+
+fn close_prog(c: Close) -> Prog {
+  match! c {
+    (.(a: After) { going(a.?{after}) }, .(f: Close_failed) { stopped(f.?{close_failed}) })
+  }
+}
+
+fn feed_op(op: Op, spot: I32, out: List(Step), stack: List(Frame)) -> Prog {
+  match! op {
+    (
+      , .(_prefix: Unary) { going(carry(out, cons(op_frame(op, spot), stack))) }
+      , .(b: Binary) {
+          let popped = pop_greater(b.?{binary}, out, stack);
+          going(carry(popped.?{c_out}, cons(op_frame(op, spot), popped.?{c_stack})))
+        }
+      )
+  }
+}
+
+/// One token against the current state.
+fn feed(p: Placed, out: List(Step), stack: List(Frame)) -> Prog {
+  let spot = at_of(p);
+  match! tok_of(p) {
+    (
+      , .(n: Num) { going(carry(cons(lit_step(n.?{num}, spot), out), stack)) }
+      , .(o: Oper) { feed_op(o.?{oper}, spot, out, stack) }
+      , .(_open: Lparen) { going(carry(out, cons(open_frame(spot), stack))) }
+      , .(_close: Rparen) { close_prog(pop_to_paren(spot, out, stack)) }
+      , .(_junk: Bad) { stopped(fault_at(bad_token_fault(), spot)) }
+      )
+  }
+}
+
+rec(loop) fn shunt(toks: List(Placed), out: List(Step), stack: List(Frame)) -> Built {
+  match! toks.>List.un_list {
+    (
+      , .(p: Placed, rest: List(Placed)) {
+          match! feed(p, out, stack) {
+            (
+              , .(g: Going) {
+                  let next = g.?{going};
+                  rec shunt(rest, next.?{c_out}, next.?{c_stack})
+                }
+              , .(s: Stopped) { fail_built(s.?{stopped}) }
+              )
+          }
+        }
+      , .(_empty: .) { drain(out, stack) }
+      )
+  }
+}
+
+pub fn to_rpn(toks: List(Placed)) -> Built { shunt(toks, nil(Step, ()), nil(Frame, ())) }

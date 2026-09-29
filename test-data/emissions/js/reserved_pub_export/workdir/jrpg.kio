@@ -1,0 +1,3 @@
+module jrpg;
+
+host type String role(str);

@@ -1,0 +1,31 @@
+module queue_host;
+
+import library/elab/control(if);
+import testapi as api;
+import testapi/arith as arith;
+import testapi/iter as iter;
+import testapi/text as text;
+
+pub type Bool = api.Bool;
+
+pub type I32 = api.I32;
+
+pub type String = api.String;
+
+pub fn add_i32(p0: I32, p1: I32) -> I32 { arith.add_i32(p0, p1) }
+
+pub fn eq_i32(p0: I32, p1: I32) -> Bool {
+  if! arith.leq_i32(p0, p1) {
+    arith.leq_i32(p1, p0)
+  } else {
+    .f
+  }
+}
+
+pub fn lt_i32(p0: I32, p1: I32) -> Bool { arith.lt_i32(p0, p1) }
+
+pub fn sub_i32(p0: I32, p1: I32) -> I32 { arith.sub_i32(p0, p1) }
+
+pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { iter.loop(p0, p1) }
+
+pub fn string_concat(p0: String, p1: String) -> String { text.string_concat(p0, p1) }

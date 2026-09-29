@@ -1,0 +1,9 @@
+cold cache log:
+typed-cache: miss typedcache a <key> (no entry)
+typed-cache: miss typedcache b <key> (no entry)
+edit-b cache log:
+typed-cache: hit typedcache a <key>
+typed-cache: miss typedcache b <key> (no entry)
+edit-a cache log:
+typed-cache: miss typedcache a <key> (no entry)
+typed-cache: miss typedcache b <key> (no entry)

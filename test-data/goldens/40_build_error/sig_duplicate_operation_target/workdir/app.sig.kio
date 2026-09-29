@@ -1,0 +1,37 @@
+signature app v(3);
+
+v(1) {
+  with {
+    module api {
+      rec {
+        pub newtype A : A | B { pub constructor mk_a; pub projector un_a };
+        pub newtype B : B | A { pub constructor mk_b; pub projector un_b }
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.A;
+      api.B
+    }
+  }
+}
+
+v(2) {
+  with {
+    module api {
+      rec {
+        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a };
+        pub newtype B : B | A { pub constructor mk_b; pub projector un_b }
+      }
+    }
+  };
+  breaking {
+    modify {
+      api.A;
+      module api {
+        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a }
+      }
+    }
+  }
+}

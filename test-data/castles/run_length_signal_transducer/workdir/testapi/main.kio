@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/match(match);
+import list/core as lists;
+import signal/codec as codec;
+import signal/decode as decode;
+import signal/input as input;
+import signal/report as report;
+import testapi(I32, String);
+import testapi/io as io;
+
+pub fn main() -> . {
+  match! input.consume() {
+    .(state: codec.Encoder, original: lists.List(I32)) {
+      let runs = codec.finish(state);
+      report.encoding(state, runs);
+      report.roundtrip(original, decode.samples(runs))
+    };
+    .(bad_line: String) { io.print("invalid integer input: "); io.print(bad_line); io.print("\n") }
+  }
+}

@@ -1,0 +1,5 @@
+dependency geo;
+
+source {
+  path "../library/geo/geo.pkg.kio"
+}

@@ -1,0 +1,5 @@
+module testapi/io;
+
+import testapi(_String);
+
+host fn print(p0: _String) -> .;

@@ -1,0 +1,13 @@
+package recursive_group_must_be_one_component;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

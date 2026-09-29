@@ -1,0 +1,82 @@
+module sensitivity/jet;
+
+import testapi(F64);
+import testapi/arith as arith;
+
+pub labels Jet = { value: F64, dx: F64, dy: F64, dxx: F64, dxy: F64, dyy: F64 };
+
+pub fn constant(value: F64) -> Jet { {value, dx = 0.0, dy = 0.0, dxx = 0.0, dxy = 0.0, dyy = 0.0} }
+
+fn variable_x(value: F64) -> Jet { constant(value).!{dx = 1.0} }
+
+fn variable_y(value: F64) -> Jet { constant(value).!{dy = 1.0} }
+
+pub fn add(a: Jet, b: Jet) -> Jet {
+  {
+    , value = arith.add_f64(a.?{value}, b.?{value})
+    , dx = arith.add_f64(a.?{dx}, b.?{dx})
+    , dy = arith.add_f64(a.?{dy}, b.?{dy})
+    , dxx = arith.add_f64(a.?{dxx}, b.?{dxx})
+    , dxy = arith.add_f64(a.?{dxy}, b.?{dxy})
+    , dyy = arith.add_f64(a.?{dyy}, b.?{dyy})
+    }
+}
+
+pub fn sub(a: Jet, b: Jet) -> Jet {
+  {
+    , value = arith.sub_f64(a.?{value}, b.?{value})
+    , dx = arith.sub_f64(a.?{dx}, b.?{dx})
+    , dy = arith.sub_f64(a.?{dy}, b.?{dy})
+    , dxx = arith.sub_f64(a.?{dxx}, b.?{dxx})
+    , dxy = arith.sub_f64(a.?{dxy}, b.?{dxy})
+    , dyy = arith.sub_f64(a.?{dyy}, b.?{dyy})
+    }
+}
+
+pub fn scale(factor: F64, a: Jet) -> Jet {
+  {
+    , value = arith.mul_f64(factor, a.?{value})
+    , dx = arith.mul_f64(factor, a.?{dx})
+    , dy = arith.mul_f64(factor, a.?{dy})
+    , dxx = arith.mul_f64(factor, a.?{dxx})
+    , dxy = arith.mul_f64(factor, a.?{dxy})
+    , dyy = arith.mul_f64(factor, a.?{dyy})
+    }
+}
+
+// Hessian entries store derivatives themselves, not Taylor coefficients.
+pub fn mul(a: Jet, b: Jet) -> Jet {
+  let .({value as av, dx as ax, dy as ay, dxx as axx, dxy as axy, dyy as ayy}) = a;
+  let .({value as bv, dx as bx, dy as by, dxx as bxx, dxy as bxy, dyy as byy}) = b;
+  {
+    , value = arith.mul_f64(av, bv)
+    , dx = arith.add_f64(arith.mul_f64(ax, bv), arith.mul_f64(av, bx))
+    , dy = arith.add_f64(arith.mul_f64(ay, bv), arith.mul_f64(av, by))
+    , dxx = arith.add_f64(
+        , arith.add_f64(arith.mul_f64(axx, bv), arith.mul_f64(2.0, arith.mul_f64(ax, bx)))
+        , arith.mul_f64(av, bxx)
+        )
+    , dxy = arith.add_f64(
+        , arith.add_f64(arith.mul_f64(axy, bv), arith.mul_f64(ax, by))
+        , arith.add_f64(arith.mul_f64(ay, bx), arith.mul_f64(av, bxy))
+        )
+    , dyy = arith.add_f64(
+        , arith.add_f64(arith.mul_f64(ayy, bv), arith.mul_f64(2.0, arith.mul_f64(ay, by)))
+        , arith.mul_f64(av, byy)
+        )
+    }
+}
+
+pub fn square(a: Jet) -> Jet { mul(a, a) }
+
+pub fn evaluate(model: (Jet & Jet) -> Jet, x: F64, y: F64) -> Jet {
+  model(variable_x(x), variable_y(y))
+}
+
+pub fn directional(result: Jet, vx: F64, vy: F64) -> F64 & F64 {
+  let slope = arith.add_f64(arith.mul_f64(result.?{dx}, vx), arith.mul_f64(result.?{dy}, vy));
+  let hxx = arith.mul_f64(result.?{dxx}, arith.mul_f64(vx, vx));
+  let hxy = arith.mul_f64(result.?{dxy}, arith.mul_f64(2.0, arith.mul_f64(vx, vy)));
+  let hyy = arith.mul_f64(result.?{dyy}, arith.mul_f64(vy, vy));
+  (slope, arith.add_f64(arith.add_f64(hxx, hxy), hyy))
+}

@@ -1,0 +1,2 @@
+type alias `Hidden` must be at least as visible as function `bad`
+give type alias `Hidden` visibility equal to or wider than function `bad`

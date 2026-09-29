@@ -1,0 +1,63 @@
+/// The macro pass.
+///
+/// A macro is a named instruction-sequence template. Expansion replaces
+/// every `call` item with the body bound to its name, in place, and leaves
+/// everything else alone. Bodies are straight-line instructions, so one
+/// walk suffices: a body can never introduce another call.
+///
+/// Macros are deliberately *unhygienic* - a body may jump to a label the
+/// caller defined, which is how `drain_tail` closes the drain loop in the
+/// `series` fixture. Nothing renames a label on the way in.
+module forge/expand;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import forge/isa(Src);
+import forge/list as l;
+import forge/program as p;
+import forge/program(Call, Flat, Flats, Instr, Item, Items, Macros, Mark, Srcs, Unknown_macro);
+import testapi/iter(loop);
+
+/// Expansion either finishes, or names the macro it could not find.
+pub type Expansion = Flats | Unknown_macro;
+
+rec(loop) fn splice(body: Srcs, acc: Flats) -> Flats {
+  match! l.un_cons(body) {
+    (.(i: Src, rest: Srcs) { rec splice(rest, l.cons(p.flat_instr(i), acc)) }, .(_empty: .) { acc })
+  }
+}
+
+/// Expand one item onto the reversed accumulator.
+fn one(it: Item, macros: Macros, acc: Flats) -> Expansion {
+  match! it {
+    (
+      , .(x: Instr) { widen_sum!(l.cons(p.flat_instr(x.?{p.instr}), acc)) }
+      , .(x: Mark) { widen_sum!(l.cons(p.flat_mark(x.?{p.mark}), acc)) }
+      , .(x: Call) {
+          let name = x.?{p.call};
+          match! p.find_macro(macros, name) {
+            (
+              , .(body: Srcs) { widen_sum!(splice(body, acc)) }
+              , .(_none: .) { widen_sum!(p.unknown_macro(name)) }
+              )
+          }
+        }
+      )
+  }
+}
+
+rec(loop) fn walk(items: Items, macros: Macros, acc: Flats) -> Expansion {
+  match! l.un_cons(items) {
+    (
+      , .(it: Item, rest: Items) {
+          match! one(it, macros, acc) {
+            (.(next: Flats) { rec walk(rest, macros, next) }, .(e: Unknown_macro) { widen_sum!(e) })
+          }
+        }
+      , .(_empty: .) { widen_sum!(l.reverse(acc)) }
+      )
+  }
+}
+
+/// Expand every macro call in `items`, or name the macro that is missing.
+pub fn expand(items: Items, macros: Macros) -> Expansion { walk(items, macros, l.nil(Flat, ())) }

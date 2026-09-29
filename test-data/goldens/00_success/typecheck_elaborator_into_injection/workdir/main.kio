@@ -1,0 +1,29 @@
+module main;
+
+import elab/algebraic_elaborators(into);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// R-Widen-Sum: `A → A | B`. The source's single arm `A` injects
+// into the target's left arm. Slack on the right (target values
+// of arm `B` have no pre-image), but every source value maps to
+// a unique target value.
+fn widen_sum(a: A) -> A | B { into!(a) }
+
+// R-Widen-Sum, deeper: `A → A | B | A`. Source-order pinning
+// fixes the kth source slot of type `A` to the kth target slot
+// of type `A` — here, the leftmost `A` arm.
+fn widen_sum_like_typed(a: A) -> A | B | A { into!(a) }
+
+// R-Diag-Prod: `A → A & A`. The diagonal `λa. (a, a)` is
+// injective (recover `a` via `__fst__`). This is the rule that
+// distinguishes `into!` from `ease!` — `ease!` excludes
+// duplication by design.
+fn diagonal(a: A) -> A & A { into!(a) }
+
+// R-Diag-Prod combined with R-Widen-Sum: source `A`, target
+// `(A & A) | B`. The source maps to the diagonal of the left
+// arm; the right arm is slack.
+fn diag_then_widen(a: A) -> (A & A) | B { into!(a) }

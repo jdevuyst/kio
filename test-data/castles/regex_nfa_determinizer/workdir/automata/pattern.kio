@@ -1,0 +1,89 @@
+/// The pattern language, as abstract syntax. Nothing here is parsed from
+/// text: a pattern arrives already shaped as a tree, because this castle is
+/// about what happens *after* parsing. The six node kinds are exactly the
+/// input alphabet of Thompson's construction.
+module automata/pattern;
+
+import automata/symbol(letter);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/arith(lt_i32);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec {
+  pub labels Node =
+    { chr: I32 }
+    | { cat: Pattern & Pattern }
+    | { alt: Pattern & Pattern }
+    | { star: Pattern }
+    | { plus: Pattern }
+    | { opt: Pattern };
+  pub newtype Pattern : Node { constructor pack; pub projector unpack }
+}
+
+pub fn chr(code: I32) -> Pattern { Pattern.pack({chr = code}.>widen_sum!(Node)) }
+
+pub fn cat(left: Pattern, right: Pattern) -> Pattern {
+  Pattern.pack({cat = (left, right)}.>widen_sum!(Node))
+}
+
+pub fn alt(left: Pattern, right: Pattern) -> Pattern {
+  Pattern.pack({alt = (left, right)}.>widen_sum!(Node))
+}
+
+pub fn star(body: Pattern) -> Pattern { Pattern.pack({star = body}.>widen_sum!(Node)) }
+
+pub fn plus(body: Pattern) -> Pattern { Pattern.pack({plus = body}.>widen_sum!(Node)) }
+
+pub fn opt(body: Pattern) -> Pattern { Pattern.pack({opt = body}.>widen_sum!(Node)) }
+
+/// How tightly a node binds: alternation loosest, then concatenation, then
+/// the postfix repetitions, with a bare letter tightest.
+fn tightness(p: Pattern) -> I32 {
+  match! p.>Pattern.unpack {
+    (
+      , .(_x: Chr) { 3 }
+      , .(_x: Cat) { 1 }
+      , .(_x: Alt) { 0 }
+      , .(_x: Star) { 2 }
+      , .(_x: Plus) { 2 }
+      , .(_x: Opt) { 2 }
+      )
+  }
+}
+
+/// `floor` is the tightness the parent needs from this child. Rendering a
+/// child that binds looser than its floor requires parentheses — which is
+/// the whole of why `(a|b)*abb` does not come back out as `((a|b))*(a)(b)(b)`.
+rec(loop) fn show_at(p: Pattern, floor: I32) -> String {
+  let text =
+    match! p.>Pattern.unpack {
+      (
+        , .(x: Chr) { letter(x.?{chr}) }
+        , .(x: Cat) {
+            let .(left: Pattern, right: Pattern) = x.?{cat};
+            string_concat(rec(cont) show_at(left, 1), rec(cont) show_at(right, 1))
+          }
+        , .(x: Alt) {
+            let .(left: Pattern, right: Pattern) = x.?{alt};
+            string_concat(
+              , rec(cont) show_at(left, 0)
+              , string_concat("|", rec(cont) show_at(right, 0))
+              )
+          }
+        , .(x: Star) { string_concat(rec(cont) show_at(x.?{star}, 3), "*") }
+        , .(x: Plus) { string_concat(rec(cont) show_at(x.?{plus}, 3), "+") }
+        , .(x: Opt) { string_concat(rec(cont) show_at(x.?{opt}, 3), "?") }
+        )
+    };
+  if! lt_i32(tightness(p), floor) {
+    string_concat("(", string_concat(text, ")"))
+  } else {
+    text
+  }
+}
+
+pub fn show(p: Pattern) -> String { show_at(p, 0) }

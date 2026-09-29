@@ -1,0 +1,19 @@
+module testapi/main;
+
+import elab/spine_elaborators(fit, widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// A source function whose return arms coincide on type. The two
+// branches return distinct `String`s wrapped in a `(String | String)`
+// sum.
+fn dual(s: String) -> String | String { widen_sum!(s) }
+
+// `fit!` walks function arrows: source `String -> (String | String)`,
+// target `String -> String`. Parameter is identity (String).
+// Return is covariant — fit!'s recursion fires the uniform-arm
+// collapse (one_sum! territory) to lift `(String | String)` down to
+// `String`. The wrapper applies the source function then collapses.
+fn collapse(f: String -> String | String) -> String -> String { fit!(f) }
+
+pub fn main() -> . { let narrowed = collapse(dual); print(narrowed("fit .-ret narrowed\n")) }

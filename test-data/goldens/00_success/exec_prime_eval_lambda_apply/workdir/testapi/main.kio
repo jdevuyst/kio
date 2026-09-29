@@ -1,0 +1,21 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+// A guest that applies a lambda immediately at its definition site —
+// `.(x: T) { body }(arg)` — the shape the `match!` elaborator's clause
+// handlers lower to in emitted Kio'. Running `main` through dyn_load_prime's
+// interpreter resolves the application against the lambda's own binder, so
+// the dyn-load-prime differential agrees with compile-and-run.
+fn line(label: String, n: I32) -> . {
+  print(string_concat(label, string_concat(int_to_string(n), "\n")))
+}
+
+pub fn main() -> . {
+  line("r=", .(x: I32) { add_i32(x, 1) }(41));
+  line("sum=", .(a: I32, b: I32) { add_i32(a, b) }(6, 9))
+}

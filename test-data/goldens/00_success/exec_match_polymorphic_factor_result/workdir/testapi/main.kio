@@ -1,0 +1,17 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io as io;
+
+newtype Box[A] : A { pub constructor make; pub projector unpack }
+
+labels { tag: . };
+
+fn project(input: Box(String) & Tag) -> String {
+  match! input {
+    .[A](slot: Box(A)) -> A { slot.>Box.unpack }
+  }
+}
+
+pub fn main() -> . { io.print(project((Box.make("factor-result\n"), {tag=}))) }

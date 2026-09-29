@@ -1,0 +1,34 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import elab/spine_elaborators(widen_prod);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn widen_pair(p: String & String) -> String & String & String & String { widen_prod!(p) }
+
+fn render(w: String & String & String & String) -> String {
+  let first = __fst__(String, String & String & String, w);
+  let tail = __snd__(String, String & String & String, w);
+  let second = __fst__(String, String & String, tail);
+  let tail2 = __snd__(String, String & String, tail);
+  let third = __fst__(String, String, tail2);
+  let fourth = __snd__(String, String, tail2);
+  string_concat(
+    , first
+    , string_concat(
+        , " "
+        , string_concat(
+            , second
+            , string_concat(" ", string_concat(third, string_concat(" ", fourth)))
+            )
+        )
+    )
+}
+
+pub fn main() -> . {
+  let source = __pair__(String, String, "left", "right");
+  print(render(widen_pair(source)))
+}

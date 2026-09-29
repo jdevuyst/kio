@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `match!` over arms with polymorphic input types: a polymorphic
+// newtype `Box[A]` applied to two distinct payloads. Each arm pins a
+// concrete instance (`Box(I32)`, `Box(String)`).
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn show_int(b: Box(I32)) -> String { int_to_string(Box.un_box(b)) }
+
+fn show_str(b: Box(String)) -> String { Box.un_box(b) }
+
+fn handle(v: Box(I32) | Box(String)) -> String {
+  match! v {
+    (show_int, show_str)
+  }
+}
+
+pub fn main() -> . { print(handle(widen_sum!(Box.mk_box("match! polymorphic: ok\n")))) }

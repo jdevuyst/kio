@@ -1,0 +1,13 @@
+package tlpkg;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}
+
+bridge {
+  tlpkg
+}

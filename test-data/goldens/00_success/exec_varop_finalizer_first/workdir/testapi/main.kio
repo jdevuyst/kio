@@ -1,0 +1,44 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn base() -> String { "empty" }
+
+fn seed(_value: String) -> String { "seeded" }
+
+fn right(_left: String, value: String) -> String { value }
+
+fn left(value: String, _right: String) -> String { value }
+
+fn finish(value: String) -> String {
+  print(value);
+  "done"
+}
+
+varop [* *] { finalize finish; foldl right base; };
+
+varop [+ +] { finalize finish; foldr left base; };
+
+varop [! !] { finalize finish; foldl1 right seed; };
+
+varop [% %] { finalize finish; foldr1 left seed; };
+
+pub fn main() -> . {
+  print([* "a", "b", "c" *]);
+  print("\n");
+  print([+ "a", "b", "c" +]);
+  print("\n");
+  print([! "a", "b", "c" !]);
+  print("\n");
+  print([% "a", "b", "c" %]);
+  print("\n");
+  print([* *]);
+  print("\n");
+  print([+ +]);
+  print("\n");
+  print([! "solo" !]);
+  print("\n");
+  print([% "solo" %]);
+  print("\n")
+}

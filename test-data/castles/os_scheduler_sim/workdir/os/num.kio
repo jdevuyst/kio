@@ -1,0 +1,78 @@
+/// The integer vocabulary this host tier does not supply.
+///
+/// The tier's only comparison is `leq_i32`, so equality and strict order are
+/// derived from it, and its arithmetic stops at multiplication, so division
+/// is written here.
+module os/num;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+pub fn and(a: Bool, b: Bool) -> Bool {
+  if! a {
+    b
+  } else {
+    .f
+  }
+}
+
+pub fn or(a: Bool, b: Bool) -> Bool {
+  if! a {
+    .t
+  } else {
+    b
+  }
+}
+
+pub fn not(a: Bool) -> Bool {
+  if! a {
+    .f
+  } else {
+    .t
+  }
+}
+
+/// Equality, from the antisymmetry of `<=`.
+pub fn eq(a: I32, b: I32) -> Bool { and(leq_i32(a, b), leq_i32(b, a)) }
+
+/// Strict order, from `a < b` iff `a + 1 <= b` over the integers.
+pub fn lt(a: I32, b: I32) -> Bool { leq_i32(add_i32(a, 1), b) }
+
+pub fn geq(a: I32, b: I32) -> Bool { leq_i32(b, a) }
+
+/// Quotient and remainder of `a / b`, for `a >= 0`.
+///
+/// Halving is itself a division, so the usual shift-and-subtract loop is not
+/// available here and the recursion runs the other way: double the divisor
+/// until it passes the dividend, then rebuild the quotient bit by bit on the
+/// way back out. That is one step per bit of the quotient rather than one per
+/// unit of it. A non-positive divisor divides nothing and yields `(0, a)`.
+rec(loop) fn div_mod(a: I32, b: I32) -> I32 & I32 {
+  if! leq_i32(b, 0) {
+    (0, a)
+  } else if! lt(a, b) {
+    (0, a)
+  } else {
+    let .(half: I32, rest: I32) = rec(cont) div_mod(a, mul_i32(b, 2));
+    let doubled = mul_i32(half, 2);
+    if! lt(rest, b) {
+      (doubled, rest)
+    } else {
+      (add_i32(doubled, 1), sub_i32(rest, b))
+    }
+  }
+}
+
+pub fn div(a: I32, b: I32) -> I32 { let .(q: I32, _r: I32) = div_mod(a, b); q }
+
+/// `part` out of `whole`, in thousandths, truncated. There are no floats in
+/// this tier, so a ratio is reported as a permille integer.
+pub fn permille(part: I32, whole: I32) -> I32 {
+  if! leq_i32(whole, 0) {
+    0
+  } else {
+    div(mul_i32(part, 1000), whole)
+  }
+}

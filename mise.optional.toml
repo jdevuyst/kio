@@ -1,0 +1,7 @@
+[tools]
+"cargo:cargo-fuzz" = { version = "0.13.1", depends = ["rust"] }
+"cargo:cargo-mutants" = { version = "25.3.1", depends = ["rust"] }
+"cargo:cargo-llvm-cov" = { version = "0.6.16", depends = ["rust"] }
+"cargo:cargo-audit" = { version = "0.22.2", depends = ["rust"] }
+# Release tooling: builds the distributed binaries and installers.
+"aqua:axodotdev/cargo-dist" = "0.32.0"

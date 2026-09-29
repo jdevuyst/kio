@@ -1,0 +1,11 @@
+pub pure fn: loaded
+pure pub fn: loaded
+pub(scope) pure fn: loaded
+pure pub(scope) fn: loaded
+pure fn: loaded
+trusted pure body: loaded
+duplicate pure: dyn_load_prime: malformed image — duplicate `pure` declaration modifier at line 3, column 6
+pure host fn: dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` declarations at line 3, column 6
+pure rec: dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` declarations at line 3, column 6
+pure type: dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` declarations at line 3, column 6
+pure newtype: dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` declarations at line 3, column 6

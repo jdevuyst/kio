@@ -1,0 +1,135 @@
+/// An independent re-check of whatever the search hands back.
+///
+/// Nothing here reads the solver's `used_*` tables. Every answer is
+/// rebuilt from the board alone, so a bug in the undo trail — a table slot
+/// left set after a retraction, say — cannot make a wrong grid look right:
+/// the two would have to be wrong in the same way.
+module sudoku/verify;
+
+import elab/control(if);
+import sudoku/geometry as geo;
+import sudoku/num as num;
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32);
+import testapi/array(array_get, array_make_filled, array_set);
+import testapi/iter(loop);
+
+fn blank_flags() -> Array(I32) { array_make_filled(geo.flag_count(), 0) }
+
+fn unseen(flags: Array(I32), slot: I32) -> Bool { num.is_zero(array_get(flags, slot)) }
+
+rec(loop) fn scan_units(
+  , cells: Array(I32)
+  , rows: Array(I32)
+  , cols: Array(I32)
+  , boxes: Array(I32)
+  , seen_row: Array(I32)
+  , seen_col: Array(I32)
+  , seen_box: Array(I32)
+  , cell: I32
+  ) -> Bool {
+  if! leq_i32(cell, geo.last_cell()) {
+    let digit = array_get(cells, cell);
+    if! num.is_zero(digit) {
+      rec scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
+    } else {
+      let row_slot = geo.flag_at(array_get(rows, cell), digit);
+      let col_slot = geo.flag_at(array_get(cols, cell), digit);
+      let box_slot = geo.flag_at(array_get(boxes, cell), digit);
+      let fresh = num.and_bool(
+        , unseen(seen_row, row_slot)
+        , num.and_bool(unseen(seen_col, col_slot), unseen(seen_box, box_slot))
+        );
+      if! fresh {
+        array_set(seen_row, row_slot, 1);
+        array_set(seen_col, col_slot, 1);
+        array_set(seen_box, box_slot, 1);
+        rec scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
+      } else {
+        .f
+      }
+    }
+  } else {
+    .t
+  }
+}
+
+/// No row, column, or box holds the same digit twice. Empty cells are
+/// ignored, so this also answers "are these givens even legal".
+pub fn is_consistent(cells: Array(I32)) -> Bool {
+  let .(rows: Array(I32), cols: Array(I32), boxes: Array(I32)) = geo.build_coords();
+  scan_units(cells, rows, cols, boxes, blank_flags(), blank_flags(), blank_flags(), 0)
+}
+
+rec(loop) fn all_filled_from(cells: Array(I32), cell: I32) -> Bool {
+  if! leq_i32(cell, geo.last_cell()) {
+    let digit = array_get(cells, cell);
+    if! num.and_bool(leq_i32(1, digit), leq_i32(digit, geo.last_digit())) {
+      rec all_filled_from(cells, add_i32(cell, 1))
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+/// Every cell carries a digit and no unit repeats one. Nine distinct
+/// digits drawn from 1..9 in a nine-cell unit is 1..9 exactly once, so the
+/// two halves together are the whole sudoku condition.
+pub fn is_solved(cells: Array(I32)) -> Bool {
+  if! all_filled_from(cells, 0) {
+    is_consistent(cells)
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn count_from(cells: Array(I32), cell: I32, found: I32) -> I32 {
+  if! leq_i32(cell, geo.last_cell()) {
+    if! num.is_zero(array_get(cells, cell)) {
+      rec count_from(cells, add_i32(cell, 1), found)
+    } else {
+      rec count_from(cells, add_i32(cell, 1), add_i32(found, 1))
+    }
+  } else {
+    found
+  }
+}
+
+pub fn count_givens(cells: Array(I32)) -> I32 { count_from(cells, 0, 0) }
+
+rec(loop) fn keeps_from(givens: Array(I32), cells: Array(I32), cell: I32) -> Bool {
+  if! leq_i32(cell, geo.last_cell()) {
+    let given = array_get(givens, cell);
+    if! num.is_zero(given) {
+      rec keeps_from(givens, cells, add_i32(cell, 1))
+    } else if! num.eq_i32(given, array_get(cells, cell)) {
+      rec keeps_from(givens, cells, add_i32(cell, 1))
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+/// Every given still sits where the puzzle put it — the solver filled
+/// blanks and never overwrote a clue.
+pub fn keeps_givens(givens: Array(I32), cells: Array(I32)) -> Bool { keeps_from(givens, cells, 0) }
+
+rec(loop) fn same_from(left: Array(I32), right: Array(I32), cell: I32) -> Bool {
+  if! leq_i32(cell, geo.last_cell()) {
+    if! num.eq_i32(array_get(left, cell), array_get(right, cell)) {
+      rec same_from(left, right, add_i32(cell, 1))
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+/// Cell for cell identical. After a refutation the board must be back to
+/// the givens: every placement the search made, it undid.
+pub fn same_board(left: Array(I32), right: Array(I32)) -> Bool { same_from(left, right, 0) }

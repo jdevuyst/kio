@@ -1,0 +1,90 @@
+module sensor_alarm_window/scanner;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+pub type Reading = String & String & String & I32 & String & String;
+
+fn both(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else {
+    .f
+  }
+}
+
+fn same_i32_text(value: I32, expected: String) -> Bool {
+  text.string_eq(fmt.i32_to_string(value), expected)
+}
+
+pub fn scan(line: String) -> Reading {
+  let _first_bar = text.string_code_at(line, 5);
+  let _second_bar = text.string_code_at(line, 8);
+  let _third_bar = text.string_code_at(line, 14);
+  let _fourth_bar = text.string_code_at(line, 22);
+  (
+    , text.string_slice(line, 0, 5)
+    , text.string_slice(line, 6, 8)
+    , text.string_slice(line, 9, 14)
+    , text.string_len(line)
+    , text.string_slice(line, 19, 22)
+    , text.string_slice(line, 26, 29)
+    )
+}
+
+pub fn time(reading: Reading) -> String {
+  let .(time: String, _sensor: String, _state: String, _line_len: I32, _temp: String, _co: String) =
+    reading;
+  time
+}
+
+pub fn sensor(reading: Reading) -> String {
+  let .(_time: String, sensor: String, _state: String, _line_len: I32, _temp: String, _co: String) =
+    reading;
+  sensor
+}
+
+pub fn state(reading: Reading) -> String {
+  let .(_time: String, _sensor: String, state: String, _line_len: I32, _temp: String, _co: String) =
+    reading;
+  state
+}
+
+pub fn line_len(reading: Reading) -> I32 {
+  let .(_time: String, _sensor: String, _state: String, line_len: I32, _temp: String, _co: String) =
+    reading;
+  line_len
+}
+
+pub fn temp(reading: Reading) -> String {
+  let .(_time: String, _sensor: String, _state: String, _line_len: I32, temp: String, _co: String) =
+    reading;
+  temp
+}
+
+pub fn co(reading: Reading) -> String {
+  let .(_time: String, _sensor: String, _state: String, _line_len: I32, _temp: String, co: String) =
+    reading;
+  co
+}
+
+pub fn is_alert(reading: Reading) -> Bool { text.string_eq(state(reading), "ALERT") }
+
+pub fn has_expected_layout(line: String) -> Bool {
+  let scanned = scan(line);
+  both(
+    , same_i32_text(line_len(scanned), "29")
+    , both(
+        , text.string_eq(text.string_slice(line, 5, 6), "|")
+        , both(
+            , text.string_eq(text.string_slice(line, 8, 9), "|")
+            , both(
+                , text.string_eq(text.string_slice(line, 14, 15), "|")
+                , text.string_eq(text.string_slice(line, 22, 23), "|")
+                )
+            )
+        )
+    )
+}

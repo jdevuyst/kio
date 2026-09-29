@@ -1,0 +1,32 @@
+module testapi/main;
+
+import elab/spine_elaborators(one_prod);
+import testapi(I32);
+import testapi/arith(add);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// A stored function value whose own parameter is itself function-typed:
+// a higher-order callback bundled into a product slot. This complements
+// `exec_stored_fn_from_product`, whose stored functions are first-order.
+//
+// `Apply` is a one-factor-of-interest product carrying an applicator
+// `(step: I32 -> I32, x: I32) -> I32` alongside a plain `I32 ->
+// I32`. `proj_apply` projects the applicator back out (`one_prod!`),
+// returning it as the same function type; `main` then drives it with a
+// concrete callback.
+type Apply = (((I32 -> I32) & I32) -> I32) & (I32 -> I32);
+
+fn proj_apply(p: Apply) -> ((I32 -> I32) & I32) -> I32 { one_prod!(p) }
+
+pub fn main() -> . {
+  // `twice` applies its callback parameter twice — its first parameter
+  // is itself function-typed, so storing it in `Apply` exercises a
+  // nested callable value.
+  let twice = .(step: I32 -> I32, x: I32) -> I32 { step(step(x)) };
+  let inc = .(n: I32) -> I32 { add(n, 1) };
+  let p = (twice, inc);
+  // Project the applicator back out of the product and drive it with a
+  // concrete callback: twice(inc, 40) = inc(inc(40)) = 42.
+  print(int_to_string(proj_apply(p)(inc, 40)))
+}

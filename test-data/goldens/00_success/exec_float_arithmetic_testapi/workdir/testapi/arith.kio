@@ -1,0 +1,11 @@
+module testapi/arith;
+
+import testapi(F32, F64);
+
+host fn add_f32(p0: F32, p1: F32) -> F32;
+
+host fn add_f64(p0: F64, p1: F64) -> F64;
+
+host fn sub_f64(p0: F64, p1: F64) -> F64;
+
+host fn mul_f64(p0: F64, p1: F64) -> F64;

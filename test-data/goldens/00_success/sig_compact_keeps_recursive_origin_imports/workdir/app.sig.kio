@@ -1,0 +1,43 @@
+signature app v(3);
+
+v(1) {
+  with {
+    module api {
+      import left as dep;
+      pub rec newtype Left : dep.Token | Left { pub constructor mk_left; pub projector un_left }
+    }
+  };
+  breaking {
+    add {
+      module left {
+        host type Token
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.Left
+    }
+  }
+}
+
+v(2) {
+  with {
+    module api {
+      import right as dep;
+      pub rec newtype Right : dep.Token | Right { pub constructor mk_right; pub projector un_right }
+    }
+  };
+  breaking {
+    add {
+      module right {
+        host type Token
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.Right
+    }
+  }
+}

@@ -1,0 +1,13 @@
+module main;
+
+import elaborators(observe);
+
+host type State;
+
+host type Done;
+
+host fn drive[S][R](step: S -> S | R, seed: S) -> R;
+
+host fn advance(state: State) -> State | Done;
+
+fn run(seed: State) -> . { observe!(drive(.(state: State) { advance(state) }, seed)) }

@@ -1,0 +1,34 @@
+Interval merge planner
+Fixture windows: 6
+
+Raw windows
+- backup-db 30-100
+- search-reindex 100-145
+- payroll-export 130-180
+- api-deploy 240-290
+- metrics-cleanup 285-315
+- audit-sync 360-395
+
+Merged windows
+- segment 1 30-180 duration 150 windows 3
+- segment 2 240-315 duration 75 windows 2
+- segment 3 360-395 duration 35 windows 1
+
+Idle gaps
+- gap 1 180-240 duration 60
+- gap 2 315-360 duration 45
+
+Conflicts
+- payroll-export overlaps active segment by 15 minutes
+- metrics-cleanup overlaps active segment by 5 minutes
+
+Summary
+covered_minutes=260
+idle_gap_count=2
+idle_minutes=105
+merged_segments=3
+merged_edges=3
+touching_edges=1
+touch_backup_to_search=true
+conflicts=2
+conflict_minutes=20

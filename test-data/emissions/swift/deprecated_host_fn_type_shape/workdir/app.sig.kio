@@ -1,0 +1,24 @@
+signature app v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Live role(str);
+        host type Retired role(str);
+        host fn archived(value: Retired) -> Retired;
+        pub fn echo(value: Live) -> Live;
+        host fn open() -> Live
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      api.Retired;
+      api.archived
+    }
+  }
+}

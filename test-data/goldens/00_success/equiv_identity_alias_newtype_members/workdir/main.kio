@@ -1,0 +1,12 @@
+module main;
+
+newtype Box[A] : A { constructor make; projector open }
+
+type Mid[A] = Box(A);
+
+type Alias[A] = Mid(A);
+
+equiv identity_alias_preserves_iota[A](x: A) {
+  Alias.open(A, Alias.make(A, x));
+  x
+}

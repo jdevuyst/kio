@@ -1,0 +1,26 @@
+module testapi/main;
+
+import elab/algebraic_elaborators(into);
+import elab/match(match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `into!` sum widening: `A → A | B` for any `B` injects the source
+// value into the matching arm of a wider target sum. Source type
+// `String`, target type `(String | I32)` — the elaborator picks the
+// left arm because that's where `String` lives.
+fn widen(s: String) -> String | I32 { into!(s) }
+
+pub fn main() -> . {
+  let widened = widen("hello\n");
+  // widened : String | I32. Discriminate via `match!` to print a
+  // String. The right arm is unreachable in this caller's flow
+  // (widening always produced the left arm), but `match!` requires
+  // exhaustive coverage so we supply it.
+  let s =
+    match! widened {
+      (.(s: String) { s }, .(n: I32) { int_to_string(n) })
+    };
+  print(s)
+}

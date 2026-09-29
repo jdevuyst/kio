@@ -1,0 +1,22 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `Thunk` wraps a deferred computation `. -> I32`.
+newtype Thunk : . -> I32 { pub constructor delay; pub projector force }
+
+// `Cell` wraps a `Thunk` *nominally* — its payload is the `Thunk`
+// newtype, which structurally looks like a plain comparable name but
+// transitively reaches the stored function. Backends that derive equality
+// for nominal carriers must therefore follow the payload through `Thunk`
+// instead of treating the named `Cell` payload as an atomic comparable value.
+newtype Cell : Thunk { pub constructor hold; pub projector contents }
+
+fn evaluate(c: Cell) -> I32 { let thunk = c.>Cell.contents; let run = thunk.>Thunk.force; run() }
+
+pub fn main() -> . {
+  let cell = Cell.hold(Thunk.delay(.() { 42(I32) }));
+  print(int_to_string(evaluate(cell)))
+}

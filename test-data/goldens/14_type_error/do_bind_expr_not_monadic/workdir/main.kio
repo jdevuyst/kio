@@ -1,0 +1,21 @@
+module main;
+
+import elab/sequence(do);
+
+host type String role(str);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+// Type error: the bind statement RHS `"plain string"` is not of
+// type `Box(_)`. Each bind step must produce the monadic
+// shape the receiver works on.
+fn bad() -> Box(.) {
+  do! box_bind {
+    let _x <- "plain string";
+    box_pure(())
+  }
+}

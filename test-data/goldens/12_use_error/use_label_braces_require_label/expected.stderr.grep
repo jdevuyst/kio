@@ -1,0 +1,2 @@
+does not export label `item`
+ordinary binding; import it without braces

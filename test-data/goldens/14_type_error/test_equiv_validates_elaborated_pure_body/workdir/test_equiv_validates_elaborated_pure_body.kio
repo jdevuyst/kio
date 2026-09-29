@@ -1,0 +1,3 @@
+module test_equiv_validates_elaborated_pure_body;
+
+host fn effect() -> .;

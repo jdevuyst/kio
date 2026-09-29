@@ -1,0 +1,128 @@
+/// The four operations, each a descent from the root sharing one shape:
+/// a node **disjoint** from the range contributes nothing; a node **covered**
+/// by it is settled arithmetically and the descent stops there; otherwise the
+/// node's pending tag is **pushed down** and both children are recursed into.
+///
+/// The covered case is what pays for the whole structure, and the pushed-down
+/// tag is what keeps it honest. A descent combines its children's results
+/// afterwards, so its recursive calls are not tail calls: hence `rec(cont)`.
+module seg/ops;
+
+import elab/control(if);
+import seg/agg(Agg, agg_min, agg_sum, combine, leaf_agg, neutral);
+import seg/tree(
+  , Tree
+  , apply_tag
+  , covers
+  , disjoint
+  , is_leaf
+  , leaf_count
+  , left
+  , mid_of
+  , node_agg
+  , push_down
+  , right
+  , set_agg
+  , visit
+  );
+import testapi(Array, Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+import testapi/array(array_set);
+import testapi/iter(loop);
+
+/// Add `x` to every cell of `[l, r]`, returning the node's aggregate so the
+/// parent can pull up from it. A covered node never looks below itself.
+rec(loop) fn add_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32, x: I32) -> Agg {
+  visit(t);
+  if! disjoint(lo, hi, l, r) {
+    node_agg(t, node)
+  } else if! covers(lo, hi, l, r) {
+    apply_tag(t, node, lo, hi, x);
+    node_agg(t, node)
+  } else {
+    let mid = mid_of(lo, hi);
+    push_down(t, node, lo, hi, mid);
+    let from_left = rec(cont) add_at(t, left(node), lo, mid, l, r, x);
+    let from_right = rec(cont) add_at(t, right(node), add_i32(mid, 1), hi, l, r, x);
+    let pulled = combine(from_left, from_right);
+    set_agg(t, node, pulled);
+    pulled
+  }
+}
+
+/// Both aggregates of `[l, r]` in one descent, so `sum` and `min` cost the
+/// same walk. A covered node answers straight from its stored aggregate --
+/// correct precisely because `apply_tag` already folded its pending add in.
+rec(loop) fn query_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32) -> Agg {
+  visit(t);
+  if! disjoint(lo, hi, l, r) {
+    neutral()
+  } else if! covers(lo, hi, l, r) {
+    node_agg(t, node)
+  } else {
+    let mid = mid_of(lo, hi);
+    push_down(t, node, lo, hi, mid);
+    let from_left = rec(cont) query_at(t, left(node), lo, mid, l, r);
+    let from_right = rec(cont) query_at(t, right(node), add_i32(mid, 1), hi, l, r);
+    combine(from_left, from_right)
+  }
+}
+
+/// Overwrite cell `i`. Only one child is on the path, so the sibling is
+/// *read*, not visited: the push-down already made its aggregate correct.
+rec(loop) fn set_at(t: Tree, node: I32, lo: I32, hi: I32, i: I32, v: I32) -> Agg {
+  visit(t);
+  if! is_leaf(lo, hi) {
+    let cell = leaf_agg(v);
+    set_agg(t, node, cell);
+    cell
+  } else {
+    let mid = mid_of(lo, hi);
+    push_down(t, node, lo, hi, mid);
+    let pulled = if! leq_i32(i, mid) {
+      let from_left = rec(cont) set_at(t, left(node), lo, mid, i, v);
+      combine(from_left, node_agg(t, right(node)))
+    } else {
+      let from_right = rec(cont) set_at(t, right(node), add_i32(mid, 1), hi, i, v);
+      combine(node_agg(t, left(node)), from_right)
+    };
+    set_agg(t, node, pulled);
+    pulled
+  }
+}
+
+/// Push every remaining tag down to the leaves and write each settled leaf
+/// into `out` -- the moment the deferred work finally lands. The push counter
+/// still moves (that count is the point), but nothing here counts as a visit:
+/// the drain is a reporting pass, not a scripted operation.
+rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) -> . {
+  if! is_leaf(lo, hi) {
+    array_set(out, lo, agg_sum(node_agg(t, node)))
+  } else {
+    let mid = mid_of(lo, hi);
+    push_down(t, node, lo, hi, mid);
+    rec(cont) drain_at(t, left(node), lo, mid, out);
+    rec drain_at(t, right(node), add_i32(mid, 1), hi, out)
+  }
+}
+
+fn last_leaf(t: Tree) -> I32 { sub_i32(leaf_count(t), 1) }
+
+pub fn range_add(t: Tree, l: I32, r: I32, x: I32) -> . {
+  let _root = add_at(t, 0, 0, last_leaf(t), l, r, x);
+  ()
+}
+
+fn query(t: Tree, l: I32, r: I32) -> Agg { query_at(t, 0, 0, last_leaf(t), l, r) }
+
+pub fn query_sum(t: Tree, l: I32, r: I32) -> I32 { agg_sum(query(t, l, r)) }
+
+pub fn query_min(t: Tree, l: I32, r: I32) -> I32 { agg_min(query(t, l, r)) }
+
+pub fn point_set(t: Tree, i: I32, v: I32) -> . {
+  let _root = set_at(t, 0, 0, last_leaf(t), i, v);
+  ()
+}
+
+/// Settle the whole tree into a plain array of leaf values.
+pub fn drain(t: Tree, out: Array(I32)) -> . { drain_at(t, 0, 0, last_leaf(t), out) }

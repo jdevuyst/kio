@@ -1,0 +1,8 @@
+module reflect_helper;
+
+import __comptime__;
+import types as local_alias;
+
+type Actual = local_alias.Actual;
+
+pub pure fn reflected_actual(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, Actual) }

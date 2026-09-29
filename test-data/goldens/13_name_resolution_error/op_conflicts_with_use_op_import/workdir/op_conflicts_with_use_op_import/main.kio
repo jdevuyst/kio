@@ -1,0 +1,12 @@
+module op_conflicts_with_use_op_import/main;
+
+import op_conflicts_with_use_op_import(A);
+// The import and local declaration use one operator name but denote distinct
+// source identities, so neither may silently replace the other.
+import op_conflicts_with_use_op_import/helper(op _ + _);
+
+fn local_add(a: A, b: A) -> A { a }
+
+op _ + _ { impl local_add }
+
+pub fn main() -> . { () }

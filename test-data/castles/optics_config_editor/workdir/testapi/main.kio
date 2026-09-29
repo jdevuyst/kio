@@ -1,0 +1,6 @@
+module testapi/main;
+
+import config/editor(program_output);
+import testapi/io(print);
+
+pub fn main() -> . { print(program_output()) }

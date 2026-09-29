@@ -1,0 +1,48 @@
+/// The substitution environment: variable code -> constant code.
+///
+/// It is built one binding at a time as a rule body is matched left to
+/// right, and it is what makes a join a join: when a later goal meets a
+/// variable an earlier one already bound, the binding is here and the
+/// match has to agree with it.
+module datalog/subst;
+
+import datalog/list as list;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(eq_i32);
+import testapi/iter(loop);
+
+pub labels Bind = { b_var: I32, b_const: I32 };
+
+pub type Subst = list.List(Bind);
+
+pub type Substs = list.List(Subst);
+
+pub labels Maybe_const = { some_const: I32 } | { no_const: . };
+
+pub fn some_const(code: I32) -> Maybe_const { {some_const = code}.>widen_sum!(Maybe_const) }
+
+pub fn no_const() -> Maybe_const { {no_const=}.>widen_sum!(Maybe_const) }
+
+pub fn empty() -> Subst { list.nil(Bind, ()) }
+
+/// Bindings are only ever added, never overwritten: the matcher extends
+/// the environment exclusively for a variable it has just found unbound.
+pub fn extend(s: Subst, v: I32, code: I32) -> Subst { list.cons({b_var = v, b_const = code}, s) }
+
+pub rec(loop) fn lookup(s: Subst, v: I32) -> Maybe_const {
+  match! s.>list.List.un_list {
+    (
+      , .(b: Bind, rest: Subst) {
+          if! eq_i32(b.?{b_var}, v) {
+            some_const(b.?{b_const})
+          } else {
+            rec lookup(rest, v)
+          }
+        }
+      , .(_empty: .) { no_const() }
+      )
+  }
+}

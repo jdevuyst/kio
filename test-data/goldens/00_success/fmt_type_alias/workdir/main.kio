@@ -1,0 +1,13 @@
+module main;
+
+type Unit = .;
+
+type Bottom = !;
+
+type Logger = String -> .;
+
+type Func = (A & B) -> C;
+
+type Func_zero = . -> A;
+
+pub type Pair[A][B] = A & B;

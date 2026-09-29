@@ -1,0 +1,7 @@
+module testapi/fmt;
+
+import testapi(Bool, I32, String);
+
+host fn int_to_string(v: I32) -> String;
+
+host fn bool_to_string(v: Bool) -> String;

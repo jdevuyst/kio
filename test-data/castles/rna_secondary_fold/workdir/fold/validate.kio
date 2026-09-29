@@ -1,0 +1,148 @@
+module fold/validate;
+
+import elab/control(if);
+import elab/match(match);
+import fold/bases as bases;
+import fold/numbers as numbers;
+import testapi(Array, Bool, I32, String);
+import testapi/arith as arith;
+import testapi/array as array;
+import testapi/iter(loop);
+
+pub labels Audit = {
+  , legal: Bool
+  , symmetric: Bool
+  , noncrossing: Bool
+  , brackets: Bool
+  , score_matches: Bool
+  };
+
+fn in_range(partner: I32, n: I32) -> Bool {
+  numbers.both(arith.leq_i32(0, partner), numbers.less(partner, n))
+}
+
+rec(loop) fn legal_from(sequence: Array(String), partners: Array(I32), min_loop: I32, i: I32) -> Bool {
+  if! numbers.less(i, array.array_len(sequence)) {
+    let j = array.array_get(partners, i);
+    if! numbers.equal(j, -1) {
+      rec legal_from(sequence, partners, min_loop, arith.add_i32(i, 1))
+    } else if! in_range(j, array.array_len(sequence)) {
+      let left = if! numbers.less(i, j) {
+        i
+      } else {
+        j
+      };
+      let right = if! numbers.less(i, j) {
+        j
+      } else {
+        i
+      };
+      if! bases.pair_allowed(sequence, left, right, min_loop) {
+        rec legal_from(sequence, partners, min_loop, arith.add_i32(i, 1))
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn symmetric_from(partners: Array(I32), i: I32) -> Bool {
+  if! numbers.less(i, array.array_len(partners)) {
+    let j = array.array_get(partners, i);
+    if! numbers.equal(j, -1) {
+      rec symmetric_from(partners, arith.add_i32(i, 1))
+    } else if! in_range(j, array.array_len(partners)) {
+      if! numbers.equal(array.array_get(partners, j), i) {
+        rec symmetric_from(partners, arith.add_i32(i, 1))
+      } else {
+        .f
+      }
+    } else {
+      .f
+    }
+  } else {
+    .t
+  }
+}
+
+rec(loop) fn crosses_later(partners: Array(I32), i: I32, k: I32) -> Bool {
+  if! numbers.less(k, array.array_len(partners)) {
+    let j = array.array_get(partners, i);
+    let l = array.array_get(partners, k);
+    if! numbers.both(numbers.less(k, j), numbers.less(j, l)) {
+      .t
+    } else {
+      rec crosses_later(partners, i, arith.add_i32(k, 1))
+    }
+  } else {
+    .f
+  }
+}
+
+rec(loop) fn noncrossing_from(partners: Array(I32), i: I32) -> Bool {
+  if! numbers.less(i, array.array_len(partners)) {
+    if! crosses_later(partners, i, arith.add_i32(i, 1)) {
+      .f
+    } else {
+      rec noncrossing_from(partners, arith.add_i32(i, 1))
+    }
+  } else {
+    .t
+  }
+}
+
+// A separate stack walk verifies that dot-bracket closures name the recorded partner.
+rec(loop) fn brackets_from(partners: Array(I32), stack: Array(I32), i: I32) -> Bool {
+  if! numbers.less(i, array.array_len(partners)) {
+    let j = array.array_get(partners, i);
+    if! numbers.equal(j, -1) {
+      rec brackets_from(partners, stack, arith.add_i32(i, 1))
+    } else if! numbers.less(i, j) {
+      array.array_push(stack, i);
+      rec brackets_from(partners, stack, arith.add_i32(i, 1))
+    } else match! array.array_pop_back(stack) {
+      .(opening: I32) {
+        if! numbers.equal(opening, j) {
+          rec brackets_from(partners, stack, arith.add_i32(i, 1))
+        } else {
+          .f
+        }
+      };
+      .(_empty: .) { .f }
+    }
+  } else {
+    numbers.equal(array.array_len(stack), 0)
+  }
+}
+
+rec(loop) fn count_pairs(partners: Array(I32), i: I32, total: I32) -> I32 {
+  if! numbers.less(i, array.array_len(partners)) {
+    let extra = if! numbers.less(i, array.array_get(partners, i)) {
+      1
+    } else {
+      0
+    };
+    rec count_pairs(partners, arith.add_i32(i, 1), arith.add_i32(total, extra))
+  } else {
+    total
+  }
+}
+
+pub fn audit(sequence: Array(String), partners: Array(I32), min_loop: I32, score: I32) -> Audit {
+  let lengths_match = numbers.equal(array.array_len(sequence), array.array_len(partners));
+  {
+    , legal = if! lengths_match {
+        legal_from(sequence, partners, min_loop, 0)
+      } else {
+        .f
+      }
+    , symmetric = symmetric_from(partners, 0)
+    , noncrossing = noncrossing_from(partners, 0)
+    , brackets = brackets_from(partners, array.array_make_empty(I32, ()), 0)
+    , score_matches = numbers.equal(count_pairs(partners, 0, 0), score)
+    }
+}

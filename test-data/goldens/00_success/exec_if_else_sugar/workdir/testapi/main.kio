@@ -1,0 +1,19 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// Surface `if cond { a } else { b }`. The condition pins to the
+// in-scope `role(bool)` type; both arms are blocks and constrain one
+// common result. Bind and discard that result so the fn's `()` return
+// type is satisfied.
+pub fn main() -> . {
+  let _r =
+    if! .t {
+      print("yes\n")
+    } else {
+      print("no\n")
+    };
+  ()
+}

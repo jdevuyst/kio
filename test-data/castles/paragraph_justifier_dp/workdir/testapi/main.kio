@@ -1,0 +1,75 @@
+/// paragraph_justifier_dp — optimal line breaking, set head to head against
+/// greedy first-fit.
+///
+/// Both algorithms are asked the same question about the same measured
+/// paragraph, and both answer with a list of break points, so the transcript can
+/// put their layouts side by side and price them on the same scale. Greedy fills
+/// each line as far as it will go. The dynamic program searches every way of
+/// cutting the paragraph and picks the cheapest, then reads its choice back out
+/// through the back-pointers it kept. It wins here, and the transcript shows
+/// exactly which two lines it wins on.
+module testapi/main;
+
+import justify/dp(Table, solve, table_best);
+import justify/greedy(greedy_breaks);
+import justify/layout(Line, lines_of, recover, total_badness);
+import justify/list(List);
+import justify/list(at, len);
+import justify/paragraph(column, gap, paragraph);
+import justify/render as render;
+import justify/word(Words);
+import testapi(I32, String);
+import testapi/arith(eq_i32, leq_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn cat(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
+
+fn num(n: I32) -> String { int_to_string(n) }
+
+fn field(label: String, value: String) -> . { print(cat3(label, ": ", cat(value, "\n"))) }
+
+fn heading(name: String) -> . { print(cat3("\n", name, ":\n")) }
+
+fn show(name: String, xs: Words, col: I32, bs: List(I32), ls: List(Line), total: I32) -> . {
+  heading(name);
+  field("  breaks", render.breaks(bs));
+  print(render.layout(xs, col, ls));
+  field("  total badness", num(total))
+}
+
+pub fn main() -> . {
+  let xs = paragraph();
+  let col = column();
+  let n = len(xs);
+  print("paragraph_justifier_dp v1\n");
+  field("column", num(col));
+  field("gap", num(gap()));
+  field("words", num(n));
+  heading("metrics");
+  print(render.metrics(xs));
+  let greedy = greedy_breaks(xs, col);
+  let greedy_lines = lines_of(xs, col, greedy, n);
+  let greedy_total = total_badness(greedy_lines);
+  show("greedy (first-fit)", xs, col, greedy, greedy_lines, greedy_total);
+  let table = solve(xs, col);
+  heading("dp table");
+  print(render.dp_table(table));
+  let optimal = recover(table, n);
+  let optimal_lines = lines_of(xs, col, optimal, n);
+  let optimal_total = total_badness(optimal_lines);
+  show("optimal (dp)", xs, col, optimal, optimal_lines, optimal_total);
+  let reached = at(table_best(table), n, -1);
+  heading("verify");
+  field("  dp best[n]", num(reached));
+  field("  re-summed layout", num(optimal_total));
+  field("  agree", bool_to_string(eq_i32(reached, optimal_total)));
+  heading("comparison");
+  field("  greedy total", num(greedy_total));
+  field("  optimal total", num(optimal_total));
+  field("  delta", num(sub_i32(greedy_total, optimal_total)));
+  field("  optimal <= greedy", bool_to_string(leq_i32(optimal_total, greedy_total)))
+}

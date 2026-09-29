@@ -1,0 +1,33 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(reorder_sum, widen_sum);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+// `widen_sum!` in the tail of an explicitly-annotated `fn`: the
+// `-> (I32 | .)` annotation seeds the body's expected type, so
+// `widen_sum!` finds its target with no redundant trailing
+// type-arg — even though `widen` itself sits in a synthesis-only
+// position.
+fn widen(x: I32) -> I32 | . { widen_sum!(x) }
+
+// `reorder_sum!` likewise — the `-> (String | I32)` annotation is
+// the form's target.
+fn flip(x: I32 | String) -> String | I32 { reorder_sum!(x) }
+
+// `match!` returns the common clause result type `.`.
+fn show_opt(o: I32 | .) -> . {
+  match! o {
+    (.(n: I32) { print(int_to_string(n)) }, .(_u: .) { print("none") })
+  }
+}
+
+fn show_or(x: String | I32) -> . {
+  match! x {
+    (.(s: String) { print(s) }, .(n: I32) { print(int_to_string(n)) })
+  }
+}
+
+pub fn main() -> . { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum!(7))); print("\n") }

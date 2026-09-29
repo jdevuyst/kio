@@ -1,0 +1,20 @@
+package dnf;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  dnf;
+  dnf/**;
+  elab/testapi
+}

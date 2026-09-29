@@ -1,0 +1,154 @@
+[package]
+name = "kio-lang"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+description = "Rust implementation of Kio — compiler and CLI."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jdevuyst/kio"
+homepage = "https://jdevuyst.github.io/kio/"
+readme = "README.md"
+keywords = ["kio", "programming-language", "transpiler", "compiler", "embeddable"]
+categories = ["compilers", "development-tools"]
+
+# Feature gating for the kio / kio-prime split. The default keeps both
+# binaries building from one `cargo build`. The `surface` feature gates the
+# kio-only modules (desugar, elaborator_registry, full, label_elab, op_fold,
+# substitute, typecheck_full); the `prime` feature gates the kio-prime-only
+# `prime` module; the `lsp` feature gates the LSP server (`kio lsp`
+# subcommand and the `lsp` module); the `repl` feature gates the
+# module inspector (`kio repl` subcommand and the `repl` module). The
+# `required-features` blocks below also exclude each binary from a
+# feature-restricted build that lacks its typer, so CI building each
+# binary with only its own feature catches cross-binary leakage at
+# compile time.
+#
+# The `parallel` feature (default-on) pulls in rayon and routes every
+# fan-out through a rayon `.par_iter()`; with it off, each fan-out
+# degrades to a sequential `.iter()` via the `maybe_par_iter!` family
+# (`src/par.rs`). The fan-outs are stateless maps, so the sequential
+# path is a pure performance trade-off with no behavior change.
+# `wasm32-unknown-unknown` builds turn `parallel` off: there is no
+# thread pool there, rayon's iterators require the mapped closures to be
+# `Send + Sync` (which the AST payloads are not under that target), and
+# turning the feature off drops rayon from the wasm dependency graph.
+# The `cli` feature gates the driver / IO layer — the `cmd` and
+# `cache` modules, the package
+# collection workspace-walk machinery, and the `crate::run` dispatch entry. These
+# carry the fs / process / time a host embedding the pure eval core does
+# not want and a `wasm32-unknown-unknown` build does not link. A
+# `--no-default-features --features surface` build compiles only the
+# proven-pure parse → typecheck → elaborate → eval pipeline, excluding
+# every ungated fs/process driver module. `cli` is independent of
+# `surface`; the two binaries and the `repl` / `lsp` / kiodoc surfaces pull
+# it in explicitly. (`package_collection` itself stays ungated — it holds core
+# package graph types the typer / pipeline / emitters need; only its
+# fs-coupled walk cluster is gated, inside the module.)
+[features]
+default = ["surface", "prime", "lsp", "repl", "parallel", "cli"]
+surface = []
+prime = []
+cli = []
+parallel = ["dep:rayon"]
+# The LSP server reuses the full surface pipeline plus `cmd::check`'s analysis
+# entry points and `cmd::fmt`'s formatter, so `lsp` implies `surface` and `cli`.
+lsp = ["surface", "cli", "dep:lsp-server", "dep:lsp-types", "dep:crossbeam-channel"]
+# `repl-core` is the terminal-free inspector core shared by `kio repl`
+# and the browser wasm wrapper. It builds on the full pipeline and the
+# existing analysis services also used by the LSP, so it implies `lsp`
+# but does not pull reedline / notify / terminal dependencies.
+repl-core = ["surface", "cli", "lsp"]
+# `repl` is the terminal front end over `repl-core`: reedline, live
+# input highlighting, prompt rendering, history, and auto-reload.
+repl = ["repl-core", "dep:reedline", "dep:nu-ansi-term", "dep:notify-debouncer-mini"]
+
+[lib]
+name = "kio_lang"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kio"
+path = "src/main.rs"
+required-features = ["surface", "cli"]
+
+[[bin]]
+name = "kio-prime"
+path = "src/bin/kio-prime.rs"
+required-features = ["prime", "cli"]
+
+[dependencies]
+# BLAKE3 hashes the enriched-IR cache keys
+# (`src/cache/enriched.rs`) and the kiodoc snippet cache
+# (`src/kiodoc/cache.rs`). Cryptographic-grade collision resistance —
+# a key collision would return the wrong cached entry, a correctness
+# bug. xxhash3 / FxHash admit deliberate collisions; we don't need
+# adversarial resistance but we do need accidental collisions to be
+# effectively impossible across the installed user base.
+blake3 = "1"
+# rayon drives the compiler's embarrassingly-parallel fan-outs (parse,
+# op-fold, the per-module optimize / capability-annotate / structural
+# recovery / recover-to-low passes, per-target emit, kiodoc snippet
+# checks, and the `kio build`/`test`/`fmt`/`check` drivers). Optional and
+# tied to the `parallel` feature: with it off, the `maybe_par_iter!`
+# family (`src/par.rs`) routes every site through a sequential `.iter()`.
+# `wasm32-unknown-unknown` builds use the off path (no thread pool there).
+rayon = { version = "1", optional = true }
+# Serialization framework for the on-disk enriched-IR cache (see
+# `src/enriched_cache.rs`). `serde` is the AST-derive layer;
+# `postcard` is the wire format — compact, no_std-friendly,
+# deterministic encoding, no external schema. Together they give us
+# the byte-stable round-trip the cache's determinism contract
+# requires.
+serde = { version = "1", features = ["derive", "rc"] }
+postcard = { version = "1", features = ["alloc"] }
+# JSON-encoded host-trait descriptor written alongside the Rust
+# emitter's `host.rs`. The test runner reads it instead of re-
+# parsing the trait source. `to_string_pretty` produces a stable
+# human-readable form so golden diffs surface accidental drift.
+serde_json = "1"
+
+# LSP server scaffold and the LSP-types schema. Together they
+# implement JSON-RPC over stdio against the Language Server
+# Protocol — the same pair `rust-analyzer` uses. Pulled in only
+# under the `lsp` feature; the `kio lsp` subcommand and the
+# `crate::lsp` module are cfg-gated to match.
+lsp-server = { version = "0.7", optional = true }
+lsp-types = { version = "0.97", optional = true }
+# `lsp-server` plumbs its `Connection` over `crossbeam-channel`; the
+# LSP main loop selects on the connection's receiver and the analysis
+# worker's result channel using `crossbeam_channel::select!`, so the
+# LSP module needs the crate available directly. Pulled transitively
+# through `lsp-server` anyway; declaring it here makes the direct
+# usage explicit. Gated on the `lsp` feature alongside the other LSP
+# crates.
+crossbeam-channel = { version = "0.5", optional = true }
+
+# Line editor for the `kio repl` inspector: editing, file-backed
+# history (persisted at `$XDG_DATA_HOME/kio/history` via
+# `FileBackedHistory`), tab completion (`Completer`), live input
+# highlighting (`Highlighter`), and the `Prompt` / `Hinter` /
+# `Validator` traits the later REPL sessions extend. reedline is the
+# line editor nushell ships. Pulled in only under the `repl` feature;
+# the `kio repl` subcommand and the `crate::repl` module are cfg-gated
+# to match.
+reedline = { version = "0.48", optional = true }
+# reedline's `StyledText` carries `nu_ansi_term::Style` segments, and
+# reedline does not export the crate — the REPL's live-input
+# highlighter constructs `Style` / `Color::Rgb` values directly, so the
+# dependency is declared here. Pinned to the `^0.50` reedline itself
+# resolves, so the `Style` types line up. Gated on the `repl` feature
+# alongside `reedline`.
+nu-ansi-term = { version = "0.50", optional = true }
+# Cross-platform file-change watching for the REPL's auto-reload —
+# `notify-debouncer-mini` wraps the `notify` crate (inotify / FSEvents /
+# ReadDirectoryChangesW) and debounces events, which papers over
+# editors' write-temp-then-rename atomic-write pattern. Gated on the
+# `repl` feature alongside `reedline`.
+notify-debouncer-mini = { version = "0.6", optional = true }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+
+[build-dependencies]
+blake3 = "1"

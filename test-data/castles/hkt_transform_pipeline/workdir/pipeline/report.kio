@@ -1,0 +1,42 @@
+module pipeline/report;
+
+import pipeline/domain(
+  , Pipeline_summary
+  , {approvals}
+  , {first_sample}
+  , {report_name}
+  , {score_total}
+  , {second_sample}
+  , {third_sample}
+  );
+import testapi(String);
+import testapi/fmt(int_to_string);
+import testapi/text(string_concat);
+
+fn append(left: String, right: String) -> String { string_concat(left, right) }
+
+fn append3(a: String, b: String, c: String) -> String { append(a, append(b, c)) }
+
+pub fn render_summary(summary: Pipeline_summary) -> String {
+  append3(
+    , summary.?{report_name}
+    , ": "
+    , append3(
+        , summary.?{first_sample}
+        , " | "
+        , append3(
+            , summary.?{second_sample}
+            , " | "
+            , append3(
+                , summary.?{third_sample}
+                , " | total="
+                , append3(
+                    , int_to_string(summary.?{score_total})
+                    , " | approvals="
+                    , int_to_string(summary.?{approvals})
+                    )
+                )
+            )
+        )
+    )
+}

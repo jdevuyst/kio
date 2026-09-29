@@ -1,0 +1,134 @@
+module petri/search;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import petri/model as model;
+import queue/core as queues;
+import queue/list/core as lists;
+import queue/list/list as traversal;
+import queue/queue as fifo;
+import testapi(Bool, I32);
+import testapi/arith as arithmetic;
+import testapi/iter(loop);
+
+pub labels Node = { id: I32, marking: model.Marking, parent: I32, via: I32, depth: I32 };
+
+pub labels Search = {
+  , frontier: queues.Queue(Node)
+  , visited: lists.List(Node)
+  , edges: I32
+  , duplicates: I32
+  , terminals: I32
+  , deadlocks: I32
+  , first_deadlock: Node | .
+  , peak: I32
+  };
+
+pub fn find_node(nodes: lists.List(Node), node_id: I32) -> Node | . {
+  traversal.find(.(node: Node) { arithmetic.eq_i32(node.?{id}, node_id) }, nodes)
+}
+
+fn seen(nodes: lists.List(Node), state: model.Marking) -> Bool {
+  match! traversal.find(.(node: Node) { model.equal(node.?{marking}, state) }, nodes) {
+    .(_node: Node) { .t };
+    .() { .f }
+  }
+}
+
+fn discover(state: Search, source: Node, transition_id: I32, marking: model.Marking) -> Search {
+  if! seen(state.?{visited}, marking) {
+    state.!{
+      , edges = arithmetic.add_i32(state.?{edges}, 1)
+      , duplicates = arithmetic.add_i32(state.?{duplicates}, 1)
+      }
+  } else {
+    let child = {
+      , id = traversal.length(state.?{visited})
+      , marking
+      , parent = source.?{id}
+      , via = transition_id
+      , depth = arithmetic.add_i32(source.?{depth}, 1)
+      };
+    let frontier = fifo.enqueue(child, state.?{frontier});
+    let size = fifo.length(frontier);
+    let peak = if! arithmetic.lt_i32(state.?{peak}, size) {
+      size
+    } else {
+      state.?{peak}
+    };
+    state.!{
+      , frontier
+      , visited = lists.cons(child, state.?{visited})
+      , edges = arithmetic.add_i32(state.?{edges}, 1)
+      , peak
+      }
+  }
+}
+
+rec(loop) fn expand(
+  , net: model.Net
+  , source: Node
+  , remaining: lists.List(model.Transition)
+  , transition_id: I32
+  , state: Search
+  ) -> Search {
+  match! lists.uncons(remaining) {
+    .(transition: model.Transition, rest: lists.List(model.Transition)) {
+      let .(next: Search) =
+        match! model.fire(net, transition, source.?{marking}) {
+          .(marking: model.Marking) { discover(state, source, transition_id, marking) };
+          .() { state }
+        };
+      rec expand(net, source, rest, arithmetic.add_i32(transition_id, 1), next)
+    };
+    .() { state }
+  }
+}
+
+fn record_deadlock(state: Search, node: Node) -> Search {
+  let .(first: Node | .) =
+    match! state.?{first_deadlock} {
+      .(found: Node) { found.>widen_sum! };
+      .() { node.>widen_sum! }
+    };
+  state.!{deadlocks = arithmetic.add_i32(state.?{deadlocks}, 1), first_deadlock = first}
+}
+
+rec(loop) fn explore(net: model.Net, state: Search) -> Search {
+  match! fifo.dequeue(state.?{frontier}) {
+    .(node: Node, rest: queues.Queue(Node)) {
+      let .(popped: Search) = state.!{frontier = rest};
+      let grown = expand(net, node, net.?{model.transitions}, 0, popped);
+      let .(classified: Search) =
+        if! arithmetic.eq_i32(grown.?{edges}, state.?{edges}) {
+          if! model.completed(net, node.?{marking}) {
+            grown.!{terminals = arithmetic.add_i32(grown.?{terminals}, 1)}
+          } else {
+            record_deadlock(grown, node)
+          }
+        } else {
+          grown
+        };
+      rec explore(net, classified)
+    };
+    .() { state }
+  }
+}
+
+pub fn run(net: model.Net) -> Search {
+  let root = {id = 0, marking = net.?{model.initial}, parent = -1, via = -1, depth = 0};
+  explore(
+    , net
+    , {
+        , frontier = queues.singleton(root)
+        , visited = lists.singleton(root)
+        , edges = 0
+        , duplicates = 0
+        , terminals = 0
+        , deadlocks = 0
+        , first_deadlock = ().>widen_sum!
+        , peak = 1
+        }
+    )
+}

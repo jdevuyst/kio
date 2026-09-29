@@ -1,0 +1,15 @@
+module build_rec_group_cloned_elaboration_binders/main;
+
+import build_rec_group_cloned_elaboration_binders(Bool, I32, String, done, empty, loop);
+import elab/control(if);
+
+rec(loop) {
+  pub fn spaces(n: I32) -> String { rec pad(n, empty()) };
+  fn pad(n: I32, acc: String) -> String {
+    if! done(n) {
+      acc
+    } else {
+      rec pad(n, acc)
+    }
+  }
+}

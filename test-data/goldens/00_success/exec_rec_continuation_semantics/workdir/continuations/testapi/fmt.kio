@@ -1,0 +1,10 @@
+module continuations/testapi/fmt;
+
+import continuations/testapi(I32, String);
+import testapi/fmt as _rehost_hegfhdhegbhagjcpgggnhe;
+
+pub fn int_to_string(p0: I32) -> String { _rehost_hegfhdhegbhagjcpgggnhe.int_to_string(p0) }
+
+pub fn i32_to_string(p0: I32) -> String { _rehost_hegfhdhegbhagjcpgggnhe.i32_to_string(p0) }
+
+pub fn string_to_int(p0: String) -> I32 | . { _rehost_hegfhdhegbhagjcpgggnhe.string_to_int(p0) }

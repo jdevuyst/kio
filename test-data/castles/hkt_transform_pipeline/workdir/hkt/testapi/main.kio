@@ -1,0 +1,148 @@
+module hkt/testapi/main;
+
+import hkt/elab/derive(derive);
+import hkt/elab/sequence(do);
+import hkt/testapi(String);
+import hkt/testapi/io(print);
+import hkt/testapi/text(string_concat);
+
+// Higher-kinded types worked example — NOT a drop-in library.
+//
+// Demonstrates the kinded HKT surface against two arity-1 newtypes
+// (`Box`, `Identity`) acting as brands; brand-generic operations
+// (`rebrand`, `pipeline`) work against either. The full HKT
+// vocabulary is exercised: kind-`*→*` binders `[*F]` applied as
+// `F(A)`, concrete brand crossing through a newtype's own `mk_*` /
+// `un_*` members, abstract brand crossing threaded through instance
+// dictionaries (`Pure(F).lift`, `Extract(F).peel`), a first-class
+// polymorphic monad dictionary at a newtype field, and `do`-block
+// syntax over a projected dictionary's `bind`.
+//
+// See `docs/guides/higher-kinded-types.md` for the
+// matching guide.
+
+// Brand-eligible newtype: identity wrapper around the type-
+// parameter.
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+// A second brand: also an identity wrapper at the value level,
+// but nominally distinct from `Box` — brand identity lives at
+// the type-system level, not in the carrier shape.
+pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
+
+// A polymorphic monad dictionary. The payload is the canonical
+// bind shape, parameterised over the carrier types `[A]` and
+// `[B]`. Projecting the dictionary recovers a value whose
+// polymorphism survives, so `Monad.bind(monad)` is a valid
+// `do`-block receiver against any brand `f` and any payload
+// pair `(A, B)`.
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }
+
+// `Pure(F)` lifts a bare `A` into the brand `F(A)`; `Extract(F)`
+// peels an `F(A)` back to `A`. A brand-generic body has no
+// brand-crossing primitive over an opaque `F`, so it threads these
+// instances and dispatches through their members. (The concrete
+// brand sites below build the instances from `mk_*` / `un_*`.)
+pub newtype Pure[*F] : [A] A -> F(A) { pub constructor mk_pure; pub projector lift }
+
+pub newtype Extract[*F] : [A] F(A) -> A { pub constructor mk_extract; pub projector peel }
+
+// Brand-generic operation: re-brand a value of `F(A)` by peeling
+// then re-lifting, both through threaded instances. The body is
+// `[*F]`-generic; the Rust backend picks up `Brand<H>` on the binder
+// from the generic-header walk.
+fn rebrand[*F][A](pur: Pure(F), ext: Extract(F), x: F(A)) -> F(A) {
+  Pure.lift(pur)(Extract.peel(ext)(x))
+}
+
+// Per-brand instances. The `Monad` .-literals are polymorphic in
+// `[A][B]` to match the dictionary's payload shape; the bodies peel
+// via `un_*` and hand the unwrapped value to the continuation.
+fn box_monad() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+
+fn box_functor() -> Functor(Box) {
+  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+}
+
+fn box_pure() -> Pure(Box) { Pure.mk_pure(.[A](x) { Box.mk_box(x) }) }
+
+fn box_extract() -> Extract(Box) { Extract.mk_extract(.[A](m) { Box.un_box(m) }) }
+
+fn identity_monad() -> Monad(Identity) { Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) }) }
+
+fn identity_functor() -> Functor(Identity) {
+  Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
+}
+
+fn identity_pure() -> Pure(Identity) { Pure.mk_pure(.[A](x) { Identity.mk_id(x) }) }
+
+fn identity_extract() -> Extract(Identity) { Extract.mk_extract(.[A](m) { Identity.un_id(m) }) }
+
+// Brand-generic pipeline: takes a `Monad(F)` dictionary, a
+// `Pure(F)` dictionary, and a branded seed; threads two `do`-block
+// bind steps interleaved with a pure-let. The same source runs
+// against any brand — callers pick `Box` or `Identity` at the call
+// site. Abstract brand crossing lifts through `Pure.lift(pur)`.
+fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
+  do! Monad.bind(monad) {
+    let prefix <- seed;
+    let middle = " ok"(String);
+    let trailed <- Pure.lift(pur)(string_concat(prefix, middle));
+    Pure.lift(pur)(string_concat(trailed, "\n"(String)))
+  }
+}
+
+fn run_box(s: String) -> String {
+  let branded = Box.mk_box(s);
+  let rebranded = rebrand(box_pure(), box_extract(), branded);
+  Box.un_box(rebranded)
+}
+
+fn run_identity(s: String) -> String {
+  let branded = Identity.mk_id(s);
+  let rebranded = rebrand(identity_pure(), identity_extract(), branded);
+  Identity.un_id(rebranded)
+}
+
+fn run_box_pipeline(s: String) -> String {
+  let monad = box_monad();
+  let seed = Box.mk_box(s);
+  Box.un_box(pipeline(monad, box_pure(), seed))
+}
+
+fn run_identity_pipeline(s: String) -> String {
+  let monad = identity_monad();
+  let seed = Identity.mk_id(s);
+  Identity.un_id(pipeline(monad, identity_pure(), seed))
+}
+
+fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
+
+fn run_derived_functor(s: String) -> String {
+  let functor = derived_identity_functor();
+  let branded = Identity.mk_id(s);
+  let mapped =
+    Functor.fmap(functor)(
+      , String
+      , String
+      , .(value) { string_concat(value, " ok\n"(String)) }
+      , branded
+      );
+  Identity.un_id(mapped)
+}
+
+pub fn main() -> . {
+  print(run_box("higher-kinded box ok\n"(String)));
+  print(run_identity("higher-kinded identity ok\n"(String)));
+  print(run_box_pipeline("brand-generic pipeline over box"(String)));
+  print(run_identity_pipeline("brand-generic pipeline over identity"(String)));
+  print(run_derived_functor("derived functor over identity"(String)))
+}

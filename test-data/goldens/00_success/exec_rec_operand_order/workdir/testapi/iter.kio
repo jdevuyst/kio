@@ -1,0 +1,3 @@
+module testapi/iter;
+
+host fn loop[A][B](step: A -> A | B, initial: A) -> B;

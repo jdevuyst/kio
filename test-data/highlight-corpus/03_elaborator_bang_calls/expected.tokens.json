@@ -1,0 +1,23 @@
+[
+  {"start": 0, "end": 4, "kind": "keyword.elaborator"},
+  {"start": 5, "end": 10, "kind": "keyword.elaborator"},
+  {"start": 11, "end": 16, "kind": "keyword.elaborator"},
+  {"start": 17, "end": 23, "kind": "keyword.elaborator"},
+  {"start": 24, "end": 29, "kind": "keyword.elaborator"},
+  {"start": 30, "end": 35, "kind": "keyword.elaborator"},
+  {"start": 36, "end": 48, "kind": "keyword.elaborator"},
+  {"start": 49, "end": 62, "kind": "keyword.elaborator"},
+  {"start": 63, "end": 74, "kind": "keyword.elaborator"},
+  {"start": 75, "end": 87, "kind": "keyword.elaborator"},
+  {"start": 88, "end": 98, "kind": "keyword.elaborator"},
+  {"start": 99, "end": 110, "kind": "keyword.elaborator"},
+  {"start": 111, "end": 123, "kind": "keyword.elaborator"},
+  {"start": 124, "end": 137, "kind": "keyword.elaborator"},
+  {"start": 138, "end": 146, "kind": "keyword.elaborator"},
+  {"start": 147, "end": 156, "kind": "keyword.elaborator"},
+  {"start": 157, "end": 161, "kind": "keyword.elaborator"},
+  {"start": 162, "end": 168, "kind": "keyword.elaborator"},
+  {"start": 169, "end": 172, "kind": "identifier"},
+  {"start": 173, "end": 174, "kind": "operator.builtin"},
+  {"start": 175, "end": 179, "kind": "keyword.elaborator"}
+]

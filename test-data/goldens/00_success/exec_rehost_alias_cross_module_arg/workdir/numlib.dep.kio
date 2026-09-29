@@ -1,0 +1,7 @@
+dependency numlib;
+
+source {
+  path "../library/numlib/numlib.pkg.kio"
+}
+
+rehost numlib/store to testapi;

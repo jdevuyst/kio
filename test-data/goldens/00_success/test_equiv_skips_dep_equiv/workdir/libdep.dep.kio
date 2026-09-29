@@ -1,0 +1,5 @@
+dependency libdep;
+
+source {
+  path "../libdep/libdep.pkg.kio"
+}

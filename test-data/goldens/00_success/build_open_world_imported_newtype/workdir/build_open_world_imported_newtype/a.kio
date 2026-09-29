@@ -1,0 +1,7 @@
+module build_open_world_imported_newtype/a;
+
+import build_open_world_imported_newtype(I32);
+
+pub newtype Item : I32 { pub constructor mk_item; pub projector un_item }
+
+pub fn make_a() -> Item { Item.mk_item(1(I32)) }

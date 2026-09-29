@@ -1,0 +1,3 @@
+source module `widget/api` is selected more than once
+`widget/api` was first selected here
+each dependency module may be selected by one `rehost` statement

@@ -1,0 +1,54 @@
+module elab;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Type_recur = (__Type__ & .) -> __Checked_term__;
+
+type Type_step = (Type_recur & __Type__ & .) -> __Checked_term__;
+
+type Type_structural = (__Type__ & . & Type_step) -> __Checked_term__;
+
+pure fn retain_structural(_ct: __Comptime__, structural: Type_structural) -> Type_structural {
+  structural
+}
+
+pure fn run(ct: __Comptime__, fuel: __Type__, k: __Type__ -> __Checked_term__) -> __Checked_term__ {
+  let structural = retain_structural(ct, __structural_recur__(ct)(__Type__, ., __Checked_term__));
+  structural(
+    , fuel
+    , ()
+    , .(_recur: (__Type__ & .) -> __Checked_term__, current: __Type__, _input: .) -> __Checked_term__ {
+        k(current)
+      }
+    )
+}
+
+pure fn reenter(ct: __Comptime__) -> __Checked_term__ {
+  run(
+    , ct
+    , __type_product__(ct, __type_unit__(ct), __type_unit__(ct))
+    , .(_root: __Type__) -> __Checked_term__ {
+        run(
+          , ct
+          , __type_unit__(ct)
+          , .(_unit: __Type__) -> __Checked_term__ {
+              let ignored =
+                run(
+                  , ct
+                  , __type_bottom__(ct)
+                  , .(_bottom: __Type__) -> __Checked_term__ { __term_unit__(ct) }
+                  );
+              __term_unit__(ct)
+            }
+          )
+      }
+    )
+}
+
+pure fn guarded_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  reenter(ct)
+}
+
+pub elab guarded : [Source] Source -> . { impl guarded_impl }

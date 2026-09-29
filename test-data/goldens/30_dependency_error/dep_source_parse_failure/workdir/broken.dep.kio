@@ -1,0 +1,5 @@
+dependency broken;
+
+source {
+  path "../library/broken/broken.pkg.kio"
+}

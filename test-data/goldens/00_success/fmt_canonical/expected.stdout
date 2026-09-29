@@ -1,0 +1,102 @@
+module fmt_canonical/main;
+
+import __intrinsics__;
+
+import a/b as q;
+import a/b(T);
+import g_pkg(g);
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+type Logger = String -> .;
+
+pub type Pair[A][B] = A & B;
+
+type Unit = .;
+
+type Bottom = !;
+
+type Sum = A | B;
+
+type Product = A & B;
+
+type Func = (A & B) -> C;
+
+type Func_zero = . -> A;
+
+fn unit_value() -> . { () }
+
+pub fn id[A](x: A) -> A { x }
+
+fn intermixed[A](x: A)[B](y: B) -> A { x }
+
+fn use_call(s: String) -> . { print(s) }
+
+fn use_let_simple() -> . { let x = (); x }
+
+fn use_fn_simple() -> . { .(x) { print(x) }("hi"(String)) }
+
+fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
+
+fn mixed_args() -> . { id(String, "hi"(String)) }
+
+fn literals() -> . {
+  let s = "hi"(String);
+  let n = 42(I32);
+  let f = 3.14(F64);
+  let b = .t(Bool);
+  ()
+}
+module fmt_canonical/main;
+
+import __intrinsics__;
+
+import a/b as q;
+import a/b(T);
+import g_pkg(g);
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+
+type Logger = String -> .;
+
+pub type Pair[A][B] = A & B;
+
+type Unit = .;
+
+type Bottom = !;
+
+type Sum = A | B;
+
+type Product = A & B;
+
+type Func = (A & B) -> C;
+
+type Func_zero = . -> A;
+
+fn unit_value() -> . { () }
+
+pub fn id[A](x: A) -> A { x }
+
+fn intermixed[A](x: A)[B](y: B) -> A { x }
+
+fn use_call(s: String) -> . { print(s) }
+
+fn use_let_simple() -> . { let x = (); x }
+
+fn use_fn_simple() -> . { .(x) { print(x) }("hi"(String)) }
+
+fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
+
+fn mixed_args() -> . { id(String, "hi"(String)) }
+
+fn literals() -> . {
+  let s = "hi"(String);
+  let n = 42(I32);
+  let f = 3.14(F64);
+  let b = .t(Bool);
+  ()
+}

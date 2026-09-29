@@ -1,0 +1,10 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}
+
+rehost widget/relay to testapi;
+rehost widget/store to testapi;
+
+retype widget/store to core/store;

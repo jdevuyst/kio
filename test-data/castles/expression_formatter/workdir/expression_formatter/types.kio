@@ -1,0 +1,37 @@
+module expression_formatter/types;
+
+import testapi(Bool, Int, String);
+
+pub labels Token = {
+  , token_kind: String
+  , token_text: String
+  , token_start: Int
+  , token_stop: Int
+  , token_depth: Int
+  };
+
+pub labels Stream = {
+  , source_text: String
+  , binding_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , eq_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , left_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , add_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , open_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , group_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , mul_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , literal_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  , close_token: Token_kind & Token_text & Token_start & Token_stop & Token_depth
+  };
+
+pub labels Parse_state = {
+  , assignment_name: String
+  , left_term: String
+  , grouped_term: String
+  , factor_text: String
+  , normalized_expr: String
+  , shape_name: String
+  , valid_shape: Bool
+  , token_count: Int
+  , max_depth: Int
+  , binding_count: Int
+  };

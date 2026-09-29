@@ -1,0 +1,6 @@
+module hkt/testapi/io;
+
+import hkt/testapi(String);
+import testapi/io as _rehost_hegfhdhegbhagjcpgjgp;
+
+pub fn print(p0: String) -> . { _rehost_hegfhdhegbhagjcpgjgp.print(p0) }

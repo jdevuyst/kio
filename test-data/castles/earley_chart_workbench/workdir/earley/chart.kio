@@ -1,0 +1,60 @@
+module earley/chart;
+
+import earley/arrays as numbers;
+import earley/model as model;
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/array as arrays;
+import testapi/iter(loop);
+
+rec(loop) fn has_from(column: model.Column, state: model.Item, index: I32) -> Bool {
+  if! arith.leq_i32(arrays.array_len(column), index) {
+    .f
+  } else if! model.same(arrays.array_get(column, index), state) {
+    .t
+  } else {
+    rec has_from(column, state, arith.add_i32(index, 1))
+  }
+}
+
+pub fn contains(column: model.Column, state: model.Item) -> Bool { has_from(column, state, 0) }
+
+pub fn insert(column: model.Column, state: model.Item) -> . {
+  if! contains(column, state) {
+    ()
+  } else {
+    arrays.array_push(column, state)
+  }
+}
+
+rec(loop) fn allocate(chart: model.Chart, remaining: I32) -> model.Chart {
+  if! arith.leq_i32(remaining, 0) {
+    chart
+  } else {
+    arrays.array_push(chart, arrays.array_make_empty());
+    rec allocate(chart, arith.sub_i32(remaining, 1))
+  }
+}
+
+pub fn create(token_count: I32) -> model.Chart {
+  allocate(arrays.array_make_empty(), arith.add_i32(token_count, 1))
+}
+
+rec(loop) fn seed_rules(grammar: model.Grammar, column: model.Column, category: I32, index: I32) -> . {
+  if! arith.leq_i32(arrays.array_len(grammar), index) {
+    ()
+  } else {
+    let rule = arrays.array_get(grammar, index);
+    if! numbers.equal(model.left(rule), category) {
+      insert(column, model.item(index, 0, 0))
+    } else {
+      ()
+    };
+    rec seed_rules(grammar, column, category, arith.add_i32(index, 1))
+  }
+}
+
+pub fn seed(grammar: model.Grammar, column: model.Column, category: I32) -> . {
+  seed_rules(grammar, column, category, 0)
+}

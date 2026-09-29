@@ -1,0 +1,16 @@
+module consumer;
+
+import actual as a;
+import domain(Items);
+import list/list as list;
+import wrong as actual;
+
+labels State = { direct: Items };
+
+newtype Callback[A] : A -> . { constructor callback; projector uncallback }
+
+fn keep_state(state: State) -> State { state }
+
+fn keep_callback(value: Callback(Items)) -> Callback(Items) { value }
+
+pub fn keep_box[A](value: a.Box(A)) -> a.Box(A) { value }

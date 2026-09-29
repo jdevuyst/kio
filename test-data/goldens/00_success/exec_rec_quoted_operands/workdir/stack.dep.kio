@@ -1,0 +1,13 @@
+dependency stack;
+
+source {
+  path "../../exec_rec_quoted_stack/workdir/exec_rec_quoted_stack.pkg.kio"
+}
+
+rehost stack/elab/testapi to elab/testapi;
+rehost stack/testapi to testapi;
+rehost stack/testapi/arith to testapi/arith;
+rehost stack/testapi/fmt to testapi/fmt;
+rehost stack/testapi/io to testapi/io;
+rehost stack/testapi/iter to testapi/iter;
+rehost stack/testapi/text to testapi/text;

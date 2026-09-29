@@ -1,0 +1,15 @@
+module widget/store;
+
+import core/store as _rehost_gdgphcgfcphdhegphcgf;
+
+pub type Foo[A] = _rehost_gdgphcgfcphdhegphcgf.Foo(A);
+
+pub rec labels { peer[A]: (Peer(A) -> A) -> A };
+
+pub type Mixed[A] = Foo(A) & Peer(A);
+
+pub type {foo} = {_rehost_gdgphcgfcphdhegphcgf.foo};
+
+pub fn mixed_peer[A](row: Mixed(A), next: Peer(A) -> A) -> A { row.?{peer}(next) }
+
+pub fn read_foo[A](value: Foo(A), next: Foo(A) -> A) -> A { value.?{foo}(next) }

@@ -1,0 +1,18 @@
+module testapi/definitions;
+
+import __intrinsics__;
+
+import testapi(I32);
+import testapi/arith(add_i32);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector unbox }
+
+pub fn combine(left: I32, right: I32) -> I32 { add_i32(left, right) }
+
+pub fn begin() -> I32 { 1 }
+
+pub fn accumulate(value: I32, rest: I32) -> I32 { add_i32(value, rest) }
+
+pub fn finish(value: I32) -> I32 { add_i32(value, 100) }
+
+pub fn sum_pair(value: I32 & I32) -> I32 { add_i32(__fst__(value), __snd__(value)) }

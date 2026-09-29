@@ -1,0 +1,2 @@
+# Two `target js` blocks collide on the same target id.
+duplicate target id

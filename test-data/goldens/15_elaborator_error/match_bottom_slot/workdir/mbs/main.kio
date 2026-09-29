@@ -1,0 +1,13 @@
+module mbs/main;
+
+import __intrinsics__;
+
+import elab/match(match);
+import mbs(I32);
+
+// A Bottom parameter covers no source branch.
+fn handle(s: I32) -> I32 {
+  match! s {
+    (.(v: I32) { v }, .(x: !) { __absurd__(I32, x) })
+  }
+}

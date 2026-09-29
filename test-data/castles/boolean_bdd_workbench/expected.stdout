@@ -1,0 +1,22 @@
+Ordered reduced Boolean decision diagrams: x < y < z
+Truth rows: 000 001 010 011 100 101 110 111
+factored: truth=00000111 models=3 nodes=3 witness=101 checked=true
+expanded: truth=00000111 models=3 nodes=3 witness=101 checked=true
+contradiction: truth=00000000 models=0 nodes=0 witness=none checked=true
+tautology: truth=11111111 models=8 nodes=0 witness=000 checked=true
+shared: truth=00010100 models=2 nodes=4 witness=011 checked=true
+equivalent-bits: truth=11000011 models=4 nodes=3 witness=000 checked=true
+mux: truth=01010011 models=4 nodes=3 witness=001 checked=true
+distributivity-same-root=true
+contradiction-is-false=true
+tautology-is-true=true
+recompilation-allocates-zero=true
+apply-reuses-commuted-key=true
+shared | z=1: truth=00111100 models=4 nodes=3 witness=010 checked=true
+restriction-reuses-shared-subgraph=true
+shared | z=0: truth=00000000 models=0 nodes=0 witness=none checked=true
+mux | x=0: truth=01010101 models=4 nodes=1 witness=001 checked=true
+mux | x=1: truth=00110011 models=4 nodes=1 witness=010 checked=true
+unique-table-reuse-observed=true
+equal-branches-reduced=true
+ordered-reduced-unique=true

@@ -1,0 +1,28 @@
+module main;
+
+import __intrinsics__;
+
+// Single-binder callee: `id`'s scheme is `∀A. A -> A`. The
+// caller writes the type-arg `.` explicitly.
+fn id[A](x: A) -> A { x }
+
+fn call_id_explicit(x: .) -> . { id(., x) }
+
+// Two-binder callee on an intrinsic: `__pair__`'s scheme
+// is `∀A B. (A & B) -> A & B`. Both type-args written out.
+fn call_pair_explicit(x: ., y: .) -> . & . { __pair__(., ., x, y) }
+
+// Three-binder callee: `__either__`'s scheme is
+// `∀A B C. ((A | B) & (A -> C) & (B -> C)) -> C`. Every binder explicit.
+fn call_either_explicit(s: . | .) -> . {
+  __either__(., ., ., s, .(l: .) -> . { l }, .(r: .) -> . { r })
+}
+
+// Multi-curry-layer call: `foo`'s type is two consecutive
+// `Forall + Function` layers (`∀A. A -> ∀B. B -> .`).
+// Each layer's type-arg is written explicitly. The curried
+// shape `foo(...)(...)` is what Kio' admits; the flat sugar
+// is a surface-only form covered elsewhere.
+fn foo[A](v1: A)[B](v2: B) -> . { () }
+
+fn call_foo_explicit() -> . { foo(., ())(., ()) }

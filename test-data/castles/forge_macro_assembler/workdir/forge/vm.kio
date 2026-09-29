@@ -1,0 +1,238 @@
+/// The FORGE-4 machine.
+///
+/// State is a labeled record: a program counter, the four registers, an
+/// operand stack, its depth and high-water mark, the remaining fuel, and
+/// the emit log. Every fetched instruction spends one unit of fuel, so
+/// `run` terminates on *any* image - a program that loops forever stops
+/// with `out_of_fuel` instead of hanging the host.
+///
+/// Nothing here traps into the host: a zero divisor and a pop on an empty
+/// stack both stop the machine with a fault, and a program counter that
+/// walks off the end simply runs out of instructions.
+module forge/vm;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import forge/isa as isa;
+import forge/isa(
+  , Add
+  , Div
+  , Emit
+  , Halt
+  , Ins
+  , Jmp_addr
+  , Jmpz_addr
+  , Loadi
+  , Mod
+  , Mov
+  , Mul
+  , Pop
+  , Push
+  , Ra
+  , Rb
+  , Rc
+  , Rd
+  , Reg
+  , Sub
+  );
+import forge/list as l;
+import forge/program(Prog);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+/// A list of machine words. The operand stack and the emit log are both
+/// one of these.
+pub type Words = l.List(I32);
+
+/// Integer equality, out of the antisymmetry of `<=`: this host tier
+/// supplies the comparisons but no `eq_i32`.
+pub fn int_eq(a: I32, b: I32) -> Bool {
+  if! leq_i32(a, b) {
+    leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+fn is_zero(n: I32) -> Bool { int_eq(n, 0) }
+
+/// The register file. `Reg` in `forge/isa` says *which* register an
+/// instruction names; this record holds their values.
+pub labels Regs = { va: I32, vb: I32, vc: I32, vd: I32 };
+
+fn zeroed() -> Regs { {va = 0, vb = 0, vc = 0, vd = 0} }
+
+pub fn read_reg(regs: Regs, r: Reg) -> I32 {
+  match! r {
+    (
+      , .(_a: Ra) { regs.?{va} }
+      , .(_b: Rb) { regs.?{vb} }
+      , .(_c: Rc) { regs.?{vc} }
+      , .(_d: Rd) { regs.?{vd} }
+      )
+  }
+}
+
+fn set_a(regs: Regs, v: I32) -> Regs { regs.!{va = v} }
+
+fn set_b(regs: Regs, v: I32) -> Regs { regs.!{vb = v} }
+
+fn set_c(regs: Regs, v: I32) -> Regs { regs.!{vc = v} }
+
+fn set_d(regs: Regs, v: I32) -> Regs { regs.!{vd = v} }
+
+fn write_reg(regs: Regs, r: Reg, v: I32) -> Regs {
+  match! r {
+    (
+      , .(_a: Ra) { set_a(regs, v) }
+      , .(_b: Rb) { set_b(regs, v) }
+      , .(_c: Rc) { set_c(regs, v) }
+      , .(_d: Rd) { set_d(regs, v) }
+      )
+  }
+}
+
+/// The machine.
+pub labels Vm = { pc: I32, bank: Regs, stack: Words, depth: I32, high: I32, fuel: I32, out: Words };
+
+/// The step budget every program is given. It is generous enough for the
+/// fixtures that terminate and small enough that a runaway one is caught
+/// promptly.
+pub fn budget() -> I32 { 120 }
+
+pub fn boot() -> Vm {
+  {
+    , pc = 0
+    , bank = zeroed()
+    , stack = l.nil(I32, ())
+    , depth = 0
+    , high = 0
+    , fuel = budget()
+    , out = l.nil(I32, ())
+    }
+}
+
+/// Why the machine stopped.
+pub labels Stop = { halted: . } | { ran_off: . } | { out_of_fuel: . } | { faulted: String };
+
+fn halted() -> Stop { {halted=}.>widen_sum!(Stop) }
+
+fn ran_off() -> Stop { {ran_off=}.>widen_sum!(Stop) }
+
+fn out_of_fuel() -> Stop { {out_of_fuel=}.>widen_sum!(Stop) }
+
+fn faulted(why: String) -> Stop { {faulted = why}.>widen_sum!(Stop) }
+
+/// One step's result: the machine carries on, or it is finished and hands
+/// back its final state together with the reason.
+labels Outcome = { going: Vm } | { done: Vm & Stop };
+
+fn going(m: Vm) -> Outcome { {going = m}.>widen_sum!(Outcome) }
+
+fn stop(m: Vm, why: Stop) -> Outcome { {done = (m, why)}.>widen_sum!(Outcome) }
+
+fn set_pc(m: Vm, at: I32) -> Vm { m.!{pc = at} }
+
+fn advance(m: Vm) -> Vm { set_pc(m, add_i32(m.?{pc}, 1)) }
+
+fn set_bank(m: Vm, regs: Regs) -> Vm { m.!{bank = regs} }
+
+fn spend(m: Vm) -> Vm { m.!{fuel = sub_i32(m.?{fuel}, 1)} }
+
+fn read(m: Vm, r: Reg) -> I32 { read_reg(m.?{bank}, r) }
+
+/// Write a register and move to the next instruction - the shape of every
+/// opcode that is not a jump, a stack move, or a halt.
+fn store(m: Vm, dst: Reg, v: I32) -> Outcome {
+  going(advance(set_bank(m, write_reg(m.?{bank}, dst, v))))
+}
+
+/// `dst <- dst op src`: FORGE-4 arithmetic is two-address.
+fn alu(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
+  store(m, dst, f(read(m, dst), read(m, src)))
+}
+
+/// `DIV` and `MOD` share one divisor guard, so a zero divisor never
+/// reaches the host's integer division.
+fn alu_checked(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
+  let divisor = read(m, src);
+  if! is_zero(divisor) {
+    stop(m, faulted("divide by zero"))
+  } else {
+    store(m, dst, f(read(m, dst), divisor))
+  }
+}
+
+fn push_word(m: Vm, v: I32) -> Outcome {
+  let deep = add_i32(m.?{depth}, 1);
+  let peak =
+    if! lt_i32(m.?{high}, deep) {
+      deep
+    } else {
+      m.?{high}
+    };
+  going(advance(m.!{stack = l.cons(v, m.?{stack}), depth = deep, high = peak}))
+}
+
+fn pop_word(m: Vm, dst: Reg) -> Outcome {
+  let next = l.un_cons(m.?{stack});
+  match! next {
+    (
+      , .(top: I32, rest: Words) {
+          let .(popped: Vm) = m.!{stack = rest, depth = sub_i32(m.?{depth}, 1)};
+          store(popped, dst, top)
+        }
+      , .(_empty: .) { stop(m, faulted("stack underflow")) }
+      )
+  }
+}
+
+fn emit_word(m: Vm, r: Reg) -> Outcome {
+  let .(logged: Vm) = m.!{out = l.cons(read(m, r), m.?{out})};
+  going(advance(logged))
+}
+
+fn exec(m: Vm, i: Ins) -> Outcome {
+  match! i {
+    (
+      , .(x: Loadi) { let .(r: Reg, n: I32) = x.?{isa.loadi}; store(m, r, n) }
+      , .(x: Mov) { let .(dst: Reg, src: Reg) = x.?{isa.mov}; store(m, dst, read(m, src)) }
+      , .(x: Add) { let .(dst: Reg, src: Reg) = x.?{isa.add}; alu(m, dst, src, add_i32) }
+      , .(x: Sub) { let .(dst: Reg, src: Reg) = x.?{isa.sub}; alu(m, dst, src, sub_i32) }
+      , .(x: Mul) { let .(dst: Reg, src: Reg) = x.?{isa.mul}; alu(m, dst, src, mul_i32) }
+      , .(x: Div) { let .(dst: Reg, src: Reg) = x.?{isa.div}; alu_checked(m, dst, src, div_i32) }
+      , .(x: Mod) { let .(dst: Reg, src: Reg) = x.?{isa.mod}; alu_checked(m, dst, src, mod_i32) }
+      , .(x: Push) { push_word(m, read(m, x.?{isa.push})) }
+      , .(x: Pop) { pop_word(m, x.?{isa.pop}) }
+      , .(x: Emit) { emit_word(m, x.?{isa.emit}) }
+      , .(_x: Halt) { stop(m, halted()) }
+      , .(x: Jmp_addr) { going(set_pc(m, x.?{isa.jmp_addr})) }
+      , .(x: Jmpz_addr) {
+          let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
+          if! is_zero(read(m, r)) {
+            going(set_pc(m, at))
+          } else {
+            going(advance(m))
+          }
+        }
+      )
+  }
+}
+
+/// Fetch, charge one unit of fuel, execute. A program counter past the
+/// last instruction finds nothing and ends the run.
+fn step(code: Prog, m: Vm) -> Outcome {
+  if! leq_i32(m.?{fuel}, 0) {
+    stop(m, out_of_fuel())
+  } else match! l.un_cons(l.drop(code, m.?{pc})) {
+    (.(i: Ins, _rest: Prog) { exec(spend(m), i) }, .(_end: .) { stop(m, ran_off()) })
+  }
+}
+
+pub rec(loop) fn run(code: Prog, m: Vm) -> Vm & Stop {
+  match! step(code, m) {
+    (.(g: Going) { rec run(code, g.?{going}) }, .(d: Done) { d.?{done} })
+  }
+}

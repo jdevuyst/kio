@@ -1,0 +1,14 @@
+[
+  {"start": 0, "end": 6, "kind": "keyword.declaration"},
+  {"start": 7, "end": 10, "kind": "entity.name.module"},
+  {"start": 11, "end": 13, "kind": "keyword.declaration"},
+  {"start": 14, "end": 22, "kind": "entity.name.function"},
+  {"start": 22, "end": 23, "kind": "punctuation.bracket"},
+  {"start": 23, "end": 24, "kind": "punctuation.bracket"},
+  {"start": 25, "end": 27, "kind": "operator.builtin"},
+  {"start": 28, "end": 29, "kind": "punctuation.separator"},
+  {"start": 30, "end": 31, "kind": "punctuation.bracket"},
+  {"start": 32, "end": 33, "kind": "punctuation.bracket"},
+  {"start": 33, "end": 34, "kind": "punctuation.bracket"},
+  {"start": 35, "end": 36, "kind": "punctuation.bracket"}
+]

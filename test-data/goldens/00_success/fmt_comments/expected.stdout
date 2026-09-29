@@ -1,0 +1,34 @@
+module main;
+
+// Header note for the import block.
+import a/b(T);
+
+// First paragraph of the docstring for `id`.
+
+// Second paragraph (separated by a blank line).
+fn id[A](x: A) -> A { x }
+
+//
+// First entry of an enclosing run.
+//
+fn empty_runs() -> . { () }
+
+// Trailing item.
+fn last() -> . { () }
+module main;
+
+// Header note for the import block.
+import a/b(T);
+
+// First paragraph of the docstring for `id`.
+
+// Second paragraph (separated by a blank line).
+fn id[A](x: A) -> A { x }
+
+//
+// First entry of an enclosing run.
+//
+fn empty_runs() -> . { () }
+
+// Trailing item.
+fn last() -> . { () }

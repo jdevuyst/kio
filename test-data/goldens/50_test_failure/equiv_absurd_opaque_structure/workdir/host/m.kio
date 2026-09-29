@@ -1,0 +1,15 @@
+module host/m;
+
+import __intrinsics__;
+
+import host(Input, Output, never_a, never_b);
+
+equiv same_absurd_source(x: Input) {
+  __absurd__(Output, never_a(x));
+  __absurd__(Output, never_a(x))
+}
+
+equiv different_absurd_source(x: Input) {
+  __absurd__(Output, never_a(x));
+  __absurd__(Output, never_b(x))
+}

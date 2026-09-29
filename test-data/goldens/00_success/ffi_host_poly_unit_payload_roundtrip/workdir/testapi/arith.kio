@@ -1,0 +1,7 @@
+module testapi/arith;
+
+import testapi/types(Poly_thunk, Unit_slot);
+
+host fn round_poly_thunk(thunk: Poly_thunk) -> Poly_thunk;
+
+host fn round_unit_slot(step: Unit_slot(.)) -> Unit_slot(.);

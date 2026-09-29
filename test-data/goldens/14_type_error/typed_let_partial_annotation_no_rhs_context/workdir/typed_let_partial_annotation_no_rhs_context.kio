@@ -1,0 +1,3 @@
+module typed_let_partial_annotation_no_rhs_context;
+
+host type I32 role(i32);

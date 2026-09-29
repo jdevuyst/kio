@@ -1,0 +1,75 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/sequence(do);
+import testapi(I32, String);
+import testapi/arith(add_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+
+fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+
+fn describe(x: I32 & I32 & I32) -> String {
+  match! x {
+    .(a: I32, b: I32, c: I32) {
+      string_concat(
+        , int_to_string(a)
+        , string_concat(",", string_concat(int_to_string(b), string_concat(",", int_to_string(c))))
+        )
+    }
+  }
+}
+
+// As-pattern at block scope: `let <name>: (<pat-elems>) = e;`
+// binds the whole product to `<name>` AND destructures it into the
+// per-slot bindings. The continuation can reference the outer name
+// (`q`) alongside each slot (`a`, `b`, `c`). This exercises the
+// distinct-from-`let p: T = e;` parser dispatch: `(<pat-elems>)`
+// is a pattern, not a type, so the as-pattern form is admissible
+// where the plain type-annotation form remains rejected.
+fn sum_and_describe(p: I32 & I32 & I32) -> String {
+  let .(q: (a: I32, b: I32, c: I32)) = p;
+  // `q`, `a`, `b`, `c` are all in scope here.
+  let total = add_i32(a, add_i32(b, c));
+  string_concat(string_concat(int_to_string(total), " from "), describe(q))
+}
+
+// Nested as-pattern: the outer name `pair` and the inner-tuple
+// name `inner` are both bound, and the leaf slots `x` and `y` and
+// `z` are bound inside the body too. (The desugar nests one match
+// per pattern level; the as-pattern variants supply the user-given
+// outer names.)
+fn nested_demo(input: (I32 & I32) & I32) -> String {
+  let .(pair: (inner: (x: I32, y: I32), z: I32)) = input;
+  let from_inner =
+    match! inner {
+      .(a: I32, b: I32) { add_i32(a, b) }
+    };
+  let total = add_i32(from_inner, add_i32(x, add_i32(y, z)));
+  string_concat(int_to_string(total), " (nested)")
+}
+
+// As-pattern in a do-block's pure-let position. Same shape as the
+// block-scope version; the outer `t` is in scope alongside `lo`
+// and `hi` for the rest of the do-block.
+fn do_demo() -> Box(String) {
+  do! box_bind {
+    let .(t: (lo: I32, hi: I32)) = (10, 32);
+    let s <- box_pure(int_to_string(add_i32(lo, hi)));
+    box_pure(string_concat(s, " from do-block"))
+  }
+}
+
+pub fn main() -> . {
+  print(sum_and_describe((1, 2, 3)));
+  print("\n");
+  print(nested_demo(((4, 5), 6)));
+  print("\n");
+  print(Box.un_box(do_demo()));
+  print("\n")
+}

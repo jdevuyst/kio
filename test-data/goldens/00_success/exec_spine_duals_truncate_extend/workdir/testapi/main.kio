@@ -1,0 +1,24 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_prod, narrow_sum, widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+// **Truncate** (product axis): `narrow_prod!` drops the trailing
+// `()` slot. R-Identity-Prod-elim is implicit in narrow_prod!'s
+// general rule (sub-multiset projection) — no carve-out.
+fn truncate(p: String & .) -> String { narrow_prod!(p) }
+
+// **Extend** (sum axis): `widen_sum!` adds a `!` arm to the target.
+// R-Identity-Sum-intro is implicit in widen_sum!'s general "any new
+// arm" rule (the new arm is uninhabited, unreachable).
+fn extend(s: String) -> String | ! { widen_sum!(s) }
+
+pub fn main() -> . {
+  print(truncate(("truncate: dropped unit slot\n", ())));
+  // The widened sum is `String | !`. R-Identity-Sum-elim collapses
+  // it back to `String` — the `!` arm is uninhabited, so it drops
+  // freely under narrow_sum!.
+  let widened = extend("extend: added bottom arm\n");
+  print(widened.>narrow_sum!(String))
+}

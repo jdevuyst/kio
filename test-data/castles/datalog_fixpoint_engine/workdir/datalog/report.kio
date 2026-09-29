@@ -1,0 +1,245 @@
+/// The printed report: the program in Datalog notation, the round-by-round
+/// trace of both strategies, the tally of what was derived, and the answers.
+///
+/// The host surface gives strings only concatenation - no length, no
+/// comparison - so every column width the trace table needs is derived
+/// from the magnitude of the number being padded.
+module datalog/report;
+
+import datalog/atom(Args, Atom, Atoms, T_const, T_var, Term, args_of, count_pred, pred_of);
+import datalog/atom({t_const});
+import datalog/atom({t_var});
+import datalog/eval as eval;
+import datalog/list as list;
+import datalog/program as program;
+import datalog/query as query;
+import datalog/subst as subst;
+import datalog/subst({some_const});
+import datalog/symbols as sym;
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import testapi/fmt(bool_to_string, int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat2(a: String, b: String) -> String { string_concat(a, b) }
+
+fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
+
+fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(a, cat3(b, c, d)) }
+
+fn line(s: String) -> . { print(cat2(s, "\n")) }
+
+pub fn section(title: String) -> . { line(cat3("\n== ", title, " ==")) }
+
+fn tally(label: String, n: I32) -> . { line(cat3(label, ": ", int_to_string(n))) }
+
+rec(loop) fn spaces(n: I32, acc: String) -> String {
+  if! leq_i32(n, 0) {
+    acc
+  } else {
+    rec spaces(sub_i32(n, 1), cat2(acc, " "))
+  }
+}
+
+/// The bound climbs one decade per digit. The last decade answers
+/// directly: multiplying past 10^9 would overflow the 32-bit host type
+/// before the comparison that consumes it could run.
+rec(loop) fn digits(n: I32, bound: I32, acc: I32) -> I32 {
+  if! lt_i32(n, bound) {
+    acc
+  } else if! leq_i32(1000000000, bound) {
+    add_i32(acc, 1)
+  } else {
+    rec digits(n, mul_i32(bound, 10), add_i32(acc, 1))
+  }
+}
+
+fn pad_int(n: I32, width: I32) -> String {
+  cat2(spaces(sub_i32(width, digits(n, 10, 1)), ""), int_to_string(n))
+}
+
+fn term_text(t: Term) -> String {
+  match! t {
+    (.(k: T_const) { sym.const_name(k.?{t_const}) }, .(v: T_var) { sym.var_name(v.?{t_var}) })
+  }
+}
+
+rec(loop) fn args_onto(args: Args, acc: String, first: Bool) -> String {
+  match! args.>list.List.un_list {
+    (
+      , .(t: Term, rest: Args) {
+          if! first {
+            rec args_onto(rest, cat2(acc, term_text(t)), .f)
+          } else {
+            rec args_onto(rest, cat3(acc, ", ", term_text(t)), .f)
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+fn atom_text(a: Atom) -> String {
+  cat4(sym.pred_name(pred_of(a)), "(", args_onto(args_of(a), "", .t), ")")
+}
+
+rec(loop) fn body_onto(body: Atoms, acc: String, first: Bool) -> String {
+  match! body.>list.List.un_list {
+    (
+      , .(goal: Atom, rest: Atoms) {
+          if! first {
+            rec body_onto(rest, cat2(acc, atom_text(goal)), .f)
+          } else {
+            rec body_onto(rest, cat3(acc, ", ", atom_text(goal)), .f)
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn print_facts(facts: Atoms) -> . {
+  match! facts.>list.List.un_list {
+    (
+      , .(f: Atom, rest: Atoms) { line(cat2(atom_text(f), ".")); rec print_facts(rest) }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn edb(facts: Atoms) -> . { print_facts(facts); tally("facts", list.length(facts)) }
+
+rec(loop) fn print_rules(rules: program.Rules) -> . {
+  match! rules.>list.List.un_list {
+    (
+      , .(r: program.Rule, rest: program.Rules) {
+          line(cat4(
+            , atom_text(program.head_of(r))
+            , " :- "
+            , body_onto(program.body_of(r), "", .t)
+            , "."
+            ));
+          rec print_rules(rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn rules(rs: program.Rules) -> . { print_rules(rs); tally("rules", list.length(rs)) }
+
+rec(loop) fn print_rounds(trace: eval.Trace) -> . {
+  match! trace.>list.List.un_list {
+    (
+      , .(r: eval.Round, rest: eval.Trace) {
+          line(cat3(
+            , pad_int(eval.round_index(r), 7)
+            , pad_int(eval.round_derivs(r), 13)
+            , pad_int(eval.round_added(r), 11)
+            ));
+          rec print_rounds(rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+/// The `new facts` column falling to zero is the termination witness: a
+/// round that adds nothing can never make a later round add something.
+pub fn run(r: eval.Run) -> . {
+  line("  round  derivations  new facts");
+  print_rounds(eval.trace_of(r));
+  tally("rounds", list.length(eval.trace_of(r)));
+  tally("derivations", eval.derivs_of(r));
+  tally("facts", list.length(eval.db_of(r)))
+}
+
+pub fn agreement(semi: eval.Run, naive: eval.Run) -> . {
+  tally("semi-naive derivations", eval.derivs_of(semi));
+  tally("naive derivations", eval.derivs_of(naive));
+  tally("derivations saved", sub_i32(eval.derivs_of(naive), eval.derivs_of(semi)));
+  tally("semi-naive facts", list.length(eval.db_of(semi)));
+  tally("naive facts", list.length(eval.db_of(naive)));
+  line(cat2(
+    , "same fixpoint: "
+    , bool_to_string(eval.same_fixpoint(eval.db_of(semi), eval.db_of(naive)))
+    ))
+}
+
+rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) -> . {
+  match! preds.>list.List.un_list {
+    (
+      , .(p: I32, rest: list.List(I32)) {
+          tally(sym.pred_name(p), count_pred(db, p));
+          rec print_tallies(db, rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn derived(db: Atoms, preds: list.List(I32)) -> . {
+  print_tallies(db, preds);
+  tally(
+    , "derived total"
+    , list.fold(preds, .(acc: I32, p: I32) { add_i32(acc, count_pred(db, p)) }, 0)
+    )
+}
+
+fn bound_text(s: subst.Subst, v: I32) -> String {
+  match! subst.lookup(s, v) {
+    (
+      , .(bound: subst.Some_const) { sym.const_name(bound.?{some_const}) }
+      , .(_free: subst.No_const) { "_" }
+      )
+  }
+}
+
+rec(loop) fn answer_onto(vars: query.Codes, s: subst.Subst, acc: String, first: Bool) -> String {
+  match! vars.>list.List.un_list {
+    (
+      , .(v: I32, rest: query.Codes) {
+          let binding = cat3(sym.var_name(v), " = ", bound_text(s, v));
+          if! first {
+            rec answer_onto(rest, s, cat2(acc, binding), .f)
+          } else {
+            rec answer_onto(rest, s, cat3(acc, ", ", binding), .f)
+          }
+        }
+      , .(_empty: .) { acc }
+      )
+  }
+}
+
+rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) -> . {
+  match! rows.>list.List.un_list {
+    (
+      , .(s: subst.Subst, rest: subst.Substs) {
+          line(cat2("  ", answer_onto(vars, s, "", .t)));
+          rec print_answers(vars, rest)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+rec(loop) fn print_queries(qs: Atoms, db: Atoms) -> . {
+  match! qs.>list.List.un_list {
+    (
+      , .(q: Atom, rest: Atoms) {
+          let rows = query.answers(q, db);
+          line(cat3("?- ", atom_text(q), "."));
+          print_answers(query.query_vars(q), rows);
+          tally("  answers", list.length(rows));
+          rec print_queries(rest, db)
+        }
+      , .(_empty: .) { () }
+      )
+  }
+}
+
+pub fn queries(qs: Atoms, db: Atoms) -> . { print_queries(qs, db) }

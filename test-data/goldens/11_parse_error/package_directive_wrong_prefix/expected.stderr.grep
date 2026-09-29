@@ -1,0 +1,1 @@
+a `\.pkg\.kio` file must begin with a `package <name>;` directive whose `<name>` is the filename stem

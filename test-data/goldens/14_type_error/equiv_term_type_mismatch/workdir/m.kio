@@ -1,0 +1,8 @@
+module m;
+
+newtype Wrapped : . { pub constructor mk_w; pub projector w }
+
+equiv mismatched() {
+  ();
+  Wrapped.mk_w(())
+}

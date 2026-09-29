@@ -1,0 +1,39 @@
+module testapi/main;
+
+import elab/spine_elaborators(narrow_prod, reorder_prod);
+import testapi(I32, String);
+import testapi/io(print);
+
+newtype A : I32 { pub constructor mk_a; pub projector a }
+
+newtype B : I32 { pub constructor mk_b; pub projector b }
+
+newtype C : I32 { pub constructor mk_c; pub projector c }
+
+newtype D : I32 { pub constructor mk_d; pub projector d }
+
+// Repeated elaborator composition: a function-call chain pins each
+// step's target type via the parameter type, so each elaborator call
+// sees the elaborated output of the previous one as its source.
+// `reorder` swaps A & B & C & D to D & C & B & A; the three
+// `drop_*` functions each take the previous step's output and apply
+// `narrow_prod!` to peel off one factor. The chain terminates in `D`.
+// This asserts that elaborations compose without dropping or
+// duplicating factors mid-chain — a straight-through reduction.
+fn reorder(p: A & B & C & D) -> D & C & B & A { reorder_prod!(p) }
+
+fn drop_a(p: D & C & B & A) -> D & C & B { narrow_prod!(p) }
+
+fn drop_b(p: D & C & B) -> D & C { narrow_prod!(p) }
+
+fn drop_c(p: D & C) -> D { narrow_prod!(p) }
+
+fn last_factor(p: A & B & C & D) -> D { drop_c(drop_b(drop_a(reorder(p)))) }
+
+pub fn main() -> . {
+  let p = (A.mk_a(1), B.mk_b(2), C.mk_c(3), D.mk_d(4));
+  // Force evaluation of the chain; the constant message confirms
+  // the program reached the print without elaborator-side rejection.
+  let _ = last_factor(p);
+  print("compose-ok\n")
+}

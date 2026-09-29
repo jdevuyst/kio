@@ -1,0 +1,17 @@
+module derive_recursive_missing_unit_precondition/main;
+
+import __intrinsics__;
+
+import elab/derive(derive);
+
+newtype Token : . { constructor make_token; projector read_token }
+
+type Target = . | (Token & Token);
+
+type Precondition = . | !;
+
+fn through_precondition(_precondition: Precondition) -> Target { __left__(., Token & Token, ()) }
+
+fn bad() -> Target { derive!(through_precondition, Target) }
+
+pub fn main() -> . { () }

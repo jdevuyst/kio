@@ -1,0 +1,3 @@
+module core/store;
+
+pub newtype Box[A][B] : A { pub constructor mk_box; pub projector un_box }

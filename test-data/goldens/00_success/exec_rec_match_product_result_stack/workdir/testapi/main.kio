@@ -1,0 +1,25 @@
+module testapi/main;
+
+import fixture/model(Report, {first}, {second});
+import fixture/search(descend, descend_pending);
+import testapi(I32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn first(report: Report) -> I32 { report.?{first} }
+
+fn second(report: Report) -> I32 { report.?{second} }
+
+pub fn main() -> . {
+  let tail = descend(5000);
+  let pending = descend_pending(4);
+  print("[");
+  print(int_to_string(first(tail)));
+  print(", ");
+  print(int_to_string(second(tail)));
+  print("] [");
+  print(int_to_string(first(pending)));
+  print(", ");
+  print(int_to_string(second(pending)));
+  print("]\n")
+}

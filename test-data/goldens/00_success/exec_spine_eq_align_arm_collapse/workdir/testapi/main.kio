@@ -1,0 +1,21 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/spine_elaborators(narrow_sum, widen_sum);
+import testapi(Bool, String);
+import testapi/io(print);
+
+// The branches explicitly construct `String | String`; the spine
+// palette's `narrow_sum!` collapses to `String`. Equivalent to the
+// algebraic `exec_align_arm_collapse` golden, swapping `align!` for
+// the spine form — the operation is the codiagonal under either
+// palette.
+fn pick(b: Bool) -> String {
+  narrow_sum!(if! b {
+    widen_sum!("collapsed\n", String | String)
+  } else {
+    widen_sum!("collapsed\n", String | String)
+  })
+}
+
+pub fn main() -> . { print(pick(.t)) }

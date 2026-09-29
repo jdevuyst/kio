@@ -1,0 +1,13 @@
+module build_comptime_role_literals/main;
+
+import __comptime__;
+
+fn keep_bool(b: Comptime_bool) -> Comptime_bool { b }
+
+fn keep_str(s: Comptime_str) -> Comptime_str { s }
+
+fn true_lit() -> Comptime_bool { .t }
+
+fn str_lit() -> Comptime_str { "role" }
+
+pub fn main() -> . { () }

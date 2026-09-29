@@ -1,0 +1,3 @@
+module private_pack;
+
+newtype Pack[A] <U> : A & U { constructor mk_pack; projector un_pack }

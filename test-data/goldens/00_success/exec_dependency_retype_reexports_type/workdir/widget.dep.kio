@@ -1,0 +1,9 @@
+dependency widget;
+
+source {
+  path "../library/widget/widget.pkg.kio"
+}
+
+rehost widget/store to testapi;
+
+retype widget/store to core/store;

@@ -1,0 +1,209 @@
+/// Everything the program prints. The heap map renders an object the
+/// way the layout stores it -- address, tag, field count, then the
+/// fields, a pointer as `*<address>` and an immediate as its value -- so
+/// that reading the before and after maps side by side is enough to
+/// check the collector by hand.
+module gc/report;
+
+import elab/control(if);
+import elab/match(match);
+import gc/compact(Plan);
+import gc/compact({forward_table});
+import gc/heap(field_count, field_slot, fold_fields, fold_objects, tag_at, tag_name, top);
+import gc/heap(object_count);
+import gc/mark(Trace);
+import gc/mark({marked}, {pops}, {pushes}, {revisits});
+import gc/num(bool_eq, int_eq, int_lt);
+import gc/slot(Imm, Ptr);
+import gc/slot({imm}, {ptr});
+import gc/sweep(Census);
+import gc/sweep({dead_cells}, {dead_objects}, {live_cells}, {live_objects});
+import gc/verify(
+  , {arena_objects}
+  , {broken}
+  , {checked_pointers}
+  , {checked_roots}
+  , {dangling}
+  , {expected_live}
+  , {reachable}
+  , {verified}
+  );
+import gc/verify(Audit, Broken, Verdict, Verified);
+import testapi(Array, Bool, I32, String);
+import testapi/arith(add_i32, sub_i32);
+import testapi/array(array_get, array_len);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+fn cat(left: String, right: String) -> String { string_concat(left, right) }
+
+fn num(value: I32) -> String { int_to_string(value) }
+
+fn at(addr: I32) -> String { cat("@", num(addr)) }
+
+pub fn line(text: String) -> . { print(cat(text, "\n")) }
+
+pub fn blank() -> . { print("\n") }
+
+pub fn labeled(label: String, value: String) -> . { line(label.>cat(": ").>cat(value)) }
+
+fn counted(label: String, value: I32) -> . { labeled(label, num(value)) }
+
+/// Append `item` to a list being built, separating it from whatever is
+/// already there. A filtered walk cannot key the separator off an
+/// index, so the list carries whether anything has been appended yet.
+fn append(list: Bool & String, separator: String, item: String) -> Bool & String {
+  let .(empty: Bool, text: String) = list;
+  let lead =
+    if! empty {
+      ""
+    } else {
+      separator
+    };
+  (.f, text.>cat(lead).>cat(item))
+}
+
+fn list_text(list: Bool & String) -> String { let .(_empty: Bool, text: String) = list; text }
+
+fn fields_text(cells: Array(I32), addr: I32) -> String {
+  list_text(fold_fields(
+    , cells
+    , addr
+    , .(list, index) {
+        let field =
+          match! field_slot(cells, addr, index) {
+            (.(p: Ptr) { cat("*", num(p.?{ptr})) }, .(v: Imm) { num(v.?{imm}) })
+          };
+        append(list, ", ", field)
+      }
+    , (.t, "")
+    ))
+}
+
+fn object_text(cells: Array(I32), addr: I32) -> String {
+  at(addr)
+    .>cat(" ")
+    .>cat(tag_name(tag_at(cells, addr)))
+    .>cat(" n=")
+    .>cat(num(field_count(cells, addr)))
+    .>cat(" [")
+    .>cat(fields_text(cells, addr))
+    .>cat("]")
+}
+
+pub fn print_heap(title: String, cells: Array(I32)) -> . {
+  line(title
+    .>cat(" (")
+    .>cat(num(top(cells)))
+    .>cat(" cells, ")
+    .>cat(num(object_count(cells)))
+    .>cat(" objects)"));
+  fold_objects(cells, .(_unit, addr) { line(object_text(cells, addr)) }, ())
+}
+
+rec(loop) fn addrs_text(addrs: Array(I32), index: I32, text: String) -> String {
+  if! int_lt(index, array_len(addrs)) {
+    let separator = if! int_eq(index, 0) {
+      ""
+    } else {
+      " "
+    };
+    rec addrs_text(addrs, add_i32(index, 1), text.>cat(separator).>cat(at(array_get(addrs, index))))
+  } else {
+    text
+  }
+}
+
+pub fn addr_list(addrs: Array(I32)) -> String { addrs_text(addrs, 0, "") }
+
+/// The addresses of every object whose mark bit is `wanted` -- the live
+/// set for `.t`, the garbage for `.f`.
+fn marked_list(cells: Array(I32), marks: Array(Bool), wanted: Bool) -> String {
+  list_text(fold_objects(
+    , cells
+    , .(list, addr) {
+        if! bool_eq(array_get(marks, addr), wanted) {
+          append(list, " ", at(addr))
+        } else {
+          list
+        }
+      }
+    , (.t, "")
+    ))
+}
+
+fn tally(label: String, count: I32, addrs: String) -> . {
+  labeled(label, num(count).>cat(" (").>cat(addrs).>cat(")"))
+}
+
+pub fn print_mark(trace: Trace) -> . {
+  line("-- mark --");
+  counted("worklist pushes", trace.?{pushes});
+  counted("worklist pops", trace.?{pops});
+  counted("revisits skipped", trace.?{revisits});
+  counted("marked objects", trace.?{marked})
+}
+
+pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) -> . {
+  line("-- sweep --");
+  tally("live objects", census.?{live_objects}, marked_list(cells, marks, .t));
+  tally("dead objects", census.?{dead_objects}, marked_list(cells, marks, .f));
+  counted("live cells", census.?{live_cells});
+  counted("dead cells", census.?{dead_cells})
+}
+
+/// Printed before the move, while the old object list is still there to
+/// walk: a dead object leaves no forwarding entry, so only survivors
+/// appear.
+pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) -> . {
+  line("-- compact --");
+  line("forwarding table (old -> new)");
+  let forward = layout.?{forward_table};
+  fold_objects(
+    , cells
+    , .(_unit, addr) {
+        if! array_get(marks, addr) {
+          line("  ".>cat(at(addr)).>cat(" -> ").>cat(at(array_get(forward, addr))))
+        } else {
+          ()
+        }
+      }
+    , ()
+    )
+}
+
+pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) -> . {
+  labeled("roots after fixup", addr_list(roots));
+  labeled("arena top", num(before_top).>cat(" -> ").>cat(num(after_top)));
+  counted("cells reclaimed", sub_i32(before_top, after_top))
+}
+
+fn reached_text(report: Audit) -> String {
+  let reachable = report.?{reachable};
+  match! reachable {
+    (
+      , .(count: I32) { num(count).>cat(" of ").>cat(num(report.?{expected_live})) }
+      , .(_untraversed: .) { "not traversed (unsound pointers)" }
+      )
+  }
+}
+
+fn print_audit(report: Audit) -> . {
+  counted("objects in arena", report.?{arena_objects});
+  counted("roots checked", report.?{checked_roots});
+  counted("pointer fields checked", report.?{checked_pointers});
+  counted("dangling pointers", report.?{dangling});
+  labeled("reachable from roots", reached_text(report))
+}
+
+pub fn print_verify(verdict: Verdict) -> . {
+  line("-- verify --");
+  match! verdict {
+    (
+      , .(sound: Verified) { print_audit(sound.?{verified}); labeled("verdict", "heap verified") }
+      , .(damaged: Broken) { print_audit(damaged.?{broken}); labeled("verdict", "heap broken") }
+      )
+  }
+}

@@ -1,0 +1,25 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn scrutinee() -> Bool | String {
+  print("scrutinee\n"(String));
+  __right__(Bool, String, "payload"(String))
+}
+
+fn make_left_handler() -> Bool -> . {
+  print("left factory\n"(String));
+  .(_value: Bool) -> . { print("left invoke\n"(String)) }
+}
+
+fn make_right_handler() -> String -> . {
+  print("right factory\n"(String));
+  .(_value: String) -> . { print("right invoke\n"(String)) }
+}
+
+pub fn main() -> . {
+  __either__(Bool, String, ., scrutinee(), make_left_handler(), make_right_handler())
+}

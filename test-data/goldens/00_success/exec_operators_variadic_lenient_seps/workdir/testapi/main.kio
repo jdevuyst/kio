@@ -1,0 +1,28 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+// Cons-list scaffolding. `cat` returns its first arg so the fold
+// result is the leftmost element of each literal.
+fn nil() -> String { "[]" }
+
+fn cat(head: String, tail: String) -> String { head }
+
+varop [* *] { foldr cat nil }
+
+// Mirrors the A1 chain rule: leading, trailing, and repeated
+// separators inside a variadic literal collapse to the same
+// element list as the spaced canonical form. So `[* , a, b, *]`,
+// `[* , , a , , b , , *]`, and `[* a, b *]` all evaluate to the same
+// thing.
+pub fn main() -> . {
+  print([* "a", "b" *]);
+  print("\n");
+  print([* "x", "y" *]);
+  print("\n");
+  print([* *]);
+  print("\n");
+  print([* *]);
+  print("\n")
+}

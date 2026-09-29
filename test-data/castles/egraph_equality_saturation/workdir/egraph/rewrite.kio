@@ -1,0 +1,172 @@
+module egraph/rewrite;
+
+import egraph/graph as graph;
+import egraph/numbers as n;
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as num;
+import testapi/iter(loop);
+
+pub labels Outcome = { saturated: I32 } | { exhausted: I32 };
+
+rec(loop) fn constant_value(g: graph.Graph, root: I32, i: I32, limit: I32) -> I32 | . {
+  if! n.equal(i, limit) {
+    ().>widen_sum!
+  } else if! graph.same_class(g, root, i) {
+    match! graph.node(g, i) {
+      .(value: graph.Constant) { value.?{graph.constant}.>widen_sum!(I32 | .) };
+      .() { rec constant_value(g, root, n.increment(i), limit) }
+    }
+  } else {
+    rec constant_value(g, root, n.increment(i), limit)
+  }
+}
+
+fn has_constant(g: graph.Graph, root: I32, value: I32, limit: I32) -> Bool {
+  match! constant_value(g, root, 0, limit) {
+    .(found: I32) { n.equal(found, value) };
+    .() { .f }
+  }
+}
+
+fn join(g: graph.Graph, a: I32, b: I32) -> . { let _ = graph.merge(g, a, b); () }
+
+fn fold_constants(g: graph.Graph, owner: I32, a: I32, b: I32, multiply: Bool, limit: I32) -> . {
+  match! constant_value(g, a, 0, limit) {
+    .(left: I32) {
+      match! constant_value(g, b, 0, limit) {
+        .(right: I32) {
+          let value =
+            if! multiply {
+              num.mul_i32(left, right)
+            } else {
+              num.add_i32(left, right)
+            };
+          join(g, owner, graph.constant_node(g, value))
+        };
+        .() { () }
+      }
+    };
+    .() { () }
+  }
+}
+
+fn factor_pair(g: graph.Graph, owner: I32, a: I32, b: I32) -> . {
+  match! graph.node(g, a) {
+    .(left: graph.Product) {
+      match! graph.node(g, b) {
+        .(right: graph.Product) {
+          let .(common_a, tail_a) = left.?{graph.product};
+          let .(common_b, tail_b) = right.?{graph.product};
+          if! graph.same_class(g, common_a, common_b) {
+            let tail = graph.add(g, tail_a, tail_b);
+            let factored = graph.multiply(g, common_a, tail);
+            join(g, owner, factored)
+          } else {
+            ()
+          }
+        };
+        .() { () }
+      }
+    };
+    .() { () }
+  }
+}
+
+rec(loop) fn factor_members(
+  , g: graph.Graph
+  , owner: I32
+  , left: I32
+  , right: I32
+  , i: I32
+  , j: I32
+  , limit: I32
+  ) -> . {
+  if! n.equal(i, limit) {
+    ()
+  } else if! n.equal(j, limit) {
+    rec factor_members(g, owner, left, right, n.increment(i), 0, limit)
+  } else {
+    if! n.both(graph.same_class(g, i, left), graph.same_class(g, j, right)) {
+      factor_pair(g, owner, i, j)
+    } else {
+      ()
+    };
+    rec factor_members(g, owner, left, right, i, n.increment(j), limit)
+  }
+}
+
+fn rewrite_node(g: graph.Graph, owner: I32, limit: I32) -> . {
+  match! graph.node(g, owner) {
+    .(value: graph.Addition) {
+      let .(a, b) = value.?{graph.addition};
+      if! has_constant(g, a, 0, limit) {
+        join(g, owner, b)
+      } else {
+        ()
+      };
+      if! has_constant(g, b, 0, limit) {
+        join(g, owner, a)
+      } else {
+        ()
+      };
+      fold_constants(g, owner, a, b, .f, limit);
+      factor_members(g, owner, a, b, 0, 0, limit)
+    };
+    .(value: graph.Product) {
+      let .(a, b) = value.?{graph.product};
+      if! has_constant(g, a, 1, limit) {
+        join(g, owner, b)
+      } else {
+        ()
+      };
+      if! has_constant(g, b, 1, limit) {
+        join(g, owner, a)
+      } else {
+        ()
+      };
+      if! has_constant(g, a, 0, limit) {
+        join(g, owner, a)
+      } else {
+        ()
+      };
+      if! has_constant(g, b, 0, limit) {
+        join(g, owner, b)
+      } else {
+        ()
+      };
+      fold_constants(g, owner, a, b, .t, limit)
+    };
+    .() { () }
+  }
+}
+
+rec(loop) fn rewrite_nodes(g: graph.Graph, i: I32, limit: I32) -> . {
+  if! n.equal(i, limit) {
+    ()
+  } else {
+    rewrite_node(g, i, limit);
+    rec rewrite_nodes(g, n.increment(i), limit)
+  }
+}
+
+pub fn rewrite_round(g: graph.Graph) -> . { rewrite_nodes(g, 0, graph.size(g)) }
+
+rec(loop) fn saturation(g: graph.Graph, remaining: I32, rounds: I32) -> Outcome {
+  if! n.equal(remaining, 0) {
+    {exhausted = rounds}.>widen_sum!
+  } else {
+    let before = graph.revision(g);
+    rewrite_round(g);
+    let _ = graph.rebuild(g);
+    if! n.equal(before, graph.revision(g)) {
+      {saturated = n.increment(rounds)}.>widen_sum!
+    } else {
+      rec saturation(g, num.sub_i32(remaining, 1), n.increment(rounds))
+    }
+  }
+}
+
+pub fn saturate(g: graph.Graph, round_budget: I32) -> Outcome { saturation(g, round_budget, 0) }

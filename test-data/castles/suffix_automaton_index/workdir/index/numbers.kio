@@ -1,0 +1,23 @@
+module index/numbers;
+
+import elab/control(if);
+import testapi(Bool, I32);
+import testapi/arith as n;
+
+pub fn equal(a: I32, b: I32) -> Bool {
+  if! n.leq_i32(a, b) {
+    n.leq_i32(b, a)
+  } else {
+    .f
+  }
+}
+
+pub fn less(a: I32, b: I32) -> Bool { n.leq_i32(n.add_i32(a, 1), b) }
+
+pub fn max(a: I32, b: I32) -> I32 {
+  if! n.leq_i32(a, b) {
+    b
+  } else {
+    a
+  }
+}

@@ -1,0 +1,28 @@
+/// The workbench's fixture polynomials.
+module poly/fixtures;
+
+import list/list(varop [* *]);
+import poly/core as core;
+import testapi(I32);
+
+/// `3x^2 - 2x + 5`.
+pub fn p() -> core.Poly { core.of_coeffs([* 5, -2, 3 *]) }
+
+/// `x^2 - 4`. The interior zero coefficient is the one the renderer must drop,
+/// and the unit leading coefficient is the one it must not print.
+pub fn q() -> core.Poly { core.of_coeffs([* -4, 0, 1 *]) }
+
+/// `x - 2`. Monic, so long division by it never needs a coefficient reciprocal.
+pub fn d() -> core.Poly { core.of_coeffs([* -2, 1 *]) }
+
+/// `2x + 1`. Not monic: its leading 2 does not divide `p`'s leading 3, which is
+/// the `not_divisible` arm.
+pub fn e() -> core.Poly { core.of_coeffs([* 1, 2 *]) }
+
+/// `6x^2 + 7x + 2`, which is `(2x + 1)(3x + 2)`. This checked fixture divides
+/// evenly by the non-monic `e`.
+pub fn s() -> core.Poly { core.of_coeffs([* 2, 7, 6 *]) }
+
+/// `p` written with two redundant trailing zero coefficients — the un-normalized
+/// spelling that `of_coeffs` has to trim back down.
+pub fn padded_p() -> core.Poly { core.of_coeffs([* 5, -2, 3, 0, 0 *]) }

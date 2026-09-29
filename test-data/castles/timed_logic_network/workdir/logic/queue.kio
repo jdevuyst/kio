@@ -1,0 +1,53 @@
+module logic/queue;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as lists;
+import list/list as traversal;
+import list_host as numbers;
+import logic/model as model;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/iter(loop);
+
+fn before(a: model.Event, b: model.Event) -> Bool {
+  if! arith.lt_i32(a.?{model.at}, b.?{model.at}) {
+    .t
+  } else if! arith.lt_i32(b.?{model.at}, a.?{model.at}) {
+    .f
+  } else if! model.same_bit(a.?{model.source}, b.?{model.source}) {
+    arith.lt_i32(a.?{model.serial}, b.?{model.serial})
+  } else {
+    a.?{model.source}
+  }
+}
+
+pub rec(loop) fn insert(event: model.Event, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+  match! lists.uncons(queue) {
+    .(head: model.Event, tail: lists.List(model.Event)) {
+      if! before(event, head) {
+        lists.cons(event, queue)
+      } else {
+        lists.cons(head, rec(cont) insert(event, tail))
+      }
+    };
+    .() { lists.singleton(event) }
+  }
+}
+
+pub fn for_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+  traversal.filter(.(event: model.Event) { numbers.eq_i32(event.?{model.target}, id) }, queue)
+}
+
+pub fn without_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+  traversal.filter(
+    , .(event: model.Event) {
+        if! numbers.eq_i32(event.?{model.target}, id) {
+          .f
+        } else {
+          .t
+        }
+      }
+    , queue
+    )
+}

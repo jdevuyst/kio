@@ -1,0 +1,8 @@
+module use_op_pattern_no_match/helper;
+
+import use_op_pattern_no_match(A);
+
+pub fn add(a: A, b: A) -> A { a }
+
+// Helper exports `_ + _` only — no `??` operator anywhere.
+pub op _ + _ { impl add }

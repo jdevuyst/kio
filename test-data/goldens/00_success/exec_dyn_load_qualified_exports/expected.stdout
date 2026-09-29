@@ -1,0 +1,6 @@
+m1.ping = 1
+m2.ping = 2
+bare ping = <no unique export>
+contract (bare) = dyn_load_prime: `ping` is ambiguous — qualify it as one of: m1.ping, m2.ping
+contract (qualified) = ok
+contract (wrong signature) = dyn_load_prime: contract mismatch — export `m1.ping` declares `() -> h{hostapi.I32}` but the host expects `(h{hostapi.I32}) -> h{hostapi.I32}`

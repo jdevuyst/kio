@@ -1,0 +1,14 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+labels Choice = { ok: String } | { err: String, code: String };
+
+fn make_ok() -> Choice { __left__(Ok, Err & Code, {ok = "ok\n"}) }
+
+fn make_err() -> Choice { __right__(Ok, Err & Code, {err = "bad", code = "code\n"}) }
+
+pub fn main() -> . { let _ok = make_ok(); let _err = make_err(); print("ok\n"); print("code\n") }

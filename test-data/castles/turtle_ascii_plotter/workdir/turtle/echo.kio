@@ -1,0 +1,74 @@
+/// The parse, printed back.
+///
+/// Two spaces of indent per nesting level, and a `repeat` prints its own
+/// `end`. The echo is not decoration: it is the only place the nesting the
+/// parser recovered becomes observable, so a `repeat` that swallowed the wrong
+/// commands shows up in the output before the plot does.
+module turtle/echo;
+
+import elab/control(if);
+import elab/match(match);
+import list/core as list;
+import testapi(Bool, I32, String);
+import testapi/arith(add_i32, mul_i32);
+import testapi/io(print);
+import testapi/iter(loop);
+import turtle/command as cmd;
+import turtle/text as text;
+
+fn line(indent: String, body: String) -> . { print(text.cat3(indent, body, "\n")) }
+
+fn pen_text(down: Bool) -> String {
+  if! down {
+    "pen down"
+  } else {
+    "pen up"
+  }
+}
+
+fn turn_text(right: Bool) -> String {
+  if! right {
+    "turn right"
+  } else {
+    "turn left"
+  }
+}
+
+rec(loop) {
+  /// Print every command of `b`, indented `depth` levels deep.
+  pub fn echo_block(b: list.List(cmd.Command), depth: I32) -> . { rec walk(b, depth) };
+  fn walk(b: list.List(cmd.Command), depth: I32) -> . {
+    match! list.uncons(b) {
+      (
+        , .(c: cmd.Command, rest: list.List(cmd.Command)) {
+            rec(cont) emit(c, depth);
+            rec walk(rest, depth)
+          }
+        , .(_empty: .) { () }
+        )
+    }
+  };
+  /// One command and, when it is a `repeat`, everything under it.
+  fn emit(c: cmd.Command, depth: I32) -> . {
+    let indent = text.spaces(mul_i32(depth, 2));
+    match! cmd.un_command(c) {
+      (
+        , .(p: cmd.Pen_cmd) { line(indent, pen_text(p.?{cmd.pen_cmd})) }
+        , .(m: cmd.Move_cmd) { line(indent, text.cat2("move ", text.num(m.?{cmd.move_cmd}))) }
+        , .(t: cmd.Turn_cmd) { line(indent, turn_text(t.?{cmd.turn_cmd})) }
+        , .(g: cmd.Goto_cmd) {
+            let .(x: I32, y: I32) = g.?{cmd.goto_cmd};
+            line(indent, text.cat4("goto ", text.num(x), " ", text.num(y)))
+          }
+        , .(k: cmd.Mark_cmd) { line(indent, text.cat2("mark ", text.num(k.?{cmd.mark_cmd}))) }
+        , .(r: cmd.Repeat_cmd) {
+            let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
+            line(indent, text.cat2("repeat ", text.num(n)));
+            rec(cont) walk(body, add_i32(depth, 1));
+            line(indent, "end")
+          }
+        , .(u: cmd.Unknown_cmd) { line(indent, text.cat2("unknown ", u.?{cmd.unknown_cmd})) }
+        )
+    }
+  }
+}

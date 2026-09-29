@@ -1,0 +1,80 @@
+module testapi/scalar;
+
+import testapi(Bool, F64, I32, Scalar, String);
+
+// `testapi/scalar.kio` — the host's **opaque scalar** capability.
+//
+// `dyn_load_prime`'s value model carries a guest's host scalars opaquely
+// (`value.kio` § `V_host`): the interpreter never learns whether a
+// `V_host` is an i32, a string, a bool, or a float — it only threads the
+// opaque `Scalar` the host owns. The host supplies the whole scalar
+// vocabulary here: build one from a literal's text, lift a typed host
+// value into the box, project a typed host value back out, and test an
+// opaque bool. Adding a new scalar shape (a wider numeric, a host
+// function value) is a new lift / project pair here plus the host backing
+// it — no interpreter change, because the interpreter names none of these.
+//
+// `Scalar` is a `role`-less `host type`: an opaque host-owned box, like a
+// `Token` or `Box` capability, not a role-bearing primitive. The host
+// decides its representation (a tagged union of the scalar shapes); Kio
+// never introspects it.
+
+// =====================================================================
+// Literal construction — a literal's text + a host representation key → a Scalar
+// =====================================================================
+//
+// A Kio' literal pins a host-typed value with its `(Type)` annotation —
+// `42(I32)`, `"hi"(String)`, `.t(Bool)`, `562.406(F64)`. The interpreter
+// parses neither the value nor the type: it carries the literal's **raw
+// text** and exact resolved host-type descriptor. The fixture's literal
+// capability maps that descriptor to a representation key and constructs the
+// scalar. So the interpreter knows no scalar representation; the host owns the
+// mapping and the text-to-value parse.
+//
+// The representation key is private to this fixture host. It is selected by
+// exact host-type identity, not inferred from the type's role or spelling.
+host fn make_scalar(p0: String, p1: String) -> Scalar;
+
+// =====================================================================
+// Lifts — a typed host value → the opaque Scalar box
+// =====================================================================
+//
+// A host op's result is a typed host value (`add_i32` yields an `I32`,
+// `string_concat` a `String`); lifting it into the opaque box is how the
+// host `call` capability returns a scalar to the interpreter without the
+// interpreter learning the shape.
+host fn scalar_of_i32(p0: I32) -> Scalar;
+
+host fn scalar_of_str(p0: String) -> Scalar;
+
+host fn scalar_of_bool(p0: Bool) -> Scalar;
+
+host fn scalar_of_f64(p0: F64) -> Scalar;
+
+// =====================================================================
+// Projections — the opaque Scalar box → a typed host value, or `()`
+// =====================================================================
+//
+// A host op's operand arrives as an opaque `Scalar`; projecting the typed
+// host value back out is how the host `call` capability reads it before
+// applying the op. The `()` arm covers a scalar of the wrong shape (a
+// well-typed guest never triggers it), so a call applier can branch on a
+// mismatch rather than fault.
+host fn scalar_as_i32(p0: Scalar) -> . | I32;
+
+host fn scalar_as_str(p0: Scalar) -> . | String;
+
+host fn scalar_as_bool(p0: Scalar) -> . | Bool;
+
+host fn scalar_as_f64(p0: Scalar) -> . | F64;
+
+// =====================================================================
+// Bool test — the opaque Scalar box → a host bool decision
+// =====================================================================
+//
+// `__if_then_else__` over a guest `Bool` reaches the interpreter as an
+// opaque `Scalar`; the interpreter cannot read its truth, so the host
+// tests it. The decision (a host `Bool`) enters the interpreter only at
+// the `test_bool` capability's conversion site, where it becomes a structural
+// choice the interpreter branches on (`hostrec.kio`'s `test_bool_default`).
+host fn scalar_is_true(p0: Scalar) -> Bool;

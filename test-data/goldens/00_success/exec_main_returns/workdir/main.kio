@@ -1,0 +1,11 @@
+module main;
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn id[A](x: A) -> A { x }
+
+fn box_unbox[A](x: A) -> A { let b = x.>Box.mk_box; b.>Box.un_box }
+
+fn pair_first[A](x: A) -> A { let .(first: A, _second: A) = (x, x); first }
+
+fn main() -> . { let r1 = id(()); let r2 = box_unbox(()); let r3 = pair_first(()); () }

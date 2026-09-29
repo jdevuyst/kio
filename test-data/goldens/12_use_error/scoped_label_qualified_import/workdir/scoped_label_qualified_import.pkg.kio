@@ -1,0 +1,14 @@
+package scoped_label_qualified_import;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  outside;
+  scope/origin
+}

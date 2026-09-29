@@ -1,0 +1,5 @@
+len(nul) = 1
+len(c0 run) = 8
+len(cr lf tab) = 3
+len(mixed) = 6
+nul roundtrips concat = yes

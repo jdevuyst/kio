@@ -1,0 +1,46 @@
+module main;
+
+import elab/spine_elaborators(one_prod);
+
+// Bare destructuring with explicit slot types.
+pub fn project_first_explicit[A][B]((x: A, _: B)) -> A { x }
+
+// Nested bare destructuring.
+fn project_inner_left[A][B][C](((x: A, _: B), _: C)) -> A { x }
+
+// As-pattern at top: bind whole AND destructure.
+fn pair_dup_as[A][B](p: (x: A, y: B)) -> (A & B) & A & B { (p, p) }
+
+// Wildcard slots at every level.
+fn ignore_all[A][B][C](((_: A, _: B), _: C)) -> . { () }
+
+// Single-slot pattern (unary).
+fn unary[A](wrapper: (only: A)) -> A { let .(got: A) = wrapper; got }
+
+// Let destructuring at top of body.
+fn use_let[A][B](pair: A & B) -> A { let .(x: A, _: B) = pair; x }
+
+// Nested let destructuring.
+fn use_nested_let[A][B][C](triple: (A & B) & C) -> B { let .((_: A, y: B), _: C) = triple; y }
+
+// Anonymous-fn pattern with a bare-name slot in check-mode position.
+// The lambda `.((x, _: B))` desugars to `.(_pat: (_ & B))` — the
+// outer slot's type carries a nested `_` because `x` was bare. Passed
+// to `apply` (whose first param has the concrete fn type `((A & B)) ->
+// A`), the lambda is checked against that expected type: the
+// structural-annotation rule resolves `_` against `A`, the cell
+// mechanism binds `_pat` to `(A & B)`, and the inner `match!` clause
+// destructures normally. Explicit type-args `A, B` route through the
+// cheap apply path so the lambda reaches `check_fn_against` (the
+// inferred-type-arg path would synth the lambda first and never get
+// the expected-type push).
+fn apply[A][B](f: (A & B) -> A, x: A & B) -> A { f(x) }
+
+fn use_anon_fn_pattern[A][B](p: A & B) -> A { apply(A, B, .((x, _: B)) -> A { x }, p) }
+
+// The same shape with a direct nested-`_` annotation (no parameter
+// pattern). Pins the typer's structural-against-expected rule
+// independently of the pattern-desugar surface.
+fn use_anon_fn_nested_infer[A][B](p: A & B) -> A {
+  apply(A, B, .(pair: _ & B) -> A { one_prod!(pair) }, p)
+}

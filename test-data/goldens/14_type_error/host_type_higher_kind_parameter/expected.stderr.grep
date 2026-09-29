@@ -1,0 +1,2 @@
+host type `Wrapper` cannot have higher-kinded type parameter `F`
+host type parameters must have kind `\*` — write `\[F\]`

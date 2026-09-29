@@ -1,0 +1,27 @@
+module testapi/types;
+
+// The product payload makes each applied `Box(A)` structurally visible at
+// the host boundary while retaining one value-bearing slot.
+pub newtype Box[A] : A & . { pub constructor mk_box; pub projector un_box }
+
+// The nested `A` binds only the function parameter. Instantiating `T` with
+// a type that contains an outer `A` must not capture that outer binder.
+pub newtype Capture[T] : [A] A -> T { pub constructor mk_capture; pub projector un_capture }
+
+// The outer `T` and the nested polymorphic `T` are distinct binders. An
+// instantiation substitutes only the value slot and leaves the identity
+// function polymorphic. The `Capture(T)` slot also exercises substitution
+// of a type containing an outer binder beneath another nested forall.
+pub newtype Shadow[T] : T & ([T] T -> T) & Capture(T) {
+  pub constructor mk_shadow;
+  pub projector un_shadow
+  }
+
+// A `Functor[*F]` dictionary with a polymorphic-function payload:
+// `fmap` lifts a shadow-bearing `F(A)` through the carrier to `F(B)`.
+// This is the value that crosses the host boundary in this case — an
+// ordinary record-of-functions, never a host typeclass instance.
+pub newtype Functor[*F] : [A][B] ((Shadow(F(A)) -> Shadow(F(B))) & F(A)) -> F(B) {
+  pub constructor mk_functor;
+  pub projector fmap
+  }

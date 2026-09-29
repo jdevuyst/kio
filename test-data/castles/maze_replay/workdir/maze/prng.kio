@@ -1,0 +1,44 @@
+/// A small, overflow-free linear congruential generator (LCG) for
+/// deterministic procedural generation. The modulus, multiplier, and
+/// increment are chosen so the product `a * state + c` always fits in a
+/// signed 32-bit integer, so every step stays in `[0, modulus)` without
+/// relying on wrap-around: `21407 * 32748 + 1 = 701072437`, well under
+/// `i32` max (`2147483647`).
+module maze/prng;
+
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, mod_i32, mul_i32);
+
+/// LCG modulus — a prime below `2^15`. The generator's period is the
+/// modulus, and every produced value lies in `[0, modulus)`.
+pub fn modulus() -> I32 { 32749 }
+
+fn multiplier() -> I32 { 21407 }
+
+fn increment() -> I32 { 1 }
+
+/// Reduce an arbitrary non-negative seed into the generator's state
+/// space `[0, modulus)`.
+pub fn seed_state(seed: I32) -> I32 { mod_i32(seed, modulus()) }
+
+/// Advance the generator one step: `next = (a * state + c) mod m`. The
+/// intermediate product is overflow-free by construction, so the result
+/// is always in `[0, modulus)`.
+pub fn next(state: I32) -> I32 {
+  mod_i32(add_i32(mul_i32(multiplier(), state), increment()), modulus())
+}
+
+/// A reproducible value in `[0, bound)` derived from `state`, for a
+/// positive `bound` no larger than the modulus.
+pub fn bounded(state: I32, bound: I32) -> I32 { mod_i32(state, bound) }
+
+/// Deterministically mix a base state with a coordinate pair into a
+/// fresh state. Each coordinate is folded in through the LCG step so
+/// nearby cells diverge, with extra steps to decorrelate the low bits.
+pub fn mix(state: I32, x: I32, y: I32) -> I32 {
+  next(add_i32(next(next(next(add_i32(state, x)))), y))
+}
+
+/// True when `n <= 0`. The replay loops bottom out on a zero counter,
+/// and the simulation guards subtraction against underflow with it.
+pub fn at_or_below_zero(n: I32) -> Bool { leq_i32(n, 0) }

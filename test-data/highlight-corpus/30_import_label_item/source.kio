@@ -1,0 +1,17 @@
+module x;
+
+import labels(
+  , Item
+  , {
+      // label selector trivia
+      selected_label
+    }
+  );
+
+fn shorthand(shorthand_label: Item) -> Item { {shorthand_label} }
+
+fn keep(ordinary_value: Item) -> Item { ordinary_value }
+
+fn import(value: Item) -> Item { value }
+
+fn contextual_call(value: Item) -> Item { import({value}) }

@@ -1,0 +1,5 @@
+module types;
+
+host type Actual role(bool);
+
+host type Other role(i32);

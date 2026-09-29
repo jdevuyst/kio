@@ -1,0 +1,3 @@
+module probe;
+
+pub fn identity(value: .) -> . { value }

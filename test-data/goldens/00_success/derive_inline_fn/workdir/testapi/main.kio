@@ -1,0 +1,25 @@
+module testapi/main;
+
+import elab/derive(derive);
+import testapi(String);
+import testapi/io(print);
+
+pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+  pub constructor mk_monad;
+  pub projector bind
+  }
+
+// The candidate is an inline `fn`-literal defining the rule on the
+// spot, rather than a reference to a named top-level `fn`. A
+// zero-precondition base instance written inline.
+fn use_derived() -> String {
+  let monad =
+    derive!(.() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }, Monad(Box));
+  let lifted = Box.mk_box("derive! inline fn: ok\n"(String));
+  let stepped = Monad.bind(monad)(String, String, lifted, .(s) { Box.mk_box(s) });
+  Box.un_box(stepped)
+}
+
+pub fn main() -> . { print(use_derived()) }

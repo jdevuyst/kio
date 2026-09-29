@@ -1,0 +1,83 @@
+/// Turning the tower back into text for the transcript.
+module rational/render;
+
+import elab/control(if);
+import elab/match(match);
+import rational/core as core;
+import rational/core(Division_by_zero, Eval, Fraction, Rational);
+import rational/expr(Add, Div, Expr, Lit, Mul, Sub);
+import rational/text as text;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/iter(loop);
+
+fn pair(numerator: I32, denominator: I32) -> String {
+  if! arith.eq_i32(denominator, 1) {
+    fmt.int_to_string(numerator)
+  } else {
+    text.cat3(fmt.int_to_string(numerator), "/", fmt.int_to_string(denominator))
+  }
+}
+
+/// A canonical rational. The invariant keeps the denominator positive, so a
+/// negative value always shows its sign on the numerator: `-2/5`, never `2/-5`.
+pub fn rational(value: Rational) -> String {
+  pair(core.numerator_of(value), core.denominator_of(value))
+}
+
+/// A written fraction, shown exactly as it was written. `2/4` stays `2/4` and
+/// `2/-5` keeps its negative denominator: a grader's transcript has to show
+/// what the student actually put down, not what it reduces to.
+pub fn fraction(value: Fraction) -> String {
+  pair(core.written_numerator(value), core.written_denominator(value))
+}
+
+pub fn outcome(value: Eval) -> String {
+  match! value {
+    (.(number: Rational) { rational(number) }, .(_fault: Division_by_zero) { "undefined" })
+  }
+}
+
+fn binary(left: String, operator: String, right: String) -> String {
+  text.cat5("(", left, operator, right, ")")
+}
+
+/// Every operator node is fully parenthesized. The grader never has to defend a
+/// precedence table, and the printed question is unambiguous about the tree the
+/// evaluator actually walked.
+pub rec(loop) fn expr(value: Expr) -> String {
+  match! Expr.get(value) {
+    (
+      , .(node: Lit) { fraction(Lit.get(node)) }
+      , .(node: Add) {
+          match! Add.get(node) {
+            .(left: Expr, right: Expr) {
+              binary(rec(cont) expr(left), " + ", rec(cont) expr(right))
+            }
+          }
+        }
+      , .(node: Sub) {
+          match! Sub.get(node) {
+            .(left: Expr, right: Expr) {
+              binary(rec(cont) expr(left), " - ", rec(cont) expr(right))
+            }
+          }
+        }
+      , .(node: Mul) {
+          match! Mul.get(node) {
+            .(left: Expr, right: Expr) {
+              binary(rec(cont) expr(left), " * ", rec(cont) expr(right))
+            }
+          }
+        }
+      , .(node: Div) {
+          match! Div.get(node) {
+            .(left: Expr, right: Expr) {
+              binary(rec(cont) expr(left), " / ", rec(cont) expr(right))
+            }
+          }
+        }
+      )
+  }
+}

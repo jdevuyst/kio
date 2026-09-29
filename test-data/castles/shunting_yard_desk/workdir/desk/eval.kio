@@ -1,0 +1,163 @@
+/// The RPN machine: one value stack, one pass over the queue.
+///
+/// A literal is pushed; an operator pops its operands, computes, and pushes
+/// the result. Every partial operation is guarded *before* the host call, not
+/// after: `div_i32` and `mod_i32` are asked for a quotient only once the
+/// divisor is known to be non-zero, and `pow` is asked for a power only once
+/// the exponent is known to be non-negative. The guards are the calculator's
+/// faults, and the host arithmetic never sees an argument it cannot answer.
+module desk/eval;
+
+import desk/list(List, cons, is_empty, nil);
+import desk/num(int_eq, pow);
+import desk/op(Binary, Binop, Divide, Minus, Modulo, Op, Plus, Power, Times, Unary);
+import desk/op(Negate, Unop, {binary}, {unary});
+import desk/outcome(Answer, Failure, divide_by_zero_fault, extra_operand_fault, failed_answer);
+import desk/outcome(fault_at, missing_operand_fault, negative_exponent_fault, value_answer);
+import desk/step(Action, App, Lit, Step, act_of, spot_of, {app}, {lit});
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, div_i32, lt_i32, mod_i32, mul_i32, sub_i32);
+import testapi/iter(loop);
+
+/// A value on the stack, remembering the token that produced it. That origin
+/// is what lets the trailing-operand fault point at the surplus token rather
+/// than at the end of the line.
+labels Cell = { cell_val: I32, cell_at: I32 };
+
+labels Tick = { pushed: List(Cell) } | { blew: Failure };
+
+fn cell(v: I32, spot: I32) -> Cell { {cell_val = v, cell_at = spot} }
+
+fn pushed(stack: List(Cell)) -> Tick { {pushed = stack}.>widen_sum!(Tick) }
+
+fn blew(f: Failure) -> Tick { {blew = f}.>widen_sum!(Tick) }
+
+fn underflow(spot: I32) -> Tick { blew(fault_at(missing_operand_fault(), spot)) }
+
+/// Apply a binary operator to two known operands. The three partial cases —
+/// division by zero, remainder by zero, a negative exponent — become faults
+/// here rather than reaching the host.
+fn combine(b: Binop, spot: I32, left: I32, right: I32, rest: List(Cell)) -> Tick {
+  match! b {
+    (
+      , .(_p: Plus) { pushed(cons(cell(add_i32(left, right), spot), rest)) }
+      , .(_m: Minus) { pushed(cons(cell(sub_i32(left, right), spot), rest)) }
+      , .(_t: Times) { pushed(cons(cell(mul_i32(left, right), spot), rest)) }
+      , .(_d: Divide) {
+          if! int_eq(right, 0) {
+            blew(fault_at(divide_by_zero_fault(), spot))
+          } else {
+            pushed(cons(cell(div_i32(left, right), spot), rest))
+          }
+        }
+      , .(_o: Modulo) {
+          if! int_eq(right, 0) {
+            blew(fault_at(divide_by_zero_fault(), spot))
+          } else {
+            pushed(cons(cell(mod_i32(left, right), spot), rest))
+          }
+        }
+      , .(_w: Power) {
+          if! lt_i32(right, 0) {
+            blew(fault_at(negative_exponent_fault(), spot))
+          } else {
+            pushed(cons(cell(pow(left, right), spot), rest))
+          }
+        }
+      )
+  }
+}
+
+fn apply_binop(b: Binop, spot: I32, stack: List(Cell)) -> Tick {
+  match! stack.>List.un_list {
+    (
+      , .(right: Cell, below: List(Cell)) {
+          match! below.>List.un_list {
+            (
+              , .(left: Cell, rest: List(Cell)) {
+                  combine(b, spot, left.?{cell_val}, right.?{cell_val}, rest)
+                }
+              , .(_empty: .) { underflow(spot) }
+              )
+          }
+        }
+      , .(_empty: .) { underflow(spot) }
+      )
+  }
+}
+
+fn apply_unop(u: Unop, spot: I32, stack: List(Cell)) -> Tick {
+  match! stack.>List.un_list {
+    (
+      , .(top: Cell, rest: List(Cell)) {
+          match! u {
+            .(_n: Negate) { pushed(cons(cell(sub_i32(0, top.?{cell_val}), spot), rest)) }
+          }
+        }
+      , .(_empty: .) { underflow(spot) }
+      )
+  }
+}
+
+fn apply_op(op: Op, spot: I32, stack: List(Cell)) -> Tick {
+  match! op {
+    (
+      , .(b: Binary) { apply_binop(b.?{binary}, spot, stack) }
+      , .(u: Unary) { apply_unop(u.?{unary}, spot, stack) }
+      )
+  }
+}
+
+fn exec(s: Step, stack: List(Cell)) -> Tick {
+  let spot = spot_of(s);
+  match! act_of(s) {
+    (
+      , .(l: Lit) { pushed(cons(cell(l.?{lit}, spot), stack)) }
+      , .(a: App) { apply_op(a.?{app}, spot, stack) }
+      )
+  }
+}
+
+/// What the stack must look like when the queue runs out: exactly one value.
+/// An empty stack means the expression never produced one — `( )` is the only
+/// way to write that here — and the fault quotes the last token. More than one
+/// value means an operand was pushed and never consumed; the fault quotes the
+/// topmost such value's own token, which for a trailing operand is the
+/// trailing token itself.
+fn settle(stack: List(Cell), last: I32) -> Answer {
+  match! stack.>List.un_list {
+    (
+      , .(top: Cell, rest: List(Cell)) {
+          if! is_empty(rest) {
+            value_answer(top.?{cell_val})
+          } else {
+            failed_answer(fault_at(extra_operand_fault(), top.?{cell_at}))
+          }
+        }
+      , .(_empty: .) { failed_answer(fault_at(missing_operand_fault(), last)) }
+      )
+  }
+}
+
+rec(loop) fn run(steps: List(Step), stack: List(Cell), last: I32) -> Answer {
+  match! steps.>List.un_list {
+    (
+      , .(s: Step, rest: List(Step)) {
+          match! exec(s, stack) {
+            (
+              , .(p: Pushed) { rec run(rest, p.?{pushed}, last) }
+              , .(f: Blew) { failed_answer(f.?{blew}) }
+              )
+          }
+        }
+      , .(_empty: .) { settle(stack, last) }
+      )
+  }
+}
+
+/// Evaluate an RPN queue. `last` is the position of the expression's final
+/// token, used only to place the fault of an expression that yields no value.
+pub fn evaluate(steps: List(Step), last: I32) -> Answer { run(steps, nil(Cell, ()), last) }

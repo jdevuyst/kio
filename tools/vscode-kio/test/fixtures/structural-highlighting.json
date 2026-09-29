@@ -1,0 +1,654 @@
+[
+  {
+    "name": "if_value",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if\n}\n",
+    "targets": [
+      {
+        "start": 41,
+        "end": 43,
+        "text": "if",
+        "kind": "identifier",
+        "owners": [
+          "expression_block",
+          "function_definition",
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "if_block_elaborator",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if!\n  .t { () } else { () }\n}\n",
+    "targets": [
+      {
+        "start": 41,
+        "end": 44,
+        "text": "if!",
+        "kind": "keyword.elaborator",
+        "owners": [
+          "expression_block",
+          "function_definition",
+          "block_call"
+        ]
+      },
+      {
+        "start": 57,
+        "end": 61,
+        "text": "else",
+        "kind": "keyword.control",
+        "owners": [
+          "block_call",
+          "labelled_block",
+          "expression_block",
+          "function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "if_value_comment",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if // shared trivia\n}\n",
+    "targets": [
+      {
+        "start": 41,
+        "end": 43,
+        "text": "if",
+        "kind": "identifier",
+        "owners": [
+          "expression_block",
+          "function_definition",
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "if_block_elaborator_comment",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if! // shared trivia\n  .t { () } else { () }\n}\n",
+    "targets": [
+      {
+        "start": 41,
+        "end": 44,
+        "text": "if!",
+        "kind": "keyword.elaborator",
+        "owners": [
+          "expression_block",
+          "function_definition",
+          "block_call"
+        ]
+      },
+      {
+        "start": 74,
+        "end": 78,
+        "text": "else",
+        "kind": "keyword.control",
+        "owners": [
+          "block_call",
+          "labelled_block",
+          "expression_block",
+          "function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "rec_callee_newline",
+    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec // shared trivia\n  again(value)\n}\n",
+    "targets": [
+      {
+        "start": 106,
+        "end": 109,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_call_expression",
+          "expression_block",
+          "function_definition",
+          "recursive_function_definition"
+        ]
+      },
+      {
+        "start": 68,
+        "end": 71,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "rec_parameter_newline",
+    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(\n  rec // shared trivia\n  : .\n) -> . { () }\n",
+    "targets": [
+      {
+        "start": 90,
+        "end": 93,
+        "text": "rec",
+        "kind": "variable.parameter",
+        "owners": [
+          "fn_decl_head",
+          "function_definition",
+          "recursive_function_definition"
+        ]
+      },
+      {
+        "start": 68,
+        "end": 71,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "rec_arguments_newline",
+    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec again\n  (value)\n}\n",
+    "targets": [
+      {
+        "start": 106,
+        "end": 109,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_call_expression",
+          "expression_block",
+          "function_definition",
+          "recursive_function_definition"
+        ]
+      },
+      {
+        "start": 68,
+        "end": 71,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_with",
+    "source": "signature app v(1);\nv(1) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub newtype B : A { pub constructor mk_b; pub projector un_b; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 59,
+        "end": 62,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_module_section",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 29,
+        "end": 33,
+        "text": "with",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_with_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_remove",
+    "source": "signature app v(1);\nv(1) {\n  breaking {\n    remove {\n      module api {\n        type;\n        pub;\n        fn;\n      }\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 80,
+        "end": 84,
+        "text": "type",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 94,
+        "end": 97,
+        "text": "pub",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 107,
+        "end": 109,
+        "text": "fn",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_add",
+    "source": "signature app v(1);\nv(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub type T = .;\n      }\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 84,
+        "end": 88,
+        "text": "type",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_module_section",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 47,
+        "end": 50,
+        "text": "add",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_add_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_member_boundary",
+    "source": "module source;\nrec {\n  type Alias = .;\n  newtype Box : . { constructor constructor; projector projector; };\n}\nfn use(type: .) -> . { type }\n",
+    "targets": [
+      {
+        "start": 15,
+        "end": 18,
+        "text": "rec",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 23,
+        "end": 27,
+        "text": "type",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 41,
+        "end": 48,
+        "text": "newtype",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 59,
+        "end": 70,
+        "text": "constructor",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 71,
+        "end": 82,
+        "text": "constructor",
+        "kind": "entity.name.function",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 84,
+        "end": 93,
+        "text": "projector",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 94,
+        "end": 103,
+        "text": "projector",
+        "kind": "entity.name.function",
+        "owners": [
+          "type_rec_group"
+        ]
+      },
+      {
+        "start": 117,
+        "end": 121,
+        "text": "type",
+        "kind": "variable.parameter",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ]
+      },
+      {
+        "start": 133,
+        "end": 137,
+        "text": "type",
+        "kind": "identifier",
+        "owners": [
+          "expression_path",
+          "expression_block",
+          "function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_reference_boundary",
+    "source": "signature app v(1);\nv(1) {\n  breaking {\n    remove {\n      module/if.type;\n      api.rec;\n      api.remove;\n      module api {\n        with;\n        module;\n        remove;\n      }\n    }\n  };\n  nonbreaking {\n    modify {\n      module api {\n        pub fn remove() -> .;\n      }\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 59,
+        "end": 65,
+        "text": "module",
+        "kind": "entity.name.module",
+        "owners": [
+          "signature_item_reference",
+          "signature_file"
+        ],
+        "textmate": [
+          "entity.name.module.kio"
+        ]
+      },
+      {
+        "start": 66,
+        "end": 68,
+        "text": "if",
+        "kind": "entity.name.module",
+        "owners": [
+          "signature_item_reference",
+          "signature_file"
+        ],
+        "textmate": [
+          "entity.name.module.kio"
+        ]
+      },
+      {
+        "start": 69,
+        "end": 73,
+        "text": "type",
+        "kind": "identifier",
+        "owners": [
+          "signature_item_reference",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 85,
+        "end": 88,
+        "text": "rec",
+        "kind": "identifier",
+        "owners": [
+          "signature_item_reference",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 100,
+        "end": 106,
+        "text": "remove",
+        "kind": "identifier",
+        "owners": [
+          "signature_item_reference",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 135,
+        "end": 139,
+        "text": "with",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 149,
+        "end": 155,
+        "text": "module",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 165,
+        "end": 171,
+        "text": "remove",
+        "kind": "identifier",
+        "owners": [
+          "signature_remove_module",
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 255,
+        "end": 261,
+        "text": "remove",
+        "kind": "entity.name.function",
+        "owners": [
+          "signature_module_section",
+          "signature_file"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "start": 44,
+        "end": 50,
+        "text": "remove",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_remove_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 212,
+        "end": 218,
+        "text": "modify",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_modify_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 29,
+        "end": 37,
+        "text": "breaking",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_breaking_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 194,
+        "end": 205,
+        "text": "nonbreaking",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_nonbreaking_block",
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_split_module",
+    "source": "// Header trivia\nsignature\napp\nv(1);\nv(1) {\n  breaking {\n    remove {\n      module // shared tail\n      api {\n        type;\n      }\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 17,
+        "end": 26,
+        "text": "signature",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 76,
+        "end": 82,
+        "text": "module",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": []
+      },
+      {
+        "start": 118,
+        "end": 122,
+        "text": "type",
+        "kind": "identifier",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_split_reference",
+    "source": "// Header trivia\nsignature\napp\nv(1);\nv(1) {\n  breaking {\n    remove {\n      module // shared tail\n      /api.type;\n    }\n  }\n}\n",
+    "targets": [
+      {
+        "start": 17,
+        "end": 26,
+        "text": "signature",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 76,
+        "end": 82,
+        "text": "module",
+        "kind": "entity.name.module",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": []
+      },
+      {
+        "start": 109,
+        "end": 113,
+        "text": "type",
+        "kind": "identifier",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_name_inverse",
+    "source": "// Ordinary module, not a signature file\nmodule source;\nfn signature() -> . { () }\nfn keep() -> . { signature() }\n",
+    "targets": [
+      {
+        "start": 59,
+        "end": 68,
+        "text": "signature",
+        "kind": "entity.name.function",
+        "owners": [],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "start": 100,
+        "end": 109,
+        "text": "signature",
+        "kind": "entity.name.function",
+        "owners": [],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
+    ]
+  }
+]

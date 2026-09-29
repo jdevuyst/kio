@@ -1,0 +1,26 @@
+/// The consumer declares its own `String` host type and imports the
+/// dependency's `dep_take`, which consumes the dependency's *own*
+/// `String`. Identity-exact nominal typing
+/// (`specs/language.md` § Nominal types) keeps the two `String`s distinct:
+/// `String` here is `(main, String)`, the dependency's is
+/// `(bdep/text, String)`.
+///
+/// The argument is a string literal *annotated* with the consumer's own
+/// `String` — `"hi"(String)`. A literal's annotation resolves it to that
+/// host type's identity-exact `(module, name)`, here `(main, String)`,
+/// so the literal is the consumer's `String`. `dep_take`'s parameter
+/// (qualified in its *declaring* module) wants
+/// `(bdep/text, String)`. The annotated literal is therefore a type
+/// error in the LITERAL-annotation slot — exit 14.
+///
+/// The annotation is load-bearing: a *bare* `"hi"` would resolve via
+/// tier 2 to the expected `(bdep/text, String)` and be accepted; the
+/// `(String)` annotation forces the consumer's `(main, String)` and
+/// exposes the distinctness.
+module main;
+
+import bdep/text(dep_take);
+
+host type String role(str);
+
+pub fn mix() -> String { dep_take("hi"(String)) }

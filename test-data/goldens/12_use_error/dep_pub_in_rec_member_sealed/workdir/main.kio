@@ -1,0 +1,10 @@
+module main;
+
+import seclib/calc(spin);
+
+// `main` is not within the `seclib/calc` subtree, so importing the
+// `pub(seclib/calc)`-sealed `spin` must fail with a use error (exit 12).
+// The dependency declared `spin` as `pub(calc)`; materialization re-rooted
+// the scope to `pub(seclib/calc)`, and the `rec`-group desugar preserved
+// it — so the seal is enforced here.
+pub fn use_it[A](x: A) -> A { spin(x) }

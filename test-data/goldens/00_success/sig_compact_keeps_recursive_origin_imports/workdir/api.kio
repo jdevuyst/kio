@@ -1,0 +1,8 @@
+module api;
+
+import left as left_dep;
+import right as right_dep;
+
+pub rec newtype Left : left_dep.Token | Left { pub constructor mk_left; pub projector un_left }
+
+pub rec newtype Right : right_dep.Token | Right { pub constructor mk_right; pub projector un_right }

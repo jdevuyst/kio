@@ -1,0 +1,15 @@
+package probe;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  testapi;
+  main;
+  elab/testapi
+}

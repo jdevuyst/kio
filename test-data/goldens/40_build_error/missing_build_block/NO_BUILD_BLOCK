@@ -1,0 +1,6 @@
+This case's subject is precisely the absence of a `build` block:
+`kio build` must error (exit 40) when the root package file has
+no build block. The case therefore cannot declare one. The sentinel
+exempts it from run-tests' build-block pre-flight and makes the
+target gate treat it as target-agnostic so it still runs on every
+impl.

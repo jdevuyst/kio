@@ -1,0 +1,60 @@
+/// An address-keyed table, generic in its payload. The engine keeps four of
+/// them: the sheet itself (address -> content), the value store (address ->
+/// value), the dependents map (address -> the cells that read it), and the
+/// in-degree counter Kahn's algorithm decrements (address -> count).
+module sheet/table;
+
+import elab/control(if);
+import elab/match(match);
+import sheet/addr(Addr, addr_eq);
+import sheet/list(List, cons, nil, reverse);
+import testapi(Bool);
+import testapi/iter(loop);
+
+pub newtype Table[V] : List(Addr & V) { pub constructor pack; pub projector unpack }
+
+pub fn empty[V]() -> Table(V) { Table.pack(V, nil(Addr & V, ())) }
+
+rec(loop) fn find_or[V](entries: List(Addr & V), key: Addr, fallback: V) -> V {
+  match! entries.>List.unpack {
+    (
+      , .(head: Addr & V, rest: List(Addr & V)) {
+          let .(k: Addr, v: V) = head;
+          if! addr_eq(k, key) {
+            v
+          } else {
+            rec find_or(rest, key, fallback)
+          }
+        }
+      , .(_empty: .) { fallback }
+      )
+  }
+}
+
+/// Every lookup in the engine is total: an unset key reads as the caller's
+/// default rather than failing.
+pub fn get_or[V](t: Table(V), key: Addr, fallback: V) -> V {
+  find_or(t.>Table.unpack, key, fallback)
+}
+
+rec(loop) fn without[V](entries: List(Addr & V), key: Addr, acc: List(Addr & V)) -> List(Addr & V) {
+  match! entries.>List.unpack {
+    (
+      , .(head: Addr & V, rest: List(Addr & V)) {
+          let .(k: Addr, _v: V) = head;
+          if! addr_eq(k, key) {
+            rec without(rest, key, acc)
+          } else {
+            rec without(rest, key, cons(head, acc))
+          }
+        }
+      , .(_empty: .) { reverse(acc) }
+      )
+  }
+}
+
+/// Dropping the old entry rather than shadowing it keeps the table at one
+/// entry per cell, so a long edit script does not grow the lookup cost.
+pub fn put[V](t: Table(V), key: Addr, value: V) -> Table(V) {
+  Table.pack(V, cons((key, value), without(t.>Table.unpack, key, nil(Addr & V, ()))))
+}

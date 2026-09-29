@@ -1,0 +1,15 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/array(array_get, array_make_filled);
+import testapi/io(print);
+
+pub fn main() -> . {
+  let flags = array_make_filled(1, .t);
+  if! array_get(flags, 0) {
+    print("true\n")
+  } else {
+    print("false\n")
+  }
+}

@@ -1,0 +1,9 @@
+module build_open_world_imported_newtype/c;
+
+import __intrinsics__;
+
+import build_open_world_imported_newtype/a(Item);
+
+pub type Bag = Item & Item;
+
+pub fn absurd_bag(p: !) -> Bag { __absurd__(Bag, p) }

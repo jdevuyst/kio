@@ -1,0 +1,7 @@
+module main;
+
+newtype A : . { constructor mk_a; projector un_a }
+
+fn outer[A](value: A) -> A { let identity = .(inner: A) -> A { inner }; identity(value) }
+
+pub fn main() -> . { outer(., ()) }

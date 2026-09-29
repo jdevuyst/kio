@@ -1,0 +1,7 @@
+/// References a nonexistent term in a directive.
+///
+/// This is broken: [`@signature nonexistent`].
+/// This is also broken: [`@source also_missing`].
+module brokendir/main;
+
+pub fn identity(x: .) -> . { x }

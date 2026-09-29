@@ -1,0 +1,68 @@
+module pid/controller;
+
+import pid/calibration(apply);
+import pid/model(
+  , Accumulated_error
+  , Bias
+  , Calibration
+  , Command
+  , Derivative
+  , Derivative_term
+  , Error
+  , Gains
+  , Integral
+  , Integral_term
+  , Kd
+  , Ki
+  , Kp
+  , Measured
+  , Memory
+  , Previous_error
+  , Proportional
+  , Step
+  , {accumulated_error}
+  , {bias}
+  , {command}
+  , {derivative_term}
+  , {derivative}
+  , {error}
+  , {integral_term}
+  , {integral}
+  , {kd}
+  , {ki}
+  , {kp}
+  , {measured}
+  , {previous_error}
+  , {proportional}
+  );
+import testapi(F64);
+import testapi/arith as arith;
+
+fn control_output(bias: F64, proportional: F64, integral_term: F64, derivative_term: F64) -> F64 {
+  let pi = arith.add_f64(proportional, integral_term);
+  arith.add_f64(bias, arith.add_f64(pi, derivative_term))
+}
+
+pub fn update(target: F64, raw: F64, calibration: Calibration, gains: Gains, memory: Memory) -> Step {
+  let measured = apply(raw, calibration);
+  let error = arith.sub_f64(target, measured);
+  let integral = arith.add_f64(memory.?{accumulated_error}, error);
+  let derivative = arith.sub_f64(error, memory.?{previous_error});
+  let proportional = arith.mul_f64(gains.?{kp}, error);
+  let integral_term = arith.mul_f64(gains.?{ki}, integral);
+  let derivative_term = arith.mul_f64(gains.?{kd}, derivative);
+  {
+    , measured
+    , error
+    , integral
+    , derivative
+    , proportional
+    , integral_term
+    , derivative_term
+    , command = control_output(gains.?{bias}, proportional, integral_term, derivative_term)
+    }
+}
+
+pub fn memory_after(step: Step) -> Memory {
+  {previous_error = step.?{error}, accumulated_error = step.?{integral}}
+}

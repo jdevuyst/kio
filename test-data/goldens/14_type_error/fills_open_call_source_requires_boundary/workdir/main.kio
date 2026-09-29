@@ -1,0 +1,9 @@
+module main;
+
+import elab(infer);
+
+host type String role(str);
+
+host fn apply[A](function: . -> A) -> A;
+
+fn rejected() -> String { infer!(apply(.(_unit: .) { "inline" })) }

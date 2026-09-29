@@ -1,0 +1,3 @@
+module operator_type_syntax;
+
+host type String role(str);

@@ -1,0 +1,43 @@
+/// What lives in one field cell: an immediate, or a pointer to an
+/// object header. The arena stores both in the same `I32` cell and
+/// tells them apart by a bias -- a cell at or above `ptr_base` is a
+/// pointer to `cell - ptr_base`, anything smaller is an immediate. The
+/// bias sits far above the arena's top so the ranges cannot overlap,
+/// and decoding costs one subtraction: the host env has no division or
+/// bit operations to spend on a packed tag. Immediates are therefore
+/// non-negative and below `ptr_base`.
+module gc/slot;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith(add_i32, leq_i32, sub_i32);
+
+literal ptr_base = 1000;
+
+pub labels Slot = { ptr: I32 } | { imm: I32 };
+
+fn ptr_slot(target: I32) -> Slot { {ptr = target}.>widen_sum!(Slot) }
+
+fn imm_slot(value: I32) -> Slot { {imm = value}.>widen_sum!(Slot) }
+
+/// Decode one raw field cell.
+pub fn slot_of(cell: I32) -> Slot {
+  if! leq_i32(ptr_base, cell) {
+    ptr_slot(sub_i32(cell, ptr_base))
+  } else {
+    imm_slot(cell)
+  }
+}
+
+/// Encode a slot back into the raw cell the arena stores.
+fn cell_of(slot: Slot) -> I32 {
+  match! slot {
+    (.(p: Ptr) { add_i32(ptr_base, p.?{ptr}) }, .(v: Imm) { v.?{imm} })
+  }
+}
+
+pub fn ptr_cell(target: I32) -> I32 { cell_of(ptr_slot(target)) }
+
+pub fn imm_cell(value: I32) -> I32 { cell_of(imm_slot(value)) }

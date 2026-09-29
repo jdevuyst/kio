@@ -1,0 +1,33 @@
+module main;
+
+import elab/spine_elaborators(flatten_sum);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+newtype C : . { pub constructor mk_c; pub projector un_c }
+
+newtype D : . { pub constructor mk_d; pub projector un_d }
+
+// Single R-Assoc-Sum step. Source `(A | B) | C` is left-nested
+// (`Sum(Sum(A, B), C)`); target `A | B | C` right-associates to
+// `Sum(A, Sum(B, C))`. assoc_depth(S) = 1, assoc_depth(T) = 0, so
+// k = 1 step. Arm multisets agree (`{A, B, C}` on both sides).
+fn single_step(s: (A | B) | C) -> A | B | C { flatten_sum!(s) }
+
+// Multi-step R-Assoc-Sum. Source `((A | B) | C) | D` has
+// assoc_depth 3 along the outer-left chain; target `A | B | C | D`
+// right-associates to depth 0. k = 3 steps cascade through. Each
+// step is a single `__either__` re-routing the outer arm at the
+// new shape; the chain is three nested dispatches. Arm multisets
+// `{A, B, C, D}` preserved at every step.
+fn multi_step(s: ((A | B) | C) | D) -> A | B | C | D { flatten_sum!(s) }
+
+// Identity short-circuit. Source `A | B | C` right-associates to
+// `A | (B | C)`, identical to the target. k = 0 — no rewrite
+// fires; the rule produces identity glue.
+fn identity_short_circuit(s: A | B | C) -> A | B | C { flatten_sum!(s) }
+
+// UFCS spelling — same rule, postfix form.
+fn ufcs(s: (A | B) | C) -> A | B | C { s.>flatten_sum!(A | B | C) }

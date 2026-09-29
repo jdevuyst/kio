@@ -1,0 +1,15 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/labs1 as l1;
+import testapi/two as t2;
+
+// Two modules each declare a `labels { a: … }`, so both mint a leaf
+// newtype `A`. A record built with *both* (written through their module
+// aliases, `{t2.a = …, l1.a = …}`) holds two distinct slots; projecting
+// `l1.a` must read the `testapi/labs1.A` slot, not whichever slot's leaf
+// happens to read `A`. Before the identity-exact label-slot fix the
+// projection read the wrong slot and the two constructors collapsed onto
+// one module's `A`, so this printed "from two".
+pub fn main() -> . { print({t2.a = "from two\n", l1.a = "from labs1\n"}.?{l1.a}) }

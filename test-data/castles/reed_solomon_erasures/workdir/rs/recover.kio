@@ -1,0 +1,163 @@
+module rs/recover;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import list/core as c;
+import list/list as l;
+import rs/field as f;
+import rs/polynomial as p;
+import rs/symbols as s;
+import testapi(Bool, I32, String);
+import testapi/arith as a;
+import testapi/iter(loop);
+
+pub labels Decoded = { coefficients: p.Polynomial, repaired: s.Word, erased: s.Word, verified: I32 };
+
+pub labels Result = { accepted: Decoded } | { rejected: String };
+
+rec(loop) fn valid_coordinates(rest: c.List(I32), seen: c.List(I32)) -> String | . {
+  match! c.uncons(rest) {
+    .(coordinate: I32, tail: c.List(I32)) {
+      if! f.valid(coordinate) {
+        if! l.elem(f.equal, coordinate, seen) {
+          "repeated codeword coordinate".>widen_sum!
+        } else {
+          rec valid_coordinates(tail, c.cons(coordinate, seen))
+        }
+      } else {
+        "codeword coordinate outside F17".>widen_sum!
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}
+
+rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List(I32), seen: c.List(I32)) -> String | . {
+  match! c.uncons(rest) {
+    .(sample: s.Sample, tail: s.Word) {
+      let coordinate = sample.?{s.coordinate};
+      if! f.valid(coordinate) {
+        if! f.valid(sample.?{s.value}) {
+          if! l.elem(f.equal, coordinate, coordinates) {
+            if! l.elem(f.equal, coordinate, seen) {
+              "repeated surviving coordinate".>widen_sum!
+            } else {
+              rec valid_samples(tail, coordinates, c.cons(coordinate, seen))
+            }
+          } else {
+            "surviving coordinate absent from codeword".>widen_sum!
+          }
+        } else {
+          "surviving value outside F17".>widen_sum!
+        }
+      } else {
+        "surviving coordinate outside F17".>widen_sum!
+      }
+    };
+    .() { ().>widen_sum! }
+  }
+}
+
+labels Basis = { factors: p.Polynomial, divisor: I32 };
+
+fn term(sample: s.Sample, basis: s.Word) -> p.Polynomial | String {
+  let coordinate = sample.?{s.coordinate};
+  let product =
+    l.foldl(
+      , .(acc, other) {
+          let root = other.?{s.coordinate};
+          if! f.equal(coordinate, root) {
+            acc
+          } else {
+            {
+              , factors = p.multiply_linear(acc.?{factors}, root)
+              , divisor = f.multiply(acc.?{divisor}, f.subtract(coordinate, root))
+              }
+          }
+        }
+      , {factors = c.singleton(1), divisor = 1}
+      , basis
+      );
+  match! f.inverse(product.?{divisor}) {
+    .(inverse: I32) {
+      p.scale(product.?{factors}, f.multiply(sample.?{s.value}, inverse)).>widen_sum!
+    };
+    .() { "singular interpolation basis".>widen_sum! }
+  }
+}
+
+rec(loop) fn interpolate(rest: s.Word, basis: s.Word, total: p.Polynomial) -> p.Polynomial | String {
+  match! c.uncons(rest) {
+    .(sample: s.Sample, tail: s.Word) {
+      match! term(sample, basis) {
+        .(contribution: p.Polynomial) { rec interpolate(tail, basis, p.add(total, contribution)) };
+        .(error: String) { error.>widen_sum! }
+      }
+    };
+    .() { total.>widen_sum! }
+  }
+}
+
+fn agrees(poly: p.Polynomial, samples: s.Word) -> Bool {
+  l.foldl(
+    , .(ok, sample) {
+        if! ok {
+          f.equal(p.direct(poly, sample.?{s.coordinate}), sample.?{s.value})
+        } else {
+          .f
+        }
+      }
+    , .t
+    , samples
+    )
+}
+
+fn reconstruct(poly: p.Polynomial, coordinates: c.List(I32), samples: s.Word) -> Result {
+  if! agrees(poly, samples) {
+    let known = l.map(.(sample) { sample.?{s.coordinate} }, samples);
+    let repaired = l.map(
+      , .(coordinate) { {s.coordinate, s.value = p.direct(poly, coordinate)} }
+      , coordinates
+      );
+    let erased = l.filter(
+      , .(sample) {
+          if! l.elem(f.equal, sample.?{s.coordinate}, known) {
+            .f
+          } else {
+            .t
+          }
+        }
+      , repaired
+      );
+    {accepted = {coefficients = poly, repaired, erased, verified = l.length(samples)}}.>widen_sum!
+  } else {
+    {rejected = "surviving samples contradict degree bound"}.>widen_sum!
+  }
+}
+
+fn sufficient(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Result {
+  if! a.lt_i32(l.length(samples), dimension) {
+    {rejected = "insufficient surviving symbols"}.>widen_sum!
+  } else {
+    let basis = l.take(dimension, samples);
+    match! interpolate(basis, basis, l.replicate(dimension, 0)) {
+      .(poly: p.Polynomial) { reconstruct(poly, coordinates, samples) };
+      .(error: String) { {rejected = error}.>widen_sum! }
+    }
+  }
+}
+
+pub fn decode(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Result {
+  if! a.lt_i32(l.length(coordinates), dimension) {
+    {rejected = "codeword shorter than message dimension"}.>widen_sum!
+  } else match! valid_coordinates(coordinates, c.nil()) {
+    .(error: String) { {rejected = error}.>widen_sum! };
+    .() {
+      match! valid_samples(samples, coordinates, c.nil()) {
+        .(error: String) { {rejected = error}.>widen_sum! };
+        .() { sufficient(dimension, coordinates, samples) }
+      }
+    }
+  }
+}

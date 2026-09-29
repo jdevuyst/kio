@@ -1,0 +1,7 @@
+module api;
+
+host type Live role(str);
+
+host fn open() -> Live;
+
+pub fn echo(value: Live) -> Live { value }

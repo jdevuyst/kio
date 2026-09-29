@@ -1,0 +1,13 @@
+module testapi/main;
+
+import elab/match(match);
+import testapi(String);
+import testapi/io(print);
+
+fn classify() -> String {
+  match! "ignored" {
+    .[A](_value: A) { "matched atom\n" }
+  }
+}
+
+pub fn main() -> . { print(classify()) }

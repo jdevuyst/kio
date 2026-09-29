@@ -1,0 +1,25 @@
+module rs/symbols;
+
+import list/core as c;
+import list/list as l;
+import rs/polynomial as p;
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/text as text;
+
+pub labels Sample = { coordinate: I32, value: I32 };
+
+pub type Word = c.List(Sample);
+
+pub fn encode(message: p.Polynomial, coordinates: c.List(I32)) -> Word {
+  l.map(.(coordinate) { {coordinate, value = p.horner(message, coordinate)} }, coordinates)
+}
+
+pub fn show(sample: Sample) -> String {
+  text.string_concat(
+    , fmt.int_to_string(sample.?{coordinate})
+    , text.string_concat(":", fmt.int_to_string(sample.?{value}))
+    )
+}
+
+pub fn values(word: Word) -> c.List(I32) { l.map(.(sample) { sample.?{value} }, word) }

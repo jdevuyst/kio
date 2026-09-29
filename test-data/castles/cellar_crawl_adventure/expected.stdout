@@ -1,0 +1,158 @@
+The Cellar Crawl
+Seven rooms under an old vineyard. Find the bottle; keep hold of the light.
+
+> look
+Foot of the Cellar Stairs
+Worn steps climb back up toward the daylight. The air is cold and smells of oak.
+Exits: north
+
+> go up
+You cannot go that way.
+
+> go sideways
+"sideways" is not a direction.
+
+> go north
+The Barrel Hall
+Fat oak barrels sweat in the gloom. A trapdoor is set into the flagstones.
+Exits: south, east, west, down (locked)
+
+> go down
+That way is locked. You need the brass key.
+
+> unlock down
+The lock will not turn without the brass key.
+
+> go west
+The Cooperage
+Staves, iron hoops, and a half-built barrel. A cooper's bench runs along the wall.
+Here: a brass key
+Exits: east
+
+> take lantern
+There is no lantern here.
+
+> take key
+Taken: a brass key
+
+> take key
+You are already carrying the brass key.
+
+> look
+The Cooperage
+Staves, iron hoops, and a half-built barrel. A cooper's bench runs along the wall.
+Exits: east
+
+> go east
+The Barrel Hall
+Fat oak barrels sweat in the gloom. A trapdoor is set into the flagstones.
+Exits: south, east, west, down (locked)
+
+> go east
+The Tasting Nook
+A scarred table, six glasses, and a hundred overlapping rings of old wine.
+Here: a cork
+Exits: west
+
+> take cork
+Taken: a cork
+
+> go west
+The Barrel Hall
+Fat oak barrels sweat in the gloom. A trapdoor is set into the flagstones.
+Exits: south, east, west, down (locked)
+
+> unlock north
+There is nothing to unlock that way.
+
+> unlock down
+The lock turns. The way is open.
+
+> go down
+The Racking Floor
+Bottles lie racked neck-down in the shadows. A low arch opens to the north.
+Here: a lantern
+Exits: north, up
+
+> go north
+It is pitch dark that way. You will not go in without a light.
+
+> take lantern
+Taken: a lantern
+
+> go north
+The Unlit Cellar
+Your light throws long shapes across a vault no flame has entered in thirty years.
+Exits: south, east (locked)
+
+> drop lantern
+Dropped: a lantern
+
+> look
+Pitch Dark
+You cannot see a thing. Only cold air, and the smell of very old wine.
+
+> take lantern
+Taken: a lantern
+
+> look
+The Unlit Cellar
+Your light throws long shapes across a vault no flame has entered in thirty years.
+Exits: south, east (locked)
+
+> unlock east
+The lock turns. The way is open.
+
+> go east
+The Reserve Vault
+A cold stone chamber. One bottle rests alone in a cradle of straw.
+Here: a dusty bottle
+Exits: west
+
+> take unicorn
+There is no unicorn here.
+
+> take bottle
+Taken: a dusty bottle
+
+> inventory
+Carrying: a lantern, a brass key, a cork, a dusty bottle
+
+> dance
+You do not know how to "dance".
+
+> drop sword
+You are not carrying a sword.
+
+> go west
+The Unlit Cellar
+Your light throws long shapes across a vault no flame has entered in thirty years.
+Exits: south, east
+
+> go south
+The Racking Floor
+Bottles lie racked neck-down in the shadows. A low arch opens to the north.
+Exits: north, up
+
+> go up
+The Barrel Hall
+Fat oak barrels sweat in the gloom. A trapdoor is set into the flagstones.
+Exits: south, east, west, down
+
+> go south
+Foot of the Cellar Stairs
+Worn steps climb back up toward the daylight. The air is cold and smells of oak.
+Exits: north
+
+> quit
+You climb the stairs and step out into the daylight.
+
+--- final tally ---
+turns: 37
+moves: 12
+fumbles: 12
+doors opened: 2
+Carrying: a lantern, a brass key, a cork, a dusty bottle
+score: 63 = 20 doors + 55 haul - 12 fumbles
+rank: Bottle Hunter
+prize: won

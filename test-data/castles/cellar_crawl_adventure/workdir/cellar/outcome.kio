@@ -1,0 +1,92 @@
+/// What a turn did.
+///
+/// Every refusal the cellar can produce is an arm of this sum, so a command the
+/// world will not honour is a *value* the engine returns, not a failure it
+/// raises. Nothing here renders itself: `cellar/report` is the only module that
+/// turns an outcome into English, and `cellar/engine` is the only one that
+/// mints it.
+module cellar/outcome;
+
+import cellar/ids as ids;
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, String);
+
+pub labels Outcome =
+  { saw_room: . }
+  | { too_dark_to_see: . }
+  | { dark_ahead: . }
+  | { way_locked: ids.Item_id }
+  | { no_exit: . }
+  | { not_a_direction: String }
+  | { took: ids.Item_id }
+  | { already_held: ids.Item_id }
+  | { nothing_named: String }
+  | { dropped: ids.Item_id }
+  | { not_held: String }
+  | { lock_opened: . }
+  | { nothing_to_unlock: . }
+  | { lock_needs: ids.Item_id }
+  | { held_items: . }
+  | { unknown_verb: String }
+  | { left_cellar: . };
+
+pub fn saw_room() -> Outcome { {saw_room=}.>widen_sum!(Outcome) }
+
+pub fn too_dark_to_see() -> Outcome { {too_dark_to_see=}.>widen_sum!(Outcome) }
+
+pub fn dark_ahead() -> Outcome { {dark_ahead=}.>widen_sum!(Outcome) }
+
+pub fn way_locked(key: ids.Item_id) -> Outcome { {way_locked = key}.>widen_sum!(Outcome) }
+
+pub fn no_exit() -> Outcome { {no_exit=}.>widen_sum!(Outcome) }
+
+pub fn not_a_direction(word: String) -> Outcome { {not_a_direction = word}.>widen_sum!(Outcome) }
+
+pub fn took(i: ids.Item_id) -> Outcome { {took = i}.>widen_sum!(Outcome) }
+
+pub fn already_held(i: ids.Item_id) -> Outcome { {already_held = i}.>widen_sum!(Outcome) }
+
+pub fn nothing_named(word: String) -> Outcome { {nothing_named = word}.>widen_sum!(Outcome) }
+
+pub fn dropped(i: ids.Item_id) -> Outcome { {dropped = i}.>widen_sum!(Outcome) }
+
+pub fn not_held(word: String) -> Outcome { {not_held = word}.>widen_sum!(Outcome) }
+
+pub fn lock_opened() -> Outcome { {lock_opened=}.>widen_sum!(Outcome) }
+
+pub fn nothing_to_unlock() -> Outcome { {nothing_to_unlock=}.>widen_sum!(Outcome) }
+
+pub fn lock_needs(key: ids.Item_id) -> Outcome { {lock_needs = key}.>widen_sum!(Outcome) }
+
+pub fn held_items() -> Outcome { {held_items=}.>widen_sum!(Outcome) }
+
+pub fn unknown_verb(word: String) -> Outcome { {unknown_verb = word}.>widen_sum!(Outcome) }
+
+pub fn left_cellar() -> Outcome { {left_cellar=}.>widen_sum!(Outcome) }
+
+/// A fumble is a turn that got the player nothing they asked for. The score
+/// docks a point for each, so every outcome arm is classified explicitly.
+pub fn is_fumble(o: Outcome) -> Bool {
+  match! o {
+    (
+      , .(_a: Saw_room) { .f }
+      , .(_b: Too_dark_to_see) { .t }
+      , .(_c: Dark_ahead) { .t }
+      , .(_d: Way_locked) { .t }
+      , .(_e: No_exit) { .t }
+      , .(_f: Not_a_direction) { .t }
+      , .(_g: Took) { .f }
+      , .(_h: Already_held) { .t }
+      , .(_i: Nothing_named) { .t }
+      , .(_j: Dropped) { .f }
+      , .(_k: Not_held) { .t }
+      , .(_l: Lock_opened) { .f }
+      , .(_m: Nothing_to_unlock) { .t }
+      , .(_n: Lock_needs) { .t }
+      , .(_o: Held_items) { .f }
+      , .(_p: Unknown_verb) { .t }
+      , .(_q: Left_cellar) { .f }
+      )
+  }
+}

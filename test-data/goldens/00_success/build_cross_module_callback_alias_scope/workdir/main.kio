@@ -1,0 +1,8 @@
+module main;
+
+import helper as h;
+import testapi(Bool, String);
+
+fn same(_left: String, _right: String) -> Bool { .t }
+
+pub fn check(value: . | (String & String)) -> Bool { h.matches(same, value) }

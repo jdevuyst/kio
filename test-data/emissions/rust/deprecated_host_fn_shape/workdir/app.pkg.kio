@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  api
+}

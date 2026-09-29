@@ -1,0 +1,7 @@
+module host/b;
+
+host type Value role(str);
+
+host fn ping() -> Value;
+
+host fn unused() -> Value;

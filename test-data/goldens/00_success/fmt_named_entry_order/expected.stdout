@@ -1,0 +1,145 @@
+package fmt_named_entry_order;
+
+// bridge outer
+build {
+  // Build cache.
+  cache ();
+
+  docs {
+    md "docs";
+    support "first";
+    support "second";
+    html "out/docs"
+
+    // docs tail
+    // docs close
+  };
+
+  target js {
+    out "out/js/";
+    namespace "example"
+
+    // target tail
+    // target close
+  }
+
+  // cache tail
+  // build close
+}
+
+bridge {
+  fmt_named_entry_order/**
+
+  // bridge tail
+  // bridge close
+}
+// build outer
+module fmt_named_entry_order/main;
+
+varop [* *] {
+  // fold tail
+  // varop close
+  foldl step base; finalize finish
+}
+
+// varop outer
+elab make : . {
+  // capture tail
+  // elab close
+  captures (first, second); impl run
+}
+
+// elab outer
+newtype Box : . {
+  constructor create;
+  projector read
+  // constructor tail
+  // newtype close
+  }
+
+// newtype outer
+op _ + _ {
+  // implementation tail
+  // op close
+  impl step
+}
+
+// op outer
+dependency lib;
+
+source {
+  git "https://example.invalid/lib";
+  ref "main"
+
+  // source tail
+  // source close
+}
+
+// source outer
+rehost lib/io to fmt_named_entry_order/io;
+
+retype lib/types to fmt_named_entry_order/types;
+lock lib;
+
+resolved {
+  git "https://example.invalid/lib";
+  ref "main";
+  commit "revision";
+  sig "digest"
+
+  // resolved tail
+  // resolved close
+}
+// resolved outer
+signature app v(2);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        pub type Gone = .;
+        pub type Old = .
+      }
+    }
+  }
+}
+
+v(2) {
+  with {
+    module api {
+      pub rec newtype Fresh : . | Fresh {
+        pub constructor make;
+        pub projector read
+        // member tail
+        // member close
+        }
+    }
+  };
+  breaking {
+    add {
+      module api {
+        host type H
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.Fresh
+      // reference tail
+      // add close
+    };
+    modify {
+      module api {
+        pub type Old = !
+      }
+    };
+    remove {
+      api.Gone
+      // removed tail
+      // removed close
+    }
+  }
+  // with tail
+  // version close
+}
+// version outer

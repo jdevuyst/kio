@@ -1,0 +1,6 @@
+module m;
+
+equiv distinct_params[A](x: A, y: A) {
+  x;
+  y
+}

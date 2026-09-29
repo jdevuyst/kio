@@ -1,0 +1,8 @@
+module libdep/lib;
+
+pub fn unit() -> . { () }
+
+equiv lib_unit_law() {
+  unit();
+  ()
+}

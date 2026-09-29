@@ -1,0 +1,19 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+fn identity[T](value: T) -> T { value }
+
+fn run(choice: . | ([T] T -> T)) -> String {
+  match! choice {
+    (
+      , .(poly: [T] T -> T) { poly(String, "terminal rank-n sum payload ok\n"(String)) }
+      , .(_unit: .) { "wrong sum arm\n"(String) }
+      )
+  }
+}
+
+pub fn main() -> . { print(run(widen_sum!(identity, . | ([T] T -> T)))) }

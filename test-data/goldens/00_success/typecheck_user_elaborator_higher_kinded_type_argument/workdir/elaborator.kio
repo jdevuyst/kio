@@ -1,0 +1,9 @@
+module elaborator;
+
+import __comptime__;
+
+pure fn hkt_identity_impl(_ct: __Comptime__, _f: __Type__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub elab hkt_identity : [*F][A] F(A) -> F(A) { impl hkt_identity_impl }

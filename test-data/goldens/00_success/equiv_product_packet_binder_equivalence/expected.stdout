@@ -1,0 +1,10 @@
+  pass equiv `binary_partition` in equiv_product_packet_binder_equivalence
+  pass equiv `binary_partition_flat_first` in equiv_product_packet_binder_equivalence
+  pass equiv `ternary_partition` in equiv_product_packet_binder_equivalence
+  pass equiv `ternary_partition_flat_first` in equiv_product_packet_binder_equivalence
+  pass equiv `tail_partition` in equiv_product_packet_binder_equivalence
+  pass equiv `binary_forwarding` in equiv_product_packet_binder_equivalence
+  pass equiv `ternary_forwarding` in equiv_product_packet_binder_equivalence
+  pass equiv `curried_partition` in equiv_product_packet_binder_equivalence
+
+result: 8/8 equiv blocks passed

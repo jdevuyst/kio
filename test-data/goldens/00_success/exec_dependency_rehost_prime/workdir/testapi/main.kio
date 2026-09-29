@@ -1,0 +1,15 @@
+/// A dependency authored in Kio' stays Kio' through materialization: the
+/// library's literals carry their `(Type)` annotations spelled both ways —
+/// `41(I32)` through a selective import and `42(t.I32)` through a module
+/// alias — and `fmtlib.dep.kio`'s `rehost` replaces the library's own host
+/// declarations with generated wrappers over `testapi/fmt` and a type
+/// alias over `testapi/adapter`. The whole materialized closure parses as
+/// Kio' (the case carries IS_KIO_PRIME), so the annotation's type path is
+/// requalified through the re-rooted `fmtlib/types` and the case runs on
+/// the kio-prime differential, where the printed value flows through the
+/// alias-qualified annotation.
+module testapi/main;
+
+import fmtlib/show(show);
+
+pub fn main() -> . { show() }

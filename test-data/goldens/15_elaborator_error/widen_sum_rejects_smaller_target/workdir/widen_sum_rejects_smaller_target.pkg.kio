@@ -1,0 +1,19 @@
+package widen_sum_rejects_smaller_target;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  elab/testapi
+}

@@ -1,0 +1,78 @@
+module testapi/render;
+
+import testapi(String);
+import testapi/domain(
+  , Line
+  , Report
+  , Totals
+  , line_actual_of
+  , line_delta_of
+  , line_expected_of
+  , line_name_of
+  , line_status_of
+  , report_bolt_of
+  , report_gear_of
+  , report_panel_of
+  , report_seal_of
+  , report_totals_of
+  , report_unknown_of
+  , report_valve_of
+  , totals_missing
+  , totals_ok
+  , totals_skewed
+  , totals_unknown
+  );
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
+
+fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
+  string_concat(a, string_concat(b, string_concat(c, string_concat(d, e))))
+}
+
+fn render_line(row: Line) -> String {
+  cat5(
+    , "- "
+    , line_name_of(row)
+    , " expected="
+    , int_to_string(line_expected_of(row))
+    , cat5(
+        , " actual="
+        , int_to_string(line_actual_of(row))
+        , " delta="
+        , int_to_string(line_delta_of(row))
+        , cat3(" status=", line_status_of(row), "\n")
+        )
+    )
+}
+
+fn summary(row: Totals) -> String {
+  cat5(
+    , "summary ok="
+    , int_to_string(totals_ok(row))
+    , " missing="
+    , int_to_string(totals_missing(row))
+    , cat5(
+        , " skew="
+        , int_to_string(totals_skewed(row))
+        , " unknown="
+        , int_to_string(totals_unknown(row))
+        , "\n"
+        )
+    )
+}
+
+pub fn render_report(report_value: Report) -> . {
+  print("inventory reconciliation\n");
+  print("known items:\n");
+  print(render_line(report_bolt_of(report_value)));
+  print(render_line(report_gear_of(report_value)));
+  print(render_line(report_seal_of(report_value)));
+  print(render_line(report_panel_of(report_value)));
+  print(render_line(report_valve_of(report_value)));
+  print("unknown actuals:\n");
+  print(render_line(report_unknown_of(report_value)));
+  print(summary(report_totals_of(report_value)))
+}

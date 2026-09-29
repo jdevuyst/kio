@@ -1,0 +1,13 @@
+package wide;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/"
+  }
+}
+
+bridge {
+  api
+}

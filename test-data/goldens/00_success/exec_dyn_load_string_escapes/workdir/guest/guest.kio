@@ -1,0 +1,5 @@
+module guest;
+
+import hostapi(String);
+
+pub fn escapes() -> String { "tab\thereesc\u001bmid\r\nend" }

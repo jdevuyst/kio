@@ -1,0 +1,7 @@
+module helper;
+
+pub newtype T : . { pub constructor mk_t; pub projector un_t }
+
+pub type Alias = T;
+
+pub fn wrap(x: T) -> T { x }

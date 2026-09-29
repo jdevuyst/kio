@@ -1,0 +1,129 @@
+module csv_reconcile/reconcile;
+
+import csv_reconcile/model as model;
+import csv_reconcile/model(State);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+fn cat(left: String, right: String) -> String { text.string_concat(left, right) }
+
+fn append_i32(prefix: String, value: I32) -> String { cat(prefix, fmt.i32_to_string(value)) }
+
+fn println(value: String) -> . { io.print(cat(value, "\n")) }
+
+fn ledger_fields(state: State) -> String {
+  cat(
+    , append_i32("balance=", model.get_balance(state))
+    , cat(
+        , append_i32(" credits=", model.get_credits(state))
+        , cat(
+            , append_i32(" debits=", model.get_debits(state))
+            , cat(
+                , append_i32(" checks=", model.get_checks(state))
+                , append_i32(" errors=", model.get_errors(state))
+                )
+            )
+        )
+    )
+}
+
+fn begin_line(state: State) -> String { cat("begin ", ledger_fields(state)) }
+
+fn end_line(state: State) -> String { cat("end ", ledger_fields(state)) }
+
+fn balance_suffix(state: State) -> String { append_i32(" balance=", model.get_balance(state)) }
+
+fn credit_line(amount: I32, state: State) -> String {
+  cat(append_i32("credit +", amount), balance_suffix(state))
+}
+
+fn debit_line(amount: I32, state: State) -> String {
+  cat(append_i32("debit -", amount), balance_suffix(state))
+}
+
+fn reject_debit_line(amount: I32, state: State) -> String {
+  cat(append_i32("reject debit ", amount), balance_suffix(state))
+}
+
+fn check_line(state: State) -> String {
+  cat(
+    , append_i32("check ", model.get_checks(state))
+    , cat(balance_suffix(state), cat(" status=", model.status(state)))
+    )
+}
+
+fn read_amount() -> I32 | . {
+  match! io.read_ascii_line() {
+    (.(line: String) { fmt.string_to_int(line) }, .(_eof: .) { widen_sum!((), I32 | .) })
+  }
+}
+
+pub rec(loop) fn process(state: State) -> State {
+  match! io.read_ascii_line() {
+    (
+      , .(line: String) {
+          if! text.string_eq(line, "BEGIN") {
+            let next = model.begin(state);
+            println(begin_line(next));
+            rec process(next)
+          } else if! text.string_eq(line, "CREDIT") {
+            match! read_amount() {
+              (
+                , .(amount: I32) {
+                    let next = model.add_credit(state, amount);
+                    println(credit_line(amount, next));
+                    rec process(next)
+                  }
+                , .(_missing: .) {
+                    let next = model.add_error(state);
+                    println("credit missing amount");
+                    rec process(next)
+                  }
+                )
+            }
+          } else if! text.string_eq(line, "DEBIT") {
+            match! read_amount() {
+              (
+                , .(amount: I32) {
+                    if! model.debit_allowed(state, amount) {
+                      let next = model.apply_debit(state, amount);
+                      println(debit_line(amount, next));
+                      rec process(next)
+                    } else {
+                      let next = model.apply_debit(state, amount);
+                      println(reject_debit_line(amount, next));
+                      rec process(next)
+                    }
+                  }
+                , .(_missing: .) {
+                    let next = model.add_error(state);
+                    println("debit missing amount");
+                    rec process(next)
+                  }
+                )
+            }
+          } else if! text.string_eq(line, "CHECK") {
+            let next = model.record_check(state);
+            println(check_line(next));
+            rec process(next)
+          } else if! text.string_eq(line, "END") {
+            println(end_line(state));
+            state
+          } else {
+            let next = model.add_error(state);
+            println(cat("unknown command ", line));
+            rec process(next)
+          }
+        }
+      , .(_eof: .) { println(end_line(state)); state }
+      )
+  }
+}
+
+pub fn run() -> . { println("csv reconcile"); let _state = process(model.init()); () }

@@ -1,0 +1,31 @@
+module testapi/main;
+
+import elab/match(match);
+import systems/input as input;
+import systems/report as report;
+import testapi(I32);
+import testapi/arith as a;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter(loop);
+import testapi/text as text;
+
+rec(loop) fn workbench(count: I32) -> . {
+  match! input.next() {
+    .(item: input.Loaded) { report.run(item.?{input.loaded}); rec workbench(a.add_i32(count, 1)) };
+    .(error: input.Input_error) {
+      io.print(text.string_concat(
+        , "input error: "
+        , text.string_concat(error.?{input.input_error}, "\n")
+        ))
+    };
+    .(done: input.Finished) {
+      io.print(text.string_concat(
+        , "workbench complete: "
+        , text.string_concat(fmt.int_to_string(count), " systems\n")
+        ))
+    }
+  }
+}
+
+pub fn main() -> . { io.print("Exact linear-system workbench\n"); workbench(0) }

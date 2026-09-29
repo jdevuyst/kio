@@ -1,0 +1,5 @@
+module app/main;
+
+import widget/store(wrap);
+
+pub fn go() -> . { let _ = wrap(()); () }

@@ -1,0 +1,117 @@
+{
+  "name": "kio",
+  "displayName": "Kio",
+  "description": "Syntax highlighting and language-server integration for the Kio programming language.",
+  "version": "0.1.0",
+  "publisher": "kio-lang",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jdevuyst/kio.git",
+    "directory": "tools/vscode-kio"
+  },
+  "homepage": "https://jdevuyst.github.io/kio/",
+  "bugs": {
+    "url": "https://github.com/jdevuyst/kio/issues"
+  },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#003048",
+    "theme": "dark"
+  },
+  "keywords": [
+    "kio",
+    "programming language",
+    "transpiler",
+    "embeddable",
+    "hosted language",
+    "system-f"
+  ],
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.js",
+  "browser": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onLanguage:kio"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kio",
+        "aliases": [
+          "Kio"
+        ],
+        "extensions": [
+          ".kio"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kio",
+        "scopeName": "source.kio",
+        "path": "./syntaxes/kio.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Kio",
+      "properties": {
+        "kio.server.path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Path to the `kio` binary. When unset, falls back to the `KIO_BIN` environment variable, then `kio` on `PATH`."
+        },
+        "kio.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace LSP messages between VS Code and the `kio lsp` server. Output appears in the `Kio LSP` output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build:textmate": "node -e \"const fs=require('fs'); fs.mkdirSync('syntaxes',{recursive:true}); fs.copyFileSync('../textmate-kio/kio.tmLanguage.json', 'syntaxes/kio.tmLanguage.json')\"",
+    "build:wasm": "node -e \"require('fs').mkdirSync('parsers',{recursive:true})\" && cd ../tree-sitter-kio && tree-sitter build --wasm -o ../vscode-kio/parsers/tree-sitter-kio.wasm",
+    "build:js": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=es2022 \"--define:import.meta.url=\\\"file:///bundle.js\\\"\"",
+    "build:wts-wasm": "node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.copyFileSync('node_modules/web-tree-sitter/web-tree-sitter.wasm', 'dist/web-tree-sitter.wasm')\"",
+    "build": "npm run build:textmate && npm run build:wasm && npm run build:js && npm run build:wts-wasm",
+    "build:license": "node scripts/prepare-license.mjs",
+    "package": "npm run build && npm run build:license && vsce package --out kio.vsix --no-dependencies --baseContentUrl https://github.com/jdevuyst/kio/blob/main/tools/vscode-kio/ --baseImagesUrl https://github.com/jdevuyst/kio/raw/main/tools/vscode-kio/",
+    "build:test": "tsc -p test/tsconfig.json",
+    "test": "npm run build && npm run build:test && node ./test/out/runTest.js",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.0",
+    "glob": "^11.0.0",
+    "mocha": "^10.0.0",
+    "ovsx": "^1.0.2",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "web-tree-sitter": "^0.26.0"
+  }
+}
