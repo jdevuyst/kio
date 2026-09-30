@@ -56,6 +56,7 @@ pub mod fmt;
 pub mod parse;
 pub mod refs;
 pub mod render;
+mod scratch;
 pub mod validate;
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the

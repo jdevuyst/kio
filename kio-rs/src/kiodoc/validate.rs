@@ -47,13 +47,14 @@ use crate::path_display::DisplayPath;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::exit_code::ExitCode;
 use crate::span::Span;
 
 use super::cache::{CachedResult, DocCache, DocCacheKey};
 use super::document::{Document, DocumentFileHeader, Harness, Snippet, SnippetPlaceholder};
+use super::scratch::create_scratch_dir;
 use crate::ast::KioFileKind;
 
 /// Validation-level error. Carries enough information for an
@@ -1092,28 +1093,6 @@ const SCRATCH_PKG_NAME: &str = "kiodoc";
 /// snippets within one batch reuse a single scratch root).
 fn synthesize_pkg_name(_open_line: usize) -> String {
     SCRATCH_PKG_NAME.to_owned()
-}
-
-/// Create a per-snippet scratch directory under
-/// `std::env::temp_dir()`. We don't reuse the markdown file's
-/// directory; `kio check` walks `cwd` for source files, and we want
-/// it to see only the synthesized package.
-fn create_scratch_dir(md_path: &Path, open_line: usize) -> std::io::Result<PathBuf> {
-    let mut p = std::env::temp_dir();
-    let stem = md_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("kiodoc");
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!(
-        "kiodoc-{stem}-l{open_line}-{nonce}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&p)?;
-    Ok(p)
 }
 
 /// Run `kio check` against the synthesized package inside `scratch`.

@@ -380,6 +380,11 @@ jobs:
           # smoke passes on macOS, unlike Windows where it is scoped out.
           sh ci/cargo.sh test --manifest-path kio-rs/Cargo.toml
 
+      - name: Castle contract checks
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh ci/checks/repo-lint/castle-contract-selftest.sh
+
       - name: Castle sample
         if: runner.os == 'macOS'
         shell: bash

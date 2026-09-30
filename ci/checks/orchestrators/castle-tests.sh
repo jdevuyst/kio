@@ -83,6 +83,9 @@
 
 set -eu
 
+# Older POSIX shells can lose a parse failure's status once EXIT is trapped.
+sh -n "$0"
+
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 
@@ -353,7 +356,7 @@ validate_castle_contract() {
               skip=0
               for dep in $dep_roots; do
                 case "$src" in
-                  "$dir/workdir/$dep"/*)
+                  ("$dir/workdir/$dep"/*)
                     skip=1
                     break
                     ;;

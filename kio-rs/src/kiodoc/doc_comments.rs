@@ -35,6 +35,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::scratch::create_scratch_dir;
 use crate::ast::{DocComment, Item, Module};
 use crate::exit_code::ExitCode;
 use crate::kiodoc::cache::{CachedResult, DocCache, DocCacheKey};
@@ -725,25 +726,6 @@ fn make_cache_key(augmented_source: &str, check_exit_code: i32) -> DocCacheKey {
     // "snippet body" slot for differentiation.
     let exit_str = check_exit_code.to_string();
     DocCacheKey::new(augmented_source, &exit_str, None)
-}
-
-/// Create a per-snippet scratch directory under `std::env::temp_dir()`.
-fn create_scratch_dir(kio_path: &Path, open_line: usize) -> std::io::Result<PathBuf> {
-    let mut p = std::env::temp_dir();
-    let stem = kio_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("kiodoc");
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    p.push(format!(
-        "kiodoc-kio-{stem}-l{open_line}-{nonce}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&p)?;
-    Ok(p)
 }
 
 /// Run `kio check` against the augmented source inside `scratch`.
