@@ -689,6 +689,7 @@ where
         .map(|(i, p)| match p {
             crate::ast::HostFnParam::Type(tp_) => {
                 crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+                    presentation: tp_.presentation.clone(),
                     name: tp_.name.clone(),
                     span,
                     kind: tp_.kind.clone(),
@@ -763,6 +764,7 @@ where
             crate::ast::HostFnParam::Type(tp_) => {
                 binder_kinds.insert(tp_.name.clone(), tp_.effective_kind());
                 crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+                    presentation: tp_.presentation.clone(),
                     name: tp_.name.clone(),
                     span: if source.is_some() { tp_.span } else { span },
                     kind: tp_.kind.clone(),
@@ -1009,6 +1011,7 @@ where
             .iter()
             .map(|tp_| {
                 crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+                    presentation: tp_.presentation.clone(),
                     name: tp_.name.clone(),
                     span,
                     kind: tp_.kind.clone(),
@@ -1017,6 +1020,7 @@ where
             .collect();
         for tp_ in &d.existential_params {
             params.push(crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+                presentation: tp_.presentation.clone(),
                 name: tp_.name.clone(),
                 span,
                 // Existential binders are kind-`*` only.
@@ -1051,6 +1055,7 @@ where
         .iter()
         .map(|tp_| {
             crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+                presentation: tp_.presentation.clone(),
                 name: tp_.name.clone(),
                 span,
                 kind: tp_.kind.clone(),
@@ -1093,6 +1098,7 @@ where
     for tp_ in d.existential_params.iter().rev() {
         cont_ty = crate::ast::Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: tp_.presentation.clone(),
                 name: tp_.name.clone(),
                 span,
                 // Existential binders are kind-`*` only.
@@ -1107,6 +1113,7 @@ where
     let cps_inner_fn = crate::ast::Type::synth_function(vec![cont_ty], r_path.clone(), span);
     let cps_ty = crate::ast::Type::Forall {
         param: crate::ast::TypeParam {
+            presentation: Default::default(),
             name: r_name,
             span,
             // The synthetic CPS result binder is an ordinary kind-`*`
@@ -3776,6 +3783,7 @@ mod tests {
         let span = Span::new(0, 8);
         let incomplete = crate::ast::Type::<Lowered>::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -3806,6 +3814,7 @@ mod tests {
         let a = crate::ast::Type::<Lowered>::synth_path(vec!["A".to_owned()], Vec::new(), span);
         let unclassified = crate::ast::Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -3949,7 +3958,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             crate::pretty::pretty_type(&specialize.ty),
-            "(__Comptime__ & __Checked_term__ & __Type__ & __Type__) ->\n  __Checked_term__ | . | __Diagnostic_text__\n"
+            "(__Comptime__ & __Checked_term__ & __Type__ & __Type__) -> (\n  __Checked_term__ | . | __Diagnostic_text__\n  )"
         );
     }
 }

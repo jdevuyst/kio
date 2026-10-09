@@ -10,4 +10,4 @@ host fn done(value: I32) -> Bool;
 
 host fn empty() -> String;
 
-host fn loop[S][R](step: S -> S | R, state: S) -> R;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;

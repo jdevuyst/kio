@@ -27,7 +27,7 @@ pub type I32 = _rehost_hbhfgfhfgffpgigphdhe.I32;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hbhfgfhfgffpgigphdhe.add_i32(p0, p1) }
 
-pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loop(S, R, p0, p1) }
+pub fn loop[S][R](p0: S -> (S | R), p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loop(S, R, p0, p1) }
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 

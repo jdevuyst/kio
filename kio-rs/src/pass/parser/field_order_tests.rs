@@ -253,7 +253,7 @@ fn reordered_build_fields_preserve_repeated_entries_comments_and_spans() {
             if build
                 .targets
                 .iter()
-                .map(|target| target.id.as_str())
+                .map(|target| target.name())
                 .collect::<Vec<_>>()
                 != ["rust", "js"]
             {

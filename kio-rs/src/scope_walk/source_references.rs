@@ -446,7 +446,9 @@ mod tests {
             match actual.unwrap() {
                 CandidateOrigin::Declaration(_) => declarations += 1,
                 CandidateOrigin::Local(_) => locals += 1,
-                CandidateOrigin::Placeholder(_) => placeholders += 1,
+                CandidateOrigin::Placeholder(_) | CandidateOrigin::NumberedBinding(_) => {
+                    placeholders += 1
+                }
                 CandidateOrigin::Import { .. } => imports += 1,
                 other => panic!("unexpected origin {other:?}"),
             }

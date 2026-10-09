@@ -153,7 +153,7 @@ host fn array_make_filled[T](n: I32, fill: T) -> Array(T);
 
 host fn array_set[T](a: Array(T), i: I32, v: T) -> .;
 
-host fn loop[S][R](step: S -> S | R, state: S) -> R;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
   if! leq_i32(i, 2) {
@@ -674,6 +674,48 @@ bridge {
 
 For the full key list, see
 [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
+
+To build the same package more than once for one backend, give each target a
+name. The pair is `(backend, "name")`:
+
+```kio {variant=package}
+package app;
+
+build {
+  cache ();
+
+  target (js, "web") {
+    out "out/web/";
+    namespace "web_app"
+  };
+
+  target (js, "worker") {
+    out "out/worker/";
+    namespace "worker_app"
+  }
+}
+```
+
+`kio build web` builds just `web`;
+`kio build web worker` builds both. Names
+must be unique within the build block. The backend determines the available
+keys, while `namespace` independently controls the generated artifact's name.
+The bare form `target js` is still a target named `js` using backend `js`;
+`kio build js` does not select all JavaScript targets.
+
+By default, `kio build` discovers packages beneath the current directory.
+Use `--package app` (or `--pkg app`) to select the package declared in
+`app.pkg.kio`; selectors are names, not paths. Both options are repeatable:
+`kio build --pkg app --pkg tools web` builds `web` in each selected
+package that declares it. A requested target must occur in at least one
+selected package. A requested package name must identify exactly one
+discovered package; if it is ambiguous, run the command from a narrower
+directory. Each package option takes one name and applies to all requested
+targets, even when it appears between them: `kio build --pkg app web --pkg tools
+worker` selects the same builds as `kio build --pkg app --pkg tools web worker`.
+Use `--` before a target name beginning with a hyphen, as in
+`kio build -- --help`. Target names that look like paths are still names;
+package selection never interprets a directory or file path.
 
 Give targets separate output directories, such as `out/js` and `out/rust` above.
 Building both into `out`, or placing one output inside another, is rejected

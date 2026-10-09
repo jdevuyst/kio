@@ -99,70 +99,114 @@ mod cache_work_counters {
 }
 
 const HELP_TEMPLATE: &str = "\
-Usage: kio build [--skip-unsupported-targets] [<target-id>...] [<package-path>...]
+Usage: kio build [--package NAME]... [--skip-unsupported-targets] [TARGET]...
 
 Transpile package(s) to one or more compilation targets.
 
 Phase 1 runs the same checks `kio check` runs. Phase 2 reads the
 `build { ... }` block from each package's <name>.pkg.kio and
-dispatches to the backend(s). With no <target-id>, every
+dispatches to the backend(s). With no target names, every
 target block in the build block is built; the
 `--skip-unsupported-targets` flag tunes that default mode.
 
-Package scope: with no <package-path>, every package discovered in the
-current directory's subtree is built independently. A <package-path>
-positional (a directory or a `*.pkg.kio` file) scopes the build to the
-named package(s); a bare identifier positional is a <target-id>.
+Packages are discovered in the current directory's subtree. Selectors
+name packages and targets exactly; they are not paths or backend groups.
+Each requested target must occur in at least one selected package.
+Packages with no matching target are skipped. Package options may appear
+between target names; all selectors apply to the whole invocation.
+Use -- before a target name beginning with a hyphen.
 
 Options:
+  --package NAME  Select a discovered package by name; repeatable.
+  --pkg NAME      Alias for --package.
   --skip-unsupported-targets
                    Treat targets in the build block whose backend this
                    build of kio doesn't recognize as no-ops (warn on
                    stderr, exit 0 if every target that did run
                    succeeded). Only applies to implicit selection (no
-                   positional <target-id>); explicit ids whose backend
+                   target names); explicit names whose backend
                    is unsupported still error.
   -h, --help       Show this help and exit.
 
-Exit codes (per {base}/specs/exit-codes.md): 0 on success; 40 (build
+Exit codes (per {base}/specs/exit-codes.md): 0 on success; 2 for invalid
+options or a missing package-option value; 40 (build
 error) for a missing package file, a package file with no
-`build { ... }` block, unknown target id, key validation, codegen, or
+`build { ... }` block, unknown or ambiguous package name, unknown target
+name, key validation, codegen, or
 runtime-audit failures; the matching `1x` category code for Phase-1
 parse / use / type errors.
 
-See {base}/specs/cli.md#kio-build---skip-unsupported-targets-target-id-package-path for full command behavior.";
+See {base}/specs/cli.md#kio-build for full command behavior.";
+
+#[derive(Default)]
+struct BuildOptions {
+    help: bool,
+    skip_unsupported: bool,
+    targets: Vec<String>,
+    packages: Vec<String>,
+}
+
+pub(crate) fn is_value_option(arg: &str) -> bool {
+    matches!(arg, "--package" | "--pkg")
+}
+
+fn parse_options(args: &[String]) -> Result<BuildOptions, String> {
+    let mut options = BuildOptions::default();
+    let mut args = args.iter();
+    let mut ended = false;
+    while let Some(arg) = args.next() {
+        if !ended {
+            match arg.as_str() {
+                "-h" | "--help" => {
+                    options.help = true;
+                    return Ok(options);
+                }
+                "--" => {
+                    ended = true;
+                    continue;
+                }
+                "--skip-unsupported-targets" => {
+                    options.skip_unsupported = true;
+                    continue;
+                }
+                _ => {}
+            }
+            let (option, inline) = arg
+                .split_once('=')
+                .map_or((arg.as_str(), None), |(k, v)| (k, Some(v)));
+            if is_value_option(option) {
+                let value = inline
+                    .or_else(|| args.next().map(String::as_str))
+                    .ok_or_else(|| format!("option `{option}` requires a name"))?;
+                options.packages.push(value.to_owned());
+                continue;
+            }
+            if arg.starts_with('-') {
+                return Err(format!(
+                    "unknown flag for `kio build`: {}",
+                    arg.escape_debug()
+                ));
+            }
+        }
+        options.targets.push(arg.to_owned());
+    }
+    Ok(options)
+}
 
 pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     let build_total_start = Instant::now();
-    if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return ExitCode::Usage;
+        }
+    };
+    if options.help {
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
-    let mut skip_unsupported = false;
-    let mut target_ids: Vec<String> = Vec::new();
-    let mut package_selectors: Vec<String> = Vec::new();
-    for arg in args {
-        match arg.as_str() {
-            "--skip-unsupported-targets" => skip_unsupported = true,
-            other if other.starts_with("--") => {
-                eprintln!("error: unknown flag for `kio build`: {other}");
-                return ExitCode::Usage;
-            }
-            // A positional that contains a path separator or carries the
-            // `*.pkg.kio` suffix is a package selector; a bare identifier
-            // (`js`, `rust`, `kio-prime`) is a target id. The shape-based
-            // rule is deterministic — it does not depend on cwd
-            // filesystem state, so a cwd-sibling directory named `rust`
-            // never hijacks the bare-identifier-is-a-target-id rule.
-            other if crate::package_collection::is_package_selector_arg(other) => {
-                package_selectors.push(other.to_owned())
-            }
-            other => target_ids.push(other.to_owned()),
-        }
-    }
+    let target_ids = options.targets;
 
     let cwd = match std::env::current_dir() {
         Ok(c) => c,
@@ -172,14 +216,7 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
         }
     };
 
-    // Resolve the set of package roots to build. With no explicit
-    // package selector, discover every package in the cwd subtree and
-    // fan out over all of them; with selectors, build exactly the
-    // named packages. `kio build` is no longer single-root-package:
-    // it builds every discovered package independently (no
-    // cross-package rollback — each package's success/failure is
-    // its own), mirroring `kio sig`.
-    let package_dirs = match resolve_package_dirs(&cwd, &package_selectors) {
+    let package_dirs = match resolve_package_dirs(&cwd, &options.packages) {
         Ok(dirs) => dirs,
         Err(code) => return code,
     };
@@ -189,6 +226,19 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     let plans: std::collections::BTreeMap<_, _> = crate::maybe_par_iter!(&package_dirs)
         .map(|dir| (dir.clone(), output_guard::prepare(dir, &target_ids)))
         .collect();
+    if let Err(message) = output_guard::validate_target_names(&plans, &target_ids) {
+        // A malformed manifest cannot establish whether a requested target
+        // exists. Report that input error before any output is written.
+        if let Some(output_guard::PackagePlan::Failed { code, stderr, .. }) = plans
+            .values()
+            .find(|plan| matches!(plan, output_guard::PackagePlan::Failed { .. }))
+        {
+            eprint!("{stderr}");
+            return *code;
+        }
+        eprintln!("error: {message}");
+        return ExitCode::Build;
+    }
     if let Err(message) = output_guard::validate(&plans) {
         eprintln!("error: {message}");
         return ExitCode::Build;
@@ -217,11 +267,14 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
                 cap.stderr.push_str(stderr);
                 return *code;
             };
+            if !target_ids.is_empty() && selected.is_empty() {
+                return ExitCode::Success;
+            }
             build_one_package(
                 inputs,
                 selected,
                 !target_ids.is_empty(),
-                skip_unsupported,
+                options.skip_unsupported,
                 prime_only,
                 build_total_start,
                 cap,
@@ -233,110 +286,73 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     )
 }
 
-/// Resolve the package directories to build. With no selector, discover
-/// every package in `cwd`'s subtree; with selectors, resolve each to
-/// the directory holding its `*.pkg.kio`. Prints a diagnostic and
-/// returns the matching exit code on failure.
+/// Resolve names against the same discovery domain as an unfiltered build.
 fn resolve_package_dirs(cwd: &Path, selectors: &[String]) -> Result<Vec<PathBuf>, ExitCode> {
-    if selectors.is_empty() {
-        let roots = match crate::package_collection::discover_package_roots(cwd) {
-            Ok(roots) => roots,
-            Err(crate::package_collection::WalkError::MultiplePackageFiles { root, paths }) => {
-                eprintln!(
-                    "error: multiple `*.pkg.kio` files at the package root {}; expected exactly one per package directory",
-                    DisplayPath(&root)
-                );
-                for p in paths {
-                    eprintln!("  {}", DisplayPath(&p));
-                }
-                return Err(ExitCode::Build);
-            }
-            Err(e) => {
-                eprintln!(
-                    "error: walking source tree: {}",
-                    e.into_located().error.diag().1
-                );
-                return Err(ExitCode::Internal);
-            }
-        };
-        if roots.is_empty() {
+    let roots = match crate::package_collection::discover_package_roots(cwd) {
+        Ok(roots) => roots,
+        Err(crate::package_collection::WalkError::MultiplePackageFiles { root, paths }) => {
             eprintln!(
-                "error: no `<name>.pkg.kio` in {} or its subdirectories — `kio build` requires a package file at a package root; run `kio init` to scaffold one (see specs/package.md § Package File)",
-                DisplayPath(cwd)
+                "error: multiple `*.pkg.kio` files at the package root {}; expected exactly one per package directory",
+                DisplayPath(&root)
             );
+            for p in paths {
+                eprintln!("  {}", DisplayPath(&p));
+            }
             return Err(ExitCode::Build);
         }
+        Err(e) => {
+            eprintln!(
+                "error: walking source tree: {}",
+                e.into_located().error.diag().1
+            );
+            return Err(ExitCode::Internal);
+        }
+    };
+    if roots.is_empty() && selectors.is_empty() {
+        eprintln!(
+            "error: no `<name>.pkg.kio` in {} or its subdirectories — `kio build` requires a package file at a package root; run `kio init` to scaffold one (see {})",
+            DisplayPath(cwd),
+            crate::documentation_help("{base}/specs/package.md#package-file")
+        );
+        return Err(ExitCode::Build);
+    }
+    if selectors.is_empty() {
         return Ok(roots.into_iter().map(|r| r.dir).collect());
     }
 
-    // Explicit selectors: each names a package directory or a
-    // `.pkg.kio` file. Resolve to the holding directory and confirm
-    // a package marker is present there.
     let mut dirs = Vec::with_capacity(selectors.len());
+    let mut seen = std::collections::HashSet::new();
     for sel in selectors {
-        let path = Path::new(sel);
-        let dir = if path.is_dir() {
-            path.to_path_buf()
-        } else if path.is_file() {
-            // Only a `*.pkg.kio` file is a valid file selector; any other
-            // existing file is an input error, not a silent accept.
-            let is_pkg = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .is_some_and(crate::file_kind::is_package_file);
-            if !is_pkg {
+        if !seen.insert(sel) {
+            continue;
+        }
+        let matches: Vec<_> = roots.iter().filter(|root| root.name == *sel).collect();
+        match matches.as_slice() {
+            [] => {
                 eprintln!(
-                    "error: package selector `{sel}` is not an existing directory or `*.pkg.kio` file"
+                    "error: unknown package name `{}` in {} or its subdirectories",
+                    sel.escape_debug(),
+                    DisplayPath(cwd)
                 );
                 return Err(ExitCode::Build);
             }
-            match path.parent() {
-                Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
-                _ => cwd.to_path_buf(),
-            }
-        } else {
-            eprintln!(
-                "error: package selector `{sel}` is not an existing directory or `*.pkg.kio` file"
-            );
-            return Err(ExitCode::Build);
-        };
-        match find_package_file(&dir) {
-            Ok(_) => dirs.push(dir),
-            Err(PackageFileError::Missing) => {
+            [root] => dirs.push(root.dir.clone()),
+            _ => {
                 eprintln!(
-                    "error: no `<name>.pkg.kio` in {} (selected by `{sel}`)",
-                    DisplayPath(&dir)
+                    "error: ambiguous package name `{}`; matching package files:",
+                    sel.escape_debug()
                 );
-                return Err(ExitCode::Build);
-            }
-            Err(PackageFileError::Multiple(paths)) => {
-                eprintln!(
-                    "error: multiple `*.pkg.kio` files in {} (selected by `{sel}`); expected exactly one",
-                    DisplayPath(&dir)
-                );
-                for p in paths {
-                    eprintln!("  {}", DisplayPath(&p));
+                for root in matches {
+                    eprintln!("  {}", DisplayPath(&root.package_file));
                 }
+                eprintln!(
+                    "help: run `kio build` from a directory containing only the intended package with this name"
+                );
                 return Err(ExitCode::Build);
             }
-            Err(PackageFileError::Io(e)) => {
-                eprintln!("error: walking source tree: {e}");
-                return Err(ExitCode::Internal);
-            }
         }
     }
-    // Canonicalize + dedup so overlapping / duplicate selectors
-    // (`./pkg ./pkg`, or `./pkg ./pkg/foo.pkg.kio`) build each package
-    // exactly once, preserving first-seen order.
-    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    let mut deduped = Vec::with_capacity(dirs.len());
-    for dir in dirs {
-        let key = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
-        if seen.insert(key) {
-            deduped.push(dir);
-        }
-    }
-    Ok(deduped)
+    Ok(dirs)
 }
 
 fn package_marker(pkg_dir: &Path, cap: &mut CapturedOutput) -> Result<PathBuf, ExitCode> {
@@ -345,8 +361,9 @@ fn package_marker(pkg_dir: &Path, cap: &mut CapturedOutput) -> Result<PathBuf, E
         Err(PackageFileError::Missing) => {
             cap_errln!(
                 cap,
-                "error: no `<name>.pkg.kio` in {} — `kio build` requires a package file at the package root; run `kio init` to scaffold one (see specs/package.md § Package File)",
-                DisplayPath(pkg_dir)
+                "error: no `<name>.pkg.kio` in {} — `kio build` requires a package file at the package root; run `kio init` to scaffold one (see {})",
+                DisplayPath(pkg_dir),
+                crate::documentation_help("{base}/specs/package.md#package-file")
             );
             Err(ExitCode::Build)
         }
@@ -493,15 +510,9 @@ fn build_one_package(
     // progress). Forcing it here, with the whole pool free, means every
     // backend then reads an already-initialized value and never blocks.
     //
-    // The guard is `len > 1`, not a per-backend "does this backend read
-    // the routed package?" test, on purpose: target ids are unique and
-    // `kio-prime` (which emits from `Package<Prime>` directly) is the
-    // only backend that does not read it, so any two or more targets
-    // always include at least one consumer — the up-front computation is
-    // never wasted — and the rule needs no maintenance when a backend is
-    // added. A lone target cannot race itself, so a warm single-target
-    // build whose artifact cache hits still computes nothing.
-    if selected.len() > 1 {
+    // Several named targets may share one backend. Prime-only targets do
+    // not consume the routed package; a lone target cannot race itself.
+    if selected.len() > 1 && selected.iter().any(|target| target.backend != "kio-prime") {
         routed.get();
     }
 
@@ -540,15 +551,23 @@ fn build_one_package(
                     cap_errln!(
                         cap,
                         "warning: skipping target '{}': no backend in this kio build",
-                        target.id
+                        target.name().escape_debug()
                     );
                     continue;
                 }
-                cap_errln!(cap, "error: target `{}`: {msg}", target.id);
+                cap_errln!(
+                    cap,
+                    "error: target `{}`: {msg}",
+                    target.name().escape_debug()
+                );
                 return ExitCode::Build;
             }
             Err(BackendError::Build(msg)) => {
-                cap_errln!(cap, "error: target `{}`: {msg}", target.id);
+                cap_errln!(
+                    cap,
+                    "error: target `{}`: {msg}",
+                    target.name().escape_debug()
+                );
                 return ExitCode::Build;
             }
         }
@@ -593,11 +612,10 @@ fn find_package_file(cwd: &Path) -> Result<PathBuf, PackageFileError> {
 
 fn check_unique_ids(bf: &BuildBlock) -> Result<(), String> {
     for (i, t) in bf.targets.iter().enumerate() {
-        if let Some(prev) = bf.targets[..i].iter().find(|p| p.id == t.id) {
-            let _ = prev;
+        if bf.targets[..i].iter().any(|p| p.name() == t.name()) {
             return Err(format!(
-                "duplicate target id `{}` in the build block (each id must be unique)",
-                t.id
+                "duplicate target name `{}` in the build block (each name must be unique)",
+                t.name().escape_debug()
             ));
         }
     }
@@ -611,7 +629,7 @@ fn check_unique_ids(bf: &BuildBlock) -> Result<(), String> {
 /// Two failure modes from a backend. `Build` is a user-visible
 /// configuration / source issue (unknown key, malformed `out`, …) and
 /// maps to exit code 40. `UnknownBackend` is the specific case where
-/// the target id maps to no backend in this build of kio; the dispatch
+/// the target's backend header is unknown to this build of kio; the dispatch
 /// loop in `run()` may treat it as a skip under
 /// `--skip-unsupported-targets`, and otherwise surfaces it as a build
 /// error.
@@ -728,7 +746,7 @@ impl<'a> SharedRoutedPackage<'a> {
     }
 }
 
-/// Hand a target block off to the backend named by its bare target id.
+/// Hand a target block off to the backend named by its header.
 fn dispatch_target(
     cwd: &Path,
     target: &TargetBlock,
@@ -741,7 +759,7 @@ fn dispatch_target(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    match BuildTarget::from_id(&target.id) {
+    match BuildTarget::from_id(&target.backend) {
         Some(BuildTarget::Js) => {
             js_backend(cwd, target, workspace, routed, emit_cache, artifact_cache)
         }
@@ -761,7 +779,7 @@ fn dispatch_target(
         Some(BuildTarget::Rust) => rust_backend(cwd, target, workspace, routed, artifact_cache),
         None => Err(BackendError::UnknownBackend(format!(
             "unknown backend `{}` (recognized: {})",
-            target.id,
+            target.backend,
             BuildTarget::ALL
                 .iter()
                 .map(|target| format!("`{}`", target.id()))
@@ -2527,6 +2545,48 @@ mod tests {
     use std::env;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    fn options(args: &[&str]) -> Result<BuildOptions, String> {
+        parse_options(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn named_build_options_apply_interspersed_package_names_globally() {
+        let parsed = options(&["--pkg", "a", "b", "--package", "c", "d", "e"]).unwrap();
+        assert_eq!(parsed.packages, ["a", "c"]);
+        assert_eq!(parsed.targets, ["b", "d", "e"]);
+        assert!(!parsed.help);
+        let inline = options(&["b", "--package=a", "d", "--pkg=c", "e"]).unwrap();
+        assert_eq!(inline.packages, parsed.packages);
+        assert_eq!(inline.targets, parsed.targets);
+    }
+
+    #[test]
+    fn named_build_options_keep_literal_names_after_end_options() {
+        let parsed = options(&[
+            "--pkg",
+            "app",
+            "./app",
+            "app.pkg.kio",
+            "--",
+            "--help",
+            "--no-cache",
+            "--pkg",
+            "",
+        ])
+        .unwrap();
+        assert_eq!(parsed.packages, ["app"]);
+        assert_eq!(
+            parsed.targets,
+            ["./app", "app.pkg.kio", "--help", "--no-cache", "--pkg", ""]
+        );
+        assert!(!parsed.help);
+        assert!(!parsed.skip_unsupported);
+        assert!(options(&["--target", "web"]).is_err());
+        assert!(options(&["--package"]).is_err());
+        assert!(options(&["--pkg"]).is_err());
+        assert_eq!(options(&["--pkg", "--help"]).unwrap().packages, ["--help"]);
+    }
+
     /// Allocate a fresh empty directory under the OS temp dir so two
     /// concurrent test threads don't trip over each other when writing
     /// `*.pkg.kio` files.
@@ -2595,7 +2655,8 @@ mod tests {
     fn target(id: &str) -> TargetBlock {
         TargetBlock {
             trailing_trivia: Vec::new(),
-            id: id.to_owned(),
+            backend: id.to_owned(),
+            name: None,
             entries: Vec::new(),
             span: crate::span::Span { start: 0, end: 0 },
             leading_trivia: Vec::new(),
@@ -2736,7 +2797,7 @@ v(2) {
             .as_ref()
             .and_then(|package| package.package_file())
             .and_then(|entry| entry.package_file().build.as_ref())
-            .and_then(|build| build.targets.iter().find(|target| target.id == "go"))
+            .and_then(|build| build.targets.iter().find(|target| target.name() == "go"))
             .cloned()
             .expect("Go target");
         (workspace, target)
@@ -2776,7 +2837,12 @@ v(2) {
             .as_ref()
             .and_then(|package| package.package_file())
             .and_then(|entry| entry.package_file().build.as_ref())
-            .and_then(|build| build.targets.iter().find(|target| target.id == "python"))
+            .and_then(|build| {
+                build
+                    .targets
+                    .iter()
+                    .find(|target| target.name() == "python")
+            })
             .cloned()
             .expect("Python target");
         (workspace, target)
@@ -2821,7 +2887,7 @@ v(2) {
             .as_ref()
             .and_then(|package| package.package_file())
             .and_then(|entry| entry.package_file().build.as_ref())
-            .and_then(|build| build.targets.iter().find(|target| target.id == backend))
+            .and_then(|build| build.targets.iter().find(|target| target.name() == backend))
             .cloned()
             .unwrap_or_else(|| panic!("{backend} target"));
         (workspace, target)
@@ -2951,11 +3017,26 @@ v(2) {
             span: crate::span::Span { start: 0, end: 0 },
         };
         let err = check_unique_ids(&bf).expect_err("duplicate id should fail");
-        assert!(err.contains("duplicate target id"), "got: {err}");
+        assert!(err.contains("duplicate target name"), "got: {err}");
         assert!(err.contains("`js`"), "should name the offender: {err}");
     }
 
     // ---- signature replay and artifact identity ---------------------
+
+    #[test]
+    fn named_targets_are_unique_by_name_not_backend() {
+        for (source, valid) in [
+            (
+                r#"target js {}; target (js, "web") {}; target (js, "worker") {}"#,
+                true,
+            ),
+            (r#"target js {}; target (rust, "js") {}"#, false),
+            (r#"target (js, "web") {}; target (rust, "web") {}"#, false),
+        ] {
+            let build = crate::pass::parser::parse_build_block_body(source).unwrap();
+            assert_eq!(check_unique_ids(&build).is_ok(), valid, "{source}");
+        }
+    }
 
     #[cfg(feature = "surface")]
     #[test]
@@ -3461,6 +3542,40 @@ v(1) {
         let counts = cache_work_counters::snapshot();
         assert_eq!(counts.prime_emit_serializations, 1);
         assert_eq!(counts.prime_emit_keys, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn named_target_profiles_partition_artifact_cache_entries() {
+        let dir = fresh_dir("named-artifact-key");
+        let package: Package<crate::ast::Prime> =
+            Package::build(&dir, Vec::new(), None).expect("build empty package");
+        let package = crate::prime::typer::check_package(&package).expect("validate empty package");
+        let build = crate::pass::parser::parse_build_block_body(
+            r#"
+            target (js, "web") { out "out/web"; namespace "app" };
+            target (js, "worker") { out "out/worker"; namespace "app" };
+            target (js, "web") { out "out/web"; namespace "changed" }
+        "#,
+        )
+        .unwrap();
+        let keys: Vec<_> = build
+            .targets
+            .iter()
+            .map(|target| artifact_key_for_package(&target.backend, target, &package, None))
+            .collect();
+        assert_ne!(keys[0], keys[1]);
+        assert_ne!(keys[0], keys[2]);
+        let mut other_backend = build.targets[0].clone();
+        other_backend.backend = "ts".to_owned();
+        assert_ne!(
+            keys[0],
+            artifact_key_for_package("ts", &other_backend, &package, None)
+        );
+        assert_eq!(
+            keys[0],
+            artifact_key_for_package("js", &build.targets[0], &package, None)
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

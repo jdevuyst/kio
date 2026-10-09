@@ -385,6 +385,13 @@ pub fn main() { let y = apply(.(n) { add(n, 1) }, 41); print(int_to_string(y)) }
 
 A lambda's parameter types can be elided when the expected type is fixed by context — here, by `apply`'s signature. They can also be written explicitly (`.(n: Int) { add(n, 1) }`) for emphasis. Unlike a module-level `fn`, a lambda without a written return type takes its result from its body and surrounding expected function type; omission does not mean unit.
 
+A function type returning a product or sum groups that result:
+`Int -> (Int & Int)` or `Int -> (Int | String)`. A function or lambda's own
+return annotation can stay bare, as in `fn pair(n: Int) -> Int & Int`.
+Returning another function uses the type-expression rule again:
+`fn make_pair() -> Int -> (Int & Int)`. Arrow-only chains such as
+`Int -> Int -> Int` need no extra parentheses.
+
 Checked annotations may mix concrete structure with local `_` placeholders,
 but a placeholder cannot sit beneath a `forall` written inside that same
 annotation. `.[A](x: _) -> _ { x }` remains valid because `[A]` is a header
@@ -497,6 +504,29 @@ fn show_pair_param((first: String, second: String)) { print(first); print(second
 ```
 
 Parameter patterns and destructuring lets bind the product once and project the named components directly. The pattern shape extends to nesting (`((a: A, b: B), c: C)`), wildcards (`(_: A, b: B)` — keeps the slot's type but doesn't name it), and an "as-pattern" form (`name: (a: A, b: B)`) that binds the whole product alongside its components.
+
+For a short local use, a numbered binding names those slots with a shared stem:
+
+```kio {@tutorial_module}
+fn print_pair(first: String, second: String) {
+  let .part. = (first, second);
+  print(part1);
+  print(part2)
+}
+```
+
+The highest referenced index sets the number of slots, just as in a placeholder
+lambda. Referencing only `part1` binds the whole value; referencing `part2`
+creates two slots. The last slot receives any remaining product tail. Stems
+end in a letter and indices start at one, without leading zeroes.
+
+A later `let .part.` starts a new family after its initializer. Other stems
+stay available: `let .left. = a; let .right. = b; (left1, right1)` uses both.
+Explicit lambdas can refer to the family, subject to their parameter names;
+a nested placeholder lambda owns its own references. Sequence blocks use the
+matching `let .part. <- action;` spelling for an action's payload. Each family
+must have a reference in the remaining block. Use an ordinary named binding
+when a descriptive name makes the code clearer.
 
 ### Labels
 
@@ -803,7 +833,7 @@ fn example() {
 
 `nothing` has type `[A] A | .`: `nothing(Int)` constructs an empty result.
 Saving `nothing` in `make` keeps it polymorphic and does not run its body.
-`nothing_later` has type `[A] . -> A | .`: supplying `Int` leaves a function
+`nothing_later` has type `[A] . -> (A | .)`: supplying `Int` leaves a function
 that waits for `()`. Choose the type-only form when selecting the type should
 construct the result; keep `()` when the caller should explicitly start a
 later computation. The two types are distinct.

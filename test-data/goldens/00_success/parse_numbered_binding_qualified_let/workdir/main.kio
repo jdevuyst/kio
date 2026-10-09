@@ -1,0 +1,21 @@
+module main;
+
+fn call() { let.x.y() }
+
+fn value() { let.x.y }
+
+fn keyword_call() { let.x.fn() }
+
+fn keyword_value() { let.x.fn }
+
+fn neutral_call() {
+  action! {
+    let.x.y()
+  }
+}
+
+fn neutral_value() {
+  action! {
+    let.x.y
+  }
+}

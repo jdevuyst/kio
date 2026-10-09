@@ -91,6 +91,7 @@ fn reflection_fold_constructs_deep_forall_types_on_the_default_stack() {
         },
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: zero_span(),
                 kind: None,

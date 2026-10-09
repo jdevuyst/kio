@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target (js, "web") {
+    out "out/web/"
+  }
+}
+
+bridge {
+  main
+}

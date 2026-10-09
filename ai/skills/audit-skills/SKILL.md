@@ -28,6 +28,11 @@ List directories under `ai/skills/` matching `audit-*` (excluding `audit` itself
 
 ## 3. Coverage matrix
 
+The binary-input contract in `ai/topics/docs.md` § Website and offline bundle
+inputs (also routed from `ai/topics/specs.md`) is owned by
+`audit-bundled-docs`. `audit-kio-guide` owns the portable authoring workflow and
+repository supplement; `audit-docs-drift` owns the offline learning path.
+
 Cross-reference. For each load-bearing section:
 
 - **Covered** — at least one audit skill names this section as its anchor.

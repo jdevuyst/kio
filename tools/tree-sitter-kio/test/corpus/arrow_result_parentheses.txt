@@ -1,0 +1,35 @@
+================================================================================
+arrow result chains use grouped types while signature results retain chains
+================================================================================
+module m;
+type Product = A -> (B & C);
+type Sum = A -> (B | C);
+type Arrows = A -> B -> C;
+type Forall = A -> [B] B & B;
+fn own() -> A & B { value }
+fn nested() -> A -> (B & C) { value }
+fn lambda_own() { .() -> A | B { value } }
+fn lambda_nested() { .() -> A -> (B | C) { value } }
+--------------------------------------------------------------------------------
+
+(source_file (module_decl (keyword_module) path: (module_path (entity_name_module)) (separator_semicolon)) (type_alias_decl_head (keyword_type) (entity_name_type) (operator_builtin) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_group (bracket_lparen) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))) (bracket_rparen))) (separator_semicolon)) (type_alias_decl_head (keyword_type) (entity_name_type) (operator_builtin) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_group (bracket_lparen) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))) (bracket_rparen))) (separator_semicolon)) (type_alias_decl_head (keyword_type) (entity_name_type) (operator_builtin) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_path (entity_name_type)))) (separator_semicolon)) (type_alias_decl_head (keyword_type) (entity_name_type) (operator_builtin) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (forall_type (type_param_list (type_param_group (bracket_lbracket) (type_param_binder (variable_parameter)) (bracket_rbracket))) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))))) (separator_semicolon)) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen))) (operator_arrow_type) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type)))) (expression_block (bracket_lbrace) (expression_path (identifier)) (bracket_rbrace))) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen))) (operator_arrow_type) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_group (bracket_lparen) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))) (bracket_rparen)))) (expression_block (bracket_lbrace) (expression_path (identifier)) (bracket_rbrace))) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen)))) (expression_block (bracket_lbrace) (fn_lambda_expr (separator_dot) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen))) (operator_arrow_type) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))) (expression_block (bracket_lbrace) (expression_path (identifier)) (bracket_rbrace))) (bracket_rbrace))) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen)))) (expression_block (bracket_lbrace) (fn_lambda_expr (separator_dot) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen))) (operator_arrow_type) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_group (bracket_lparen) (type_product (type_path (entity_name_type)) (operator_builtin) (type_path (entity_name_type))) (bracket_rparen))) (expression_block (bracket_lbrace) (expression_path (identifier)) (bracket_rbrace))) (bracket_rbrace))))
+
+================================================================================
+bare product arrow result rejects and the following declaration recovers
+================================================================================
+module m;
+type Bad = A -> B & C;
+fn after() { () }
+--------------------------------------------------------------------------------
+
+(source_file (module_decl (keyword_module) path: (module_path (entity_name_module)) (separator_semicolon)) (type_alias_decl_head (keyword_type) (entity_name_type) (operator_builtin) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_path (entity_name_type))) (MISSING separator_semicolon)) (operator_builtin) (identifier) (separator_semicolon) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen)))) (expression_block (bracket_lbrace) (unit_expression (bracket_lparen) (bracket_rparen)) (bracket_rbrace))))
+
+================================================================================
+bare sum nested arrow result rejects and the following declaration recovers
+================================================================================
+module m;
+fn bad() -> A -> B | C { value }
+fn after() { () }
+--------------------------------------------------------------------------------
+
+(source_file (module_decl (keyword_module) path: (module_path (entity_name_module)) (separator_semicolon)) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen))) (operator_arrow_type) (type_arrow (type_path (entity_name_type)) (operator_arrow_type) (type_path (entity_name_type)))) (MISSING _editor_boundary)) (operator_builtin) (identifier) (body_block (expression_block (bracket_lbrace) (expression_path (identifier)) (bracket_rbrace))) (function_definition (fn_decl_head (keyword_fn) (entity_name_function) (fn_signature (value_param_group (bracket_lparen) (bracket_rparen)))) (expression_block (bracket_lbrace) (unit_expression (bracket_lparen) (bracket_rparen)) (bracket_rbrace))))

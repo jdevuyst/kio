@@ -151,9 +151,9 @@ mod intern;
 pub(crate) use intern::PackageTypecheckRevisionStore;
 #[cfg(all(feature = "surface", test))]
 pub(crate) use intern::TransientTypeKey;
-#[cfg(feature = "surface")]
-pub(crate) use intern::TypeMemoKey;
 pub use intern::{InternedType, PackageTypecheckScope, TypeInterner};
+#[cfg(feature = "surface")]
+pub(crate) use intern::{PresentedTypeMemoKey, TypeMemoKey};
 
 mod kind_scheme;
 

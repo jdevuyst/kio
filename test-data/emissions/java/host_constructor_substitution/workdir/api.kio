@@ -8,23 +8,23 @@ pub fn abstract_keep[*F][T](value: F(T)) -> F(T) { value }
 
 host fn echo[T](value: Box(T)) -> Box(T);
 
-fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> A & T, value: A & T) ->
+fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> (A & T), value: A & T) ->
   A & T
    { read(pack(value)) }
 
-fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> A | T, value: A | T) ->
+fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> (A | T), value: A | T) ->
   A | T
    { read(pack(value)) }
 
 pub fn concrete_product_roundtrip(
   , pack: (I32 & I32 & I32) -> Box(I32 & I32 & I32)
-  , read: Box(I32 & I32 & I32) -> I32 & I32 & I32
+  , read: Box(I32 & I32 & I32) -> (I32 & I32 & I32)
   , value: I32 & I32 & I32
   ) -> I32 & I32 & I32 { product_roundtrip(Box, I32, I32 & I32, pack, read, value) }
 
 pub fn concrete_sum_roundtrip(
   , pack: (I32 | I32 | I32) -> Box(I32 | I32 | I32)
-  , read: Box(I32 | I32 | I32) -> I32 | I32 | I32
+  , read: Box(I32 | I32 | I32) -> (I32 | I32 | I32)
   , value: I32 | I32 | I32
   ) -> I32 | I32 | I32 { sum_roundtrip(Box, I32, I32 | I32, pack, read, value) }
 

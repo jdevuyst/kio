@@ -1,0 +1,13 @@
+package test_equiv_structural_recur_callback_discarded;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

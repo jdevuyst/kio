@@ -93,11 +93,11 @@
   },
   {
     "name": "rec_callee_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec // shared trivia\n  again(value)\n}\n",
+    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec // shared trivia\n  again(value)\n}\n",
     "targets": [
       {
-        "start": 106,
-        "end": 109,
+        "start": 108,
+        "end": 111,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -108,8 +108,8 @@
         ]
       },
       {
-        "start": 68,
-        "end": 71,
+        "start": 70,
+        "end": 73,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -120,11 +120,11 @@
   },
   {
     "name": "rec_parameter_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(\n  rec // shared trivia\n  : .\n) -> . { () }\n",
+    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(\n  rec // shared trivia\n  : .\n) -> . { () }\n",
     "targets": [
       {
-        "start": 90,
-        "end": 93,
+        "start": 92,
+        "end": 95,
         "text": "rec",
         "kind": "variable.parameter",
         "owners": [
@@ -134,8 +134,8 @@
         ]
       },
       {
-        "start": 68,
-        "end": 71,
+        "start": 70,
+        "end": 73,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -146,11 +146,11 @@
   },
   {
     "name": "rec_arguments_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec again\n  (value)\n}\n",
+    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec again\n  (value)\n}\n",
     "targets": [
       {
-        "start": 106,
-        "end": 109,
+        "start": 108,
+        "end": 111,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -161,8 +161,8 @@
         ]
       },
       {
-        "start": 68,
-        "end": 71,
+        "start": 70,
+        "end": 73,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [

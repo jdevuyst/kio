@@ -11,9 +11,9 @@ fn emit(value: I32) { io.print(fmt.int_to_string(value)); io.print("\n") }
 
 fn marked(label: String, value: I32) -> I32 { io.print(label); value }
 
-fn pair_factory() -> [A][B] (A & B) -> A & B { __pair__ }
+fn pair_factory() -> [A][B] (A & B) -> (A & B) { __pair__ }
 
-fn passed(make: [A][B] (A & B) -> A & B, a: I32, b: I32) -> I32 & I32 { make(a, b) }
+fn passed(make: [A][B] (A & B) -> (A & B), a: I32, b: I32) -> I32 & I32 { make(a, b) }
 
 fn select(value: I32 | I32) -> I32 {
   let fold = __either__;

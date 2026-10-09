@@ -8353,6 +8353,7 @@ mod tests {
     fn forall(name: &str, body: Type<Lowered>) -> Type<Lowered> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: sp(),
                 kind: None,
@@ -9115,11 +9116,13 @@ mod tests {
     fn isolated_specialization_returns_binder_ordered_goal_free_arguments() {
         let params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: sp(),
                 kind: None,
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span: sp(),
                 kind: None,
@@ -9160,6 +9163,7 @@ mod tests {
     #[test]
     fn isolated_specialization_classifies_structural_mismatch_without_text() {
         let params = [TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -9199,11 +9203,13 @@ mod tests {
     fn isolated_specialization_reports_an_underdetermined_binder() {
         let params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: sp(),
                 kind: None,
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "Unused".to_owned(),
                 span: sp(),
                 kind: None,
@@ -9223,6 +9229,7 @@ mod tests {
     #[test]
     fn scoped_specialization_preserves_target_rigid_proof_through_instantiation() {
         let param = TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: sp(),
             kind: None,
@@ -9278,6 +9285,7 @@ mod tests {
         let open_goal = goal(&mut store, owner, Kind::Star);
         let target = scoped_canonical(&store, owner, goal_type(open_goal));
         let param = TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: sp(),
             kind: None,
@@ -9324,11 +9332,13 @@ mod tests {
     #[test]
     fn scoped_specialization_rehydrates_one_open_head_across_distinct_arguments() {
         let a = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
         };
         let b = TypeParam {
+            presentation: Default::default(),
             name: "B".to_owned(),
             span: sp(),
             kind: None,
@@ -9343,9 +9353,10 @@ mod tests {
         let open_goal = goal(&mut store, owner, Kind::arrow_chain(1));
         let outer_scope = store.owner_scope(owner, sp()).unwrap();
         let flexible = TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: sp(),
-            kind: Some(Kind::arrow_chain(1)),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
         };
         let pattern = ScopedType::new(
             InternedType::fresh_canonical(product(
@@ -9405,6 +9416,7 @@ mod tests {
         let open_goal = goal(&mut store, owner, Kind::arrow_chain(1));
         let outer_scope = store.owner_scope(owner, sp()).unwrap();
         let flexible = TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: sp(),
             kind: None,
@@ -9582,6 +9594,7 @@ mod tests {
         let owner = owner(&mut store, RigidScope::new());
         let open_goal = goal(&mut store, owner, Kind::Star);
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -9752,6 +9765,7 @@ mod tests {
         let abstracted = left
             .projected_forall_abstract(
                 TypeParam {
+                    presentation: Default::default(),
                     name: "B".to_owned(),
                     span: sp(),
                     kind: None,
@@ -9768,6 +9782,7 @@ mod tests {
         assert!(
             left.projected_forall_abstract(
                 TypeParam {
+                    presentation: Default::default(),
                     name: "A".to_owned(),
                     span: sp(),
                     kind: None,
@@ -11219,6 +11234,7 @@ mod tests {
             )
             .unwrap();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -11540,6 +11556,7 @@ mod tests {
     #[test]
     fn parent_header_export_rejects_free_nominal_capture_before_reservation() {
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -11700,9 +11717,10 @@ mod tests {
         let body =
             peer.projected_closed_peer(InternedType::fresh_canonical(path(&["A"], Vec::new())));
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         };
         let mut scratch = ProjectedTypeCloseScratch::default();
 
@@ -11726,14 +11744,16 @@ mod tests {
         )));
         let binders = [
             TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: sp(),
-                kind: Some(Kind::arrow_chain(1)),
+                kind: Some(Box::new(Kind::arrow_chain(1))),
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: sp(),
-                kind: Some(Kind::Star),
+                kind: Some(Box::new(Kind::Star)),
             },
         ];
         let mut scratch = ProjectedTypeCloseScratch::default();
@@ -11851,9 +11871,10 @@ mod tests {
             owner,
             Type::Forall {
                 param: TypeParam {
+                    presentation: Default::default(),
                     name: "F".to_owned(),
                     span: sp(),
-                    kind: Some(Kind::arrow_chain(1)),
+                    kind: Some(Box::new(Kind::arrow_chain(1))),
                 },
                 body: Box::new(unit()),
                 meta: Meta::new(sp()),
@@ -12092,9 +12113,10 @@ mod tests {
             "a free rigid absent from both the root and explicit path must fail closed"
         );
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         };
         assert!(
             store
@@ -12109,14 +12131,16 @@ mod tests {
         );
         let duplicate = [
             TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span: sp(),
-                kind: Some(Kind::Star),
+                kind: Some(Box::new(Kind::Star)),
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span: sp(),
-                kind: Some(Kind::Star),
+                kind: Some(Box::new(Kind::Star)),
             },
         ];
         assert!(
@@ -13540,9 +13564,10 @@ mod tests {
 
         let mark = tcx.save();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: sp(),
-            kind: Some(Kind::arrow_chain(1)),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
         };
         let binder = tcx.push_retained_type_param(&param);
         let child_scope = store.scope_from_type_ctx(&tcx);
@@ -13789,9 +13814,10 @@ mod tests {
 
         let mark = tcx.save();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: sp(),
-            kind: Some(Kind::arrow_chain(1)),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
         };
         let binder = tcx.push_retained_type_param(&param);
         let child = store
@@ -14682,6 +14708,7 @@ mod tests {
             occurrence: Default::default(),
             sig: crate::ast::Signature::new(vec![
                 SignatureParam::Type(TypeParam {
+                    presentation: Default::default(),
                     name: "A".to_owned(),
                     span: sp(),
                     kind: None,
@@ -16889,6 +16916,7 @@ mod tests {
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
         let mark = tcx.save();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -17005,6 +17033,7 @@ mod tests {
 
         let mark = tcx.save();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -17879,9 +17908,10 @@ mod tests {
         let f = path(&["F"], vec![unit()]);
         let ty = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: sp(),
-                kind: Some(Kind::arrow_chain(1)),
+                kind: Some(Box::new(Kind::arrow_chain(1))),
             },
             body: Box::new(function(f.clone(), f)),
             meta: Meta::new(sp()),
@@ -17914,9 +17944,10 @@ mod tests {
     fn complete_higher_kinded_function_scheme_is_a_structural_value_type() {
         let hkt_scheme = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: sp(),
-                kind: Some(Kind::arrow_chain(1)),
+                kind: Some(Box::new(Kind::arrow_chain(1))),
             },
             body: Box::new(function(
                 path(&["F"], vec![unit()]),

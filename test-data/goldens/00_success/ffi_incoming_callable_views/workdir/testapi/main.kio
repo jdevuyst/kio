@@ -64,6 +64,6 @@ pub fn invoke_computed(vault: Vault(((t.I32 & t.I32) & t.I32) -> .), value: (t.I
   (t.I32 & t.I32) & t.I32
    { vault.>Vault.open(value); value }
 
-pub fn receive_pair(vault: Vault(. -> (t.I32 & t.I32) & t.I32), after: . -> .) ->
+pub fn receive_pair(vault: Vault(. -> ((t.I32 & t.I32) & t.I32)), after: . -> .) ->
   (t.I32 & t.I32) & t.I32
    { let callback = vault.>Vault.open; let value = callback(); after(); value }

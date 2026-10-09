@@ -2297,11 +2297,7 @@ where
                 );
                 AliasMaterialized {
                     ty: crate::ast::Type::Forall {
-                        param: crate::ast::TypeParam {
-                            name: emitted,
-                            span: param.span,
-                            kind: param.kind.clone(),
-                        },
+                        param: param.renamed(emitted),
                         body: Box::new(body.ty),
                         meta: meta.clone(),
                     },
@@ -4593,9 +4589,10 @@ mod tests {
     ) -> Type<Lowered> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: binder.to_owned(),
                 span: span(),
-                kind,
+                kind: kind.map(Box::new),
             },
             body: Box::new(body),
             meta: Meta::new(span()),
@@ -4666,6 +4663,7 @@ mod tests {
     #[test]
     fn complete_scheme_demand_uses_the_virtual_alias_frontier_without_materializing() {
         let maker_params = vec![TypeParam {
+            presentation: Default::default(),
             name: "X".to_owned(),
             span: span(),
             kind: None,
@@ -4673,11 +4671,13 @@ mod tests {
         let maker_body = forall("Y", func(path("Y"), path("Y")));
         let apply_params = vec![
             TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: span(),
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: span(),
                 kind: None,
@@ -4798,6 +4798,7 @@ mod tests {
     #[test]
     fn direct_occurrences_stay_untransported_around_one_alias_branch() {
         let params = vec![TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: Span::new(2, 3),
             kind: None,
@@ -4875,6 +4876,7 @@ mod tests {
     #[test]
     fn dropped_occurrence_under_a_direct_forall_has_no_binder_route() {
         let params = vec![TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: Span::new(2, 3),
             kind: None,
@@ -4909,6 +4911,7 @@ mod tests {
     #[test]
     fn source_transport_records_alias_root_graft_and_mixed_duplication() {
         let params = vec![TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: Span::new(2, 3),
             kind: None,
@@ -5138,11 +5141,13 @@ mod tests {
     fn source_transport_reorders_one_occurrence_and_finalizes_a_drop() {
         let params = vec![
             TypeParam {
+                presentation: Default::default(),
                 name: "First".to_owned(),
                 span: span(),
                 kind: None,
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "Second".to_owned(),
                 span: span(),
                 kind: None,
@@ -5414,6 +5419,7 @@ mod tests {
     #[test]
     fn finite_repeated_transparent_alias_occurrences_reach_the_terminal_head() {
         let params = [TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
             kind: None,
@@ -5488,6 +5494,7 @@ mod tests {
     #[test]
     fn repeated_formal_uses_of_one_higher_kinded_alias_view_all_expand() {
         let unary_params = [TypeParam {
+            presentation: Default::default(),
             name: "E".to_owned(),
             span: span(),
             kind: None,
@@ -5495,11 +5502,13 @@ mod tests {
         let unary_body = Type::synth_path(vec!["Either".to_owned()], vec![path("E")], span());
         let twice_params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: span(),
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: span(),
                 kind: None,
@@ -5564,6 +5573,7 @@ mod tests {
     #[test]
     fn selected_formal_applications_complete_only_missing_alias_arguments() {
         let maker_params = [TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
             kind: None,
@@ -5571,11 +5581,13 @@ mod tests {
         let maker_body = path("A");
         let maker2_params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: span(),
                 kind: None,
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span: span(),
                 kind: None,
@@ -5584,11 +5596,13 @@ mod tests {
         let maker2_body = product(path("A"), path("B"));
         let apply_params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: span(),
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: span(),
                 kind: None,
@@ -5666,6 +5680,7 @@ mod tests {
         const ARITY: usize = 96;
 
         let pass_params = [TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: span(),
             kind: None,
@@ -5673,11 +5688,13 @@ mod tests {
         let pass_body = path("F");
         let mut apply_params = Vec::with_capacity(ARITY + 1);
         apply_params.push(TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: span(),
             kind: None,
         });
         apply_params.extend((0..ARITY).map(|index| TypeParam {
+            presentation: Default::default(),
             name: format!("A{index}"),
             span: span(),
             kind: None,
@@ -5753,6 +5770,7 @@ mod tests {
         const DEPTH: usize = 20_000;
 
         let pass_params = [TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: span(),
             kind: None,
@@ -5760,11 +5778,13 @@ mod tests {
         let pass_body = Type::synth_path(vec!["F".to_owned()], vec![path("Forwarded")], span());
         let apply_params = [
             TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: span(),
                 kind: None,
             },
             TypeParam {
+                presentation: Default::default(),
                 name: "Last".to_owned(),
                 span: span(),
                 kind: None,
@@ -5773,6 +5793,7 @@ mod tests {
         let apply_body = Type::synth_path(vec!["F".to_owned()], vec![path("Last")], span());
         let consume_params = (0..DEPTH)
             .map(|index| TypeParam {
+                presentation: Default::default(),
                 name: format!("A{index}"),
                 span: span(),
                 kind: None,
@@ -5848,6 +5869,7 @@ mod tests {
         const BINDERS: usize = 512;
 
         let params = [TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: span(),
             kind: None,
@@ -5926,6 +5948,7 @@ mod tests {
         const DEPTH: usize = 128;
 
         let params = [TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
             kind: None,
@@ -5991,6 +6014,7 @@ mod tests {
         let params = (0..DEPTH)
             .map(|_| {
                 [TypeParam {
+                    presentation: Default::default(),
                     name: "A".to_owned(),
                     span: span(),
                     kind: None,
@@ -7926,6 +7950,7 @@ mod tests {
         let owner = parse_module("module type_of; type A = .;");
         let poly_body = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: span(),
                 kind: None,

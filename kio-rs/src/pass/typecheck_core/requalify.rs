@@ -288,7 +288,7 @@ impl PrimeTypeRequalifier {
                 .into_iter()
                 .enumerate()
                 .map(|(index, mut param)| {
-                    param.name = self.fresh_type_param(index, leaf, bound);
+                    param.rename(self.fresh_type_param(index, leaf, bound));
                     param
                 })
                 .collect();

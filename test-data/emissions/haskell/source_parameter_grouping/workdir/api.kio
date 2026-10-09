@@ -28,7 +28,7 @@ pub fn invoke(callback: (Text & Text) -> Text, left: Text, right: Text) -> Text 
   callback(left, right)
 }
 
-pub fn first_value() -> (Text & Text) -> Text & Text { first(Text, Text) }
+pub fn first_value() -> (Text & Text) -> (Text & Text) { first(Text, Text) }
 
 pub fn boxed_callback(value: Box((Text & Text) -> Text)) -> Box((Text & Text) -> Text) {
   box_echo(value)
@@ -38,7 +38,7 @@ pub fn boxed_generic[A](value: Box((A & A) -> A)) -> Box((A & A) -> A) { value }
 
 pub fn applied_generic[*F][A](value: F((A & A) -> A)) -> F((A & A) -> A) { value }
 
-pub fn returned(first: Text) -> Text -> Text & Text {
+pub fn returned(first: Text) -> Text -> (Text & Text) {
   mark("head");
   .(last: Text) { mark("tail"); (first, last) }
 }

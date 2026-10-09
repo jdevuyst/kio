@@ -4126,7 +4126,7 @@ v(2) {
                  choice: (. -> N) | ([A] A -> A), \
                  product: (Outer -> More) & ([B] B -> Outer), \
                  wrapped: Box([C] C -> Outer), \
-                 callback: ((. -> N) | ([D] D -> D)) -> (. -> N) | ([E] E -> E) \
+                 callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
              ) -> Box([R] R -> More); \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \

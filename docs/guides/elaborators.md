@@ -299,7 +299,7 @@ the arguments nor the context determine it.
 
 An ordinary call can also obtain its result type from a fully annotated
 callback without checking the callback body first. For example, given
-`drive[S][R](step: S -> S | R, seed: S) -> R`, the callback signature in
+`drive[S][R](step: S -> (S | R), seed: S) -> R`, the callback signature in
 `drive(.(state: State) -> State | Done { advance(state) }, seed)` determines
 `R` as `Done`, just as passing a named function of that type does. This works
 through enclosing ordinary calls too. The body is still checked before the
@@ -345,7 +345,7 @@ and diagnostic text for malformed or underdetermined input.
 
 During marked header staging, the resolved canonical product intrinsic exposes
 its two value operands because its intrinsic classification and exact
-`[A][B](A, B) -> A & B` scheme prove their one-to-one order. The compiler still
+`[A][B](A, B) -> (A & B)` scheme prove their one-to-one order. The compiler still
 completes that original call exactly once. An ordinary function with the same
 type remains one opaque value: its body may reorder, duplicate, or discard the
 arguments. This is a resolved builtin boundary, not behavior attached to a
@@ -530,16 +530,15 @@ The evaluator measures the root fuel and checks every recursive callback:
   measure and the stored root measure; evaluator-created callbacks maintain
   `current ≤ root`, while both bounds are checked independently for a callback
   constructed directly through the evaluator API;
-- each resolved `__structural_recur__` source occurrence supplies a helper
-  origin that survives proof/type application stages and higher-order use;
 - the helper's three operands and the callback's two operands may be written
   as flattened arguments or as one right-folded product packet;
-- after all call operands are evaluated, the first invocation at an origin
-  uses the initial fuel measure; re-entering that origin uses the recursive
-  measure and must descend strictly from the nearest active invocation;
-- invocations from distinct helper origins do not compare measures;
-- equal-measure fuel is rejected regardless of its value identity,
-  representation, or whether it contains a projected handle;
+- after all call operands are evaluated, every fresh invocation uses the
+  initial fuel measure and starts an independent callback root, including
+  nested calls through the same helper and higher-order use;
+- saved callbacks retain their immutable bounds after the creating invocation
+  returns, and sibling applications do not consume each other's bounds;
+- on a callback edge, equal-measure fuel is rejected regardless of value
+  identity, representation, or whether it contains a projected handle;
 - unit, literals, finite constructor trees with measurable children,
   structurally determined reflection handles, checked terms, arities, and
   diagnostic text are measurable;
@@ -556,8 +555,7 @@ The evaluator measures the root fuel and checks every recursive callback:
   not valid fuel.
 
 Unmeasurable initial or recursive fuel, a callback that does not strictly
-descend from its current fuel or stay below its stored root, or an active same
-helper origin re-entry that does not strictly descend is a totality failure
+descend from its current fuel or stay below its stored root is a totality failure
 (exit code `16`), with root/current/next measures included when available. If
 both callback bounds fail, the diagnostic reports the current edge; the
 root-specific diagnostic applies only when the current edge descends but the

@@ -860,6 +860,7 @@ mod tests {
     fn enclosing_scheme_supplies_omitted_closure_types_and_lexical_binder_names() {
         let span = Span::new(0, 0);
         let param = |name: &str| crate::ast::TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             kind: None,
             span,
@@ -898,6 +899,7 @@ mod tests {
         let free_a = Type::synth_path(vec!["A".to_owned()], Vec::new(), span);
         let source = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -1112,6 +1114,7 @@ mod tests {
         let t_ty = Type::synth_path(vec!["T".to_owned()], Vec::new(), span);
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span,
                 kind: None,
@@ -1158,6 +1161,7 @@ mod tests {
         let b_ty = Type::synth_path(vec!["B".to_owned()], Vec::new(), span);
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -1169,6 +1173,7 @@ mod tests {
                 meta: Meta::new(span),
             }),
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span,
                 kind: None,
@@ -1222,6 +1227,7 @@ mod tests {
         let a_ty = Type::synth_path(vec!["A".to_owned()], Vec::new(), span);
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -1268,6 +1274,7 @@ mod tests {
         let a_ty = Type::synth_path(vec!["A".to_owned()], Vec::new(), span);
         let inner_sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,

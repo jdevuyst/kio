@@ -298,7 +298,7 @@ returns `(A | .)`, with the `()` arm meaning "this is not the focused case".
 Its constructor injects an `A` back into `S`:
 
 ```kio {@optics}
-type Prism[S][A] = (S -> A | .) & (A -> S);
+type Prism[S][A] = (S -> (A | .)) & (A -> S);
 ```
 
 ### preview, review, over_prism
@@ -308,7 +308,7 @@ the same `one_prod!` projection the lens combinators use, picking the right
 half of the pair by type:
 
 ```kio {@optics}
-fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> A | .)(x) }
+fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> (A | .))(x) }
 
 fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
 ```
@@ -850,7 +850,7 @@ then discharges by reconstruction. And `over_iso`'s defining
 equation is checked on `swap_iso`:
 
 ```text
-equiv swap_over_def[A][B](x: A & B, f: (B & A) -> B & A) {
+equiv swap_over_def[A][B](x: A & B, f: (B & A) -> (B & A)) {
   over_iso(swap_iso(A, B), f, x);
   review_iso(swap_iso(A, B), f(view_iso(swap_iso(A, B), x)))
 }

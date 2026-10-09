@@ -3336,7 +3336,7 @@ mod tests {
         let full = full_prime(
             "module x/main; import __intrinsics__; \
              host type I32 role(i32); \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              fn step(_n: I32) -> I32 | . { __right__(I32, ., ()) } \
              fn t(start: I32) -> . { loop(.(n: I32) { step(n) }, start) }",
         );

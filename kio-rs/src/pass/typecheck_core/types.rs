@@ -1027,8 +1027,9 @@ where
         span,
         format!(
             "higher-kinded `Forall` binder `{}` must bind a complete function scheme \
-             (see `specs/prime.md` § Higher-kinded types)",
+             (see {})",
             param.name,
+            crate::documentation_help("{base}/specs/prime.md#higher-kinded-types"),
         ),
     ))
 }
@@ -1247,12 +1248,13 @@ where
                             span,
                             format!(
                                 "`{}` has kind `*` and cannot be applied to a type argument \
-                                 (see `specs/grammar.md` § Kind grammar)",
+                                 (see {})",
                                 segments
                                     .iter()
                                     .map(|s| s.name.as_str())
                                     .collect::<Vec<_>>()
                                     .join("."),
+                                crate::documentation_help("{base}/specs/grammar.md#kind-grammar"),
                             ),
                         ));
                     }
@@ -1282,8 +1284,9 @@ where
                         format!(
                             "type application argument `{}` has kind `{arg_kind}`, but a \
                              kind-`{domain}` argument is required here \
-                             (see `specs/grammar.md` § Kind grammar)",
+                             (see {})",
                             display_type(arg),
+                            crate::documentation_help("{base}/specs/grammar.md#kind-grammar"),
                         ),
                     ));
                 }
@@ -1768,11 +1771,7 @@ where
             param.name.clone(),
             crate::ast::Type::synth_path(vec![fresh.clone()], Vec::new(), param.span),
         );
-        crate::ast::TypeParam {
-            name: fresh,
-            span: param.span,
-            kind: param.kind.clone(),
-        }
+        param.renamed(fresh)
     } else {
         param.clone()
     };
@@ -2123,7 +2122,7 @@ where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
     let mut s = String::new();
-    write_type_with_path_style(ty, &mut s, PathStyle::Source);
+    write_type(ty, &mut s);
     s
 }
 
@@ -2136,7 +2135,7 @@ where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
     let mut s = String::new();
-    write_type_with_path_style(ty, &mut s, PathStyle::CanonicalModule);
+    write_type_with_path_style(ty, &mut s, PathStyle::CanonicalModule, &mut None);
     s
 }
 
@@ -2173,37 +2172,49 @@ pub fn write_type<P>(ty: &crate::ast::Type<P>, out: &mut String)
 where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
-    write_type_with_path_style(ty, out, PathStyle::Source);
+    let projection = crate::pass::binder_presentation::TypeNameProjection::new(ty, HashMap::new());
+    write_type_with_path_style(ty, out, PathStyle::Source, &mut Some(projection));
 }
 
-fn write_type_with_path_style<P>(ty: &crate::ast::Type<P>, out: &mut String, path_style: PathStyle)
-where
+fn write_type_with_path_style<P>(
+    ty: &crate::ast::Type<P>,
+    out: &mut String,
+    path_style: PathStyle,
+    names: &mut Option<crate::pass::binder_presentation::TypeNameProjection>,
+) where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
     match ty {
         crate::ast::Type::Unit { .. } => out.push('.'),
         crate::ast::Type::Bottom { .. } => out.push('!'),
         crate::ast::Type::Function { param, ret, .. } => {
-            write_type_atom(param, out, path_style);
+            write_type_atom(param, out, path_style, names);
             out.push_str(" -> ");
-            write_type_with_path_style(ret, out, path_style);
+            if matches!(
+                ret.as_ref(),
+                crate::ast::Type::Product { .. } | crate::ast::Type::Sum { .. }
+            ) {
+                write_type_atom(ret, out, path_style, names);
+            } else {
+                write_type_with_path_style(ret, out, path_style, names);
+            }
         }
         crate::ast::Type::Product { left, right, .. } => {
-            write_type_atom(left, out, path_style);
+            write_type_atom(left, out, path_style, names);
             out.push_str(" & ");
             if matches!(right.as_ref(), crate::ast::Type::Product { .. }) {
-                write_type_with_path_style(right, out, path_style);
+                write_type_with_path_style(right, out, path_style, names);
             } else {
-                write_type_atom(right, out, path_style);
+                write_type_atom(right, out, path_style, names);
             }
         }
         crate::ast::Type::Sum { left, right, .. } => {
-            write_type_atom(left, out, path_style);
+            write_type_atom(left, out, path_style, names);
             out.push_str(" | ");
             if matches!(right.as_ref(), crate::ast::Type::Sum { .. }) {
-                write_type_with_path_style(right, out, path_style);
+                write_type_with_path_style(right, out, path_style, names);
             } else {
-                write_type_atom(right, out, path_style);
+                write_type_atom(right, out, path_style, names);
             }
         }
         crate::ast::Type::Path { segments, args, .. } => {
@@ -2211,7 +2222,11 @@ where
             // cannot occur in parsed Kio identifiers, and diagnostics must
             // render the source-level unknown rather than leaking planner
             // implementation details.
-            if segments.iter().any(|segment| segment.starts_with('\0')) {
+            if let [segment] = segments.as_slice()
+                && let Some(name) = names.as_ref().and_then(|names| names.name(&segment.name))
+            {
+                out.push_str(name);
+            } else if segments.iter().any(|segment| segment.starts_with('\0')) {
                 out.push('_');
             } else {
                 match path_style {
@@ -2228,7 +2243,7 @@ where
                     if i > 0 {
                         out.push_str(", ");
                     }
-                    write_type_with_path_style(a, out, path_style);
+                    write_type_with_path_style(a, out, path_style, names);
                 }
                 out.push(')');
             }
@@ -2240,16 +2255,26 @@ where
                 binders.push(param);
                 cur = body.as_ref();
             }
+            let count = binders.len();
             for tp in binders {
                 out.push('[');
                 for _ in 0..tp.effective_kind().arity() {
                     out.push('*');
                 }
-                out.push_str(&tp.name);
+                out.push_str(
+                    names
+                        .as_mut()
+                        .map_or(tp.name.as_str(), |names| names.enter(tp)),
+                );
                 out.push(']');
             }
             out.push(' ');
-            write_type_with_path_style(cur, out, path_style);
+            write_type_with_path_style(cur, out, path_style, names);
+            if let Some(names) = names {
+                for _ in 0..count {
+                    names.leave();
+                }
+            }
         }
         // Statically uninhabited per the `TypeLabelSugar = Never`
         // bound on `P`.
@@ -2265,7 +2290,7 @@ where
                     if index > 0 {
                         out.push_str(", ");
                     }
-                    write_type_with_path_style(arg, out, path_style);
+                    write_type_with_path_style(arg, out, path_style, names);
                 }
                 out.push(')');
             }
@@ -2273,8 +2298,12 @@ where
     }
 }
 
-fn write_type_atom<P>(ty: &crate::ast::Type<P>, out: &mut String, path_style: PathStyle)
-where
+fn write_type_atom<P>(
+    ty: &crate::ast::Type<P>,
+    out: &mut String,
+    path_style: PathStyle,
+    names: &mut Option<crate::pass::binder_presentation::TypeNameProjection>,
+) where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
     if matches!(
@@ -2285,10 +2314,10 @@ where
             | crate::ast::Type::Sum { .. }
     ) {
         out.push('(');
-        write_type_with_path_style(ty, out, path_style);
+        write_type_with_path_style(ty, out, path_style, names);
         out.push(')');
     } else {
-        write_type_with_path_style(ty, out, path_style);
+        write_type_with_path_style(ty, out, path_style, names);
     }
 }
 // =========================================================================
@@ -2400,6 +2429,7 @@ where
     P: crate::ast::Phase,
 {
     crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+        presentation: Default::default(),
         name: name.to_owned(),
         span,
         kind: None,
@@ -2738,9 +2768,8 @@ where
                     }
                     crate::ast::Type::Forall {
                         param: crate::ast::TypeParam {
-                            name,
                             span: self.span,
-                            kind: param.kind.clone(),
+                            ..param.renamed(name)
                         },
                         body: Box::new(body),
                         meta: Meta::new(self.span),
@@ -3123,9 +3152,10 @@ mod tests {
         let kind = crate::ast::Kind::arrow_chain(2);
         let original = Ty::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: Span::new(1, 2),
-                kind: Some(kind.clone()),
+                kind: Some(Box::new(kind.clone())),
             },
             body: Box::new(Ty::Path {
                 segments: vec![
@@ -3150,7 +3180,7 @@ mod tests {
             panic!("expected forall");
         };
         assert_eq!(param.name, "F");
-        assert_eq!(param.kind, Some(kind));
+        assert_eq!(param.kind.as_deref(), Some(&kind));
         assert_eq!(meta.span, target);
         let Ty::Path {
             segments,
@@ -3193,6 +3223,7 @@ mod tests {
     fn forall(name: &str, body: Ty, span: Span) -> Ty {
         Ty::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,
@@ -3439,9 +3470,10 @@ mod tests {
         let original_goal = crate::ast::TypeGoalRef::for_test(7, 8, 9);
         let original = Ty::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: Span::new(1, 2),
-                kind: Some(crate::ast::Kind::arrow_chain(2)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(2))),
             },
             body: Box::new(Ty::Function {
                 param: Box::new(product(
@@ -3487,7 +3519,10 @@ mod tests {
             panic!("expected forall")
         };
         assert_eq!(param.name, "A");
-        assert_eq!(param.kind, Some(crate::ast::Kind::arrow_chain(2)));
+        assert_eq!(
+            param.kind.as_deref(),
+            Some(&crate::ast::Kind::arrow_chain(2))
+        );
         let Ty::Function { ret, abi_arity, .. } = body.as_ref() else {
             panic!("expected function")
         };
@@ -3668,8 +3703,8 @@ mod tests {
             ("((A & B) & C) -> D", "((A & B) & C) -> D"),
             ("(A | (B | C)) -> D", "(A | B | C) -> D"),
             ("((A | B) | C) -> D", "((A | B) | C) -> D"),
-            ("A -> (B & (C & D))", "A -> B & C & D"),
-            ("A -> (B | (C | D))", "A -> B | C | D"),
+            ("A -> (B & (C & D))", "A -> (B & C & D)"),
+            ("A -> (B | (C | D))", "A -> (B | C | D)"),
             ("(A -> B) -> C", "(A -> B) -> C"),
             ("A -> (B -> C)", "A -> B -> C"),
             ("((A -> B) & C)", "(A -> B) & C"),

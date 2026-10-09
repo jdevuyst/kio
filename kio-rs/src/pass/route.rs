@@ -2269,6 +2269,7 @@ impl<'a> Lowerer<'a> {
         // The CPS result binder `R` and a reference to it.
         let r_name = "__kio_cps_r".to_owned();
         let r_param = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: r_name.clone(),
             span,
             kind: None,
@@ -7336,6 +7337,7 @@ mod tests {
         let span = Span::new(0, 0);
         let inner = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -7345,6 +7347,7 @@ mod tests {
         };
         let callee = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span,
                 kind: None,
@@ -7377,12 +7380,14 @@ mod tests {
         };
         let callee = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span,
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             body: Box::new(Type::Forall {
                 param: crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: "A".to_owned(),
                     span,
                     kind: None,
@@ -8337,6 +8342,7 @@ mod tests {
     fn enriched_field_payload_resolution_is_exact_and_decline_safe() {
         let span = Span::new(0, 0);
         let type_param = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span,
             kind: None,
@@ -10094,6 +10100,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "Shared".to_owned(),
                 span,
                 kind: None,
@@ -10220,6 +10227,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
                 meta: test_meta_enriched(),
             }),
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "Shared".to_owned(),
                 span,
                 kind: None,
@@ -10256,11 +10264,13 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let target_path = "testapi/helper";
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "Phantom".to_owned(),
                 span,
                 kind: None,
             }),
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -10272,6 +10282,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
                 meta: test_meta_enriched(),
             }),
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span,
                 kind: None,
@@ -10352,6 +10363,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         assert_eq!(value_param.ty.as_ref(), Some(&path_ty("A")));
         let expected_ret = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span,
                 kind: None,
@@ -10478,6 +10490,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn identity_alias_existential_members_route_to_terminal_cps_namespace() {
         let span = Span::new(0, 0);
         let type_param = |name: &str| crate::ast::TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,
@@ -10633,6 +10646,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             projector: "un_box".to_owned(),
             has_existentials: false,
             type_params: vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -10742,6 +10756,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             payload: path_ty("A"),
             home: target_path.to_owned(),
             existential_params: vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -10820,6 +10835,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let caller_path = "testapi/main";
         let target_path = "testapi/types";
         let type_param = |name: &str| crate::ast::TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,
@@ -11120,6 +11136,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
                 "Identity".to_owned(),
                 AliasInfo {
                     type_params: vec![crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span,
                         kind: None,
@@ -11198,6 +11215,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -11339,6 +11357,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
 
         let generic_sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -11372,6 +11391,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let span = Span::new(0, 0);
         let forall = |name: &str, body: Type<Routed>| Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,
@@ -11637,6 +11657,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         let source = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span,
                 kind: None,
@@ -11776,6 +11797,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         let forall = |name: &str, body: Type<Routed>| Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,
@@ -11791,11 +11813,13 @@ pub fn keep_right(value: Shared) -> Shared { value }
             sig: Signature::from_parts(
                 vec![
                     SignatureParam::Type(crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span,
                         kind: None,
                     }),
                     SignatureParam::Type(crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "B".to_owned(),
                         span,
                         kind: None,
@@ -12131,6 +12155,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let span = Span::new(0, 0);
         let forall = |name: &str, body: Type<Routed>| Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,
@@ -12202,6 +12227,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let span = Span::new(0, 0);
         let forall = |name: &str, body: Type<Routed>| Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,

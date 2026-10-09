@@ -768,7 +768,7 @@ where
 {
     for param in sig.params {
         match param {
-            SignatureParam::Type(param) => pending.extend(param.kind.map(Node::from)),
+            SignatureParam::Type(param) => pending.extend(param.kind.map(|kind| Node::from(*kind))),
             SignatureParam::Value(param) => pending.extend(param.ty.map(Into::into)),
         }
     }
@@ -805,7 +805,7 @@ macro_rules! reclaim_ast {
                         pending.push((*right).into());
                     }
                     Type::Forall { param, body, .. } => {
-                        pending.extend(param.kind.map(Node::from));
+                        pending.extend(param.kind.map(|kind| Node::from(*kind)));
                         pending.push((*body).into());
                     }
                     Type::LabelSugar { ext, .. }

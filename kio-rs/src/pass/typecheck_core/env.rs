@@ -2406,6 +2406,7 @@ mod tests {
         let path = |name: &str| Type::synth_path(vec![name.to_owned()], Vec::new(), span);
         let forall = |name: &str, body| Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,

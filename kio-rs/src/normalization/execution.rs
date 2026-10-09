@@ -461,7 +461,7 @@ enum Frame<'code> {
         kind: Measure,
         started: Instant,
     },
-    StructuralSite,
+    StructuralHelper,
     CallBody {
         excess: usize,
     },
@@ -528,7 +528,7 @@ struct Machine<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserve
     callbacks: Vec<callback::Callback<'code>>,
     reflected_branches: Vec<branch_callback::Callback<'code>>,
     comparisons: Vec<comparison::Engine>,
-    sites: Vec<StructuralRecurSiteGuard<'ctx, 'artifact>>,
+    helpers: Vec<StructuralRecurHelperGuard<'ctx, 'artifact>>,
     current: Owner,
     observer: Observer,
 }
@@ -680,7 +680,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             comparisons: Vec::new(),
             tasks: Vec::new(),
             branches: Vec::new(),
-            sites: Vec::new(),
+            helpers: Vec::new(),
             current: None,
             observer,
         }
@@ -737,8 +737,8 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             Frame::BranchLeft | Frame::BranchRight => {
                 self.branches.pop();
             }
-            Frame::StructuralSite => {
-                self.sites.pop();
+            Frame::StructuralHelper => {
+                self.helpers.pop();
             }
             Frame::FoldStep => {
                 self.folds.pop();
@@ -1301,7 +1301,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             return self.primitive(*builtin, combined, result);
         }
         if let Value::Data(primitive) = &callee
-            && let Some(StructuralRecurDataIdentity::Primitive { site, stage }) =
+            && let Some(StructuralRecurDataIdentity::Primitive { stage }) =
                 primitive.structural_recur_identity()
         {
             let args = args.into_vec();
@@ -1311,10 +1311,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     return Control::Return;
                 };
                 (
-                    structural_recur_primitive_data(
-                        site.clone(),
-                        StructuralRecurPrimitiveStage::AwaitingRuntime,
-                    ),
+                    structural_recur_primitive_data(StructuralRecurPrimitiveStage::AwaitingRuntime),
                     runtime,
                 )
             } else {
@@ -1322,7 +1319,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             };
             if let Some([fuel, input, step]) = structural_recur_runtime_operands(args) {
                 self.measure(Measure::Reflection(ComptimeBuiltin::StructuralRecur));
-                return self.structural_at_site(site, fuel, input, step, result);
+                return self.structural_recur(fuel, input, step, result);
             }
             *result = if args.is_empty() {
                 Value::Data(primitive)
@@ -1547,13 +1544,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             && let Some([fuel, input, step]) = public_structural_recur_runtime_operands(&args)
         {
             self.measure(Measure::Reflection(builtin));
-            return self.structural_at_site(
-                &self.ctx.public_structural_recur_site,
-                fuel,
-                input,
-                step,
-                result,
-            );
+            return self.structural_recur(fuel, input, step, result);
         }
         let started = direct_reflection_start(self.ctx);
         if let Some(value) = reflect_leaf(builtin, &args, self.ctx) {
@@ -1574,18 +1565,17 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         Control::Return
     }
 
-    fn structural_at_site(
+    fn structural_recur(
         &mut self,
-        site: &Arc<StructuralRecurSite>,
         fuel: Value,
         input: Value,
         step: Value,
         result: &mut Value,
     ) -> Control<'code> {
-        match self.ctx.enter_structural_recur_site(site, &fuel) {
-            Ok((measure, guard)) => {
-                self.sites.push(guard);
-                self.push_frame(Frame::StructuralSite);
+        match self.ctx.enter_structural_recur_helper(&fuel) {
+            Some((measure, guard)) => {
+                self.helpers.push(guard);
+                self.push_frame(Frame::StructuralHelper);
                 let recur = Value::StructuralRecur {
                     root_measure: measure,
                     current_measure: measure,
@@ -1596,24 +1586,9 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     args: EvalArgs::Three([recur, fuel, input]),
                 })
             }
-            Err(StructuralRecurSiteEntryError::UnmeasurableInitialFuel) => {
+            None => {
                 *result =
                     structural_recur_fault(structural_recur_initial_rejected_value(), self.ctx);
-                Control::Return
-            }
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure,
-                current_measure,
-                next_measure,
-            }) => {
-                *result = structural_recur_fault(
-                    structural_recur_site_rejected_value(
-                        root_measure,
-                        current_measure,
-                        next_measure,
-                    ),
-                    self.ctx,
-                );
                 Control::Return
             }
         }
@@ -2593,8 +2568,8 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                         }
                         Control::Return
                     }
-                    Some(Frame::StructuralSite) => {
-                        self.sites.pop();
+                    Some(Frame::StructuralHelper) => {
+                        self.helpers.pop();
                         Control::Return
                     }
                     Some(Frame::CallBody { excess }) => {
@@ -3214,9 +3189,9 @@ mod tests {
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _guard = ctx
-                    .active_structural_recur_sites
+                    .structural_recur_operations
                     .lock()
-                    .expect("unpoisoned site state");
+                    .expect("unpoisoned operation state");
                 panic!("selected memo preparation fault");
             }))
             .is_err()

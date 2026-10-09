@@ -29,7 +29,9 @@ fn schedule(seq: &Sequence, depth: usize) -> String {
     for (i, step) in seq.steps.iter().enumerate() {
         let event = quoted(&format!("value-{i}:{}", seq.initial));
         out.push_str(&match step {
+            Step::Let(v) if i % 2 == 0 => format!("let .local. = {}; let value = local1;\n", value(v)),
             Step::Let(v) => format!("let value = {};\n", value(v)),
+            Step::Bind(Payload::String(v)) if i % 2 == 0 => format!("let .local. <- effect({event}, ((), {})); let value = local2;\n", value(v)),
             Step::Bind(Payload::String(v)) => format!("let value <- effect({event}, {});\n", value(v)),
             Step::Bind(Payload::Unit) => format!("let unit <- effect({event}, ());\n"),
             Step::Action => format!("action({});\n", quoted(&format!("action-{i}:{}", seq.initial))),
@@ -202,4 +204,37 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
             "module testapi/io;\nimport testapi(String);\nhost fn print(s: String) -> .;\n".into(),
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbered_and_ordinary_bindings_share_the_control_model() {
+        let sequence = Sequence {
+            receiver: Receiver::Direct,
+            initial: "initial\n".into(),
+            steps: vec![
+                Step::Let(Value::Current),
+                Step::Let(Value::Current),
+                Step::Bind(Payload::String(Value::Current)),
+                Step::Bind(Payload::String(Value::Current)),
+            ],
+            result: Value::Current,
+        };
+        let source = schedule(&sequence, 0);
+        for form in [
+            "let .local. = value; let value = local1;",
+            "let value = value;",
+            "let .local. <- effect(\"value-2:initial\\n\", ((), value)); let value = local2;",
+            "let value <- effect(\"value-3:initial\\n\", value);",
+        ] {
+            assert!(source.contains(form), "{source}");
+        }
+        assert_eq!(
+            crate::control::expected_stdout(&ControlProbe::Sequence(sequence)),
+            "value-2:initial\nbind\nvalue-3:initial\nbind\ninitial\n"
+        );
+    }
 }

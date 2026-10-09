@@ -169,10 +169,7 @@ fn current_module_of(session: &Session) -> Option<String> {
 /// the terminal or current directory cannot be read.
 pub fn run(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     // Reject unknown options (anything starting with `-`); every other

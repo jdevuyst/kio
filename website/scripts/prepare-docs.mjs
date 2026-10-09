@@ -4,6 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { siteUrl } from '../.vitepress/site.mjs'
+import { createMarkdownRenderer } from 'vitepress'
+import { withHeadingIds } from '../.vitepress/search-content.mjs'
 
 const websiteDir = path.resolve(new URL('..', import.meta.url).pathname)
 const repoRoot = path.resolve(websiteDir, '..')
@@ -689,23 +691,27 @@ function generateHelloExample() {
   writeText(path.join(generatedDir, 'helloExample.mjs'), `export const helloExampleFiles = ${JSON.stringify(files, null, 2)}\n`)
 }
 
-function generateKiodocHtml() {
-  const pages = Object.fromEntries([...kiodocPages.entries()].sort(([left], [right]) => left.localeCompare(right)))
+async function generateKiodocHtml() {
+  const md = await createMarkdownRenderer(websiteDir, {}, siteBase)
+  const pages = {}
+  for (const [key, html] of [...kiodocPages.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    pages[key] = await withHeadingIds(html, md)
+  }
   writeText(path.join(generatedDir, 'kiodoc-html.mjs'), `export const kiodocHtml = ${JSON.stringify(pages, null, 2)}\n`)
 }
 
-function main() {
+async function main() {
   const sections = parseDocsReadme()
   validateDocsCatalogue(sections)
   const languages = buildLanguages(sections.get('hosts').items)
   runKiodocBuild()
   generateDocsPages(sections)
   const blogEntries = generateBlog()
-  generateKiodocHtml()
+  await generateKiodocHtml()
   generateLanguages(languages)
   generateHelloExample()
   generateNav(sections)
   console.log(`prepare-docs: generated docs for ${languages.length} host languages, ${blogEntries.length} blog post(s)`)
 }
 
-main()
+await main()

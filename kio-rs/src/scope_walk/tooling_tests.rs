@@ -3,6 +3,108 @@ use crate::ast::KioFileKind;
 use crate::pass::parser::{CursorSlot, ToolingProbe, probe_tooling};
 
 #[test]
+fn numbered_binding_completion_tracks_lexical_owners() {
+    for (marked, expected, absent) in [
+        (
+            "module m; fn run() { let .x. = (); print(x3); let .x. = (); x|2 }",
+            vec!["x1", "x2"],
+            vec!["x3"],
+        ),
+        (
+            "module m; fn run() { .x. { print(x3); let .x. = (); x|2 } }",
+            vec!["x1", "x2"],
+            vec!["x3"],
+        ),
+        (
+            "module m; fn run() { let .x. = (); (x3, x|1) }",
+            vec!["x1", "x2", "x3"],
+            vec![],
+        ),
+        (
+            "module m; fn run() { let .x. = (); let .y. = (); (x1, y|2) }",
+            vec!["x1", "y1", "y2"],
+            vec!["x2"],
+        ),
+        (
+            "module m; fn run() { let .x. = (); print(x2); let .x. = (); x|3 }",
+            vec!["x1", "x2", "x3"],
+            vec![],
+        ),
+        (
+            "module m; fn run() { let .x. = (); let .x. = x|2; x3 }",
+            vec!["x1", "x2"],
+            vec!["x3"],
+        ),
+        (
+            "module m; fn run() { let .x. = (); (x1, .y. { y|2 }) }",
+            vec!["y1", "y2"],
+            vec!["x1"],
+        ),
+        (
+            "module m; fn run() { action! { let .x. <- (); let .y. <- (); (x1, y|2) } }",
+            vec!["x1", "y1", "y2"],
+            vec!["x2"],
+        ),
+    ] {
+        let (source, offset) = probe(marked, None);
+        let module = crate::pass::parser::parse(&source).unwrap();
+        let facts = crate::pass::parser::probe_tooling_source(&source, Some(offset));
+        for candidates in [
+            in_scope_candidates(&module, offset),
+            tooling::namespace_candidates(&facts, offset, Namespace::Value),
+        ] {
+            for name in &expected {
+                assert!(
+                    candidates.iter().any(|candidate| candidate.label == *name),
+                    "{marked}: {candidates:?}"
+                );
+            }
+            for name in &absent {
+                assert!(
+                    !candidates.iter().any(|candidate| candidate.label == *name),
+                    "{marked}: {candidates:?}"
+                );
+            }
+            if marked.contains("print(x3); let .x.") {
+                let start = source.rfind(".x.").unwrap() as u32 + 1;
+                for candidate in candidates
+                    .iter()
+                    .filter(|candidate| candidate.label.starts_with('x'))
+                {
+                    assert_eq!(
+                        candidate.origin,
+                        CandidateOrigin::NumberedBinding(Span::new(start, start + 1))
+                    );
+                }
+            }
+        }
+    }
+    for marked in [
+        "module m; fn run() { let .x. = (); print(x3); let .x. = (); x|",
+        "module m; fn run() { action! { let .x. <- (); print(x3); let .x. <- (); x|",
+    ] {
+        let (source, offset) = probe(marked, None);
+        let facts = crate::pass::parser::probe_tooling_source(&source, Some(offset));
+        let candidates = tooling::namespace_candidates(&facts, offset, Namespace::Value);
+        let start = source.rfind(".x.").unwrap() as u32 + 1;
+        assert_eq!(
+            candidates
+                .iter()
+                .find(|candidate| candidate.label == "x1")
+                .unwrap()
+                .origin,
+            CandidateOrigin::NumberedBinding(Span::new(start, start + 1))
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| matches!(candidate.label.as_str(), "x2" | "x3")),
+            "{marked}: {candidates:?}"
+        );
+    }
+}
+
+#[test]
 fn placeholder_missing_brace_recovery_keeps_neighbor_scope_separate() {
     for body in ["()", ".x. { x1 }", ".x. { x1"] {
         let marked = format!(

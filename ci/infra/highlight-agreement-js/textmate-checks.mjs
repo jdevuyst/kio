@@ -129,6 +129,17 @@ fixture("package field wrong parent", "module source;\nfn build(cache: ., docs: 
   ["fn build", "build", functionName], ["cache:", "cache", identifier], ["docs:", "docs", identifier],
   ["target:", "target", identifier], ["{ cache;", "cache", identifier], ["; docs;", "docs", identifier], ["; target }", "target", identifier],
 ]);
+fixture("named package targets", 'package app;\nbuild {\n target (js, "web") { out "out/web"; }\n target (\n rust,\n "worker"\n ) { namespace "app"; }\n}', [
+  ["target (js", "target", keyword], ["(js,", "js", identifier],
+  ["target (js", "(", "punctuation.bracket.kio"],
+  ["js,", ",", "punctuation.separator.kio"],
+  ["target (\n", "target", keyword], ["rust,", "rust", identifier],
+  ['out "out/web"', 'out', identifier], ['namespace "app"', 'namespace', identifier],
+]);
+fixture("named target recovery after incomplete body", 'package app;\nbuild {\n target js { out "out/js";\n target (rust, "worker") { out "out/worker"; }\n}', [
+  ["target js", "target", keyword], ["target (rust", "target", keyword],
+  ["(rust,", "rust", identifier], ['out "out/worker"', 'out', identifier],
+]);
 
 const recursive = (body) => `module recursive;\nrec(loop) fn again(value: .) -> . {\n  ${body}\n}`;
 fixture("monomorphic recursive call", recursive("rec again(value)"), [["rec again", "rec", keyword]]);

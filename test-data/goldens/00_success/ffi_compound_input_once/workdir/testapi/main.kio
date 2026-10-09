@@ -11,7 +11,7 @@ pub newtype Choice : I32 | Inner | Outer { pub constructor choice; pub projector
 
 pub fn direct() -> I32 & String { produce() }
 
-pub fn callback(f: . -> I32 & String) -> I32 & String { f() }
+pub fn callback(f: . -> (I32 & String)) -> I32 & String { f() }
 
 pub fn echo_outer(value: Outer) -> Outer { value }
 

@@ -16012,7 +16012,7 @@ fn freshen_reconstructed_foralls(
                             ),
                         )]),
                     );
-                    param.name = fresh;
+                    param.rename(fresh);
                 }
                 let inserted = protected.insert(param.name.clone());
                 let body = go(body, protected);
@@ -19295,6 +19295,7 @@ where
             // cannot collide with ambient or nested source binders.
             let fresh = tcx.fresh_application_hole_name();
             self.params.push(crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: fresh.clone(),
                 span: binder.span,
                 kind: binder.kind.clone(),
@@ -21716,7 +21717,7 @@ mod tests {
     #[test]
     fn rec_loop_diagnostic_does_not_add_ordinary_planning_work() {
         let package = resolved_lowered_test_package(
-            "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+            "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
              rec(drive) fn again(x: .) { rec again(x) }",
         );
         let module = &package.module("main").unwrap().module;
@@ -21756,7 +21757,7 @@ mod tests {
     #[test]
     fn rec_loop_diagnostic_nested_roots_retry_and_drain_without_body_blame() {
         let package = resolved_lowered_test_package(
-            "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+            "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
              host fn phantom[T](value: .) -> .; \
              rec(drive) fn again(value: .) { rec again(value) } \
              fn good(value: .) { value } fn bad(value: .) { phantom(value) }",
@@ -23385,14 +23386,16 @@ mod tests {
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
 
         let hkt = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: Span::new(10, 11),
-            kind: Some(crate::ast::Kind::Arrow(
+            kind: Some(Box::new(crate::ast::Kind::Arrow(
                 Box::new(crate::ast::Kind::Star),
                 Box::new(crate::ast::Kind::Star),
-            )),
+            ))),
         };
         let star = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: Span::new(12, 13),
             kind: None,
@@ -23637,6 +23640,7 @@ mod tests {
         let nested = func(vec![overapplied_box], i32);
         let error = validate_explicit_call_type_argument(
             &crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "Value".to_owned(),
                 span: Span::new(81, 82),
                 kind: None,
@@ -23705,6 +23709,7 @@ mod tests {
                 "forall body",
                 Type::Forall {
                     param: crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "T".to_owned(),
                         span: Span::new(116, 117),
                         kind: None,
@@ -23718,6 +23723,7 @@ mod tests {
         for (description, structural, offending_span) in structural_cases {
             let error = validate_explicit_call_type_argument(
                 &crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: "Value".to_owned(),
                     span: Span::new(122, 127),
                     kind: None,
@@ -23879,11 +23885,13 @@ mod tests {
             meta: Meta::new(sp()),
         };
         let binder_a = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
         };
         let binder_b = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "B".to_owned(),
             span: sp(),
             kind: None,
@@ -25326,7 +25334,7 @@ mod tests {
              host type Witness;
              host type Marker;
              host fn marker() -> Marker;
-             fn witness() -> Witness -> Witness & Marker {
+             fn witness() -> Witness -> (Witness & Marker) {
                .(item: Witness) -> Witness & _ { (item, marker()) }
              }",
         )
@@ -34781,6 +34789,7 @@ mod tests {
     #[test]
     fn application_holes_reject_cycles_and_chase_acyclic_solutions() {
         let param = |name: &str| crate::ast::TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span: sp(),
             kind: None,
@@ -34805,6 +34814,7 @@ mod tests {
         let name = "\0expected0";
         let mut holes = ApplicationHoleState::<Lowered> {
             params: vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: sp(),
                 kind: None,
@@ -35019,6 +35029,7 @@ mod tests {
         let span = Span::new(100, 105);
         let written = Type::synth_path(vec!["Token".to_owned()], Vec::new(), span);
         let binder = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: sp(),
             kind: None,
@@ -35105,6 +35116,7 @@ mod tests {
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(index);
         let binder = crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "Token".to_owned(),
             span: sp(),
             kind: None,
@@ -35312,6 +35324,7 @@ mod tests {
         let hole_name = "\0expected0";
         let mut holes = ApplicationHoleState {
             params: vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: hole_name.to_owned(),
                 span: sp(),
                 kind: None,
@@ -35371,6 +35384,7 @@ mod tests {
     fn forall(binders: &[&str], body: Type) -> Type {
         binders.iter().rev().fold(body, |acc, name| Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: (*name).to_owned(),
                 span: sp(),
                 kind: None,

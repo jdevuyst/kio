@@ -1,0 +1,3 @@
+module main;
+
+fn subject() { action! { let .x. <- (); x01 } }

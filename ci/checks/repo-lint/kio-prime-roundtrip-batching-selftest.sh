@@ -61,14 +61,13 @@ if [ "${1:-}" = debug ] &&
   [ "$mode" != inapplicable ] || exit 0
   package_name=$(sed -n 's/^package \([^;]*\);$/\1/p' "$pkg_path")
   [ -n "$package_name" ] || exit 78
-  printf 'package %s;\n\nbuild {\n  cache ();\n\n  target %s {\n' \
+  printf 'package %s;\n\nbuild {\n  cache ();\n\n  target (%s, "__kio_roundtrip_target") {\n' \
     "$package_name" "$selected_target"
   if grep -Fq '// }' "$pkg_path"; then
     printf '    // }\n'
   fi
   printf '    out "__kio_roundtrip_target/";\n  };\n\n'
-  printf '  target python {\n    out "original/python/";\n  };\n\n'
-  printf '  target kio-prime {\n    out "__kio_roundtrip_prime/";\n  }\n}\n'
+  printf '  target (kio-prime, "__kio_roundtrip_prime") {\n    out "__kio_roundtrip_prime/";\n  }\n}\n'
   exit 0
 fi
 
@@ -82,20 +81,18 @@ shift || :
 set -- ./*.pkg.kio "$@"
 pkg_path=$1
 shift
-pkg_selector=./$(basename "$pkg_path")
-if ! grep -Fq 'target ts {' "$pkg_path" ||
+pkg_selector=$(basename "$pkg_path" .pkg.kio)
+if ! grep -Fq 'target (ts, "__kio_roundtrip_target") {' "$pkg_path" ||
    ! grep -Fq 'out "__kio_roundtrip_target/";' "$pkg_path" ||
-   ! grep -Fq 'target python {' "$pkg_path" ||
-   ! grep -Fq 'out "original/python/";' "$pkg_path" ||
-   ! grep -Fq 'target kio-prime {' "$pkg_path" ||
+   ! grep -Fq 'target (kio-prime, "__kio_roundtrip_prime") {' "$pkg_path" ||
    ! grep -Fq 'out "__kio_roundtrip_prime/";' "$pkg_path"; then
   printf 'roundtrip rewrote the wrong target output\n' >&2
   exit 70
 fi
 if ! awk '
-  $1 == "target" && $2 == "ts" && $3 == "{" { in_selected = 1; next }
+  $1 == "target" && $2 == "(ts," && $4 == "{" { in_selected = 1; next }
   in_selected && $1 == "};" { in_selected = 0; selected_closed = 1; next }
-  $1 == "target" && $2 == "kio-prime" && $3 == "{" {
+  $1 == "target" && $2 == "(kio-prime," && $4 == "{" {
     prime_found = 1
     if (!selected_closed) invalid = 1
   }
@@ -104,8 +101,8 @@ if ! awk '
   printf 'roundtrip produced a nested or missing kio-prime target\n' >&2
   exit 70
 fi
-if [ "$no_cache" = 1 ] && [ "${1:-}" = kio-prime ]; then
-  [ "$#" -eq 2 ] && [ "$1" = kio-prime ] && [ "$2" = "$pkg_selector" ] || exit 69
+if [ "$no_cache" = 1 ] && [ "${1:-}" = __kio_roundtrip_prime ]; then
+  [ "$#" -eq 3 ] && [ "$2" = --package ] && [ "$3" = "$pkg_selector" ] || exit 69
   log_command combined "$target"
   case "$mode" in
     ok|mismatch|verifier-fail|combined-missing-direct|combined-missing-prime)
@@ -123,8 +120,8 @@ if [ "$no_cache" = 1 ] && [ "${1:-}" = kio-prime ]; then
       ;;
   esac
 fi
-if [ "$no_cache" = 1 ] && [ "$target" != kio-prime ]; then
-  [ "$#" -eq 1 ] && [ "$1" = "$pkg_selector" ] || exit 68
+if [ "$no_cache" = 1 ] && [ "$target" = __kio_roundtrip_target ]; then
+  [ "$#" -eq 2 ] && [ "$1" = --package ] && [ "$2" = "$pkg_selector" ] || exit 68
   log_command direct "$target"
   if [ -e __kio_roundtrip_target ] || [ -e __kio_roundtrip_prime ]; then
     printf 'partial combined output survived fallback cleanup\n' >&2
@@ -134,8 +131,8 @@ if [ "$no_cache" = 1 ] && [ "$target" != kio-prime ]; then
   write_artifact __kio_roundtrip_target verified
   exit 0
 fi
-if [ "$no_cache" = 1 ] && [ "$target" = kio-prime ]; then
-  [ "$#" -eq 1 ] && [ "$1" = "$pkg_selector" ] || exit 67
+if [ "$no_cache" = 1 ] && [ "$target" = __kio_roundtrip_prime ]; then
+  [ "$#" -eq 2 ] && [ "$1" = --package ] && [ "$2" = "$pkg_selector" ] || exit 67
   log_command prime "$target"
   [ "$mode" != prime-fail ] || exit 74
   [ "$mode" = missing-prime-output ] || write_prime
@@ -151,6 +148,7 @@ set -eu
 [ "${1:-}" = build ] || exit 81
 shift
 target=$1
+[ "$#" -eq 3 ] && [ "$2" = --package ] || exit 81
 mode=ok
 [ ! -f FIXTURE_MODE ] || IFS= read -r mode <FIXTURE_MODE
 printf '%s\treduced\t%s\t%s\t%s\n' "$KIO_TEST_RUN_LABEL" "$mode" "$target" \

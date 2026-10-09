@@ -225,6 +225,56 @@ pub use exit_code::ExitCode;
 /// with the manifest versions across the tree.
 pub const KIO_DOCS_BASE_URL: &str = "https://github.com/jdevuyst/kio/blob/releases/v0.1.0";
 
+/// Render bundled documentation references with copyable offline and web routes.
+pub fn documentation_help(template: &str) -> String {
+    let mut rendered = String::new();
+    let mut rest = template;
+    while let Some(start) = rest.find("{base}/") {
+        rendered.push_str(&rest[..start]);
+        let target = &rest[start + "{base}/".len()..];
+        let length = target
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || b"/_-.#".contains(byte))
+            .count();
+        let reference = target[..length].trim_end_matches('.');
+        let path = reference.split('#').next().expect("documentation path");
+        if path.starts_with("docs/") || path.starts_with("specs/") || path == "KIO-FOR-AGENTS.md" {
+            rendered.push_str(&format!(
+                "kio manual cat {path} ({KIO_DOCS_BASE_URL}/{reference})"
+            ));
+        } else {
+            rendered.push_str(KIO_DOCS_BASE_URL);
+            rendered.push('/');
+            rendered.push_str(reference);
+        }
+        rest = &target[reference.len()..];
+    }
+    rendered.push_str(rest);
+    rendered
+}
+
+#[cfg(all(test, feature = "cli"))]
+#[test]
+fn documentation_routes_share_targets_and_keep_fragments_web_only() {
+    assert_eq!(
+        documentation_help("See {base}/specs/cli.md#kio-manual."),
+        format!("See kio manual cat specs/cli.md ({KIO_DOCS_BASE_URL}/specs/cli.md#kio-manual).")
+    );
+    assert_eq!(
+        documentation_help("{base}/docs/README.md and {base}/KIO-FOR-AGENTS.md"),
+        format!(
+            "kio manual cat docs/README.md ({KIO_DOCS_BASE_URL}/docs/README.md) and kio manual cat KIO-FOR-AGENTS.md ({KIO_DOCS_BASE_URL}/KIO-FOR-AGENTS.md)"
+        )
+    );
+    assert_eq!(
+        documentation_help("{base}/README.md"),
+        format!("{KIO_DOCS_BASE_URL}/README.md")
+    );
+    let external =
+        "Report at https://github.com/jdevuyst/kio/issues or https://crates.io/crates/flate2";
+    assert_eq!(documentation_help(external), external);
+}
+
 // The usage / help text and `run` dispatch are the CLI surface; they
 // share the `cli` gate (a host embedding the eval core uses the lib API,
 // not `run`).
@@ -233,14 +283,15 @@ const USAGE_KIO: &str = "\
 Usage: kio <subcommand> [args]
 
 Subcommands:
+  manual                     Read bundled documentation offline.
   init [<package-name>]       Scaffold a new package in the current
                               directory.
   check                       Typecheck the current package.
-  build [--skip-unsupported-targets] [<target-id>...]
-                              Transpile to one or more compilation targets.
-                              `--skip-unsupported-targets` (no positional
-                              ids) skips targets whose backend isn't built
-                              into this `kio` instead of erroring.
+  build [--package NAME]... [TARGET]...
+                              Transpile selected packages and named targets.
+                              `--pkg` aliases `--package`;
+                              `--skip-unsupported-targets` skips unsupported
+                              backends when no target name is supplied.
   fmt [<path>...]             Format Kio source files in place.
   test                        Discharge every `equiv` declaration in the
                               current package via partial evaluation.
@@ -338,8 +389,8 @@ typecheck and build identically to the `kio` binary.
 
 Subcommands:
   check                       Typecheck the current package.
-  build [--skip-unsupported-targets] [<target-id>...]
-                              Transpile to one or more compilation targets.
+  build [--package NAME]... [TARGET]...
+                              Transpile selected packages and named targets.
   fmt [<path>...]             Format Kio' source files in place.
   cache <subcommand>          Manage the package's Kio-semantic on-disk
                               caches — see `kio --help`.
@@ -425,7 +476,7 @@ pub fn run_on_worker(args: &[String], prime_only: bool) -> ExitCode {
 /// empty for a release build or a git-less build from a published crate,
 /// where the bare version prints. `kio-prime` reports its own name.
 #[cfg(feature = "cli")]
-fn version_line(prime_only: bool) -> String {
+pub fn version_line(prime_only: bool) -> String {
     let name = if prime_only { "kio-prime" } else { "kio" };
     let base = env!("CARGO_PKG_VERSION");
     match option_env!("KIO_GIT_INFO") {
@@ -443,17 +494,7 @@ fn version_line(prime_only: bool) -> String {
 /// eval core uses the lib API directly instead of `run`.
 #[cfg(feature = "cli")]
 pub fn run(args: &[String], prime_only: bool) -> ExitCode {
-    // `--no-cache` is a global flag the caller may pass anywhere in
-    // argv. Strip it before subcommand dispatch and latch the
-    // per-process cache-policy flag so every cache-resolution call
-    // site downstream sees [`cache::policy::caches_enabled`] return
-    // `false`. Idempotent: multiple occurrences collapse to one
-    // latch and a single argv strip.
-    let owned_args: Vec<String> = args
-        .iter()
-        .filter(|a| a.as_str() != "--no-cache")
-        .cloned()
-        .collect();
+    let owned_args = strip_no_cache_flags(args);
     if owned_args.len() != args.len() {
         cache::policy::disable_for_process();
     }
@@ -464,11 +505,10 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     // on. `USAGE_KIO_LSP` resolves to `""` otherwise. The `{base}`
     // placeholder in the tail templates is substituted with the
     // pinned-release docs URL — see [`KIO_DOCS_BASE_URL`].
-    let base = KIO_DOCS_BASE_URL;
     let usage_owned: String = if prime_only {
-        USAGE_KIO_PRIME_TEMPLATE.replace("{base}", base)
+        documentation_help(USAGE_KIO_PRIME_TEMPLATE)
     } else {
-        let tail = USAGE_KIO_TAIL_TEMPLATE.replace("{base}", base);
+        let tail = documentation_help(USAGE_KIO_TAIL_TEMPLATE);
         format!("{USAGE_KIO}{USAGE_KIO_LSP}{USAGE_KIO_REPL}{tail}")
     };
     let usage: &str = &usage_owned;
@@ -611,6 +651,32 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     code
 }
 
+#[cfg(feature = "cli")]
+fn strip_no_cache_flags(args: &[String]) -> Vec<String> {
+    // Package-option values and targets after `--` are literal; an
+    // unconsumed `--no-cache` before `--` remains a global option.
+    let build = args
+        .iter()
+        .find(|arg| arg.as_str() != "--no-cache")
+        .is_some_and(|arg| arg == "build");
+    let mut value = false;
+    let mut ended = false;
+    args.iter()
+        .filter(|arg| {
+            if value || ended {
+                value = false;
+                return true;
+            }
+            if build {
+                value = cmd::build::is_value_option(arg);
+                ended = arg.as_str() == "--";
+            }
+            arg.as_str() != "--no-cache"
+        })
+        .cloned()
+        .collect()
+}
+
 // These exercise `run`, so they share its `cli` gate.
 #[cfg(all(test, feature = "cli"))]
 mod tests {
@@ -618,6 +684,37 @@ mod tests {
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn named_build_no_cache_extraction_preserves_package_values_and_literal_targets() {
+        assert_eq!(
+            strip_no_cache_flags(&argv(&[
+                "--no-cache",
+                "build",
+                "web",
+                "--pkg",
+                "--no-cache",
+                "--no-cache",
+                "--",
+                "--no-cache"
+            ])),
+            argv(&["build", "web", "--pkg", "--no-cache", "--", "--no-cache"])
+        );
+        assert_eq!(
+            strip_no_cache_flags(&argv(&[
+                "build",
+                "--package=--no-cache",
+                "web",
+                "--no-cache"
+            ])),
+            argv(&["build", "--package=--no-cache", "web"])
+        );
+        assert_eq!(
+            strip_no_cache_flags(&argv(&["check", "--", "--no-cache"])),
+            argv(&["check", "--"]),
+            "other commands retain their existing global-option handling"
+        );
     }
 
     /// Empty argv prints usage and returns `Usage` exit. Both modes

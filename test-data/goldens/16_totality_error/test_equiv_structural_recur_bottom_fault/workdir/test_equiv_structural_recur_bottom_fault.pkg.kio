@@ -1,0 +1,13 @@
+package test_equiv_structural_recur_bottom_fault;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

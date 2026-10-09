@@ -3413,7 +3413,7 @@ impl std::fmt::Display for Kind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeParam {
     pub name: String,
     pub span: Span,
@@ -3423,14 +3423,93 @@ pub struct TypeParam {
     /// (`[*F]` ⇒ `Some(*→*)`, `[**G]` ⇒ `Some(*→*→*)`). Kinds are
     /// never inferred — this field reflects exactly what the user
     /// wrote. See [`specs/grammar.md` § Kind grammar].
-    pub kind: Option<Kind>,
+    pub kind: Option<Box<Kind>>,
+    /// Occurrence-local source spelling, used only by human-facing type views.
+    #[serde(skip)]
+    pub presentation: TypeParamPresentation,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct TypeParamPresentation {
+    written: bool,
+    original: Option<std::sync::Arc<String>>,
+}
+
+impl TypeParamPresentation {
+    pub fn written() -> Self {
+        Self {
+            written: true,
+            original: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for TypeParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypeParam")
+            .field("name", &self.name)
+            .field("span", &self.span)
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+impl PartialEq for TypeParam {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.span == other.span && self.kind == other.kind
+    }
+}
+
+impl Eq for TypeParam {}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(std::mem::size_of::<TypeParam>() == 56);
+    assert!(std::mem::size_of::<Type<Surface>>() == 120);
+    assert!(std::mem::size_of::<Type<Lowered>>() == 72);
+    assert!(std::mem::size_of::<Type<Prime>>() == 72);
+};
 
 impl TypeParam {
     /// The binder's effective kind — its annotation, defaulting to
     /// `*` when unannotated.
     pub fn effective_kind(&self) -> Kind {
-        self.kind.clone().unwrap_or(Kind::Star)
+        self.kind.as_deref().cloned().unwrap_or(Kind::Star)
+    }
+
+    pub fn written_name(&self) -> Option<&str> {
+        self.presentation.written.then(|| {
+            self.presentation
+                .original
+                .as_deref()
+                .map_or(self.name.as_str(), String::as_str)
+        })
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn shared_written_name(&self) -> Option<std::sync::Arc<String>> {
+        self.presentation.written.then(|| {
+            self.presentation
+                .original
+                .clone()
+                .unwrap_or_else(|| std::sync::Arc::new(self.name.clone()))
+        })
+    }
+
+    /// Renaming changes the semantic binder, retaining its written preference.
+    pub fn rename(&mut self, name: String) {
+        if name != self.name {
+            if self.presentation.written && self.presentation.original.is_none() {
+                self.presentation.original = Some(std::sync::Arc::new(self.name.clone()));
+            }
+            self.name = name;
+        }
+    }
+
+    pub fn renamed(&self, name: String) -> Self {
+        let mut param = self.clone();
+        param.rename(name);
+        param
     }
 }
 
@@ -3470,6 +3549,15 @@ pub struct ParamPattern {
     pub elems: Vec<ParamPatternElem>,
     pub span: Span,
     pub match_id: NodeId,
+    pub numbered: Option<NumberedBinding>,
+}
+
+/// Written family ownership is consumed before operator expansion can create
+/// ordinary same-spelled references. Pattern lowering removes this source form.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NumberedBinding {
+    pub stem: PathSegment,
+    pub classified: bool,
 }
 
 /// One slot in a [`ParamPattern`]'s element list.
@@ -5883,16 +5971,24 @@ pub enum BuildBlockCache {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TargetBlock {
     pub trailing_trivia: Vec<crate::pass::lexer::Trivia>,
-    /// The target id — a bare identifier after `target` naming the
-    /// backend (`rust`, `js`, `kio-prime`, …). What `kio build <id>`
-    /// selects.
-    pub id: String,
+    /// The backend in either `target js` or `target (js, "web")`.
+    pub backend: String,
+    /// The explicit target name in a pair header. A bare header uses
+    /// its backend spelling as the target name.
+    pub name: Option<String>,
     /// The ordered list of `key "value";` entries inside the block.
     /// Keep insertion order so repeat-key diagnostics name the second
     /// occurrence at its actual source position.
     pub entries: Vec<TargetEntry>,
     pub span: Span,
     pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
+}
+
+impl TargetBlock {
+    /// The exact selector accepted by `kio build`.
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.backend)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -7605,6 +7701,7 @@ mod tests {
 
     fn type_param(name: &str) -> TypeParam {
         TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span: sp(),
             kind: None,
@@ -7967,6 +8064,7 @@ mod tests {
 
     fn tp_sp(name: &str) -> SignatureParam<Surface> {
         SignatureParam::Type(TypeParam {
+            presentation: Default::default(),
             name: name.into(),
             span: sp(),
             kind: None,

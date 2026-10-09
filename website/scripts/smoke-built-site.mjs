@@ -2,6 +2,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { pathToFileURL } from 'node:url'
+import { headingIds } from '../.vitepress/search-content.mjs'
 
 const websiteDir = path.resolve(new URL('..', import.meta.url).pathname)
 const repoRoot = path.resolve(websiteDir, '..')
@@ -152,6 +154,32 @@ if (!(magic[0] === 0x00 && magic[1] === 0x61 && magic[2] === 0x73 && magic[3] ==
 assertFile('wasm/kio_repl_wasm.js')
 
 const htmlFiles = walkHtml(distDir)
+const searchIndexes = fs.readdirSync(path.join(distDir, 'assets'), { recursive: true })
+  .filter((name) => path.basename(name).startsWith('@localSearchIndexroot.') && name.endsWith('.js'))
+if (searchIndexes.length !== 1) fail('expected one built local-search root index')
+const search = JSON.parse((await import(pathToFileURL(path.join(distDir, 'assets', searchIndexes[0])).href)).default)
+const indexedPages = new Set()
+const headingIdsByPage = new Map()
+for (const [document, target] of Object.entries(search.documentIds)) {
+  const separator = target.indexOf('#')
+  const route = target.slice(0, separator)
+  const anchor = decodeURIComponent(target.slice(separator + 1))
+  const relative = route.slice(1) + (route.endsWith('/') ? 'index.html' : '')
+  const targetFile = path.join(distDir, relative)
+  if (!fs.existsSync(targetFile)) fail(`local search links to missing page ${target}`)
+  if (!headingIdsByPage.has(relative)) headingIdsByPage.set(relative, headingIds(read(targetFile)))
+  if (!anchor || !headingIdsByPage.get(relative).has(anchor)) {
+    fail(`local search links to missing heading ${target}`)
+  }
+  if (!search.storedFields[document]?.title?.trim()) fail(`local search has no title for ${target}`)
+  indexedPages.add(relative)
+}
+for (const file of htmlFiles) {
+  const relative = path.relative(distDir, file).split(path.sep).join('/')
+  if (/^(?:docs|blog)\//.test(relative) && !indexedPages.has(relative)) {
+    fail(`local search omits generated page ${relative}`)
+  }
+}
 const leakPatterns = [
   [/href="\.\.\/(?:\.\.\/)*(?:specs|test-data)\//, 'unrewritten repo-relative link', false],
   [/\[`[^`\]]+`\]/, 'unresolved Kiodoc intra-doc reference', true],

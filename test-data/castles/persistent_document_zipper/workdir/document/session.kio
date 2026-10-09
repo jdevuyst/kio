@@ -38,7 +38,7 @@ pub fn where(state: Session) -> Session {
   state
 }
 
-pub fn apply(state: Session, operation: zipper.Cursor -> zipper.Cursor | String, edit: Bool) -> Session {
+pub fn apply(state: Session, operation: zipper.Cursor -> (zipper.Cursor | String), edit: Bool) -> Session {
   let .(cursor, history, snapshots) = Session.open(state);
   match! operation(cursor) {
     .(changed: zipper.Cursor) {

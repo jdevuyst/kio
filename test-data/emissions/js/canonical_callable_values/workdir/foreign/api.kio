@@ -4,4 +4,4 @@ host type Number role(i32);
 
 host type Flag role(bool);
 
-pub fn keep(value: . -> Number & Flag) -> . -> Number & Flag { value }
+pub fn keep(value: . -> (Number & Flag)) -> . -> (Number & Flag) { value }

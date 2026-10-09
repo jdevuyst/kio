@@ -4186,7 +4186,7 @@ impl BodyShapeRegistry {
                 // `render_use`. A fn leaf whose own parameter is
                 // itself fn-typed (a higher-order callback stored in
                 // a product / sum slot — e.g. the host `loop`
-                // `(step: (S) -> S | R, S) -> R` bundled into a deps
+                // `(step: (S) -> (S | R), S) -> R` bundled into a deps
                 // product) renders that inner param via
                 // `render_fn_arg_position`, which boxes it as
                 // `Rc<dyn Fn(...)>` — `impl Trait` is illegal in a
@@ -6954,7 +6954,7 @@ struct BodyEmitter<'a> {
     /// The surrounding fn's type-parameter names. The erased body itself
     /// is type-agnostic, but a **host-call boundary** still converts a
     /// function-typed callback argument whose leg types name these
-    /// params (`loop`'s `step: S -> S | R`); the conversion needs them in
+    /// params (`loop`'s `step: S -> (S | R)`); the conversion needs them in
     /// scope so a type-var slot renders as its name rather than failing a
     /// shape lookup.
     tparams: std::collections::HashSet<String>,
@@ -13518,7 +13518,7 @@ mod tests {
                  choice: (. -> N) | ([A] A -> A), \
                  product: (Outer -> More) & ([B] B -> Outer), \
                  wrapped: Box([C] C -> Outer), \
-                 callback: ((. -> N) | ([D] D -> D)) -> (. -> N) | ([E] E -> E) \
+                 callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
              ) -> Box([R] R -> More); \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
@@ -13789,8 +13789,8 @@ mod tests {
     fn ffi_alias_type_params_follow_declaration_order() {
         let pkg = build_package(
             "module main; \
-             host fn loop_sr[S][R](step: S -> S | R, state: S) -> R; \
-             host fn loop_ab[A][B](step: A -> A | B, state: A) -> B; \
+             host fn loop_sr[S][R](step: S -> (S | R), state: S) -> R; \
+             host fn loop_ab[A][B](step: A -> (A | B), state: A) -> B; \
              fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
@@ -13945,7 +13945,7 @@ mod tests {
              host type Array[A]; \
              host type Bool role(bool); \
              host type I32 role(i32); \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              labels Array_state = { cells: Array(I32) }; \
              labels Scalar_state = { done: Bool }; \
              rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \

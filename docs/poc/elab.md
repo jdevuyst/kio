@@ -409,7 +409,7 @@ equiv fit_function_param_law[A][B](f: (A | B) -> ., a: A) {
   f(__left__(A, B, a))
 }
 
-equiv fit_function_return_law[A][B](f: A -> A & B, a: A) {
+equiv fit_function_return_law[A][B](f: A -> (A & B), a: A) {
   fit!(f, A -> A)(a);
   __fst__(A, B, f(a))
 }
@@ -625,7 +625,7 @@ descent measure.
 
 Each node of the clause tuple's ordinary product construction can expose its
 two operands during this marked staging because the resolved product intrinsic
-has the exact ordered `[A][B](A, B) -> A & B` scheme. An equivalently typed
+has the exact ordered `[A][B](A, B) -> (A & B)` scheme. An equivalently typed
 ordinary function remains opaque—it may reorder, duplicate, or discard its
 inputs—and each original product call still completes once. The rule follows
 the resolved intrinsic and scheme, not the spelling `match` or a tuple argument

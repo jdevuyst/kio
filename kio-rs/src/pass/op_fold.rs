@@ -2012,6 +2012,7 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
                 fold_expr(value, scope)?;
             }
             for block in blocks {
+                crate::pass::placeholder::prepare_items(&mut block.items)?;
                 for item in &mut block.items {
                     let value = match item {
                         crate::ast::NeutralItem::Expression { value, .. }
@@ -2063,7 +2064,15 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
             crate::pass::placeholder::prepare(stem, state, body, meta.span)?;
             fold_expr(body, scope)?;
         }
-        Expr::Let { value, body, .. } => {
+        Expr::Let {
+            pattern,
+            value,
+            body,
+            ..
+        } => {
+            if let Some(pattern) = pattern {
+                crate::pass::placeholder::prepare_binding(pattern, body)?;
+            }
             fold_expr(value, scope)?;
             fold_expr(body, scope)?;
         }
@@ -3370,7 +3379,7 @@ mod tests {
     #[test]
     fn operator_accepts_private_member_of_earlier_multi_rec_group() {
         let consumer = p("module x; \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                fn hidden(a: A) -> A { rec other(a) }; \
                fn other(a: A) -> A { rec hidden(a) } \
@@ -3383,7 +3392,7 @@ mod tests {
     #[test]
     fn operator_accepts_public_member_of_earlier_multi_rec_group() {
         let consumer = p("module x; \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                pub fn visible(a: A) -> A { rec hidden(a) }; \
                fn hidden(a: A) -> A { rec visible(a) } \
@@ -3395,7 +3404,7 @@ mod tests {
     #[test]
     fn operator_accepts_private_singleton_rec_function() {
         let consumer = p("module x; \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) fn recursive(a: A) -> A { a } \
              op + _ { impl recursive; };");
         validate_against_modules(&consumer, &[])

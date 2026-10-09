@@ -8,9 +8,115 @@ Exit codes signal the **category** of an error (parse, type, elaborator, …) so
 
 ## Global options
 
-- `--no-cache` — Accepted by every subcommand and may appear anywhere in argv (before, between, or after positional arguments); the dispatcher strips it before the subcommand sees its arguments. Disable every persistent on-disk Kio cache for this invocation: both reads and writes. An implementation that keeps no such caches treats the flag as a no-op. The intent is to force a cold semantic run for diagnosis or benchmarking while leaving host-toolchain caches alone. The caches that fall under this contract are Kio-semantic by definition (package-check, typed-module, enriched-IR, emit/artifact, equiv, doc-snippet, …); host-toolchain caches that are content-addressed by their host inputs (e.g., `cargo`'s `target/`, `rustc`'s incremental cache, an emitted Rust crate's compiled artifacts) are outside the scope of this flag and remain on.
+- `--no-cache` — Accepted by every subcommand and may appear before, between, or after positional arguments. In `kio build`, a token consumed as a package-option value or appearing after `--` is literal, not a global option. Disable every persistent on-disk Kio cache for this invocation: both reads and writes. An implementation that keeps no such caches treats the flag as a no-op. The intent is to force a cold semantic run for diagnosis or benchmarking while leaving host-toolchain caches alone. The caches that fall under this contract are Kio-semantic by definition (package-check, typed-module, enriched-IR, emit/artifact, equiv, doc-snippet, …); host-toolchain caches that are content-addressed by their host inputs (e.g., `cargo`'s `target/`, `rustc`'s incremental cache, an emitted Rust crate's compiled artifacts) are outside the scope of this flag and remain on.
 
 - `-V` / `--version` — Recognized at the top level, before any subcommand. Prints the binary name and version (`kio <version>`) and exits `0`. A build ahead of its release tag appends a `-dev (<commit>)` provenance marker — with `-dirty` when the working tree carries uncommitted tracked changes; a released build, or a build from a published crate, prints the bare version.
+
+## `kio manual`
+
+Reads documentation bundled with the executable, without a source checkout,
+network access, package discovery, compiler-cache initialization, browser, or
+pager. It works from any current directory. Top-level `kio --help` explicitly
+points to this offline capability.
+
+The virtual root contains `KIO-FOR-AGENTS.md` and the complete tracked `docs/`
+and `specs/` trees, including regular non-Markdown files. Tracked files remain
+included even when an ignore rule matches them; untracked and generated ignored
+files are excluded. Symlinks and other non-regular entries are rejected during
+bundle assembly. Files retain their original bytes and repository-relative
+paths. The bundle belongs to the executable's version and has a deterministic
+content identity; it never reads replacement documentation from the current
+directory.
+
+The bare command gives a short entry point identifying the bundled version and
+content identity, naming the four operations, and pointing to
+`kio manual cat docs/README.md`, `kio manual cat KIO-FOR-AGENTS.md`, and
+`kio manual tree`. There is no search or partial-read operation: export the tree
+to use ordinary local tools.
+
+### Operations
+
+```sh
+kio manual ls [path]
+kio manual tree [path]
+kio manual cat <path>
+kio manual export [--format=tar.gz-concat|tar|tar.gz]
+```
+
+- `ls` lists immediate children of a directory, one per line, in lexical path
+  order; directory names end with `/`.
+- `tree` lists all descendants in lexical path order, with directories before
+  their own children, directory names ending with `/`, and two ASCII spaces of
+  indentation per nesting level. Its output describes the complete exported
+  logical tree, without internal payload/index files.
+- `ls` and `tree` default to the virtual root; an empty path or `.` explicitly
+  names that root. A trailing `/` on a directory is accepted. A file is not a
+  directory.
+- `cat` requires one regular-file path and writes that complete file's exact
+  bytes to stdout, without a banner, decoration, or appended newline.
+- `export` writes the complete archive to stdout and refuses binary output to
+  a terminal. The format option accepts either `--format=VALUE` or
+  `--format VALUE`; the default is `tar.gz-concat`.
+
+Paths use `/` separators relative to the virtual root. Absolute paths,
+backslashes, empty internal components, `.` or `..` components, and control
+characters are rejected. Missing paths, wrong entry kinds, unknown operations,
+unknown flags/formats, missing arguments, and extra arguments are usage errors.
+The global `--no-cache` flag remains accepted anywhere and has no effect on
+manual access. Each operation accepts `-h` or `--help` as its sole argument;
+the manual container accepts either flag alone. Help writes readable text to
+stdout and exits successfully.
+
+### Export formats
+
+All formats extract the same files and original bytes beneath the same virtual
+root. Entries are ordered deterministically, with regular-file mode `0644`,
+zero timestamps and numeric ownership, no absolute paths or traversal, and no
+symlinks. Gzip metadata is normalized too. Identical bundle and format inputs
+produce identical archive bytes.
+
+`tar.gz-concat` consists of concatenated complete single-file tar.gz archives:
+each gzip member contains one tar file entry, its padding, and tar end markers.
+Export copies the stored compressed members directly. Extraction must read
+past the inner tar end markers:
+
+```sh
+kio manual export | tar --ignore-zeros -xzf -
+```
+
+The final `-` selects standard input; extraction writes into the current
+directory without an intermediate archive file. Without `--ignore-zeros`, a
+reader can report success after extracting only the first file. The suggested
+suffix `.tar.gz-concat` identifies this command's format; it does not enable
+the necessary reader option automatically.
+
+The conventional alternatives contain one tar archive with one end marker:
+
+```sh
+kio manual export --format=tar | tar -xf -
+kio manual export --format=tar.gz | tar -xzf -
+```
+
+Prefer `tar.gz-concat` for direct compressed export, or `tar` for immediate
+local extraction without recompression. Choose `tar.gz` when a conventional
+compressed archive is needed. These describe processing choices, not a promised
+end-to-end timing advantage. Export help briefly names `KIO-FOR-AGENTS.md`
+before `docs/` and `specs/`, identifies the default, points to `kio manual tree`
+for complete contents, and includes these commands and their explanation.
+
+**Streams and exit codes:** success is `0`; usage failures, missing paths, and
+terminal archive refusal are `2`; archive or output I/O failure is `1`.
+Diagnostics go to stderr, never into file or archive bytes. An output error
+may leave a partial stream; a failed export must not be treated as complete.
+
+### Documentation references
+
+When console output refers to documentation present in the bundle, it prints
+the copyable `kio manual cat <path>` command first and retains the clickable
+release-tagged web URL beside or below it. Web fragments remain on the URL;
+the manual command reads the whole file. This applies equally to terminals and
+captured output. External-action links, such as bug-report and dependency URLs,
+do not acquire a manual command.
 
 ## `kio init [<package-name>]`
 
@@ -72,21 +178,55 @@ selector, a directory containing zero `.kio` files is a CLI-usage error
 there is nothing to check. Cross-module resolution means a selector
 scopes which names are validated, not which modules are type-checked.
 
-## `kio build [--skip-unsupported-targets] [<target-id>...] [<package-path>...]`
+## `kio build`
 
 Transpiles one or more packages to one or more compilation targets declared in the `build { ... }` block of `<name>.pkg.kio`.
 
-With no arguments, every target in the build block is emitted. With one or more target ids, only the named ones are emitted; an unknown id is a hard error.
+```text
+kio build [--package NAME]... [--skip-unsupported-targets] [TARGET]...
+```
 
-**Positional disambiguation: package path vs. target id.** A positional argument is read as a **package selector** when it names an existing path — a directory or a `*.pkg.kio` file; otherwise it is a **target id** (a bare identifier such as `js` or `rust`). The disambiguation is purely path-existence: path exists ⇒ package selector, else target id. With no package selector, `kio build` discovers every package in the current directory's subtree and builds each; with one or more selectors, it builds exactly the named packages. The two argument kinds combine freely (`kio build rust ./pkg-a ./pkg-b` builds the `rust` target of two named packages).
+Every positional argument is a target name. `--package` is repeatable and
+`--pkg` is its alias. Each occurrence takes one package name, either as its
+next argument or after `=`. A consumed package value is literal, even when it
+starts with `-`. Options may be interspersed with target names; their position
+does not create groups or limit which targets they apply to.
+`--` ends option parsing: every following argument is a literal target name,
+including `--help`, `--no-cache`, or strings that resemble file paths.
+An unknown option or a package option missing its value is a usage error (`2`).
+`-h` and `--help` print the command help when parsed as options, not name values.
+
+With no package selector, discover every package in the current directory's
+subtree. `--package NAME` selects the discovered `<NAME>.pkg.kio`, whose
+declaration must agree with its filename. Names are not directory or file
+paths. An unknown name is a build error. If more than one discovered package
+has a requested name, report an ambiguity with their locations; selecting a
+narrower current directory disambiguates them. Unfiltered discovery continues
+to build independent packages that happen to share a name.
+
+With no target names, emit every target in each selected package. Otherwise,
+emit the requested target names wherever they occur in those packages.
+Each requested name must match at least one target across the selected package
+set; a name missing everywhere is a build error before any output is written.
+Validate selected package manifests before selection; skip a package with no
+matching targets before checking its module bodies or emitting output. A
+package without a build block has no matching targets in this mode.
+
+Names are exact: `target js` has name `js`, while `target (js, "web")` has
+name `web`. There is no selection by backend group: `kio build js` does not
+select targets named `web` or `worker` that use backend `js`. Package and
+target selectors form one invocation-wide selection, not argument groups:
+`kio build --pkg a web --pkg b worker` is equivalent to
+`kio build --pkg a --pkg b web worker`: each builds each matching target in
+either package. Repeated names select the same package or target only once.
 
 **Behavior:**
 
 1. Confirm the package marker — exactly one `<name>.pkg.kio` at the package root — before walking the source tree. If absent, exit with a message pointing at how to scaffold one.
-2. Read the `build { ... }` block off the parsed package file. A package file with no build block declares no compilation targets; exit at the build-error category with a message pointing at how to add one.
-3. For each selected target, hand the target block's key/value map to the corresponding backend.
+2. Read the `build { ... }` block off the parsed package file. With no target names, a package file with no build block is a build error with a message pointing at how to add one.
+3. For each selected target, hand the target block's key/value map to the backend explicitly named in its header, independently of the target name.
 4. Each backend validates its keys (unknown keys are an error) and writes output under the target's `out` directory (relative to the package root).
-5. `--skip-unsupported-targets` only affects implicit selection (no positional `<target-id>`). When set, a target whose backend isn't recognized by this build of `kio` is skipped instead of erroring; one warning per skip is printed to stderr in the form `warning: skipping target '<id>': no backend in this kio build`. Exit 0 if every target that did run succeeded, including the case where every target was skipped. Explicit positional ids are unaffected: an unsupported backend named on the CLI still exits with the build-error category. The flag suppresses unsupported-backend skips only — every other build-time failure exits at the build-error category (code `40` — see [`exit-codes.md`](exit-codes.md)): missing package file, a package file with no build block, duplicate target ids, key-validation errors, codegen errors, runtime audits. Unknown explicit target ids likewise exit at code `40`. (The build block is parsed as part of the source walk, so a malformed build block surfaces as a parse error from `kio check`'s pipeline at the parse-error category, not here.)
+5. `--skip-unsupported-targets` only affects implicit selection (no target names). When set, a target whose backend isn't recognized by this build of `kio` is skipped instead of erroring; one warning per skip is printed to stderr in the form `warning: skipping target '<name>': no backend in this kio build`, with control characters escaped. Exit 0 if every target that did run succeeded, including the case where every target was skipped. Explicitly selected targets with an unsupported backend still error. The flag suppresses unsupported-backend skips only — other build-time failures remain errors: duplicate target names, key-validation errors, codegen errors, and runtime audits. Malformed manifests and module parse / use / type errors retain their corresponding compile-time error categories.
 
 The contract for per-backend output layout and incremental behavior is backend-specific and documented alongside each backend in [`specs/backends/`](backends/) ([`backends/js.md`](backends/js.md), [`backends/rust.md`](backends/rust.md)).
 
@@ -95,7 +235,7 @@ invocation-wide preflight rejects overlapping selected target directories and
 outputs containing known input paths, as specified in
 [`package.md` § Build target files](package.md#build-target-files). A conflict
 returns build error `40` without mutating any selected output. Unselected
-targets are ignored, and repeating the same target id selects it only once.
+targets are ignored.
 Independent later package failures still do not roll back successful packages.
 
 ## `kio test [<module>...]`
@@ -302,7 +442,7 @@ Bare `kio sig` is **non-mutating**: it prints the status summary for the package
 
 The write-path subcommands (`stage`, `commit`, `uncommit`, `compact`) accept `--stdout` to print the would-be changelog instead of writing the file.
 
-**Package scope.** Like `kio build`, `kio sig` operates per package and uses the same positional disambiguation: an argument that names an existing path (a directory or a `*.pkg.kio` file) is a **package selector**, anything else is not a valid `kio sig` positional. With no selector it discovers and processes every package in the current directory's subtree, each with its own changelog and generation (no cross-package rollback); with selectors it scopes a subset.
+**Package scope.** `kio sig` operates per package: an argument that names an existing path (a directory or a `*.pkg.kio` file) is a **package selector**, anything else is not a valid `kio sig` positional. With no selector it discovers and processes every package in the current directory's subtree, each with its own changelog and generation (no cross-package rollback); with selectors it scopes a subset.
 
 **Build-time staleness warning.** `kio check` and `kio build` emit an advisory warning when a package ships a `<pkg>.sig.kio` **and** the live source carries an unrecorded **breaking** delta. The warning is non-load-bearing — it never changes the build's exit code or output (a package without a sig builds identically). A nonbreaking drift is silent; a sig-less package gets no warning. `kio sig status` remains the exit-coded gate. See [`versioning.md` § Build-time staleness warning](versioning.md#build-time-staleness-warning).
 
@@ -376,7 +516,7 @@ A wrong continuation label can offer a token-local replacement which is fully re
   rather than expanding placeholders into documentation framing.
 - `textDocument/formatting` — formats the entire document to the canonical style produced by `kio fmt`. The target document comes from the editor's in-memory overlay when open, otherwise from the latest analysis snapshot. A concrete absolute `file:` URI authenticates its decoded lexical path against the document's declared module path, never through workspace/package discovery. The document's written import grammars are parsed without reading provider modules or their overlays; non-file buffers likewise need no provider source context. Parse errors remain silent no-ops because the diagnostics channel already reports them. A relative, query-bearing, fragment-bearing, or otherwise invalid `file:` URI is not reinterpreted as an untitled workspace buffer and returns no formatting result. Returns a list of zero or one `TextEdit`s: an empty list when the text is already canonical or an ordinary parse error prevents formatting; one full-file replacement edit otherwise. The Kio-family file kind (`*.kio`, `*.pkg.kio`, `*.sig.kio`, `*.dep.kio`, or `*.lock.kio`) is inferred from the URI's filename; `untitled:` and other scheme-only URIs fall back to plain `.kio` treatment. Formatting options (`tabSize`, `insertSpaces`, etc.) are accepted but ignored — Kio's canonical style is non-configurable.
 - `textDocument/semanticTokens/full` — returns a `SemanticTokens` object with a delta-encoded token array classifying every token in the document. Reads the editor overlay (if the document is open) or the latest analysis snapshot. Concrete absolute `file:` URIs retain the same path/declaration validation as other syntax-backed requests. AST-derived classification parses the document's written operator grammars without consulting provider sources or overlays, including for untitled buffers. A syntactically incomplete buffer retains lexical classification and roles established by successfully parsed source prefixes; an invalid `file:` identity returns `null` rather than being reinterpreted through the workspace. Returns `null` when no source text is available. Token classification is lexer/parser-derived: keywords, comments, strings, numbers, operators, function definition names, elaborator call heads, type names (including the optional leading underscore), module path segments, label names in construction/access/update/row-let entries, and parameter or row-let binders are each classified from the source token stream. The `data` field is a flat array of `u32`s, five per token (`deltaLine, deltaStart, length, tokenType, tokenModifiers`), relative to the start of the previous token. Token type indices are fixed by the legend advertised at `initialize`; see the table below.
-- `textDocument/prepareRename` — returns a `RangeWithPlaceholder` (the identifier span at the cursor and its text as the placeholder) when the cursor is on a renameable identifier. Row-let aliases are renameable local declarations; a shorthand row-let entry such as `let .({abc})` prepares the local span `abc`. Returns `null` when the position is on whitespace, a literal, an intrinsic, a `host fn`, a qualified import alias, a bridge glob, or any other non-renameable position — the editor disables the rename popup for those positions. For a placeholder family, the intro stem or an owned numbered reference prepares only the stem portion (`x` in `.x.` or `x2`). Requires a recent analysis snapshot; returns `null` when none is available.
+- `textDocument/prepareRename` — returns a `RangeWithPlaceholder` (the identifier span at the cursor and its text as the placeholder) when the cursor is on a renameable identifier. Row-let aliases are renameable local declarations; a shorthand row-let entry such as `let .({abc})` prepares the local span `abc`. Returns `null` when the position is on whitespace, a literal, an intrinsic, a `host fn`, a qualified import alias, a bridge glob, or any other non-renameable position — the editor disables the rename popup for those positions. For a placeholder-lambda or numbered-binding family, the intro stem or an owned numbered reference prepares only the stem portion (`x` in `.x.` or `x2`). Requires a recent analysis snapshot; returns `null` when none is available.
 - `textDocument/rename` — renames the identifier at the cursor to `newName` across the entire package. Returns a `WorkspaceEdit` on success. For editor-facing requests, the edit uses versioned `documentChanges` so open-document edits are tied to the analysis snapshot's document versions; clients can reject the edit if the buffer has moved on. Renaming an ordinary newtype includes its written type occurrences, including explicit call type arguments; same-spelled lexical type parameters retain their separate identities. Row-let rename preserves selected labels: renaming shorthand `let .({abc})` to `payload` rewrites the declaration to `let .({abc as payload})` and updates local references; renaming an explicit alias changes only the alias. A placeholder-family rename changes the intro stem and exactly its owned references, preserving each numeric index: renaming `x` to `arg` changes `.x.` / `x2` to `.arg.` / `arg2`. Nested owners, shadowed references, and qualified paths stay unchanged. The new stem must be valid and end in a letter; a rename that changes ownership or arity is refused. Returns a JSON-RPC error (`RequestFailed`, code `−32803`) when: (1) the cursor is not on a renameable identifier; (2) `newName` is not a valid spelling for the resolved binder's namespace — type binders require `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`, value binders require `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`, and reserved or letterless spellings remain invalid; (3) `newName` would shadow or collide with an existing binding at any reference site (conservative conflict check — refuses rather than silently altering semantics). Explicit newtype constructors and projectors are checked against the other member of their exact owning newtype; members of unrelated newtypes do not enter the module's binding namespace. **Scope:** cross-file within the current package; package-external rename is not attempted. `pub op` bindings are refused because renaming a `pub op` affects parser behavior in all importers. Doc comments that mention the old name by hand are not rewritten — the user fixes those manually. Returns `null` when no analysis snapshot is available.
 - `textDocument/inlayHint` — returns range-filtered `InlayHint[]` entries from the latest typed snapshot. Unannotated `let` binders get a type hint at the binder-name end (`: <type>` rendered with the compiler's `write_type` renderer). Calls with inferred or value-reclassified type arguments get a type-argument hint at the callee end (`[T0, T1, …]`, also rendered with `write_type`). The provider does not resolve hints lazily; `resolveProvider` is `false`. Returns `null` when no analysis snapshot or source text is available.
 - `textDocument/signatureHelp` — when the cursor is inside a direct-path call, returns a `SignatureHelp` whose signature label is rendered from the resolved top-level Kio `fn` or host `fn` declaration. Ordinary calls highlight value arguments only: written or inferred type-argument slots do not increment `activeParameter`; a cursor inside a type-argument slot reports the current value slot. Block elaborators use the current-header region display described above. Returns `null` for other unsupported callee shapes (locals, newtype constructors, operators, blockless user elaborators, complex callee expressions), when the required current metadata/source is unavailable, or when a concrete file's syntax context is invalid.
@@ -446,7 +586,7 @@ A wrong continuation label can offer a token-local replacement which is fully re
   bodies as documented code; the VS Code consumer applies its existing Kio
   classifier separately to each authenticated fence body.
 
-  Structural punctuation (`( ) { } , ;` and parser-confirmed forall `[` / `]`) and slot tokens (`_`) are covered by the grammar-level highlighter rather than emitted as semantic tokens. Placeholder-lambda stems and numbered references use the ordinary parameter and identifier categories; `#` is an ordinary operator character. Contextual keyword roles come from the parser rather than a flat word list. A line-local regex highlighter may leave a genuinely later-line-dependent role unclassified; compiler-derived highlighting uses the complete source context.
+  Structural punctuation (`( ) { } , ;` and parser-confirmed forall `[` / `]`) and slot tokens (`_`) are covered by the grammar-level highlighter rather than emitted as semantic tokens. Placeholder-lambda and numbered-binding stems use the ordinary parameter category; their numbered references use the identifier category. The stem introduces a family, so it has no individual member's type or reference set. `#` is an ordinary operator character. Contextual keyword roles come from the parser rather than a flat word list. A line-local regex highlighter may leave a genuinely later-line-dependent role unclassified; compiler-derived highlighting uses the complete source context.
 
 **SymbolKind mapping.** The mapping from Kio item variants to LSP `SymbolKind` values is:
 
@@ -632,7 +772,7 @@ Clears the contents of the cache directory declared by the package's `build { ca
 **Exit codes.** Per [`exit-codes.md`](exit-codes.md):
 
 - `0` — the cache was cleared, was already empty, or the build block declares no cache (or there is no build block).
-- `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache clear` must be run from a package root, the same constraint `kio build` imposes).
+- `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache clear` must be run from a package root).
 - `1` — internal error: the package file couldn't be parsed, or a filesystem operation against the cache directory failed (e.g., permission denied).
 
 ### `kio cache path`
@@ -670,7 +810,7 @@ Garbage-collects stale Kio-semantic entries in the cache directory declared by t
 **Exit codes.** Per [`exit-codes.md`](exit-codes.md):
 
 - `0` — garbage collection completed, the cache was already clean, or the build block declares no cache (or there is no build block).
-- `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache gc` must be run from a package root, the same constraint `kio build` imposes).
+- `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache gc` must be run from a package root).
 - `1` — internal error: the package file couldn't be parsed, or a filesystem operation against the cache directory failed (e.g., permission denied).
 
 ## `kio dep <subcommand>`
@@ -775,7 +915,7 @@ Prints a shell completion script for `kio` to stdout. The user installs the outp
 
 `kio completions` accepts exactly one `<shell>` argument and no flags (only `-h` / `--help`). A missing shell argument, an unrecognized shell, or extra arguments are a usage error.
 
-**Completion behavior.** The generated scripts are **static**: they complete the fixed CLI grammar — the subcommand names, the `doc` / `cache` / `dep` / `sig` sub-subcommand names (including `dep clean` and `sig uncommit`), the `completions` `<shell>` names (`bash` / `zsh` / `fish`), and each subcommand's flags. Every other positional argument slot (a source path, a target id, a source selector, a module selector) falls back to the shell's default filename completion. The scripts do **not** introspect the package on disk to offer module names or target ids; completion is purely lexical. After upgrading `kio` — which may add a subcommand — the user re-runs `kio completions <shell>` to regenerate the script.
+**Completion behavior.** The generated scripts are **static**: they complete the fixed CLI grammar — the subcommand names, the `doc` / `cache` / `dep` / `sig` sub-subcommand names (including `dep clean` and `sig uncommit`), the `completions` `<shell>` names (`bash` / `zsh` / `fish`), and each subcommand's flags. Source path, source selector, and module selector slots fall back to the shell's default filename completion. Build package and target name slots do not suggest filenames. The scripts do **not** introspect the package on disk to offer module, package, or target names; completion is purely lexical. Build package options consume one name, and `--` ends build-option suggestions. After upgrading `kio` — which may add a subcommand — the user re-runs `kio completions <shell>` to regenerate the script.
 
 The completed subcommand set reflects the running binary's surface: a `kio` built without the `lsp` / `repl` features (see [`package.md`](package.md)) emits a script that omits those subcommands, the same way they are absent from `kio --help`.
 

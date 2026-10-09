@@ -8593,9 +8593,10 @@ pub(crate) fn projected_type_forall_finish(
     let body = authenticated_projected_type_operand(proof, body, peer, "__type_forall__")?;
     let span = body.ty.ty().span();
     let param = crate::ast::TypeParam {
+        presentation: Default::default(),
         name,
         span,
-        kind: Some(crate::ast::Kind::arrow_chain(arity)),
+        kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
     };
     let ty = body
         .ty
@@ -8979,9 +8980,10 @@ pub(crate) fn projected_term_type_fn_finish(
     let body = authenticated_projected_recipe_operand(proof, body, peer, "__term_type_fn__")?;
     let span = body.ty.ty.ty().span();
     let param = crate::ast::TypeParam {
+        presentation: Default::default(),
         name,
         span,
-        kind: Some(crate::ast::Kind::arrow_chain(arity)),
+        kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
     };
     let ty = body
         .ty
@@ -9876,6 +9878,7 @@ pub(crate) fn specialization_term_for_test() -> (MarkedComptimeProof, FillContex
     let span = crate::span::Span::new(0, 0);
     let scheme = crate::ast::Type::Forall {
         param: crate::ast::TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span,
             kind: None,
@@ -11143,6 +11146,7 @@ mod tests {
                 "type-function body",
                 deferred_tail_test_recipe(ProjectedRecipeNode::TermTypeFn {
                     param: crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: crate::span::Span::new(0, 0),
                         kind: None,
@@ -11354,6 +11358,7 @@ mod tests {
                 "type-function body",
                 deferred_tail_test_recipe(ProjectedRecipeNode::TermTypeFn {
                     param: crate::ast::TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: crate::span::Span::new(0, 0),
                         kind: None,
@@ -11607,12 +11612,14 @@ mod tests {
 
         let interleaved = crate::ast::Signature::from_groups(vec![
             crate::ast::SignatureGroup::Type(vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span,
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             }]),
             crate::ast::SignatureGroup::Value(vec![value("first", unit())]),
             crate::ast::SignatureGroup::Type(vec![crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -12304,6 +12311,7 @@ mod tests {
         };
         let forall_ty = crate::ast::Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span,
                 kind: None,
@@ -12396,6 +12404,7 @@ mod tests {
             ty: projected_type(forall.clone()),
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TermTypeFn {
                 param: crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: "_ct_type_n99".to_owned(),
                     span,
                     kind: None,
@@ -12439,9 +12448,10 @@ mod tests {
             ty: projected_type(forall),
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TermTypeFn {
                 param: crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: "B".to_owned(),
                     span,
-                    kind: Some(crate::ast::Kind::arrow_chain(1)),
+                    kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
                 },
                 body: Arc::new(local("unused_binder_body", unit)),
             }),
@@ -13061,6 +13071,7 @@ mod tests {
         for index in (0..BINDERS).rev() {
             scheme = crate::ast::Type::Forall {
                 param: crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: format!("T{index}"),
                     span,
                     kind: None,
@@ -15392,9 +15403,9 @@ mod tests {
         let package = fixture(
             "module projected_computed_field_header; \
              host type String role(str); \
-             pub labels { lookup[P]: String -> P | . }; \
+             pub labels { lookup[P]: String -> (P | .) }; \
              pub labels { inject[P]: String -> P }; \
-             pub labels { apply[P]: (P & P) -> P | . }; \
+             pub labels { apply[P]: (P & P) -> (P | .) }; \
              pub labels { unit_in[P]: P }; \
              pub labels { identity: [A] A -> A }; \
              type Surface[P] = \

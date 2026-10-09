@@ -1,5 +1,5 @@
 main\.kio:5:5: error: the selected `rec` loop has incompatible type
-incompatible type `\[S\]\[R\] \(\(S -> S \| R\) & S & \.\) -> R`
+incompatible type `\[S\]\[R\] \(\(S -> \(S \| R\)\) & S & \.\) -> R`
 \|     \^\^\^\^\^\^\^\^
 the selected loop's type is declared here
 `rec` requires a loop compatible with

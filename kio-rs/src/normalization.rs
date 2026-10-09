@@ -93,9 +93,6 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::num::NonZeroUsize;
-#[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -178,11 +175,6 @@ struct EvalSourceOccurrence(usize);
 impl EvalSourceOccurrence {
     fn of(expr: &EvalAstExpr) -> Self {
         Self(std::ptr::from_ref(expr).addr())
-    }
-
-    #[cfg(test)]
-    fn for_test(id: usize) -> Self {
-        Self(id)
     }
 }
 
@@ -1733,7 +1725,7 @@ impl CheckedTermNameCanonicalizer {
                     SignatureParam::Type(param) => {
                         let mut param = param.clone();
                         if let Some(binding) = self.push_type_name(&param.name) {
-                            param.name = binding.canonical.clone();
+                            param.rename(binding.canonical.clone());
                             type_bindings.push(binding);
                         }
                         SignatureParam::Type(param)
@@ -1803,7 +1795,7 @@ impl CheckedTermNameCanonicalizer {
                 let mut param = param.clone();
                 let binding = self.push_type_name(&param.name);
                 if let Some(binding) = &binding {
-                    param.name = binding.canonical.clone();
+                    param.rename(binding.canonical.clone());
                 }
                 let body = Box::new(self.ty(body));
                 self.pop_type_binding(binding);
@@ -2161,9 +2153,14 @@ where
     for param in &sig.params {
         let param = match param {
             SignatureParam::Type(tp) => SignatureParam::Type(TypeParam {
+                presentation: tp.presentation.clone(),
                 name: tp.name.clone(),
                 span: tp.span,
-                kind: tp.kind.as_ref().map(type_traversal::clone_kind),
+                kind: tp
+                    .kind
+                    .as_deref()
+                    .map(type_traversal::clone_kind)
+                    .map(Box::new),
             }),
             SignatureParam::Value(vp) => SignatureParam::Value(Param {
                 name: vp.name.clone(),
@@ -2377,41 +2374,12 @@ enum StructuralRecurPrimitiveStage {
     AwaitingRuntime,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum StructuralRecurDataIdentity {
     Primitive {
-        site: Arc<StructuralRecurSite>,
         stage: StructuralRecurPrimitiveStage,
     },
     InitialRejected,
-    SiteRejected {
-        root_measure: usize,
-        current_measure: usize,
-        next_measure: Option<usize>,
-    },
-}
-
-impl std::fmt::Debug for StructuralRecurDataIdentity {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Primitive { stage, .. } => formatter
-                .debug_struct("Primitive")
-                .field("stage", stage)
-                .finish(),
-            Self::InitialRejected => formatter.write_str("InitialRejected"),
-            Self::SiteRejected {
-                root_measure,
-                current_measure,
-                next_measure,
-                ..
-            } => formatter
-                .debug_struct("SiteRejected")
-                .field("root_measure", root_measure)
-                .field("current_measure", current_measure)
-                .field("next_measure", next_measure)
-                .finish(),
-        }
-    }
 }
 
 impl PartialEq for DataConstructorIdentity {
@@ -2432,24 +2400,6 @@ impl PartialEq for DataConstructorIdentity {
                     StructuralRecurDataIdentity::InitialRejected,
                     StructuralRecurDataIdentity::InitialRejected,
                 ) => true,
-                (
-                    StructuralRecurDataIdentity::SiteRejected {
-                        root_measure: left_root,
-                        current_measure: left_current,
-                        next_measure: left_next,
-                        ..
-                    },
-                    StructuralRecurDataIdentity::SiteRejected {
-                        root_measure: right_root,
-                        current_measure: right_current,
-                        next_measure: right_next,
-                        ..
-                    },
-                ) => {
-                    left_root == right_root
-                        && left_current == right_current
-                        && left_next == right_next
-                }
                 _ => false,
             },
             #[cfg(feature = "surface")]
@@ -2581,40 +2531,20 @@ pub(crate) fn data_value(ctor: impl Into<String>, args: Vec<Value>) -> Value {
     Value::Data(EvalRef::new(DataValue::new(ctor, args)))
 }
 
-fn structural_recur_primitive_data(
-    site: Arc<StructuralRecurSite>,
-    stage: StructuralRecurPrimitiveStage,
-) -> EvalRef<DataValue> {
+fn structural_recur_primitive_data(stage: StructuralRecurPrimitiveStage) -> EvalRef<DataValue> {
     EvalRef::new(DataValue::new_structural_recur(
-        StructuralRecurDataIdentity::Primitive { site, stage },
+        StructuralRecurDataIdentity::Primitive { stage },
     ))
 }
 
 #[cfg(test)]
-fn structural_recur_primitive_value(
-    site: Arc<StructuralRecurSite>,
-    stage: StructuralRecurPrimitiveStage,
-) -> Value {
-    Value::Data(structural_recur_primitive_data(site, stage))
+fn structural_recur_primitive_value(stage: StructuralRecurPrimitiveStage) -> Value {
+    Value::Data(structural_recur_primitive_data(stage))
 }
 
 fn structural_recur_initial_rejected_value() -> Value {
     Value::Data(EvalRef::new(DataValue::new_structural_recur(
         StructuralRecurDataIdentity::InitialRejected,
-    )))
-}
-
-fn structural_recur_site_rejected_value(
-    root_measure: usize,
-    current_measure: usize,
-    next_measure: Option<usize>,
-) -> Value {
-    Value::Data(EvalRef::new(DataValue::new_structural_recur(
-        StructuralRecurDataIdentity::SiteRejected {
-            root_measure,
-            current_measure,
-            next_measure,
-        },
     )))
 }
 
@@ -2626,20 +2556,10 @@ fn structural_recur_data_identity(value: &Value) -> Option<&StructuralRecurDataI
 }
 
 #[cfg(test)]
-fn structural_recur_primitive_site(value: &Value) -> Option<&Arc<StructuralRecurSite>> {
-    match structural_recur_data_identity(value)? {
-        StructuralRecurDataIdentity::Primitive { site, .. } => Some(site),
-        StructuralRecurDataIdentity::InitialRejected
-        | StructuralRecurDataIdentity::SiteRejected { .. } => None,
-    }
-}
-
-#[cfg(test)]
 fn structural_recur_primitive_stage(value: &Value) -> Option<StructuralRecurPrimitiveStage> {
     match structural_recur_data_identity(value)? {
         StructuralRecurDataIdentity::Primitive { stage, .. } => Some(*stage),
-        StructuralRecurDataIdentity::InitialRejected
-        | StructuralRecurDataIdentity::SiteRejected { .. } => None,
+        StructuralRecurDataIdentity::InitialRejected => None,
     }
 }
 
@@ -2670,22 +2590,6 @@ fn structural_recur_data_public_eq(left: &Value, right: &Value) -> Option<bool> 
             Some(StructuralRecurDataIdentity::InitialRejected),
             Some(StructuralRecurDataIdentity::InitialRejected),
         ) => Some(true),
-        (
-            Some(StructuralRecurDataIdentity::SiteRejected {
-                root_measure: left_root,
-                current_measure: left_current,
-                next_measure: left_next,
-                ..
-            }),
-            Some(StructuralRecurDataIdentity::SiteRejected {
-                root_measure: right_root,
-                current_measure: right_current,
-                next_measure: right_next,
-                ..
-            }),
-        ) => Some(
-            left_root == right_root && left_current == right_current && left_next == right_next,
-        ),
         (Some(StructuralRecurDataIdentity::Primitive { .. }), None)
         | (None, Some(StructuralRecurDataIdentity::Primitive { .. })) => None,
         _ => Some(false),
@@ -2906,6 +2810,21 @@ struct ExactCallMemoKey {
     function: EvalFunctionCacheKey,
     captured: Vec<EvalValueMemoKey>,
     args: Vec<EvalValueMemoKey>,
+}
+
+impl ExactCallMemoKey {
+    fn presentation_matches(&self, other: &Self) -> bool {
+        self.captured
+            .iter()
+            .chain(&self.args)
+            .zip(other.captured.iter().chain(&other.args))
+            .all(|(a, b)| match (a, b) {
+                (EvalValueMemoKey::ReflType(a), EvalValueMemoKey::ReflType(b)) => {
+                    a.presentation_matches(b)
+                }
+                _ => true,
+            })
+    }
 }
 
 struct ExactCallMemoTicket {
@@ -3169,80 +3088,11 @@ fn value_shareable_for_exact_memo(value: &Value, budget: &mut usize) -> bool {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct StructuralRecurSite {
-    source_generation: EvalSourceGeneration,
-    module_path: Arc<str>,
-    occurrence: EvalSourceOccurrence,
-}
-
-impl std::fmt::Debug for StructuralRecurSite {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("StructuralRecurSite(<opaque>)")
-    }
-}
-
-impl StructuralRecurSite {
-    fn new(
-        source_generation: &EvalSourceGeneration,
-        module_path: &str,
-        occurrence: EvalSourceOccurrence,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            source_generation: source_generation.clone(),
-            module_path: Arc::from(module_path),
-            occurrence,
-        })
-    }
-
-    fn public_api(source_generation: &EvalSourceGeneration) -> Arc<Self> {
-        static MODULE_PATH: OnceLock<Arc<str>> = OnceLock::new();
-        Arc::new(Self {
-            source_generation: source_generation.clone(),
-            module_path: MODULE_PATH
-                .get_or_init(|| Arc::from("<public-evaluator-context>"))
-                .clone(),
-            occurrence: EvalSourceOccurrence(0),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(test, derive(PartialEq, Eq))]
-struct ActiveStructuralRecurSite {
-    site: Arc<StructuralRecurSite>,
-    root_measure: usize,
-    measure: usize,
-    previous_same: Option<NonZeroUsize>,
-}
-
-#[derive(Debug, Default)]
-#[cfg_attr(test, derive(Clone, PartialEq, Eq))]
-struct ActiveStructuralRecurSites {
-    frames: Vec<ActiveStructuralRecurSite>,
-    latest_by_site: HashMap<Arc<StructuralRecurSite>, NonZeroUsize>,
-}
-
 #[derive(Debug)]
 struct StructuralRecurOperationState {
     depth: usize,
+    active_helpers: usize,
     first_fault: Option<Value>,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<StructuralRecurSite>() == 32);
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<ActiveStructuralRecurSite>() == 32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StructuralRecurSiteEntryError {
-    UnmeasurableInitialFuel,
-    NonDecreasingReentry {
-        root_measure: usize,
-        current_measure: usize,
-        next_measure: Option<usize>,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -3696,13 +3546,8 @@ pub struct EvalCtx<'m> {
     /// value-args-only behavior, the pre-existing default.
     pub module_path: String,
     pub metrics: Option<Arc<EvalMetrics>>,
-    active_structural_recur_sites:
-        Mutex<HashMap<std::thread::ThreadId, ActiveStructuralRecurSites>>,
-    #[cfg(test)]
-    structural_recur_site_lookup_work: AtomicUsize,
     structural_recur_operations:
         Mutex<HashMap<std::thread::ThreadId, StructuralRecurOperationState>>,
-    public_structural_recur_site: Arc<StructuralRecurSite>,
 }
 
 impl<'m> Default for EvalCtx<'m> {
@@ -3713,7 +3558,6 @@ impl<'m> Default for EvalCtx<'m> {
 
 impl<'m> EvalCtx<'m> {
     pub fn new() -> Self {
-        let public_generation = EvalSourceGeneration::fresh();
         Self {
             fn_defs: HashMap::new(),
             qualified_fn_defs: HashMap::new(),
@@ -3730,11 +3574,7 @@ impl<'m> EvalCtx<'m> {
             primitive_env: EvalPrimitiveEnv::default(),
             module_path: String::new(),
             metrics: None,
-            active_structural_recur_sites: Mutex::new(HashMap::new()),
-            #[cfg(test)]
-            structural_recur_site_lookup_work: AtomicUsize::new(0),
             structural_recur_operations: Mutex::new(HashMap::new()),
-            public_structural_recur_site: StructuralRecurSite::public_api(&public_generation),
         }
     }
 
@@ -3821,36 +3661,13 @@ impl<'m> EvalCtx<'m> {
             .with_primitive_env(artifact.primitives().clone()))
     }
 
-    fn has_active_structural_recur_site(&self) -> bool {
+    fn has_active_structural_recur_helper(&self) -> bool {
         let thread_id = std::thread::current().id();
-        self.active_structural_recur_sites
+        self.structural_recur_operations
             .lock()
-            .expect("active __structural_recur__ site stack poisoned")
+            .expect("__structural_recur__ operation map poisoned")
             .get(&thread_id)
-            .is_some_and(|state| {
-                assert_eq!(
-                    state.frames.is_empty(),
-                    state.latest_by_site.is_empty(),
-                    "active structural recursion frames and latest-site index agree on emptiness"
-                );
-                !state.frames.is_empty()
-            })
-    }
-
-    #[cfg(test)]
-    fn take_structural_recur_site_lookup_work(&self) -> usize {
-        self.structural_recur_site_lookup_work
-            .swap(0, Ordering::Relaxed)
-    }
-
-    #[cfg(test)]
-    fn active_structural_recur_state_for_test(&self) -> Option<ActiveStructuralRecurSites> {
-        let thread_id = std::thread::current().id();
-        self.active_structural_recur_sites
-            .lock()
-            .expect("active __structural_recur__ site stack poisoned")
-            .get(&thread_id)
-            .cloned()
+            .is_some_and(|state| state.active_helpers != 0)
     }
 
     fn enter_structural_recur_operation(&self) -> StructuralRecurOperationGuard<'_, 'm> {
@@ -3863,6 +3680,7 @@ impl<'m> EvalCtx<'m> {
             .entry(thread_id)
             .or_insert(StructuralRecurOperationState {
                 depth: 0,
+                active_helpers: 0,
                 first_fault: None,
             });
         let root = state.depth == 0;
@@ -3916,6 +3734,7 @@ impl<'m> EvalCtx<'m> {
             .expect("__structural_recur__ operation depth is positive");
         if root {
             debug_assert_eq!(state.depth, 0);
+            debug_assert_eq!(state.active_helpers, 0);
             return operations
                 .remove(&thread_id)
                 .and_then(|state| state.first_fault);
@@ -3924,130 +3743,30 @@ impl<'m> EvalCtx<'m> {
         None
     }
 
-    fn enter_structural_recur_site(
+    fn enter_structural_recur_helper(
         &self,
-        site: &Arc<StructuralRecurSite>,
         fuel: &Value,
-    ) -> Result<(usize, StructuralRecurSiteGuard<'_, 'm>), StructuralRecurSiteEntryError> {
+    ) -> Option<(usize, StructuralRecurHelperGuard<'_, 'm>)> {
+        let measure = initial_fuel_measure(fuel, self)?;
         let thread_id = std::thread::current().id();
-        let active_entry = self
-            .active_structural_recur_sites
+        let mut operations = self
+            .structural_recur_operations
             .lock()
-            .expect("active __structural_recur__ site stack poisoned")
-            .get(&thread_id)
-            .and_then(|state| {
-                assert_eq!(
-                    state.frames.is_empty(),
-                    state.latest_by_site.is_empty(),
-                    "active structural recursion frames and latest-site index agree on emptiness"
-                );
-                assert!(
-                    !state.frames.is_empty(),
-                    "empty structural recursion thread states are removed"
-                );
-                #[cfg(test)]
-                self.structural_recur_site_lookup_work
-                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |work| {
-                        work.checked_add(1)
-                    })
-                    .expect("structural recursion site lookup work overflow");
-                state.latest_by_site.get(site).copied().map(|frame_number| {
-                    let frame_index = frame_number
-                        .get()
-                        .checked_sub(1)
-                        .expect("active structural recursion frame number is nonzero");
-                    let frame = state
-                        .frames
-                        .get(frame_index)
-                        .expect("latest structural recursion frame number is in bounds");
-                    assert_eq!(
-                        frame.site.as_ref(),
-                        site.as_ref(),
-                        "latest structural recursion frame maps to its exact site"
-                    );
-                    (frame_number, frame.root_measure, frame.measure)
-                })
-            });
-        let (previous_same, root_measure, measure) = match active_entry {
-            Some((frame_number, root_measure, current_measure)) => {
-                let Some(next_measure) = fuel_measure(fuel, self) else {
-                    return Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                        root_measure,
-                        current_measure,
-                        next_measure: None,
-                    });
-                };
-                if next_measure >= current_measure {
-                    return Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                        root_measure,
-                        current_measure,
-                        next_measure: Some(next_measure),
-                    });
-                }
-                (Some(frame_number), root_measure, next_measure)
-            }
-            None => {
-                let measure = initial_fuel_measure(fuel, self)
-                    .ok_or(StructuralRecurSiteEntryError::UnmeasurableInitialFuel)?;
-                (None, measure, measure)
-            }
-        };
-
-        // Measuring fuel only inspects immutable evaluator values and cannot
-        // invoke evaluator code. The same thread therefore cannot mutate its
-        // stack between the snapshot above and this push, while releasing the
-        // mutex avoids serializing independent evaluator threads.
-        let mut active = self
-            .active_structural_recur_sites
-            .lock()
-            .expect("active __structural_recur__ site stack poisoned");
-        let state = active.entry(thread_id).or_default();
-        assert_eq!(
-            state.frames.is_empty(),
-            state.latest_by_site.is_empty(),
-            "active structural recursion frames and latest-site index agree on emptiness"
-        );
-        assert_eq!(
-            state.latest_by_site.get(site).copied(),
-            previous_same,
-            "active structural recursion site mapping changed while measuring immutable fuel"
-        );
-        let frame_number = NonZeroUsize::new(
-            state
-                .frames
-                .len()
-                .checked_add(1)
-                .expect("active structural recursion frame number overflow"),
-        )
-        .expect("active structural recursion frame number is nonzero");
-        if let Some(previous) = previous_same {
-            assert!(
-                previous < frame_number,
-                "previous same-site frame is strictly earlier"
-            );
-        }
-        state.frames.push(ActiveStructuralRecurSite {
-            site: site.clone(),
-            root_measure,
+            .expect("__structural_recur__ operation map poisoned");
+        let state = operations
+            .get_mut(&thread_id)
+            .expect("structural recursion runs within an evaluator operation");
+        // This count preserves the conservative cache scope; callback descent
+        // depends only on the immutable bounds carried by each callback.
+        state.active_helpers = state
+            .active_helpers
+            .checked_add(1)
+            .expect("active structural recursion helper count overflow");
+        Some((
             measure,
-            previous_same,
-        });
-        assert_eq!(
-            state.latest_by_site.insert(site.clone(), frame_number),
-            previous_same,
-            "active structural recursion site mapping matches its previous frame"
-        );
-        assert_eq!(
-            state.frames.is_empty(),
-            state.latest_by_site.is_empty(),
-            "active structural recursion frames and latest-site index agree on emptiness"
-        );
-        Ok((
-            measure,
-            StructuralRecurSiteGuard {
+            StructuralRecurHelperGuard {
                 ctx: self,
                 thread_id,
-                frame_number,
             },
         ))
     }
@@ -4095,88 +3814,25 @@ impl Drop for StructuralRecurOperationGuard<'_, '_> {
     }
 }
 
-struct StructuralRecurSiteGuard<'ctx, 'm> {
+struct StructuralRecurHelperGuard<'ctx, 'm> {
     ctx: &'ctx EvalCtx<'m>,
     thread_id: std::thread::ThreadId,
-    frame_number: NonZeroUsize,
 }
 
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<StructuralRecurSiteGuard<'_, '_>>() == 24);
-
-impl Drop for StructuralRecurSiteGuard<'_, '_> {
+impl Drop for StructuralRecurHelperGuard<'_, '_> {
     fn drop(&mut self) {
-        let mut active = self
+        let mut operations = self
             .ctx
-            .active_structural_recur_sites
+            .structural_recur_operations
             .lock()
-            .expect("active __structural_recur__ site stack poisoned");
-        let empty = {
-            let state = active
-                .get_mut(&self.thread_id)
-                .expect("active structural recursion thread state exists");
-            assert_eq!(
-                state.frames.len(),
-                self.frame_number.get(),
-                "structural recursion site guards drop in strict LIFO order"
-            );
-            let frame = state
-                .frames
-                .pop()
-                .expect("active structural recursion frame exists");
-            assert_eq!(
-                state.latest_by_site.get(&frame.site).copied(),
-                Some(self.frame_number),
-                "latest structural recursion site points to the popped frame"
-            );
-            match frame.previous_same {
-                Some(previous) => {
-                    assert!(
-                        previous < self.frame_number,
-                        "previous same-site frame is strictly earlier"
-                    );
-                    let previous_index = previous
-                        .get()
-                        .checked_sub(1)
-                        .expect("previous same-site frame number is nonzero");
-                    let previous_frame = state
-                        .frames
-                        .get(previous_index)
-                        .expect("previous same-site frame number is in bounds");
-                    assert_eq!(
-                        previous_frame.site.as_ref(),
-                        frame.site.as_ref(),
-                        "previous same-site link targets an equal structural site"
-                    );
-                    assert_eq!(
-                        state.latest_by_site.insert(frame.site, previous),
-                        Some(self.frame_number),
-                        "dropping a repeated site restores its previous frame"
-                    );
-                }
-                None => {
-                    assert_eq!(
-                        state.latest_by_site.remove(&frame.site),
-                        Some(self.frame_number),
-                        "dropping a site's last frame removes its latest mapping"
-                    );
-                }
-            }
-            let frames_empty = state.frames.is_empty();
-            assert_eq!(
-                frames_empty,
-                state.latest_by_site.is_empty(),
-                "active structural recursion frames and latest-site index agree on emptiness"
-            );
-            frames_empty
-        };
-        if empty {
-            let removed = active
-                .remove(&self.thread_id)
-                .expect("empty structural recursion thread state exists");
-            assert!(removed.frames.is_empty());
-            assert!(removed.latest_by_site.is_empty());
-        }
+            .expect("__structural_recur__ operation map poisoned");
+        let state = operations
+            .get_mut(&self.thread_id)
+            .expect("active structural recursion operation exists");
+        state.active_helpers = state
+            .active_helpers
+            .checked_sub(1)
+            .expect("active structural recursion helper count is positive");
     }
 }
 
@@ -4285,8 +3941,8 @@ pub fn eval_fn_tables<'m>(
 ///
 /// `EvalCtx` is a public mutable embedding context, so each call is a fresh
 /// evaluator root: compilation uses a root-local function cache and does not
-/// reuse the context's shared compiled-function or closure cache. Values
-/// returned by the call retain that root's private source-origin namespace.
+/// reuse the context's shared compiled-function or closure cache. Returned
+/// closures retain that root's private function-cache generation.
 pub fn eval(expr: &Expr<EvalPhase>, env: &Env, ctx: &EvalCtx<'_>) -> Value {
     eval_with_compile_scope(expr, env, ctx, EvalSourceGeneration::fresh(), false)
 }
@@ -4454,9 +4110,7 @@ fn compile_eval_expr(
             EvalExpr::DiagnosticText(value.clone())
         }
         Expr::StrLit { value, .. } => EvalExpr::StrAtom(value.clone()),
-        Expr::Path { segments, .. } => {
-            compile_eval_path(segments, EvalSourceOccurrence::of(expr), state)?
-        }
+        Expr::Path { segments, .. } => compile_eval_path(segments, state)?,
         Expr::Let {
             name, value, body, ..
         } => {
@@ -4667,7 +4321,6 @@ fn resolve_unqualified_eval_value<'m>(
 
 fn compile_eval_path(
     segments: &[PathSegment],
-    occurrence: EvalSourceOccurrence,
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<EvalExpr> {
     if segments.len() != 1
@@ -4711,11 +4364,6 @@ fn compile_eval_path(
                     if builtin == ComptimeBuiltin::StructuralRecur {
                         return Some(EvalExpr::StructuralRecurPrimitive(
                             structural_recur_primitive_data(
-                                StructuralRecurSite::new(
-                                    &state.source_generation,
-                                    &state.module_path,
-                                    occurrence,
-                                ),
                                 StructuralRecurPrimitiveStage::AwaitingProof,
                             ),
                         ));
@@ -5688,8 +5336,8 @@ fn inline_small_eval_expr(
         EvalExpr::StrAtom(value) => Some(EvalExpr::StrAtom(value.clone())),
         EvalExpr::DiagnosticText(value) => Some(EvalExpr::DiagnosticText(value.clone())),
         EvalExpr::Primitive(builtin) => Some(EvalExpr::Primitive(*builtin)),
-        EvalExpr::StructuralRecurPrimitive(site) => {
-            Some(EvalExpr::StructuralRecurPrimitive(site.clone()))
+        EvalExpr::StructuralRecurPrimitive(primitive) => {
+            Some(EvalExpr::StructuralRecurPrimitive(primitive.clone()))
         }
         EvalExpr::NewtypeMember(member) => Some(EvalExpr::NewtypeMember(member.clone())),
         EvalExpr::Const(value @ Value::ReflType(_)) => Some(EvalExpr::Const(value.clone())),
@@ -7517,6 +7165,7 @@ fn host_converter_type(
     for param in host_type.type_params.iter().rev() {
         ty = Type::Forall {
             param: TypeParam {
+                presentation: param.presentation.clone(),
                 name: param.name.clone(),
                 span: zero_span(),
                 kind: param.kind.clone(),
@@ -7747,8 +7396,9 @@ fn type_view_value(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<Value> {
         .inner
         .lock()
         .expect("type-view cache lock poisoned")
-        .get(&key)
-        .cloned()
+        .get_key_value(&key)
+        .filter(|(stored, _)| stored.ty.presentation_matches(&key.ty))
+        .map(|(_, value)| value.clone())
     {
         return cached;
     }
@@ -7757,7 +7407,8 @@ fn type_view_value(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<Value> {
         .inner
         .lock()
         .expect("type-view cache lock poisoned")
-        .insert(key, value.clone());
+        .entry(key)
+        .or_insert_with(|| value.clone());
     value
 }
 
@@ -9250,10 +8901,8 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
     }
 }
 
-/// Apply an evaluator value. A public plain `StructuralRecur` primitive gains
-/// its private synthetic origin only when this call completes its runtime
-/// saturation; the destination `ctx` therefore owns that origin even when a
-/// proof-prefix partial value was created elsewhere.
+/// Apply an evaluator value, retaining the first totality failure throughout
+/// the operation, including failures in a discarded argument or callback.
 pub fn apply(callee: Value, args: Vec<Value>, ctx: &EvalCtx<'_>) -> Value {
     let operation = ctx.enter_structural_recur_operation();
     operation.finish(apply_args(callee, EvalArgs::Many(args), ctx))
@@ -9669,11 +9318,11 @@ fn lookup_exact_call_memo(
     args: &[Value],
     ctx: &EvalCtx<'_>,
 ) -> Result<Option<ExactCallMemoTicket>, Value> {
-    // A cached result cannot replace work performed while a recursion origin
+    // A cached result cannot replace work performed while a recursion helper
     // is active, and a fault already recorded by this operation cannot be
     // hidden by a later cache hit.
     let memo_key = if !function.memo_candidate
-        || ctx.has_active_structural_recur_site()
+        || ctx.has_active_structural_recur_helper()
         || ctx.structural_recur_operation_has_fault()
     {
         None
@@ -9692,8 +9341,9 @@ fn lookup_exact_call_memo(
             .inner
             .lock()
             .expect("exact call memo lock poisoned")
-            .get(key)
-            .cloned()
+            .get_key_value(key)
+            .filter(|(stored, _)| stored.presentation_matches(key))
+            .map(|(_, value)| value.clone())
     {
         if let Some(metrics) = ctx.metrics.as_deref() {
             metrics.record_exact_call_memo_hit();
@@ -9728,7 +9378,7 @@ fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoTicket>
     // producing an otherwise shareable result. The operation retains that
     // first fault until its public boundary, so never cache the apparent
     // success.
-    if ctx.has_active_structural_recur_site() || ctx.structural_recur_operation_has_fault() {
+    if ctx.has_active_structural_recur_helper() || ctx.structural_recur_operation_has_fault() {
         return;
     }
     if !exact_call_memo_result_shareable(&value) {
@@ -9739,8 +9389,10 @@ fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoTicket>
         .inner
         .lock()
         .expect("exact call memo lock poisoned");
-    if memo.len() < EXACT_CALL_MEMO_MAX_ENTRIES {
-        memo.insert(ticket.key, value);
+    if memo.len() < EXACT_CALL_MEMO_MAX_ENTRIES
+        && let std::collections::hash_map::Entry::Vacant(entry) = memo.entry(ticket.key)
+    {
+        entry.insert(value);
         if let Some(metrics) = ctx.metrics.as_deref() {
             metrics.record_exact_call_memo_store();
         }
@@ -10103,18 +9755,6 @@ pub fn structural_recur_stuck_message(value: &Value, ctx: &EvalCtx<'_>) -> Optio
                             .to_string(),
                     );
                 }
-                Some(StructuralRecurDataIdentity::SiteRejected {
-                    root_measure,
-                    current_measure,
-                    next_measure,
-                    ..
-                }) => {
-                    return Some(structural_recur_site_reentry_stuck_message(
-                        *root_measure,
-                        *current_measure,
-                        *next_measure,
-                    ));
-                }
                 None => pending.extend(data.args().iter().rev()),
             },
             Value::CaseSplit {
@@ -10135,21 +9775,6 @@ pub fn structural_recur_stuck_message(value: &Value, ctx: &EvalCtx<'_>) -> Optio
         }
     }
     None
-}
-
-fn structural_recur_site_reentry_stuck_message(
-    root_measure: usize,
-    current_measure: usize,
-    next_measure: Option<usize>,
-) -> String {
-    let Some(next_measure) = next_measure else {
-        return format!(
-            "`__structural_recur__` got stuck because a same helper origin re-entry used fuel with no recursive structural measure (root={root_measure}, current={current_measure}, next=unmeasurable)"
-        );
-    };
-    format!(
-        "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root={root_measure}, current={current_measure}, next={next_measure})"
-    )
 }
 
 fn structural_recur_recursive_stuck_message(
@@ -10349,41 +9974,22 @@ mod tests {
         EvalCtx::new().with_primitive_env(primitives)
     }
 
-    fn structural_recur_site_for_test(label: &str) -> Arc<StructuralRecurSite> {
-        static TEST_SITE_GENERATION: OnceLock<EvalSourceGeneration> = OnceLock::new();
-        StructuralRecurSite::new(
-            TEST_SITE_GENERATION.get_or_init(EvalSourceGeneration::fresh),
-            label,
-            EvalSourceOccurrence::for_test(0),
-        )
+    fn structural_recur_primitive_for_test() -> Value {
+        structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime)
     }
 
-    fn structural_recur_primitive_for_test(label: &str) -> Value {
-        structural_recur_primitive_value(
-            structural_recur_site_for_test(label),
-            StructuralRecurPrimitiveStage::AwaitingRuntime,
-        )
-    }
-
-    fn structural_recur_source_primitive_for_test(label: &str) -> Value {
-        structural_recur_primitive_value(
-            structural_recur_site_for_test(label),
-            StructuralRecurPrimitiveStage::AwaitingProof,
-        )
+    fn structural_recur_source_primitive_for_test() -> Value {
+        structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingProof)
     }
 
     fn structural_recur_runtime_expr(
-        site: Arc<StructuralRecurSite>,
         fuel: EvalRef<EvalExpr>,
         input: EvalRef<EvalExpr>,
         step: EvalRef<EvalExpr>,
     ) -> EvalExpr {
         EvalExpr::Call {
             callee: EvalRef::new(EvalExpr::StructuralRecurPrimitive(
-                structural_recur_primitive_data(
-                    site,
-                    StructuralRecurPrimitiveStage::AwaitingRuntime,
-                ),
+                structural_recur_primitive_data(StructuralRecurPrimitiveStage::AwaitingRuntime),
             )),
             args: vec![fuel, input, step],
         }
@@ -10423,7 +10029,7 @@ mod tests {
         // `parse_module` deliberately stops before the typer's retained call
         // plan. Recreate only the three type slots that the ordinary typer
         // authenticates; keep the inner source node in place so its
-        // helper-origin identity and proof prefix are unchanged.
+        // source occurrence and proof prefix are unchanged.
         let origin = EvalSourceOccurrence::of(proof_callee.as_ref());
         let type_args = args
             .iter()
@@ -10437,26 +10043,43 @@ mod tests {
         args.len()
     }
 
-    fn structural_recur_site_rejection_for_test(
+    fn structural_recur_callback_rejection_for_test(
         root_measure: usize,
         current_measure: usize,
         next_measure: Option<usize>,
     ) -> Value {
-        structural_recur_site_rejected_value(root_measure, current_measure, next_measure)
-    }
-
-    fn structural_recur_site_rejection_measures(
-        value: &Value,
-    ) -> Option<(usize, usize, Option<usize>)> {
-        match structural_recur_data_identity(value)? {
-            StructuralRecurDataIdentity::SiteRejected {
+        let fuel = next_measure.map_or_else(
+            || Value::Atom("opaque-fuel".to_owned()),
+            |measure| Value::ReflTypeArity(measure.checked_sub(1).expect("positive test measure")),
+        );
+        Value::Stuck(
+            EvalRef::new(Value::StructuralRecur {
                 root_measure,
                 current_measure,
-                next_measure,
-            } => Some((*root_measure, *current_measure, *next_measure)),
-            StructuralRecurDataIdentity::Primitive { .. }
-            | StructuralRecurDataIdentity::InitialRejected => None,
-        }
+                step: EvalRef::new(Value::Unit),
+            }),
+            vec![fuel, Value::Unit].into(),
+        )
+    }
+
+    fn structural_recur_callback_rejection_measures(
+        value: &Value,
+    ) -> Option<(usize, usize, Option<usize>)> {
+        let Value::Stuck(callee, args) = value else {
+            return None;
+        };
+        let Value::StructuralRecur {
+            root_measure,
+            current_measure,
+            ..
+        } = callee.as_ref()
+        else {
+            return None;
+        };
+        let next = args
+            .first()
+            .and_then(|fuel| fuel_measure(fuel, &EvalCtx::new()));
+        Some((*root_measure, *current_measure, next))
     }
 
     fn test_capture_free_fn_expr(params: &[&str], body: EvalExpr) -> EvalRef<EvalExpr> {
@@ -10467,20 +10090,20 @@ mod tests {
         })
     }
 
-    fn nested_same_origin_rejection_expr(site: Arc<StructuralRecurSite>) -> EvalExpr {
-        let return_input =
-            test_capture_free_fn_expr(&["recur", "fuel", "input"], EvalExpr::Local(2));
-        let inner = structural_recur_runtime_expr(
-            site.clone(),
-            EvalRef::new(EvalExpr::ReflTypeUnit),
-            EvalRef::new(EvalExpr::Unit),
-            return_input,
-        );
+    fn non_descending_callback_expr() -> EvalExpr {
         structural_recur_runtime_expr(
-            site,
             EvalRef::new(EvalExpr::ReflTypeUnit),
             EvalRef::new(EvalExpr::Unit),
-            test_capture_free_fn_expr(&["recur", "fuel", "input"], inner),
+            test_capture_free_fn_expr(
+                &["recur", "fuel", "input"],
+                EvalExpr::Call {
+                    callee: EvalRef::new(EvalExpr::Local(0)),
+                    args: vec![
+                        EvalRef::new(EvalExpr::Local(1)),
+                        EvalRef::new(EvalExpr::Local(2)),
+                    ],
+                },
+            ),
         )
     }
 
@@ -10605,43 +10228,29 @@ mod tests {
     }
 
     #[test]
-    fn distinct_raw_helper_nodes_with_identical_spans_keep_distinct_origins() {
-        let span = zero_span();
+    fn distinct_raw_helper_nodes_retain_the_same_proof_stage() {
         let expr = Expr::Seq {
             occurrence: Default::default(),
             value: Box::new(path_expr("__structural_recur__")),
             body: Box::new(path_expr("__structural_recur__")),
-            meta: Meta::new(span),
+            meta: zero_meta(),
         };
         let ctx = test_primitive_ctx(&[ComptimeBuiltin::StructuralRecur]);
         let compiled = compile_eval_root(&expr, &ctx, Vec::new()).expect("compile helper pair");
         let EvalExpr::Seq { value, body } = compiled.as_ref() else {
             panic!("helper pair did not retain its sequence shape");
         };
-        let site = |expr: &EvalExpr| {
-            let EvalExpr::StructuralRecurPrimitive(data) = expr else {
-                panic!("expected a source-origin helper token, got {expr:?}");
+        for expr in [value, body] {
+            let EvalExpr::StructuralRecurPrimitive(data) = expr.as_ref() else {
+                panic!("expected a staged helper token");
             };
-            let Some(StructuralRecurDataIdentity::Primitive { site, .. }) =
-                data.structural_recur_identity()
-            else {
-                panic!("helper token lost its private source origin");
-            };
-            site.clone()
-        };
-        let left = site(value);
-        let right = site(body);
-        assert_ne!(left, right, "distinct AST nodes shared an origin by span");
-
-        let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
-        let (_left_measure, left_guard) = ctx
-            .enter_structural_recur_site(&left, &fuel)
-            .expect("first helper origin");
-        let (_right_measure, right_guard) = ctx
-            .enter_structural_recur_site(&right, &fuel)
-            .expect("an equal measure at a distinct helper node is independent");
-        drop(right_guard);
-        drop(left_guard);
+            assert!(matches!(
+                data.structural_recur_identity(),
+                Some(StructuralRecurDataIdentity::Primitive {
+                    stage: StructuralRecurPrimitiveStage::AwaitingProof
+                })
+            ));
+        }
     }
 
     #[test]
@@ -10674,7 +10283,7 @@ mod tests {
     }
 
     #[test]
-    fn artifact_generation_namespaces_source_origins_across_env_and_higher_order_use() {
+    fn helper_tokens_compose_across_artifact_generations_and_higher_order_use() {
         let source =
             "module x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
         let artifact = lowered_package(&[("x.kio", source)]);
@@ -10700,32 +10309,14 @@ mod tests {
         let token = eval_authenticated(&helper_expr, &Env::new(), &ctx);
         let cloned_token = eval_authenticated(&helper_expr, &Env::new(), &cloned_ctx);
         let rebuilt_token = eval_authenticated(&helper_expr, &Env::new(), &rebuilt_ctx);
-        let token_site = structural_recur_primitive_site(&token).expect("source token");
-        assert_ne!(
-            ctx.public_structural_recur_site.as_ref(),
-            token_site.as_ref()
-        );
-        assert_eq!(
-            structural_recur_primitive_site(&cloned_token),
-            Some(token_site)
-        );
-        assert_ne!(
-            structural_recur_primitive_site(&rebuilt_token),
-            Some(token_site)
-        );
-
-        let raw_ctx = EvalCtx::for_module(&artifact, module, "x")
-            .expect("public package context remains deauthenticated");
-        let raw_first = eval(&helper_expr, &Env::new(), &raw_ctx);
-        let raw_second = eval(&helper_expr, &Env::new(), &raw_ctx);
-        assert_ne!(
-            structural_recur_primitive_site(&raw_first),
-            structural_recur_primitive_site(&raw_second)
-        );
-        assert_ne!(
-            structural_recur_primitive_site(&raw_first),
-            Some(token_site)
-        );
+        for token in [&token, &cloned_token, &rebuilt_token] {
+            assert_eq!(
+                structural_recur_primitive_stage(token),
+                Some(StructuralRecurPrimitiveStage::AwaitingProof)
+            );
+        }
+        let raw_ctx = EvalCtx::for_module(&artifact, module, "x").unwrap();
+        let raw_token = eval(&helper_expr, &Env::new(), &raw_ctx);
 
         let forward = Value::EvalClosure {
             function: test_eval_function(&["value"], EvalExpr::Local(0)),
@@ -10761,23 +10352,16 @@ mod tests {
             env.insert("fuel".to_owned(), fuel.clone());
             env.insert("input".to_owned(), Value::Unit);
             env.insert("step".to_owned(), step.clone());
-            let (_measure, active) = ctx
-                .enter_structural_recur_site(token_site, &fuel)
-                .expect("destination source origin");
+            let operation = ctx.enter_structural_recur_operation();
+            let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
             let result = eval_authenticated(&indirect_call, &env, &ctx);
             drop(active);
-            result
+            operation.finish(result)
         };
 
-        let same_generation = evaluate_nested(cloned_token);
-        assert_eq!(
-            structural_recur_stuck_message(&same_generation, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_owned()
-            )
-        );
-        assert!(matches!(evaluate_nested(rebuilt_token), Value::Unit));
+        for helper in [token, cloned_token, rebuilt_token, raw_token] {
+            assert!(matches!(evaluate_nested(helper), Value::Unit));
+        }
     }
 
     #[test]
@@ -10996,7 +10580,7 @@ mod tests {
             } else {
                 (second, first)
             };
-            assert!(structural_recur_primitive_site(&authorized_value).is_some());
+            assert!(structural_recur_primitive_stage(&authorized_value).is_some());
             assert!(matches!(
                 unauthorized_value,
                 Value::Atom(name) if name == "__structural_recur__"
@@ -11250,7 +10834,7 @@ mod tests {
         assert!(
             matches!(specialize_for_test(Value::Atom("__type_unit__".into()), &ctx), Value::Atom(name) if name == "__type_unit__")
         );
-        let primitive = structural_recur_source_primitive_for_test("type-only-test");
+        let primitive = structural_recur_source_primitive_for_test();
         let Value::Data(expected) = &primitive else {
             panic!("structural primitive")
         };
@@ -11259,20 +10843,18 @@ mod tests {
             panic!("type application executed a primitive")
         };
         let Some(StructuralRecurDataIdentity::Primitive {
-            site: expected_site,
             stage: expected_stage,
         }) = expected.structural_recur_identity()
         else {
             panic!("primitive identity")
         };
         let Some(StructuralRecurDataIdentity::Primitive {
-            site: actual_site,
             stage: actual_stage,
         }) = actual.structural_recur_identity()
         else {
             panic!("specialized primitive identity")
         };
-        assert!(Arc::ptr_eq(actual_site, expected_site));
+        assert!(EvalRef::ptr_eq(&actual, expected));
         assert_eq!(actual_stage, expected_stage);
         let stuck = Value::Stuck(
             EvalRef::new(Value::Atom("unknown".into())),
@@ -11760,6 +11342,7 @@ mod tests {
         };
         let scheme = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_string(),
                 span: zero_span(),
                 kind: None,
@@ -11920,6 +11503,7 @@ mod tests {
         };
         let forall_type = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_string(),
                 span: zero_span(),
                 kind: None,
@@ -12619,9 +12203,10 @@ mod tests {
         };
         let arity_ty = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".to_owned(),
                 span: zero_span(),
-                kind: Some(crate::ast::Kind::arrow_chain(2)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(2))),
             },
             body: Box::new(unit()),
             meta: zero_meta(),
@@ -12629,6 +12214,7 @@ mod tests {
         let specialized_pattern = type_path("A");
         let specialized_ty = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -13995,7 +13581,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_structural_recur_nested_helper_same_origin_reentry_is_stuck() {
+    fn direct_structural_recur_nested_helper_calls_are_independent() {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(k: . -> .) -> . { \
@@ -14015,18 +13601,12 @@ mod tests {
 
         let values = eval_each(&equiv_terms(&m), &ctx);
 
-        let (a, _b) = first_two(&values);
-        assert_eq!(
-            structural_recur_stuck_message(a, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_string()
-            )
-        );
+        let (a, b) = first_two(&values);
+        assert!(nf_eq(a, b, &ctx), "nested helper did not reduce: {a:?}");
     }
 
     #[test]
-    fn direct_grouped_structural_recur_nested_helper_same_origin_reentry_is_stuck() {
+    fn direct_grouped_structural_recur_nested_helper_calls_are_independent() {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(proof: ., k: . -> .) -> . { \
@@ -14058,29 +13638,21 @@ mod tests {
             .map(|term| eval(term, &env, &ctx))
             .collect::<Vec<_>>();
 
-        let (a, _b) = first_two(&values);
-        assert_eq!(
-            structural_recur_stuck_message(a, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_string()
-            )
-        );
+        let (a, b) = first_two(&values);
+        assert!(nf_eq(a, b, &ctx), "nested helper did not reduce: {a:?}");
     }
 
     #[test]
-    fn structural_recur_origin_survives_partial_and_internal_application() {
+    fn structural_recur_stage_survives_partial_and_internal_application() {
         let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("partial-and-internal");
         let primitive_expr = EvalExpr::StructuralRecurPrimitive(structural_recur_primitive_data(
-            site.clone(),
             StructuralRecurPrimitiveStage::AwaitingProof,
         ));
         assert!(is_simple_handler_expr(&primitive_expr));
         let slots = EvalSlots::root(Vec::new());
         let mut budget = 8;
         let primitive = eval_simple_handler_expr(&primitive_expr, &[], &[], &slots, &mut budget)
-            .expect("simple-handler evaluation must retain the recursion origin");
+            .expect("simple-handler evaluation must retain the proof stage");
         let mut second_budget = 8;
         let primitive_again =
             eval_simple_handler_expr(&primitive_expr, &[], &[], &slots, &mut second_budget)
@@ -14092,14 +13664,13 @@ mod tests {
         };
         assert!(
             EvalRef::ptr_eq(primitive_data, primitive_again_data),
-            "evaluating a compiled token must not rebuild its site payload"
+            "evaluating a compiled token must not rebuild its staged value"
         );
         let identity = Value::EvalClosure {
             function: test_eval_function(&["helper"], EvalExpr::Local(0)),
             captured: Vec::<Value>::new().into(),
         };
         let bare = apply(identity, vec![primitive], &ctx);
-        assert_eq!(structural_recur_primitive_site(&bare), Some(&site));
         assert_eq!(
             structural_recur_primitive_stage(&bare),
             Some(StructuralRecurPrimitiveStage::AwaitingProof)
@@ -14107,7 +13678,6 @@ mod tests {
         assert!(structural_recur_stuck_message(&bare, &ctx).is_none());
         let proof = Value::Atom("opaque-proof".to_owned());
         let proof_partial = apply(bare, vec![proof], &ctx);
-        assert_eq!(structural_recur_primitive_site(&proof_partial), Some(&site));
         assert_eq!(
             structural_recur_primitive_stage(&proof_partial),
             Some(StructuralRecurPrimitiveStage::AwaitingRuntime)
@@ -14115,9 +13685,8 @@ mod tests {
         assert!(structural_recur_stuck_message(&proof_partial, &ctx).is_none());
 
         // Type groups are erased before evaluator application. Applying an
-        // empty group must retain the same origin-bearing partial value.
+        // empty group must retain the same staged partial value.
         let type_partial = apply(proof_partial, Vec::new(), &ctx);
-        assert_eq!(structural_recur_primitive_site(&type_partial), Some(&site));
         assert_eq!(
             structural_recur_primitive_stage(&type_partial),
             Some(StructuralRecurPrimitiveStage::AwaitingRuntime)
@@ -14139,18 +13708,19 @@ mod tests {
         let saturated = apply(type_partial, vec![packet], &ctx);
         assert!(matches!(saturated, Value::Unit));
 
+        let operation = ctx.enter_structural_recur_operation();
         let internal = apply_args(
-            structural_recur_primitive_value(site, StructuralRecurPrimitiveStage::AwaitingRuntime),
+            structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime),
             EvalArgs::Three([fuel, Value::Unit, step]),
             &ctx,
         );
-        assert!(matches!(internal, Value::Unit));
+        assert!(matches!(operation.finish(internal), Value::Unit));
     }
 
     #[test]
     fn structural_recur_runtime_layer_does_not_accumulate_flattened_slots() {
         let ctx = EvalCtx::new();
-        let runtime = structural_recur_primitive_for_test("runtime-layer-split");
+        let runtime = structural_recur_primitive_for_test();
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
         let step = Value::EvalClosure {
             function: test_eval_function(&["recur", "fuel", "input"], EvalExpr::Local(2)),
@@ -14184,7 +13754,7 @@ mod tests {
     }
 
     #[test]
-    fn public_structural_recur_primitive_uses_the_saturating_context_origin() {
+    fn public_structural_recur_primitive_composes_across_contexts() {
         let source_ctx = EvalCtx::new();
         let destination_ctx = EvalCtx::new();
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
@@ -14225,7 +13795,7 @@ mod tests {
             &destination_ctx,
         );
         assert!(matches!(returned_callback, Value::StructuralRecur { .. }));
-        assert!(structural_recur_primitive_site(&returned_callback).is_none());
+        assert!(!destination_ctx.has_active_structural_recur_helper());
 
         let proof_partial = apply(
             primitive.clone(),
@@ -14241,33 +13811,32 @@ mod tests {
         let type_partial = apply(proof_partial.clone(), Vec::new(), &source_ctx);
         assert!(structural_recur_stuck_message(&type_partial, &source_ctx).is_none());
 
-        let (_source_measure, source_active) = source_ctx
-            .enter_structural_recur_site(&source_ctx.public_structural_recur_site, &fuel)
-            .expect("source synthetic origin");
+        let source_operation = source_ctx.enter_structural_recur_operation();
+        let (_source_measure, source_active) =
+            source_ctx.enter_structural_recur_helper(&fuel).unwrap();
         let saturated_elsewhere = apply(
             type_partial.clone(),
             vec![fuel.clone(), Value::Unit, step.clone()],
             &destination_ctx,
         );
         drop(source_active);
+        source_operation.finish(Value::Unit);
         assert!(matches!(saturated_elsewhere, Value::Unit));
 
+        let destination_operation = destination_ctx.enter_structural_recur_operation();
         let (_destination_measure, destination_active) = destination_ctx
-            .enter_structural_recur_site(&destination_ctx.public_structural_recur_site, &fuel)
-            .expect("destination synthetic origin");
-        let rejected_at_destination = apply(
+            .enter_structural_recur_helper(&fuel)
+            .unwrap();
+        let nested_at_destination = apply(
             proof_partial,
             vec![fuel.clone(), Value::Unit, step],
             &destination_ctx,
         );
         drop(destination_active);
-        assert_eq!(
-            structural_recur_stuck_message(&rejected_at_destination, &destination_ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_owned()
-            )
-        );
+        assert!(matches!(
+            destination_operation.finish(nested_at_destination),
+            Value::Unit
+        ));
 
         let identity = Value::EvalClosure {
             function: test_eval_function(&["helper"], EvalExpr::Local(0)),
@@ -14295,7 +13864,7 @@ mod tests {
     }
 
     #[test]
-    fn public_structural_recur_synthetic_origin_rejects_nested_equal_fuel_and_cleans_up() {
+    fn public_structural_recur_accepts_nested_equal_fuel_and_cleans_up() {
         let ctx = EvalCtx::new();
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
         let inner_step = test_capture_free_fn_expr(&["recur", "fuel", "input"], EvalExpr::Local(2));
@@ -14314,22 +13883,16 @@ mod tests {
             captured: Vec::<Value>::new().into(),
         };
 
-        let rejected = apply(
+        let nested = apply(
             Value::Primitive(ComptimeBuiltin::StructuralRecur),
             vec![fuel.clone(), Value::Unit, outer_step],
             &ctx,
         );
-        assert_eq!(
-            structural_recur_stuck_message(&rejected, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_owned()
-            )
-        );
+        assert!(matches!(nested, Value::Unit));
         assert!(
-            ctx.active_structural_recur_sites
+            ctx.structural_recur_operations
                 .lock()
-                .expect("active site map")
+                .expect("operation map")
                 .is_empty()
         );
 
@@ -14347,23 +13910,24 @@ mod tests {
         );
         assert!(matches!(clean, Value::Unit));
         assert!(
-            ctx.active_structural_recur_sites
+            ctx.structural_recur_operations
                 .lock()
-                .expect("active site map")
+                .expect("operation map")
                 .is_empty()
         );
     }
 
     #[test]
-    fn public_structural_recur_synthetic_origin_is_thread_local_and_unwind_safe() {
+    fn structural_recur_helper_activity_is_thread_local_and_unwind_safe() {
         let ctx = Arc::new(EvalCtx::new());
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
-        let (_measure, active) = ctx
-            .enter_structural_recur_site(&ctx.public_structural_recur_site, &fuel)
-            .expect("main-thread synthetic origin");
+        let operation = ctx.enter_structural_recur_operation();
+        let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
+        assert!(ctx.has_active_structural_recur_helper());
         let thread_ctx = ctx.clone();
         let thread_fuel = fuel.clone();
         let result = std::thread::spawn(move || {
+            assert!(!thread_ctx.has_active_structural_recur_helper());
             apply(
                 Value::Primitive(ComptimeBuiltin::StructuralRecur),
                 vec![
@@ -14381,21 +13945,22 @@ mod tests {
             )
         })
         .join()
-        .expect("synthetic-origin thread");
+        .expect("helper activity thread");
         assert!(matches!(result, Value::Unit));
         drop(active);
+        operation.finish(Value::Unit);
 
         let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _active = ctx
-                .enter_structural_recur_site(&ctx.public_structural_recur_site, &fuel)
-                .expect("synthetic origin before unwind");
-            panic!("synthetic site cleanup witness");
+            let _operation = ctx.enter_structural_recur_operation();
+            let _active = ctx.enter_structural_recur_helper(&fuel).unwrap();
+            assert!(ctx.has_active_structural_recur_helper());
+            panic!("helper activity cleanup witness");
         }));
         assert!(unwind.is_err());
         assert!(
-            ctx.active_structural_recur_sites
+            ctx.structural_recur_operations
                 .lock()
-                .expect("active site map")
+                .expect("operation map")
                 .is_empty()
         );
     }
@@ -14520,544 +14085,70 @@ mod tests {
     }
 
     #[test]
-    fn structural_recur_same_origin_uses_oldest_root_and_nearest_current() {
+    fn structural_recur_nested_entries_measure_independently_and_balance_activity() {
         let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("same-origin-root-current");
-        let parent = refl_type_value(Type::Product {
-            left: Box::new(Type::Unit { meta: zero_meta() }),
-            right: Box::new(Type::Unit { meta: zero_meta() }),
-            meta: zero_meta(),
-        });
-        let unit = refl_type_value(Type::Unit { meta: zero_meta() });
-        let bottom = refl_type_value(Type::Bottom { meta: zero_meta() });
-        let (parent_measure, parent_guard) = ctx
-            .enter_structural_recur_site(&site, &parent)
-            .expect("initial same-origin entry");
-        assert_eq!(parent_measure, 3);
-        let (current_measure, current_guard) = ctx
-            .enter_structural_recur_site(&site, &unit)
-            .expect("strict same-origin child entry");
-        assert_eq!(current_measure, 1);
-
-        let rejected = apply(
-            structural_recur_primitive_value(
-                site.clone(),
-                StructuralRecurPrimitiveStage::AwaitingRuntime,
-            ),
-            vec![bottom, Value::Unit, Value::Unit],
-            &ctx,
-        );
-        assert_eq!(
-            structural_recur_site_rejection_measures(&rejected),
-            Some((3, 1, Some(1)))
-        );
-        assert_eq!(
-            structural_recur_stuck_message(&rejected, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=3, current=1, next=1)"
-                    .to_string()
-            )
-        );
-        drop(current_guard);
-        drop(parent_guard);
-    }
-
-    #[test]
-    fn indexed_structural_recur_restores_previous_same_site_after_interleave() {
-        let ctx = EvalCtx::new();
-        let site_a = structural_recur_site_for_test("indexed-interleave-a");
-        let equal_site_a = Arc::new(site_a.as_ref().clone());
-        let site_b = structural_recur_site_for_test("indexed-interleave-b");
-        let equal_site_b = Arc::new(site_b.as_ref().clone());
-        assert_eq!(site_a, equal_site_a);
-        assert!(!Arc::ptr_eq(&site_a, &equal_site_a));
-        assert_eq!(site_b, equal_site_b);
-        assert!(!Arc::ptr_eq(&site_b, &equal_site_b));
-
-        let fuel = |measure: usize| Value::ReflTypeArity(measure - 1);
-        let (root_measure, root_a) = ctx
-            .enter_structural_recur_site(&site_a, &fuel(5))
-            .expect("outer A enters");
-        let (_b_measure, guard_b) = ctx
-            .enter_structural_recur_site(&site_b, &fuel(1))
-            .expect("interleaved B enters independently");
-        let (inner_measure, inner_a) = ctx
-            .enter_structural_recur_site(&equal_site_a, &fuel(3))
-            .expect("equal but separately allocated A descends");
-        assert_eq!((root_measure, inner_measure), (5, 3));
-
-        let state = ctx
-            .active_structural_recur_state_for_test()
-            .expect("indexed state");
-        assert_eq!(state.frames.len(), 3);
-        assert_eq!(state.latest_by_site.len(), 2);
-        assert_eq!(
-            state.latest_by_site.get(&site_a).copied(),
-            NonZeroUsize::new(3)
-        );
-        assert_eq!(
-            state.latest_by_site.get(&equal_site_a).copied(),
-            NonZeroUsize::new(3)
-        );
-        assert_eq!(
-            state.latest_by_site.get(&site_b).copied(),
-            NonZeroUsize::new(2)
-        );
-        assert_eq!(state.frames[2].previous_same, NonZeroUsize::new(1));
-        assert_eq!(state.frames[2].site, equal_site_a);
-        for b_site in [&site_b, &equal_site_b] {
-            assert!(matches!(
-                ctx.enter_structural_recur_site(b_site, &fuel(1)),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                    root_measure: 1,
-                    current_measure: 1,
-                    next_measure: Some(1),
-                })
-            ));
-        }
-        assert!(matches!(
-            ctx.enter_structural_recur_site(&site_a, &fuel(3)),
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure: 5,
-                current_measure: 3,
-                next_measure: Some(3),
-            })
-        ));
-
-        drop(inner_a);
-        let restored = ctx
-            .active_structural_recur_state_for_test()
-            .expect("outer A and B remain");
-        let mapping_restored =
-            restored.latest_by_site.get(&site_a).copied() == NonZeroUsize::new(1);
-        if !mapping_restored {
-            std::mem::forget(guard_b);
-            std::mem::forget(root_a);
-            panic!("dropping inner A must restore the outer A mapping");
-        }
-        assert_eq!(
-            restored.latest_by_site.get(&site_a).copied(),
-            NonZeroUsize::new(1)
-        );
-        assert_eq!(
-            restored.latest_by_site.get(&site_b).copied(),
-            NonZeroUsize::new(2)
-        );
-        assert!(matches!(
-            ctx.enter_structural_recur_site(&site_b, &fuel(1)),
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure: 1,
-                current_measure: 1,
-                next_measure: Some(1),
-            })
-        ));
-
-        let (_replacement_measure, replacement_a) = ctx
-            .enter_structural_recur_site(&equal_site_a, &fuel(3))
-            .expect("restored outer A accepts a fresh strict child");
-        assert!(matches!(
-            ctx.enter_structural_recur_site(&site_a, &fuel(3)),
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure: 5,
-                current_measure: 3,
-                next_measure: Some(3),
-            })
-        ));
-        drop(replacement_a);
-        drop(guard_b);
-        let only_a = ctx
-            .active_structural_recur_state_for_test()
-            .expect("outer A remains");
-        assert_eq!(only_a.frames.len(), 1);
-        assert_eq!(only_a.latest_by_site.len(), 1);
-        assert_eq!(
-            only_a.latest_by_site.get(&site_a).copied(),
-            NonZeroUsize::new(1)
-        );
-        drop(root_a);
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
-    }
-
-    #[test]
-    fn indexed_structural_recur_uses_structural_site_equality() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-structural-equality");
-        let equal_site = Arc::new(site.as_ref().clone());
-        assert_eq!(site, equal_site);
-        assert!(!Arc::ptr_eq(&site, &equal_site));
-
-        let (_measure, root) = ctx
-            .enter_structural_recur_site(&site, &Value::Unit)
-            .expect("root enters");
-        std::mem::forget(root);
-        let rejected = ctx.enter_structural_recur_site(&equal_site, &Value::Unit);
-        let removed = ctx
-            .active_structural_recur_sites
-            .lock()
-            .expect("active site map")
-            .remove(&std::thread::current().id());
-        assert!(removed.is_some());
-        assert!(matches!(
-            rejected,
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure: 1,
-                current_measure: 1,
-                next_measure: Some(1),
-            })
-        ));
-    }
-
-    #[test]
-    fn indexed_structural_recur_links_each_same_site_frame_to_its_predecessor() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-predecessor-links");
-        let mut guards = Vec::new();
-        for arity in [3, 2, 1] {
-            let (_measure, guard) = ctx
-                .enter_structural_recur_site(&site, &Value::ReflTypeArity(arity - 1))
-                .expect("same-site frame descends");
-            guards.push(guard);
-        }
-        let state = ctx
-            .active_structural_recur_state_for_test()
-            .expect("three same-site frames");
-        let links: Vec<_> = state
-            .frames
-            .iter()
-            .map(|frame| frame.previous_same)
-            .collect();
-        if links != [None, NonZeroUsize::new(1), NonZeroUsize::new(2)] {
-            for guard in guards.drain(..) {
-                std::mem::forget(guard);
-            }
-            panic!("each repeated frame must link to its immediate predecessor: {links:?}");
-        }
-        assert_eq!(
-            state.latest_by_site.get(&site).copied(),
-            NonZeroUsize::new(3)
-        );
-        while let Some(guard) = guards.pop() {
-            drop(guard);
-        }
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
-    }
-
-    #[test]
-    fn indexed_structural_recur_removes_final_site_and_thread_state() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-final-removal");
-        let (_measure, guard) = ctx
-            .enter_structural_recur_site(&site, &Value::Unit)
-            .expect("single site enters");
-        drop(guard);
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
-        assert!(
-            ctx.active_structural_recur_sites
-                .lock()
-                .expect("active site map")
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn indexed_structural_recur_authenticates_reverse_drop_order() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-guard-frame");
-        let (_measure, guard) = ctx
-            .enter_structural_recur_site(&site, &Value::Unit)
-            .expect("single site enters");
-        assert_eq!(guard.frame_number, NonZeroUsize::new(1).unwrap());
-        drop(guard);
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
-    }
-
-    #[test]
-    fn indexed_structural_recur_counter_is_wired_to_existing_state_lookup() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-counter-wiring");
-        let (_measure, root) = ctx
-            .enter_structural_recur_site(&site, &Value::ReflTypeArity(1))
-            .expect("root enters");
-        assert_eq!(ctx.take_structural_recur_site_lookup_work(), 0);
-        let (_measure, child) = ctx
-            .enter_structural_recur_site(&site, &Value::Unit)
-            .expect("child descends");
-        assert_eq!(ctx.take_structural_recur_site_lookup_work(), 1);
-        drop(child);
-        drop(root);
-    }
-
-    #[test]
-    fn structural_recur_site_index_failed_entries_leave_state_unchanged() {
-        let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("indexed-failed-entry");
-        let (_measure, guard) = ctx
-            .enter_structural_recur_site(&site, &Value::ReflTypeArity(2))
-            .expect("measure-three root enters");
-        let before = ctx
-            .active_structural_recur_state_for_test()
-            .expect("root state");
-
-        assert!(matches!(
-            ctx.enter_structural_recur_site(&site, &Value::Atom("opaque".to_owned())),
-            Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                root_measure: 3,
-                current_measure: 3,
-                next_measure: None,
-            })
-        ));
-        assert_eq!(
-            ctx.active_structural_recur_state_for_test().as_ref(),
-            Some(&before)
-        );
-        let distinct_site = structural_recur_site_for_test("indexed-failed-entry-distinct");
-        assert!(matches!(
-            ctx.enter_structural_recur_site(
-                &distinct_site,
-                &Value::Atom("opaque-distinct".to_owned())
-            ),
-            Err(StructuralRecurSiteEntryError::UnmeasurableInitialFuel)
-        ));
-        assert_eq!(
-            ctx.active_structural_recur_state_for_test().as_ref(),
-            Some(&before)
-        );
-        for fuel in [Value::ReflTypeArity(2), Value::ReflTypeArity(4)] {
-            assert!(matches!(
-                ctx.enter_structural_recur_site(&site, &fuel),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry {
-                    root_measure: 3,
-                    current_measure: 3,
-                    next_measure: Some(_),
-                })
-            ));
+        let operation = ctx.enter_structural_recur_operation();
+        assert!(!ctx.has_active_structural_recur_helper());
+        let (root, outer) = ctx.enter_structural_recur_helper(&Value::Unit).unwrap();
+        assert_eq!(root, 1);
+        assert!(ctx.has_active_structural_recur_helper());
+        let nested = ctx.enter_structural_recur_operation();
+        for fuel in [Value::Unit, Value::ReflTypeArity(9), Value::Unit] {
+            let (measure, inner) = ctx.enter_structural_recur_helper(&fuel).unwrap();
+            assert_eq!(measure, initial_fuel_measure(&fuel, &ctx).unwrap());
             assert_eq!(
-                ctx.active_structural_recur_state_for_test().as_ref(),
-                Some(&before)
+                ctx.structural_recur_operations
+                    .lock()
+                    .unwrap()
+                    .get(&std::thread::current().id())
+                    .unwrap()
+                    .active_helpers,
+                2
+            );
+            drop(inner);
+            assert!(ctx.has_active_structural_recur_helper());
+        }
+        for fuel in [
+            Value::Atom("opaque".to_owned()),
+            Value::ReflTypeArity(usize::MAX),
+        ] {
+            assert!(ctx.enter_structural_recur_helper(&fuel).is_none());
+            assert_eq!(
+                ctx.structural_recur_operations
+                    .lock()
+                    .unwrap()
+                    .get(&std::thread::current().id())
+                    .unwrap()
+                    .active_helpers,
+                1
             );
         }
-        drop(guard);
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
+        nested.finish(Value::Unit);
+        assert!(ctx.has_active_structural_recur_helper());
+        drop(outer);
+        assert!(!ctx.has_active_structural_recur_helper());
+        operation.finish(Value::Unit);
+        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
     }
 
     #[test]
-    fn structural_recur_site_index_separates_every_source_identity_component() {
-        let generation = EvalSourceGeneration::fresh();
-        let other_generation = EvalSourceGeneration::fresh();
-        let base = StructuralRecurSite::new(
-            &generation,
-            "indexed-identity",
-            EvalSourceOccurrence::for_test(7),
-        );
-        let controls = [
-            StructuralRecurSite::new(
-                &generation,
-                "indexed-identity-other-module",
-                EvalSourceOccurrence::for_test(7),
-            ),
-            StructuralRecurSite::new(
-                &generation,
-                "indexed-identity",
-                EvalSourceOccurrence::for_test(8),
-            ),
-            StructuralRecurSite::new(
-                &other_generation,
-                "indexed-identity",
-                EvalSourceOccurrence::for_test(7),
-            ),
-        ];
-        let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
-
-        for distinct in controls {
-            assert_ne!(base, distinct);
-            let ctx = EvalCtx::new();
-            let (_left_measure, left) = ctx
-                .enter_structural_recur_site(&base, &fuel)
-                .expect("base identity enters");
-            let (_right_measure, right) = ctx
-                .enter_structural_recur_site(&distinct, &fuel)
-                .expect("one unequal source component keeps the site independent");
-            let state = ctx
-                .active_structural_recur_state_for_test()
-                .expect("two independent sites");
-            assert_eq!(state.frames.len(), 2);
-            assert_eq!(state.latest_by_site.len(), 2);
-            drop(right);
-            drop(left);
-            assert!(ctx.active_structural_recur_state_for_test().is_none());
-        }
-    }
-
-    #[test]
-    fn indexed_structural_recur_lookup_work_matches_exact_tables() {
-        const DEPTHS: [usize; 5] = [8, 16, 32, 64, 128];
-        let mut same_work = Vec::new();
-        let mut distinct_work = Vec::new();
-
-        for depth in DEPTHS {
-            let ctx = EvalCtx::new();
-            let site = structural_recur_site_for_test(&format!("indexed-same-{depth}"));
-            let fuels: Vec<_> = (1..=depth)
-                .rev()
-                .map(|measure| Value::ReflTypeArity(measure - 1))
-                .collect();
-            let mut guards = Vec::with_capacity(depth);
-            let (first_measure, first) = ctx
-                .enter_structural_recur_site(&site, &fuels[0])
-                .expect("first repeated site enters");
-            assert_eq!(first_measure, depth);
-            guards.push(first);
-            assert_eq!(ctx.take_structural_recur_site_lookup_work(), 0);
-            let first_state = ctx
-                .active_structural_recur_state_for_test()
-                .expect("accepted first site creates one indexed frame");
-            assert_eq!(first_state.frames.len(), 1);
-            assert_eq!(first_state.latest_by_site.len(), 1);
-            assert_eq!(first_state.frames[0].previous_same, None);
-            for (expected_measure, fuel) in (1..depth).rev().zip(&fuels[1..]) {
-                let (measure, guard) = ctx
-                    .enter_structural_recur_site(&site, fuel)
-                    .expect("repeated site descends");
-                assert_eq!(measure, expected_measure);
-                guards.push(guard);
-            }
-            same_work.push(ctx.take_structural_recur_site_lookup_work());
-            let state = ctx
-                .active_structural_recur_state_for_test()
-                .expect("repeated-site state");
-            assert_eq!(state.frames.len(), depth);
-            assert_eq!(state.latest_by_site.len(), 1);
-            while let Some(guard) = guards.pop() {
-                drop(guard);
-            }
-            assert!(ctx.active_structural_recur_state_for_test().is_none());
-        }
-
-        for depth in DEPTHS {
-            let ctx = EvalCtx::new();
-            let sites: Vec<_> = (0..depth)
-                .map(|index| {
-                    structural_recur_site_for_test(&format!("indexed-distinct-{depth}-{index}"))
-                })
-                .collect();
-            let mut guards = Vec::with_capacity(depth);
-            let (first_measure, first) = ctx
-                .enter_structural_recur_site(&sites[0], &Value::Unit)
-                .expect("first distinct site enters");
-            assert_eq!(first_measure, 1);
-            guards.push(first);
-            assert_eq!(ctx.take_structural_recur_site_lookup_work(), 0);
-            let first_state = ctx
-                .active_structural_recur_state_for_test()
-                .expect("accepted first site creates one indexed frame");
-            assert_eq!(first_state.frames.len(), 1);
-            assert_eq!(first_state.latest_by_site.len(), 1);
-            assert_eq!(first_state.frames[0].previous_same, None);
-            for site in &sites[1..] {
-                let (measure, guard) = ctx
-                    .enter_structural_recur_site(site, &Value::Unit)
-                    .expect("distinct site enters independently");
-                assert_eq!(measure, 1);
-                guards.push(guard);
-            }
-            distinct_work.push(ctx.take_structural_recur_site_lookup_work());
-            let state = ctx
-                .active_structural_recur_state_for_test()
-                .expect("distinct-site state");
-            assert_eq!(state.frames.len(), depth);
-            assert_eq!(state.latest_by_site.len(), depth);
-            assert!(state.latest_by_site.capacity() >= depth);
-            while let Some(guard) = guards.pop() {
-                drop(guard);
-            }
-            assert!(ctx.active_structural_recur_state_for_test().is_none());
-        }
-
-        assert_eq!(same_work, [7, 15, 31, 63, 127]);
-        assert_eq!(distinct_work, [7, 15, 31, 63, 127]);
-    }
-
-    #[cfg(target_pointer_width = "64")]
-    #[test]
-    fn structural_recur_site_index_private_layout_inventory_is_explicit() {
-        assert_eq!(std::mem::size_of::<StructuralRecurSite>(), 32);
-        assert_eq!(std::mem::size_of::<ActiveStructuralRecurSite>(), 32);
-        assert_eq!(
-            std::mem::size_of::<ActiveStructuralRecurSites>(),
-            std::mem::size_of::<Vec<ActiveStructuralRecurSite>>()
-                + std::mem::size_of::<HashMap<Arc<StructuralRecurSite>, NonZeroUsize>>()
-        );
-        assert_eq!(std::mem::size_of::<StructuralRecurSiteGuard<'_, '_>>(), 24);
-        eprintln!(
-            "structural-recur-index-layout site={} frame={} guard={} state={} map={} test_eval_ctx={} value={} data={}",
-            std::mem::size_of::<StructuralRecurSite>(),
-            std::mem::size_of::<ActiveStructuralRecurSite>(),
-            std::mem::size_of::<StructuralRecurSiteGuard<'_, '_>>(),
-            std::mem::size_of::<ActiveStructuralRecurSites>(),
-            std::mem::size_of::<HashMap<Arc<StructuralRecurSite>, NonZeroUsize>>(),
-            std::mem::size_of::<EvalCtx<'static>>(),
-            std::mem::size_of::<Value>(),
-            std::mem::size_of::<DataValue>(),
-        );
-    }
-
-    #[test]
-    fn unmeasurable_initial_fuel_does_not_create_an_active_stack_entry() {
+    fn unmeasurable_initial_fuel_does_not_create_helper_activity() {
         let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("unmeasurable-initial");
-        assert!(matches!(
-            ctx.enter_structural_recur_site(&site, &Value::Atom("opaque".to_string())),
-            Err(StructuralRecurSiteEntryError::UnmeasurableInitialFuel)
-        ));
-        assert_eq!(ctx.take_structural_recur_site_lookup_work(), 0);
-        assert!(ctx.active_structural_recur_state_for_test().is_none());
+        let operation = ctx.enter_structural_recur_operation();
         assert!(
-            ctx.active_structural_recur_sites
-                .lock()
-                .expect("active site stack")
-                .is_empty(),
-            "failed initial measurement leaked an empty per-thread stack"
+            ctx.enter_structural_recur_helper(&Value::Atom("opaque".to_owned()))
+                .is_none()
         );
-    }
-
-    #[test]
-    fn structural_recur_distinct_origins_do_not_compare_measures() {
-        let ctx = EvalCtx::new();
-        let left_site = structural_recur_site_for_test("distinct-origin-left");
-        let right_site = structural_recur_site_for_test("distinct-origin-right");
-        let unit = refl_type_value(Type::Unit { meta: zero_meta() });
-        let (_measure, left_guard) = ctx
-            .enter_structural_recur_site(&left_site, &unit)
-            .expect("left origin entry");
-        let step = Value::EvalClosure {
-            function: test_eval_function(&["recur", "fuel", "input"], EvalExpr::Local(2)),
-            captured: Vec::<Value>::new().into(),
-        };
-        let right = apply(
-            structural_recur_primitive_value(
-                right_site,
-                StructuralRecurPrimitiveStage::AwaitingRuntime,
-            ),
-            vec![unit, Value::Unit, step],
-            &ctx,
-        );
-        assert!(matches!(right, Value::Unit));
-        drop(left_guard);
+        assert!(!ctx.has_active_structural_recur_helper());
+        operation.finish(Value::Unit);
+        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
     }
 
     #[test]
     fn structural_recur_values_are_publicly_equal_but_never_memo_shared() {
         let ctx = EvalCtx::new();
-        let left_site = structural_recur_site_for_test("public-equality-left");
-        let right_site = structural_recur_site_for_test("public-equality-right");
-        let left = structural_recur_primitive_value(
-            left_site.clone(),
-            StructuralRecurPrimitiveStage::AwaitingProof,
-        );
-        let right = structural_recur_primitive_value(
-            right_site.clone(),
-            StructuralRecurPrimitiveStage::AwaitingProof,
-        );
+        let left = structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingProof);
+        let right = structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingProof);
         let plain = Value::Primitive(ComptimeBuiltin::StructuralRecur);
         assert!(nf_eq(&left, &right, &ctx));
         assert!(!nf_eq(&left, &plain, &ctx));
@@ -15073,7 +14164,6 @@ mod tests {
             ComptimeBuiltin::StructuralRecur.public_name()
         );
         assert!(left_data.args().is_empty());
-        assert_eq!(format!("{left_site:?}"), "StructuralRecurSite(<opaque>)");
         assert!(!format!("{left:?}").contains("public-equality-left"));
 
         let eta = Value::EvalClosure {
@@ -15082,7 +14172,6 @@ mod tests {
                 EvalExpr::Call {
                     callee: EvalRef::new(EvalExpr::StructuralRecurPrimitive(
                         structural_recur_primitive_data(
-                            right_site.clone(),
                             StructuralRecurPrimitiveStage::AwaitingProof,
                         ),
                     )),
@@ -15104,14 +14193,10 @@ mod tests {
             )
         );
 
-        let runtime = structural_recur_primitive_value(
-            right_site.clone(),
-            StructuralRecurPrimitiveStage::AwaitingRuntime,
-        );
-        let other_runtime = structural_recur_primitive_value(
-            structural_recur_site_for_test("public-equality-runtime-other"),
-            StructuralRecurPrimitiveStage::AwaitingRuntime,
-        );
+        let runtime =
+            structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime);
+        let other_runtime =
+            structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime);
         assert!(nf_eq(&runtime, &other_runtime, &ctx));
         assert!(!nf_eq(&left, &runtime, &ctx));
         assert!(!nf_eq(&plain, &runtime, &ctx));
@@ -15122,7 +14207,6 @@ mod tests {
                 EvalExpr::Call {
                     callee: EvalRef::new(EvalExpr::StructuralRecurPrimitive(
                         structural_recur_primitive_data(
-                            right_site,
                             StructuralRecurPrimitiveStage::AwaitingRuntime,
                         ),
                     )),
@@ -15151,16 +14235,8 @@ mod tests {
         assert!(!exact_call_memo_result_shareable(&plain));
         assert!(!exact_call_memo_result_shareable(&runtime));
 
-        let left_rejection = structural_recur_site_rejection_for_test(3, 1, Some(1));
-        let right_rejection = structural_recur_site_rejection_for_test(3, 1, Some(1));
-        let Value::Data(rejection_data) = &left_rejection else {
-            panic!("site rejection must use the private data envelope")
-        };
-        assert_eq!(
-            rejection_data.ctor(),
-            ComptimeBuiltin::StructuralRecur.public_name()
-        );
-        assert!(rejection_data.args().is_empty());
+        let left_rejection = structural_recur_callback_rejection_for_test(3, 1, Some(1));
+        let right_rejection = structural_recur_callback_rejection_for_test(3, 1, Some(1));
         assert!(!nf_eq(&left_rejection, &right_rejection, &ctx));
         assert!(nf_eq_checked(&left_rejection, &right_rejection, &ctx).is_err());
         let mut budget = EXACT_CALL_MEMO_KEY_BUDGET;
@@ -15178,12 +14254,8 @@ mod tests {
     #[test]
     fn public_and_checked_nf_equality_do_not_collapse_faulting_closure_probes() {
         let ctx = EvalCtx::new();
-        let site = structural_recur_site_for_test("nf-equality-fault");
         let faulting = || Value::EvalClosure {
-            function: test_eval_function(
-                &["probe"],
-                nested_same_origin_rejection_expr(site.clone()),
-            ),
+            function: test_eval_function(&["probe"], non_descending_callback_expr()),
             captured: Vec::<Value>::new().into(),
         };
         let left = faulting();
@@ -15195,7 +14267,7 @@ mod tests {
         assert_eq!(
             structural_recur_stuck_message(&fault, &ctx),
             Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
+                "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                     .to_owned()
             )
         );
@@ -15206,18 +14278,14 @@ mod tests {
                 .is_empty()
         );
 
-        let eta_site = structural_recur_site_for_test("nf-equality-eta-fault");
-        let token = structural_recur_primitive_value(
-            eta_site.clone(),
-            StructuralRecurPrimitiveStage::AwaitingRuntime,
-        );
+        let token =
+            structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime);
         let eta_wrapper = Value::EvalClosure {
             function: test_eval_function(
                 &["fuel", "input", "step"],
                 EvalExpr::Call {
                     callee: EvalRef::new(EvalExpr::StructuralRecurPrimitive(
                         structural_recur_primitive_data(
-                            eta_site,
                             StructuralRecurPrimitiveStage::AwaitingRuntime,
                         ),
                     )),
@@ -15238,11 +14306,10 @@ mod tests {
     fn structural_recur_fault_survives_discard_and_false_success_is_not_memoized() {
         let metrics = Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new().with_metrics(metrics.clone());
-        let site = structural_recur_site_for_test("discarded-memo-fault");
         let function = test_eval_function(
             &["key"],
             EvalExpr::Let {
-                value: EvalRef::new(nested_same_origin_rejection_expr(site)),
+                value: EvalRef::new(non_descending_callback_expr()),
                 body: EvalRef::new(EvalExpr::Unit),
             },
         );
@@ -15259,7 +14326,7 @@ mod tests {
             assert_eq!(
                 structural_recur_stuck_message(fault, &ctx),
                 Some(
-                    "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
+                    "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                         .to_string()
                 )
             );
@@ -15289,14 +14356,12 @@ mod tests {
     }
 
     #[test]
-    fn active_origin_suppresses_a_warm_exact_call_memo_hit() {
+    fn active_helper_suppresses_a_warm_exact_call_memo_hit() {
         let metrics = Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new().with_metrics(metrics.clone());
-        let site = structural_recur_site_for_test("warm-active-origin");
         let function = test_eval_function(
             &["fuel"],
             structural_recur_runtime_expr(
-                site.clone(),
                 EvalRef::new(EvalExpr::Local(0)),
                 EvalRef::new(EvalExpr::Unit),
                 test_capture_free_fn_expr(&["recur", "fuel", "input"], EvalExpr::Local(2)),
@@ -15311,19 +14376,12 @@ mod tests {
 
         let warmed = apply(closure(), vec![fuel.clone()], &ctx);
         assert!(matches!(warmed, Value::Unit));
-        let (_measure, active) = ctx
-            .enter_structural_recur_site(&site, &fuel)
-            .expect("manual parent origin");
+        let operation = ctx.enter_structural_recur_operation();
+        let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
         let guarded = apply(closure(), vec![fuel], &ctx);
         drop(active);
 
-        assert_eq!(
-            structural_recur_stuck_message(&guarded, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=1, current=1, next=1)"
-                    .to_string()
-            )
-        );
+        assert!(matches!(operation.finish(guarded), Value::Unit));
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.exact_call_memo_misses, 1, "{snapshot:?}");
         assert_eq!(snapshot.exact_call_memo_stores, 1, "{snapshot:?}");
@@ -15332,12 +14390,75 @@ mod tests {
     }
 
     #[test]
+    fn escaped_callback_does_not_extend_fresh_helper_cache_scope() {
+        let metrics = Arc::new(EvalMetrics::default());
+        let ctx = EvalCtx::new().with_metrics(metrics.clone());
+        let cached = test_eval_function(
+            &["key"],
+            EvalExpr::ReflTypeEqual {
+                left: EvalRef::new(EvalExpr::ReflTypeUnit),
+                right: EvalRef::new(EvalExpr::ReflTypeUnit),
+            },
+        );
+        assert!(cached.memo_candidate);
+        let warmed = apply(
+            Value::EvalClosure {
+                function: cached.clone(),
+                captured: Vec::<Value>::new().into(),
+            },
+            vec![Value::Unit],
+            &ctx,
+        );
+        assert!(matches!(warmed, Value::Bool(true)));
+        let step = Value::EvalClosure {
+            function: test_eval_function(
+                &["recur", "fuel", "input"],
+                EvalExpr::Let {
+                    value: EvalRef::new(EvalExpr::CallFnExpr {
+                        function: cached,
+                        captured_slots: Vec::<usize>::new().into(),
+                        args: vec![EvalRef::new(EvalExpr::Unit)],
+                    }),
+                    body: EvalRef::new(EvalExpr::Local(0)),
+                },
+            ),
+            captured: Vec::<Value>::new().into(),
+        };
+        let escaped = apply(
+            Value::Primitive(ComptimeBuiltin::StructuralRecur),
+            vec![Value::ReflTypeArity(2), Value::Unit, step],
+            &ctx,
+        );
+        assert!(matches!(
+            escaped,
+            Value::StructuralRecur {
+                root_measure: 3,
+                current_measure: 3,
+                ..
+            }
+        ));
+        assert!(!ctx.has_active_structural_recur_helper());
+        assert_eq!(metrics.snapshot().exact_call_memo_hits, 0);
+        let next = apply(escaped, vec![Value::Unit, Value::Unit], &ctx);
+        assert!(matches!(
+            next,
+            Value::StructuralRecur {
+                root_measure: 3,
+                current_measure: 1,
+                ..
+            }
+        ));
+        assert_eq!(metrics.snapshot().exact_call_memo_hits, 1);
+        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn structural_recur_operation_keeps_first_fault_nested_and_thread_local() {
         use std::sync::Barrier;
 
         let ctx = Arc::new(EvalCtx::new());
-        let first = structural_recur_site_rejection_for_test(5, 3, Some(3));
-        let later = structural_recur_site_rejection_for_test(9, 7, Some(7));
+        let first = structural_recur_callback_rejection_for_test(5, 3, Some(3));
+        let later = structural_recur_callback_rejection_for_test(9, 7, Some(7));
         let root = ctx.enter_structural_recur_operation();
         ctx.record_structural_recur_fault(&first);
         let nested = ctx.enter_structural_recur_operation();
@@ -15346,7 +14467,7 @@ mod tests {
         assert!(ctx.structural_recur_operation_has_fault());
         let root_fault = root.finish(Value::Unit);
         assert_eq!(
-            structural_recur_site_rejection_measures(&root_fault),
+            structural_recur_callback_rejection_measures(&root_fault),
             Some((5, 3, Some(3)))
         );
 
@@ -15360,7 +14481,7 @@ mod tests {
             fault_barrier.wait();
             let fault = operation.finish(Value::Unit);
             assert_eq!(
-                structural_recur_site_rejection_measures(&fault),
+                structural_recur_callback_rejection_measures(&fault),
                 Some((5, 3, Some(3)))
             );
         });
@@ -15584,7 +14705,7 @@ mod tests {
     }
 
     #[test]
-    fn indirect_structural_recur_compares_same_origin_but_not_distinct_origins() {
+    fn indirect_structural_recur_nested_calls_are_independent() {
         let mut m = parse_module(
             "module x; import __comptime__; \
              fn invoke(helper: ., fuel: Type, k: Type -> .) -> . { \
@@ -15661,16 +14782,14 @@ mod tests {
             .map(|term| eval(term, &env, &ctx))
             .collect::<Vec<_>>();
 
-        assert_eq!(
-            structural_recur_stuck_message(&values[0], &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=3, current=1, next=1)"
-                    .to_string()
-            )
+        assert!(
+            nf_eq(&values[0], &values[1], &ctx),
+            "reused helper compared nested root measures: {:?}",
+            values[0]
         );
         assert!(
             nf_eq(&values[2], &values[3], &ctx),
-            "distinct helper origins compared measures: {:?}",
+            "independent helper invocations compared measures: {:?}",
             values[2]
         );
     }
@@ -15779,7 +14898,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_structural_recur_same_origin_rejects_distinct_equal_measure_fuel() {
+    fn direct_structural_recur_nested_calls_accept_distinct_equal_measure_fuel() {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(k: Type -> ., fuel: Type) -> . { \
@@ -15808,14 +14927,8 @@ mod tests {
 
         let values = eval_each(&equiv_terms(&m), &ctx);
 
-        let (a, _b) = first_two(&values);
-        assert_eq!(
-            structural_recur_stuck_message(a, &ctx),
-            Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=3, current=1, next=1)"
-                    .to_string()
-            )
-        );
+        let (a, b) = first_two(&values);
+        assert!(nf_eq(a, b, &ctx), "nested helper did not reduce: {a:?}");
     }
 
     #[test]
@@ -15963,7 +15076,7 @@ mod tests {
     #[test]
     fn structural_recur_stuck_message_finds_rejection_past_deep_residual_wrappers() {
         let ctx = EvalCtx::new();
-        let mut value = structural_recur_site_rejection_for_test(7, 3, Some(3));
+        let mut value = structural_recur_callback_rejection_for_test(7, 3, Some(3));
         for _ in 0..256 {
             value = data_value("__pair__", vec![Value::Unit, value]);
         }
@@ -15971,7 +15084,7 @@ mod tests {
         assert_eq!(
             structural_recur_stuck_message(&value, &ctx),
             Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=7, current=3, next=3)"
+                "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=7, current=3, next=3)"
                     .to_string()
             )
         );
@@ -16025,11 +15138,11 @@ mod tests {
             )
         );
 
-        let site_unmeasurable = structural_recur_site_rejection_for_test(7, 3, None);
+        let site_unmeasurable = structural_recur_callback_rejection_for_test(7, 3, None);
         assert_eq!(
             structural_recur_stuck_message(&site_unmeasurable, &ctx),
             Some(
-                "`__structural_recur__` got stuck because a same helper origin re-entry used fuel with no recursive structural measure (root=7, current=3, next=unmeasurable)"
+                "`__structural_recur__` got stuck because a recursive call used fuel with no structural compile-time measure (root=7, current=3, next=unmeasurable)"
                     .to_string()
             )
         );
@@ -16955,6 +16068,7 @@ mod tests {
     fn checked_term_replay_type_applied_nullary_call_retains_unit_packet() {
         let unit_ty = Type::Unit { meta: zero_meta() };
         let type_param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_string(),
             span: zero_span(),
             kind: None,
@@ -17175,6 +16289,7 @@ mod tests {
     fn checked_term_canonicalizes_generated_type_names() {
         fn template(type_name: &str) -> CheckedTerm {
             let type_param = TypeParam {
+                presentation: Default::default(),
                 name: type_name.to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -19355,10 +18470,11 @@ mod tests {
             "scanner fixture table drifted from the Value inventory"
         );
 
-        let rejection =
-            |root, current| structural_recur_site_rejection_for_test(root, current, Some(current));
-        let first = "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=7, current=3, next=3)";
-        let second = "`__structural_recur__` got stuck because a same helper origin re-entry did not descend from the current fuel measure (root=11, current=5, next=5)";
+        let rejection = |root, current| {
+            structural_recur_callback_rejection_for_test(root, current, Some(current))
+        };
+        let first = "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=7, current=3, next=3)";
+        let second = "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=11, current=5, next=5)";
         let assert_rejection = |value: Value, expected: &str| {
             assert_eq!(
                 structural_recur_stuck_message(&value, &ctx).as_deref(),
@@ -20333,7 +19449,7 @@ mod tests {
     #[test]
     fn structural_recur_initial_failure_is_explicit_and_partial_values_are_not_faults() {
         let ctx = EvalCtx::new();
-        let bare = structural_recur_source_primitive_for_test("initial-control");
+        let bare = structural_recur_source_primitive_for_test();
         assert!(structural_recur_stuck_message(&bare, &ctx).is_none());
         let proof_partial = apply(
             bare.clone(),
@@ -20352,7 +19468,7 @@ mod tests {
         assert!(structural_recur_stuck_message(&returned, &ctx).is_none());
 
         let flattened = apply(
-            structural_recur_primitive_for_test("initial-flattened"),
+            structural_recur_primitive_for_test(),
             vec![
                 Value::Atom("opaque-fuel".to_owned()),
                 Value::Unit,
@@ -20361,7 +19477,7 @@ mod tests {
             &ctx,
         );
         let packed = apply(
-            structural_recur_primitive_for_test("initial-packed"),
+            structural_recur_primitive_for_test(),
             vec![data_value(
                 "__pair__",
                 vec![
@@ -20372,7 +19488,7 @@ mod tests {
             &ctx,
         );
         let opaque_packet = apply(
-            structural_recur_primitive_for_test("initial-opaque-packet"),
+            structural_recur_primitive_for_test(),
             vec![Value::Atom("opaque-packet".to_owned())],
             &ctx,
         );
@@ -20947,6 +20063,7 @@ mod tests {
         // __term_type_app__: apply a forall-typed term to a type arg.
         let forall_ty = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".into(),
                 span: zero_span(),
                 kind: None,
@@ -21000,6 +20117,7 @@ mod tests {
     fn term_specialize_uses_shared_solver_and_instantiates_in_binder_order() {
         let ctx = EvalCtx::new();
         let param = TypeParam {
+            presentation: Default::default(),
             name: "A".into(),
             span: zero_span(),
             kind: None,
@@ -21064,6 +20182,7 @@ mod tests {
         for name in ["B", "A"] {
             scheme = Type::Forall {
                 param: TypeParam {
+                    presentation: Default::default(),
                     name: name.into(),
                     span: zero_span(),
                     kind: None,
@@ -21320,6 +20439,7 @@ mod tests {
 
         let scheme = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -22012,20 +21132,25 @@ mod tests {
             "a projected nested goal became measurable on a recursive edge"
         );
 
-        let unstable_site = structural_recur_site_for_test("open_projected_fuel_test");
+        let operation = ctx.enter_structural_recur_operation();
         let open_function_value = projected_value(open_function.clone());
         let (initial_measure, active) = ctx
-            .enter_structural_recur_site(&unstable_site, &open_function_value)
-            .expect("known projected function shell must enter an inactive site");
+            .enter_structural_recur_helper(&open_function_value)
+            .expect("known projected function shell must start a helper");
         assert_eq!(initial_measure, 2);
+        let (nested_measure, nested_active) = ctx
+            .enter_structural_recur_helper(&open_path)
+            .expect("a fresh nested helper uses the initial lower bound");
+        assert_eq!(nested_measure, 1);
+        assert_eq!(fuel_measure(&open_path, &ctx), None);
         assert!(
-            matches!(
-                ctx.enter_structural_recur_site(&unstable_site, &open_path),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry { .. })
-            ),
-            "an unstable projected lower bound re-entered an active site as a decrease"
+            ctx.enter_structural_recur_helper(&projected_value(ret.clone()))
+                .is_none(),
+            "an unknown projected root must not acquire an initial bound"
         );
+        drop(nested_active);
         drop(active);
+        assert!(matches!(operation.finish(Value::Unit), Value::Unit));
 
         let (_proof, _fills, checked_recipe) = specialization_term_for_test();
         let (_reminted_proof, _reminted_fills, reminted_checked_recipe) =
@@ -22172,59 +21297,36 @@ mod tests {
             "equal-measure ordinary fuel bypassed strict descent: {ordinary:?}"
         );
 
-        let projected_site = structural_recur_site_for_test("projected_fuel_test");
+        let operation = ctx.enter_structural_recur_operation();
         let parent_value = projected_value(parent);
         let first_value = projected_value(first);
         let reminted_value = projected_value(reminted);
-        let (parent_measure, parent_guard) = ctx
-            .enter_structural_recur_site(&projected_site, &parent_value)
-            .expect("initial projected site entry");
+        let (parent_measure, parent_guard) =
+            ctx.enter_structural_recur_helper(&parent_value).unwrap();
         assert_eq!(parent_measure, 3);
-        let (child_measure, child_guard) = ctx
-            .enter_structural_recur_site(&projected_site, &first_value)
-            .expect("strict projected site descent");
+        let (child_measure, child_guard) = ctx.enter_structural_recur_helper(&first_value).unwrap();
         assert_eq!(child_measure, 1);
+        let (reminted_measure, reminted_guard) =
+            ctx.enter_structural_recur_helper(&reminted_value).unwrap();
+        assert_eq!(reminted_measure, 1);
+        drop(reminted_guard);
         drop(child_guard);
         drop(parent_guard);
-        let (first_measure, first_guard) = ctx
-            .enter_structural_recur_site(&projected_site, &first_value)
-            .expect("initial projected child entry");
-        assert_eq!(first_measure, 1);
-        assert!(
-            matches!(
-                ctx.enter_structural_recur_site(&projected_site, &reminted_value),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry { .. })
-            ),
-            "fresh equal-size projected fuel re-entered the same helper origin"
-        );
-        drop(first_guard);
 
-        let ordinary_site = structural_recur_site_for_test("ordinary_fuel_test");
         let (ordinary_measure, ordinary_guard) = ctx
-            .enter_structural_recur_site(&ordinary_site, &Value::StrAtom("left".to_owned()))
-            .expect("initial ordinary site entry");
+            .enter_structural_recur_helper(&Value::StrAtom("left".to_owned()))
+            .unwrap();
         assert_eq!(ordinary_measure, 1);
-        assert!(
-            matches!(
-                ctx.enter_structural_recur_site(
-                    &ordinary_site,
-                    &Value::StrAtom("right".to_owned())
-                ),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry { .. })
-            ),
-            "equal-measure ordinary fuel re-entered the same helper origin"
-        );
-        assert!(
-            matches!(
-                ctx.enter_structural_recur_site(
-                    &ordinary_site,
-                    &data_value("larger_fuel", vec![Value::Unit])
-                ),
-                Err(StructuralRecurSiteEntryError::NonDecreasingReentry { .. })
-            ),
-            "larger ordinary fuel re-entered the same helper origin"
-        );
+        for (fuel, expected) in [
+            (Value::StrAtom("right".to_owned()), 1),
+            (data_value("larger_fuel", vec![Value::Unit]), 2),
+        ] {
+            let (measure, guard) = ctx.enter_structural_recur_helper(&fuel).unwrap();
+            assert_eq!(measure, expected);
+            drop(guard);
+        }
         drop(ordinary_guard);
+        assert!(matches!(operation.finish(Value::Unit), Value::Unit));
     }
 
     #[test]
@@ -22287,7 +21389,7 @@ mod tests {
         );
 
         let recur = apply(
-            structural_recur_source_primitive_for_test("projected-semantic-carrier"),
+            structural_recur_source_primitive_for_test(),
             vec![
                 proof,
                 projected,
@@ -23087,6 +22189,7 @@ mod tests {
         let type_function = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::TypeFn {
                 param: TypeParam {
+                    presentation: Default::default(),
                     name: "A".to_owned(),
                     span: zero_span(),
                     kind: None,
@@ -23171,6 +22274,7 @@ mod tests {
         };
         let forall = |body| Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -23789,6 +22893,7 @@ mod tests {
         for name in params.into_iter().rev() {
             poly_type = Type::Forall {
                 param: TypeParam {
+                    presentation: Default::default(),
                     name: name.into(),
                     span: zero_span(),
                     kind: None,
@@ -23849,9 +22954,10 @@ mod tests {
         let ctx = EvalCtx::new();
         let scheme = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".into(),
                 span: zero_span(),
-                kind: Some(crate::ast::Kind::arrow_chain(0)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(0))),
             },
             body: Box::new(Type::Unit { meta: zero_meta() }),
             meta: zero_meta(),
@@ -23895,9 +23001,10 @@ mod tests {
     fn apply_reflection_type_instantiate_higher_kind_returns_diagnostic() {
         let scheme = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".into(),
                 span: zero_span(),
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             body: Box::new(Type::Unit { meta: zero_meta() }),
             meta: zero_meta(),
@@ -23944,7 +23051,7 @@ mod tests {
         // __structural_recur__ with exactly its three operands reduces
         // through the step (no 6-arg strip fires).
         let recur = apply(
-            structural_recur_primitive_for_test("runtime-args"),
+            structural_recur_primitive_for_test(),
             vec![Value::Unit, Value::Unit, Value::Atom("s".into())],
             &ctx,
         );
@@ -24510,7 +23617,7 @@ mod tests {
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
         let input = Value::Unit;
         let step = Value::Atom("step".into());
-        let primitive = structural_recur_source_primitive_for_test("grouped-proof");
+        let primitive = structural_recur_source_primitive_for_test();
         let direct = apply(
             primitive.clone(),
             vec![
@@ -24596,6 +23703,7 @@ mod tests {
         let type_fn = |name: &str, body| {
             EvalRef::new(checked_term_type_fn(
                 TypeParam {
+                    presentation: Default::default(),
                     name: name.to_owned(),
                     span: zero_span(),
                     kind: None,
@@ -24856,6 +23964,7 @@ mod tests {
 
         let shadowed_leaf = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "Box".to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -24871,6 +23980,7 @@ mod tests {
 
         let shadowed_alias = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "o".to_owned(),
                 span: zero_span(),
                 kind: None,
@@ -25047,7 +24157,7 @@ mod tests {
         );
         let builtin =
             eval_authenticated(&path(&["__structural_recur__"]), &Env::new(), &builtin_ctx);
-        assert!(structural_recur_primitive_site(&builtin).is_some());
+        assert!(structural_recur_primitive_stage(&builtin).is_some());
     }
 
     #[test]
@@ -25556,6 +24666,7 @@ mod tests {
 
         let nested_binder = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: zero_span(),
                 kind: None,

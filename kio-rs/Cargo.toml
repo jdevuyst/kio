@@ -48,7 +48,7 @@ categories = ["compilers", "development-tools"]
 default = ["surface", "prime", "lsp", "repl", "parallel", "cli"]
 surface = []
 prime = []
-cli = []
+cli = ["dep:flate2", "dep:tar"]
 parallel = ["dep:rayon"]
 # The LSP server reuses the full surface pipeline plus `cmd::check`'s analysis
 # entry points and `cmd::fmt`'s formatter, so `lsp` implies `surface` and `cli`.
@@ -106,6 +106,8 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 # parsing the trait source. `to_string_pretty` produces a stable
 # human-readable form so golden diffs surface accidental drift.
 serde_json = "1"
+flate2 = { version = "1.1.10", optional = true }
+tar = { version = "0.4", optional = true, default-features = false }
 
 # LSP server scaffold and the LSP-types schema. Together they
 # implement JSON-RPC over stdio against the Language Server
@@ -152,3 +154,10 @@ tempfile = "3"
 
 [build-dependencies]
 blake3 = "1"
+flate2 = { version = "1.1.10", optional = true }
+tar = { version = "0.4", optional = true, default-features = false }
+
+[[example]]
+name = "pack_manual"
+required-features = ["cli"]
+test = true

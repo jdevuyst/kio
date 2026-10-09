@@ -22,7 +22,7 @@ import __intrinsics__;
 #### `__left__`
 
 ```kio {ignore}
-__left__ : [a][b] a -> a | b
+__left__ : [a][b] a -> (a | b)
 ```
 
 Constructs the left branch of a sum value.
@@ -32,7 +32,7 @@ The two type arguments fix the complete `A | B` result and the value must have t
 #### `__right__`
 
 ```kio {ignore}
-__right__ : [a][b] b -> a | b
+__right__ : [a][b] b -> (a | b)
 ```
 
 Constructs the right branch of a sum value.
@@ -52,7 +52,7 @@ The scrutinee must have type `A | B`; the two handlers receive `A` and `B` respe
 #### `__pair__`
 
 ```kio {ignore}
-__pair__ : [a][b] (a & b) -> a & b
+__pair__ : [a][b] (a & b) -> (a & b)
 ```
 
 Constructs a product value from its two fields.
@@ -224,7 +224,7 @@ The type argument must be solved before the helper runs; the result is its exact
 #### `__type_view__`
 
 ```kio {ignore}
-__type_view__ : (__Comptime__ & __Type__) ->
+__type_view__ : (__Comptime__ & __Type__) -> (
   | .
   | .
   | (__Type__ & __Type__)
@@ -233,6 +233,7 @@ __type_view__ : (__Comptime__ & __Type__) ->
   | (__Type_var__ & __Type_arity__ & __Type__)
   | __Type_var__
   | __Type_name__
+  )
 ```
 
 Decomposes a reflected type into the compiler's structural type-view shape.
@@ -404,7 +405,7 @@ Appends one reflected argument to a named/path type head. Apply once per argumen
 #### `__type_instantiate__`
 
 ```kio {ignore}
-__type_instantiate__ : (__Comptime__ & __Type__ & __Type__) -> __Type__ | __Diagnostic_text__
+__type_instantiate__ : (__Comptime__ & __Type__ & __Type__) -> (__Type__ | __Diagnostic_text__)
 ```
 
 Instantiates a reflected polymorphic type with one reflected type argument, returning a diagnostic on failure.
@@ -639,7 +640,7 @@ __structural_recur__ : __Comptime__ -> [fuel][input][result] (& fuel
 
 Runs fuel-checked compile-time structural recursion through an ordinary helper call.
 
-Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, literals, structurally determined reflected values, arities, diagnostic text, checked terms, and finite constructor trees with measurable children are measurable; closures, opaque atoms, stuck terms, case splits, and recursive callbacks are not. An initial projected type uses its authenticated alias-unfolded structural carrier as a conservative lower bound; its exact scoped snapshot remains available for whole-handle reflection and fills. An unresolved outer carrier is unmeasurable, and a direct projected value used on a recursive edge must be complete. When an ordinary finite constructor carries a projected field, a known outer structure gives that field the same conservative size in initial and recursive measurements; an unresolved outer field makes the constructor unmeasurable. A structurally determined child can remain measurable even when its parent is open. `recur(next_fuel, next_input)` must give the callback a recursive fuel measure strictly below both the current measure and its stored root measure. Evaluator-created callbacks maintain `current ≤ root`; both bounds are checked independently for a callback constructed directly through the evaluator API. Each resolved helper source occurrence supplies an origin that survives proof/type application stages and higher-order use. The helper's three operands and the callback's two operands may be written as flattened arguments or as one right-folded product packet. After all operands are evaluated, the first invocation at an origin uses the initial measure; a re-entry at that origin uses the recursive measure and must be strictly below the nearest active invocation. Invocations from distinct origins do not compare measures. Equal-measure fuel is rejected regardless of value identity, representation, or whether it contains a projected handle. The callback has type `(fuel & input) -> result`, and every path returns the one `result` type. Unmeasurable initial or recursive fuel, a callback that does not strictly descend from its current measure or stay below its stored root, or an active same helper origin re-entry that does not strictly descend leaves the evaluator stuck and is reported as a totality error (exit 16) with root/current/next measures when available. If both callback bounds fail, the diagnostic reports the current edge; the root-specific diagnostic applies only when the current edge descends but the root bound fails. Once an evaluated edge fails, enclosing compile-time computation cannot discard it; that evaluation reports its first totality failure.
+Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, literals, structurally determined reflected values, arities, diagnostic text, checked terms, and finite constructor trees with measurable children are measurable; closures, opaque atoms, stuck terms, case splits, and recursive callbacks are not. An initial projected type uses its authenticated alias-unfolded structural carrier as a conservative lower bound; its exact scoped snapshot remains available for whole-handle reflection and fills. An unresolved outer carrier is unmeasurable, and a direct projected value used on a recursive edge must be complete. When an ordinary finite constructor carries a projected field, a known outer structure gives that field the same conservative size in initial and recursive measurements; an unresolved outer field makes the constructor unmeasurable. A structurally determined child can remain measurable even when its parent is open. `recur(next_fuel, next_input)` must give the callback a recursive fuel measure strictly below both the current measure and its stored root measure. Evaluator-created callbacks maintain `current ≤ root`; both bounds are checked independently for a callback constructed directly through the evaluator API. The helper's three operands and the callback's two operands may be written as flattened arguments or as one right-folded product packet. After all operands are evaluated, every fresh invocation uses the initial measure and starts an independent callback root, including nested calls through the same helper and higher-order use. Saved callbacks retain their immutable bounds after the creating invocation returns; sibling applications do not consume each other's bounds. On a callback edge, equal-measure fuel is rejected regardless of value identity, representation, or whether it contains a projected handle. The callback has type `(fuel & input) -> result`, and every path returns the one `result` type. Unmeasurable initial or recursive fuel, a callback that does not strictly descend from its current measure or stay below its stored root leaves the evaluator stuck and is reported as a totality error (exit 16) with root/current/next measures when available. If both callback bounds fail, the diagnostic reports the current edge; the root-specific diagnostic applies only when the current edge descends but the root bound fails. Once an evaluated edge fails, enclosing compile-time computation cannot discard it; that evaluation reports its first totality failure.
 
 ##### Checked example: `__structural_recur__`
 
@@ -776,8 +777,9 @@ Selects the converter matching the host-typed leaf carried by `value` and constr
 #### `__term_specialize__`
 
 ```kio {ignore}
-__term_specialize__ : (__Comptime__ & __Checked_term__ & __Type__ & __Type__) ->
+__term_specialize__ : (__Comptime__ & __Checked_term__ & __Type__ & __Type__) -> (
   __Checked_term__ | . | __Diagnostic_text__
+  )
 ```
 
 Specializes an explicitly polymorphic checked term against a reflected type relation.

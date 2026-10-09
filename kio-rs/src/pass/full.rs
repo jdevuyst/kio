@@ -475,6 +475,7 @@ impl Pipeline for FullPipeline {
             Some(package.package()),
         );
         crate::prime::canonical::canonicalize_module(&mut typed);
+        crate::pass::alpha_normalize::erase_module_occurrences(&mut typed);
         Ok(typed)
     }
 }
@@ -550,6 +551,7 @@ pub(crate) fn typecheck_module_collect_elaborations_with_typecheck_scope(
         Some(package),
     );
     crate::prime::canonical::canonicalize_module(&mut module);
+    crate::pass::alpha_normalize::erase_module_occurrences(&mut module);
     Ok(FullModuleTypecheck {
         module,
         #[cfg(feature = "lsp")]
@@ -695,6 +697,73 @@ fn id[A](x: A) -> A { x }
         // the value's structure is exercised by the rest of the
         // typer's tests. Just confirm the module is present.
         assert!(prime.module("main").is_some());
+    }
+
+    #[test]
+    fn finalized_module_names_match_cold_and_serialized_paths() {
+        use crate::pass::visit_mut::{TypecheckVisitMut, TypecheckVisitPhase};
+        #[derive(Default)]
+        struct WrittenNames {
+            binders: usize,
+            written: usize,
+        }
+        impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for WrittenNames {
+            fn enter_type_binder(
+                &mut self,
+                param: &mut crate::ast::TypeParam,
+                _scope: crate::span::Span,
+            ) {
+                self.binders += 1;
+                self.written += usize::from(param.written_name().is_some());
+            }
+        }
+        let sources = [
+            (
+                "main",
+                "module main; fn make[A](value: A) -> [A] A -> A { .[X](x: X) { x } }",
+            ),
+            (
+                "aux",
+                "module aux; fn make[B](value: B) -> [B] B -> B { .[Y](y: Y) { y } }",
+            ),
+        ];
+        let modules = sources
+            .into_iter()
+            .map(|(name, source)| (PathBuf::from(format!("{name}.kio")), parse(source).unwrap()))
+            .collect();
+        let (mut modules, _) = FullPipeline::lower_package(modules, None).unwrap();
+        let aux_index = modules
+            .iter()
+            .position(|(path, _)| path == Path::new("aux.kio"))
+            .unwrap();
+        let (_, aux) = modules.remove(aux_index);
+        let package = Package::build(Path::new(""), modules, None).unwrap();
+        let entry = package.module("main").unwrap();
+        let mut original = WrittenNames::default();
+        original.visit_module(&mut entry.module.clone());
+        assert!(original.written >= 3);
+        let typed = FullPipeline::typecheck_module("main", entry, &package).unwrap();
+        let auxiliary = FullPipeline::typecheck_aux_module(&aux, &package, None).unwrap();
+        let prime = FullPipeline::typecheck(&package).unwrap();
+        for module in [
+            typed,
+            auxiliary,
+            prime.module("main").unwrap().module().clone(),
+        ] {
+            let mut cold = WrittenNames::default();
+            cold.visit_module(&mut module.clone());
+            assert!(cold.binders > 0);
+            assert_eq!(cold.written, 0);
+            let bytes = postcard::to_allocvec(&module).unwrap();
+            let mut warm: Module<Prime> = postcard::from_bytes(&bytes).unwrap();
+            let mut cached = WrittenNames::default();
+            cached.visit_module(&mut warm);
+            assert_eq!(
+                (cold.binders, cold.written),
+                (cached.binders, cached.written)
+            );
+            assert_eq!(module, warm);
+        }
     }
 
     fn has_expression_position_chain(e: &Expr<Prime>) -> bool {

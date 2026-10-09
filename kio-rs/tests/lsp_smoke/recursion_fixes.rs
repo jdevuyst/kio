@@ -5,7 +5,7 @@ fn assert_recursion_repair(body: &str, repaired_body: &str) {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n",
+        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     let source = format!(
         "module pkg/main;\nimport pkg as host;\npub rec(host.drive) fn again[A](x: A) -> . {{ {body} }}\n"
@@ -187,7 +187,7 @@ fn recursion_actions(source: &str, inspect: impl FnOnce(&Value, &Value)) {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n",
+        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     let file = dir.write("pkg/main.kio", source);
     let uri = path_to_file_uri(&file);
@@ -273,7 +273,7 @@ fn shadowed_member_names_do_not_get_recursion_repairs() {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n",
+        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     let source = "module pkg/main; import pkg as host; pub rec(host.drive) fn again[A](x: A) -> A { let again = .(value: A) { value }; again(x) }";
     let file = dir.write("pkg/main.kio", source);

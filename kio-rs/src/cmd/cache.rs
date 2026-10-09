@@ -142,10 +142,7 @@ pub fn run(args: &[String]) -> ExitCode {
     if let Some(first) = args.first() {
         match first.as_str() {
             "-h" | "--help" => {
-                println!(
-                    "{}",
-                    HELP_CACHE_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                println!("{}", crate::documentation_help(HELP_CACHE_TEMPLATE));
                 return ExitCode::Success;
             }
             "clear" => return run_clear(&args[1..]),
@@ -154,20 +151,14 @@ pub fn run(args: &[String]) -> ExitCode {
             other => {
                 eprintln!("error: unknown subcommand: kio cache {other}");
                 eprintln!();
-                eprintln!(
-                    "{}",
-                    HELP_CACHE_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                eprintln!("{}", crate::documentation_help(HELP_CACHE_TEMPLATE));
                 return ExitCode::Usage;
             }
         }
     }
     eprintln!("error: `kio cache` requires a subcommand");
     eprintln!();
-    eprintln!(
-        "{}",
-        HELP_CACHE_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-    );
+    eprintln!("{}", crate::documentation_help(HELP_CACHE_TEMPLATE));
     ExitCode::Usage
 }
 
@@ -180,10 +171,7 @@ pub fn run(args: &[String]) -> ExitCode {
 /// empty string they might misinterpret as the cwd.
 fn run_path(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_PATH_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_PATH_TEMPLATE));
         return ExitCode::Success;
     }
     if !args.is_empty() {
@@ -243,10 +231,7 @@ pub fn path_at(package_root: &Path) -> ExitCode {
 /// `.gitignore`).
 fn run_clear(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_CLEAR_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_CLEAR_TEMPLATE));
         return ExitCode::Success;
     }
     if !args.is_empty() {
@@ -265,10 +250,7 @@ fn run_clear(args: &[String]) -> ExitCode {
 
 fn run_gc(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_GC_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_GC_TEMPLATE));
         return ExitCode::Success;
     }
     if !args.is_empty() {
@@ -451,8 +433,9 @@ impl LocateError {
         match self {
             LocateError::Missing => {
                 eprintln!(
-                    "error: no `<name>.pkg.kio` in {} — {missing_hint} a package directory; run `kio init` to scaffold one (see specs/package.md § Package file)",
-                    DisplayPath(package_root)
+                    "error: no `<name>.pkg.kio` in {} — {missing_hint} a package directory; run `kio init` to scaffold one (see {})",
+                    DisplayPath(package_root),
+                    crate::documentation_help("{base}/specs/package.md#package-file")
                 );
                 missing_tier
             }

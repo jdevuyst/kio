@@ -399,6 +399,7 @@ mod tests {
 
     fn param(name: &str) -> TypeParam {
         TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span: Span::new(0, 0),
             kind: None,
@@ -457,7 +458,7 @@ mod tests {
     #[should_panic(expected = "host type parameters must have kind `*` before Haskell emission")]
     fn host_type_metadata_rejects_an_unchecked_higher_kind_parameter() {
         let mut higher = param("F");
-        higher.kind = Some(Kind::arrow_chain(1));
+        higher.kind = Some(Box::new(Kind::arrow_chain(1)));
         let _ = host_type_param_metadata(&[higher]);
     }
 }

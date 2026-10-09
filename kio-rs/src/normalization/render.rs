@@ -248,9 +248,6 @@ impl ValueRenderer<'_> {
                         StructuralRecurDataIdentity::InitialRejected => {
                             "<structural-recur-initial-rejected>".to_owned()
                         }
-                        StructuralRecurDataIdentity::SiteRejected { .. } => {
-                            "<structural-recur-origin-rejected>".to_owned()
-                        }
                     };
                 }
                 let ctor = match &data.identity {

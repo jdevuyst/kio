@@ -4,7 +4,7 @@ host type String role(str);
 
 host fn print(value: String) -> .;
 
-host fn loop[S][R](step: S -> S | R, state: S) -> R;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 rec(loop) {
   fn first(value: .) -> . { print("shared-first-effect"); rec second(value) };

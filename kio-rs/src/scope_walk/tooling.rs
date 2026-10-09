@@ -145,12 +145,18 @@ pub(crate) fn tooling_keywords(probe: &ToolingProbe<'_>) -> Vec<&'static str> {
             words.retain(|word| *word != "poly");
         }
     }
-    if cursor.slot == CursorSlot::TargetId {
+    if matches!(
+        cursor.slot,
+        CursorSlot::TargetId | CursorSlot::TargetBackend
+    ) {
         words.extend(
             crate::build_target::BuildTarget::ALL
                 .iter()
                 .map(|target| target.id())
-                .filter(|id| !cursor.target_ids.iter().any(|written| written == id)),
+                .filter(|id| {
+                    cursor.slot == CursorSlot::TargetBackend
+                        || !cursor.target_ids.iter().any(|written| written == id)
+                }),
         );
     } else if cursor.slot == CursorSlot::TargetField
         && let Some(context) = &cursor.target
@@ -231,6 +237,7 @@ pub(crate) fn tooling_candidates(probe: &ToolingProbe<'_>) -> Vec<Candidate> {
         | CursorSlot::NewtypeMember
         | CursorSlot::ImportSelection
         | CursorSlot::TargetId
+        | CursorSlot::TargetBackend
         | CursorSlot::TargetField
         | CursorSlot::OperatorContinuation
         | CursorSlot::BlockLabel => Vec::new(),
@@ -294,6 +301,13 @@ pub(super) fn namespace_candidates(
                 pattern,
                 type_params: params,
             } => {
+                if seen_placeholder
+                    && pattern
+                        .as_ref()
+                        .is_some_and(|pattern| pattern.numbered.is_some())
+                {
+                    continue;
+                }
                 if ns == Namespace::Type {
                     type_params(params, offset, &mut out);
                 } else if let Some((name, span)) = name {

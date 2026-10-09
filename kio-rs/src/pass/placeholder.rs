@@ -23,21 +23,121 @@ pub(crate) fn classify<'a>(
     body: &'a mut Expr,
     owner: Span,
 ) -> Result<References<'a>, Error> {
-    let mut walk = Classifier {
+    let mut walk = classifier(stem);
+    walk.expr(body)?;
+    finish(walk, owner, false)
+}
+
+pub(crate) fn classify_binding<'a>(
+    stem: &str,
+    body: &'a mut Expr,
+    owner: Span,
+) -> Result<References<'a>, Error> {
+    let mut walk = classifier(stem);
+    walk.expr(body)?;
+    finish(walk, owner, true)
+}
+
+pub(crate) fn classify_items<'a>(
+    stem: &str,
+    items: &'a mut [crate::ast::NeutralItem],
+    owner: Span,
+) -> Result<References<'a>, Error> {
+    let mut walk = classifier(stem);
+    walk.items(items)?;
+    finish(walk, owner, true)
+}
+
+fn classifier<'s, 'a>(stem: &'s str) -> Classifier<'s, 'a> {
+    Classifier {
         stem,
         bound: HashSet::new(),
         references: References {
             slot_count: 0,
             occurrences: Vec::new(),
         },
-    };
-    walk.expr(body)?;
+    }
+}
+
+fn finish<'a>(
+    walk: Classifier<'_, 'a>,
+    owner: Span,
+    binding: bool,
+) -> Result<References<'a>, Error> {
     if walk.references.slot_count == 0 {
-        return Err(Error::parse(owner, format!(
-            "placeholder lambda `.{stem}.` must contain at least one unshadowed `{stem}N` reference"
-        )).with_help("add a numbered reference, or write an explicit `.() { ... }` lambda"));
+        let stem = walk.stem;
+        let form = if binding {
+            "numbered binding"
+        } else {
+            "placeholder lambda"
+        };
+        let help = if binding {
+            "use a numbered reference in the remaining block, or write an ordinary `let` binding"
+        } else {
+            "add a numbered reference, or write an explicit `.() { ... }` lambda"
+        };
+        return Err(Error::parse(
+            owner,
+            format!("{form} `.{stem}.` must contain at least one unshadowed `{stem}N` reference"),
+        )
+        .with_help(help));
     }
     Ok(walk.references)
+}
+
+#[cfg(feature = "surface")]
+pub(crate) fn prepare_binding(pattern: &mut ParamPattern, body: &mut Expr) -> Result<(), Error> {
+    let Some(numbered) = &pattern.numbered else {
+        return Ok(());
+    };
+    if numbered.classified {
+        return Ok(());
+    }
+    let references = classify_binding(&numbered.stem.name, body, pattern.span)?;
+    prepare_pattern(pattern, references);
+    Ok(())
+}
+
+#[cfg(feature = "surface")]
+pub(crate) fn prepare_items(items: &mut [crate::ast::NeutralItem]) -> Result<(), Error> {
+    for index in 0..items.len() {
+        let (prefix, rest) = items.split_at_mut(index + 1);
+        if let crate::ast::NeutralItem::Binding {
+            pattern: Some(pattern),
+            ..
+        } = &mut prefix[index]
+            && let Some(numbered) = &pattern.numbered
+            && !numbered.classified
+        {
+            let references = classify_items(&numbered.stem.name, rest, pattern.span)?;
+            prepare_pattern(pattern, references);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "surface")]
+fn prepare_pattern(pattern: &mut ParamPattern, references: References<'_>) {
+    assert_eq!(
+        pattern.elems.len(),
+        references.slot_count,
+        "parsed numbered arity is source-owned"
+    );
+    let name = |slot| format!("__numbered_n{}_p{slot}__", pattern.match_id.0);
+    for (reference, slot) in references.occurrences {
+        reference.name = name(slot);
+    }
+    for (index, elem) in pattern.elems.iter_mut().enumerate() {
+        let ParamPatternElem::Bind { name: binder, .. } = elem else {
+            unreachable!("numbered bindings have flat synthesized slots")
+        };
+        *binder = name(index as u32 + 1);
+    }
+    pattern
+        .numbered
+        .as_mut()
+        .expect("numbered pattern")
+        .classified = true;
 }
 
 /// Operator expansion can introduce ordinary paths with the same spelling.
@@ -151,6 +251,41 @@ impl<'a> Classifier<'_, 'a> {
         Ok(())
     }
 
+    fn items(&mut self, items: &'a mut [crate::ast::NeutralItem]) -> Result<(), Error> {
+        let mut introduced = Vec::new();
+        for item in items {
+            match item {
+                crate::ast::NeutralItem::Expression { value, .. } => self.expr(value)?,
+                crate::ast::NeutralItem::Binding {
+                    name,
+                    pattern,
+                    value,
+                    ..
+                }
+                | crate::ast::NeutralItem::ExistentialBinding {
+                    name,
+                    pattern,
+                    value,
+                    ..
+                } => {
+                    self.expr(value)?;
+                    if self.shadows_family(pattern.as_ref()) {
+                        break;
+                    }
+                    self.binding(name, pattern.as_ref(), &mut introduced);
+                }
+                crate::ast::NeutralItem::RowBinding { entries, value, .. } => {
+                    self.expr(value)?;
+                    for entry in entries {
+                        self.bind(&entry.local, &mut introduced);
+                    }
+                }
+            }
+        }
+        self.leave(introduced);
+        Ok(())
+    }
+
     fn expr(&mut self, expr: &'a mut Expr) -> Result<(), Error> {
         match expr {
             Expr::BlockCall { prefix, blocks, .. } => {
@@ -158,36 +293,7 @@ impl<'a> Classifier<'_, 'a> {
                     self.expr(value)?;
                 }
                 for block in blocks {
-                    let mut introduced = Vec::new();
-                    for item in &mut block.items {
-                        match item {
-                            crate::ast::NeutralItem::Expression { value, .. } => {
-                                self.expr(value)?
-                            }
-                            crate::ast::NeutralItem::Binding {
-                                name,
-                                pattern,
-                                value,
-                                ..
-                            }
-                            | crate::ast::NeutralItem::ExistentialBinding {
-                                name,
-                                pattern,
-                                value,
-                                ..
-                            } => {
-                                self.expr(value)?;
-                                self.binding(name, pattern.as_ref(), &mut introduced);
-                            }
-                            crate::ast::NeutralItem::RowBinding { entries, value, .. } => {
-                                self.expr(value)?;
-                                for entry in entries {
-                                    self.bind(&entry.local, &mut introduced);
-                                }
-                            }
-                        }
-                    }
-                    self.leave(introduced);
+                    self.items(&mut block.items)?;
                 }
             }
             Expr::Path { segments, .. } => self.path(segments)?,
@@ -214,6 +320,9 @@ impl<'a> Classifier<'_, 'a> {
                 ..
             } => {
                 self.expr(value)?;
+                if self.shadows_family(pattern.as_ref()) {
+                    return Ok(());
+                }
                 let mut introduced = Vec::new();
                 self.binding(name, pattern.as_ref(), &mut introduced);
                 self.expr(body)?;
@@ -311,6 +420,12 @@ impl<'a> Classifier<'_, 'a> {
         }
         Ok(())
     }
+
+    fn shadows_family(&self, pattern: Option<&ParamPattern>) -> bool {
+        pattern
+            .and_then(|pattern| pattern.numbered.as_ref())
+            .is_some_and(|numbered| numbered.stem.name == self.stem)
+    }
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -318,6 +433,68 @@ mod tests {
     use super::*;
     use crate::ast::{Item, Module};
     use crate::pass::{desugar, op_fold, parser};
+
+    #[test]
+    fn numbered_bindings_classify_before_operator_expansion() {
+        for body in [
+            "let .x. = (); x1 + ()",
+            "action! { let .x. <- (); x1 + () }",
+        ] {
+            let source = format!(
+                "module m; fn x2(a: ., b: .) -> . {{ a }} \
+                op _ + _ {{ impl x2; }}; fn run() {{ {body} }}"
+            );
+            let once =
+                op_fold::fold_package(vec![("m.kio".into(), parser::parse(&source).unwrap())])
+                    .unwrap();
+            let bytes = postcard::to_allocvec(&once).unwrap();
+            let restored = postcard::from_bytes(&bytes).unwrap();
+            let mut twice = op_fold::fold_package(restored).unwrap();
+            assert_eq!(once, twice);
+            let expr: &Expr = function_mut(&mut twice[0].1);
+            let (pattern, expression): (&ParamPattern, &Expr) = match expr {
+                Expr::Let {
+                    pattern: Some(pattern),
+                    body,
+                    ..
+                } => (pattern, body.as_ref()),
+                Expr::BlockCall { blocks, .. } => {
+                    let crate::ast::NeutralItem::Binding {
+                        pattern: Some(pattern),
+                        ..
+                    } = &blocks[0].items[0]
+                    else {
+                        panic!("numbered neutral binding")
+                    };
+                    (pattern, blocks[0].items[1].value())
+                }
+                _ => panic!("numbered binding"),
+            };
+            assert_eq!(pattern.elems.len(), 1);
+            assert!(pattern.numbered.as_ref().unwrap().classified);
+            let Expr::Call { callee, args, .. } = expression else {
+                panic!("folded operator")
+            };
+            assert!(
+                matches!(callee.as_ref(), Expr::Path { segments, .. } if segments[0].name == "x2")
+            );
+            assert!(
+                matches!(&args[0], CallArg::Value(Expr::Path { segments, .. }) if segments[0].name.starts_with("__numbered_n"))
+            );
+        }
+    }
+
+    #[test]
+    fn numbered_binding_direct_desugar_matches_operator_fold_route() {
+        let source = "module m; fn run() { let .x. = ((), ()); let .x. = x2; x3 }";
+        let parsed = parser::parse(source).unwrap();
+        let direct = desugar::desugar_module(parsed.clone()).unwrap();
+        let (_, folded) = op_fold::fold_package(vec![("m.kio".into(), parsed)])
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(direct, desugar::desugar_module(folded).unwrap());
+    }
 
     fn function_mut(module: &mut Module) -> &mut Expr {
         module

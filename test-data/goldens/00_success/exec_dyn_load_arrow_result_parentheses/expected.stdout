@@ -1,0 +1,15 @@
+grouped product: loaded
+grouped sum: loaded
+bare product: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+bare sum: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+leading product: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+empty sum: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+trailing product: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+nested result: dyn_load_prime: malformed host function `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized
+grouped nested result: loaded
+own product return: loaded
+own sum return: loaded
+arrows only: loaded
+forall result scope: loaded
+export grouped result: loaded
+export bare result: dyn_load_prime: export signature `a.f`: dyn_load_prime: malformed exact host-function signature: product and sum types on the right of `->` must be parenthesized

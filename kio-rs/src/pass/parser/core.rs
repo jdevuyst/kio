@@ -691,6 +691,7 @@ pub(crate) enum CursorSlot {
     NewtypeMember,
     ImportSelection,
     TargetId,
+    TargetBackend,
     TargetField,
     OperatorContinuation,
     BlockLabel,
@@ -2029,6 +2030,10 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Ident(_)) | Some(TokenKind::Slot1) => true,
             Some(TokenKind::SymbolRun(run)) if run == "." => {
                 matches!(self.peek_at(2), Some(TokenKind::LParen))
+                    || (matches!(self.peek_at(2), Some(TokenKind::Ident(_)))
+                        && matches!(self.peek_at(3), Some(TokenKind::SymbolRun(close)) if close == ".")
+                        && (matches!(self.peek_at(4), Some(TokenKind::SymbolRun(connective)) if connective == "=" || connective == "<-")
+                            || Self::token_is_statement_boundary(self.peek_at(4))))
             }
             _ => false,
         }
@@ -2288,12 +2293,22 @@ impl<'a> Parser<'a> {
     /// formatter can break long literals across source lines and re-
     /// chunk deterministically on emission with no runtime cost.
     fn read_str_literal(&mut self) -> (String, Span) {
+        self.read_str_literal_parts(None)
+    }
+
+    fn read_str_literal_parts(
+        &mut self,
+        mut interior_trivia: Option<&mut Vec<Trivia>>,
+    ) -> (String, Span) {
         let tok = self.advance();
         let TokenKind::StrLit(mut value) = tok.kind else {
             unreachable!("read_str_literal called when next token is not StrLit");
         };
         let mut span = tok.span;
         while matches!(self.peek(), Some(TokenKind::StrLit(_))) {
+            if let Some(trivia) = interior_trivia.as_mut() {
+                trivia.extend(self.peek_leading_trivia());
+            }
             let next = self.advance();
             let TokenKind::StrLit(more) = next.kind else {
                 unreachable!()
@@ -3521,27 +3536,55 @@ impl<'a> Parser<'a> {
         leading_trivia.extend(self.peek_leading_trivia());
         let start = self.peek_span().start;
         let _kw_span = self.expect_ident_named("target")?;
-        // Target id: a bare (kebab-case) identifier naming the backend,
-        // e.g. `rust`, `js`, `kio-prime`. The old quoted form
-        // (`target "rust"`) is rejected with a migration message.
+        // Both forms begin with the backend; only the pair has a distinct
+        // string name. Config-key completion follows that backend.
         if matches!(self.peek(), Some(TokenKind::StrLit(_))) {
-            return Err(self.err_here(
-                "target id must be a bare identifier — write `target rust { … }`, \
-                 not `target \"rust\" { … }` (see specs/package.md § Build target files)",
-            ));
+            return Err(self.err_here(crate::documentation_help(
+                "target header must name a backend first — write `target rust { … }` \
+                 or `target (rust, \"native\") { … }`, not `target \"rust\" { … }` \
+                 (see {base}/specs/package.md#build-target-files)",
+            )));
         }
-        let (id, id_span) = self.target_id()?;
+        let named = matches!(self.peek(), Some(TokenKind::LParen));
+        if named {
+            leading_trivia.extend(self.peek_leading_trivia());
+            self.advance();
+        }
+        leading_trivia.extend(self.peek_leading_trivia());
+        let (backend, backend_span) = self.target_id(if named {
+            CursorSlot::TargetBackend
+        } else {
+            CursorSlot::TargetId
+        })?;
+        let (name, name_span) = if named {
+            leading_trivia.extend(self.peek_leading_trivia());
+            self.cursor_choices(CursorSlot::Grammar, &[]);
+            self.expect_kind(TokenKind::Comma, "`,` after the target backend")?;
+            leading_trivia.extend(self.peek_leading_trivia());
+            self.cursor_choices(CursorSlot::Grammar, &[]);
+            if !matches!(self.peek(), Some(TokenKind::StrLit(_))) {
+                return Err(self.err_here("expected a string-literal target name"));
+            }
+            let (name, name_span) = self.read_str_literal_parts(Some(&mut leading_trivia));
+            leading_trivia.extend(self.peek_leading_trivia());
+            self.cursor_choices(CursorSlot::Grammar, &[]);
+            self.expect_kind(TokenKind::RParen, "`)` after the target name")?;
+            (Some(name), name_span)
+        } else {
+            (None, backend_span)
+        };
         if self
             .tooling
             .as_ref()
             .is_some_and(|tooling| tooling.cursor.is_some())
         {
-            headers.push((id.clone(), id_span));
+            headers.push((name.as_ref().unwrap_or(&backend).clone(), name_span));
         }
+        leading_trivia.extend(self.peek_leading_trivia());
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut entries = Vec::new();
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
-        self.target_field_cursor(&id, &entries);
+        self.target_field_cursor(&backend, &entries);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut entry_trivia = std::mem::take(&mut pending_separator_trivia);
             entry_trivia.extend(self.skip_semicolon_separators());
@@ -3551,13 +3594,14 @@ impl<'a> Parser<'a> {
             }
             entries.push(self.target_entry(entry_trivia)?);
             pending_separator_trivia = self.block_separator(true, false, &[])?;
-            self.target_field_cursor(&id, &entries);
+            self.target_field_cursor(&backend, &entries);
         }
         pending_separator_trivia.extend(self.peek_leading_trivia());
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         Ok(TargetBlock {
             trailing_trivia: pending_separator_trivia,
-            id,
+            backend,
+            name,
             entries,
             span: Span::new(start, end),
             leading_trivia,
@@ -3571,7 +3615,7 @@ impl<'a> Parser<'a> {
     /// reassembles the run as long as each `-` and the following
     /// `IDENT` are flush (no intervening whitespace), so `kio - prime`
     /// is not a single id.
-    fn target_id(&mut self) -> Result<(String, Span), Error> {
+    fn target_id(&mut self, slot: CursorSlot) -> Result<(String, Span), Error> {
         if self
             .tooling
             .as_ref()
@@ -3594,9 +3638,9 @@ impl<'a> Parser<'a> {
                 atom.end = name.span.end;
                 offset += 2;
             }
-            self.cursor_owned_atom(CursorSlot::TargetId, atom);
+            self.cursor_owned_atom(slot, atom);
         } else {
-            self.cursor_choices(CursorSlot::TargetId, &[]);
+            self.cursor_choices(slot, &[]);
         }
         let (mut id, first_span) = self.expect_ident()?;
         let mut end = first_span.end;
@@ -3611,7 +3655,7 @@ impl<'a> Parser<'a> {
                 // continuation. (The `-` is already consumed; this is
                 // a malformed id, so report it.)
                 return Err(self.err_here(
-                    "target id must be a single bare identifier — no spaces around `-`",
+                    "target backend must be a single bare identifier — no spaces around `-`",
                 ));
             }
             let (next, next_span) = self.expect_ident()?;
@@ -8361,9 +8405,10 @@ impl<'a> Parser<'a> {
                 Some(crate::ast::Kind::arrow_chain(star_count))
             };
             params.push(TypeParam {
+                presentation: crate::ast::TypeParamPresentation::written(),
                 name,
                 span: Span::new(param_start, name_span.end),
-                kind,
+                kind: kind.map(Box::new),
             });
             if trivia.is_some() {
                 pending = self.peek_leading_trivia();
@@ -8785,6 +8830,7 @@ impl<'a> Parser<'a> {
             elems,
             span,
             match_id,
+            numbered: None,
         })
     }
 
@@ -8884,11 +8930,22 @@ impl<'a> Parser<'a> {
     // =====================================================================
 
     pub(super) fn type_expr(&mut self) -> Result<Type, Error> {
+        self.type_expr_with_chain(true)
+    }
+
+    fn type_expr_with_chain(&mut self, allow_chain: bool) -> Result<Type, Error> {
         self.cursor_choices(CursorSlot::Type, &[]);
         if self.peek_starts_type_param() {
             return self.type_prefix_signature();
         }
         let (lhs, lhs_is_chain) = self.type_chain_expr()?;
+        if lhs_is_chain && !allow_chain {
+            return Err(self.err(
+                lhs.span(),
+                "product and sum types on the right of `->` must be parenthesized; \
+                 write `A -> (B & C)` or `A -> (B | C)`",
+            ));
+        }
         if self.at_sym_prefix("->") {
             if lhs_is_chain {
                 return Err(self.err_here(
@@ -8897,7 +8954,7 @@ impl<'a> Parser<'a> {
                 ));
             }
             self.expect_fn_arrow()?;
-            let ret = self.type_expr()?;
+            let ret = self.type_expr_with_chain(false)?;
             let ret_end = ret.span().end;
             let span = Span::new(lhs.span().start, ret_end);
             return Ok(Type::synth_function(vec![lhs], ret, span));
@@ -8909,7 +8966,7 @@ impl<'a> Parser<'a> {
         let lhs = self.type_atom()?;
         if self.at_sym_prefix("->") {
             self.expect_fn_arrow()?;
-            let ret = self.type_expr()?;
+            let ret = self.type_expr_with_chain(false)?;
             let ret_end = ret.span().end;
             let span = Span::new(lhs.span().start, ret_end);
             return Ok(Type::synth_function(vec![lhs], ret, span));
@@ -9406,12 +9463,12 @@ impl<'a> Parser<'a> {
         // header) and consumed via the newtype's CPS projector — see
         // `specs/language.md` § Existential type binders.
         if self.at_sym("<") {
-            return Err(self.err_here(
+            return Err(self.err_here(crate::documentation_help(
                 "existential type expressions are no longer admissible at this position — \
                  existentials are declared on a `newtype` header (`newtype Name[A] <U> : body`) \
                  and consumed via the newtype's CPS projector. \
-                 See specs/language.md § Existential type binders.",
-            ));
+                 See {base}/specs/language.md#existential-type-binders.",
+            )));
         }
 
         // Leading `&` / `|` layouts stay in the explicit chain
@@ -9455,7 +9512,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 if self.at_sym_prefix("->") {
                     self.expect_fn_arrow()?;
-                    let ret = self.type_expr()?;
+                    let ret = self.type_expr_with_chain(false)?;
                     let ret_end = ret.span().end;
                     Ok(Type::synth_function(
                         vec![first],
@@ -9492,7 +9549,7 @@ impl<'a> Parser<'a> {
                 };
                 if self.at_sym_prefix("->") {
                     self.expect_fn_arrow()?;
-                    let ret = self.type_expr()?;
+                    let ret = self.type_expr_with_chain(false)?;
                     let ret_end = ret.span().end;
                     Ok(Type::synth_function(
                         vec![folded],
@@ -9521,6 +9578,7 @@ impl<'a> Parser<'a> {
         self.record_source_name(name_span, SourceNameRole::Parameter);
         let end = self.expect_existential_close()?.end;
         Ok(TypeParam {
+            presentation: crate::ast::TypeParamPresentation::written(),
             name,
             span: Span::new(start, end),
             kind: None,
@@ -11647,7 +11705,7 @@ impl<'a> Parser<'a> {
         leading: Vec<Trivia>,
         open: Span,
     ) -> Result<crate::ast::NeutralBlock, Error> {
-        let mut items = Vec::new();
+        let mut items: Vec<crate::ast::NeutralItem> = Vec::new();
         let mut separators = Vec::new();
         let mut pending = Vec::new();
         loop {
@@ -11682,6 +11740,23 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 pending.extend(self.peek_leading_trivia());
                 let close = self.expect_kind(TokenKind::RBrace, "`}` closing neutral block")?;
+                for index in (0..items.len()).rev() {
+                    let (prefix, rest) = items.split_at_mut(index + 1);
+                    if let crate::ast::NeutralItem::Binding {
+                        pattern: Some(pattern),
+                        ..
+                    } = &mut prefix[index]
+                        && let Some(numbered) = &pattern.numbered
+                    {
+                        let count = crate::pass::placeholder::classify_items(
+                            &numbered.stem.name,
+                            rest,
+                            pattern.span,
+                        )?
+                        .slot_count;
+                        self.populate_numbered_pattern(pattern, count);
+                    }
+                }
                 return Ok(crate::ast::NeutralBlock {
                     label,
                     elided: false,
@@ -11723,9 +11798,19 @@ impl<'a> Parser<'a> {
             Row(Vec<RowLetEntry>),
             Existential(Vec<TypeParam>, String, Span, Option<ParamPattern>),
         }
-        let (leading, start) = self.consume_let_statement_intro()?;
+        let (leading, start, dot) = self.consume_let_statement_intro()?;
         pending.extend(leading);
-        let binder = if matches!(self.peek(), Some(TokenKind::LParen))
+        let binder = if let Some(dot) = dot
+            && matches!(self.peek(), Some(TokenKind::Ident(_)))
+        {
+            let pattern = self.numbered_pattern(dot)?;
+            Binder::Value(
+                self.synth_pattern_param_name(),
+                pattern.span,
+                None,
+                Some(pattern),
+            )
+        } else if matches!(self.peek(), Some(TokenKind::LParen))
             && matches!(self.peek_at(1), Some(TokenKind::LBrace))
         {
             self.advance();
@@ -12086,25 +12171,10 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(TokenKind::Ident(stem)) if matches!(self.peek_at(1), Some(TokenKind::SymbolRun(run)) if run == ".") =>
             {
-                let stem = stem.clone();
-                let stem_span = self.advance().span;
-                Self::validate_value_name(&stem, stem_span)?;
-                if !stem
-                    .bytes()
-                    .last()
-                    .is_some_and(|byte| byte.is_ascii_alphabetic())
-                {
-                    return Err(self.err(stem_span, "a placeholder stem must end in a letter"));
-                }
-                let close = self.expect_sym(".", "`.` after the placeholder stem")?;
-                if dot_span.end != stem_span.start || stem_span.end != close.start {
-                    return Err(self.err(
-                        Span::new(dot_span.start, close.end),
-                        "the dots and stem of a placeholder intro must be adjacent",
-                    ));
-                }
-                self.record_source_name(stem_span, SourceNameRole::Parameter);
-                self.fn_placeholder_expr(dot_span.start, PathSegment::new(stem, stem_span))
+                let _ = stem;
+                let stem = self.placeholder_stem(dot_span)?;
+                self.record_source_name(stem.span, SourceNameRole::Parameter);
+                self.fn_placeholder_expr(dot_span.start, stem)
             }
             Some(TokenKind::Ident(s)) if s == "t" || s == "f" => {
                 let tok = self.advance();
@@ -12672,14 +12742,128 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume_let_statement_intro(&mut self) -> Result<(Vec<Trivia>, u32), Error> {
-        let leading_trivia = self.peek_leading_trivia();
+    fn consume_let_statement_intro(&mut self) -> Result<(Vec<Trivia>, u32, Option<Span>), Error> {
+        let mut leading_trivia = self.peek_leading_trivia();
         let start = self.peek_span().start;
         self.expect_ident_role("let", KeywordRole::Declaration)?;
-        if self.at_sym(".") {
-            self.advance();
+        if self.at_sym(".") && matches!(self.peek_at(1), Some(TokenKind::Ident(_))) {
+            leading_trivia.extend(self.peek_leading_trivia());
         }
-        Ok((leading_trivia, start))
+        let dot = self.at_sym(".").then(|| self.advance().span);
+        Ok((leading_trivia, start, dot))
+    }
+
+    fn placeholder_stem(&mut self, dot: Span) -> Result<PathSegment, Error> {
+        let (stem, span) = self.expect_binder()?;
+        Self::validate_value_name(&stem, span)?;
+        if !stem
+            .bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphabetic())
+        {
+            return Err(self.err(span, "a placeholder stem must end in a letter"));
+        }
+        let close = self.expect_sym(".", "`.` after the placeholder stem")?;
+        if dot.end != span.start || span.end != close.start {
+            return Err(self.err(
+                Span::new(dot.start, close.end),
+                "the dots and stem of a placeholder intro must be adjacent",
+            ));
+        }
+        Ok(PathSegment::new(stem, span))
+    }
+
+    fn numbered_pattern(&mut self, dot: Span) -> Result<ParamPattern, Error> {
+        let stem = self.placeholder_stem(dot)?;
+        self.record_source_name(stem.span, SourceNameRole::Parameter);
+        Ok(ParamPattern {
+            span: Span::new(dot.start, stem.span.end + 1),
+            elems: Vec::new(),
+            match_id: self.fresh_node_id(),
+            numbered: Some(crate::ast::NumberedBinding {
+                stem,
+                classified: false,
+            }),
+        })
+    }
+
+    fn populate_numbered_pattern(&mut self, pattern: &mut ParamPattern, count: usize) {
+        let stem = &pattern
+            .numbered
+            .as_ref()
+            .expect("numbered source pattern")
+            .stem;
+        pattern.elems = (1..=count)
+            .map(|index| ParamPatternElem::Bind {
+                name: format!("{}{index}", stem.name),
+                name_span: stem.span,
+                ty: Type::Infer {
+                    meta: Meta::new(stem.span),
+                    ext: (),
+                },
+            })
+            .collect();
+        if let Some(tooling) = &mut self.tooling {
+            for prefix in &mut tooling.facts.scope_prefix {
+                if let ScopeSyntax::Binding {
+                    pattern: Some(recorded),
+                    ..
+                } = &mut prefix.syntax
+                    && recorded.match_id == pattern.match_id
+                {
+                    *recorded = pattern.clone();
+                }
+            }
+        }
+    }
+
+    fn numbered_let_statement(
+        &mut self,
+        block_start: u32,
+        start: u32,
+        leading_trivia: Vec<Trivia>,
+        dot: Span,
+    ) -> Result<Expr, Error> {
+        let mut pattern = self.numbered_pattern(dot)?;
+        let mut value_leading = self.peek_leading_trivia();
+        self.expect_sym("=", "`=` after the numbered binding")?;
+        value_leading.extend(self.peek_leading_trivia());
+        let mut value = self.expr()?;
+        inject_leading_trivia(&mut value, value_leading);
+        value
+            .meta_mut()
+            .trailing_trivia
+            .extend(self.peek_leading_trivia());
+        self.expect_kind(TokenKind::Semicolon, "`;` after the numbered binding")?;
+        self.record_scope_prefix(|| ScopeSyntax::Binding {
+            name: None,
+            pattern: Some(pattern.clone()),
+            type_params: Vec::new(),
+        });
+        let mut body = self.block_body_continuation(block_start)?;
+        let stem = &pattern
+            .numbered
+            .as_ref()
+            .expect("numbered source pattern")
+            .stem;
+        let count =
+            crate::pass::placeholder::classify_binding(&stem.name, &mut body, pattern.span)?
+                .slot_count;
+        self.populate_numbered_pattern(&mut pattern, count);
+        Ok(Expr::Let {
+            occurrence: Default::default(),
+            name: format!("__pat_let_n{}__", pattern.match_id.0),
+            name_span: pattern.span,
+            ty: None,
+            pattern: Some(pattern),
+            meta: Meta {
+                span: Span::new(start, body.span().end),
+                leading_trivia,
+                trailing_trivia: Vec::new(),
+            },
+            value: Box::new(value),
+            body: Box::new(body),
+        })
     }
 
     /// Parse a `let X = E;` statement followed by the rest of the
@@ -12698,7 +12882,12 @@ impl<'a> Parser<'a> {
         // `leading_trivia` field, which the pretty-printer emits
         // above the `let` and uses as a hint to break the
         // surrounding block body to multi-line.
-        let (leading_trivia, start) = self.consume_let_statement_intro()?;
+        let (leading_trivia, start, dot) = self.consume_let_statement_intro()?;
+        if let Some(dot) = dot
+            && matches!(self.peek(), Some(TokenKind::Ident(_)))
+        {
+            return self.numbered_let_statement(block_start, start, leading_trivia, dot);
+        }
         if matches!(self.peek(), Some(TokenKind::LParen))
             && matches!(self.peek_at(1), Some(TokenKind::LBrace))
         {

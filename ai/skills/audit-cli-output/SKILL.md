@@ -166,7 +166,8 @@ spec-agreement, not prose quality.
 
 The authoritative list lives in two places that must agree:
 
-- The dispatch arms of `kio_lang::run` in `kio-rs/src/lib.rs` — every
+- The binary's `manual` dispatch in `kio-rs/src/main.rs` and the dispatch
+  arms of `kio_lang::run` in `kio-rs/src/lib.rs` — every
   user-facing arm (excluding `debug` and `host-shape`, the intentionally
   unadvertised internal namespaces) is a public subcommand.
 - The per-subcommand `## kio <name>` headers in `specs/cli.md`.
@@ -179,14 +180,19 @@ For each `kio <name> --help` (and each child of `kio doc` / `kio cache`):
 
 1. **Synopsis line** — first line begins `Usage: kio <name>` with the
    same flag/positional shape the spec's per-subcommand header advertises.
-2. **`Exit codes (per <URL>/specs/exit-codes.md):` block** — present,
-   the URL is the pinned `KIO_DOCS_BASE_URL` prefix, and it enumerates
+2. **Exit-code block** — present, starts with the offline command
+   `kio manual cat specs/exit-codes.md`, retains the pinned
+   `KIO_DOCS_BASE_URL` web link, and enumerates
    every category code the subcommand can return (compare the spec's
    "Exit codes" subsection).
-3. **Spec-footer URL** — ends `See <URL>/specs/cli.md#<anchor> …`, with
-   `<URL>` = `KIO_DOCS_BASE_URL` and `<anchor>` the GitHub-style anchor.
-4. **No bare `specs/` references** — every reference is the full GitHub
-   URL form, never a bare relative `specs/<file>.md` path.
+3. **Spec footer** — leads with `kio manual cat specs/cli.md` and retains
+   the `KIO_DOCS_BASE_URL` web link with the GitHub-style section anchor.
+4. **Usable dual routes** — bundled documentation references put the
+   offline command first, omit web anchors from its file operand, and retain
+   the release-appropriate web link. Both routes derive from one target;
+   verify every offline operand with `kio manual cat`. Bare relative paths
+   alone are insufficient. Issue trackers and dependency URLs remain web
+   references, not manual commands.
 
 ### C3. Flag / identifier agreement
 
@@ -200,7 +206,7 @@ one-sided (per-subcommand blocks may but need not repeat it).
 ### C4. Top-level `kio --help` / `kio-prime --help`
 
 Every dispatcher-accepted subcommand (excluding `debug` / `host-shape`)
-appears under "Subcommands:"; the `See <URL>` footer is present;
+appears under "Subcommands:"; the offline-first documentation footer is present;
 `--no-cache` and `-V` / `--version` are under "Options:". Internal/debug
 subcommands stay undocumented in both `--help` and `cli.md` — confirm they
 did not leak.

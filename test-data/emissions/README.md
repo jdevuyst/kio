@@ -30,7 +30,7 @@ Every case satisfies all of these structural rules:
 
 - It is a direct child of `test-data/emissions/<backend>/`.
 - It contains exactly one empty subject marker: `HOST_INTERFACE` or `ARTIFACT_SHAPE`.
-- `workdir/` contains exactly one root `*.pkg.kio` file, whose `build { ... }` block contains exactly one target, matching the backend bucket. A genuinely multi-artifact host-interface case may also contain nested packages; each nested manifest declares that same sole target, and the root package is one of the artifacts actually built rather than a routing-only dummy.
+- `workdir/` contains exactly one root `*.pkg.kio` file, whose `build { ... }` block contains exactly one target, with both backend and target name matching the backend bucket. A genuinely multi-artifact host-interface case may also contain nested packages; each nested manifest declares that same sole target, and the root package is one of the artifacts actually built rather than a routing-only dummy.
 - `run.sh` is the only execution file. There is no `run.args`, `run.test-only`, `KNOWN_FAILING`, or `oracles/` directory.
 - `expected.exit` is exactly `0`, with or without a final newline, and exactly one stderr-policy file is present.
 - The case is self-contained and portable. It names no checkout, home, scratch, or machine-specific path.

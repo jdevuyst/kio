@@ -80,7 +80,9 @@ pub(crate) fn source_warnings(
                         }
                     }
                 }
-                CandidateOrigin::Local(_) | CandidateOrigin::Placeholder(_) => {}
+                CandidateOrigin::Local(_)
+                | CandidateOrigin::Placeholder(_)
+                | CandidateOrigin::NumberedBinding(_) => {}
             }
         };
         for mut reference in crate::tokens::source_dependencies(source, module)
@@ -974,8 +976,8 @@ mod tests {
         let analysis = analyze_sources(&[(
             "main",
             "module main; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
-            fn driver[S][R](step: S -> S | R, state: S) -> R { loop(step, state) } \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+            fn driver[S][R](step: S -> (S | R), state: S) -> R { loop(step, state) } \
             type Payload = .; \
             rec { newtype A : Payload & B { constructor make_a; projector open_a; }; \
                 newtype B : A { constructor make_b; projector open_b; }; } \

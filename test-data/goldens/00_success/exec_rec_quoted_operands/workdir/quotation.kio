@@ -40,10 +40,10 @@ pure fn marked_swap_impl(
 
 pub elab second : [A][B] A -> B -> B { impl second_impl }
 
-pub elab duplicate : [A] A -> A & A { impl duplicate_impl }
+pub elab duplicate : [A] A -> (A & A) { impl duplicate_impl }
 
-pub elab marked_duplicate : [A] A -> A & A { impl(fills) marked_duplicate_impl }
+pub elab marked_duplicate : [A] A -> (A & A) { impl(fills) marked_duplicate_impl }
 
-pub elab swap : [A][B] A -> B -> B & A { impl swap_impl }
+pub elab swap : [A][B] A -> B -> (B & A) { impl swap_impl }
 
-pub elab marked_swap : [A][B] A -> B -> B & A { impl(fills) marked_swap_impl }
+pub elab marked_swap : [A][B] A -> B -> (B & A) { impl(fills) marked_swap_impl }

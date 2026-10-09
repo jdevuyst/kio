@@ -232,9 +232,8 @@ fn probe_manifest_and_bridge_match_all_backend_print_protocol() {
         .find(|(path, _)| path == "workdir/prog.pkg.kio")
         .unwrap()
         .1;
-    for target in [
-        "js", "ts", "python", "java", "rust", "go", "swift", "haskell",
-    ] {
+    assert!(manifest.contains("target (js, \"js\") {"));
+    for target in ["ts", "python", "java", "rust", "go", "swift", "haskell"] {
         assert!(manifest.contains(&format!("target {target} {{")));
     }
     assert!(manifest.contains("  testapi/io\n"));

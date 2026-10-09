@@ -12,7 +12,17 @@
 use std::env;
 use std::process;
 
+mod manual;
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    let manual_args: Vec<_> = args
+        .iter()
+        .filter(|arg| arg.as_str() != "--no-cache")
+        .cloned()
+        .collect();
+    if manual_args.first().is_some_and(|arg| arg == "manual") {
+        process::exit(manual::run(&manual_args[1..]));
+    }
     process::exit(kio_lang::run_on_worker(&args, false).as_i32());
 }

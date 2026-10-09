@@ -20,7 +20,7 @@ pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
 
 // `Swap[*F]` stores `[A]((F(A) | F(A))) -> (F(A) | F(A))`: a function
 // over a binder-mentioning sum, in both argument and result position.
-pub newtype Swap[*F] : [A] (F(A) | F(A)) -> F(A) | F(A) {
+pub newtype Swap[*F] : [A] (F(A) | F(A)) -> (F(A) | F(A)) {
   pub constructor mk_swap;
   pub projector run
   }

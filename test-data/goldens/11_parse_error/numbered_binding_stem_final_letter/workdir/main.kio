@@ -1,0 +1,3 @@
+module main;
+
+fn subject() { let .x1. = (); x11 }

@@ -4352,18 +4352,8 @@ fn is_generated_dir(dir: &Path) -> bool {
     dir.join(DISCOVERY_SKIP_MARKER).exists()
 }
 
-/// Whether a positional command argument names a **package selector**
-/// rather than a bare identifier (e.g. a `kio build` target id like
-/// `js` / `rust` / `kio-prime`).
-///
-/// The rule is **deterministic** — it keys on the argument's *shape*,
-/// not on the cwd filesystem state: a selector either contains a path
-/// separator (`a/b`, `./pkg`) or carries the `*.pkg.kio` suffix.
-/// Anything else is a bare identifier and stays a target id. Keying on
-/// `Path::is_dir()` against the cwd (the old behavior) let a cwd-sibling
-/// directory literally named `rust` hijack the documented
-/// bare-identifier-is-a-target-id rule. Shared by `kio build` (target id
-/// vs package path) and `kio sig` (selector validation).
+/// Whether a `kio sig` positional has package-path selector syntax.
+/// Validation depends on spelling, independently of cwd filesystem state.
 pub fn is_package_selector_arg(arg: &str) -> bool {
     arg.contains('/')
         || arg.contains(std::path::MAIN_SEPARATOR)
@@ -7210,10 +7200,7 @@ mod tests {
 
     #[test]
     fn package_selector_arg_keys_on_shape_not_cwd() {
-        // A bare identifier is a target id, even if a cwd-sibling dir of
-        // that name exists — the rule keys on the arg's shape, not the
-        // filesystem, so a directory named `rust` never hijacks the
-        // bare-identifier-is-a-target-id rule.
+        // Bare identifiers do not have signature package-path syntax.
         assert!(!is_package_selector_arg("rust"));
         assert!(!is_package_selector_arg("js"));
         assert!(!is_package_selector_arg("kio-prime"));
@@ -7223,8 +7210,7 @@ mod tests {
         assert!(is_package_selector_arg("app.pkg.kio"));
         assert!(is_package_selector_arg("dir/app.pkg.kio"));
 
-        // Create a cwd-sibling dir literally named `rust`; the rule must
-        // still classify the bare `rust` arg as a target id.
+        // A matching directory does not alter the syntax classification.
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("rust")).expect("mk rust dir");
         let prev = std::env::current_dir().ok();

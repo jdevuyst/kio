@@ -12,7 +12,7 @@ use crate::ast::Phase;
 
 use super::InternedType;
 #[cfg(feature = "surface")]
-use super::TypeMemoKey;
+use super::PresentedTypeMemoKey;
 
 #[cfg(feature = "surface")]
 use crate::ast::Type;
@@ -271,12 +271,13 @@ where
         F: FnOnce() -> Result<UserElaboratorTemplateResult, E>,
         V: Fn(&UserElaboratorTemplateResult),
     {
-        self.user_elaborator.get_or_try_compute(
+        self.user_elaborator.get_or_try_compute_matching(
             key,
             &self.user_elaborator_stats,
             compute,
             "user elaborator memo lock poisoned",
             verify,
+            UserElaboratorMemoKey::presentation_matches,
         )
     }
 
@@ -376,23 +377,59 @@ where
 }
 
 #[cfg(feature = "surface")]
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct UserElaboratorMemoKey {
     module_path: String,
     elaborator_name: String,
     inputs: Vec<UserElaboratorMemoInputKey>,
+    result_type: Option<PresentedTypeMemoKey>,
 }
 
 #[cfg(feature = "surface")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum UserElaboratorMemoInputKey {
     ComptimeProof,
-    Type(TypeMemoKey),
-    OptionalTypeKnown(TypeMemoKey),
+    Type(PresentedTypeMemoKey),
+    OptionalTypeKnown(PresentedTypeMemoKey),
     OptionalTypeInfer,
-    Term(TypeMemoKey),
-    ResidualShape(TypeMemoKey),
-    CapturedTerm(TypeMemoKey),
+    Term(PresentedTypeMemoKey),
+    ResidualShape(PresentedTypeMemoKey),
+    CapturedTerm(PresentedTypeMemoKey),
+}
+
+#[cfg(feature = "surface")]
+impl UserElaboratorMemoInputKey {
+    fn presentation_matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::ComptimeProof, Self::ComptimeProof)
+            | (Self::OptionalTypeInfer, Self::OptionalTypeInfer) => true,
+            (Self::Type(a), Self::Type(b))
+            | (Self::OptionalTypeKnown(a), Self::OptionalTypeKnown(b))
+            | (Self::Term(a), Self::Term(b))
+            | (Self::ResidualShape(a), Self::ResidualShape(b))
+            | (Self::CapturedTerm(a), Self::CapturedTerm(b)) => a.presentation_matches(b),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "surface")]
+impl PartialEq for UserElaboratorMemoKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.module_path == other.module_path
+            && self.elaborator_name == other.elaborator_name
+            && self.inputs == other.inputs
+    }
+}
+#[cfg(feature = "surface")]
+impl Eq for UserElaboratorMemoKey {}
+#[cfg(feature = "surface")]
+impl Hash for UserElaboratorMemoKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.module_path.hash(state);
+        self.elaborator_name.hash(state);
+        self.inputs.hash(state);
+    }
 }
 
 #[cfg(feature = "surface")]
@@ -406,7 +443,27 @@ impl UserElaboratorMemoKey {
             module_path,
             elaborator_name,
             inputs,
+            result_type: None,
         }
+    }
+
+    pub(crate) fn with_result_type(mut self, result_type: Option<PresentedTypeMemoKey>) -> Self {
+        self.result_type = result_type;
+        self
+    }
+
+    pub(crate) fn presentation_matches(&self, other: &Self) -> bool {
+        self.inputs.len() == other.inputs.len()
+            && self
+                .inputs
+                .iter()
+                .zip(&other.inputs)
+                .all(|(a, b)| a.presentation_matches(b))
+            && match (&self.result_type, &other.result_type) {
+                (Some(a), Some(b)) => a.presentation_matches(b),
+                (None, None) => true,
+                _ => false,
+            }
     }
 }
 
@@ -602,6 +659,8 @@ pub struct UserElaboratorTimingSnapshot {
 struct SingleflightMemo<K, V> {
     state: Mutex<SingleflightMemoState<K, V>>,
     ready: Condvar,
+    #[cfg(test)]
+    waiting: AtomicUsize,
 }
 
 #[cfg(feature = "surface")]
@@ -626,6 +685,8 @@ impl<K, V> Default for SingleflightMemo<K, V> {
         Self {
             state: Mutex::new(SingleflightMemoState::default()),
             ready: Condvar::new(),
+            #[cfg(test)]
+            waiting: AtomicUsize::new(0),
         }
     }
 }
@@ -711,10 +772,33 @@ where
         F: FnOnce() -> Result<V, E>,
         Verify: Fn(&V),
     {
+        self.get_or_try_compute_matching(key, stats, compute, lock_message, verify, |_, _| true)
+    }
+
+    fn get_or_try_compute_matching<E, F, Verify, Reuse>(
+        &self,
+        key: K,
+        stats: &MemoStats,
+        compute: F,
+        lock_message: &str,
+        verify: Verify,
+        reuse: Reuse,
+    ) -> Result<V, E>
+    where
+        F: FnOnce() -> Result<V, E>,
+        Verify: Fn(&V),
+        Reuse: Fn(&K, &K) -> bool,
+    {
         let mut compute = Some(compute);
         loop {
             let mut state = self.state.lock().expect(lock_message);
-            if let Some(cached) = state.values.get(&key).cloned() {
+            if let Some((stored_key, cached)) = state.values.get_key_value(&key) {
+                if !reuse(stored_key, &key) {
+                    stats.miss();
+                    drop(state);
+                    return compute.take().expect("singleflight compute used once")();
+                }
+                let cached = cached.clone();
                 stats.hit();
                 drop(state);
                 if memo_verify_enabled() {
@@ -726,7 +810,11 @@ where
                 stats.miss();
                 break;
             }
+            #[cfg(test)]
+            self.waiting.fetch_add(1, Ordering::SeqCst);
             drop(self.ready.wait(state).expect(lock_message));
+            #[cfg(test)]
+            self.waiting.fetch_sub(1, Ordering::SeqCst);
         }
 
         let mut guard = SingleflightGuard {
@@ -923,7 +1011,7 @@ mod tests {
     #[cfg(feature = "surface")]
     fn user_elaborator_key() -> UserElaboratorMemoKey {
         let ty = unit();
-        let ty_key = TypeMemoKey::from_type(&ty);
+        let ty_key = PresentedTypeMemoKey::from_type(&ty);
         UserElaboratorMemoKey::new(
             "elaborators".to_owned(),
             "id".to_owned(),

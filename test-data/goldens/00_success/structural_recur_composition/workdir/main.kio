@@ -1,0 +1,113 @@
+module main;
+
+import __intrinsics__;
+
+import __comptime__;
+import helper as r;
+import support as s;
+
+pure fn escaped(ct: __Comptime__) -> . -> __Type_arity__ {
+  r.run(
+    , ct
+    , s.three(ct)
+    , ()
+    , .(previous: (__Type_arity__ & .) -> . -> __Type_arity__, current: __Type_arity__, _state: .) -> . -> __Type_arity__ {
+        __if_then_else__(
+          , __type_arity_equal__(ct, current, s.zero(ct))
+          , .() -> . -> __Type_arity__ { .(_later: .) -> __Type_arity__ { s.zero(ct) } }
+          , .() -> . -> __Type_arity__ {
+              .(_later: .) -> __Type_arity__ {
+                __type_arity_succ__(ct, previous(s.predecessor(ct, current), ())(()))
+              }
+            }
+          )
+      }
+    )
+}
+
+pure fn captured(ct: __Comptime__) -> __Type_arity__ {
+  r.run(
+    , ct
+    , s.three(ct)
+    , ()
+    , .(outer: (__Type_arity__ & .) -> __Type_arity__, current: __Type_arity__, _state: .) -> __Type_arity__ {
+        __if_then_else__(
+          , __type_arity_equal__(ct, current, s.zero(ct))
+          , .() -> __Type_arity__ { s.zero(ct) }
+          , .() -> __Type_arity__ {
+              let saved = .(_later: .) -> __Type_arity__ { outer(s.predecessor(ct, current), ()) };
+              // This same helper is re-entered at a greater/equal initial measure.
+              // Its ordinary state carries a callback into the outer predecessor.
+              let answer =
+                r.run(
+                  , ct
+                  , s.three(ct)
+                  , saved
+                  , .(
+                      , _inner: (__Type_arity__ & (. -> __Type_arity__)) -> __Type_arity__
+                      , _fuel: __Type_arity__
+                      , callback: . -> __Type_arity__
+                      ) -> __Type_arity__ { callback(()) }
+                  );
+              __type_arity_succ__(ct, answer)
+            }
+          )
+      }
+    )
+}
+
+pure fn siblings(ct: __Comptime__) -> __Type_arity__ {
+  r.run(
+    , ct
+    , s.three(ct)
+    , ()
+    , .(previous: (__Type_arity__ & .) -> __Type_arity__, current: __Type_arity__, _state: .) -> __Type_arity__ {
+        __if_then_else__(
+          , __type_arity_equal__(ct, current, s.zero(ct))
+          , .() -> __Type_arity__ { s.zero(ct) }
+          , .() -> __Type_arity__ {
+              let first = previous(s.predecessor(ct, current), ());
+              let second = previous(s.predecessor(ct, current), ());
+              __if_then_else__(
+                , __type_arity_equal__(ct, first, second)
+                , .() -> __Type_arity__ { __type_arity_succ__(ct, second) }
+                , .() -> __Type_arity__ { s.reject(__Type_arity__, ct) }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn probe_impl(ct: __Comptime__, _source: __Type__, _input: __Checked_term__) -> __Checked_term__ {
+  let later = escaped(ct);
+  let escaped_result = later(());
+  let captured_result = captured(ct);
+  let sibling_result = siblings(ct);
+  __if_then_else__(
+    , __type_arity_equal__(ct, escaped_result, s.three(ct))
+    , .() -> __Checked_term__ {
+        __if_then_else__(
+          , __type_arity_equal__(ct, captured_result, s.three(ct))
+          , .() -> __Checked_term__ {
+              __if_then_else__(
+                , __type_arity_equal__(ct, sibling_result, s.three(ct))
+                , .() -> __Checked_term__ { __term_unit__(ct) }
+                , .() -> __Checked_term__ { __elab_error__(ct, "sibling independence mismatch") }
+                )
+            }
+          , .() -> __Checked_term__ { __elab_error__(ct, "nested captured predecessor mismatch") }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, "escaped result mismatch") }
+    )
+}
+
+elab probe : [Source] Source -> . { impl probe_impl }
+
+fn witness() { probe!(()) }
+
+equiv probe_law() {
+  witness();
+  ()
+}

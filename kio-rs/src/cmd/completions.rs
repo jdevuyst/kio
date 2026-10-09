@@ -8,9 +8,9 @@
 //! the subcommand names, the `doc` / `cache` / `dep` / `sig`
 //! sub-subcommand names plus the `completions` shell names, and the
 //! flags each subcommand accepts. A
-//! positional argument slot (a path to a `.kio` file, a target id, a
-//! source selector, a module selector) falls back to the shell's
-//! default filename completion; the scripts do not introspect the
+//! path or source/module selector slot falls back to the shell's
+//! default filename completion. Build package and target name slots
+//! do not suggest filenames; the scripts do not introspect the
 //! package on disk to offer module names. After upgrading `kio`, the
 //! user re-runs `kio completions <shell>` to pick up any new
 //! subcommand.
@@ -35,9 +35,10 @@ Print a shell completion script for `kio` to stdout.
 The script completes the fixed CLI grammar — subcommand names, the
 `doc` / `cache` / `dep` / `sig` sub-subcommand names, the shell names
 this command itself takes, and each subcommand's flags. Positional
-argument slots (a source path, a target id, a source selector, a
+argument slots (a source path, a source selector, a
 module selector) fall back to the shell's default filename
-completion; the script does not read the package on disk. Re-run
+completion. Build package and target name slots do not suggest
+filenames; the script does not read the package on disk. Re-run
 after upgrading `kio` to pick up new subcommands.
 
 Install per your shell's convention — see the guide linked below for
@@ -83,13 +84,18 @@ mod grammar {
                 subs: &[],
             },
             Subcommand {
+                name: "manual",
+                flags: &[],
+                subs: &["ls", "tree", "cat", "export"],
+            },
+            Subcommand {
                 name: "check",
                 flags: &[],
                 subs: &[],
             },
             Subcommand {
                 name: "build",
-                flags: &["--skip-unsupported-targets"],
+                flags: &["--package", "--pkg", "--skip-unsupported-targets"],
                 subs: &[],
             },
             Subcommand {
@@ -153,10 +159,7 @@ mod grammar {
 /// Dispatch for `kio completions <shell>`.
 pub fn run(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     let positional: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -165,10 +168,7 @@ pub fn run(args: &[String]) -> ExitCode {
         [] => {
             eprintln!("error: `kio completions` requires a shell argument (bash, zsh, or fish)");
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
             return ExitCode::Usage;
         }
         _ => {
@@ -177,10 +177,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 positional.len()
             );
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
             return ExitCode::Usage;
         }
     };
@@ -191,10 +188,7 @@ pub fn run(args: &[String]) -> ExitCode {
         other => {
             eprintln!("error: unknown shell: {other} (expected bash, zsh, or fish)");
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
             return ExitCode::Usage;
         }
     };
@@ -217,8 +211,7 @@ fn subcommand_words() -> String {
 /// `complete -F` expects. The completer walks `COMP_WORDS` to find
 /// the active subcommand, then offers that subcommand's sub-words and
 /// flags; with no subcommand chosen yet it offers the top-level
-/// subcommand set. Any slot the static grammar doesn't enumerate
-/// falls through to `compgen -f` (filename completion).
+/// subcommand set. Filename completion excludes build name slots.
 fn render_bash() -> String {
     let mut out = String::new();
     out.push_str("# bash completion for kio. Source this file, or install it where\n");
@@ -252,6 +245,21 @@ fn render_bash() -> String {
     out.push_str("    fi\n\n");
     out.push_str("    case \"$sub\" in\n");
     for s in grammar::subcommands() {
+        if s.name == "manual" {
+            out.push_str("        manual)\n");
+            out.push_str("            if (( cword == i + 1 )); then\n");
+            out.push_str("                COMPREPLY=( $(compgen -W 'ls tree cat export -h --help' -- \"$cur\") )\n");
+            out.push_str("            elif [ \"${words[i+1]}\" = export ]; then\n");
+            out.push_str("                if [ \"$prev\" = --format ]; then\n");
+            out.push_str("                    COMPREPLY=( $(compgen -W 'tar.gz-concat tar tar.gz' -- \"$cur\") )\n");
+            out.push_str("                else\n");
+            out.push_str("                    COMPREPLY=( $(compgen -W '--format=tar.gz-concat --format=tar --format=tar.gz -h --help' -- \"$cur\") )\n");
+            out.push_str("                fi\n");
+            out.push_str("            else\n");
+            out.push_str("                COMPREPLY=( $(compgen -W '-h --help' -- \"$cur\") )\n");
+            out.push_str("            fi\n            ;;\n");
+            continue;
+        }
         let mut words: Vec<String> = s.subs.iter().map(|w| (*w).to_owned()).collect();
         for f in s.flags {
             words.push((*f).to_owned());
@@ -266,8 +274,29 @@ fn render_bash() -> String {
         words.push("-h".to_owned());
         words.push("--help".to_owned());
         out.push_str(&format!("        {})\n", s.name));
+        if s.name == "build" {
+            out.push_str("            local name_value=0 ended=0\n");
+            out.push_str("            for ((i=i+1; i < cword; i++)); do\n");
+            out.push_str(
+                "                if [ \"$name_value\" = 1 ]; then name_value=0; continue; fi\n",
+            );
+            out.push_str("                case \"${words[i]}\" in\n");
+            out.push_str("                    --) ended=1; break ;;\n");
+            out.push_str("                    --package|--pkg) name_value=1 ;;\n");
+            out.push_str("                esac\n");
+            out.push_str("            done\n");
+            out.push_str(
+                "            if [ \"$name_value\" = 1 ]; then COMPREPLY=(); return 0; fi\n",
+            );
+            out.push_str("            if [ \"$ended\" = 1 ]; then\n");
+            out.push_str("                COMPREPLY=()\n");
+            out.push_str("                return 0\n");
+            out.push_str("            fi\n");
+        }
+        // An unmatched target prefix is a valid empty completion under errexit.
+        let empty_match = if s.name == "build" { " || true" } else { "" };
         out.push_str(&format!(
-            "            COMPREPLY=( $(compgen -W \"{}\" -- \"$cur\") )\n",
+            "            COMPREPLY=( $(compgen -W \"{}\" -- \"$cur\"{empty_match}) )\n",
             words.join(" ")
         ));
         out.push_str("            ;;\n");
@@ -286,8 +315,8 @@ fn render_bash() -> String {
 ///
 /// Uses the `#compdef` autoload header plus a `_arguments`-driven
 /// state machine. The first positional offers the subcommand set;
-/// each subcommand's second positional offers its sub-words. A slot
-/// with no static candidates uses `_files` (filename completion).
+/// each subcommand's second positional offers its sub-words. Build
+/// name slots have no filename-completion action.
 fn render_zsh() -> String {
     let mut out = String::new();
     out.push_str("#compdef kio\n");
@@ -302,6 +331,9 @@ fn render_zsh() -> String {
     }
     out.push_str("    )\n");
     out.push_str("    local curcontext=\"$curcontext\" state line\n");
+    out.push_str("    local original_current=$CURRENT\n");
+    out.push_str("    local -a original_words\n");
+    out.push_str("    original_words=(\"${words[@]}\")\n");
     out.push_str("    _arguments -C \\\n");
     out.push_str("        '1: :->subcmd' \\\n");
     out.push_str("        '*::arg:->args'\n\n");
@@ -313,7 +345,39 @@ fn render_zsh() -> String {
     out.push_str("            case $line[1] in\n");
     for s in grammar::subcommands() {
         out.push_str(&format!("                {})\n", s.name));
-        if s.subs.is_empty() {
+        if s.name == "manual" {
+            out.push_str("                    local manual_index=${original_words[(i)manual]}\n");
+            out.push_str(
+                "                    if (( original_current == manual_index + 1 )); then\n",
+            );
+            out.push_str("                        _values 'manual operation' ls tree cat export\n");
+            out.push_str(
+                "                    elif [[ $original_words[manual_index+1] == export ]]; then\n",
+            );
+            out.push_str(
+                "                        words=(\"${original_words[@]:$manual_index}\")\n",
+            );
+            out.push_str(
+                "                        CURRENT=$(( original_current - manual_index ))\n",
+            );
+            out.push_str("                        _arguments '--format=[archive format]:format:(tar.gz-concat tar tar.gz)' '-h[show help]' '--help[show help]'\n");
+            out.push_str("                    else\n");
+            out.push_str(
+                "                        _arguments '-h[show help]' '--help[show help]'\n",
+            );
+            out.push_str("                    fi\n                    ;;\n");
+            continue;
+        }
+        if s.name == "build" {
+            out.push_str("                    _arguments -S \\\n");
+            out.push_str("                        '*--package=[select a package by name]:package name:' \\\n");
+            out.push_str(
+                "                        '*--pkg=[select a package by name]:package name:' \\\n",
+            );
+            out.push_str("                        '--skip-unsupported-targets[skip unavailable backends in default selection]' \\\n");
+            out.push_str("                        '-h[show help]' '--help[show help]' \\\n");
+            out.push_str("                        '*:target name:'\n");
+        } else if s.subs.is_empty() {
             // No sub-subcommands: positional slots are paths / ids the
             // script can't enumerate — fall back to filename
             // completion (or nothing for the flag-only `-h`).
@@ -362,6 +426,11 @@ fn render_fish() -> String {
         ));
     }
     for s in grammar::subcommands() {
+        if s.name == "manual" {
+            out.push_str("complete -c kio -n '__fish_seen_subcommand_from manual; and not __fish_seen_subcommand_from ls tree cat export' -a 'ls tree cat export'\n");
+            out.push_str("complete -c kio -n '__fish_seen_subcommand_from manual; and __fish_seen_subcommand_from export' -l format -r -a 'tar.gz-concat tar tar.gz'\n");
+            continue;
+        }
         for w in s.subs {
             out.push_str(&format!(
                 "complete -c kio -n '__fish_seen_subcommand_from {}' -a '{}'\n",
@@ -375,9 +444,14 @@ fn render_fish() -> String {
             // is a positional sentinel, not a flag — skip it here so
             // fish doesn't render a spurious option.
             if let Some(long) = f.strip_prefix("--") {
+                let argument = if s.name == "build" && matches!(*f, "--package" | "--pkg") {
+                    " -r"
+                } else {
+                    ""
+                };
                 out.push_str(&format!(
-                    "complete -c kio -n '__fish_seen_subcommand_from {}' -l '{}'\n",
-                    s.name, long
+                    "complete -c kio -n '__fish_seen_subcommand_from {}' -l '{}'{}\n",
+                    s.name, long, argument
                 ));
             }
         }
@@ -464,5 +538,24 @@ mod tests {
         assert!(render_bash().contains("complete -F _kio kio"));
         assert!(render_zsh().starts_with("#compdef kio"));
         assert!(render_fish().contains("complete -c kio"));
+    }
+
+    #[test]
+    fn named_build_completion_tracks_package_value_arity_and_end_options() {
+        let build = grammar::subcommands()
+            .into_iter()
+            .find(|s| s.name == "build")
+            .unwrap();
+        assert_eq!(
+            build.flags,
+            ["--package", "--pkg", "--skip-unsupported-targets"]
+        );
+        assert!(render_bash().contains("--package|--pkg) name_value=1"));
+        assert!(render_bash().contains("--) ended=1; break"));
+        assert!(render_zsh().contains("_arguments -S"));
+        assert!(render_zsh().contains("*--package=[select a package by name]:package name:"));
+        assert!(render_zsh().contains("*:target name:'"));
+        assert!(render_fish().contains("-l 'package' -r\n"));
+        assert!(render_fish().contains("-l 'pkg' -r\n"));
     }
 }

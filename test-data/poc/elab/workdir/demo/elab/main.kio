@@ -466,7 +466,7 @@ equiv fit_function_param_law[A][B](f: (A | B) -> ., a: A) {
   f(__left__(A, B, a))
 }
 
-equiv fit_function_return_law[A][B](f: A -> A & B, a: A) {
+equiv fit_function_return_law[A][B](f: A -> (A & B), a: A) {
   fit!(f, A -> A)(a);
   __fst__(A, B, f(a))
 }

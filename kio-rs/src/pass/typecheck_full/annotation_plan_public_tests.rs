@@ -375,7 +375,7 @@ fn alias_root_monadic_do_pattern_rejects_materialized_forall_hole() {
 fn recursive_alias_partial_let_rejects_once_with_source_provenance() {
     let source = r#"module main;
         host type I32 role(i32);
-        host fn loop[S][R](step: S -> S | R, state: S) -> R;
+        host fn loop[S][R](step: S -> (S | R), state: S) -> R;
         type Wrap[Slot] = [Rec_alias_bound] Slot -> Rec_alias_bound;
         newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn choose_box[A](_tag: I32, value: Box(A)) -> Box(A) { value }

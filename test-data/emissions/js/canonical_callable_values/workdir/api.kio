@@ -28,17 +28,17 @@ pub fn boxed_observer() -> Box(Seal -> Seal) { pack(observe_seal) }
 
 pub fn hold[T](value: T) -> . -> T { .() { value } }
 
-pub fn pair_hold(value: Number & Flag) -> . -> Number & Flag { hold(value) }
+pub fn pair_hold(value: Number & Flag) -> . -> (Number & Flag) { hold(value) }
 
-pub fn boxed_hold(value: Number & Flag) -> Box(. -> Number & Flag) { pack(hold(value)) }
+pub fn boxed_hold(value: Number & Flag) -> Box(. -> (Number & Flag)) { pack(hold(value)) }
 
-pub fn pair_host_hold(value: Number & Flag) -> . -> Number & Flag { host_hold(value) }
+pub fn pair_host_hold(value: Number & Flag) -> . -> (Number & Flag) { host_hold(value) }
 
 pub fn atom_hold(value: Atom) -> . -> Atom { hold(value) }
 
 pub fn relay[T](value: T) -> T { value }
 
-pub fn keep_thunk(value: . -> Number & Flag) -> . -> Number & Flag { value }
+pub fn keep_thunk(value: . -> (Number & Flag)) -> . -> (Number & Flag) { value }
 
 pub fn staged[A] -> Number -> Number { mark(1); .(value: Number) { mark(2); value } }
 

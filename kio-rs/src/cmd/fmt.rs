@@ -120,10 +120,7 @@ enum Mode {
 
 pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
 
@@ -140,10 +137,7 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
             other if other.starts_with('-') && other != "-" => {
                 eprintln!("error: unknown flag: {other}");
                 eprintln!();
-                eprintln!(
-                    "{}",
-                    HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
                 return ExitCode::Usage;
             }
             other => paths.push(other.to_owned()),

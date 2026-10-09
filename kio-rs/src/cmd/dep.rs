@@ -620,11 +620,11 @@ fn report_dep_error(diag: &crate::pass::resolve::LocatedError) -> ExitCode {
 }
 
 fn print_help(template: &str) {
-    println!("{}", template.replace("{base}", crate::KIO_DOCS_BASE_URL));
+    println!("{}", crate::documentation_help(template));
 }
 
 fn print_help_err(template: &str) {
-    eprintln!("{}", template.replace("{base}", crate::KIO_DOCS_BASE_URL));
+    eprintln!("{}", crate::documentation_help(template));
 }
 
 #[cfg(test)]
@@ -837,7 +837,7 @@ mod tests {
         .expect("write pkg");
         std::fs::write(
             dir.path().join("provider.kio"),
-            "module provider;\n\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "module provider;\n\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         )
         .expect("write provider");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
@@ -848,7 +848,7 @@ mod tests {
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/api.kio"),
-            "module api;\n\nhost fn loop[S][R](step: S -> S | R, state: S) -> R;\n\n\
+            "module api;\n\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\n\
              rec(loop) fn _rehost_hahcgphggjgegfhc(_value: .) -> . { () }\n",
         )
         .expect("write api");

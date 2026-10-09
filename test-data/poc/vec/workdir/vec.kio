@@ -48,7 +48,7 @@ host fn leq_i32(p0: I32, p1: I32) -> Bool;
 
 host fn lt_i32(p0: I32, p1: I32) -> Bool;
 
-host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
+host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 

@@ -345,6 +345,39 @@ fn lsp_protocol_completion_preserves_scope_and_recursive_identity_after_open_and
 }
 
 #[test]
+fn lsp_protocol_named_target_completion_uses_the_header_backend() {
+    for (source, expected) in [
+        (
+            "package app; build { target rust {} target (|",
+            vec![
+                "go",
+                "haskell",
+                "java",
+                "js",
+                "kio-prime",
+                "python",
+                "rust",
+                "swift",
+                "ts",
+            ],
+        ),
+        (
+            "package app; build { target (rust, \"web\") { | } }",
+            vec!["namespace", "out", "thread_safety"],
+        ),
+        (
+            "package app; build { target (js, \"rust\") { | } }",
+            vec!["namespace", "out"],
+        ),
+        ("package app; build { target (js, |", vec![]),
+        ("package app; build { target (js, \"we|b\") {} }", vec![]),
+    ] {
+        let result = open_change_and_complete(".pkg", source);
+        assert_eq!(exact_labels(&result), expected, "{source}");
+    }
+}
+
+#[test]
 fn lsp_protocol_completion_edit_replaces_the_whole_atom_after_open_and_change() {
     let source = "package app; build { ca|che (); }";
     let cursor = source.find('|').expect("completion marker");

@@ -1546,6 +1546,10 @@
           "named": true
         },
         {
+          "type": "incomplete_numbered_binding",
+          "named": true
+        },
+        {
           "type": "incomplete_recursive_call_expression",
           "named": true
         },
@@ -2454,6 +2458,10 @@
           "named": true
         },
         {
+          "type": "incomplete_numbered_binding",
+          "named": true
+        },
+        {
           "type": "incomplete_recursive_call_expression",
           "named": true
         },
@@ -2599,6 +2607,10 @@
           "named": true
         },
         {
+          "type": "incomplete_numbered_binding",
+          "named": true
+        },
+        {
           "type": "incomplete_recursive_call_expression",
           "named": true
         },
@@ -2656,6 +2668,33 @@
         },
         {
           "type": "variadic_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "incomplete_numbered_binding",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword_let",
+          "named": true
+        },
+        {
+          "type": "numbered_binding",
+          "named": true
+        },
+        {
+          "type": "operator_builtin",
+          "named": true
+        },
+        {
+          "type": "operator_run",
           "named": true
         }
       ]
@@ -3401,6 +3440,10 @@
           "named": true
         },
         {
+          "type": "numbered_binding",
+          "named": true
+        },
+        {
           "type": "operator_builtin",
           "named": true
         },
@@ -3825,6 +3868,10 @@
           "named": true
         },
         {
+          "type": "numbered_binding",
+          "named": true
+        },
+        {
           "type": "operator_expression",
           "named": true
         },
@@ -3917,6 +3964,10 @@
         },
         {
           "type": "incomplete_neutral_block",
+          "named": true
+        },
+        {
+          "type": "incomplete_numbered_binding",
           "named": true
         },
         {
@@ -4139,6 +4190,25 @@
     "type": "number_literal",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "numbered_binding",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "separator_dot",
+          "named": true
+        },
+        {
+          "type": "variable_parameter",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "op_decl",
@@ -5734,7 +5804,15 @@
           "named": true
         },
         {
+          "type": "bracket_lparen",
+          "named": true
+        },
+        {
           "type": "bracket_rbrace",
+          "named": true
+        },
+        {
+          "type": "bracket_rparen",
           "named": true
         },
         {
@@ -5746,7 +5824,15 @@
           "named": true
         },
         {
+          "type": "separator_comma",
+          "named": true
+        },
+        {
           "type": "separator_semicolon",
+          "named": true
+        },
+        {
+          "type": "string_literal",
           "named": true
         },
         {
@@ -5970,10 +6056,6 @@
         {
           "type": "type_path",
           "named": true
-        },
-        {
-          "type": "type_product",
-          "named": true
         }
       ]
     }
@@ -6155,10 +6237,6 @@
         },
         {
           "type": "slot",
-          "named": true
-        },
-        {
-          "type": "type_arrow",
           "named": true
         },
         {

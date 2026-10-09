@@ -2492,7 +2492,7 @@ fn resolve_decl(
   , d: Decl
   , fn_scope: Scope
   , nt: Ntab
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   ) -> Decl_result {
   let scope = body_scope(decl_params(d), fn_scope);
@@ -3311,7 +3311,7 @@ fn prepend_module_decls(m: Module, nt: Ntab, acc: Gdecls) -> Gdecls {
 
 // Flatten the topo-sorted modules into the global decl list, in module
 // order then declaration order within each module.
-fn flatten_modules(ordered: Modules, visible_newtypes: Module -> Ntab | Diag) -> Gdecls | Diag {
+fn flatten_modules(ordered: Modules, visible_newtypes: Module -> (Ntab | Diag)) -> Gdecls | Diag {
   let .(flattened: Gdecls | Diag) =
     loop(
       , .(st: Modules & Gdecls) {
@@ -3537,8 +3537,8 @@ labels { resolve_walk: Gdecls & Gdecls & Terms_acc & Maybe_fn_scope_cache };
 fn resolve_gdecls_step(
   , hostfns: Hostfns
   , ms: Modules
-  , resolve_host_type: (String & I32 & String) -> Host_type | String
-  , resolve_bool_type: (String & I32) -> Host_type | String
+  , resolve_host_type: (String & I32 & String) -> (Host_type | String)
+  , resolve_bool_type: (String & I32) -> (Host_type | String)
   , st: Resolve_walk
   ) -> Resolve_walk | Resolve_result {
   match! Resolve_walk.get(st) {
@@ -4433,10 +4433,10 @@ fn load_package_terms(
   , bridge: Bridge
   , runtime_hostfns: Runtime_hostfns
   , requirements: Host_contract
-  , visible_newtypes: Modules -> Module -> Ntab | Diag
-  , derive_exports: (Gdecls & Omembers) -> Export_infos | Diag
-  , resolve_host_type: (String & I32 & String) -> Host_type | String
-  , resolve_bool_type: (String & I32) -> Host_type | String
+  , visible_newtypes: Modules -> Module -> (Ntab | Diag)
+  , derive_exports: (Gdecls & Omembers) -> (Export_infos | Diag)
+  , resolve_host_type: (String & I32 & String) -> (Host_type | String)
+  , resolve_bool_type: (String & I32) -> (Host_type | String)
   ) -> Load_outcome {
   match! un_topo(topo_sort(ms)) {
     (
@@ -7668,7 +7668,7 @@ fn exact_type_index_for_modules(modules: Modules) -> Exact_type_index {
     )
 }
 
-fn exact_type_facts_collect[A](facts: Exact_type_facts, select: Exact_type_fact -> . | A) -> List(A) {
+fn exact_type_facts_collect[A](facts: Exact_type_facts, select: Exact_type_fact -> (. | A)) -> List(A) {
   loop(
     , .(state: Exact_type_facts & List(A)) {
         match! state {
@@ -9634,7 +9634,7 @@ fn classify_type_origin(
   , lookup: Type_context
   , origin: Type_origin
   , refs: Alias_refs
-  , cached_alias: (String & String) -> . | Origin_terminal
+  , cached_alias: (String & String) -> (. | Origin_terminal)
   ) -> Origin_action {
   let owner = type_origin_owner(origin);
   let name = type_origin_name(origin);
@@ -9895,7 +9895,7 @@ labels { origin_walk_state: Origin_works & (. | Origin_terminal) & Alias_refs };
 fn resolve_exact_type_origin_cached(
   , context: Type_context
   , spelling: String
-  , cached_alias: (String & String) -> . | Origin_terminal
+  , cached_alias: (String & String) -> (. | Origin_terminal)
   ) -> Exact_origin_result {
   match! visible_type_candidates(context, spelling) {
     (
@@ -10130,7 +10130,7 @@ fn canonical_starts_atom(ts: Toks) -> Bool {
   }
 }
 
-labels { ctp_expr: Toks };
+labels { ctp_expr: Toks & Bool };
 
 labels { ctp_chain: Toks };
 
@@ -10156,7 +10156,7 @@ type Ctp_head = Ctp_head_canonical | Ctp_head_exact;
 
 rec {
   labels { ctc_prefix: Canonical_binders & Type_env & Ctp_cont };
-  labels { ctc_expr_chain: Ctp_cont };
+  labels { ctc_expr_chain: Bool & Ctp_cont };
   labels { ctc_expr_arrow: Canonical_type & Ctp_cont };
   labels { ctc_arrow_atom: Ctp_cont };
   labels { ctc_arrow_rhs: Canonical_type & Ctp_cont };
@@ -10192,11 +10192,21 @@ fn mk_ctp_state(task: Ctp_task, cont: Ctp_cont, env: Type_env) -> Ctp_state {
   {ctp_state = (task, (cont, env))}
 }
 
-fn ctp_parse_expr(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
+fn ctp_parse_expr_with_chain(ts: Toks, allow_chain: Bool, cont: Ctp_cont, env: Type_env) ->
+  Ctp_state | Canonical_type_result
+   {
   widen_sum!(
-    , mk_ctp_state({ctp_task = widen_sum!({ctp_expr = ts}, Ctp_task_shape)}, cont, env)
+    , mk_ctp_state(
+        , {ctp_task = widen_sum!({ctp_expr = (ts, allow_chain)}, Ctp_task_shape)}
+        , cont
+        , env
+        )
     , Ctp_state | Canonical_type_result
     )
+}
+
+fn ctp_parse_expr(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
+  ctp_parse_expr_with_chain(ts, .t(Bool), cont, env)
 }
 
 fn ctp_parse_chain(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
@@ -10723,7 +10733,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
       match! Ctp_task.get(task) {
         (
           , .(expr: Ctp_expr) {
-              let ts = Ctp_expr.get(expr);
+              let .(ts: Toks, allow_chain: Bool) = Ctp_expr.get(expr);
               match! parse_host_binders(ts) {
                 (
                   , .(done: Host_binders_done) {
@@ -10732,7 +10742,10 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                           if! eq_i32(binders_len(bs), 0(I32)) {
                             ctp_parse_chain(
                               , ts
-                              , {ctp_cont = widen_sum!({ctc_expr_chain = cont}, Ctp_cont_shape)}
+                              , {ctp_cont = widen_sum!(
+                                  , {ctc_expr_chain = (allow_chain, cont)}
+                                  , Ctp_cont_shape
+                                  )}
                               , env
                               )
                           } else match! Canonical_binders_result.get(canonicalize_binders(bs, env)) {
@@ -10946,8 +10959,9 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                           match! punct_after_arrow(rest) {
                             (
                               , .(rhs: Toks) {
-                                  ctp_parse_expr(
+                                  ctp_parse_expr_with_chain(
                                     , rhs
+                                    , .f(Bool)
                                     , {ctp_cont = widen_sum!(
                                         , {ctc_arrow_rhs = (value, parent)}
                                         , Ctp_cont_shape
@@ -11103,15 +11117,25 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                   match! Ctp_cont.get(cont) {
                     (
                       , .(after_chain: Ctc_expr_chain) {
-                          let parent = Ctc_expr_chain.get(after_chain);
-                          match! punct_after_arrow(rest) {
+                          let .(allow_chain: Bool, parent: Ctp_cont) =
+                            Ctc_expr_chain.get(after_chain);
+                          let forbidden_chain =
+                            if! allow_chain {
+                              .f(Bool)
+                            } else {
+                              was_chain
+                            };
+                          if! forbidden_chain {
+                            canonical_parse_failure("product and sum types on the right of `->` must be parenthesized"(String))
+                          } else match! punct_after_arrow(rest) {
                             (
                               , .(rhs: Toks) {
                                   if! was_chain {
                                     canonical_parse_failure("product and sum types on the left of `->` must be parenthesized"(String))
                                   } else {
-                                    ctp_parse_expr(
+                                    ctp_parse_expr_with_chain(
                                       , rhs
+                                      , .f(Bool)
                                       , {ctp_cont = widen_sum!(
                                           , {ctc_expr_arrow = (value, parent)}
                                           , Ctp_cont_shape
@@ -11169,7 +11193,7 @@ fn parse_canonical_type(ts: Toks, env: Type_env) -> Canonical_type_result {
   loop(
     , ctp_step
     , mk_ctp_state(
-        , {ctp_task = widen_sum!({ctp_expr = ts}, Ctp_task_shape)}
+        , {ctp_task = widen_sum!({ctp_expr = (ts, .t(Bool))}, Ctp_task_shape)}
         , {ctp_cont = widen_sum!({ctc_done=}, Ctp_cont_shape)}
         , env
         )
@@ -16282,13 +16306,13 @@ fn ambiguous_export_diag(name: String, candidates: Pnames) -> Diag {
 // runtime `P` IS `Value` (the universal representation), so the pack is a
 // no-op and the surface entries are the loader's own closures.
 /// Defines the lookup operation: the named export's already-evaluated value.
-pub labels { lookup[P]: String -> P | Diag };
+pub labels { lookup[P]: String -> (P | Diag) };
 
 /// Defines the apply operation: apply a loaded closure to a loaded value.
-pub labels { apply[P]: (P & P) -> P | Diag };
+pub labels { apply[P]: (P & P) -> (P | Diag) };
 
 /// Defines the explicit-budget apply operation.
-pub labels { apply_fuel[P]: (P & P & I32) -> P | Diag };
+pub labels { apply_fuel[P]: (P & P & I32) -> (P | Diag) };
 
 /// Defines the unit value (what a zero-param export is applied to).
 pub labels { unit_in[P]: P };
@@ -16297,31 +16321,31 @@ pub labels { unit_in[P]: P };
 pub labels { i32_in[P]: I32 -> P };
 
 /// Defines the host-i32 out-marshal.
-pub labels { i32_out[P]: P -> I32 | Diag };
+pub labels { i32_out[P]: P -> (I32 | Diag) };
 
 /// Defines the host-f64 in-marshal.
 pub labels { f64_in[P]: F64 -> P };
 
 /// Defines the host-f64 out-marshal.
-pub labels { f64_out[P]: P -> F64 | Diag };
+pub labels { f64_out[P]: P -> (F64 | Diag) };
 
 /// Defines the host-string in-marshal.
 pub labels { str_in[P]: String -> P };
 
 /// Defines the host-string out-marshal.
-pub labels { str_out[P]: P -> String | Diag };
+pub labels { str_out[P]: P -> (String | Diag) };
 
 /// Defines the host-bool in-marshal.
 pub labels { bool_in[P]: Bool -> P };
 
 /// Defines the host-bool out-marshal.
-pub labels { bool_out[P]: P -> Bool | Diag };
+pub labels { bool_out[P]: P -> (Bool | Diag) };
 
 /// Defines the product constructor (fold multi-param arguments with it).
 pub labels { pair_in[P]: (P & P) -> P };
 
 /// Defines the product decomposition.
-pub labels { pair_out[P]: P -> (P & P) | Diag };
+pub labels { pair_out[P]: P -> ((P & P) | Diag) };
 
 /// Defines the left sum injection.
 pub labels { left_in[P]: P -> P };
@@ -16330,15 +16354,15 @@ pub labels { left_in[P]: P -> P };
 pub labels { right_in[P]: P -> P };
 
 /// Defines the sum-arm test: whether a sum value is the left injection.
-pub labels { sum_is_left[P]: P -> Bool | Diag };
+pub labels { sum_is_left[P]: P -> (Bool | Diag) };
 
 /// Defines the sum-payload projection.
-pub labels { sum_payload[P]: P -> P | Diag };
+pub labels { sum_payload[P]: P -> (P | Diag) };
 
 /// Defines the host-capability injection: mints a guest-callable value from
 /// an exact descriptor offered by the adapter and its separate public group
 /// inventory. A missing or mismatched descriptor is diagnosed immediately.
-pub labels { hostfn_in[P]: Host_fn -> P | Diag };
+pub labels { hostfn_in[P]: Host_fn -> (P | Diag) };
 
 /// Defines the surface's export listing (names + canonical signatures).
 pub labels { exports: Export_infos };

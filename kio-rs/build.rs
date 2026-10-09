@@ -2,6 +2,9 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "cli")]
+mod manual_build;
+
 const IMPLEMENTATION_TAG: &str = "kio-rs";
 const FEATURES: &[&str] = &["cli", "lsp", "parallel", "prime", "repl", "surface"];
 
@@ -19,6 +22,8 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
+    #[cfg(feature = "cli")]
+    manual_build::prepare(&manifest_dir);
     let feature_set = feature_set();
     let mut h = blake3::Hasher::new();
     write_framed(&mut h, b"compiler-cache-id-v1");

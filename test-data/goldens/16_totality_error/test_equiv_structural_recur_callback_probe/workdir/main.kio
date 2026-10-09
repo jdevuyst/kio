@@ -1,0 +1,21 @@
+module main;
+
+import __comptime__;
+
+// The negative edge invokes the captured callback, not a fresh helper.
+pure fn reject(ct: __Comptime__) -> . {
+  __structural_recur__(
+    , ct
+    , .
+    , .
+    , .
+    , ()
+    , ()
+    , .(again: (. & .) -> ., _fuel: ., _state: .) -> . { again((), ()) }
+    )
+}
+
+equiv callback_failure(ct: __Comptime__) {
+  .(_probe: .) { reject(ct) };
+  .(_probe: .) { reject(ct) }
+}

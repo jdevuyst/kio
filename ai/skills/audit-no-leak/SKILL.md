@@ -15,7 +15,7 @@ These are mostly small, mechanical greps. Worth their own skill because the rule
 The rule governs the **public artifacts** only. Restrict every grep to:
 
 - `specs/`, `docs/` except `docs/blog/*.md`, `test-data/`, `kio-rs/`, `ci/`
-- `README.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `TESTING.md`
+- `README.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `TESTING.md`, `KIO-FOR-AGENTS.md`
 - commit messages (sweep the unpushed window, `git log @{u}..HEAD`, when reviewing a branch)
 
 **Classify the agent-guidance layer separately.** It may describe workflow mechanics, but it is not a blanket exemption for incidental local paths, host-specific values, or session state. Prefer portable wording in `AGENTS.md`, `ai/`, and `.gitignore`; concrete local configuration belongs in untracked local files.
@@ -95,14 +95,18 @@ Findings: "we ran N agents", agent/session IDs, fan-out narration, "the integrat
 Public reader-facing files must not point readers into the agent-guidance layer:
 
 ```sh
-git grep -nE 'AGENTS\.md|ai/topics/|ai/skills/' -- \
-  README.md ROADMAP.md INSTALL.md CONTRIBUTING.md TESTING.md \
+git grep -nE '(^|[^A-Za-z0-9_-])AGENTS\.md|ai/topics/|ai/skills/' -- \
+  README.md ROADMAP.md INSTALL.md CONTRIBUTING.md TESTING.md KIO-FOR-AGENTS.md \
   ':(glob)specs/**/*.md' ':(glob)docs/**/*.md' \
   ':(exclude,glob)docs/blog/*.md' \
   ':(glob)test-data/**/*.md' ':(glob)ci/infra/**/*.md'
 ```
 
 Findings: links from public docs, specs, README / CONTRIBUTING / TESTING, test-data READMEs, or public crate READMEs to agent instructions. If the target material is genuinely public, move or summarize it in a public artifact and link there; otherwise remove the link. Judgment: generated fixtures or tests may include these strings only when the string itself is the subject under test; contribution-policy pages may name agent-only paths when the path itself is the policy subject.
+
+The public portable `KIO-FOR-AGENTS.md` is an admissible link destination and
+is itself swept as a public artifact. The filename boundary above distinguishes
+it from the repository-maintenance `AGENTS.md` file.
 
 ## 7. Session-relative dates and framing
 

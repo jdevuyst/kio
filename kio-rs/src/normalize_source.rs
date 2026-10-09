@@ -336,7 +336,7 @@ pure fn main() -> . {
     }
 
     #[test]
-    fn structural_recursion_fault_is_a_totality_error_not_a_residual() {
+    fn nested_structural_recursion_reduces_but_callback_fault_is_totality() {
         let package = "\
 package evalsrc;
 
@@ -358,9 +358,9 @@ pure fn run(ct: __Comptime__, k: . -> .) -> . {
     , __type_unit__(ct)
     , ()
     , .(
-        , _recur: (__Type__ & .) -> .
-        , _fuel: __Type__
-        , _input: .
+        , recur: (__Type__ & .) -> .
+        , fuel: __Type__
+        , input: .
         ) -> . { k(()) }
     )
 }
@@ -373,13 +373,21 @@ pure fn main(ct: __Comptime__) -> . {
 }
 ";
 
-        let error = normalize_source(package, module)
+        assert_eq!(
+            normalize_source(package, module).expect("finite nested helpers"),
+            "()"
+        );
+        let faulting = module.replace("{ k(()) }", "{ recur(fuel, input) }");
+        assert_ne!(faulting, module);
+        let error = normalize_source(package, &faulting)
             .expect_err("executed structural recursion fault must fail normalize_source");
         let Error::Totality(diagnostic) = error else {
             panic!("expected Totality error, got {error:?}");
         };
         assert!(
-            diagnostic.message.contains("same helper origin")
+            diagnostic
+                .message
+                .contains("recursive call did not descend")
                 && diagnostic.message.contains("root=1, current=1, next=1"),
             "{}",
             diagnostic.message

@@ -77,6 +77,7 @@ Before taking the listed action, read the linked topic file.
 | --- | --- |
 | Editing under `specs/` | [`ai/topics/specs.md`](ai/topics/specs.md) |
 | Editing under `docs/` | [`ai/topics/docs.md`](ai/topics/docs.md) |
+| Editing `KIO-FOR-AGENTS.md` | [`ai/topics/kio-authoring.md`](ai/topics/kio-authoring.md) — portable workflow and repository supplement ownership |
 | Editing under `docs/poc/` or `test-data/poc/<x>/` | [`ai/topics/docs.md`](ai/topics/docs.md) § Keeping a case study paired with its POC — keep the pair in sync |
 | Editing `README.md` | [`ai/topics/readme.md`](ai/topics/readme.md) |
 | Editing `DESIGN.md` | [`ai/topics/design.md`](ai/topics/design.md) |

@@ -1742,7 +1742,11 @@ fn doc_type(t: &Type) -> Doc {
         Type::Bottom { .. } => text("!"),
         Type::Function { param, ret, .. } => concat(
             doc_function_domain(param),
-            doc_chain_body_layout(ret, doc_type(ret), " -> ", " ->", empty(), empty()),
+            if matches!(ret.as_ref(), Type::Product { .. } | Type::Sum { .. }) {
+                doc_chain_body_layout(ret, doc_type(ret), " -> (", " -> (", text(")"), text(")"))
+            } else {
+                concat(text(" -> "), doc_type(ret))
+            },
         ),
         Type::Product { .. } => {
             let items = flatten_chain(t, ChainOp::Amp);
@@ -2860,6 +2864,9 @@ fn doc_neutral_let_binder(
     pattern: Option<&crate::ast::ParamPattern>,
 ) -> Doc {
     match pattern {
+        Some(pat) if pat.numbered.is_some() => {
+            text(format!(".{}.", pat.numbered.as_ref().unwrap().stem.name))
+        }
         Some(pat) => {
             if name.starts_with("__pat_param_") {
                 concat(text("."), doc_param_pattern_tuple(pat))
@@ -2906,6 +2913,16 @@ fn doc_let(
     leading_trivia: &[Trivia],
     trailing_trivia: &[Trivia],
 ) -> Doc {
+    if let Some(numbered) = pattern.and_then(|pat| pat.numbered.as_ref()) {
+        return doc_let_with(
+            text(format!("let .{}. =", numbered.stem.name)),
+            value,
+            body,
+            leading_trivia,
+            &doc_expr_statement_value,
+            &|body| doc_expr_with_outer_trivia(body, trailing_trivia),
+        );
+    }
     if let Some(pat) = pattern {
         return doc_let_pattern(
             &pat.elems,
@@ -3931,8 +3948,6 @@ fn doc_cache_decl(c: &BuildBlockCache) -> Doc {
 
 fn doc_target_block(t: &TargetBlock) -> Doc {
     // Entries at +2 indent, closing `}` back at the block's indent.
-    // The target id is a bare identifier (`target rust`), not a
-    // quoted string.
     let mut entries: Vec<Doc> = Vec::new();
     let mut ordered_entries: Vec<&TargetEntry> = t.entries.iter().collect();
     ordered_entries.sort_by(|a, b| target_entry_order(a).cmp(&target_entry_order(b)));
@@ -3942,7 +3957,14 @@ fn doc_target_block(t: &TargetBlock) -> Doc {
     doc_braced_block(
         concat(
             doc_inline_leading_trivia(&t.leading_trivia),
-            text(format!("target {}", t.id)),
+            match &t.name {
+                Some(name) => concat_all([
+                    text(format!("target ({}, ", t.backend)),
+                    doc_string_literal(name),
+                    text(")"),
+                ]),
+                None => text(format!("target {}", t.backend)),
+            },
         ),
         append_block_trailing(
             (!entries.is_empty()).then(|| join(concat(text(";"), hardline()), entries)),
@@ -5710,8 +5732,7 @@ elab demo : Box(
     #[test]
     fn type_chain_function_child_keeps_parens() {
         // A function-type child of a `|` chain needs surrounding
-        // parens, otherwise `A -> B | C` reparses as a function
-        // returning a sum.
+        // parens to delimit the function-valued chain item.
         let pp = roundtrip("module x; type T = ((A -> B) | C);");
         assert!(
             pp.contains("(A -> B) | C"),
@@ -5841,12 +5862,12 @@ elab demo : Box(
         // A function-type return that's a wide chain breaks to
         // the leading-operator multi-line layout inside the
         // function-type doc.
-        let src = "module x; type F = A -> Long_event_kind_one_pretty_long_name \
+        let src = "module x; type F = A -> (Long_event_kind_one_pretty_long_name \
                    | Hover_event_kind_two_pretty_long | Focus_event_kind_three_lengthy \
-                   | Drag_event_kind_four_more_chars;";
+                   | Drag_event_kind_four_more_chars);";
         let pp = roundtrip(src);
         assert!(
-            pp.contains("A ->\n  | Long_event_kind_one_pretty_long_name"),
+            pp.contains("A -> (\n  | Long_event_kind_one_pretty_long_name"),
             "expected leading-op break for fn-type return; got:\n{pp}"
         );
     }
@@ -5880,15 +5901,35 @@ elab demo : Box(
     }
 
     #[test]
-    fn type_function_return_chain_no_parens() {
-        // A chain in the function-return position takes no wrapping
-        // parens — `A -> B & C` parses to function returning the
-        // chain.
-        let pp = roundtrip("module x; type T = A -> B & C;");
-        assert!(
-            pp.contains("A -> B & C"),
-            "expected bare chain in return, got:\n{pp}"
-        );
+    fn arrow_result_chains_keep_load_bearing_parentheses() {
+        for operator in ["&", "|"] {
+            let pp = roundtrip(&format!("module x; type T = A -> (B {operator} C);"));
+            assert!(pp.contains(&format!("A -> (B {operator} C)")), "{pp}");
+            let signatures = roundtrip(&format!(
+                "module x; fn f() -> B {operator} C {{ () }} \
+                 fn g() {{ .() -> B {operator} C {{ () }} }} \
+                 fn h() -> A -> (B {operator} C) {{ () }}"
+            ));
+            assert!(
+                signatures.contains(&format!("fn f() -> B {operator} C")),
+                "{signatures}"
+            );
+            assert!(
+                signatures.contains(&format!(".() -> B {operator} C")),
+                "{signatures}"
+            );
+            assert!(
+                signatures.contains(&format!("fn h() -> A -> (B {operator} C)")),
+                "{signatures}"
+            );
+            let wide = format!(
+                "module x; type T = A -> (Very_long_first_result_type {operator} Very_long_second_result_type {operator} Very_long_third_result_type);"
+            );
+            roundtrip(&wide);
+            let commented = format!("module x; type T = A -> (B {operator} // result\n C);");
+            let formatted = roundtrip(&commented);
+            assert_eq!(formatted.matches("// result").count(), 1, "{formatted}");
+        }
     }
 
     // ---- value expressions ---------------------------------------------
@@ -6660,6 +6701,28 @@ pub fn main() -> . { print("Hello, world!") }"#,
         // `kio-prime` spells as a single bare kebab id.
         let pp = build_roundtrip("cache ();\ntarget kio-prime { out \"out/kio-prime/\"; }");
         assert!(pp.contains("target kio-prime {"), "got:\n{pp}");
+    }
+
+    #[test]
+    fn build_named_target_headers_roundtrip() {
+        let pp = build_roundtrip(
+            r#"target(js,"web") { namespace "demo"; out "web" };
+            target (kio-prime, "archive") {}; target (js, "js") {}"#,
+        );
+        assert!(pp.contains(r#"target (js, "web") {"#), "{pp}");
+        assert!(pp.contains(r#"target (kio-prime, "archive") {"#), "{pp}");
+        assert!(pp.contains(r#"target (js, "js") {"#), "{pp}");
+    }
+
+    #[test]
+    fn build_named_target_header_comments_survive() {
+        let pp = build_roundtrip(
+            "target // pair\n (// backend\n js // comma\n, // name\n \"w\" // chunk\n \"eb\" // close\n) { out \"web\" }",
+        );
+        for comment in ["pair", "backend", "comma", "name", "chunk", "close"] {
+            assert!(pp.contains(&format!("// {comment}")), "{pp}");
+        }
+        assert!(pp.contains(r#"target (js, "web")"#), "{pp}");
     }
 
     #[test]

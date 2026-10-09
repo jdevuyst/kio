@@ -304,7 +304,7 @@ do
   esac
 done
 for required in \
-  'visible_newtypes:Module->Ntab|Diag' \
+  'visible_newtypes:Module->(Ntab|Diag)' \
   'widen_sum!(diag,(Modules&Gdecls)|Gdecls|Diag)' \
   '.(diag:Diag){widen_sum!(diag,Gdecls|Diag)}'
 do

@@ -188,9 +188,10 @@ impl HaskellHostTypes {
                         .type_params()
                         .iter()
                         .map(|param| TypeParam {
+                            presentation: Default::default(),
                             name: param.name().to_owned(),
                             span: crate::span::Span::new(0, 0),
-                            kind: Some(param.kind().clone()),
+                            kind: Some(Box::new(param.kind().clone())),
                         })
                         .collect(),
                     role: match binding.binding() {

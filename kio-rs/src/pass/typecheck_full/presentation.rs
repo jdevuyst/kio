@@ -131,6 +131,13 @@ fn project(
     replacements: HashMap<String, String>,
     identity: bool,
 ) -> Type {
+    if !identity {
+        let mut visitor =
+            crate::pass::binder_presentation::TypeNameProjection::new(ty, replacements);
+        let mut result = ty.clone();
+        visitor.visit_type(&mut result);
+        return result;
+    }
     let occupied = free
         .iter()
         .map(|name| replacements.get(name).unwrap_or(name).clone())
@@ -169,6 +176,7 @@ impl TypecheckVisitMut<Lowered> for Projection {
         self.occupied.insert(name.clone());
         self.bound.push((raw, name.clone()));
         param.name = name;
+        param.presentation = Default::default();
     }
 
     fn exit_type_binder(&mut self, _param: &mut TypeParam, _scope: Span) {
@@ -282,6 +290,7 @@ mod tests {
         };
         let quantified = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A_n2".into(),
                 span: Span::new(10, 11),
                 kind: None,
@@ -313,6 +322,7 @@ mod tests {
         let binders = scope(&[("A_n2", Span::new(10, 11))]);
         let foreign = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A_n2".into(),
                 span: Span::new(10, 11),
                 kind: None,
@@ -339,6 +349,7 @@ mod tests {
         let binders = scope(&[("A_n2", Span::new(10, 11))]);
         let ty = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".into(),
                 span: Span::new(50, 51),
                 kind: None,

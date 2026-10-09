@@ -79,9 +79,10 @@ macro_rules! clone_phase_type {
                     },
                     Type::Forall { param, meta, .. } => Type::Forall {
                         param: TypeParam {
+                            presentation: param.presentation.clone(),
                             name: param.name.clone(),
                             span: param.span,
-                            kind: param.kind.as_ref().map(clone_kind),
+                            kind: param.kind.as_deref().map(clone_kind).map(Box::new),
                         },
                         body: Box::new(child()),
                         meta: meta.clone(),
@@ -106,8 +107,23 @@ clone_phase_type!(PrePrime, pre_prime_children, clone_pre_prime_type);
 
 /// Reflection exposes binder handles and function arity, not just alpha-equivalence.
 /// Flat tokens keep key construction, comparison and release off the native stack.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct ReflectionTypeKey(Vec<ReflectionTypePart>);
+#[derive(Debug, Clone)]
+pub(super) struct ReflectionTypeKey {
+    parts: Vec<ReflectionTypePart>,
+    presentation: crate::pass::binder_presentation::TypePresentationGuard,
+}
+
+impl PartialEq for ReflectionTypeKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.parts == other.parts
+    }
+}
+impl Eq for ReflectionTypeKey {}
+impl std::hash::Hash for ReflectionTypeKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.parts, state);
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum ReflectionTypePart {
@@ -123,6 +139,10 @@ enum ReflectionTypePart {
 }
 
 impl ReflectionTypeKey {
+    pub(super) fn presentation_matches(&self, other: &Self) -> bool {
+        self.presentation == other.presentation
+    }
+
     pub(super) fn new(root: &EvalAstType) -> Self {
         enum Part<'a> {
             Type(&'a EvalAstType),
@@ -130,6 +150,8 @@ impl ReflectionTypeKey {
         }
         let mut pending = vec![Part::Type(root)];
         let mut parts = Vec::new();
+        let mut presentation = crate::pass::binder_presentation::TypePresentationGuard::default();
+        let mut binder_ordinal = 0;
         while let Some(part) = pending.pop() {
             match part {
                 Part::Kind(Kind::Star) => parts.push(ReflectionTypePart::Star),
@@ -155,6 +177,8 @@ impl ReflectionTypeKey {
                         Type::Product { .. } => ReflectionTypePart::Product,
                         Type::Sum { .. } => ReflectionTypePart::Sum,
                         Type::Forall { param, .. } => {
+                            presentation.record(binder_ordinal, param);
+                            binder_ordinal += 1;
                             ReflectionTypePart::Forall(param.name.clone())
                         }
                         Type::LabelSugar { ext, .. }
@@ -165,12 +189,15 @@ impl ReflectionTypeKey {
                     children(ty, |child| pending.push(Part::Type(child)));
                     pending[start..].reverse();
                     if let Type::Forall { param, .. } = ty {
-                        pending.push(Part::Kind(param.kind.as_ref().unwrap_or(&Kind::Star)));
+                        pending.push(Part::Kind(param.kind.as_deref().unwrap_or(&Kind::Star)));
                     }
                 }
             }
         }
-        Self(parts)
+        Self {
+            parts,
+            presentation,
+        }
     }
 }
 
@@ -283,9 +310,10 @@ pub(super) fn to_pre_prime(
             },
             Type::Forall { param, meta, .. } => Type::Forall {
                 param: TypeParam {
+                    presentation: param.presentation.clone(),
                     name: param.name.clone(),
                     span: param.span,
-                    kind: param.kind.as_ref().map(clone_kind),
+                    kind: param.kind.as_deref().map(clone_kind).map(Box::new),
                 },
                 body: Box::new(child()),
                 meta: Meta::new(meta.span),
@@ -366,9 +394,10 @@ mod tests {
     fn forall(body: EvalAstType, kind: Option<Kind>) -> EvalAstType {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: Span::new(31, 37),
-                kind,
+                kind: kind.map(Box::new),
             },
             body: Box::new(body),
             meta: Meta::new(Span::new(29, 93)),
@@ -386,8 +415,9 @@ mod tests {
             span,
         };
         let binder = |name: &str| TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
-            kind: Some(Kind::arrow_chain(2)),
+            kind: Some(Box::new(Kind::arrow_chain(2))),
             span,
         };
         let path = |module: &str, name: &str, args| {
@@ -509,7 +539,10 @@ mod tests {
         let aliases = actual_policy.take_local_aliases();
         assert_eq!(aliases, expected_policy.take_local_aliases());
         assert_eq!(aliases.len(), 2);
-        assert_eq!(aliases[0].params[0].kind, Some(Kind::arrow_chain(2)));
+        assert_eq!(
+            aliases[0].params[0].kind.as_deref(),
+            Some(&Kind::arrow_chain(2))
+        );
     }
 
     #[test]
@@ -517,6 +550,7 @@ mod tests {
         let path = |name: &str, args| Type::synth_path(vec![name.to_owned()], args, zero_span());
         let bind = |name: &str, body| Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 kind: None,
                 span: zero_span(),
@@ -712,15 +746,23 @@ mod tests {
         };
         assert_eq!(clone_type(&ty), ty);
 
-        let original = EvalRef::new(forall(
+        let mut original = forall(
             Type::Unit { meta: zero_meta() },
             Some(Kind::arrow_chain(10_000)),
-        ));
+        );
+        let Type::Forall { param, .. } = &mut original else {
+            unreachable!()
+        };
+        param.presentation = crate::ast::TypeParamPresentation::written();
+        let written = param.name.clone();
+        param.rename("Canonical".into());
+        let original = EvalRef::new(original);
         let cloned = EvalRef::new(clone_type(&original));
         let Type::Forall { param, .. } = cloned.as_ref() else {
             unreachable!()
         };
-        let mut cursor = param.kind.as_ref().unwrap();
+        assert_eq!(param.written_name(), Some(written.as_str()));
+        let mut cursor = param.kind.as_deref().unwrap();
         let mut depth = 0;
         while let Kind::Arrow(left, right) = cursor {
             assert!(matches!(left.as_ref(), Kind::Star));

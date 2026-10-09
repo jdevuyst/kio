@@ -2,6 +2,8 @@ import { defineConfig } from 'vitepress'
 import { docsSidebar } from './generated/nav.mjs'
 import { siteUrl } from './site.mjs'
 import { fileURLToPath } from 'node:url'
+import { kiodocHtml } from './generated/kiodoc-html.mjs'
+import { createSearchRenderer } from './search-content.mjs'
 
 const publicDir = fileURLToPath(new URL('./public', import.meta.url))
 const base = '/kio/'
@@ -33,7 +35,10 @@ export default defineConfig({
       { icon: 'github', link: 'https://github.com/jdevuyst/kio' }
     ],
     search: {
-      provider: 'local'
+      provider: 'local',
+      options: {
+        _render: createSearchRenderer(kiodocHtml)
+      }
     },
     outline: {
       level: [2, 3]

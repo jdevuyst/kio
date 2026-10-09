@@ -26,6 +26,6 @@ pub fn eq_i32(x: I32, y: I32) -> Bool {
   }
 }
 
-pub fn loop[S][R](step: S -> S | R, state: S) -> R { iter.loop(step, state) }
+pub fn loop[S][R](step: S -> (S | R), state: S) -> R { iter.loop(step, state) }
 
 pub fn string_concat(x: String, y: String) -> String { text.string_concat(x, y) }

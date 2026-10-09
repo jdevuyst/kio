@@ -7,7 +7,7 @@ import testapi/arith(make_pair);
 import testapi/fmt(i32_to_string);
 import testapi/io(print);
 
-fn use_builder(builder: (I32 & String) -> I32 & String) -> I32 & String {
+fn use_builder(builder: (I32 & String) -> (I32 & String)) -> I32 & String {
   builder(42, "first-class-pair"(String))
 }
 

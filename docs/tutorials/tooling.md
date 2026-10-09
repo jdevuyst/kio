@@ -248,10 +248,10 @@ A package with no `equiv` blocks prints `no equiv blocks found` and exits `0` �
 
 ```sh
 kio build          # build every target in the build block
-kio build js       # build only the target whose id is "js"
+kio build js       # build only the target named "js"
 ```
 
-With no argument every target is emitted; naming target ids builds only those (an unknown id is an error). Our package declares one `js` target, so both commands here do the same thing. The emitted JavaScript lands under `out/js/`. What the artifact looks like, and how to call into it, is backend-specific — see the host guide for your target: [JavaScript](../hosts/js.md), [TypeScript](../hosts/ts.md), [Python](../hosts/python.md), [Java](../hosts/java.md), [Rust](../hosts/rust.md), [Go](../hosts/go.md), [Swift](../hosts/swift.md), or [Haskell](../hosts/haskell.md).
+With no argument every target is emitted; giving target names builds only those (an unknown name is an error). Our package declares one `js` target, so both commands here do the same thing. The emitted JavaScript lands under `out/js/`. What the artifact looks like, and how to call into it, is backend-specific — see the host guide for your target: [JavaScript](../hosts/js.md), [TypeScript](../hosts/ts.md), [Python](../hosts/python.md), [Java](../hosts/java.md), [Rust](../hosts/rust.md), [Go](../hosts/go.md), [Swift](../hosts/swift.md), or [Haskell](../hosts/haskell.md).
 
 ## Chapter 7 — Seal the contract surface with `kio sig`
 

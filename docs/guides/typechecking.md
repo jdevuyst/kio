@@ -342,7 +342,7 @@ complete binding annotation when the call otherwise lacks that information.
 Adding an unannotated binding alone does not supply it.
 
 For example, suppose an ordinary function has the signature
-`drive[S][R](step: S -> S | R, seed: S) -> R`. A callback written as
+`drive[S][R](step: S -> (S | R), seed: S) -> R`. A callback written as
 `.(state: State) -> State | Done { advance(state) }` identifies the call's
 result as `Done` without inspecting the callback body. An `impl(fills)`
 elaborator receiving that call can use the result type. If the callback omits

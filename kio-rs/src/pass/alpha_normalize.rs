@@ -183,7 +183,7 @@ pub(crate) fn erase_package_occurrences<P: TypecheckVisitPhase + Phase<FnBody = 
     OccurrenceEraser.visit_package(package);
 }
 
-#[cfg(feature = "prime")]
+#[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) fn erase_module_occurrences<P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>>(
     module: &mut Module<P>,
 ) {
@@ -193,6 +193,10 @@ pub(crate) fn erase_module_occurrences<P: TypecheckVisitPhase + Phase<FnBody = E
 struct OccurrenceEraser;
 
 impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for OccurrenceEraser {
+    fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
+        param.presentation = Default::default();
+    }
+
     fn visit_expr(&mut self, expr: &mut crate::ast::Expr<P>) {
         *expr.occurrence_mut() = Default::default();
         crate::pass::visit_mut::walk_expr(self, expr);
@@ -343,7 +347,7 @@ impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for BinderNormalizer<'_> {
         };
         self.presentation
             .record_name(self.module_path, param.span, &normalized, &source);
-        param.name = normalized.clone();
+        param.rename(normalized.clone());
         self.type_bindings
             .entry(source.clone())
             .or_default()

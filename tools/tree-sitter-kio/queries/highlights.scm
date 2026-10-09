@@ -13,6 +13,7 @@
 ; canonical dot-separated kind.
 
 (let_statement (keyword_let) @keyword.declaration)
+(incomplete_numbered_binding (keyword_let) @keyword.declaration)
 (row_let_stmt (keyword_let) @keyword.declaration)
 (neutral_bind (keyword_let) @keyword.declaration)
 (block_head) @keyword.elaborator
@@ -125,6 +126,7 @@
 (type_param_binder (variable_parameter) @variable.parameter)
 (type_param_group (variable_parameter) @variable.parameter)
 (placeholder_expression (variable_parameter) @variable.parameter)
+(numbered_binding (variable_parameter) @variable.parameter)
 
 (operator_builtin)        @operator.builtin
 (operator_arrow_type)     @operator.builtin

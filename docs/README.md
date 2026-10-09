@@ -53,6 +53,7 @@ authors, not the starting point for products and sums.
 
 ### Tooling
 
+- [Reading the bundled manual](guides/manual.md) — offline documentation, discovery, and archive extraction with `kio manual`.
 - [Shell completions for `kio`](guides/shell-completions.md) — generate and install `bash`, `zsh`, or `fish` completion scripts.
 - [Installing Kio from source](guides/install-from-source.md) — build the CLI and VS Code extension and configure format-on-save.
 

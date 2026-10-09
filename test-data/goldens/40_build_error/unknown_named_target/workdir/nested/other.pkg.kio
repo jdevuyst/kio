@@ -1,0 +1,13 @@
+package other;
+
+build {
+  cache ();
+
+  target (js, "worker") {
+    out "out/worker/"
+  }
+}
+
+bridge {
+  main
+}

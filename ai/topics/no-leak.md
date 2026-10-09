@@ -16,13 +16,17 @@ The rule governs the **public project artifacts** — the files a clone publishe
 
 - `specs/`
 - `docs/` except `docs/blog/*.md`
-- `README.md`, `ROADMAP.md`, `INSTALL.md`
+- `README.md`, `ROADMAP.md`, `INSTALL.md`, `KIO-FOR-AGENTS.md`
 - `kio-rs/` source and its comments (and any future compiler crate)
 - `ci/`
 - `test-data/`
 - commit messages
 
 The **agent-guidance layer** may discuss local workflow mechanics when that is its subject matter, but it is not a dumping ground for incidental session or machine detail. Prefer portable descriptions ("the configured shared cache", "sibling worktrees") over concrete local paths, host-specific values, or session state. Put concrete local configuration in untracked local files.
+
+`KIO-FOR-AGENTS.md` is a public portable authoring workflow, not part of this
+repository-maintenance layer. Public documentation may link to it; it remains
+subject to the full public-artifact portability bar.
 
 - `AGENTS.md`
 - `ai/topics/` (e.g. [`local-tools.md`](local-tools.md), [`local-ci.md`](local-ci.md), and [`local-performance.md`](local-performance.md) describe local workflow mechanics)

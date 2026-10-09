@@ -839,59 +839,73 @@ callbacks. A callback constructed directly through the public evaluator API
 can carry inconsistent stored measures and is checked against both
 independently.
 
-Each resolved source occurrence of the `__structural_recur__` value has a
-phase-local helper origin. Direct and grouped calls use that origin, and a
-helper value retains it through proof/type application stages and higher-order
-use. A local value with the same spelling is an ordinary local and acquires
-no helper origin. Ordinary artifact-backed local, function, member, and import
-resolution runs before the evaluator attaches an origin; later origin
-comparison and consumption require no declaration search. One preparation of
-a validated evaluator artifact supplies a nominal generation namespace for
-its origins: clones of that prepared artifact retain the namespace, while an
-independent preparation receives a distinct namespace even when its source is
-byte-identical. A helper value retains its namespace when it crosses into a
-different evaluator context. A public mutable evaluator root that is not held
-behind an immutable authenticated artifact context receives a fresh nominal
-namespace for that root. The helper's three operands and the callback's two
-operands follow E-App's ordinary product-packet equivalence: each layer accepts
-either flattened slots or one right-folded product value. Call operands are
-evaluated before a completed direct or indirect application enters its origin.
-An origin with no active invocation uses the initial measure above. A re-entry
-at the same helper origin instead computes the recursive measure and requires
-it to be strictly below the nearest active invocation's measure. A direct
-projected handle's conservative initial lower bound is therefore never reused
-as its re-entry measure.
-Equal-measure fuel is rejected independently of value identity,
-representation, or whether it contains a projected handle. The oldest active
-entry at that origin supplies the diagnostic root, while a callback chain
-retains the measure of the invocation that created it as its own root. A
-callback rejects the edge when `next ≥ current` or `next ≥ root`. When both
-bounds fail, the diagnostic identifies the current edge; the root-specific
-diagnostic applies only when `next < current` but `next ≥ root`.
+Every fresh invocation uses the initial measurement above and starts an
+independent callback root, including nested calls through the same ordinary
+helper, a partially applied helper, or a higher-order argument. It does not
+compare its initial fuel with another active invocation. The helper's three
+operands and the callback's two operands follow E-App's ordinary product-packet
+equivalence: each layer accepts either flattened slots or one right-folded
+product value, and evaluates all operands before invoking the step.
+A fresh nested invocation may therefore use a direct projected handle's known
+outer lower bound even when that handle has no complete recursive measure.
+Applying an existing callback to that same open handle remains rejected.
+A local value with the same spelling is an ordinary local; helper execution
+comes only from ordinary resolution under the explicit primitive environment.
 
-Strict descent along an evaluator-created callback chain keeps every recursive
-measure below that chain's root measure. Invocations from distinct helper
-origins do not compare measures. One evaluator operation can reach only
-finitely many retained helper origins, so an infinite nesting would revisit
-one active origin infinitely often and contradict strict natural-number
-descent at that origin. Infinite or unbounded sequential repetition can only
-be driven by a callback chain, whose measures also strictly descend; finite
-ordinary calls may repeat an origin sequentially. Once an evaluated helper
-entry or callback edge fails this
-check, enclosing call-by-value computation cannot discard the failure: the
-outer evaluator operation returns its first such totality failure, and the
-next operation starts clean. Memoization neither replaces evaluation while a
-helper origin is active nor stores an apparent result after that operation has
-recorded a failure. Helper origins exist only in the compile-time evaluator:
-within their nominal generation they are derived from resolved module identity
-and the exact retained helper-expression node, not from diagnostic span
-equality, and they do not enter Kio', serialized artifacts, or backend output.
-Cloning a prepared artifact retains those exact immutable nodes; an independent
-preparation or public mutable evaluator root receives a new nominal generation.
-Adding unrelated declarations may shift source offsets, but within one prepared
-artifact or root it cannot change which invocations share a helper origin,
-merge distinct resolved helper occurrences, change an existing occurrence's
-resolution, or change its behavior.
+On a callback edge, equal-measure fuel is rejected independently of value
+identity, representation, or whether it contains a projected handle. A callback
+rejects the edge when `next ≥ current` or `next ≥ root`. When both bounds fail,
+the diagnostic identifies the current edge; the root-specific diagnostic
+applies only when `next < current` but `next ≥ root`. Saved callbacks retain
+their immutable bounds and step after their creating invocation returns.
+Sibling applications do not consume or change each other's bounds.
+
+**Termination of the whole extension.** The helper is a finite iterator at
+every result type, including function types. Fix a computable step and root
+measure `b`. Define finite approximants `A₀(c, f, s)` to apply the step with a
+callback that faults on every call, and `Aₙ₊₁(c, f, s)` to apply the step with
+a callback that computes `d = recursive_measure(f')` and returns
+`Aₙ(d, f', s')` only when `d < c` and `d < b`; every other edge faults.
+A fresh invocation with initial measure `b` is `A_b(b, f, s)`.
+
+Induction on the finite index makes every approximant computable: its callback
+is an ordinary function over the preceding computable approximant, and a
+computable step maps computable arguments to a computable result. This proves
+the helper constant computable. The fundamental typing induction then admits
+that constant in arbitrary step bodies; it does not assume those bodies avoid
+nested helpers. Higher-order results, captured callbacks, state containing
+functions, and an inner helper invoking an outer predecessor are covered by
+the same arrow interpretation. The compact evaluator callback corresponds to
+an approximant with index `n ≥ current`; a successful edge to
+`d < current ≤ n` can use the predecessor approximant because `d ≤ n − 1`.
+This is a bound on each saved predecessor chain, not a global call-count or
+dynamic nesting bound.
+
+Measurements inspect finite immutable representations and use checked
+arithmetic; they neither evaluate callbacks nor consult mutable solver state.
+An initial conservative lower bound can remove callback edges, not add an
+infinite chain. The argument relies on the totality of the other admitted
+primitive operations and the core's computability theorem
+([Prime § 5](prime.md#5-strong-normalization)).
+
+For evaluator errors, use the corresponding open-term, neutral-closed
+computation interpretation: a failed edge yields an inert typed fault neutral
+and records the operation's first fault. This includes an internal neutral at
+bottom, so applying `__absurd__` to it remains inert. It is not a closed bottom
+value in the core interpretation, whose bottom candidate remains empty.
+Subsequent call-by-value work and symbolic branch probes still terminate under
+the extended interpretation even when ordinary code discards a fault value.
+The outer evaluator operation returns its first such failure; the next
+operation starts clean. Memoization neither replaces evaluation while a fresh
+helper invocation is active nor stores an apparent result after that operation
+has recorded a failure. Returned callbacks do not extend their creator's
+active cache scope, and callback-bearing arguments and results are not shared.
+
+All callback state is compile-time-local and is removed before Kio',
+serialization, or backend output. No source-origin identity participates in
+the helper's semantics. Adding unrelated declarations cannot change an
+existing resolved helper, its initial measurement, or a callback's immutable
+bounds; ordinary open-world name resolution remains unchanged.
 
 ### 7.5. Existential newtype CPS projector
 

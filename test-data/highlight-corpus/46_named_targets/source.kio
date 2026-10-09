@@ -1,0 +1,10 @@
+package app;
+
+build {
+  target js { out "out/js" };
+  target (js, "web") { out "out/web" };
+  target (
+    kio-prime,
+    "arch" "ive"
+  ) { out "out/prime" }
+}

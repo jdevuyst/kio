@@ -87,8 +87,9 @@ module.exports = grammar({
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
     $.doc_reference, $.doc_directive, $.doc_literal_fallback, $._doc_line_end, $.comment_line],
 
-  inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body],
+  inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_atom, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body],
   conflicts: ($) => [
+    [$._local_let_pattern, $.incomplete_numbered_binding],
     [$.build_block],
     [$.elaborator_body],
     [$._expression_atom, $.block_call],
@@ -316,7 +317,10 @@ module.exports = grammar({
       semicolonBody($, separated(alias($._docs_config_field, $.config_field), repeat1($.separator_semicolon)), { runs: true, empty: true }),
     ),
     target_block: ($) => seq(
-      alias(kw("target"), $.keyword_declaration), $.target_name,
+      alias(kw("target"), $.keyword_declaration), choice(
+        $.target_name,
+        seq($.bracket_lparen, $.target_name, $.separator_comma, repeat1($.string_literal), $.bracket_rparen),
+      ),
       semicolonBody($, separated($.config_field, repeat1($.separator_semicolon)), { runs: true, empty: true }),
     ),
     target_name: ($) => seq($.identifier, repeat(seq(alias("-", $.operator_run), $.identifier))),
@@ -591,12 +595,12 @@ module.exports = grammar({
     _complete_expression_block: ($) => seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
       repeat(seq(choice($.let_statement, $.row_let_stmt, $._expression), repeat1($.separator_semicolon))),
-      optional($._expression), repeat($.unowned_function), $.bracket_rbrace,
+      optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.unowned_function), $.bracket_rbrace,
     ),
     incomplete_expression_block: ($) => seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
       repeat(seq(choice($.let_statement, $.row_let_stmt, $._expression), repeat1($.separator_semicolon))),
-      optional($._expression), repeat($.function_definition), $._editor_eof,
+      optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.function_definition), $._editor_eof,
     ),
     unowned_function: ($) => seq(
       alias($.fn_decl_head, $.unowned_function_head),
@@ -607,9 +611,19 @@ module.exports = grammar({
       choice($._local_let_pattern, seq($.separator_dot, $.grouped_existential_pattern)),
       alias("=", $.operator_builtin), $._expression,
     ),
+    incomplete_numbered_binding: ($) => prec.dynamic(10, seq(
+      $.keyword_let, $.numbered_binding,
+      optional(choice(alias("=", $.operator_builtin), alias("<-", $.operator_run))),
+    )),
     _local_let_pattern: ($) => choice(
       alias($._value_identifier_like, $.identifier), alias("_", $.slot),
       seq($.separator_dot, $.local_pattern_tuple),
+      $.numbered_binding,
+    ),
+    numbered_binding: ($) => seq(
+      alias($._placeholder_open, $.separator_dot),
+      alias(token.immediate(PLACEHOLDER_STEM), $.variable_parameter),
+      alias(token.immediate("."), $.separator_dot),
     ),
     grouped_existential_pattern: ($) => seq($.bracket_lparen,
       repeat1($.existential_binder),
@@ -688,13 +702,13 @@ module.exports = grammar({
       $.bracket_lbrace, repeat($.separator_semicolon),
       repeat(seq(choice($.neutral_bind, $.let_statement, $.row_let_stmt, $._expression),
         repeat1($.separator_semicolon))),
-      optional($._expression), repeat($.unowned_function), $.bracket_rbrace,
+      optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.unowned_function), $.bracket_rbrace,
     )),
     incomplete_neutral_block: ($) => prec(2, seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
       repeat(seq(choice($.neutral_bind, $.let_statement, $.row_let_stmt, $._expression),
         repeat1($.separator_semicolon))),
-      optional($._expression), repeat($.function_definition), $._editor_eof,
+      optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.function_definition), $._editor_eof,
     )),
     neutral_bind: ($) => seq($.keyword_let, $._local_let_pattern,
       alias('<-', $.operator_run), $._expression),
@@ -732,8 +746,9 @@ module.exports = grammar({
     incomplete_forall_type: ($) => seq(
       $.type_param_list, optional($.operator_arrow_type), $._editor_boundary,
     ),
-    _type: ($) => choice(
-      $.type_path, $.forall_type, $.type_group, $.type_arrow, $.type_product,
+    _type: ($) => choice($._type_atom, $.type_arrow, $.type_product),
+    _type_atom: ($) => choice(
+      $.type_path, $.forall_type, $.type_group,
       alias(".", $.separator_dot), alias("!", $.operator_builtin), $.slot,
     ),
     type_path: ($) => prec.dynamic(1, prec.right(seq(
@@ -746,10 +761,12 @@ module.exports = grammar({
       $.bracket_lparen, optional(sep1($._type, $.separator_comma)), $._editor_block_boundary,
     ),
     type_group: ($) => seq($.bracket_lparen, $._type, $.bracket_rparen),
-    type_arrow: ($) => prec.right(1, seq($._type, $.operator_arrow_type, $._type)),
+    type_arrow: ($) => prec.right(1, seq(
+      $._type_atom, $.operator_arrow_type, choice($._type_atom, $.type_arrow),
+    )),
     type_product: ($) => prec.right(2, choice(
-      seq($._type, $._type_chain_operator, optional($._type)),
-      seq($._type_chain_operator, optional($._type)),
+      seq($._type_atom, $._type_chain_operator, optional(choice($._type_atom, $.type_product))),
+      seq($._type_chain_operator, optional(choice($._type_atom, $.type_product))),
     )),
     _type_chain_operator: ($) => choice(
       alias(choice("&", "|"), $.operator_builtin), alias(choice(/&&+/, /\|\|+/), $.operator_run),

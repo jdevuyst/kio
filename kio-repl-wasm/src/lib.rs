@@ -421,6 +421,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numbered_binding_browser_completion_and_normalization() {
+        let mut repl = trailing_blocks_repl();
+        repl.run_command(Command::Load("app".to_owned()));
+        let expression = ".() { let .x. = ((), ()); x2 }()";
+        let output = strip_ansi(
+            &repl
+                .run_command(Command::Normalize(expression.to_owned()))
+                .output,
+        );
+        assert_eq!(output.trim(), "()", "{output}");
+        let input = ".() { let .x. = (); x3; let .x. = (); x";
+        let completion = repl.complete_core(input, input.len());
+        let numbered: Vec<_> = completion
+            .candidates
+            .iter()
+            .filter(|item| item.label.starts_with('x'))
+            .collect();
+        assert_eq!(numbered.len(), 1, "{completion:?}");
+        assert_eq!(numbered[0].label, "x1");
+        assert_eq!(completion.replace, input.len() - 1..input.len());
+    }
+
+    #[test]
     fn reference_ownership_uses_the_in_memory_snapshot() {
         let mut repl = reference_ownership_repl();
         let loaded = repl.run_command(Command::Load("demo/main".to_owned()));

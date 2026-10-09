@@ -33,7 +33,7 @@ pub fn lt_i32(p0: I32, p1: I32) -> Bool { _rehost_hbhfgfhfgffpgigphdhe.lt_i32(p0
 
 pub fn sub_i32(p0: I32, p1: I32) -> I32 { _rehost_hbhfgfhfgffpgigphdhe.sub_i32(p0, p1) }
 
-pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loop(S, R, p0, p1) }
+pub fn loop[S][R](p0: S -> (S | R), p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loop(S, R, p0, p1) }
 
 pub fn string_concat(p0: String, p1: String) -> String {
   _rehost_hbhfgfhfgffpgigphdhe.string_concat(p0, p1)

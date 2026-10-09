@@ -125,10 +125,7 @@ impl EquivDischargeResult {
 
 pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     if prime_only {

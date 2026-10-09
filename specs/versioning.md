@@ -693,8 +693,8 @@ an unrecorded break is hard to miss during ordinary iteration.
 in the current directory — each with its own `<pkg>.sig.kio`, its own
 generation, and an independent report / stage / commit (there is no
 cross-package rollback). It also accepts explicit package-path arguments to
-scope a subset, mirroring `kio build`: an argument that names an existing path
-(a directory or a `*.pkg.kio` file) is a **package selector**, not a target id.
+scope a subset using a directory or a `*.pkg.kio` file. These signature-command
+selectors are separate from `kio build`'s explicit package-name selectors.
 
 ## Exit codes
 

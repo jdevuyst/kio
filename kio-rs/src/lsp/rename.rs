@@ -1111,7 +1111,7 @@ impl PlaceholderRename {
 }
 
 fn placeholder_family_at(module: &Module<Surface>, offset: u32) -> Option<PlaceholderRename> {
-    let mut nearest = None;
+    let mut owners = Vec::new();
     let mut visit = |expr: &Expr<Surface>| {
         if let Expr::FnPlaceholder {
             stem, body, meta, ..
@@ -1119,8 +1119,45 @@ fn placeholder_family_at(module: &Module<Surface>, offset: u32) -> Option<Placeh
             && meta.span.start <= offset
             && offset <= meta.span.end
         {
-            // The walker is preorder: the final containing owner is innermost.
-            nearest = Some((stem.clone(), body.as_ref().clone(), meta.span));
+            owners.push((stem.clone(), body.as_ref().clone(), meta.span));
+        }
+        if let Expr::Let {
+            pattern: Some(pattern),
+            body,
+            ..
+        } = expr
+            && let Some(numbered) = &pattern.numbered
+            && ((pattern.span.start <= offset && offset <= pattern.span.end)
+                || (body.span().start <= offset && offset <= body.span().end))
+        {
+            owners.push((numbered.stem.clone(), body.as_ref().clone(), pattern.span));
+        }
+        if let Expr::BlockCall { blocks, .. } = expr {
+            for block in blocks {
+                for (index, item) in block.items.iter().enumerate() {
+                    if let crate::ast::NeutralItem::Binding {
+                        pattern: Some(pattern),
+                        meta,
+                        ..
+                    } = item
+                        && let Some(numbered) = &pattern.numbered
+                        && ((pattern.span.start <= offset && offset <= pattern.span.end)
+                            || (meta.span.end <= offset && offset <= block.close.start))
+                    {
+                        // Reuse the neutral-block ownership walk with this owner's
+                        // exact lexical suffix; its initializer is outside scope.
+                        let mut continuation = expr.clone();
+                        let Expr::BlockCall { prefix, blocks, .. } = &mut continuation else {
+                            unreachable!("cloned neutral block call")
+                        };
+                        prefix.clear();
+                        let mut tail = block.clone();
+                        tail.items = block.items[index + 1..].to_vec();
+                        *blocks = vec![tail];
+                        owners.push((numbered.stem.clone(), continuation, pattern.span));
+                    }
+                }
+            }
         }
     };
     for item in &module.items {
@@ -1139,27 +1176,31 @@ fn placeholder_family_at(module: &Module<Surface>, offset: u32) -> Option<Placeh
             _ => {}
         }
     }
-    let (stem, mut body, owner) = nearest?;
-    let references = crate::pass::placeholder::classify(&stem.name, &mut body, owner)
-        .ok()?
-        .occurrences
+    owners
         .into_iter()
-        .map(|(reference, slot)| (reference.span, slot))
-        .collect::<Vec<_>>();
-    let contains = |span: Span| span.start <= offset && offset <= span.end;
-    let cursor_stem = if contains(stem.span) {
-        stem.span
-    } else {
-        let (span, _) = references.iter().find(|(span, _)| contains(*span))?;
-        Span::new(span.start, span.start + stem.name.len() as u32)
-    };
-    Some(PlaceholderRename {
-        stem,
-        cursor_stem,
-        body,
-        owner,
-        references,
-    })
+        .rev()
+        .find_map(|(stem, mut body, owner)| {
+            let references = crate::pass::placeholder::classify(&stem.name, &mut body, owner)
+                .ok()?
+                .occurrences
+                .into_iter()
+                .map(|(reference, slot)| (reference.span, slot))
+                .collect::<Vec<_>>();
+            let contains = |span: Span| span.start <= offset && offset <= span.end;
+            let cursor_stem = if contains(stem.span) {
+                stem.span
+            } else {
+                let (span, _) = references.iter().find(|(span, _)| contains(*span))?;
+                Span::new(span.start, span.start + stem.name.len() as u32)
+            };
+            Some(PlaceholderRename {
+                stem,
+                cursor_stem,
+                body,
+                owner,
+                references,
+            })
+        })
 }
 
 fn row_let_decl_at_offset(source: &str, byte_offset: u32) -> Option<RowLetDecl> {
@@ -1455,98 +1496,138 @@ mod tests {
     #[test]
     fn placeholder_typed_navigation_keeps_numbered_slots_distinct() {
         let root = test_file_path("/virtual/placeholder-tooling");
-        let source = "module main; pub fn run() -> ((. -> .) & .) -> . { \
-            .x. { let keep = x1; x2 } }";
-        let files = BTreeMap::from([
+        for (source, slots) in [
             (
-                root.join("demo.pkg.kio"),
-                "package demo; bridge { main; }".to_owned(),
+                "module main; pub fn run() -> ((. -> .) & .) -> . { \
+                .x. { let keep = x1; x2 } }",
+                2,
             ),
-            (root.join("main.kio"), source.to_owned()),
-        ]);
-        let overlay = crate::package_collection::SourceOverlay::complete(root.clone(), files);
-        let analysis = crate::cmd::check::analyze_workspace_at_with_overlay_lsp(&root, &overlay)
-            .expect("typed placeholder source");
-        let uri = path_to_uri(&root.join("main.kio"), &root).unwrap();
-        let stem = source.find(".x.").unwrap() as u32 + 1;
-        let stem_position = Position::new(0, stem);
-        let stem_span = Span::new(stem, stem + 1);
-        assert!(
-            analysis
-                .position_index
-                .binder_at("main", stem_span)
-                .is_none()
-        );
-        assert!(analysis.position_index.type_at("main", stem_span).is_none());
-        assert!(
-            crate::lsp::definition::handle_definition(&uri, &stem_position, &analysis, None, &root)
-                .is_none()
-        );
-        assert!(
-            crate::lsp::references::handle_references(
-                &uri,
-                &stem_position,
-                true,
-                &analysis,
-                None,
-                &root
-            )
-            .is_none()
-        );
-        assert!(
-            crate::lsp::hover::handle_hover(&uri, &stem_position, &analysis, None).is_none(),
-            "the family stem has no individual slot type"
-        );
-        let renamed = handle_rename(&uri, &stem_position, "arg", &analysis, None, &root)
-            .unwrap()
-            .unwrap();
-        assert_eq!(renamed.changes.unwrap()[&uri].len(), 3);
-        for name in ["x1", "x2"] {
-            let position = position_of(source, name);
-            let definition =
-                crate::lsp::definition::handle_definition(&uri, &position, &analysis, None, &root)
-                    .unwrap();
-            let lsp_types::GotoDefinitionResponse::Scalar(location) = definition else {
-                panic!("one stem declaration")
-            };
-            assert_eq!(location.range.start.character, stem);
-            assert_eq!(location.range.end.character, stem + 1);
-            let references = crate::lsp::references::handle_references(
-                &uri, &position, false, &analysis, None, &root,
-            )
-            .unwrap();
-            assert_eq!(
-                references.len(),
+            (
+                "module main; pub fn run(value: (. -> .) & .) -> . { \
+                let .x. = value; let keep = x1; x2 }",
+                2,
+            ),
+            (
+                "module main; import sequence(do); fn bind[A][B](value: A, next: A -> B) -> B { next(value) } \
+                pub fn run(value: (. -> .) & .) -> . { do! bind { let .x. <- value; let keep = x1; x2 } }",
+                2,
+            ),
+            (
+                "module main; pub fn run(value: (. -> .) & .) -> . { \
+                .() { let .x. = value; let keep = x1; x2 }() }",
+                2,
+            ),
+            (
+                "module main; pub fn run(value: . -> .) -> . { \
+                .() { let .x. = value; x1() }() }",
                 1,
-                "numbered slots retain separate binding identities"
+            ),
+        ] {
+            let files = BTreeMap::from([
+                (
+                    root.join("demo.pkg.kio"),
+                    "package demo; bridge { main; }".to_owned(),
+                ),
+                (root.join("main.kio"), source.to_owned()),
+                (
+                    root.join("sequence.kio"),
+                    include_str!("../../../test-data/poc/elab/workdir/sequence.kio").to_owned(),
+                ),
+            ]);
+            let overlay = crate::package_collection::SourceOverlay::complete(root.clone(), files);
+            let analysis =
+                crate::cmd::check::analyze_workspace_at_with_overlay_lsp(&root, &overlay)
+                    .expect("typed placeholder source");
+            let uri = path_to_uri(&root.join("main.kio"), &root).unwrap();
+            let stem = source.find(".x.").unwrap() as u32 + 1;
+            let stem_position = Position::new(0, stem);
+            let stem_span = Span::new(stem, stem + 1);
+            assert!(
+                analysis
+                    .position_index
+                    .binder_at("main", stem_span)
+                    .is_none()
             );
-            assert_eq!(references[0].range.start, position);
-            let with_declaration = crate::lsp::references::handle_references(
-                &uri, &position, true, &analysis, None, &root,
-            )
-            .unwrap();
-            assert_eq!(
-                with_declaration, references,
-                "the family stem is not a declaration occurrence of one numbered slot"
+            assert!(analysis.position_index.type_at("main", stem_span).is_none());
+            assert!(
+                crate::lsp::definition::handle_definition(
+                    &uri,
+                    &stem_position,
+                    &analysis,
+                    None,
+                    &root
+                )
+                .is_none()
             );
-            let hover = crate::lsp::hover::handle_hover(&uri, &position, &analysis, None).unwrap();
-            let lsp_types::HoverContents::Markup(content) = hover.contents else {
-                panic!("type hover")
-            };
-            assert_eq!(
-                content.value.contains("->"),
-                name == "x1",
-                "{name}: {}",
-                content.value
+            assert!(
+                crate::lsp::references::handle_references(
+                    &uri,
+                    &stem_position,
+                    true,
+                    &analysis,
+                    None,
+                    &root
+                )
+                .is_none()
             );
-            let renamed = handle_rename(&uri, &position, "arg", &analysis, None, &root)
+            let stem_hover = crate::lsp::hover::handle_hover(&uri, &stem_position, &analysis, None);
+            assert!(
+                stem_hover.is_none(),
+                "the family stem has no individual slot type: {source}: {stem_hover:?}"
+            );
+            let renamed = handle_rename(&uri, &stem_position, "arg", &analysis, None, &root)
                 .unwrap()
                 .unwrap();
-            assert_eq!(
-                renamed.changes.unwrap()[&uri].len(),
-                3,
-                "typed rename still targets the family"
-            );
+            assert_eq!(renamed.changes.unwrap()[&uri].len(), slots + 1);
+            for name in &["x1", "x2"][..slots] {
+                let position = position_of(source, name);
+                let definition = crate::lsp::definition::handle_definition(
+                    &uri, &position, &analysis, None, &root,
+                )
+                .unwrap();
+                let lsp_types::GotoDefinitionResponse::Scalar(location) = definition else {
+                    panic!("one stem declaration")
+                };
+                assert_eq!(location.range.start.character, stem);
+                assert_eq!(location.range.end.character, stem + 1);
+                let references = crate::lsp::references::handle_references(
+                    &uri, &position, false, &analysis, None, &root,
+                )
+                .unwrap();
+                assert_eq!(
+                    references.len(),
+                    1,
+                    "numbered slots retain separate binding identities"
+                );
+                assert_eq!(references[0].range.start, position);
+                let with_declaration = crate::lsp::references::handle_references(
+                    &uri, &position, true, &analysis, None, &root,
+                )
+                .unwrap();
+                assert_eq!(
+                    with_declaration, references,
+                    "the family stem is not a declaration occurrence of one numbered slot"
+                );
+                let hover =
+                    crate::lsp::hover::handle_hover(&uri, &position, &analysis, None).unwrap();
+                let lsp_types::HoverContents::Markup(content) = hover.contents else {
+                    panic!("type hover")
+                };
+                assert_eq!(
+                    content.value.contains("->"),
+                    *name == "x1",
+                    "{name}: {}",
+                    content.value
+                );
+                let renamed = handle_rename(&uri, &position, "arg", &analysis, None, &root)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    renamed.changes.unwrap()[&uri].len(),
+                    slots + 1,
+                    "typed rename still targets the family"
+                );
+            }
         }
     }
 
@@ -2606,5 +2687,25 @@ rec(loop) {\n\
             other => panic!("expected text document edits, got {other:?}"),
         };
         assert_eq!(edit_count, 1);
+    }
+    #[test]
+    fn numbered_family_rename_observes_whole_family_shadowing() {
+        for body in [
+            "let .x. = a; print(x1); let .y. = b; pair(x3, y1)",
+            "action! { let .x. <- a; print(x1); let .y. <- b; pair(x3, y1) }",
+        ] {
+            let source = format!("module main; fn run() {{ {body} }}");
+            let module = parse_surface_module(&source).unwrap();
+            for offset in [source.find(".x.").unwrap() + 1, source.find("x3").unwrap()] {
+                let family = placeholder_family_at(&module, offset as u32).unwrap();
+                assert!(
+                    family.rename("y", &LineIndex::new(&source)).is_err(),
+                    "{source}"
+                );
+                let family = placeholder_family_at(&module, offset as u32).unwrap();
+                let edits = family.rename("arg", &LineIndex::new(&source)).unwrap();
+                assert_eq!(edits.len(), 3, "stem and both owned references");
+            }
+        }
     }
 }

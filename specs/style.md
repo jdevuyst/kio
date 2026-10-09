@@ -70,6 +70,7 @@ Comments between a closing brace and a continuation label stay at that block bou
 
 - `x: A` — one space after `:` in type annotations.
 - `let .(x: A) = e;` — typed locals use an explicit parenthesized rich pattern; the annotation uses the same spacing.
+- `let .x. = e;` and `let .x. <- e;` — numbered bindings retain adjacent dots and stem, with one space after `let` and around the connective. Formatting preserves the family form even when it has one slot.
 - `A & B`, `A | B` — single spaces around binary type operators.
 - `A -> B` — single spaces around `->`.
 - `,` separators in single-line lists — `(a, b, c)`, never `(a,b,c)` or `(a , b , c)`.
@@ -199,8 +200,9 @@ type Triple[A][B][C] = A & B & C;
 Chains right-associate: `A & B & C` denotes `A & (B & C)`. Only **load-bearing** outer parens are written:
 
 - **Mixing** different operators in one chain: `(A & B) | C` — without explicit parentheses, mixed `&`/`|` chains are rejected.
-- **Function-type child of a chain**: `(A -> B) | C` — without surrounding parens, `A -> B | C` would reparse as `A -> (B | C)` (the function returning the sum).
+- **Function-type child of a chain**: `(A -> B) | C` — the parentheses delimit the function-valued chain item.
 - **Function-type parameter list**: `(A & B) -> C` — the outer parens belong to the arrow's parameter list, not to the chain. They're always written.
+- **Function-type result**: `A -> (B & C)` and `A -> (B | C)` — a direct product or sum result is always parenthesized. A named function or lambda's own return annotation stays bare (`fn pair() -> A & B` or `.() -> A & B`); an arrow nested inside that annotation still groups its result (`fn factory() -> A -> (B & C)`).
 - **Left-leaning same-op chain**: `(A & B) & C` keeps inner parens to preserve the AST shape (distinct from the right-leaning chain `A & B & C`).
 
 Parenthesized unary function types parse, but they are not canonical output: `(A) -> B` emits as `A -> B`.
@@ -215,7 +217,7 @@ type Event =
   ;
 ```
 
-Same width-driven trigger as the comma-separated lists: single-line if the flat form fits, multi-line otherwise. The unparenthesized-chain canonical layout is admissible at every phase — both Kio and Kio' parse `A & B & C` and `(A & (B & C))` to the same right-associated AST, and `kio fmt` emits the unparenthesized-chain shape regardless of whether the source is Kio or Kio'.
+Same width-driven trigger as the comma-separated lists: single-line if the flat form fits, multi-line otherwise. Kio and Kio' use the same chain layout and grouping rules: both parse `A & B & C` and `(A & (B & C))` to the same right-associated AST, and both retain the load-bearing parentheses listed above.
 
 ## User-operator chains
 
@@ -395,7 +397,8 @@ The package-file `build { … }`, dependency `source { … }`, and dependency-lo
 
 The package-file `build { … }` block is canonicalized as follows (see [`grammar.md` § Package files](grammar.md#package-files) for the field set):
 
-- **Canonical key order.** Fields emit in a fixed order regardless of the order the author wrote them, so a reordering produces no diff: `cache` first, then the optional `docs { … };` block, then the `target <id> { … }` blocks in source order. Inside `docs`: `md`, then any `support` entries in source order, then the optional `md_out`, then `html`. Inside each `target`, the universally meaningful `out` key emits first, then other keys emit in ASCII order by key.
+- **Canonical key order.** Fields emit in a fixed order regardless of the order the author wrote them, so a reordering produces no diff: `cache` first, then the optional `docs { … };` block, then the `target` blocks in source order. Inside `docs`: `md`, then any `support` entries in source order, then the optional `md_out`, then `html`. Inside each `target`, the universally meaningful `out` key emits first, then other keys emit in ASCII order by key.
+- **Target headers.** Bare headers print as `target js { … }`; paired headers print as `target (js, "web") { … }`, with the backend first and a space after the comma. An explicitly paired header remains paired even when its name equals its backend spelling. String escaping and chunking follow the ordinary literal rules.
 - **Insert-missing-optional-with-`()`.** The block's **optional field** is `cache`: a build block that omits `cache` gets `cache ();` inserted (caching disabled).
 
   This is the opposite of fmt's treatment of elided type-arguments, where fmt **never** inserts a slot (the prefer-fuller-elision ladder in [`language.md` § Type-argument inference and the `_` placeholder](language.md#type-system) keeps `f("")` over `f(_, "")`): for the build block's fields presence is the canonical form, so fmt adds the missing field; for type-argument elision absence is the preferred form, so fmt never de-elides. The two rules concern different constructs — keep them straight.

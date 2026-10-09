@@ -51,7 +51,7 @@ pub(crate) fn log_target(
     let mut line = format!(
         "build-target-timing: package={} target={} backend={} artifact_hit={} total_ms={:.3}",
         package,
-        target.id,
+        target.name().escape_debug(),
         backend,
         usize::from(artifact_hit),
         total_ms
@@ -139,7 +139,7 @@ pub(crate) fn log_package_shape<P: Phase<FnBody = Expr<P>>>(
     eprintln!(
         "build-shape: package={} target={} backend={} phase={} subject={} modules={} uses={} items={} functions={} rec_groups={} type_rec_groups={} aliases={} newtypes={} labels={} elaborator_defs={} equivs={} ops={} export_items={} host_fns={} export_fns={} expr_nodes={} type_nodes={} calls={} rec_calls={} fn_exprs={} lets={} seqs={} field_syntax_calls={} user_elab_calls={} enriched_nodes={} low_nodes={} max_expr_depth={} max_type_depth={}",
         package,
-        target.id,
+        target.name().escape_debug(),
         backend,
         phase,
         subject,

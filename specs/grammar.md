@@ -140,9 +140,11 @@ TypeBinder        ::= '*'* IDENT                          (* kind-annotated bind
 
 Type              ::= TypeArrow
 TypeArrow         ::= TypeBinderGroup+ TypeArrow          (* forall, prefix-only *)
-                    | TypeArrowParam '->' TypeArrow       (* function type; right-associative *)
+                    | TypeArrowParam '->' TypeArrowResult (* function type; right-associative *)
                     | TypeChain
 TypeArrowParam    ::= TypeAtom                            (* product/sum LHS requires parentheses *)
+TypeArrowResult   ::= TypeBinderGroup+ TypeArrow
+                    | TypeArrowParam ('->' TypeArrowResult)? (* direct product/sum result requires parentheses *)
 TypeChain         ::= TypeAtom TypeChainTail?
 TypeChainTail     ::= ('&' TypeAtom)+                     (* unparenthesized product chain *)
                     | ('|' TypeAtom)+                     (* unparenthesized sum chain     *)
@@ -182,7 +184,7 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
 
 - `(` introduces several productions in both type and expression positions; in type position it is grouping unless the contents form a parenthesized `&` / `|` chain. A grouped type may be followed by `->`, so `(A) -> R` is the same function type as `A -> R`, and `(A & B) -> R` uses the grouped product as the function domain. Type position has no comma-product production and empty parentheses are not a type: `(A, B)` and `()` are not type expressions. The grammar above is unambiguous given one-token lookahead after the opening `(` — extended to also recognize a leading `&` / `|` as a chain opener (the formatter's multi-line layout).
 - Type-binder groups inside type expressions are prefix-only. `[A] A -> R` and `[A] (A & B) -> R` are valid forall-prefixed types; `[A] -> R` is rejected because the binder run has no body type.
-- Mixing `&` and `|` in one parenthesized chain remains a parse error — `(A & B | C)` is ill-formed; users wanting both must explicitly parenthesize as `(A & (B | C))` or `((A & B) | C)`. Bare unary arrows are right-associative (`A -> B -> C` is `A -> (B -> C)`), but their left side is atomic: a product/sum parameter must be parenthesized (`(A & B) -> C`, not `A & B -> C`; `(A | B) -> C`, not `A | B -> C`). The arrow's right side is a full `Type`, so `A -> B & C` parses as `A -> (B & C)`. Mixed chains still reject: `A & B | C` and `A | B & C` are ill-formed without explicit grouping. Leading, trailing, and repeated arrow-token runs are not accepted.
+- Mixing `&` and `|` in one parenthesized chain remains a parse error — `(A & B | C)` is ill-formed; users wanting both must explicitly parenthesize as `(A & (B | C))` or `((A & B) | C)`. Bare unary arrows are right-associative (`A -> B -> C` is `A -> (B -> C)`), but their left side is atomic: a product/sum parameter must be parenthesized (`(A & B) -> C`, not `A & B -> C`; `(A | B) -> C`, not `A | B -> C`). A direct product/sum result is likewise grouped (`A -> (B & C)` or `A -> (B | C)`); bare result chains reject. A named function or lambda's own return annotation uses `Type` and may retain a bare chain, but an arrow nested inside it still uses `TypeArrowResult`. Forall prefixes retain their own full body scope. Mixed chains still reject: `A & B | C` and `A | B & C` are ill-formed without explicit grouping. Leading, trailing, and repeated arrow-token runs are not accepted.
 - `ValuePath` is the lexical path shape for value expressions. A bare head is
   local or selectively imported; dotted segments select through an explicitly
   imported module alias or name a local/imported newtype member, directly or
@@ -506,7 +508,7 @@ FinalElidedBlock  ::= IDENT BlockElabCall
 NeutralBlock      ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding    ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind       ::= 'let' NeutralBinder '<-' Expr ';'
-NeutralBinder     ::= LetBinder | '.' ParamPatternTuple
+NeutralBinder     ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
 RecCall           ::= 'rec' RecCallAnnotationList? IDENT CallArgList         (* group-local callee *)
 RecCallAnnotationList ::= '(' RecCallAnnotation (',' RecCallAnnotation)* ','? ')'
 RecCallAnnotation ::= 'poly' | 'cont' | 'escape'
@@ -585,7 +587,7 @@ The `PrefixOpExpr` and `OperatorTail` productions cover fixed prefix, infix and 
 ```ebnf
 Stmt += PatternLet | ExistentialLet | RowLet
 
-PatternLet        ::= 'let' '.' ParamPatternTuple '=' Expr ';'               (* typed unary, tuple, or as-pattern *)
+PatternLet        ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ExistentialLet    ::= 'let' '.' '(' ExistsBinder+ ExistentialLetBinder ')' '=' Expr ';'
 ExistentialLetBinder ::= IDENT | ParamPatternTuple                           (* existing parameter as-pattern disambiguation applies *)
 RowLet            ::= 'let' '.' '(' '{' RowLetEntry (',' RowLetEntry)* ','? '}' ')' '=' Expr ';'
@@ -596,7 +598,9 @@ RowLetEntry       ::= LabelPath ('as' IDENT)?                                 (*
 
 `PatternLet` extends ordinary `let NAME = ...;` with the explicit `let .(PATTERN) = ...;` form. Typed unary `let .(x: T) = e;`, tuple `let .(x, y) = e;`, and as-pattern `let .(whole: (x: A, y: B)) = e;` bindings retain the same checking and projection semantics as parameter patterns. A unary name-only pattern formats as ordinary `let x = e;`. Tuple/as-patterns lower to a scrutinee binding and ordinary projection lets. `RowLet` evaluates its RHS once; a shorthand entry binds the last label-path segment and an `as` entry binds the explicit alias. Row and existential patterns are pure `=` bindings, including in a neutral block; they are not `<-` binders.
 
-At statement start, `let` is structural only before a name/wildcard binder or before `.` followed by `(`. The latter commits to a rich binding pattern; it is not an expression lookahead across the parenthesized group. Thus `let(f)` remains an ordinary call, including in an expression such as `let(f) <- x` when the operator is declared. There is no keyword-free binding alias. Kio' retains only its ordinary name/wildcard `LetStmt` production.
+`let .stem. = e;` and a neutral `let .stem. <- e;` introduce a numbered binding with the same adjacent-dot spelling and index rules as a placeholder lambda. The highest owned index in the remaining block determines the unannotated pattern's slot count. The initializer is outside the new scope; later same-stem bindings shadow the family, while different-stem bindings retain it. Actual nested placeholder lambdas remain ownership barriers. See [Numbered bindings](language.md#numbered-bindings).
+
+At statement start, `let` is structural before a name/wildcard binder, before `.` followed by `(`, or before a complete `DotPlaceholderIntro`. The parenthesized route commits to a rich binding pattern; it is not an expression lookahead across the group. Thus `let(f)` remains an ordinary call, including in an expression such as `let(f) <- x` when the operator is declared. Qualified `let.x` references and their operator uses retain their ordinary meaning. There is no keyword-free binding alias. Kio' retains only its ordinary name/wildcard `LetStmt` production.
 
 ### Notes (Kio surface)
 
@@ -662,8 +666,9 @@ BuildEntry        ::= CacheDecl | DocsDecl | TargetBlock
 CacheDecl         ::= 'cache' BlockFieldValue
 DocsDecl          ::= 'docs' '{' SemiRunEntries<DocsKey> '}'
 DocsKey           ::= ('md' | 'support' | 'md_out' | 'html') BlockFieldValue
-TargetBlock       ::= 'target' TargetId '{' SemiRunEntries<TargetKey> '}'
-TargetId          ::= IDENT ('-' IDENT)*                                       (* a bare kebab-case backend id, e.g. rust, js, kio-prime *)
+TargetBlock       ::= 'target' TargetHeader '{' SemiRunEntries<TargetKey> '}'
+TargetHeader      ::= BackendId | '(' BackendId ',' STR_LIT ')'
+BackendId         ::= IDENT ('-' IDENT)*                                       (* a bare kebab-case backend id, e.g. rust, js, kio-prime *)
 TargetKey         ::= IDENT BlockFieldValue
 ```
 
@@ -672,7 +677,7 @@ Notes:
 - The leading tokens `build`, `cache`, `docs`, and `target` are contextual keywords inside the build block; elsewhere in a package file they are ordinary identifiers unless another production gives them meaning.
 - The `CacheDecl` is **optional** and may appear at most once, anywhere among the build entries. When **omitted** its value defaults to `()` (caching disabled); `kio fmt` inserts the `cache ()` entry, followed by `;` only when another build entry follows (see [`style.md`](style.md)). A `STR_LIT` cache value names a filesystem path (relative to the package root, or absolute); `()` opts caching out. A `cache` value that is neither a `STR_LIT` nor `()` is a parse error.
 - The `DocsDecl` is **optional**, declared at most once, anywhere among the build entries. Its keys are unordered: `md` is required; `support` is repeatable; `md_out` and `html` are optional and may each appear at most once. Every `DocsKey` value is a `STR_LIT` filesystem path. See [`package.md` § Build target files](package.md#build-target-files).
-- A `TargetId` is a **bare identifier** naming a registered backend (`rust`, `js`, `kio-prime`, …), not a quoted string. The hyphen-folding lets a kebab-cased backend id like `kio-prime` spell as a single id; each `-` and the following `IDENT` must be flush. Target ids must be unique within the block; duplicates are a build error (exit code `40`).
+- A `BackendId` is a **bare identifier** naming a backend (`rust`, `js`, `kio-prime`, …). The hyphen-folding lets a kebab-cased backend id like `kio-prime` spell as a single id; each `-` and the following `IDENT` must be flush. In a bare header, the backend spelling is also the target name. A paired header supplies a distinct string name: `target (js, "web")`. The pair is backend first and is not an expression. Target names must be unique within the block, including collisions between bare and paired headers; duplicates are a build error (exit code `40`). Different names may select the same backend. Unknown backends are build errors, not parse errors.
 - Every target-key *value* is a `STR_LIT` unless the backend spec states otherwise. Unknown keys are a build error.
 
 The build block's field-value grammar:

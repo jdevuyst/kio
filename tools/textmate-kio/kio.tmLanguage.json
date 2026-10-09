@@ -241,7 +241,7 @@
     },
     "package-docs-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+[a-z][a-z0-9_-]*[ \\t]*\\{))",
+      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+(?:[a-z][a-z0-9_-]*[ \\t]*\\{|\\()))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -934,13 +934,16 @@
         { "include": "#comment-doc" },
         { "include": "#comment" },
         { "include": "#package-field-body" },
+        { "include": "#string" },
+        { "include": "#punctuation-bracket" },
+        { "include": "#punctuation-separator" },
         { "include": "#identifier" },
         { "include": "#operator-user" }
       ]
     },
     "package-field-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+[a-z][a-z0-9_-]*[ \\t]*\\{))",
+      "end": "\\}|(?=^[ \\t]*(?:bridge[ \\t]*\\{|target[ \\t]+(?:[a-z][a-z0-9_-]*[ \\t]*\\{|\\()))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2263,7 +2266,7 @@
       ]
     },
     "expression-let": {
-      "begin": "\\blet\\b(?=[ \\t]*(?:[A-Za-z_][A-Za-z0-9_]*|\\.[ \\t]*\\())",
+      "begin": "\\blet\\b(?=[ \\t]*(?:[A-Za-z_][A-Za-z0-9_]*|\\.[ \\t]*\\(|\\._?[a-z]+(?:[0-9]*_[a-z]+)*\\.(?=[ \\t]*(?:=|<-|//|$))))",
       "beginCaptures": {
         "0": {
           "name": "keyword.declaration.kio"
@@ -2615,6 +2618,14 @@
         }
       },
       "patterns": [
+        {
+          "match": "(\\.)(_?[a-z]+(?:[0-9]*_[a-z]+)*)(\\.)(?=[ \\t]*(?:=|<-|//|$))",
+          "captures": {
+            "1": { "name": "punctuation.separator.kio" },
+            "2": { "name": "variable.parameter.kio" },
+            "3": { "name": "punctuation.separator.kio" }
+          }
+        },
         {
           "include": "#binding-pattern-group"
         },

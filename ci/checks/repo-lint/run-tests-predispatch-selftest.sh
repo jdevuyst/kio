@@ -1073,19 +1073,25 @@ for unknown_target_invalid in standard success no-target no-build-marker no-mani
 done
 printf 'run-tests-predispatch-selftest: unknown-target routing, sampling, narrowing, and marker guards passed\n'
 
-for target_prefix_kind in plain single repeated tight; do
+for target_prefix_kind in plain single repeated tight named; do
   case "$target_prefix_kind" in
     plain) target_prefix='  ' ;;
     single) target_prefix='  ; ' ;;
     repeated) target_prefix='  ;; ' ;;
     tight) target_prefix='  ;;' ;;
+    named) target_prefix='  ' ;;
   esac
   target_prefix_label=target-prefix-$target_prefix_kind
   make_package_shape_case "$target_prefix_label"
   target_prefix_dir=$scratch/package-shape/$target_prefix_label
   {
     printf 'package prefix;\n\nbuild {\n'
-    printf '%starget js {\n    out "out/js/"\n  };\n' "$target_prefix"
+    if [ "$target_prefix_kind" = named ]; then
+      printf '%starget (js, "web") {\n    out "out/web/"\n  };\n' "$target_prefix"
+      printf '%starget (js, "worker") {\n    out "out/worker/"\n  };\n' "$target_prefix"
+    else
+      printf '%starget js {\n    out "out/js/"\n  };\n' "$target_prefix"
+    fi
     printf '  // target rust {\n  docs {\n    md "target rust {"\n  }\n}\n'
   } >"$target_prefix_dir/case/workdir/prefix.pkg.kio"
   if ! run_package_shape_harness "$target_prefix_label" "$scratch/bin/runner" \

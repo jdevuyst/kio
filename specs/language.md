@@ -165,7 +165,7 @@ So Kio's type system is effectively **System F with disjunction, conjunction, an
 
 **Positional and type-indexed.** The operators are ordered and do not collapse duplicates. `A & A` is a two-component product, not one; `A | A` is a two-branch sum, not one. Repeated types are distinguished **positionally** (first-match wins at elimination). This is *not* Boolean algebra on types: `A & B` ≠ `B & A` and `A & A` ≠ `A` up to type equality. At runtime a `|` value carries a small positional integer tag, not a reflective type tag.
 
-**Construction and parenthesization.** Kio accepts same-operator `&` / `|` chains **without** outer parentheses in both surface and Kio' syntax: `A & B`, `A | B`, `A & B & C`, `A | B | C` are all valid `Type` expressions wherever a type is expected. Chains right-associate: `A & B & C` denotes `A & (B & C)`. Outer parens become **load-bearing** only where omitting them would change parsing: when the chain is a child of the *other* operator (`(A & B) | C`, `A & (B | C)`), and as the parameter list of a function-type form (`(A & B) -> C` — the parens belong to the arrow's parameter list, not to chain grouping). Values of `A & B` are written as the surface tuple literal `(a, b)`, which is sugar for the Prime intrinsic call `__pair__(a, b)`; correspondingly, `(a, b, c)` is sugar for `__pair__(a, __pair__(b, c))` and inhabits `A & B & C`, whereas `__pair__(__pair__(a, b), c)` inhabits the distinct type `(A & B) & C`. Values of `A | B` are normally produced by the spine elaborator via `widen_sum!(e)`. For explicit construction (the only path in [Kio'](prime.md)), the intrinsic injections `__left__ : [A][B] A -> A | B` and `__right__ : [A][B] B -> A | B` are available but **not in scope by default**: pull them in (along with the rest of the value intrinsics) with a top-of-file `import __intrinsics__;`. The friction of that declaration reinforces that `widen_sum!` is the usual surface path. Since `A | B | C` is sugar for `A | (B | C)`, the third branch is constructed as `__right__(__right__(c))`. The same applies to the product intrinsics (`__pair__`, `__fst__`, `__snd__`) and the sum eliminator (`__either__`) — those six, together with the branching intrinsic `__if_then_else__` (see [Conditionals](#conditionals)), are all gated behind the same `import __intrinsics__;`.
+**Construction and parenthesization.** Kio accepts same-operator `&` / `|` chains **without** outer parentheses in both surface and Kio' syntax: `A & B`, `A | B`, `A & B & C`, `A | B | C` are valid `Type` expressions, with grouping required in the arrow positions described below. Chains right-associate: `A & B & C` denotes `A & (B & C)`. Outer parens become **load-bearing** where the grammar requires grouping: when the chain is a child of the *other* operator (`(A & B) | C`, `A & (B | C)`), and directly on either side of a function-type arrow (`(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`). Values of `A & B` are written as the surface tuple literal `(a, b)`, which is sugar for the Prime intrinsic call `__pair__(a, b)`; correspondingly, `(a, b, c)` is sugar for `__pair__(a, __pair__(b, c))` and inhabits `A & B & C`, whereas `__pair__(__pair__(a, b), c)` inhabits the distinct type `(A & B) & C`. Values of `A | B` are normally produced by the spine elaborator via `widen_sum!(e)`. For explicit construction (the only path in [Kio'](prime.md)), the intrinsic injections `__left__ : [A][B] A -> (A | B)` and `__right__ : [A][B] B -> (A | B)` are available but **not in scope by default**: pull them in (along with the rest of the value intrinsics) with a top-of-file `import __intrinsics__;`. The friction of that declaration reinforces that `widen_sum!` is the usual surface path. Since `A | B | C` is sugar for `A | (B | C)`, the third branch is constructed as `__right__(__right__(c))`. The same applies to the product intrinsics (`__pair__`, `__fst__`, `__snd__`) and the sum eliminator (`__either__`) — those six, together with the branching intrinsic `__if_then_else__` (see [Conditionals](#conditionals)), are all gated behind the same `import __intrinsics__;`.
 
 **The zero-component product.** The anonymous product with no components has type `.` and the sole value `()`. It is typically used as the return type of a function whose effect happens at the host boundary (`String -> .`). The positional non-collapsing rule still applies: `A & .` is a 2-component product distinct from `A`.
 
@@ -1212,7 +1212,7 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
   order; a fixed operator body contains exactly one `impl` entry.
 - **At the start of a package file**: `package <name>;` declares the package identity.
 - **Inside a package file** (`<name>.pkg.kio`): `bridge` leads the package's module-glob block.
-- **Inside a `build { ... }` block** (in `<name>.pkg.kio`): `build` opens the block; `cache`, `docs`, and `target` lead its declarations, with `target` opening a `target <id> { … }` block (bare-identifier id).
+- **Inside a `build { ... }` block** (in `<name>.pkg.kio`): `build` opens the block; `cache`, `docs`, and `target` lead its declarations. A target opens with `target <backend> { … }` or `target (<backend>, "<name>") { … }`; the backend is a bare identifier and the explicit target name is a string. See [Build target files](package.md#build-target-files).
 - **Inside a `newtype` block**: `constructor`, `projector` at item positions.
 - **Inside a host type declaration**: `role` opens the `role(...)` annotation.
 - **Declaration modifier position** (top-level declarations and `newtype` block items): `pub`; on an ordinary module-body `fn` only, `pure` as well. `host` is a declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub`); elsewhere it is an ordinary identifier.
@@ -1232,7 +1232,7 @@ Every comma-separated production in Kio's grammar — type-binder groups, value-
 
 Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral elaborator blocks, and keyed/member blocks such as `newtype`, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
 
-The type chains `&` (product) and `|` (sum) follow the symmetric rule: a chain accepts **any number of operators in any position** — leading, interior, trailing — all collapse to the same right-associated chain. `&&& A &&& B &&&` (when terminated by a non-Type token like `,`, `)`, `;`, `=`, `{`, `}`) and `A & B` parse identically; same for `|`. The rule applies in both unparenthesized and parenthesized form: `( &&& A &&& B &&& )` and `(A & B)` parse identically. Empty and unary chains use the algebraic identities: product `&` with no items (`&` or `(&)`) is `.`, sum `|` with no items (`|` or `(|)`) is `!`, and a one-item chain (`& A`, `(A &)`, `| A`, `(A |)`) is just `A`. Mixing `&` and `|` in one chain still requires explicit parentheses (per [Anonymous sum and product types](#anonymous-sum-and-product-types)) — `A & B | C` is a parse error, and the user writes `(A & B) | C` or `A & (B | C)` to disambiguate. The formatter's multi-line emit for a chain mirrors the leading-comma layout for lists: each chain item lives on its own line at +2 indent, prefixed with `&` (or `|`) followed by a space — the leading-operator A1 analogue. Arrow `->` is not a variadic delimiter: bare unary `A -> B & C` parses as `A -> (B & C)`, but a product/sum chain on the left of an arrow must be parenthesized (`(A & B) -> C`, not `A & B -> C`).
+The type chains `&` (product) and `|` (sum) follow the symmetric rule: a chain accepts **any number of operators in any position** — leading, interior, trailing — all collapse to the same right-associated chain. `&&& A &&& B &&&` (when terminated by a non-Type token like `,`, `)`, `;`, `=`, `{`, `}`) and `A & B` parse identically; same for `|`. The rule applies in both unparenthesized and parenthesized form: `( &&& A &&& B &&& )` and `(A & B)` parse identically. Empty and unary chains use the algebraic identities: product `&` with no items (`&` or `(&)`) is `.`, sum `|` with no items (`|` or `(|)`) is `!`, and a one-item chain (`& A`, `(A &)`, `| A`, `(A |)`) is just `A`. Mixing `&` and `|` in one chain still requires explicit parentheses (per [Anonymous sum and product types](#anonymous-sum-and-product-types)) — `A & B | C` is a parse error, and the user writes `(A & B) | C` or `A & (B | C)` to disambiguate. The formatter's multi-line emit for a chain mirrors the leading-comma layout for lists: each chain item lives on its own line at +2 indent, prefixed with `&` (or `|`) followed by a space — the leading-operator A1 analogue. Arrow `->` is not a variadic delimiter. Product/sum chains directly on either side of a type-expression arrow must be parenthesized: `(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`. A named function or lambda's own return annotation retains bare chains; see [Function types](#function-types).
 
 ### Comments
 
@@ -1594,15 +1594,53 @@ Statements are either:
 
 - A **simple `let` binding** — `let name = expr;` or `let _ = expr;`. The RHS synthesizes its type; a named local retains that type, including a synthesized polytype, and `_` deliberately discards the result.
 - A **rich-pattern `let` binding** — `let .(PATTERN) = expr;`. Typed unary `let .(name: Type) = expr;`, tuple `let .(x, y) = expr;`, and as-pattern `let .(whole: (x: A, y: B)) = expr;` forms use the parameter-pattern grammar (see [Parameter patterns](#parameter-patterns)). A concrete pattern supplies the RHS's expected type. An untyped or partially annotated pattern leaves the RHS in synthesis mode; concrete leaves are checked afterward, without partial product unification or let-generalization. The as-pattern binds the whole value alongside its components. A unary name-only pattern formats as an ordinary simple let.
+- A **numbered binding** — `let .stem. = expr;`, with its unannotated slots determined by the highest owned numbered reference in the remaining block (see [Numbered bindings](#numbered-bindings)).
 - A **row-let binding** — `let .({foo, bar}) = expr;` or `let .({foo as local}) = expr;`. It evaluates the RHS once and names the payloads of visible label slots for the continuation. Shorthand binds each label's last path segment; `as` changes the local name while preserving the selected label.
 - An **existential-opening binding** — `let .(<U> x) = expr;`, as specified in [Existential type binders](#existential-type-binders).
 - An **expression statement** — a non-final expression clause. It must have type `.`; deliberately discarding any other type requires `let _ = expr;`. A final expression remains the block's result even when followed by `;`.
 
-`let` is contextual at statement start: a following name or wildcard starts a simple binding, and `.` followed by `(` starts a rich binding. Rich patterns are always parenthesized, including rows and existential openings. There is no keyword-free binding form. A following `(` without the dot instead leaves `let` as an ordinary value name, so `let(f)` is a call; `let(f) <- x` is an ordinary expression when `<-` is declared as an operator.
+`let` is contextual at statement start: a following name or wildcard starts a simple binding, `.` followed by `(` starts a rich binding, and `.stem.` starts a numbered binding. Rich patterns are always parenthesized, including rows and existential openings; numbered stems use adjacent dots without parentheses. There is no keyword-free binding form. A following `(` without the dot instead leaves `let` as an ordinary value name, so `let(f)` is a call; `let(f) <- x` is an ordinary expression when `<-` is declared as an operator. Qualified `let.x` references retain their ordinary meaning.
 
 A block that ends in a statement (no trailing expression) is a compile-time error. A trailing semicolon is accepted only after a real final expression.
 
 Destructuring `let` is a surface-only form. The Surface → Desugared boundary eliminates it by the same pattern-elimination machinery the parameter-pattern rewrite uses (see [Parameter patterns](#parameter-patterns) § Desugaring). Both forms reduce to a `let <outer> = <expr>;` followed by generated per-slot `let` bindings that project with `__fst__` / `__snd__`, where `<outer>` is the user-given `<name>` for the as-pattern form and a synthetic fresh name for the bare form. Wildcards emit no local binding. From the post-desugar AST onward, the destructuring-let leaves no trace beyond ordinary lets and projection calls.
+
+### Numbered bindings
+
+`let .stem. = expr;` introduces an unannotated flat pattern with slots `stem1`
+through `stemN`. As with [placeholder lambdas](#placeholder-lambdas), the stem
+is an ordinary value-binding name ending in an ASCII letter; both dots and
+the stem are adjacent. Indices are positive decimal integers without leading
+zeroes and fit in `u32`. The remaining block must contain at least one owned
+reference, and its highest owned index determines `N`, including unused lower
+slots. An index does not select an independently counted leaf of the RHS type.
+The final slot receives the remaining product tail: with `N = 1` it receives
+the whole value, with `N = 2` it is the second component of the right-associated
+product, and with `N = 3` it is the third component.
+
+The initializer evaluates once, synthesizes its type before the continuation
+is checked, and is outside the new family's scope. Reference ownership follows
+the placeholder rule over the written lexical continuation, including ordinary
+binders, qualified paths, type positions, labels, and dedicated callee positions.
+An actual nested placeholder lambda starts a fresh owner and its body is not
+scanned. An explicit lambda retains the family subject to its own binders.
+A later numbered binding of the same stem shadows the entire previous family
+in its continuation, while its initializer may use the previous family.
+A different-stem numbered binding leaves earlier families in scope.
+
+Thus `let .x. = a; print(x2); let .x. = b; print(x3); ()` gives the first
+binding two slots and the second three. In
+`let .x. = a; let .y. = b; pair(x1, y1)`, both families remain visible.
+
+`let .stem. <- expr;` uses the same numbered pattern in a sequence block;
+the resolved sequence descriptor and ordinary bind-call type determine its
+payload, exactly as for an unannotated `let .(stem1, ..., stemN) <- expr;`.
+Neither form admits an annotation on the stem. Numbered bindings lower to
+hygienic ordinary pattern bindings before Kio'; no owner or index rule survives
+that boundary. Ownership is fixed before operator expansion, so an operator's
+implementation name cannot introduce a new reference. Parsing, ownership and
+arity depend only on written local syntax: adding a module declaration cannot
+change them.
 
 ### Function definitions
 
@@ -1632,7 +1670,7 @@ require at least one written value group.
 Surface Kio admits explicit recursion through `rec(loop)`. The name inside the parentheses is an ordinary value path that must resolve to a function with the loop shape:
 
 ```kio
-loop[S][R](step: S -> S | R, state: S) -> R
+loop[S][R](step: S -> (S | R), state: S) -> R
 ```
 
 There is no privileged built-in named `loop`: hosts, package files, root modules, or earlier module declarations provide a normal function, and `rec(loop)` resolves that path by the usual rules.
@@ -1997,6 +2035,16 @@ A function type has the same grouped shape as a `fn` header without names. Produ
 
 Single-parameter function types may also be written with a parenthesized domain `(Int) -> Int`. The formatter still emits the canonical bare unary form `Int -> Int`, so write the bare form in examples and committed source. Compound parameter types remain parenthesized: write `(A & B) -> C` or `(A | B) -> C`, not `A & B -> C` or `A | B -> C`.
 
+A direct product or sum result also requires parentheses: `A -> (B & C)`
+or `A -> (B | C)`, never `A -> B & C` or `A -> B | C`. This includes
+leading, trailing, empty and one-item chain spellings. A named function or
+lambda's own return annotation may remain bare (`fn pair() -> A & B` and
+`.() -> A & B`); an arrow nested inside that annotation obeys the ordinary
+type-expression rule (`fn factory() -> A -> (B & C)`). Arrow-only chains
+remain right-associative: `A -> B -> C` means `A -> (B -> C)`. A prefix
+forall keeps its own body scope, so `A -> [B] B & B` is a function returning
+a universally quantified product, not a direct product result.
+
 ### Conditionals
 
 *Surface only; elaborates to Kio'.* The reference library's conditional is an
@@ -2304,7 +2352,8 @@ trailing final expression. A binder is an ordinary name or `_`, or an explicit
 rich pattern `.(PATTERN)`: typed `.(x: T)`, tuple `.(x, y)`, or as-pattern
 `.(whole: (x: A, y: B))`. Ordinary `=` bindings also admit row and
 existential-opening forms under [Blocks and local bindings](#blocks-and-local-bindings).
-The `<-` connective uses the name, wildcard, typed, tuple, or as-pattern forms;
+The `<-` connective uses the name, wildcard, typed, tuple, as-pattern, or
+[numbered](#numbered-bindings) forms;
 it does not introduce a row or existential-opening binder.
 
 | Form | Surface | Desugared |

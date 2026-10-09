@@ -20,3 +20,22 @@ fn monadic() {
 
 op _ <- _ { impl left; };
 fn contextual() { (let(f) <- action) }
+
+fn numbered() {
+    let .x. = pair;
+    print(x2);
+    let .x. = x1;
+    x3
+}
+
+fn numbered_sequence() {
+    do! bind {
+        let .x. <- action;
+        print(x2);
+        let .y. = x1;
+        pair(x2, y1)
+    }
+}
+
+fn qualified_let() { let.x.y() }
+fn qualified_let_neutral() { action! { let.x.y } }

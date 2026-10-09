@@ -13,7 +13,7 @@ import app(loop, leq_i32, sub_i32);
 The loop function has the shape:
 
 ```text
-loop[S][R](step: S -> S | R, state: S) -> R
+loop[S][R](step: S -> (S | R), state: S) -> R
 ```
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
@@ -32,7 +32,7 @@ host fn eq_i32(p0: I32, p1: I32) -> Bool;
 host fn leq_i32(p0: I32, p1: I32) -> Bool;
 host fn sub_i32(p0: I32, p1: I32) -> I32;
 host fn mul_i32(p0: I32, p1: I32) -> I32;
-host fn loop[S][R](step: S -> S | R, state: S) -> R;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 __INSERT_CODE_HERE__
 -->

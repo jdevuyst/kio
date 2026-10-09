@@ -25,7 +25,7 @@ host type I32 role(i32);
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 
-host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
+host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 

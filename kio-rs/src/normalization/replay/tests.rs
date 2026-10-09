@@ -277,6 +277,7 @@ fn signature_converter_unwind_releases_completed_deep_annotations() {
             for _ in 0..10_000 {
                 ty = Type::Forall {
                     param: TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: zero_span(),
                         kind: None,

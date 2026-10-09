@@ -146,11 +146,11 @@ and keep the test's semantic assertions intact.
   protocol. `test-data/goldens/00_success/ffi_two_packages_coexist/` contains
   **two** sibling packages identical up to their names (same module paths,
   export and host-fn leaves, and shapes), so every name that could collide does.
-  `test-data/goldens/00_success/ffi_same_package_namespaces_coexist/` uses two
-  separate manifest roots with the same package name and byte-identical modules,
-  building each for one backend under a distinct configured artifact namespace.
-  Each custom `run.sh` runs
-  `kio test` and `"$KIO_BIN" build "$KIO_TARGET"` in both roots, then gives the
+  `test-data/goldens/00_success/ffi_same_package_namespaces_coexist/` uses one
+  manifest and one source tree, with two named targets per backend under
+  distinct configured artifact namespaces. Its custom `run.sh` runs `kio test`
+  once and builds both names together, repeating the build against the cache.
+  The two-package witness tests and builds each package separately. Both give the
   runner two ordered artifact descriptors (`--package-name`, an optional
   target-local `--artifact-namespace`, and the matching positional output
   directory). The runner hosts both artifacts in one host program and
@@ -159,6 +159,13 @@ and keep the test's semantic assertions intact.
   § Coexistence) and instance isolation (§ 4 there). Extending the property to
   a new backend means implementing the `coexist` protocol and adding that
   backend's target to both sides of both goldens.
+
+  For named-target custom cases, implementation rows and `KIO_TARGET` still
+  identify the **backend**, not a manifest target name. The case script selects
+  its explicit names (for example `"$KIO_TARGET-a"` and `"$KIO_TARGET-b"`) and
+  passes the configured output directories to the runner. Harness applicability
+  reads the backend from either target-header form. Standard `run.args` cases
+  retain their conventional backend-named target and `out/$KIO_TARGET` layout.
 - **Spec change** — check whether existing buckets cover the new spec rule. If not, add coverage in the bucket whose exit code the new rule would produce. A spec change without a corresponding test is a contract assertion without enforcement.
 - **Refactor (no behavior change)** — no new test. Existing tests guard against regressions. The PR description should call out which tests gave confidence the refactor is behavior-preserving.
 - **Bug fix** — regression golden first (the case must fail before the fix and pass after), then the fix. The golden lives in whichever `<NN_>` bucket matches the bug's observable category.

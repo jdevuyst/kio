@@ -1984,7 +1984,7 @@ fn yield_primary(v: Term, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Ps
 }
 
 fn yield_literal(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , text: String
   , type_name: String
   , after: Toks
@@ -2023,7 +2023,7 @@ fn start_call(tg: Tg, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate
 // representation itself. Any other word after `.` is not
 // a Kio' value form.
 fn parse_bool_lit(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , w: String
   , ts: Toks
   , sc: Scope
@@ -2326,7 +2326,7 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
 // lambda (`.(x: T) { … }` or the zero-param `.() { … }`). `ts` is
 // positioned just after the `.`.
 fn parse_dot(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , ts: Toks
   , sc: Scope
   , k: Pk
@@ -2664,7 +2664,7 @@ fn do_pword(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt:
 // opens the unit value `()` or a parenthesized expression (`ExprAtom ::=
 // '(' Expr ')'`). Any other punctuation is not a primary.
 fn do_ppunct(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , code: I32
   , ts: Toks
   , sc: Scope
@@ -2735,7 +2735,7 @@ fn fold_str_run(first: String, ts: Toks) -> String & Toks {
 // token: a literal / unit yields directly, `let` opens a binding, `.`
 // opens a bool-literal or lambda, and a word opens a call or variable.
 fn do_pexpr(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , ts: Toks
   , sc: Scope
   , k: Pk
@@ -2825,7 +2825,7 @@ fn do_pblock(ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
 // One machine transition — the host `loop` body
 // =====================================================================
 fn ptransition(
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   , s: Pstate
   ) -> Pstate | Pres {
@@ -2880,7 +2880,7 @@ pub fn parse_toks_scope_ntab_fuel(
   , ts: Toks
   , sc: Scope
   , nt: Ntab
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   , fuel: I32
   ) -> Pres {
@@ -2896,7 +2896,7 @@ pub fn parse_toks_scope_ntab(
   , ts: Toks
   , sc: Scope
   , nt: Ntab
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   ) -> Pres {
   parse_toks_scope_ntab_fuel(ts, sc, nt, resolve_host_type, bool_type, parse_fuel_default())
@@ -2908,7 +2908,7 @@ pub fn parse_toks_scope_ntab(
 pub fn parse_toks_scope_fuel(
   , ts: Toks
   , sc: Scope
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   , fuel: I32
   ) -> Pres { parse_toks_scope_ntab_fuel(ts, sc, ntab_nil(), resolve_host_type, bool_type, fuel) }
@@ -2918,14 +2918,14 @@ pub fn parse_toks_scope_fuel(
 pub fn parse_toks_scope(
   , ts: Toks
   , sc: Scope
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   ) -> Pres { parse_toks_scope_ntab(ts, sc, ntab_nil(), resolve_host_type, bool_type) }
 
 /// Parses one closed Kio' term expression (no free names) from a token list.
 pub fn parse_toks(
   , ts: Toks
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   ) -> Pres { parse_toks_scope(ts, scope_nil(), resolve_host_type, bool_type) }
 
@@ -2933,7 +2933,7 @@ pub fn parse_toks(
 /// A lexical error surfaces as the parse-error arm.
 pub fn parse_str(
   , src: String
-  , resolve_host_type: String -> Host_type | String
+  , resolve_host_type: String -> (Host_type | String)
   , bool_type: Host_type | String
   ) -> Pres {
   match! lex(src) {

@@ -83,6 +83,9 @@ export KIO_DEBUG_TEST_KIO_BIN KIO_DEBUG_TEST_KIO_PRIME_BIN
 
 sh "$REPO_ROOT/ci/cargo.sh" test --all-features
 
+# Source packages carry a self-contained snapshot of the canonical manual.
+sh "$REPO_ROOT/ci/cargo.sh" run --example pack_manual -- --check
+
 # Per-feature checks — confirm each binary's slice compiles and has
 # no rustc warnings in its reduced feature configuration.
 # Per kio-prime-refactor.md Stage 3.1.

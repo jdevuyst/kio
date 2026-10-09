@@ -66,14 +66,14 @@ pub const fn runner_protocol(surface_mode: bool) -> &'static str {
 // `specs/package.md` § Build target files; a fixed in-package path
 // suffices here, the actual runner build cache lives under the harness-
 // supplied `KIO_TEST_RUNNER_BUILD_CACHE_DIR`, not this per-package cache
-// directory. Target ids are bare identifiers.
+// directory.
 const PACKAGE_FILE_KIO_PREFIX: &str = "\
 package prog;
 
 build {
   cache \"out/.kio-cache/\";
 
-  target js {
+  target (js, \"js\") {
     out \"out/js/\"
   };
 
@@ -825,7 +825,7 @@ mod tests {
 build {
   cache "out/.kio-cache/";
 
-  target js {
+  target (js, "js") {
     out "out/js/"
   };
 

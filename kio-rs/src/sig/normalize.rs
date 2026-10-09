@@ -185,6 +185,7 @@ mod tests {
         let span = Span::new(0, 0);
         let a = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "A".into(),
                 span,
                 kind: None,
@@ -194,6 +195,7 @@ mod tests {
         };
         let b = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "B".into(),
                 span,
                 kind: None,
@@ -209,6 +211,7 @@ mod tests {
         let span = Span::new(0, 0);
         let star = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".into(),
                 span,
                 kind: None,
@@ -218,9 +221,10 @@ mod tests {
         };
         let higher = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "F".into(),
                 span,
-                kind: Some(Kind::arrow_chain(1)),
+                kind: Some(Box::new(Kind::arrow_chain(1))),
             },
             body: Box::new(path("F")),
             meta: crate::ast::Meta::new(span),
@@ -260,6 +264,7 @@ mod tests {
     fn declaration_binders_are_alpha_equivalent_and_existentials_are_explicit() {
         let span = Span::new(0, 0);
         let param = |name: &str| TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,

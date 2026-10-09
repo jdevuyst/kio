@@ -6,6 +6,36 @@ The `docs/` directory holds **pedagogical material** for Kio — tutorials, topi
 
 The current layout is one cluster per kind under `docs/`: `tutorials/` for learning-oriented walkthroughs, `guides/` for topic- and task-oriented pieces, `poc/` for case studies, `hosts/` for per-host integration guides. The catalog of specific files is [`docs/README.md`](../../docs/README.md).
 
+## Website and offline bundle inputs
+
+`docs/`, `specs/`, and the explicit root `KIO-FOR-AGENTS.md` are also inputs
+to the installed `kio manual` bundle. It preserves tracked regular files,
+including non-Markdown assets and tracked files matching ignore rules, at their
+original repository-relative paths and bytes. Untracked/generated ignored
+files and unsupported entries are not publication inputs. Additions must be
+tracked before assembling the bundle.
+
+When adding, editing, renaming, or removing these files, consider both website
+rendering and original-source offline reading: relative links, assets,
+prerequisites, Kiodoc presentation, and version correspondence. Essential
+authoring knowledge must not depend on an unbundled checkout path; distinguish
+further-reading links from instructions needed for the page's advertised task.
+Do not expand the bundle roots or rewrite source during extraction to conceal
+an offline gap. The source trees remain canonical, never hand-maintained copies.
+
+Checkout builds regenerate their indexed per-file tar.gz payload from current
+tracked sources. The crate-local snapshot supports source-package builds
+without Git or sibling directories. Refresh it from `kio-rs/` with
+`sh ../ci/cargo.sh run --example pack_manual -- --write`; use `--check` to detect
+staleness. Regenerate after integrated docs changes, not merely before stacking
+them. Build inputs must detect add/edit/rename/remove without invalidating
+unrelated semantic compiler caches.
+
+[`audit-bundled-docs`](../skills/audit-bundled-docs/SKILL.md) owns bundle,
+package, freshness, offline access, and size evidence. Website checks retain
+their separate rendering ownership; docs-drift reviews the offline learning
+path and the portable guide's navigation into it.
+
 **`docs/` is a standalone introduction to Kio.** A reader who starts at `docs/README.md` and follows its recommended order should understand most of the language and its ordinary development workflow without needing the specifications, source code, tests, blog history, agent guidance, or an external explanation. “Most” includes the central concepts and tools needed for everyday Kio work; it does not require teaching every specification edge case or repeating every host-specific detail. Concepts must be introduced before later documents rely on them. The specifications remain the authority for precision and edge cases, but a link to a specification must not substitute for the explanation a learner needs.
 
 **Internal links must set accurate expectations.** When one document under `docs/` describes another document it links to, the description, destination, and any reading order around that link must agree about what the destination contains, who it is for, and when it should be read. None of those is automatically authoritative: resolve a mismatch by making the documentation truthful and the standalone learning path coherent. When a destination's scope, audience, or prerequisites change, review every document that describes or sequences it; a changed description or sequence may instead reveal that the destination needs revision. Do not fix a mismatch merely by weakening or deleting a meaningful description: first preserve the useful coverage or routing obligation somewhere appropriate, then re-evaluate the linking document's own explanation, prerequisites, and order. Apply the obligation according to each document's role: catalogs and routing pages direct readers accurately, sequences preserve prerequisite order, and standalone pages fulfill their advertised scope. The resulting structure must not overstate coverage, omit a prerequisite, or send a reader to the wrong kind of material.
@@ -33,7 +63,7 @@ Do **not** use `{ignore}` as the default for examples that are inconvenient to s
 
 **Keep `docs/` consistent with `specs/` and the implementation.** When a change in behavior is described in `docs/`, update the affected docs in the same change. `specs/` and the implementation are the source of truth; if `docs/` and `specs/` diverge, `docs/` is the bug. `docs/` may lag in *coverage* but never in *correctness*.
 
-**Public docs outside the blog link only public docs.** Outside `docs/blog/*.md`, `docs/` must not send readers into the agent-guidance layer (`AGENTS.md`, `ai/topics/`, `ai/skills/`). If a concept is useful to users, link to `specs/`, `docs/`, `README.md`, `TESTING.md`, or `CONTRIBUTING.md`; if it is only agent guidance, omit it.
+**Public docs outside the blog link only public material.** Outside `docs/blog/*.md`, `docs/` must not send readers into repository-maintenance instructions (`AGENTS.md`, `ai/topics/`, `ai/skills/`). If a concept is useful to users, link to `specs/`, `docs/`, `README.md`, `TESTING.md`, or `CONTRIBUTING.md`. The public portable `KIO-FOR-AGENTS.md` workflow is also an appropriate destination for agent-assisted authoring; repository-only agent guidance is not.
 
 ## Blog posts
 

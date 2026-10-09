@@ -83,6 +83,39 @@ pub fn handle_hover(
         return None;
     }
 
+    // Retained family references authenticate their shared stem declaration.
+    // A containing let's result type is not a type of that introduction.
+    if analysis
+        .position_index
+        .binders_iter()
+        .any(|((owner, _), binder)| {
+            let crate::pass::typecheck_full::ResolvedBinder::Local {
+                decl_span: Some(stem),
+                ..
+            } = binder
+            else {
+                return false;
+            };
+            if owner != module_path
+                || stem.start == 0
+                || !(stem.start..stem.end).contains(&byte_offset)
+            {
+                return false;
+            }
+            let intro = stem.start as usize - 1..stem.end as usize + 1;
+            let Some(written) = analysis
+                .sources
+                .get(canonical.as_path())
+                .and_then(|source| source.get(intro.clone()))
+            else {
+                return false;
+            };
+            written.starts_with('.') && written.ends_with('.') && source.get(intro) == Some(written)
+        })
+    {
+        return None;
+    }
+
     if let Some((
         span,
         crate::pass::typecheck_full::ResolvedBinder::BlockLabel {

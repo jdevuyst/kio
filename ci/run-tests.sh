@@ -762,10 +762,10 @@ index_case_targets() {
 
         targets = ""
         while ((getline line < package_path[case_dir]) > 0) {
-          if (line ~ /^[[:space:];]*target [A-Za-z_][A-Za-z0-9_-]* [{]/) {
+          if (line ~ /^[[:space:];]*target [(]?[A-Za-z_][A-Za-z0-9_-]*[ ,{]/) {
             target = line
-            sub(/^[[:space:];]*target /, "", target)
-            sub(/ [{].*$/, "", target)
+            sub(/^[[:space:];]*target [(]?/, "", target)
+            sub(/[ ,{].*$/, "", target)
             targets = targets (targets == "" ? "" : " ") target
           }
         }

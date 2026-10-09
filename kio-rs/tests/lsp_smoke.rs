@@ -650,7 +650,7 @@ fn lsp_unrelated_package_keeps_current_diagnostic_and_its_quick_fix() {
     let call_path = dir.write("call/main.kio", source);
     dir.write(
         "call/support.kio",
-        "module support; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n",
+        "module support; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     dir.write(
         "call/call.pkg.kio",
@@ -1545,6 +1545,60 @@ fn lsp_hover_retains_the_occurrences_polymorphic_binder_spelling() {
         "hover must use the selected occurrence's binder spelling: {hover:?}"
     );
 
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_composed_types_keep_each_providers_written_binders() {
+    let dir = TempDir::new("composed-binder-names");
+    for (module, binder) in [("left", "Left"), ("rite", "Rite")] {
+        dir.write(
+            &format!("pkg/{module}.kio"),
+            &format!(
+                "module pkg/{module};\n\
+                 pub fn make[{binder}](value: {binder}) -> [{binder}] {binder} -> {binder} {{\n\
+                 .[Item](inner: Item) -> Item {{ inner }}\n\
+                 }}\n"
+            ),
+        );
+    }
+    let source = concat!(
+        "module pkg/main;\n",
+        "import pkg/left as l;\n",
+        "import pkg/rite as r;\n",
+        "pub fn run() -> . {\n",
+        "  let forward = (l.make(()), r.make(()));\n",
+        "  let backward = (r.make(()), l.make(()));\n",
+        "  let _ = forward;\n",
+        "  let _ = backward;\n",
+        "  ()\n",
+        "}\n",
+    );
+    let main_path = dir.write("pkg/main.kio", source);
+    dir.write_pkg_root_package();
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let uri = path_to_file_uri(&main_path);
+    open_and_wait_for_analysis(&mut lsp, &uri, source);
+    let expected = [
+        "([Left] Left -> Left) & ([Rite] Rite -> Rite)",
+        "([Rite] Rite -> Rite) & ([Left] Left -> Left)",
+    ];
+    for (line, ty) in [(6, expected[0]), (7, expected[1])] {
+        let hover = wait_for_hover(&mut lsp, &uri, line, 11);
+        assert_eq!(hover_type(&hover), ty, "{hover:?}");
+    }
+    let result = send_inlay_hints(&mut lsp, &uri);
+    let hints = result.as_array().expect("inlayHint result array");
+    for ty in expected {
+        let label = format!(": {ty}");
+        assert!(
+            hints
+                .iter()
+                .any(|hint| hint.get("label").and_then(Value::as_str) == Some(&label)),
+            "expected composed type hint {label}: {result:?}"
+        );
+    }
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -4069,6 +4123,51 @@ fn lsp_capabilities_advertise_completion_provider() {
         "completionProvider.resolveProvider must be false"
     );
 
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_numbered_binding_completion_retains_only_the_nearest_family() {
+    let dir = TempDir::new("completion-numbered");
+    let source = "module pkg/main;\nfn run() -> . { let .x. = ((), (), ()); let keep = x3; let .x. = (); x1 }\n";
+    let main_path = dir.write("pkg/main.kio", source);
+    dir.write_pkg_root_package();
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let uri = path_to_file_uri(&main_path);
+    open_and_wait_for_analysis(&mut lsp, &uri, source);
+    let (line, character) = source_position(source, source.rfind("x1").unwrap() + 1);
+    let result = send_completion(&mut lsp, &uri, line, character);
+    let items = result["items"].as_array().expect("completion items");
+    let numbered: Vec<_> = items
+        .iter()
+        .filter(|item| {
+            item["label"]
+                .as_str()
+                .is_some_and(|name| name.starts_with('x'))
+        })
+        .collect();
+    assert_eq!(numbered.len(), 1, "{items:?}");
+    assert_eq!(numbered[0]["label"], "x1");
+    assert!(numbered[0].get("documentation").is_none());
+    let stem = source.rfind(".x.").unwrap() + 1;
+    let (line, character) = source_position(source, stem);
+    let hover_id = lsp.send_request(
+        "textDocument/hover",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character },
+        }),
+    );
+    let hover =
+        lsp.recv_matching(|value| value.get("id").and_then(Value::as_i64) == Some(hover_id));
+    assert!(hover["result"].is_null(), "family stem hover: {hover:?}");
+    let renamed = send_rename(&mut lsp, &uri, line, character, "arg");
+    assert!(renamed.get("error").is_none(), "{renamed:?}");
+    let changes = renamed["result"]["documentChanges"].as_array().unwrap();
+    assert_eq!(changes.len(), 1);
+    let edits = changes[0]["edits"].as_array().unwrap();
+    assert_eq!(edits.len(), 2, "inner stem and its single use: {renamed:?}");
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -7901,7 +8000,7 @@ fn assert_lsp_nested_rec_call_identity(tag: &str, source: &str) {
 fn lsp_rec_call_inside_normal_operator_operand_keeps_member_identity() {
     let source = concat!(
         "module pkg/main;\n",
-        "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+        "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         "fn choose(left: ., right: .) -> . { left }\n",
         "op _ + _ { impl choose; };\n",
         "rec(loop) {\n",
@@ -7916,7 +8015,7 @@ fn lsp_rec_call_inside_normal_operator_operand_keeps_member_identity() {
 fn lsp_rec_call_inside_variadic_operator_operand_keeps_member_identity() {
     let source = concat!(
         "module pkg/main;\n",
-        "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+        "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         "fn empty() -> . { () }\n",
         "fn prepend(head: ., tail: .) -> . { head }\n",
         "varop [* *] { foldr prepend empty; };\n",
@@ -7981,7 +8080,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
             "\n",
             "host fn leq_i32(a: I32, b: I32) -> Bool;\n",
             "\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         ),
     );
     dir.write(
@@ -10185,8 +10284,8 @@ fn lsp_imported_parameter_diagnostics_retain_signature_owner_across_overlays() {
 fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
     for signature in [
         "host fn selected[S][R](step: S, state: S) -> R;",
-        "host fn selected[S][R](step: S -> S | R, state: S, extra: .) -> R;",
-        "host fn selected[S][R][T](step: S -> S | R, state: S) -> R;",
+        "host fn selected[S][R](step: S -> (S | R), state: S, extra: .) -> R;",
+        "host fn selected[S][R][T](step: S -> (S | R), state: S) -> R;",
     ] {
         let dir = TempDir::new("rec-loop-diagnostic");
         dir.write_pkg_root_package();
@@ -10251,7 +10350,7 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
             "choosing or repairing the loop needs author intent: {response:?}"
         );
         let repaired =
-            "module pkg/provider;\n\nhost fn selected[S][R](step: S -> S | R, state: S) -> R;\n";
+            "module pkg/provider;\n\nhost fn selected[S][R](step: S -> (S | R), state: S) -> R;\n";
         send_full_text_change(&mut lsp, &provider_uri, 2, repaired);
         wait_for_analysis_event(&lsp.analysis_events, &provider_uri, 2);
         // Provider edits preserve the consumer's version. Fence the accepted

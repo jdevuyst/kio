@@ -287,6 +287,80 @@ fn parser_context_target_ids_exclude_other_written_targets() {
 }
 
 #[test]
+fn named_target_completion_follows_backend_not_name() {
+    for marked in [
+        "package app; build { target rust {} target (|",
+        "package app; build { target (rust, \"native\") {} target (|",
+        "package app; build { target (ru|st, \"native\") {} }",
+    ] {
+        let (_, result) = complete_marked(".pkg", marked);
+        let mut labels: Vec<_> = result
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect();
+        labels.sort_unstable();
+        assert_eq!(
+            labels,
+            [
+                "go",
+                "haskell",
+                "java",
+                "js",
+                "kio-prime",
+                "python",
+                "rust",
+                "swift",
+                "ts"
+            ],
+            "{marked}"
+        );
+        assert!(!result.is_incomplete, "{marked}");
+    }
+    for (marked, expected) in [
+        (
+            "package app; build { target (rust, \"web\") { | } }",
+            vec!["namespace", "out", "thread_safety"],
+        ),
+        (
+            "package app; build { target (js, \"rust\") { | } }",
+            vec!["namespace", "out"],
+        ),
+        (
+            "package app; build { target (rust, \"native\") { out \"out\"; | } }",
+            vec!["namespace", "thread_safety"],
+        ),
+    ] {
+        let (_, result) = complete_marked(".pkg", marked);
+        let mut labels: Vec<_> = result
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect();
+        labels.sort_unstable();
+        assert_eq!(labels, expected, "{marked}");
+        assert!(!result.is_incomplete, "{marked}");
+    }
+    for marked in [
+        "package app; build { target (js, |",
+        "package app; build { target (js, \"we|b\") {} }",
+    ] {
+        let (_, result) = complete_marked(".pkg", marked);
+        assert!(result.items.is_empty(), "{marked}: {result:?}");
+    }
+    let (_, result) = complete_marked(
+        ".pkg",
+        "package app; build { target (js, \"web\") {} target | }",
+    );
+    assert!(result.items.iter().any(|item| item.label == "js"));
+    let (_, result) = complete_marked(
+        ".pkg",
+        "package app; build { target (js, \"rust\") {} target | }",
+    );
+    assert!(!result.items.iter().any(|item| item.label == "rust"));
+}
+
+#[test]
 fn parser_context_rec_annotations_require_an_eligible_structural_owner() {
     let mut invalid = Vec::new();
     for marked in [

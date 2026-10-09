@@ -1,0 +1,3 @@
+  pass equiv `probe_law` in main
+
+result: 1/1 equiv block passed

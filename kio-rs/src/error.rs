@@ -465,7 +465,7 @@ impl Error {
         );
         diagnostic.span = selected_path;
         diagnostic.extra_mut().notes.push(original);
-        self.with_note("`rec` requires a loop compatible with `[State][Result] (State -> State | Result, State) -> Result`")
+        self.with_note("`rec` requires a loop compatible with `[State][Result] (State -> (State | Result), State) -> Result`")
     }
 
     /// Primary span and message for diagnostic rendering.

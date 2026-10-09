@@ -535,9 +535,14 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
                         .iter()
                         .map(|param| match param {
                             SignatureParam::Type(param) => SignatureParam::Type(TypeParam {
+                                presentation: param.presentation.clone(),
                                 name: param.name.clone(),
                                 span: param.span,
-                                kind: param.kind.as_ref().map(type_traversal::clone_kind),
+                                kind: param
+                                    .kind
+                                    .as_deref()
+                                    .map(type_traversal::clone_kind)
+                                    .map(Box::new),
                             }),
                             SignatureParam::Value(param) => SignatureParam::Value(Param {
                                 name: param.name.clone(),

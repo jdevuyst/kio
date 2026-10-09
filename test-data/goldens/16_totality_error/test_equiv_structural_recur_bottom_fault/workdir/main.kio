@@ -1,0 +1,23 @@
+module main;
+
+import __intrinsics__;
+
+import __comptime__;
+
+// The negative edge invokes the captured callback, not a fresh helper.
+pure fn reject(ct: __Comptime__) -> ! {
+  __structural_recur__(
+    , ct
+    , .
+    , .
+    , !
+    , ()
+    , ()
+    , .(again: (. & .) -> !, _fuel: ., _state: .) -> ! { again((), ()) }
+    )
+}
+
+equiv callback_failure(ct: __Comptime__) {
+  .() { let ignored = __absurd__(., reject(ct)); () }();
+  ()
+}

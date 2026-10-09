@@ -12,23 +12,23 @@ host type Box[T];
 
 pub type Atom = Native(., .);
 
-fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> A & T, value: A & T) ->
+fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> (A & T), value: A & T) ->
   A & T
    { read(pack(value)) }
 
-fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> A | T, value: A | T) ->
+fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> (A | T), value: A | T) ->
   A | T
    { read(pack(value)) }
 
 pub fn concrete_product_roundtrip(
   , pack: (Atom & Atom & Atom) -> Box(Atom & Atom & Atom)
-  , read: Box(Atom & Atom & Atom) -> Atom & Atom & Atom
+  , read: Box(Atom & Atom & Atom) -> (Atom & Atom & Atom)
   , value: Atom & Atom & Atom
   ) -> Atom & Atom & Atom { product_roundtrip(Box, Atom, Atom & Atom, pack, read, value) }
 
 pub fn concrete_sum_roundtrip(
   , pack: (Atom | Atom | Atom) -> Box(Atom | Atom | Atom)
-  , read: Box(Atom | Atom | Atom) -> Atom | Atom | Atom
+  , read: Box(Atom | Atom | Atom) -> (Atom | Atom | Atom)
   , value: Atom | Atom | Atom
   ) -> Atom | Atom | Atom { sum_roundtrip(Box, Atom, Atom | Atom, pack, read, value) }
 

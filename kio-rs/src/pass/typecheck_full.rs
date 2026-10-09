@@ -1423,17 +1423,15 @@ fn trailing_declaration_open_candidate(
     let mut formals = params
         .iter()
         .enumerate()
-        .map(|(index, param)| TypeParam {
-            name: format!("\0block-public-{index}"),
-            ..param.clone()
-        })
+        .map(|(index, param)| param.renamed(format!("\0block-public-{index}")))
         .collect::<Vec<_>>();
     for index in 0..blocks.len() {
         for (role, kind) in [
             ("result", None),
-            ("carrier", Some(crate::ast::Kind::arrow_chain(1))),
+            ("carrier", Some(Box::new(crate::ast::Kind::arrow_chain(1)))),
         ] {
             formals.push(TypeParam {
+                presentation: Default::default(),
                 name: format!("\0block-descriptor-{index}-{role}"),
                 span,
                 kind,
@@ -1631,6 +1629,7 @@ fn trailing_declaration_slot_schema(
     span: Span,
 ) -> Option<(Type, Vec<TypeParam>)> {
     let binder = |role: &str, kind| TypeParam {
+        presentation: Default::default(),
         name: format!("\0block-descriptor-{index}-{role}"),
         span,
         kind,
@@ -1666,7 +1665,7 @@ fn trailing_declaration_slot_schema(
     let (a, b, fa) = known_carrier.unwrap_or_else(|| {
         let a = binder("input", None);
         let b = binder("output", None);
-        let carrier = binder("carrier", Some(crate::ast::Kind::arrow_chain(1)));
+        let carrier = binder("carrier", Some(Box::new(crate::ast::Kind::arrow_chain(1))));
         let fa = Type::synth_path(
             vec![carrier.name.clone()],
             vec![Type::synth_path(vec![a.name.clone()], Vec::new(), span)],
@@ -1973,11 +1972,7 @@ fn generated_elaborator_type_param(
         reserved.insert(name.clone()),
         "a generated elaborator type binder must be fresh"
     );
-    TypeParam {
-        name,
-        span: original.span,
-        kind: original.kind.clone(),
-    }
+    original.renamed(name)
 }
 
 fn type_mentions_free_param(ty: &Type, name: &str) -> bool {
@@ -5756,11 +5751,13 @@ impl Elaborations {
                 continue;
             }
             let key = user_elaborator_template_memo_key(ob, env);
-            let unique_index = match unique_by_key.get(&key).copied() {
-                Some(index) => index,
-                None => {
+            let unique_index = match unique_by_key.get_key_value(&key) {
+                Some((stored, &index)) if key.presentation_matches(stored) => index,
+                existing => {
                     let index = unique.len();
-                    unique_by_key.insert(key.clone(), index);
+                    if existing.is_none() {
+                        unique_by_key.insert(key.clone(), index);
+                    }
                     unique.push((ob_index, key));
                     index
                 }
@@ -8985,6 +8982,11 @@ fn user_elaborator_template_memo_key(
             .map(user_elaborator_memo_input_key)
             .collect(),
     )
+    .with_result_type(
+        ob.result_ty
+            .as_ref()
+            .map(|ty| crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty.as_type())),
+    )
 }
 
 fn user_elaborator_memo_input_key(
@@ -8992,23 +8994,29 @@ fn user_elaborator_memo_input_key(
 ) -> UserElaboratorMemoInputKey {
     match input {
         UserElaboratorTemplateInputKey::ComptimeProof => UserElaboratorMemoInputKey::ComptimeProof,
-        UserElaboratorTemplateInputKey::Type(ty) => {
-            UserElaboratorMemoInputKey::Type(TypeMemoKey::from_type(ty))
-        }
+        UserElaboratorTemplateInputKey::Type(ty) => UserElaboratorMemoInputKey::Type(
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+        ),
         UserElaboratorTemplateInputKey::OptionalTypeKnown(ty) => {
-            UserElaboratorMemoInputKey::OptionalTypeKnown(TypeMemoKey::from_type(ty))
+            UserElaboratorMemoInputKey::OptionalTypeKnown(
+                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+            )
         }
         UserElaboratorTemplateInputKey::OptionalTypeInfer => {
             UserElaboratorMemoInputKey::OptionalTypeInfer
         }
-        UserElaboratorTemplateInputKey::Term(ty) => {
-            UserElaboratorMemoInputKey::Term(TypeMemoKey::from_type(ty))
-        }
+        UserElaboratorTemplateInputKey::Term(ty) => UserElaboratorMemoInputKey::Term(
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+        ),
         UserElaboratorTemplateInputKey::ResidualShape(ty) => {
-            UserElaboratorMemoInputKey::ResidualShape(TypeMemoKey::from_type(ty))
+            UserElaboratorMemoInputKey::ResidualShape(
+                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+            )
         }
         UserElaboratorTemplateInputKey::CapturedTerm(ty) => {
-            UserElaboratorMemoInputKey::CapturedTerm(TypeMemoKey::from_type(ty))
+            UserElaboratorMemoInputKey::CapturedTerm(
+                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+            )
         }
     }
 }
@@ -9968,8 +9976,9 @@ mod tests {
 
     #[test]
     fn rec_loop_diagnostic_terminal_modes_keep_body_goals_distinct_and_drain_scratch() {
-        let valid = "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; ";
-        let wrong = "module main; host fn drive[S][R](step: S -> S | R, state: S, extra: .) -> R; ";
+        let valid = "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; ";
+        let wrong =
+            "module main; host fn drive[S][R](step: S -> (S | R), state: S, extra: .) -> R; ";
         for (prefix, body, is_loop_error) in [
             (
                 valid,
@@ -10016,7 +10025,7 @@ mod tests {
         let package = lowered_package(&[(
             "main.kio",
             "module main; \
-            host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+            host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
             rec(drive) { fn first(x: .) { rec second(x) }; fn second(x: .) { rec first(x) } }",
         )]);
         let mut plain = package.clone();
@@ -10703,6 +10712,7 @@ mod tests {
         reserve_module_nominal_type_names(&module, &mut reserved);
         let generated = generated_elaborator_type_param(
             &TypeParam {
+                presentation: Default::default(),
                 name: "A".to_owned(),
                 span: Span::new(0, 1),
                 kind: None,
@@ -11728,7 +11738,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 let main = format!(
                     "module main; import control(if);
                     host type Bool role(bool);
-                    host fn loop[S][R](step: S -> S | R, state: S) -> R;
+                    host fn loop[S][R](step: S -> (S | R), state: S) -> R;
                     host fn make[A]() -> A;
                     fn invoke(predicate: . -> Bool) -> Bool {{ predicate() }}
                     rec(loop) fn repeat(go: Bool) -> Bool {{
@@ -11747,7 +11757,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn ordinary_optional_rec_callback_checks_contextual_lambda_body_once() {
         let main = "module main; import control(if);
             host type Bool role(bool);
-            host fn loop[S][R](step: S -> S | R, state: S) -> R;
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(factory: . -> (Bool -> Bool), value: Bool) -> Bool { factory()(value) }
             rec(loop) fn repeat(go: Bool) -> Bool {
               if! invoke(.() { .(value) { value } }, go) {
@@ -11775,7 +11785,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn ordinary_optional_rec_callback_keeps_return_annotation_errors() {
         let message = err("module main; import control(if);
             host type Bool role(bool);
-            host fn loop[S][R](step: S -> S | R, state: S) -> R;
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
               if! invoke(.() -> . { go }) { rec repeat(.f) } else { go }
@@ -11787,7 +11797,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn ordinary_optional_rec_callback_does_not_admit_recursive_closures() {
         let error = check_package_sources(&["module main; import control(if);
             host type Bool role(bool);
-            host fn loop[S][R](step: S -> S | R, state: S) -> R;
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
               if! invoke(.() { rec repeat(go) }) { rec repeat(.f) } else { go }
@@ -15167,7 +15177,7 @@ fn generic_last() -> . {
                 _b_type: __Type__, \
                 second: __Checked_term__ \
               ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
-            elab relay : [A] A -> [B] (A & B) -> A & B { impl(fills) relay_impl; }; \
+            elab relay : [A] A -> [B] (A & B) -> (A & B) { impl(fills) relay_impl; }; \
             fn run[A](first: A) -> A & . { \
               let residual = relay!(first); \
               residual((first, ())) \
@@ -15183,7 +15193,7 @@ fn generic_last() -> . {
             import __intrinsics__; \
             import __comptime__; \
             host type Later; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             host fn later() -> Later; \
             pure fn invoke_then_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
@@ -15220,6 +15230,7 @@ fn generic_last() -> . {
     fn projected_residual_abi_classifies_every_callable_layer() {
         let type_only = FrozenProjectedResidualAbi {
             generated_type_params: vec![Some(TypeParam {
+                presentation: Default::default(),
                 name: "Later".into(),
                 span: test_span(),
                 kind: None,
@@ -15302,7 +15313,7 @@ fn generic_last() -> . {
                      {relations} \
                    ) \
                  }} \
-                 elab solve : [A] [B] [Fixed] Fixed -> A & B & Fixed {{ \
+                 elab solve : [A] [B] [Fixed] Fixed -> (A & B & Fixed) {{ \
                    impl(fills) solve_impl; \
                  }}; \
                  fn run() -> . {{ let _result = solve!(()); () }}"
@@ -15806,6 +15817,7 @@ fn generic_last() -> . {
         let span = test_span();
         let bound = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: slash.alias.clone(),
                 span,
                 kind: None,
@@ -18755,7 +18767,7 @@ fn generic_last() -> . {
         );
         assert_eq!(
             diagnostic.message,
-            "type mismatch: expected `[A_n2] A_n2 -> A_n2`, found `[T] T -> .`"
+            "type mismatch: expected `[A] A -> A`, found `[T] T -> .`"
         );
         assert!(
             diagnostic
@@ -18907,7 +18919,7 @@ fn generic_last() -> . {
         let source = "module x; \
             host type I32; \
             host fn nil[A]() -> A; \
-            host fn loop[S][R](step: S -> S | R, seed: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), seed: S) -> R; \
             rec(loop) { \
               pub fn keep(value: .) -> I32 { rec walk(value) }; \
               fn walk(_value: .) -> I32 { nil(I32)() } \
@@ -21195,9 +21207,9 @@ fn generic_last() -> . {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
             host type String role(str); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn consume_pair[B](first: I32 & B, tail: I32) -> I32 { tail } \
-            rec(loop) fn stale_slot[A](maker: [X] String -> X & A, n: I32) -> I32 { \
+            rec(loop) fn stale_slot[A](maker: [X] String -> (X & A), n: I32) -> I32 { \
               consume_pair(maker(\"stale\"), rec(cont) stale_slot(maker, n)) \
             }"])
         .expect("the substituted recursive carrier must retain the refined slot type");
@@ -21207,7 +21219,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_keeps_direct_type_slot() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             fn consume[A](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
@@ -21220,7 +21232,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_ends_successor_packet() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             fn layered[A](first: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
@@ -21233,7 +21245,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_guides_ufcs_splice() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             fn layered[A](receiver: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
@@ -21246,7 +21258,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_keeps_immediate_initial_type_slot() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](tail) -> I32 { tail }( \
@@ -21260,7 +21272,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_keeps_immediate_successor_type_slot() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](first: A)[B](tail) -> I32 { tail }( \
@@ -21274,7 +21286,7 @@ fn generic_last() -> . {
     fn recursive_value_shaped_type_argument_concrete_lambda_control() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](tail: I32) -> I32 { tail }( \
@@ -21295,7 +21307,7 @@ fn generic_last() -> . {
             "module main; \
              import elab(same); \
              host type I32 role(i32); \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              type Identity[A] = A; \
              rec(loop) fn value(n: I32) -> I32 { \
                same!(Identity(I32), rec(cont) value(0)) \
@@ -21309,7 +21321,7 @@ fn generic_last() -> . {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
             host type String role(str); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn effectful_identity[A](tag: String) -> A -> A { .(value: A) -> A { value } } \
             fn pair_second((transform: I32 -> I32, value: I32)) -> I32 { value } \
             rec(loop) fn tuple_order(n: I32) -> I32 { \
@@ -21322,7 +21334,7 @@ fn generic_last() -> . {
     fn recursive_let_can_discard_a_branch_result() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn take_second(first: I32, second: I32) -> I32 { second } \
             rec(loop) fn sequence(n: I32) -> I32 { \
               let ignored = take_second(0, rec(cont) sequence(0)); \
@@ -21335,7 +21347,7 @@ fn generic_last() -> . {
     fn recursive_partial_let_synthesizes_rhs_before_checking_annotation() {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
             rec(loop) fn value(n: I32) -> Box(I32) { \
@@ -21349,7 +21361,7 @@ fn generic_last() -> . {
     fn recursive_partial_let_inside_plain_do_uses_ordinary_let_flow() {
         check_package_sources(&["module x; import control(scope); \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
             rec(loop) fn value(n: I32) -> Box(I32) { scope! { \
@@ -21363,7 +21375,7 @@ fn generic_last() -> . {
     fn recursive_partial_let_rejects_mismatching_annotation() {
         let message = package_type_err(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             newtype Other[A] : A { pub constructor mk_other; pub projector un_other; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
@@ -21380,7 +21392,7 @@ fn generic_last() -> . {
     #[test]
     fn recursive_sequence_accepts_exact_unit_value() {
         check_package_sources(&["module x; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn unit_after(value: .) -> . { () } \
             rec(loop) fn sequence(value: .) -> . { \
               unit_after(rec(cont) sequence(())); \
@@ -21393,7 +21405,7 @@ fn generic_last() -> . {
     fn recursive_sequence_rejects_non_unit_value() {
         let message = package_type_err(&["module x; \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn identity(value: I32) -> I32 { value } \
             rec(loop) fn sequence(value: I32) -> I32 { \
               identity(rec(cont) sequence(0)); \
@@ -21410,7 +21422,7 @@ fn generic_last() -> . {
         let source = "module x; import control(if); \
             host type Bool role(bool); \
             host type I32 role(i32); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             host fn condition() -> Bool; \
             fn identity(value: Bool) -> Bool { value } \
             rec(loop) fn choose(n: I32) -> Bool { \
@@ -21429,7 +21441,7 @@ fn generic_last() -> . {
             host type Bool role(bool); \
             host type I32 role(i32); \
             host type String role(str); \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             host fn done(value: I32) -> Bool; \
             host fn empty() -> String; \
             rec(loop) { \
@@ -21448,7 +21460,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type String role(str); \
             fn consume_pair[B](first: I32 & B, tail: I32) -> I32 { tail } \
-            fn stable_slot[A](maker: [X] String -> X & A) -> I32 { \
+            fn stable_slot[A](maker: [X] String -> (X & A)) -> I32 { \
               consume_pair(maker(\"stable\"), 0) \
             }"])
         .expect("the non-recursive control should retain its inferred slot type");
@@ -22625,7 +22637,7 @@ fn generic_last() -> . {
             _phantom: __Type__, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab required_phantom : [Left] [Right] [Phantom] (Left & Right) -> Left & Right { impl required_phantom_impl; }; \
+        pub elab required_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl required_phantom_impl; }; \
         pure fn optional_phantom_impl( \
             _ct: __Comptime__, \
             _left: __Type__, \
@@ -22633,7 +22645,7 @@ fn generic_last() -> . {
             _phantom: Optional_type, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab optional_phantom : [Left] [Right] [Phantom] (Left & Right) -> Left & Right { impl optional_phantom_impl; };";
+        pub elab optional_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl optional_phantom_impl; };";
 
     fn source_span(source: &str, needle: &str) -> Span {
         let start = source.find(needle).expect("test expression is present");
@@ -23995,7 +24007,7 @@ fn generic_last() -> . {
                  import elab(inspect); \
                  host type State; \
                  host type Done; \
-                 host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+                 host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
                  host fn advance(state: State) -> State | Done; \
                  fn run(seed: State) -> . {{ {} }}",
                 case.body
@@ -24390,7 +24402,7 @@ fn generic_last() -> . {
         let main = "module main; \
             import elab(inspect); \
             host type String role(str); \
-            labels { lookup[P]: String -> P | . }; \
+            labels { lookup[P]: String -> (P | .) }; \
             type Surface[P] = Lookup(P); \
             fn run[P](surface: Surface(P), name: String) -> . { \
               inspect!(surface.?{lookup}(name)) \
@@ -24573,7 +24585,7 @@ fn generic_last() -> . {
         let main = "module main; \
             import elab(inspect_two); \
             host type String role(str); \
-            labels { lookup[P]: String -> P | . }; \
+            labels { lookup[P]: String -> (P | .) }; \
             type Surface[P] = Lookup(P); \
             fn run[P](surface: Surface(P), name: String) -> . { \
               inspect_two!(surface.?{lookup}(name), \"wrong\"(String)) \
@@ -25535,14 +25547,14 @@ fn generic_last() -> . {
     fn fills_written_callback_enters_body_once_after_action() {
         for (declarations, signature, lambda, producer) in [
             (
-                "host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+                "host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done;",
                 "fn run(seed: State) -> .",
                 ".(state: State) -> State | Done { advance(state) }",
                 "dispatch(LAMBDA, seed)",
             ),
             (
-                "host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+                "host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done; \
                  fn identity[A](value: A) -> A { value };",
                 "fn run(seed: State) -> .",
@@ -25550,8 +25562,8 @@ fn generic_last() -> . {
                 "identity(dispatch(LAMBDA, seed))",
             ),
             (
-                "host fn dispatch[S][R](step: S -> S | R, seed: S) -> R;",
-                "fn run[*F][A](seed: F(A), advance: F(A) -> F(A) | Done) -> .",
+                "host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R;",
+                "fn run[*F][A](seed: F(A), advance: F(A) -> (F(A) | Done)) -> .",
                 ".(state: F(A)) -> F(A) | Done { advance(state) }",
                 "dispatch(LAMBDA, seed)",
             ),
@@ -25598,7 +25610,7 @@ fn generic_last() -> . {
             let call = format!("observe!(dispatch({lambda}, seed))");
             let main = format!(
                 "module main; import elab(observe); host type State; host type Done; \
-                 host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+                 host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done; \
                  fn run(seed: State) -> . {{ {call} }}"
             );
@@ -25629,7 +25641,7 @@ fn generic_last() -> . {
             let call = format!("observe!({})", producer.replace("LAMBDA", lambda));
             let main = format!(
                 "module main; import elab(observe); host type State; host type Done; \
-             host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+             host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn identity[A](value: A) -> A; \
              fn run(seed: State) -> . {{ {call} }}"
             );
@@ -25668,7 +25680,7 @@ fn generic_last() -> . {
         let good = "observe!(identity(dispatch(.(state: State) -> State | Done { advance(state) }, seed)))";
         let main = format!(
             "module main; import elab(observe); host type State; host type Done; \
-             host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+             host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              host fn identity[A](value: A) -> A; \
              fn bad(seed: State) -> . {{ {bad} }}; \
@@ -25745,7 +25757,7 @@ fn generic_last() -> . {
         let call = format!("observe!(make_identity()(dispatch({lambda}, seed)))");
         let main = format!(
             "module main; import elab(observe); host type State; host type Done; \
-             host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+             host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              host fn make_identity() -> [A] A -> A; \
              fn run(seed: State) -> . {{ {call} }}"
@@ -25785,7 +25797,7 @@ fn generic_last() -> . {
         let call = format!("observe!(identity(relay!(dispatch({lambda}, seed))))");
         let main = format!(
             "module main; import elab(observe, relay); host type State; host type Done; \
-             host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+             host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              fn identity[A](value: A) -> A {{ value }}; \
              fn run(seed: State) -> . {{ {call} }}"
@@ -25861,7 +25873,7 @@ fn generic_last() -> . {
             let call = format!("observe!({})", producer.replace("LAMBDA", lambda));
             let main = format!(
                 "module main; import elab(observe, relay); host type State; host type Done; \
-                 host fn dispatch[S][R](step: S -> S | R, seed: S) -> R; \
+                 host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done; host fn finish() -> Done; \
                  fn run(seed: State) -> . {{ {call} }}"
             );
@@ -26163,7 +26175,7 @@ fn generic_last() -> . {
     #[test]
     fn fills_ambient_recursive_lambda_needs_anchor_before_lifted_check() {
         let host = "module host; \
-            pub host fn loop[S][R](step: S -> S | R, initial: S) -> R;";
+            pub host fn loop[S][R](step: S -> (S | R), initial: S) -> R;";
         let lambda = ".[A](_value: A) { rec run(value) }";
         let main = format!(
             "module main; import elab(invoke); import host(loop); \

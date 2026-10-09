@@ -353,9 +353,10 @@ impl HaskellFacadeCatalog {
                         unreachable!("a live Haskell type stage lost its paired execution action")
                     }
                     let param = TypeParam {
+                        presentation: Default::default(),
                         name: binder.name.clone(),
                         span: binder.span,
-                        kind: Some(binder.kind.clone()),
+                        kind: Some(Box::new(binder.kind.clone())),
                     };
                     scope.insert(
                         binder_id,
@@ -779,9 +780,10 @@ impl HaskellFacadeCatalog {
             } => {
                 let binder_meta = plan.binder(*binder);
                 let param = TypeParam {
+                    presentation: Default::default(),
                     name: binder_meta.name.clone(),
                     span: binder_meta.span,
-                    kind: Some(binder_meta.kind.clone()),
+                    kind: Some(Box::new(binder_meta.kind.clone())),
                 };
                 let mut nested = substitutions.clone();
                 nested.insert(

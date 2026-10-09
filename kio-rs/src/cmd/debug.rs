@@ -26,7 +26,7 @@ const HELP: &str = "\
 Usage: kio debug <subcommand> [args]
 
 Internal dumpers for CI and tooling. Not part of the public CLI
-surface (specs/cli.md does not specify these); the spellings may
+surface ({base}/specs/cli.md does not specify these); the spellings may
 change without notice.
 
 Subcommands:
@@ -50,7 +50,7 @@ const HELP: &str = "\
 Usage: kio debug <subcommand> [args]
 
 Internal dumpers for CI and tooling. Not part of the public CLI
-surface (specs/cli.md does not specify these); the spellings may
+surface ({base}/specs/cli.md does not specify these); the spellings may
 change without notice.
 
 Subcommands:
@@ -79,14 +79,17 @@ Internal subcommand: not part of the public CLI surface.";
 
 const ROUNDTRIP_TARGET_OUT: &str = "__kio_roundtrip_target/";
 const ROUNDTRIP_PRIME_OUT: &str = "__kio_roundtrip_prime/";
+const ROUNDTRIP_TARGET_NAME: &str = "__kio_roundtrip_target";
+const ROUNDTRIP_PRIME_NAME: &str = "__kio_roundtrip_prime";
 
 pub fn run(args: &[String]) -> ExitCode {
+    let help = crate::documentation_help(HELP);
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("{HELP}");
+        println!("{help}");
         return ExitCode::Success;
     }
     let Some(sub) = args.first() else {
-        eprintln!("{HELP}");
+        eprintln!("{help}");
         return ExitCode::Usage;
     };
     match sub.as_str() {
@@ -97,7 +100,7 @@ pub fn run(args: &[String]) -> ExitCode {
         other => {
             eprintln!("error: unknown debug subcommand: {other}");
             eprintln!();
-            eprintln!("{HELP}");
+            eprintln!("{help}");
             ExitCode::Usage
         }
     }
@@ -140,31 +143,30 @@ fn prepare_kio_prime_roundtrip_package(
     selected_target: &str,
 ) -> Result<Option<String>, crate::error::Error> {
     let mut package = parse_package_file(source, stem)?;
-    if selected_target == "kio-prime" {
-        return Ok(None);
-    }
     let Some(build) = package.build.as_mut() else {
         return Ok(None);
     };
     let Some(target) = build
         .targets
-        .iter_mut()
-        .find(|target| target.id == selected_target)
+        .iter()
+        .find(|target| target.name() == selected_target)
     else {
         return Ok(None);
     };
-    set_target_output(target, ROUNDTRIP_TARGET_OUT);
-
-    if let Some(target) = build
-        .targets
-        .iter_mut()
-        .find(|target| target.id == "kio-prime")
-    {
-        set_target_output(target, ROUNDTRIP_PRIME_OUT);
-    } else {
-        build.targets.push(TargetBlock {
+    if target.backend == "kio-prime" {
+        return Ok(None);
+    }
+    // The copied check package owns exactly two targets. Their private names
+    // cannot collide with arbitrary source target names or impersonate a backend.
+    let mut target = target.clone();
+    target.name = Some(ROUNDTRIP_TARGET_NAME.to_owned());
+    set_target_output(&mut target, ROUNDTRIP_TARGET_OUT);
+    build.targets = vec![
+        target,
+        TargetBlock {
             trailing_trivia: Vec::new(),
-            id: "kio-prime".to_owned(),
+            backend: "kio-prime".to_owned(),
+            name: Some(ROUNDTRIP_PRIME_NAME.to_owned()),
             entries: vec![TargetEntry {
                 key: "out".to_owned(),
                 value: ROUNDTRIP_PRIME_OUT.to_owned(),
@@ -173,8 +175,8 @@ fn prepare_kio_prime_roundtrip_package(
             }],
             span: build.span,
             leading_trivia: Vec::new(),
-        });
-    }
+        },
+    ];
 
     Ok(Some(pretty_package_file(&package)))
 }
@@ -336,13 +338,13 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{name}: {error:?}\n{rendered}"));
             let build = package.build.expect("prepared build block");
             for (id, output) in [
-                ("ts", ROUNDTRIP_TARGET_OUT),
-                ("kio-prime", ROUNDTRIP_PRIME_OUT),
+                (ROUNDTRIP_TARGET_NAME, ROUNDTRIP_TARGET_OUT),
+                (ROUNDTRIP_PRIME_NAME, ROUNDTRIP_PRIME_OUT),
             ] {
                 let targets: Vec<_> = build
                     .targets
                     .iter()
-                    .filter(|target| target.id == id)
+                    .filter(|target| target.name() == id)
                     .collect();
                 assert_eq!(targets.len(), 1, "{name}: target {id}\n{rendered}");
                 let outs: Vec<_> = targets[0]
@@ -380,6 +382,42 @@ mod tests {
             "ts".to_owned(),
         ];
         assert_eq!(run(&args), ExitCode::Internal);
+    }
+
+    #[test]
+    fn roundtrip_named_targets_do_not_confuse_names_with_backends() {
+        let source = r#"package app; build {
+            target (ts, "kio-prime") { out "old"; namespace "app" };
+            target (js, "__kio_roundtrip_target") { out "decoy" };
+            target (js, "__kio_roundtrip_prime") { out "other" }
+        }"#;
+        let rendered = prepare_kio_prime_roundtrip_package(source, Some("app"), "kio-prime")
+            .unwrap()
+            .unwrap();
+        let build = parse_package_file(&rendered, Some("app"))
+            .unwrap()
+            .build
+            .unwrap();
+        assert_eq!(build.targets.len(), 2);
+        assert_eq!(build.targets[0].backend, "ts");
+        assert_eq!(build.targets[0].name(), ROUNDTRIP_TARGET_NAME);
+        assert!(
+            build.targets[0]
+                .entries
+                .iter()
+                .any(|entry| entry.key == "namespace" && entry.value == "app")
+        );
+        assert_eq!(build.targets[1].backend, "kio-prime");
+        assert_eq!(build.targets[1].name(), ROUNDTRIP_PRIME_NAME);
+        assert!(
+            prepare_kio_prime_roundtrip_package(
+                r#"package app; build { target (kio-prime, "js") {} }"#,
+                Some("app"),
+                "js"
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[test]

@@ -3,12 +3,118 @@ use super::*;
 fn scheme(name: &str) -> EvalAstType {
     Type::Forall {
         param: TypeParam {
+            presentation: Default::default(),
             name: name.into(),
             span: zero_span(),
             kind: None,
         },
         body: Box::new(type_path(name)),
         meta: zero_meta(),
+    }
+}
+
+fn written_scheme(name: &str) -> EvalAstType {
+    let Type::Forall { mut param, .. } = scheme(name) else {
+        unreachable!()
+    };
+    param.presentation = crate::ast::TypeParamPresentation::written();
+    param.rename("Canonical".into());
+    Type::Forall {
+        param,
+        body: Box::new(type_path("Canonical")),
+        meta: zero_meta(),
+    }
+}
+
+fn forall_view_body(view: &Value) -> &EvalAstType {
+    let mut payload = view;
+    for _ in 0..6 {
+        let Value::Data(data) = payload else {
+            panic!("forall sum arm")
+        };
+        payload = &data.args()[0];
+    }
+    let Value::Data(pair) = payload else {
+        panic!("forall packet")
+    };
+    let Value::Data(rest) = &pair.args()[1] else {
+        panic!("forall rest")
+    };
+    let Value::ReflType(body) = &rest.args()[1] else {
+        panic!("forall body")
+    };
+    body.as_type()
+}
+
+#[test]
+fn type_view_cache_guards_nested_written_names_without_changing_reflection() {
+    for names in [["A", "B", "A"], ["B", "A", "B"]] {
+        let ctx = EvalCtx::new();
+        for name in names {
+            let mut ty = scheme("Outer");
+            let Type::Forall { body, .. } = &mut ty else {
+                unreachable!()
+            };
+            **body = written_scheme(name);
+            let view = type_view_value(&ty, &ctx).unwrap();
+            assert_eq!(
+                crate::pass::typecheck_core::display_type(forall_view_body(&view)),
+                format!("[{name}] {name}")
+            );
+            assert_eq!(
+                crate::pass::typecheck_core::display_reflected_type(forall_view_body(&view)),
+                "[Canonical] Canonical"
+            );
+        }
+        assert_eq!(ctx.type_view_cache.inner.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn exact_call_memo_guards_written_names_in_arguments_and_captures() {
+    for captured in [false, true] {
+        for names in [["A", "B", "A"], ["B", "A", "B"]] {
+            let metrics = Arc::new(EvalMetrics::default());
+            let ctx = EvalCtx::new().with_metrics(metrics.clone());
+            let function = test_eval_function(
+                &["argument"],
+                EvalExpr::ReflTypeView {
+                    typ: EvalRef::new(EvalExpr::Local(0)),
+                },
+            );
+            assert!(function.memo_candidate);
+            for name in names {
+                let mut input = scheme("Outer");
+                let Type::Forall { body, .. } = &mut input else {
+                    unreachable!()
+                };
+                **body = written_scheme(name);
+                let input = refl_type_value(input);
+                let (captures, args) = if captured {
+                    (vec![input], vec![Value::Unit])
+                } else {
+                    (Vec::new(), vec![input])
+                };
+                ctx.type_view_cache.inner.lock().unwrap().clear();
+                let result = apply(
+                    Value::EvalClosure {
+                        function: function.clone(),
+                        captured: captures.into(),
+                    },
+                    args,
+                    &ctx,
+                );
+                assert_eq!(
+                    crate::pass::typecheck_core::display_type(forall_view_body(&result)),
+                    format!("[{name}] {name}")
+                );
+            }
+            let stats = metrics.snapshot();
+            assert_eq!(stats.exact_call_memo_misses, 2, "captured={captured}");
+            assert_eq!(stats.exact_call_memo_stores, 1);
+            assert_eq!(stats.exact_call_memo_hits, 1);
+            assert_eq!(ctx.exact_call_memo.inner.lock().unwrap().len(), 1);
+        }
     }
 }
 
@@ -242,14 +348,14 @@ fn reflection_keys_keep_nested_identity_arity_kind_and_path_slots() {
     let Type::Forall { param, meta, .. } = &mut b else {
         unreachable!()
     };
-    param.kind = Some(crate::ast::Kind::Star);
+    param.kind = Some(Box::new(crate::ast::Kind::Star));
     param.span = Span::new(10, 20);
     meta.span = Span::new(5, 30);
     assert_eq!(ReflectionTypeKey::new(&a), ReflectionTypeKey::new(&b));
     let Type::Forall { param, .. } = &mut b else {
         unreachable!()
     };
-    param.kind = Some(crate::ast::Kind::arrow_chain(2));
+    param.kind = Some(Box::new(crate::ast::Kind::arrow_chain(2)));
     assert_ne!(ReflectionTypeKey::new(&a), ReflectionTypeKey::new(&b));
 }
 
@@ -267,7 +373,7 @@ fn reflection_key_flattens_deep_types_and_complete_kinds() {
             let Type::Forall { param, .. } = &mut ty else {
                 unreachable!()
             };
-            param.kind = Some(kind);
+            param.kind = Some(Box::new(kind));
             for _ in 0..1024 {
                 ty = Type::Product {
                     left: Box::new(Type::Unit { meta: zero_meta() }),

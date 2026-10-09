@@ -4037,10 +4037,10 @@ pure fn run(ct: __Comptime__, k: . -> __Checked_term__, value: __Checked_term__)
     , __type_unit__(ct)
     , value
     , .(
-        , _recur: (__Type__ & __Checked_term__) -> __Checked_term__
+        , recur: (__Type__ & __Checked_term__) -> __Checked_term__
         , _fuel: __Type__
         , _input: __Checked_term__
-        ) -> __Checked_term__ { k(()) }
+        ) -> __Checked_term__ { recur(__type_unit__(ct), k(())) }
     )
 }
 
@@ -4565,7 +4565,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
     #[test]
     fn expression_totality_error_has_a_distinct_renderer() {
         let error = ReplExprQueryError::Totality(
-            "same helper origin did not descend (root=1, current=1, next=1)".to_owned(),
+            "recursive call did not descend (root=1, current=1, next=1)".to_owned(),
         );
         let rendered = render_expr_error(&error);
         assert!(rendered.starts_with("compile-time evaluation failed its Totality check:"));

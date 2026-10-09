@@ -77,6 +77,7 @@ Prefer to build it yourself? `cargo install kio-lang --bin kio`. Prebuilt archiv
 
 ## Documentation
 
+- [KIO-FOR-AGENTS.md](KIO-FOR-AGENTS.md) — instructions for AI agents writing Kio in any project.
 - [`docs/`](docs/) — pedagogical material: tutorials, guides, host integrations.
 - [`specs/`](specs/) — authoritative contracts.
 - [`DESIGN.md`](DESIGN.md) — language goals and design rationale.

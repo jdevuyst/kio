@@ -28,7 +28,8 @@ Read the three anchors above before starting. The shipping-backend set is
 
 Both packages under `ffi_two_packages_coexist/workdir/` and both configured
 builds under `ffi_same_package_namespaces_coexist/workdir/` must declare a
-`target <lang>` block for **every** shipping backend. Each witness's two target
+target block selecting **every** shipping backend. Headers may be bare or
+backend-first pairs; compare their backend slots, not target names. Each witness's two target
 sets must be identical. A backend missing from either side of either witness is
 a finding (the per-backend opt-out these goldens exist to forbid); a new
 backend absent from both is the `add-backend` Step-5 gap.
@@ -40,10 +41,11 @@ backend absent from both is the `add-backend` Step-5 gap.
   host-fn leaves, and structural shapes. Diff the two `workdir/pkg_*` trees
   modulo the package name; a divergence that removes a collidable name weakens
   the maximal-collision witness.
-- In `ffi_same_package_namespaces_coexist`, the two trees remain the same
-  source package: byte-identical Kio modules and the same package name. Their
-  manifests differ only where needed to configure two distinct effective
-  artifact namespaces. A source, package-name, protocol, or facade-shape
+- In `ffi_same_package_namespaces_coexist`, one manifest and one module tree
+  define the source package. Two named targets per backend configure distinct
+  effective artifact namespaces and disjoint outputs; the script selects both
+  names together and repeats the cached build before invoking the host.
+  A source, package-name, protocol, or facade-shape
   divergence turns this into another two-package test and is a finding.
 
 ## 3. Each runner's coexist arm is genuine
@@ -74,8 +76,8 @@ Group findings into:
 1. **Missing backend** — a shipping backend absent from either side of either
    witness's build blocks (§ 1).
 2. **Weakened fixtures** — either the distinct packages are no longer
-   maximal-collision or the same-package trees no longer differ only by their
-   configured namespaces (§ 2).
+   maximal-collision or the same-package witness no longer builds one source
+   package under two configured namespaces (§ 2).
 3. **Fake coexist arm** — a runner arm that doesn't host two live,
    interleaved instances (§ 3).
 4. **Spec/witness drift** — the Coexistence text and the golden disagree

@@ -103,6 +103,10 @@ case "$1" in
       printf '%s\n' "$KIO_DEBUG_TEST_KIO_PRIME_BIN" >>"$KIO_TEST_SNAPSHOT_PATHS"
     fi
     ;;
+  run)
+    [ "$#" -eq 5 ] && [ "$2" = --example ] && [ "$3" = pack_manual ] &&
+      [ "$4" = -- ] && [ "$5" = --check ] || exit 90
+    ;;
   fmt|clippy|check) ;;
   *) exit 94 ;;
 esac

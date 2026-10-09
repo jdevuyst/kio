@@ -329,9 +329,10 @@ impl Finish {
                     return Some(projected_value(term));
                 }
                 let param = TypeParam {
+                    presentation: Default::default(),
                     name,
                     span: zero_span(),
-                    kind: Some(crate::ast::Kind::arrow_chain(arity)),
+                    kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
                 };
                 if source.builtin == ComptimeBuiltin::TypeForall {
                     let body = canonical_refl_type(&body, ctx)?;

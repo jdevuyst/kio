@@ -1,0 +1,44 @@
+/// Exercises direct arrow-result chains at the loader's public-type boundary.
+module testapi/main;
+
+import elab/match(match);
+import loader as l;
+import loader/scan as scan;
+import testapi as t;
+import testapi/io as io;
+import testapi/text as text;
+
+fn show(label: t.String, source: t.String) {
+  let result =
+    match! l.un_load_outcome(scan.load_package(source)) {
+      (
+        , .(_image: l.Lr_image) { "loaded"(t.String) }
+        , .(diag: l.Lr_diag) { l.diag_message(l.Lr_diag.get(diag)) }
+        )
+    };
+  io.print(text.string_concat(label, text.string_concat(result, "\n"(t.String))))
+}
+
+pub fn main() {
+  show("grouped product: "(t.String), "module a; host fn f(cb: . -> (. & .)) -> .;"(t.String));
+  show("grouped sum: "(t.String), "module a; host fn f(cb: . -> (. | .)) -> .;"(t.String));
+  show("bare product: "(t.String), "module a; host fn f(cb: . -> . & .) -> .;"(t.String));
+  show("bare sum: "(t.String), "module a; host fn f(cb: . -> . | .) -> .;"(t.String));
+  show("leading product: "(t.String), "module a; host fn f(cb: . -> & .) -> .;"(t.String));
+  show("empty sum: "(t.String), "module a; host fn f(cb: . -> |) -> .;"(t.String));
+  show("trailing product: "(t.String), "module a; host fn f(cb: . -> . &) -> .;"(t.String));
+  show("nested result: "(t.String), "module a; host fn f() -> . -> . & .;"(t.String));
+  show("grouped nested result: "(t.String), "module a; host fn f() -> . -> (. & .);"(t.String));
+  show("own product return: "(t.String), "module a; host fn f() -> . & .;"(t.String));
+  show("own sum return: "(t.String), "module a; host fn f() -> . | .;"(t.String));
+  show("arrows only: "(t.String), "module a; host fn f(cb: . -> . -> .) -> .;"(t.String));
+  show("forall result scope: "(t.String), "module a; host fn f(cb: . -> [A] A & A) -> .;"(t.String));
+  show(
+    , "export grouped result: "(t.String)
+    , "module a; pub fn f(cb: . -> (. & .)) { () } package p; bridge { a; }"(t.String)
+    );
+  show(
+    , "export bare result: "(t.String)
+    , "module a; pub fn f(cb: . -> . & .) { () } package p; bridge { a; }"(t.String)
+    )
+}

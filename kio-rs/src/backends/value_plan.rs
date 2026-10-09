@@ -906,6 +906,7 @@ mod tests {
     fn forall(name: &str, body: Type<Routed>) -> Type<Routed> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: Span::new(0, 0),
                 kind: None,
@@ -920,7 +921,7 @@ mod tests {
         let Type::Forall { param, .. } = &mut ty else {
             unreachable!()
         };
-        param.kind = Some(kind);
+        param.kind = Some(Box::new(kind));
         ty
     }
 

@@ -6,7 +6,7 @@ import build_reassoc_function_slots(I32);
 // products: one reassociates three values to the right, and the other restores
 // the left-associated form.
 pub type Reassoc =
-  (((I32 & I32) & I32) -> I32 & I32 & I32) & ((I32 & I32 & I32) -> (I32 & I32) & I32)
+  (((I32 & I32) & I32) -> (I32 & I32 & I32)) & ((I32 & I32 & I32) -> ((I32 & I32) & I32))
   ;
 
 pub fn reassoc_iso() -> Reassoc {

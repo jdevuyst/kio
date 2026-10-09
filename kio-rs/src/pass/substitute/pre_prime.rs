@@ -561,6 +561,7 @@ mod tests {
     fn value_name_collection_preserves_tree_and_exact_reservations() {
         let forall = |name: &str| Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: span(1),
                 kind: None,
@@ -570,6 +571,7 @@ mod tests {
         };
         let sig = Signature::new(vec![
             SignatureParam::Type(TypeParam {
+                presentation: Default::default(),
                 name: "Outer".to_owned(),
                 span: span(1),
                 kind: None,
@@ -606,6 +608,7 @@ mod tests {
             occurrence: Default::default(),
             sig: Signature::new(vec![
                 SignatureParam::Type(TypeParam {
+                    presentation: Default::default(),
                     name: "Inner".to_owned(),
                     span: span(1),
                     kind: None,
@@ -776,6 +779,7 @@ mod tests {
             sig: Signature::from_parts(
                 vec![
                     SignatureParam::Type(TypeParam {
+                        presentation: Default::default(),
                         name: marker.to_owned(),
                         span: span(2),
                         kind: None,
@@ -822,6 +826,7 @@ mod tests {
             sig: Signature::from_parts(
                 vec![
                     SignatureParam::Type(TypeParam {
+                        presentation: Default::default(),
                         name: marker.to_owned(),
                         span: span(1),
                         kind: None,
@@ -913,6 +918,7 @@ mod tests {
             args: vec![
                 CallArg::Type(Type::Forall {
                     param: TypeParam {
+                        presentation: Default::default(),
                         name: marker.to_owned(),
                         span: span(1),
                         kind: None,

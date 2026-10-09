@@ -1,0 +1,94 @@
+module testapi/main;
+
+import elab/sequence(Bind, do);
+import testapi(String);
+import testapi/io(print);
+
+newtype Box[A] : A { constructor mk; projector get }
+
+fn pure[A](value: A) -> Box(A) { Box.mk(value) }
+
+fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.get(value)) }
+
+fn receiver() -> Bind(Box) { print("receiver\n"); bind }
+
+fn display(value: String) -> Box(.) { print(value); pure(()) }
+
+fn sequence() -> Box(String) {
+  do! receiver() {
+    let .x. <- pure(("unused", "sequence pair\n"));
+    display(x2);
+    let .x. <- pure(("unused", "unused", "sequence triple\n"));
+    display(x3);
+    let .x. = ("sequence old\n", "sequence new\n");
+    let .x. <- pure((x1, x2));
+    display(x1);
+    let .y. = "sequence different\n";
+    display(x2);
+    pure(y1)
+  }
+}
+
+fn x9(first: String, second: .) -> String { first }
+
+op _ + _ { impl x9 }
+
+fn make() -> String { print("once\n"); "value\n" }
+
+fn apply(f: (String & String & String) -> String) -> String { f(("unused", "unused", "lambda\n")) }
+
+fn pair(value: String & String) -> String { let .x. = value; x2 }
+
+fn identity(value: String) -> String { value }
+
+fn lambda_shadow() -> String {
+  .x. { print(x2); let .x. = ("unused", "unused", "lambda binding\n"); x3 }((
+    , "unused"
+    , "lambda pair\n"
+    ))
+}
+
+equiv numbered_pair[A][B](first: A, second: B) {
+  .() { let .x. = (first, second); (x1, x2) }();
+  (first, second)
+}
+
+equiv numbered_tail[A][B][C](first: A, second: B, third: C) {
+  .() { let .x. = (first, (second, third)); x2 }();
+  (second, third)
+}
+
+equiv numbered_sequence[A](value: A) {
+  do! bind {
+    let .x. <- pure(value);
+    pure(x1)
+  };
+  pure(value)
+}
+
+pub fn main() {
+  let .x. = ("unused", "pair\n");
+  print(x2);
+  let .x. = ("unused", "unused", "triple\n");
+  print(x3);
+  let .x. = ("old\n", "new\n");
+  let .x. = (x1, x2);
+  print(x1);
+  print(x2);
+  let .left. = "left\n";
+  let .right. = "right\n";
+  print(left1);
+  print(right1);
+  let .tail. = ("unused", ("unused", "tail\n"));
+  print(pair(tail2));
+  let .call. = ("call\n", identity);
+  print(call1.>call2);
+  let .x. = "outer\n";
+  print(.(x01: String) { print(x1); x01 }(apply(.x. { x3 })));
+  print(lambda_shadow());
+  let .x. = "operator\n";
+  print(x1 + ());
+  let .once. = make();
+  print(once1);
+  print(Box.get(sequence()))
+}

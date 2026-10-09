@@ -21,7 +21,20 @@ emissions_validate_manifest() {
   emissions_manifest=$1
   emissions_backend=$2
   emissions_label=$3
-  emissions_targets=$(awk '$1 == "target" && $3 == "{" { print $2 }' "$emissions_manifest")
+  emissions_targets=$(awk '
+    /^[[:space:];]*target [(]?[A-Za-z_][A-Za-z0-9_-]*[ ,{]/ {
+      backend = $0
+      sub(/^[[:space:];]*target [(]?/, "", backend)
+      sub(/[ ,{].*$/, "", backend)
+      # The fixed corpus build command selects KIO_TARGET by name.
+      if ($0 ~ /^[[:space:];]*target [(]/ &&
+          $0 !~ ("^[[:space:];]*target [(]" backend ",[[:space:]]*\"" backend "\"[)][[:space:]]*[{]")) {
+        print backend " (target name must match the backend)"
+        next
+      }
+      print backend
+    }
+  ' "$emissions_manifest")
   emissions_target_count=$(printf '%s\n' "$emissions_targets" | awk 'NF { n++ } END { print n + 0 }')
   if [ "$emissions_target_count" -ne 1 ]; then
     emissions_contract_fail "$emissions_label must declare exactly one build target"

@@ -1032,7 +1032,7 @@ pure fn run(ct: __Comptime__, k: . -> .) -> . {
     , .
     , __type_unit__(ct)
     , ()
-    , .(_recur: (__Type__ & .) -> ., _fuel: __Type__, _input: .) -> . { k(()) }
+    , .(recur: (__Type__ & .) -> ., _fuel: __Type__, _input: .) -> . { recur(__type_unit__(ct), k(())) }
     )
 }
 

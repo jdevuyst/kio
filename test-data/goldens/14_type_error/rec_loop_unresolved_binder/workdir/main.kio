@@ -1,5 +1,5 @@
 module main;
 
-host fn selected[S][R][T](step: S -> S | R, state: S) -> R;
+host fn selected[S][R][T](step: S -> (S | R), state: S) -> R;
 
 rec(selected) fn again(value: .) { rec again(value) }

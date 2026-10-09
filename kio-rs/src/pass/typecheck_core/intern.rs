@@ -856,6 +856,7 @@ fn representation_exact<P: Phase>(left: &Type<P>, right: &Type<P>) -> bool {
             lp.name == rp.name
                 && lp.span == rp.span
                 && lp.kind == rp.kind
+                && lp.presentation == rp.presentation
                 && meta_exact(lm, rm)
                 && representation_exact(lb, rb)
         }
@@ -923,6 +924,58 @@ impl TypeMemoKey {
         P: Phase,
     {
         (!super::type_contains_goal(ty)).then(|| Self(TypeKey::from_type(ty)))
+    }
+}
+
+/// A semantic memo key with an independently checked caller presentation.
+#[cfg(feature = "surface")]
+#[derive(Clone, Debug)]
+pub(crate) struct PresentedTypeMemoKey {
+    semantic: TypeMemoKey,
+    presentation: crate::pass::binder_presentation::TypePresentationGuard,
+}
+
+#[cfg(feature = "surface")]
+impl PresentedTypeMemoKey {
+    #[cfg(test)]
+    pub(crate) fn presentation_storage_counts(&self) -> (usize, usize) {
+        self.presentation.storage_counts()
+    }
+
+    pub(crate) fn from_type<P: Phase>(ty: &Type<P>) -> Self {
+        assert!(
+            !super::type_contains_goal(ty),
+            "memo inputs must have closed type-inference goals"
+        );
+        let mut presentation = crate::pass::binder_presentation::TypePresentationGuard::default();
+        let mut ordinal = 0;
+        let key = TypeKey::from_type_recording(ty, &mut |param| {
+            presentation.record(ordinal, param);
+            ordinal += 1;
+        });
+        Self {
+            semantic: TypeMemoKey(key),
+            presentation,
+        }
+    }
+
+    pub(crate) fn presentation_matches(&self, other: &Self) -> bool {
+        self.semantic == other.semantic && self.presentation == other.presentation
+    }
+}
+
+#[cfg(feature = "surface")]
+impl PartialEq for PresentedTypeMemoKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.semantic == other.semantic
+    }
+}
+#[cfg(feature = "surface")]
+impl Eq for PresentedTypeMemoKey {}
+#[cfg(feature = "surface")]
+impl Hash for PresentedTypeMemoKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.semantic.hash(state);
     }
 }
 
@@ -1013,11 +1066,21 @@ impl TypeKey {
     where
         P: Phase,
     {
-        let mut binders = Vec::new();
-        Self::from_type_with_binders(ty, &mut binders)
+        Self::from_type_recording(ty, &mut |_| {})
     }
 
-    fn from_type_with_binders<P>(ty: &Type<P>, binders: &mut Vec<String>) -> Self
+    fn from_type_recording<P: Phase>(
+        ty: &Type<P>,
+        record: &mut impl FnMut(&crate::ast::TypeParam),
+    ) -> Self {
+        Self::from_type_with_binders(ty, &mut Vec::new(), record)
+    }
+
+    fn from_type_with_binders<P>(
+        ty: &Type<P>,
+        binders: &mut Vec<String>,
+        record: &mut impl FnMut(&crate::ast::TypeParam),
+    ) -> Self
     where
         P: Phase,
     {
@@ -1040,31 +1103,32 @@ impl TypeKey {
                     head,
                     args: args
                         .iter()
-                        .map(|arg| Self::from_type_with_binders(arg, binders))
+                        .map(|arg| Self::from_type_with_binders(arg, binders, record))
                         .collect(),
                 }
             }
             Type::Unit { .. } => TypeKey::Unit,
             Type::Bottom { .. } => TypeKey::Bottom,
             Type::Function { param, ret, .. } => TypeKey::Function {
-                param: Box::new(Self::from_type_with_binders(param, binders)),
-                ret: Box::new(Self::from_type_with_binders(ret, binders)),
+                param: Box::new(Self::from_type_with_binders(param, binders, record)),
+                ret: Box::new(Self::from_type_with_binders(ret, binders, record)),
             },
             Type::Product { left, right, .. } => TypeKey::Product {
-                left: Box::new(Self::from_type_with_binders(left, binders)),
-                right: Box::new(Self::from_type_with_binders(right, binders)),
+                left: Box::new(Self::from_type_with_binders(left, binders, record)),
+                right: Box::new(Self::from_type_with_binders(right, binders, record)),
             },
             Type::Sum { left, right, .. } => TypeKey::Sum {
-                left: Box::new(Self::from_type_with_binders(left, binders)),
-                right: Box::new(Self::from_type_with_binders(right, binders)),
+                left: Box::new(Self::from_type_with_binders(left, binders, record)),
+                right: Box::new(Self::from_type_with_binders(right, binders, record)),
             },
             Type::Forall { param, body, .. } => {
+                record(param);
                 let old_len = binders.len();
                 binders.push(param.name.clone());
-                let body = Box::new(Self::from_type_with_binders(body, binders));
+                let body = Box::new(Self::from_type_with_binders(body, binders, record));
                 binders.truncate(old_len);
                 TypeKey::Forall {
-                    param: param.kind.as_ref().map(KindKey::from_kind),
+                    param: param.kind.as_deref().map(KindKey::from_kind),
                     body,
                 }
             }
@@ -1073,7 +1137,7 @@ impl TypeKey {
                 goal: *goal,
                 args: args
                     .iter()
-                    .map(|arg| Self::from_type_with_binders(arg, binders))
+                    .map(|arg| Self::from_type_with_binders(arg, binders, record))
                     .collect(),
             },
             Type::LabelSugar { labels, .. } => {
@@ -1082,10 +1146,9 @@ impl TypeKey {
                     .map(|label| {
                         (
                             label.label.clone(),
-                            label
-                                .payload
-                                .as_ref()
-                                .map(|payload| Self::from_type_with_binders(payload, binders)),
+                            label.payload.as_ref().map(|payload| {
+                                Self::from_type_with_binders(payload, binders, record)
+                            }),
                         )
                     })
                     .collect();
@@ -1123,6 +1186,50 @@ mod tests {
 
     fn path_at(name: &str, span: Span) -> TestType {
         Type::synth_path(vec![name.to_owned()], Vec::new(), span)
+    }
+
+    #[test]
+    fn written_quantifier_names_survive_opposite_interner_order_and_parallel_inputs() {
+        fn written(name: &str) -> TestType {
+            let mut param = TypeParam {
+                name: name.into(),
+                span: sp(),
+                kind: None,
+                presentation: crate::ast::TypeParamPresentation::written(),
+            };
+            param.rename("Canonical".into());
+            Type::Forall {
+                param,
+                body: Box::new(path("Canonical")),
+                meta: Meta::new(sp()),
+            }
+        }
+        for names in [["A", "B"], ["B", "A"]] {
+            let interner = Arc::new(TypeInterner::default());
+            let a = interner.intern(&written(names[0]));
+            let b = interner.intern(&written(names[1]));
+            assert!(a.ptr_eq(&b));
+            assert_eq!(a, b);
+            assert!(!a.representation_is_exact(&b));
+            for (value, name) in [(&a, names[0]), (&b, names[1])] {
+                assert_eq!(
+                    super::super::display_type(value.as_type()),
+                    format!("[{name}] {name}")
+                );
+            }
+            std::thread::scope(|scope| {
+                for name in ["A", "B", "Authored_n2", "Unrelated"] {
+                    let interner = &interner;
+                    scope.spawn(move || {
+                        let value = interner.intern(&written(name));
+                        assert_eq!(
+                            super::super::display_type(value.as_type()),
+                            format!("[{name}] {name}")
+                        );
+                    });
+                }
+            });
+        }
     }
 
     #[test]
@@ -1189,6 +1296,7 @@ mod tests {
     fn forall_at(name: &str, span: Span, body: TestType) -> TestType {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span,
                 kind: None,

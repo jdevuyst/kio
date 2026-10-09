@@ -8,7 +8,7 @@ host type I32 role(i32);
 
 host fn add(p0: I32, p1: I32) -> I32;
 
-host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
+host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 
 /// Defines the ordering labels used to distinguish less-than, equal, and greater-than comparison outcomes.
 pub labels { ord_lt: ., ord_eq: ., ord_gt: . };

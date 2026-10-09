@@ -6,7 +6,7 @@ import __comptime__;
 
 host type Later;
 
-host fn loop[S][R](step: S -> S | R, state: S) -> R;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 host fn later() -> Later;
 

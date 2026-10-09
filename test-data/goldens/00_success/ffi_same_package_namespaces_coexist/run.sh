@@ -1,5 +1,5 @@
 #!/bin/sh
-# One source package, built twice for the same backend under two configured
+# One source package, two named targets for the same backend under two configured
 # artifact namespaces. A single ordinary host loads both outputs through the
 # coexist protocol, proving that distribution configuration—not source package
 # identity—isolates every facade, symbol, runtime helper, and structural mint.
@@ -11,25 +11,15 @@ scratch=$(mktemp -d) || {
 }
 trap 'rm -rf "$scratch"' EXIT
 
-# The manifests deliberately differ in namespace configuration, while the Kio
-# module trees must remain the same source package.
-cmp workdir/ns_a/greeter.kio workdir/ns_b/greeter.kio >/dev/null || {
-  printf 'same-package namespace fixture: root modules differ\n' >&2
-  exit 1
-}
-cmp workdir/ns_a/greeter/main.kio workdir/ns_b/greeter/main.kio >/dev/null || {
-  printf 'same-package namespace fixture: entry modules differ\n' >&2
-  exit 1
-}
-
-cp -R workdir/ns_a workdir/ns_b "$scratch/" || exit 1
-for config in ns_a ns_b; do
-  (
-    cd "$scratch/$config" || exit 1
-    "$KIO_BIN" test >/dev/null || exit
-    "$KIO_BIN" build "$KIO_TARGET" || exit
-  ) || exit 1
-done
+cp -R workdir/. "$scratch/" || exit 1
+(
+  cd "$scratch" || exit 1
+  "$KIO_BIN" test >/dev/null || exit
+  "$KIO_BIN" build "$KIO_TARGET-a" "$KIO_TARGET-b" || exit
+  # Repeat against the same package cache before the two-artifact runtime
+  # assertion, so cached output must retain each target's configuration.
+  "$KIO_BIN" build "$KIO_TARGET-a" "$KIO_TARGET-b" || exit
+) || exit 1
 
 case "$KIO_TARGET" in
   swift)
@@ -52,5 +42,5 @@ exec "$KIO_RUNNER" \
   --package-name shared_pkg \
   --artifact-namespace "$namespace_b" \
   --protocol coexist \
-  "$scratch/ns_a/out/$KIO_TARGET" \
-  "$scratch/ns_b/out/$KIO_TARGET"
+  "$scratch/out/$KIO_TARGET-a" \
+  "$scratch/out/$KIO_TARGET-b"

@@ -3162,10 +3162,10 @@ mod tests {
 
     #[test]
     fn compound_callback_input_does_not_invoke_or_wrap_the_producer() {
-        let rendered = compound_input_conversion(". -> Text & Text", "callback");
+        let rendered = compound_input_conversion(". -> (Text & Text)", "callback");
         assert_eq!(rendered, "callback");
         let output =
-            prepared_return_conversion(". -> Text & Text", "produce()", JavaFfiDirection::Out);
+            prepared_return_conversion(". -> (Text & Text)", "produce()", JavaFfiDirection::Out);
         assert!(
             output.contains("Shapes.Fn1<Shapes.Unit, Shapes.Product<"),
             "{output}"

@@ -1,5 +1,324 @@
 [
   {
+    "name": "numbered_binding_modified_head_partial_0",
+    "source": "module m;\nfn f() { let .x.\npure fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 34,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_1",
+    "source": "module m;\nfn f() { let .x.\npub fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 31,
+        "end": 33,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_2",
+    "source": "module m;\nfn f() { let .x.\npub(scope) fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 38,
+        "end": 40,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_3",
+    "source": "module m;\nfn f() { let .x.\npub(scope/child) pure fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 49,
+        "end": 51,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_4",
+    "source": "module m;\nfn f() { let .x.\npure pub(scope/child) fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 49,
+        "end": 51,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_5",
+    "source": "module m;\nfn f() { let .x.\npub pure fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 36,
+        "end": 38,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_modified_head_partial_6",
+    "source": "module m;\nfn f() { let .x.\npure pub fn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "incomplete_numbered_binding"
+        ]
+      },
+      {
+        "start": 36,
+        "end": 38,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_bindings_preserve_long_qualified_let_paths",
+    "source": "module m; fn f() { let.x.y() } fn g() { action! { let.x.y } }",
+    "targets": [
+      { "text": "let", "start": 19, "end": 22, "kind": "identifier", "vscodeKind": "entity.name.module", "owners": ["call_callee"] },
+      { "text": "x", "start": 23, "end": 24, "kind": "identifier", "vscodeKind": "entity.name.module", "owners": ["call_callee"] },
+      { "text": "y", "start": 25, "end": 26, "kind": "entity.name.function", "owners": ["call_callee"] },
+      { "text": "let", "start": 50, "end": 53, "kind": "identifier", "owners": ["expression_path"] },
+      { "text": "x", "start": 54, "end": 55, "kind": "identifier", "owners": ["expression_path"] },
+      { "text": "y", "start": 56, "end": 57, "kind": "identifier", "owners": ["expression_path"] }
+    ]
+  },
+  {
+    "name": "numbered_binding_complete",
+    "source": "module m;\nfn f() { let .x. = (); x2; let .x. = x1; x3 }\nfn after() { () }\n",
+    "partial": false,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": ["let_statement"],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 24,
+        "end": 25,
+        "text": "x",
+        "kind": "variable.parameter",
+        "owners": ["numbered_binding"],
+        "textmate": ["variable.parameter.kio"]
+      },
+      {
+        "start": 56,
+        "end": 58,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_sequence_binding_complete",
+    "source": "module m;\nfn f() { action! { let .x. <- (); x2; let .x. <- x1; x3 } }\nfn after() { () }\n",
+    "partial": false,
+    "targets": [
+      {
+        "start": 29,
+        "end": 32,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": ["neutral_bind"],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 34,
+        "end": 35,
+        "text": "x",
+        "kind": "variable.parameter",
+        "owners": ["numbered_binding"],
+        "textmate": ["variable.parameter.kio"]
+      },
+      {
+        "start": 70,
+        "end": 72,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_initializer_partial",
+    "source": "module m;\nfn f() { let .x. =\nfn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 29,
+        "end": 31,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numbered_binding_dot_partial",
+    "source": "module m;\nfn f() { let .x.\nfn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 19,
+        "end": 22,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 27,
+        "end": 29,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
     "name": "type_only_dot_star_binder_multiline",
     "source": "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let value = x; value } } }\nfn after() { () }\n",
     "targets": [

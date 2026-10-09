@@ -1,0 +1,61 @@
+================================================================================
+backend-first named build targets
+================================================================================
+package app;
+build {
+  target js { out "out/js" };
+  target (js, "w" "eb") { out "out/web" };
+  target (kio-prime, "archive") { out "out/prime" }
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (target_block
+        (keyword_declaration)
+        (target_name
+          (identifier))
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (string_literal))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (bracket_lparen)
+        (target_name
+          (identifier))
+        (separator_comma)
+        (string_literal)
+        (string_literal)
+        (bracket_rparen)
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (string_literal))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (bracket_lparen)
+        (target_name
+          (identifier)
+          (operator_run)
+          (identifier))
+        (separator_comma)
+        (string_literal)
+        (bracket_rparen)
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (string_literal))
+        (bracket_rbrace))
+      (bracket_rbrace))))

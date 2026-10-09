@@ -236,10 +236,7 @@ See {base}/specs/cli.md#kio-check-module for full command behavior.";
 
 pub fn run(args: &[String], prime_only: bool) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     // Validate unknown-flag-looking args up front; positional
@@ -4808,7 +4805,7 @@ mod tests {
         let provider = concat!(
             "module provider;\n",
             "\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "host fn supplied(value: .) -> .;\n",
             "\n",
             "pub fn combine(left: ., right: .) -> . { left }\n",
@@ -6147,7 +6144,7 @@ mod tests {
 
         let source = concat!(
             "module pkg/main;\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { rec second(value) };\n",
             "  fn second(value: .) -> . { rec first(value) }\n",
@@ -6250,7 +6247,7 @@ mod tests {
 
         let source = concat!(
             "module pkg/main;\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
             "rec(loop) {\n",
@@ -6608,7 +6605,7 @@ mod tests {
         let source = concat!(
             "module pkg/main;\n",
             "\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "\n",
             "rec(loop) pub fn run(x: .) -> . {\n",
             "  ()\n",
@@ -6970,6 +6967,86 @@ mod tests {
             message.contains("missing_alpha"),
             "lexically first module error should remain primary: {message}"
         );
+    }
+
+    #[cfg(all(feature = "surface", feature = "lsp"))]
+    #[test]
+    fn lsp_repeated_alpha_equal_elaborator_callers_keep_written_names() {
+        for reverse in [false, true] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            std::fs::write(dir.path().join("pkg.pkg.kio"), "package pkg;\n")
+                .expect("write package");
+            std::fs::write(
+                dir.path().join("elaborators.kio"),
+                "module elaborators; import __comptime__;\n\
+                 pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n\
+                 pub elab echo : [T] T -> T { impl keep; };\n",
+            )
+            .expect("write elaborator");
+            let mut source = String::from("module main; import elaborators(echo);\n");
+            for number in 0..8 {
+                source.push_str(&format!(
+                    "fn make{number}[Name{number}](value: Name{number}) -> [Name{number}] Name{number} -> Name{number} {{ .[Item](x: Item) -> Item {{ x }} }}\n"
+                ));
+            }
+            let mut names = vec![0, 1, 0, 2, 3, 4, 5, 6, 7, 0];
+            if reverse {
+                names.reverse();
+            }
+            source.push_str("pub fn run() -> . {\n");
+            for (index, number) in names.iter().enumerate() {
+                source.push_str(&format!("let result{index} = echo!(make{number}(()));\n"));
+            }
+            source.push_str("() }\n");
+            let main_path = dir.path().join("main.kio");
+            std::fs::write(&main_path, &source).expect("write main");
+            let overlay = package_collection::SourceOverlay::empty();
+            let cancel = crate::lsp::cancel::CancellationToken::new();
+            let memos = LspUserElaboratorMemos::default();
+            let started = std::time::Instant::now();
+            for _ in 0..3 {
+                let analysis = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
+                    dir.path(),
+                    &overlay,
+                    &main_path,
+                    &cancel,
+                    &memos,
+                )
+                .expect("analysis is not cancelled")
+                .expect("alpha-equivalent callers check");
+                let index = &analysis.position_index;
+                let mut observed = 0;
+                for ((module, span), ty) in index.inlay_let_types_iter() {
+                    if module != "main" {
+                        continue;
+                    }
+                    let written = &source[span.start as usize..span.end as usize];
+                    let position = written.strip_prefix("result").expect("let binding");
+                    let number = names[position.parse::<usize>().expect("binding index")];
+                    let projected = index.display_let_type(module, *span, ty);
+                    assert_eq!(
+                        crate::pass::typecheck_core::display_type(&projected),
+                        format!("[Name{number}] Name{number} -> Name{number}")
+                    );
+                    observed += 1;
+                }
+                assert_eq!(observed, names.len());
+            }
+            let snapshot = memos
+                .revisions
+                .only_memo()
+                .expect("one revision")
+                .snapshot();
+            assert_eq!(snapshot.user_elaborator.first_writes, 1);
+            assert!(snapshot.user_elaborator.misses >= 8);
+            assert!(snapshot.user_elaborator.hits > 0);
+            eprintln!(
+                "written binder memo: reverse={reverse} callers={} analyses=3 elapsed={:?} stats={:?}",
+                names.len(),
+                started.elapsed(),
+                snapshot.user_elaborator
+            );
+        }
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]

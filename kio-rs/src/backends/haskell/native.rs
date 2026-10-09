@@ -6411,6 +6411,7 @@ mod module_call_shape_tests {
     fn successive_foralls_are_distinct_effect_stages() {
         let span = Span::new(0, 0);
         let params = ["A", "B"].map(|name| TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,
@@ -6427,6 +6428,7 @@ mod module_call_shape_tests {
     fn staged_boundary_adapter_sequences_each_public_type_stage() {
         let span = Span::new(0, 0);
         let params = ["A", "B"].map(|name| TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,
@@ -6462,6 +6464,7 @@ mod module_call_shape_tests {
     fn module_patterns_preserve_interleaved_type_and_value_groups() {
         let span = Span::new(0, 0);
         let type_param = |name: &str| TypeParam {
+            presentation: Default::default(),
             name: name.to_owned(),
             span,
             kind: None,

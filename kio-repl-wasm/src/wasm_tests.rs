@@ -57,6 +57,8 @@ export function exerciseTrailingBlocks(repl) {
     for (const [input, expected] of [
       [':normalize packet! { () }', '()'],
       [':normalize enter! { let value = (); value }', '()'],
+      [':normalize .() { let .x. = ((), ()); x2 }()', '()'],
+      [':normalize sequence! box_bind { let .x. <- box_pure(()); box_pure(x1) }', 'Box.box(())'],
       [':normalize sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.box(())'],
     ]) {
       const actual = turn(input);
@@ -65,6 +67,7 @@ export function exerciseTrailingBlocks(repl) {
     for (const [input, present, absent, prefix] of [
       ['enter! { let local = (); loc', 'local', 'other', 'loc'],
       ['enter! { let other = (); ', 'other', 'local', ''],
+      ['.() { let .x. = (); x3; let .x. = (); x', 'x1', 'x3', 'x'],
     ]) {
       const result = repl.complete(input, input.length);
       check(Object.keys(result).sort().join(',') === 'candidates,replaceEnd,replaceStart', 'completion keys');

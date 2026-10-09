@@ -20,6 +20,13 @@ Compare the `kio` binary's argument handling — `kio-rs/src/main.rs`, dispatchi
 - Every subcommand and flag listed in `cli.md` must exist in the binary with matching semantics.
 - Every public flag in the binary must appear in `cli.md`. The exception is *internal/debug* flags (e.g. `kio debug tokens`), which AGENTS.md § Universal rules — Debug-only surfaces are internal keeps out of public `specs/` — those should NOT be in `cli.md`. Confirm each non-spec'd flag has the "internal" comment.
 - The `kio-prime` binary is internal — it must not be documented in `cli.md`.
+- Include binary-entry dispatch for `kio manual`, both normal and distribution
+  builds, its four operations, help/streams/path errors/exit codes and archive
+  formats. Verify the top-level offline pointer, whole-file manual targets,
+  offline-first plus release-tagged web references, and that every printed
+  manual path resolves in the actual bundle. Inspect help's contents/tree
+  agreement and default-format extraction guidance through `audit-cli-output`;
+  inventory/package/platform evidence belongs to `audit-bundled-docs`.
 
 ## 2. Exit codes
 

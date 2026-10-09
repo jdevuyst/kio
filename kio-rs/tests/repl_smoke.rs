@@ -81,6 +81,24 @@ impl Drop for TempPackage {
 }
 
 #[test]
+fn repl_numbered_bindings_normalize_through_ordinary_patterns() {
+    let pkg = TempPackage::new("numbered-bindings");
+    pkg.write_demo_package();
+    pkg.write("demo/main.kio", "module demo/main;\npub fn unit() { () }\n");
+    let out = run_repl(
+        pkg.path(),
+        &[
+            ":load demo/main",
+            ":normalize .() { let .x. = ((), ()); x2 }()",
+            ":normalize .() { let .x. = ((), ()); let .x. = x2; x1 }()",
+            ":quit",
+        ],
+    );
+    assert_eq!(out.lines().filter(|line| *line == "()").count(), 2, "{out}");
+    assert!(!out.contains("does not type-check"), "{out}");
+}
+
+#[test]
 fn public_session_refreshes_list_on_default_stack() {
     const CHILD: &str = "KIO_DEBUG_SESSION_STACK_TEST_CHILD";
     const TEST: &str = "public_session_refreshes_list_on_default_stack";

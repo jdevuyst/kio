@@ -56,25 +56,60 @@ pub(super) fn prepare(pkg_dir: &Path, target_ids: &[String]) -> PackagePlan {
 }
 
 fn select(inputs: &PreparedBuildInputs, target_ids: &[String]) -> Result<Vec<usize>, String> {
-    let block = inputs.manifest.package_file.build.as_ref().ok_or_else(||
-        "the package's package file has no `build { … }` block — kio build requires one to name the compilation targets (see specs/package.md § Build target files)".to_owned()
-    )?;
+    let Some(block) = inputs.manifest.package_file.build.as_ref() else {
+        return if target_ids.is_empty() {
+            Err(format!(
+                "the package's package file has no `build {{ … }}` block — kio build requires one to name the compilation targets (see {})",
+                crate::documentation_help("{base}/specs/package.md#build-target-files")
+            ))
+        } else {
+            Ok(Vec::new())
+        };
+    };
     check_unique_ids(block)?;
     if target_ids.is_empty() {
         return Ok((0..block.targets.len()).collect());
     }
     let mut selected = Vec::new();
     for id in target_ids {
-        let index = block
-            .targets
-            .iter()
-            .position(|target| target.id == *id)
-            .ok_or_else(|| format!("unknown target id `{id}` in the build block"))?;
+        let Some(index) = block.targets.iter().position(|target| target.name() == id) else {
+            continue;
+        };
         if !selected.contains(&index) {
             selected.push(index);
         }
     }
     Ok(selected)
+}
+
+pub(super) fn validate_target_names(
+    plans: &BTreeMap<PathBuf, PackagePlan>,
+    names: &[String],
+) -> Result<(), String> {
+    for name in names {
+        let found = plans.values().any(|plan| {
+            let PackagePlan::Ready { inputs, selected } = plan else {
+                return false;
+            };
+            inputs
+                .manifest
+                .package_file
+                .build
+                .as_ref()
+                .is_some_and(|block| {
+                    selected
+                        .iter()
+                        .any(|&index| block.targets[index].name() == name)
+                })
+        });
+        if !found {
+            return Err(format!(
+                "unknown target name `{}` in the selected packages",
+                name.escape_debug()
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), String> {
@@ -83,6 +118,9 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
         let PackagePlan::Ready { inputs, selected } = plan else {
             continue;
         };
+        if selected.is_empty() {
+            continue;
+        }
         let block = inputs
             .manifest
             .package_file
@@ -91,7 +129,7 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
             .expect("selected build block");
         for &index in selected {
             let target = &block.targets[index];
-            if BuildTarget::from_id(&target.id).is_none() {
+            if BuildTarget::from_id(&target.backend).is_none() {
                 continue;
             }
             let mut entries = target.entries.iter().filter(|entry| entry.key == "out");
@@ -105,12 +143,13 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
             let path = normalize(&inputs.root.join(&entry.value)).map_err(|error| {
                 format!(
                     "cannot resolve output `{}` for target `{}`: {error}",
-                    entry.value, target.id
+                    entry.value,
+                    target.name().escape_debug()
                 )
             })?;
             let label = format!(
                 "target `{}` in `{}` (out `{}`)",
-                target.id,
+                target.name().escape_debug(),
                 DisplayPath(&inputs.root),
                 entry.value
             );
@@ -268,13 +307,41 @@ mod tests {
         fs::create_dir(dir.path().join("input")).unwrap();
         fs::write(dir.path().join("input/main.kio"), "module input/main;").unwrap();
         for backend in BuildTarget::ALL {
-            package(
-                dir.path(),
-                &format!("target {} {{ out \"input\"; }}", backend.id()),
-            );
-            let error = validate(&plans(&[dir.path()], &[])).unwrap_err();
-            assert!(error.contains("contains input"), "{error}");
+            for header in [
+                backend.id().to_owned(),
+                format!("({}, \"named\")", backend.id()),
+            ] {
+                package(dir.path(), &format!("target {header} {{ out \"input\"; }}"));
+                let error = validate(&plans(&[dir.path()], &[])).unwrap_err();
+                assert!(error.contains("contains input"), "{error}");
+            }
         }
+    }
+
+    #[test]
+    fn named_targets_select_exactly_and_share_output_preflight() {
+        let dir = tempfile::tempdir().unwrap();
+        package(
+            dir.path(),
+            r#"target (js, "web") { out "out" }; target (js, "worker") { out "out/worker" }"#,
+        );
+        assert!(
+            validate(&plans(&[dir.path()], &[]))
+                .unwrap_err()
+                .contains("conflicting output")
+        );
+        assert!(validate(&plans(&[dir.path()], &["web", "web"])).is_ok());
+        assert!(
+            matches!(prepare(dir.path(), &["web".to_owned(), "web".to_owned()]),
+            PackagePlan::Ready { selected, .. } if selected == [0])
+        );
+        let no_matches = plans(&[dir.path()], &["js"]);
+        assert!(
+            validate_target_names(&no_matches, &["js".to_owned()])
+                .unwrap_err()
+                .contains("unknown target name")
+        );
+        assert!(validate(&no_matches).is_ok());
     }
 
     #[test]

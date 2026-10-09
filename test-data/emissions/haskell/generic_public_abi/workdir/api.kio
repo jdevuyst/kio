@@ -8,7 +8,7 @@ host fn collision[Comptime_a](pair: Comptime_a & Comptime_a) -> Comptime_a & Com
 
 host fn inspect[*G](callback: [X][Y] G(X & Y) -> G(X & Y)) -> .;
 
-host fn shadow[A](callback: [A] (A & A) -> A & A) -> .;
+host fn shadow[A](callback: [A] (A & A) -> (A & A)) -> .;
 
 newtype Comptime_a : . { constructor mk_comptime_a; projector un_comptime_a }
 

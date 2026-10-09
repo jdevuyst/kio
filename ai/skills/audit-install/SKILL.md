@@ -162,6 +162,19 @@ grep -q '\.ghcup/bin' INSTALL.md || echo 'INSTALL.md: missing ~/.ghcup/bin PATH 
 
 Agent-shell wiring (`BASH_ENV` → mise shims + `~/.ghcup/bin`, for the Bash tool's non-interactive shells) is an agent-environment concern owned by [`ai/topics/local-tools.md`](../../topics/local-tools.md) § Toolchains on PATH, not `INSTALL.md`; this audit checks only the human/local story.
 
+## 7. Distributed offline manual
+
+Every distributed installation route must carry the complete offline manual,
+including the normal crate install and distribution-wrapper binary. Inspect
+Git-free packaged-crate build evidence and unrelated-directory installed-binary
+access. Require actual Windows-supplied tar.exe acceptance for the default
+format, both published pipe and named-file extraction, complete byte parity,
+and cmd.exe/PowerShell >=7.4 transfer; also require native macOS/Linux evidence
+and conventional alternatives without ignore-zeros. Record versions and
+commands. Upstream manuals and a Linux bsdtar run are research, not native
+Windows/macOS runtime evidence. Use `audit-bundled-docs` for detailed inventory,
+freshness, and binary-size checks.
+
 ## How to report
 
 Group findings into:

@@ -11,11 +11,10 @@
 # specs/exit-codes.md applies to error messages), so this case pins the
 # four §C2 *structural* elements per subcommand, not prose:
 #   1. a `Usage: kio <name> …` synopsis as the first line;
-#   2. an `Exit codes (per <BASE>/specs/exit-codes.md …):` block;
-#   3. a `See <BASE>/specs/cli.md#<anchor> …` spec footer;
-#   4. no bare relative `specs/…` path — every doc reference is the full
-#      <BASE> GitHub URL.
-# The top-level `kio --help` is §C4, not §C2: it carries the `See <BASE>`
+#   2. an offline-first Exit-codes block with its retained web URL;
+#   3. an offline-first spec footer with its retained web anchor;
+#   4. every offline file operand resolves through the actual manual.
+# The top-level `kio --help` is §C4, not §C2: it carries the same dual-route
 # footer (no `#anchor`) and lists `--no-cache` under Options, but has no
 # per-subcommand Exit-codes block.
 #
@@ -103,22 +102,29 @@ check_surface() {
     *) fail "kio $cs_words --help: first line is not a 'Usage: kio $cs_head …' synopsis" ;;
   esac
 
-  # §C2.2 — Exit-codes block, URL-anchored to <BASE>.
-  printf '%s\n' "$cs_out" | grep -qF "Exit codes (per $base/specs/exit-codes.md" \
-    || fail "kio $cs_words --help: missing 'Exit codes (per <BASE>/specs/exit-codes.md …)' block"
+  # §C2.2 — offline command first, matching pinned URL retained.
+  printf '%s\n' "$cs_out" | grep -qF "Exit codes (per kio manual cat specs/exit-codes.md ($base/specs/exit-codes.md)" \
+    || fail "kio $cs_words --help: missing offline-first Exit-codes block"
 
   # §C2.3 — spec footer `See <BASE>/specs/cli.md#<anchor> …`.
-  printf '%s\n' "$cs_out" | grep -qF "See $base/specs/cli.md#" \
-    || fail "kio $cs_words --help: missing 'See <BASE>/specs/cli.md#<anchor>' footer"
+  printf '%s\n' "$cs_out" | grep -qF "See kio manual cat specs/cli.md ($base/specs/cli.md#" \
+    || fail "kio $cs_words --help: missing offline-first spec footer"
 
-  # §C2.4 — no bare `specs/…`: strip the full <BASE>/specs/ URLs, then any
-  # residual `specs/` is a bare relative reference.
-  if printf '%s\n' "$cs_out" | sed "s#$base/specs/##g" | grep -q 'specs/'; then
-    fail "kio $cs_words --help: bare 'specs/…' reference (must be the full <BASE> URL)"
-  fi
+  check_manual_paths "$cs_out" "kio $cs_words --help"
 
   # Anchor resolution — every cli.md anchor the footer emits is a real slug.
   check_anchors "$cs_out" "kio $cs_words --help"
+}
+
+check_manual_paths() {
+  cmp_text=$1
+  cmp_label=$2
+  cmp_paths=$(printf '%s\n' "$cmp_text" | grep -oE 'kio manual cat [A-Za-z0-9_./-]+' | sed 's/^kio manual cat //' | sort -u)
+  [ -n "$cmp_paths" ] || fail "$cmp_label: no offline documentation commands"
+  for cmp_path in $cmp_paths; do
+    "$KIO_BIN" manual cat "$cmp_path" >/dev/null \
+      || fail "$cmp_label: offline operand does not resolve: $cmp_path"
+  done
 }
 
 # container_children <container>: the child subcommand names a container
@@ -142,7 +148,7 @@ top=$("$KIO_BIN" --help) || fail "kio --help: non-zero exit"
 [ -n "$top" ] || fail "kio --help: empty stdout"
 
 # Anchor <BASE> from the top-level `See <BASE>/specs/cli.md` footer.
-base=$(printf '%s\n' "$top" | sed -n 's#^See \(https://[^ ]*\)/specs/cli\.md.*#\1#p')
+base=$(printf '%s\n' "$top" | sed -n 's#^See kio manual cat specs/cli\.md (\(https://[^ ]*\)/specs/cli\.md).*#\1#p')
 case "$base" in
   https://*) ;;
   *) fail "kio --help: missing 'See <BASE>/specs/cli.md' footer (cannot anchor docs base)" ;;
@@ -155,6 +161,8 @@ printf '%s\n' "$top" | grep -q -- '--no-cache' \
 # The top-level footer carries no `#anchor` today; validate defensively so a
 # future anchored top-level footer is held to the same resolution contract.
 check_anchors "$top" "kio --help"
+check_manual_paths "$top" "kio --help"
+printf '%s\n' "$top" | grep -qF 'manual' || fail "top-level help omits offline manual"
 
 # --- Advertised subcommand list (from the `Subcommands:` block) -----------
 subs=$(printf '%s\n' "$top" | awk '/^Subcommands:/{f=1;next} /^Options:/{f=0} f && /^  [a-z]/{print $1}')
@@ -163,7 +171,7 @@ subs=$(printf '%s\n' "$top" | awk '/^Subcommands:/{f=1;next} /^Options:/{f=0} f 
 # A help-parse regression would silently empty the loop, so require the
 # always-present core subcommands (lsp / repl are feature-gated and only
 # checked when the binary ships them).
-for want in init check build fmt test sig doc cache dep completions; do
+for want in init manual check build fmt test sig doc cache dep completions; do
   printf '%s\n' "$subs" | grep -qxF "$want" \
     || fail "Subcommands: block missing core subcommand '$want' (help-parse regression?)"
 done
@@ -178,10 +186,16 @@ done
 # core list above); a help-parse regression that emptied a container's
 # child list would silently skip all its child coverage, so require each
 # to yield children.
-for container in doc cache dep sig; do
+for container in doc cache dep sig manual; do
   kids=$(container_children "$container") \
     || fail "kio $container --help: non-zero exit"
   [ -n "$kids" ] || fail "kio $container --help: no child subcommands parsed (help-parse regression?)"
+  if [ "$container" = manual ]; then
+    for operation in ls tree cat export; do
+      printf '%s\n' "$kids" | grep -qxF "$operation" \
+        || fail "manual help omits operation $operation"
+    done
+  fi
   for kid in $kids; do
     check_surface "$container $kid"
   done

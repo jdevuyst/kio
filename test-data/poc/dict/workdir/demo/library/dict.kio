@@ -9,7 +9,7 @@ pub type I32 = _rehost_gegjgdhefpgigphdhe.I32;
 
 pub fn add(p0: I32, p1: I32) -> I32 { _rehost_gegjgdhefpgigphdhe.add(p0, p1) }
 
-pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_gegjgdhefpgigphdhe.loop(S, R, p0, p1) }
+pub fn loop[S][R](p0: S -> (S | R), p1: S) -> R { _rehost_gegjgdhefpgigphdhe.loop(S, R, p0, p1) }
 
 /// Defines the ordering labels used to distinguish less-than, equal, and greater-than comparison outcomes.
 pub labels { ord_lt: ., ord_eq: ., ord_gt: . };

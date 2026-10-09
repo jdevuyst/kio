@@ -54,6 +54,8 @@ pub enum CandidateOrigin {
     Local(Span),
     /// Numbered members of the nearest source placeholder family.
     Placeholder(Span),
+    /// A numbered local binding's stem, without introducing a lambda barrier.
+    NumberedBinding(Span),
     /// The written declaration head or owning declaration range.
     Declaration(Span),
     /// An explicit selection from this exact provider.
@@ -223,8 +225,21 @@ fn preceding_items_scope(
 
 fn deduplicate(out: Vec<Candidate>) -> Vec<Candidate> {
     let mut seen = std::collections::HashSet::new();
+    let mut families = std::collections::HashMap::new();
     out.into_iter()
-        .filter(|candidate| seen.insert(candidate.label.clone()))
+        .filter(|candidate| {
+            if let CandidateOrigin::NumberedBinding(span) | CandidateOrigin::Placeholder(span) =
+                candidate.origin
+            {
+                let stem = candidate
+                    .label
+                    .trim_end_matches(|ch: char| ch.is_ascii_digit());
+                if *families.entry(stem.to_owned()).or_insert(span) != span {
+                    return false;
+                }
+            }
+            seen.insert(candidate.label.clone())
+        })
         .collect()
 }
 
@@ -546,6 +561,19 @@ fn pattern_scope(
     bind: bool,
     out: &mut impl CandidateSink,
 ) {
+    if let Some(numbered) = &pattern.numbered {
+        if bind && ns == Namespace::Value && !out.has_placeholder() {
+            for slot in 1..=pattern.elems.len().max(1) {
+                push(
+                    out,
+                    &format!("{}{slot}", numbered.stem.name),
+                    CandidateKind::Variable,
+                    CandidateOrigin::NumberedBinding(numbered.stem.span),
+                );
+            }
+        }
+        return;
+    }
     for elem in pattern.elems.iter().rev() {
         match elem {
             ParamPatternElem::Bind {

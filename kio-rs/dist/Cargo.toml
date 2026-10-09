@@ -13,13 +13,23 @@ publish = false
 
 [[bin]]
 name = "kio"
-path = "src/main.rs"
+path = "../src/main.rs"
 
 [dependencies]
 # The compiler crate, built with the `kio` binary's feature set;
 # `prime` is deliberately excluded so the released binary carries no
 # kio-prime code.
 kio-lang = { path = "..", default-features = false, features = ["surface", "cli", "lsp", "repl", "parallel"] }
+flate2 = "1.1.10"
+tar = { version = "0.4", default-features = false }
+
+[build-dependencies]
+blake3 = "1"
+flate2 = "1.1.10"
+tar = { version = "0.4", default-features = false }
+
+[dev-dependencies]
+blake3 = "1"
 
 [package.metadata.dist]
 # Release this crate even though it is publish = false.

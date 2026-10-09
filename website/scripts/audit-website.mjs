@@ -503,15 +503,15 @@ function checkBuiltOutputIfPresent() {
     add('built Kiodoc page is missing literal fenced reference brackets')
   }
 
-  // VitePress links whichever CSS asset it finds first in the Rollup output as
-  // the theme stylesheet, so any extra emitted CSS asset silently displaces the
-  // real one and ships the whole site unstyled.
+  // VitePress selects the first bundled CSS asset as the theme stylesheet;
+  // its icon stylesheet is emitted separately after rendering.
   const styles = fs
     .readdirSync(path.join(dist, 'assets'))
     .filter((file) => file.endsWith('.css'))
   const themeStyle = styles.find((file) => /^style\..*\.css$/.test(file))
-  if (styles.length !== 1 || !themeStyle) {
-    add(`built assets/ should hold exactly one CSS bundle, found: ${styles.join(', ') || 'none'}`)
+  const iconStyle = styles.find((file) => /^vp-icons\.[a-f0-9]{8}\.css$/.test(file))
+  if (styles.length !== 2 || !themeStyle || !iconStyle) {
+    add(`built assets/ should hold the theme and icon stylesheets, found: ${styles.join(', ') || 'none'}`)
   }
 
   for (const htmlFile of fs.readdirSync(dist, { recursive: true })) {
@@ -519,6 +519,9 @@ function checkBuiltOutputIfPresent() {
     const html = readText(path.join(dist, htmlFile))
     if (!themeStyle || !html.includes(`assets/${themeStyle}`)) {
       add(`built ${htmlFile} does not link the theme stylesheet`)
+    }
+    if (!iconStyle || !html.includes(`assets/${iconStyle}`)) {
+      add(`built ${htmlFile} does not link the icon stylesheet`)
     }
     if (/<p>\s*&lt;!--/.test(html)) {
       add(`built ${htmlFile} contains a rendered HTML comment`)

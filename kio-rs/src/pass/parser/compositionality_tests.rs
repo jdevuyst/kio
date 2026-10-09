@@ -878,6 +878,12 @@ const TYPE_FORMS: &[TypeForm] = &[
         root_tag: "function",
     },
     TypeForm {
+        id: "function-chain-result",
+        grammar: "TypeArrowResult",
+        source: "Forminput -> (Formleft & Formright)",
+        root_tag: "function",
+    },
+    TypeForm {
         id: "forall",
         grammar: "TypeArrow",
         source: "[Formtype] Formtype",
@@ -1569,6 +1575,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "Type",
     "TypeArrow",
     "TypeArrowParam",
+    "TypeArrowResult",
     "TypeChain",
     "TypeChainTail",
     "TypeAtom",
@@ -1716,8 +1723,9 @@ SignatureParam += ParamPatternTuple | IDENT ':' ParamPatternTuple
 FnSignatureParam ::= IDENT (':' Type)?
 FnSignatureParam += ParamPatternTuple | IDENT ':' ParamPatternTuple
 Type ::= TypeArrow
-TypeArrow ::= TypeBinderGroup+ TypeArrow | TypeArrowParam '->' TypeArrow | TypeChain
+TypeArrow ::= TypeBinderGroup+ TypeArrow | TypeArrowParam '->' TypeArrowResult | TypeChain
 TypeArrowParam ::= TypeAtom
+TypeArrowResult ::= TypeBinderGroup+ TypeArrow | TypeArrowParam ('->' TypeArrowResult)?
 TypeChain ::= TypeAtom TypeChainTail?
 TypeChainTail ::= ('&' TypeAtom)+ | ('|' TypeAtom)+
 TypeAtom ::= '!' | '.' | '(' Type ')' | '(' Type ('|' Type)+ ')' | '(' Type ('&' Type)+ ')' | TypePath
@@ -1764,7 +1772,7 @@ BlockElabCall ::= IDENT '!' BlockPrefix? NeutralBlock LabelledBlock* FinalElided
 NeutralBlock ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind ::= 'let' NeutralBinder '<-' Expr ';'
-NeutralBinder ::= LetBinder | '.' ParamPatternTuple
+NeutralBinder ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
 BangCall ::= IDENT '!' CallArgList
 RecCall ::= 'rec' RecCallAnnotationList? IDENT CallArgList
 CallArgList ::= '(' (CallArg (',' CallArg)*)? ','? ')'
@@ -1778,7 +1786,7 @@ LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList?
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'
 TightCallArg ::= ExprAtom CallArgList*
 OperatorTail ::= (FixedOpToken Expr)+
-PatternLet ::= 'let' '.' ParamPatternTuple '=' Expr ';'
+PatternLet ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ParamPatternElem ::= IDENT (':' Type)? | '_' (':' Type)? | ParamPatternTuple | IDENT ':' ParamPatternTuple
 ExistentialLet ::= 'let' '.' '(' ExistsBinder+ ExistentialLetBinder ')' '=' Expr ';'
 ExistentialLetBinder ::= IDENT | ParamPatternTuple

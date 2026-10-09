@@ -1087,7 +1087,7 @@ fn intrinsic_value_wrapper(
             &body,
             &std::collections::HashMap::from([(param.name.clone(), ty.clone())]),
         );
-        param.name = name;
+        param.rename(name);
         groups.push(SignatureGroup::Type(vec![param]));
         args.push(CallArg::Type(ty));
     }
@@ -1507,8 +1507,8 @@ mod tests {
         for source in [
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p(I32, I32, x, y) }",
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__(I32, I32); p(x, y) }",
-            "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> A & B { __pair__ }",
-            "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> A & B, x: I32, y: I32) -> I32 & I32 { p(I32, I32, x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
+            "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
+            "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p(I32, I32, x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p(I32, I32, x, y); p(I32, I32, __fst__(I32, I32, first), y) }",
             "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__; choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
         ] {

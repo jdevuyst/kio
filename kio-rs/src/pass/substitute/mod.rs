@@ -2915,6 +2915,7 @@ mod tests {
                 alias: "Kiosite_1".to_owned(),
                 nominal: "Box".to_owned(),
                 params: vec![crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: "Qp0_s0".to_owned(),
                     span,
                     kind: None,
@@ -2995,6 +2996,7 @@ mod tests {
 
         let bound_alias = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "Kiosite_1".to_owned(),
                 span,
                 kind: None,

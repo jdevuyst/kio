@@ -201,10 +201,7 @@ See {base}/specs/cli.md#kio-doc-build---md---html for full command behavior.";
 /// `specs/exit-codes.md`.
 pub fn run(args: &[String]) -> ExitCode {
     if args.first().map(|a| a == "-h" || a == "--help") == Some(true) {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     match args.first().map(String::as_str) {
@@ -214,19 +211,13 @@ pub fn run(args: &[String]) -> ExitCode {
         Some(other) => {
             eprintln!("error: kio doc: unknown subcommand: {other}");
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
             ExitCode::Usage
         }
         None => {
             eprintln!("error: kio doc: missing subcommand (expected `check`, `fmt`, or `build`)");
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_TEMPLATE));
             ExitCode::Usage
         }
     }
@@ -292,8 +283,9 @@ fn resolve_docs_config_at(
                 "error: kio doc: no `<name>.pkg.kio` at {} — `kio doc` requires a \
                  package file with a `build {{ … }}` block declaring a `docs` field; \
                  run `kio init` to scaffold a package \
-                 (see specs/package.md § Build target files)",
-                DisplayPath(&package_root)
+                 (see {})",
+                DisplayPath(&package_root),
+                crate::documentation_help("{base}/specs/package.md#build-target-files")
             );
             return Err(ExitCode::Build);
         }
@@ -326,8 +318,9 @@ fn resolve_docs_config_at(
                 eprintln!(
                     "error: kio doc: package's package file ({}) declares no `docs` field in its \
                      `build {{ … }}` block — add `build {{ cache (); docs {{ md \"<path>\"; }}; }}` \
-                     (see specs/package.md § Build target files)",
-                    DisplayPath(&package_path)
+                     (see {})",
+                    DisplayPath(&package_path),
+                    crate::documentation_help("{base}/specs/package.md#build-target-files")
                 );
                 return Err(ExitCode::Build);
             }
@@ -465,10 +458,7 @@ fn run_build(args: &[String]) -> ExitCode {
     for arg in args {
         match arg.as_str() {
             "-h" | "--help" => {
-                println!(
-                    "{}",
-                    HELP_BUILD_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                println!("{}", crate::documentation_help(HELP_BUILD_TEMPLATE));
                 return ExitCode::Success;
             }
             "--html" => want_html = true,
@@ -476,10 +466,7 @@ fn run_build(args: &[String]) -> ExitCode {
             other => {
                 eprintln!("error: kio doc build: unexpected argument: {other}");
                 eprintln!();
-                eprintln!(
-                    "{}",
-                    HELP_BUILD_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                eprintln!("{}", crate::documentation_help(HELP_BUILD_TEMPLATE));
                 return ExitCode::Usage;
             }
         }
@@ -527,8 +514,9 @@ fn run_build(args: &[String]) -> ExitCode {
         eprintln!(
             "error: kio doc: no `<name>.pkg.kio` at {} or its subdirectories — `kio doc` requires a \
              package file with a `build {{ … }}` block declaring a `docs` field; \
-             run `kio init` to scaffold a package (see specs/package.md § Build target files)",
-            DisplayPath(&cwd)
+             run `kio init` to scaffold a package (see {})",
+            DisplayPath(&cwd),
+            crate::documentation_help("{base}/specs/package.md#build-target-files")
         );
         return ExitCode::Build;
     }
@@ -617,20 +605,14 @@ fn doc_build_one_package(
 /// and forcing a single dispatch surface keeps the contract obvious.
 fn run_check(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_CHECK_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_CHECK_TEMPLATE));
         return ExitCode::Success;
     }
     for a in args {
         if a.starts_with("--") {
             eprintln!("error: kio doc check: unknown flag: {a}");
             eprintln!();
-            eprintln!(
-                "{}",
-                HELP_CHECK_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-            );
+            eprintln!("{}", crate::documentation_help(HELP_CHECK_TEMPLATE));
             return ExitCode::Usage;
         }
     }
@@ -690,10 +672,7 @@ enum DocFmtMode {
 /// `kio doc fmt` — format Markdown Kiodoc snippets in place.
 fn run_fmt(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_FMT_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_FMT_TEMPLATE));
         return ExitCode::Success;
     }
 
@@ -705,10 +684,7 @@ fn run_fmt(args: &[String]) -> ExitCode {
             other if other.starts_with("--") => {
                 eprintln!("error: kio doc fmt: unknown flag: {other}");
                 eprintln!();
-                eprintln!(
-                    "{}",
-                    HELP_FMT_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-                );
+                eprintln!("{}", crate::documentation_help(HELP_FMT_TEMPLATE));
                 return ExitCode::Usage;
             }
             other => paths.push(other.to_owned()),

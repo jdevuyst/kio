@@ -1286,7 +1286,7 @@ impl Parser {
         self.type_()
     }
 
-    /// `Type ::= TypeAtom '->' Type | TypeChain`
+    /// `Type ::= TypeAtom '->' TypeArrowResult | TypeChain`
     /// `TypeChain ::= TypeAtom (('&' TypeAtom)+ | ('|' TypeAtom)+)?`
     ///
     /// Bare same-operator chains (`A & B & C`, `A | B | C`) are
@@ -1297,6 +1297,10 @@ impl Parser {
     /// `(A & B) | C` or `A & (B | C)`. Mirrors the kio-rs parser's
     /// `type_expr` logic.
     fn type_(&mut self) -> Result<(), ParseError> {
+        self.type_with_chain(true)
+    }
+
+    fn type_with_chain(&mut self, allow_chain: bool) -> Result<(), ParseError> {
         if self.peek_starts_type_param() {
             return self.type_signature_prefix();
         }
@@ -1314,6 +1318,10 @@ impl Parser {
 
         let mut used_chain = leading_op.is_some();
         if leading_op.is_some() && !self.peek_starts_type_atom() {
+            if !allow_chain {
+                return self
+                    .err("product and sum types on the right of `->` must be parenthesized");
+            }
             if self.at_amp_chain_sep() || self.at_pipe_chain_sep() {
                 return self.err(
                     "mixing `&` and `|` requires explicit parentheses; \
@@ -1358,12 +1366,15 @@ impl Parser {
                 }
             }
         }
+        if used_chain && !allow_chain {
+            return self.err("product and sum types on the right of `->` must be parenthesized");
+        }
         if self.at_arrow() {
             if used_chain {
                 return self.err("product and sum types on the left of `->` must be parenthesized");
             }
             self.eat_arrow();
-            self.type_()?;
+            self.type_with_chain(false)?;
         }
         Ok(())
     }
@@ -1482,7 +1493,7 @@ impl Parser {
             self.type_()?;
             self.expect_kind(&TokenKind::RParen, "`)` closing parenthesized type")?;
             if self.eat_arrow() {
-                self.type_()?;
+                self.type_with_chain(false)?;
             }
             return Ok(());
         }
@@ -1514,7 +1525,7 @@ impl Parser {
             self.collect_type_chain_after_first(op)?;
             self.expect_kind(&TokenKind::RParen, "`)` closing parenthesised type")?;
             if self.eat_arrow() {
-                self.type_()?;
+                self.type_with_chain(false)?;
             }
             return Ok(());
         }
@@ -1522,7 +1533,7 @@ impl Parser {
         if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
             self.advance();
             if self.eat_arrow() {
-                self.type_()?;
+                self.type_with_chain(false)?;
             }
             return Ok(());
         }
@@ -1533,7 +1544,7 @@ impl Parser {
             self.collect_type_chain_after_first('|')?;
             self.expect_kind(&TokenKind::RParen, "`)` closing parenthesised type")?;
             if self.eat_arrow() {
-                self.type_()?;
+                self.type_with_chain(false)?;
             }
             return Ok(());
         }
@@ -1541,7 +1552,7 @@ impl Parser {
             self.collect_type_chain_after_first('&')?;
             self.expect_kind(&TokenKind::RParen, "`)` closing parenthesised type")?;
             if self.eat_arrow() {
-                self.type_()?;
+                self.type_with_chain(false)?;
             }
             return Ok(());
         }
@@ -2904,8 +2915,33 @@ mod tests {
     fn accepts_bare_unary_function_type() {
         ok("module m; type F = A -> B;");
         ok("module m; type F = A -> B -> C;");
-        ok("module m; type F = A -> B & C;");
+        ok("module m; type F = A -> (B & C);");
         ok("module m; type F = (A -> B);");
+    }
+
+    #[test]
+    fn arrow_result_chains_require_grouping_but_signature_returns_do_not() {
+        for result in ["B & C", "B | C", "& B &", "| B |", "&", "|"] {
+            for domain in ["A", "(A)", "(A & B)", "(A | B)", "([A] A -> A)"] {
+                for source in [
+                    format!("module m; type F = {domain} -> {result};"),
+                    format!("module m; fn f() -> {domain} -> {result} {{ () }}"),
+                    format!("module m; fn f() {{ .() -> {domain} -> {result} {{ () }} }}"),
+                ] {
+                    let message = err(&source);
+                    if matches!(result, "B & C" | "B | C") {
+                        assert!(message.contains("right of `->`"), "{source}: {message}");
+                    }
+                }
+                ok(&format!("module m; type F = {domain} -> ({result});"));
+            }
+            if matches!(result, "B & C" | "B | C") {
+                ok(&format!("module m; fn f() -> {result} {{ () }}"));
+                ok(&format!("module m; fn f() {{ .() -> {result} {{ () }} }}"));
+            }
+        }
+        ok("module m; type F = A -> B -> C;");
+        ok("module m; type F = A -> [B] B & B;");
     }
 
     #[test]

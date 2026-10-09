@@ -1,0 +1,21 @@
+module main;
+
+type Product = A -> (B & C);
+
+type Sum = A -> (B | C);
+
+type Arrows = A -> B -> C;
+
+type Forall = A -> [B] B & B;
+
+fn own_product() -> A & B { value }
+
+fn own_sum() -> A | B { value }
+
+fn nested() -> A -> (B & C) { value }
+
+fn lambda_product() { .() -> A & B { value } }
+
+fn lambda_sum() { .() -> A | B { value } }
+
+fn lambda_nested() { .() -> A -> (B | C) { value } }

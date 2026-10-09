@@ -1,0 +1,4 @@
+module main;
+
+import left as l;
+import right as r;

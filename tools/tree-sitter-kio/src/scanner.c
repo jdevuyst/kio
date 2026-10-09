@@ -490,6 +490,65 @@ static bool skip_comment(TSLexer *lexer) {
   return true;
 }
 
+static bool skip_trivia_comments(TSLexer *lexer) {
+  for (;;) {
+    while (trivia(lexer->lookahead)) lexer->advance(lexer, false);
+    if (lexer->lookahead != '/') return true;
+    lexer->advance(lexer, false);
+    if (lexer->lookahead != '/' || !skip_comment(lexer)) return false;
+  }
+}
+
+static bool identifier_char(int32_t c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+    (c >= '0' && c <= '9') || c == '_';
+}
+
+// An incomplete family before a declaration must not absorb its `fn` as a
+// qualified segment. `fn(` and a terminal `fn` remain ordinary path leaves.
+static bool fn_head_follows(TSLexer *lexer) {
+  bool pure = false, pub = false;
+  for (;;) {
+    char word[5] = {0};
+    unsigned length = 0;
+    while (identifier_char(lexer->lookahead)) {
+      if (length == sizeof(word) - 1) return false;
+      word[length++] = (char)lexer->lookahead;
+      lexer->advance(lexer, false);
+    }
+    if (!skip_trivia_comments(lexer)) return false;
+    if (strcmp(word, "fn") == 0) break;
+    if (strcmp(word, "pure") == 0 && !pure) {
+      pure = true;
+    } else if (strcmp(word, "pub") == 0 && !pub) {
+      pub = true;
+      if (lexer->lookahead == '(') {
+        lexer->advance(lexer, false);
+        while (lexer->lookahead != ')') {
+          while (trivia(lexer->lookahead)) lexer->advance(lexer, false);
+          if (lexer->lookahead == ')') break;
+          if (lexer->lookahead == '/') {
+            lexer->advance(lexer, false);
+            if (lexer->lookahead == '/' && !skip_comment(lexer)) return false;
+            continue;
+          }
+          if (!identifier_char(lexer->lookahead) && lexer->lookahead != '.') return false;
+          lexer->advance(lexer, false);
+        }
+        lexer->advance(lexer, false);
+      }
+    } else {
+      return false;
+    }
+    if (!skip_trivia_comments(lexer)) return false;
+  }
+  if (!((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+      (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') || lexer->lookahead == '_')) return false;
+  while (identifier_char(lexer->lookahead)) lexer->advance(lexer, false);
+  if (!skip_trivia_comments(lexer)) return false;
+  return lexer->lookahead == '(' || lexer->lookahead == '[';
+}
+
 static bool delimiter(const SymbolRun *run, bool opening) {
   return run->count >= 2 && !(run->first == '.' && run->dots == 1) &&
     (opening ? run->opens && !run->closes : run->closes && !run->opens);
@@ -736,6 +795,13 @@ static bool scan(Scanner *state, TSLexer *lexer, const bool *valid) {
         SymbolRun close = {0};
         while (next_symbol(lexer, &close)) {}
         if (close.count != 1 || (close.comment_started && !skip_comment(lexer))) return false;
+        if (!skip_trivia_comments(lexer)) return false;
+        // A following name continues a qualified path such as `let.x.y`.
+        if ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+            (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+            lexer->lookahead == '_') {
+          if (!fn_head_follows(lexer)) return false;
+        }
         lexer->result_symbol = PLACEHOLDER_OPEN;
         return true;
       }

@@ -4,6 +4,15 @@ Trigger: editing under `specs/`, or adding a new spec page.
 
 The `specs/` directory holds the authoritative specifications. These are **contracts**, not prose documentation — each file describes settled behavior and should be kept strictly consistent with the implementation. Pedagogical and reader-facing material lives in `docs/`; see [`ai/topics/docs.md`](docs.md).
 
+Specifications are also original-byte inputs to the version-matched installed
+`kio manual` bundle, alongside their website/checkout role. Follow
+[`docs.md` § Website and offline bundle inputs](docs.md#website-and-offline-bundle-inputs)
+for inventory, paths, assets, links, source readability, snapshot freshness,
+and add/edit/rename/remove rebuild obligations. Precise offline access does not
+replace the public docs' teaching responsibility. Console references to bundled
+material put the copyable manual command first and retain the release-tagged
+web URL, with fragments only on the web route.
+
 **A spec never carries a "future extension" note** — no deferred features, no "not yet supported", no sketches of unbuilt behavior; direction lives in `ROADMAP.md` and nowhere else. State a deliberate omission as present-tense contract ("there is no X; Y is the supported route"), with its error category when the omission is a rejection. Reservations (a spelling or range rejected today to keep design space open), concrete current-caveat banners, and the exact per-backend Host API stability field are the admissible exceptions; backend maturity and ad hoc stability banners are not. The full class catalogue is in [`no-future-extensions.md`](no-future-extensions.md).
 
 - **[`specs/prime.md`](../../specs/prime.md)** — **Kio'**, the small desugared subset that carries the formal semantics and is the self-hosting target. It is a strict subset of `language.md`: every Kio' program is a Kio program with the same meaning, and there are no Kio'-only productions, identifier classes, or semantic privileges.

@@ -1562,11 +1562,7 @@ fn rec_state_outer_type_params(
             );
             let name = crate::pass::typecheck_core::fresh_type_var(&base, reserved);
             assert!(reserved.insert(name.clone()));
-            TypeParam {
-                name,
-                span: param.span,
-                kind: param.kind.clone(),
-            }
+            param.renamed(name)
         })
         .collect()
 }
@@ -5636,14 +5632,17 @@ impl SurfaceToDesugared for DesugarVisitor {
             name,
             name_span,
             ty,
-            pattern,
+            mut pattern,
             value,
-            body,
+            mut body,
             meta: Meta { span, .. },
         } = e
         else {
             unreachable!()
         };
+        if let Some(pattern) = &mut pattern {
+            crate::pass::placeholder::prepare_binding(pattern, &mut body)?;
+        }
         if let Some(pat) = pattern {
             self.state.needs_intrinsics = true;
             let pat_span = pat.span;
@@ -6222,11 +6221,7 @@ fn subst_rec_type(
                     param.name.clone(),
                     Type::synth_path(vec![fresh.clone()], Vec::new(), param.span),
                 );
-                TypeParam {
-                    name: fresh,
-                    span: param.span,
-                    kind: param.kind.clone(),
-                }
+                param.renamed(fresh)
             } else {
                 param.clone()
             };
@@ -8163,6 +8158,7 @@ mod tests {
         let path = |name: &str| Type::synth_path(vec![name.to_owned()], Vec::new(), span);
         let source = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span: binder_span,
                 kind: None,
@@ -8207,9 +8203,10 @@ mod tests {
         let applied = |name: &str| Type::synth_path(vec![name.to_owned()], vec![unit()], span);
         let source = Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "B".to_owned(),
                 span,
-                kind: Some(crate::ast::Kind::arrow_chain(1)),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
             },
             body: Box::new(Type::Product {
                 left: Box::new(applied("A")),
@@ -8285,7 +8282,7 @@ mod tests {
     fn cont_rec_state_types_form_an_explicit_recursive_scope() {
         let source = concat!(
             "module x;\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { let next = rec(cont) second(value); next };\n",
             "  fn second(value: .) -> . { rec first(value) }\n",
@@ -8490,7 +8487,7 @@ mod tests {
         use std::path::{Path, PathBuf};
 
         let prefix = "module x;\n\
-             host fn loop[S][R](step: S -> S | R, state: S) -> R;\n\
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\
              rec(loop) { \
                fn go[A][B](value: A, extra: B) -> A { rec next(A, B, value, extra) }; \
                fn next[A][B](value: A, extra: B) -> A { value } \
@@ -8891,7 +8888,7 @@ mod tests {
     #[test]
     fn rec_group_clones_refresh_replacement_node_ids() {
         let module = d("module x; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             rec(loop) { \
               fn first(value: .) -> . { rec second(value) }; \
               fn second(value: .) -> . { \
@@ -8970,7 +8967,7 @@ mod tests {
     fn tail_rec_group_clones_refresh_label_value_node_ids() {
         assert_rec_group_clones_refresh_label_value_node_ids(
             "module x; \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                fn first(value: .) -> . { rec second(value) }; \
                fn second(value: .) -> . { \
@@ -8985,7 +8982,7 @@ mod tests {
     fn continuation_rec_group_clones_refresh_label_value_node_ids() {
         assert_rec_group_clones_refresh_label_value_node_ids(
             "module x; \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                fn first(value: .) -> . { rec second(value) }; \
                fn second(value: .) -> . { \
@@ -9655,7 +9652,7 @@ mod tests {
     fn rec_order_synthesized_value_preserves_the_written_partial_annotation() {
         let source = "module x;
             host type I32;
-            host fn loop[S][R](step: S -> S | R, state: S) -> R;
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value }
             rec(loop) fn value(n: I32) -> Box(I32) {

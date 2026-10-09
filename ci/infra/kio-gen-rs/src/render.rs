@@ -1131,6 +1131,16 @@ mod tests {
             Box::new(Type::Base(Base::Str)),
         );
         assert_eq!(render_type(&sum), "(I32 | String)");
+
+        for (result, expected) in [
+            (prod, "I32 -> (I32 & Bool)"),
+            (sum, "I32 -> (I32 | String)"),
+        ] {
+            assert_eq!(
+                render_type(&Type::Fun(vec![Type::i32()], Box::new(result))),
+                expected
+            );
+        }
     }
 
     /// The two well-known type aliases (`Intpair`, `Optint`) emit

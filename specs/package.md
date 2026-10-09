@@ -693,7 +693,26 @@ placement of the different entry kinds.
 `md_out` and `html` are optional, naming the Markdown and HTML output
 directories and defaulting to `out/docs-md/` and `out/docs/` respectively.
 
-Each `target <id> { ... }` block names one backend. The `out` key is
+Each target block names one backend and has one target name. A bare header
+such as `target js { ... }` uses `js` for both. A paired header separates them:
+
+```kio
+target (js, "web") { out "out/web/" }
+target (js, "worker") { out "out/worker/" }
+```
+
+The backend comes first; the target name is a string literal. Names must be
+unique within the build block, including bare/paired collisions. Multiple
+targets may use the same backend, even with the same artifact namespace,
+provided their selected outputs do not conflict. `kio build web` selects the
+target named `web`, not every target using the JavaScript backend. Target
+names do not set artifact namespaces; the `namespace` key retains its usual
+package-name default. There is no `backend` field inside a target body.
+Every string literal is an admissible target name; names are opaque labels,
+not filesystem paths. The CLI accepts them as positional arguments; use `--`
+before a name beginning with a hyphen.
+
+The `out` key is
 **required** in every target block and names the target's output directory;
 it is the universally meaningful target key, and other keys are
 backend-specific. `out` must be a path **relative** to the package root —

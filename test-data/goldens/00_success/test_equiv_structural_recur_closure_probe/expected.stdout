@@ -1,0 +1,3 @@
+  pass equiv `closure_probe_totality` in main
+
+result: 1/1 equiv block passed

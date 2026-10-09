@@ -223,7 +223,7 @@ fn at_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, s:
 
 /// A `missing` child means the key was never in the tree: nothing is rebuilt
 /// and nothing is counted.
-fn lift(dt: Del_out, repair: Shrunk -> Shrunk & Tally) -> Del_out {
+fn lift(dt: Del_out, repair: Shrunk -> (Shrunk & Tally)) -> Del_out {
   let .(d: Del, acc: Tally) = dt;
   match! d {
     (

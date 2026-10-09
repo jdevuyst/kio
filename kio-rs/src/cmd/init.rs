@@ -32,10 +32,7 @@ See {base}/specs/cli.md#kio-init-package-name for full command behavior.";
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     let package_name = match args {

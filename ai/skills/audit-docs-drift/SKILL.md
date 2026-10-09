@@ -69,6 +69,17 @@ Start at `docs/README.md` and follow the order and branches it recommends as a n
 
 ## 6. Internal link structure
 
+Repeat the ordinary learning-path assessment using the original files exposed
+by `kio manual`, without assuming a checkout or rendered website. Classify
+unbundled links as essential authoring prerequisites or optional further
+reading; report missing essentials and source-presentation obstacles. Compare
+the portable agent guide and precise spec fallbacks with the teaching path:
+ordinary language or idiom knowledge available only there is a docs-coverage
+finding, even when nothing contradicts a specification. Inspect the bounded
+external authoring trial separately; normal castle work permits precise spec
+questions and integration-source inspection, which must not masquerade as
+proof that docs sufficed. Bundle integrity belongs to `audit-bundled-docs`.
+
 For every link from one document under `docs/` to another, compare any surrounding description and reading order with the destination itself.
 
 - Flag descriptions or sequences that overstate or understate the destination's coverage, name the wrong audience or purpose, conceal a prerequisite, promise material the destination does not contain, or place the page before its prerequisites or after material that relies on it.

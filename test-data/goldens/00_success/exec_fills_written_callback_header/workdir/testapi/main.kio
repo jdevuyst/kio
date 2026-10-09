@@ -6,7 +6,7 @@ import testapi(I32, String);
 import testapi/io as io;
 import testapi/iter as iter;
 
-fn drive[S][R](step: S -> S | R, seed: S) -> R { iter.loop(step, seed) }
+fn drive[S][R](step: S -> (S | R), seed: S) -> R { iter.loop(step, seed) }
 
 fn identity[A](value: A) -> A { value }
 

@@ -1547,6 +1547,10 @@ fn walk_param_pattern(
     overrides: &mut AstOverrides,
     binders_are_parameters: bool,
 ) {
+    if let Some(numbered) = &pattern.numbered {
+        overrides.insert(numbered.stem.span.start, TokenKind::VariableParameter);
+        return;
+    }
     for element in &pattern.elems {
         if binders_are_parameters {
             match element {
@@ -3158,7 +3162,7 @@ mod tests {
     #[test]
     fn ordinary_ufcs_and_recursive_callees_are_function_references() {
         let source = "module x; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn call_target(x: .) -> . { x } \
             fn ufcs_target(x: .) -> . { x } \
             rec(loop) fn recursive(x: .) -> . { \
@@ -3228,7 +3232,7 @@ mod tests {
     #[test]
     fn invalid_empty_ufcs_keeps_proved_callees_without_claiming_later_body_calls() {
         let source = "module x; \
-            host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn call_target(x: .) -> . { x } \
             fn ufcs_target(x: .) -> . { x } \
             rec(loop) fn recursive(x: .) -> . { \
@@ -3602,7 +3606,7 @@ mod tests {
     fn recursive_call_inside_an_operator_operand_remains_a_member_fact() {
         let source = concat!(
             "module pkg/main;\n",
-            "host fn loop[S][R](step: S -> S | R, state: S) -> R;\n",
+            "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
             "rec(loop) {\n",

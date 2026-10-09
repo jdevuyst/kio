@@ -1,0 +1,10 @@
+kio repl — the module inspector
+loaded: main
+type `:help` for commands, `:quit` to leave
+pub fn make[Left](value: Left) -> [Left] Left -> Left
+pub fn make[Right](value: Right) -> [Right] Right -> Right
+pub fn suffix[A_n2](value: A_n2) -> [A_n2] A_n2 -> A_n2
+(l.make(()), r.make(())) : ([Left] Left -> Left) & ([Right] Right -> Right)
+(r.make(()), l.make(())) : ([Right] Right -> Right) & ([Left] Left -> Left)
+(l.suffix(()), l.make(())) : ([A_n2] A_n2 -> A_n2) & ([Left] Left -> Left)
+bye

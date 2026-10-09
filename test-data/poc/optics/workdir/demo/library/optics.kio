@@ -86,10 +86,10 @@ pub fn id_lens[A] -> Lens(A, A) {
 // preview can miss, so it returns `(A | .)` — the `()` arm meaning
 // "this is not the focused case". review injects an `A` back into `S`.
 /// Product of preview and review functions focused from `S` to optional `A`.
-pub type Prism[S][A] = (S -> A | .) & (A -> S);
+pub type Prism[S][A] = (S -> (A | .)) & (A -> S);
 
 /// Attempts to extract a prism focus as a bare optional sum.
-pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> A | .)(x) }
+pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> (A | .))(x) }
 
 /// Embeds a prism focus back into the source sum.
 pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
@@ -327,7 +327,7 @@ equiv swap_swap_view[A][B](x: A & B) {
 }
 
 // over_iso is review_iso . f . view_iso — its defining equation.
-equiv swap_over_def[A][B](x: A & B, f: (B & A) -> B & A) {
+equiv swap_over_def[A][B](x: A & B, f: (B & A) -> (B & A)) {
   over_iso(swap_iso(A, B), f, x);
   review_iso(swap_iso(A, B), f(view_iso(swap_iso(A, B), x)))
 }

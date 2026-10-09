@@ -39,7 +39,7 @@ fn function_param_walk(f: (A | B) -> .) -> A -> . { fit!(f) }
 
 // WK-FitFnFn covariant return. Parameter is `A` on both sides
 // (identity); return narrows `(A & B)` to `A` via the leaf engine.
-fn function_return_walk(f: A -> A & B) -> A -> A { fit!(f) }
+fn function_return_walk(f: A -> (A & B)) -> A -> A { fit!(f) }
 
 // WK-FitStrictInitial — `!` source elaborates via `__absurd__`,
 // any target type accepted. The vacuous initial-object morphism.
@@ -50,7 +50,7 @@ fn bottom_source(b: !) -> A & B & C { fit!(b) }
 // adapter so the call-site sees a return of any target type.
 // Load-bearing recursive case: the inner `walk(call, !, A | B)`
 // fires WK-FitStrictInitial.
-fn bottom_via_function_return(panic_fn: A -> !) -> A -> A | B { fit!(panic_fn) }
+fn bottom_via_function_return(panic_fn: A -> !) -> A -> (A | B) { fit!(panic_fn) }
 
 // UFCS spelling — same engine, postfix form.
 fn ufcs(p: A & B) -> A { p.>fit! }

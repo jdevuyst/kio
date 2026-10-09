@@ -1084,11 +1084,7 @@ impl ExpectedAlphaMaterializer {
                 let body = self.materialize(body);
                 self.pop_local(&param.name);
                 Type::Forall {
-                    param: crate::ast::TypeParam {
-                        name: emitted,
-                        span: param.span,
-                        kind: param.kind.clone(),
-                    },
+                    param: param.renamed(emitted),
                     body: Box::new(body),
                     meta: crate::ast::Meta::new(meta.span),
                 }
@@ -3616,6 +3612,7 @@ mod tests {
     ) -> Type<crate::ast::Lowered> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: span(binder_start),
                 kind: None,
@@ -3723,9 +3720,10 @@ mod tests {
         with_type_ctx(|tcx| {
             let params = (0..DEPTH)
                 .map(|index| TypeParam {
+                    presentation: Default::default(),
                     name: format!("Source{index}"),
                     span: span(u32::try_from(index + 1).expect("test span fits in u32")),
-                    kind: Some(Kind::Star),
+                    kind: Some(Box::new(Kind::Star)),
                 })
                 .collect();
             let signature: Signature<Lowered> =
@@ -3757,6 +3755,7 @@ mod tests {
             let mut groups = Vec::with_capacity(DEPTH + 1);
             for index in 0..DEPTH {
                 groups.push(SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: format!("Source{index}"),
                     span: span(u32::try_from(index * 2 + 1).expect("test span fits in u32")),
                     kind: None,
@@ -3873,6 +3872,7 @@ mod tests {
             let mut groups = Vec::with_capacity(DEPTH + 1);
             for index in 0..DEPTH {
                 groups.push(SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: format!("Source{index}"),
                     span: span(u32::try_from(index + 1).expect("test span fits in u32")),
                     kind: None,
@@ -3950,12 +3950,14 @@ mod tests {
         with_type_ctx(|tcx| {
             let signature = Signature::from_groups(vec![
                 SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: "Source0".to_owned(),
                     span: span(1),
                     kind: None,
                 }]),
                 SignatureGroup::Value(vec![value_param("first", Some(path("Source0", 3)), 3)]),
                 SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: "Source1".to_owned(),
                     span: span(5),
                     kind: None,
@@ -4008,17 +4010,22 @@ mod tests {
         with_type_ctx(|tcx| {
             let signature = Signature::from_groups(vec![
                 SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: "Inner".to_owned(),
                     span: span(1),
                     kind: None,
                 }]),
                 SignatureGroup::Value(vec![value_param("value", None, 3)]),
             ]);
-            let nested = forall(
+            let mut nested = forall(
                 "Inner",
                 11,
                 function(path("Expected", 13), path("Inner", 17), 12),
             );
+            let Type::Forall { param, .. } = &mut nested else {
+                unreachable!()
+            };
+            param.presentation = crate::ast::TypeParamPresentation::written();
             let expected = forall("Expected", 7, function(nested, path("Expected", 19), 8));
             let expected = tcx.intern_type(&expected);
             let mut plan = plan_lowered_lambda_header(&signature, None, tcx)
@@ -4037,6 +4044,7 @@ mod tests {
                 panic!("the expected value slot must retain its nested forall")
             };
             assert_ne!(nested.name, "Inner");
+            assert_eq!(nested.written_name(), Some("Inner"));
             let Type::Function { param, ret, .. } = body.as_ref() else {
                 panic!("the nested forall must retain its function body")
             };
@@ -4062,6 +4070,7 @@ mod tests {
         with_type_ctx(|tcx| {
             let signature = Signature::from_groups(vec![
                 SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: "Inner".to_owned(),
                     span: span(1),
                     kind: None,
@@ -4207,6 +4216,7 @@ mod tests {
             |tcx| {
                 let signature = Signature::from_groups(vec![
                     SignatureGroup::Type(vec![TypeParam {
+                        presentation: Default::default(),
                         name: "Source".to_owned(),
                         span: span(3),
                         kind: None,
@@ -4262,9 +4272,10 @@ mod tests {
         with_type_ctx(|tcx| {
             let signature = Signature::from_groups(vec![
                 SignatureGroup::Type(vec![TypeParam {
+                    presentation: Default::default(),
                     name: "F".to_owned(),
                     span: span(3),
-                    kind: Some(Kind::arrow_chain(1)),
+                    kind: Some(Box::new(Kind::arrow_chain(1))),
                 }]),
                 SignatureGroup::Value(vec![value_param(
                     "value",

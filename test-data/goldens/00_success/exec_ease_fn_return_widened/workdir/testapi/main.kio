@@ -19,7 +19,7 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 fn source() -> A { A.mk_a("ease! return widened ok\n") }
 
 pub fn main() {
-  let widen_ret = ease!(source, . -> A | B);
+  let widen_ret = ease!(source, . -> (A | B));
   let r = widen_ret();
   print(match! r {
     (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })

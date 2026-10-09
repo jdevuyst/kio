@@ -2070,6 +2070,7 @@ mod tests {
     fn forall_identity(binder: &str) -> Type<Lowered> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: binder.to_owned(),
                 span: sp(),
                 kind: None,
@@ -2274,9 +2275,10 @@ mod tests {
         let phantom_scheme = |name: &str, kind: Kind| {
             InternedType::fresh(Type::Forall {
                 param: TypeParam {
+                    presentation: Default::default(),
                     name: name.to_owned(),
                     span: sp(),
-                    kind: Some(kind),
+                    kind: Some(Box::new(kind)),
                 },
                 body: Box::new(Type::synth_function(vec![path_ty("N")], path_ty("N"), sp())),
                 meta: Meta::new(sp()),
@@ -2348,6 +2350,7 @@ mod tests {
         let tcx = TypeCtx::new(&env, &mut elaborations);
         let shadowed = InternedType::fresh(Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "Alias".to_owned(),
                 span: sp(),
                 kind: None,
@@ -2365,6 +2368,7 @@ mod tests {
         });
         let terminal = InternedType::fresh(Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: sp(),
                 kind: None,

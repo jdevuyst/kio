@@ -493,6 +493,24 @@ mod tests {
     }
 
     #[test]
+    fn numbered_binding_completion_shadows_the_entire_earlier_family() {
+        let mut completer = completer_with(NameSet::default());
+        for prefix in ["", ":normalize "] {
+            let input = format!("{prefix}.() {{ let .x. = (); x3; let .x. = (); x");
+            let suggestions = completer.complete(&input, input.len());
+            let numbered: Vec<_> = suggestions
+                .iter()
+                .filter(|item| item.value.starts_with('x'))
+                .collect();
+            assert_eq!(numbered.len(), 1, "{suggestions:?}");
+            assert_eq!(numbered[0].value, "x1");
+            assert_eq!(numbered[0].span, Span::new(input.len() - 1, input.len()));
+            assert!(!validates_complete(&input));
+            assert!(validates_complete(&format!("{input}1 }}")));
+        }
+    }
+
+    #[test]
     fn type_only_lambda_completion_and_validation_keep_written_binders() {
         let mut completer = completer_with(NameSet {
             current_module_src: Some("module app; type Existing = .;".to_owned()),

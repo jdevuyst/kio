@@ -450,6 +450,51 @@ suite("Kio extension — LSP client", () => {
 // actual `kio lsp` against a real package and waits for its verdict.
 if (MODE === "real")
 suite("Kio extension — real kio lsp", () => {
+  test("composed hover and inlay types keep each provider's written binders", async () => {
+    const root = path.join(workspaceDir(), "composed-binders");
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+    for (const [module, binder] of [["left", "Left"], ["rite", "Rite"]]) {
+      fs.writeFileSync(path.join(root, `${module}.kio`),
+        `module ${module};\npub fn make[${binder}](value: ${binder}) -> [${binder}] ${binder} -> ${binder} { .[Item](inner: Item) -> Item { inner } }\n`);
+    }
+    const source = "module main;\nimport left as l;\nimport rite as r;\n"
+      + "pub fn run() -> . {\n"
+      + "  let forward = (l.make(()), r.make(()));\n"
+      + "  let backward = (r.make(()), l.make(()));\n"
+      + "  let _ = forward;\n  let _ = backward;\n  ()\n}\n";
+    fs.writeFileSync(path.join(root, "main.kio"), source);
+    const doc = await openFixture("composed-binders/main.kio");
+    const expected = [
+      "([Left] Left -> Left) & ([Rite] Rite -> Rite)",
+      "([Rite] Rite -> Rite) & ([Left] Left -> Left)",
+    ];
+    for (const [index, name] of ["forward", "backward"].entries()) {
+      const at = doc.positionAt(source.lastIndexOf(name));
+      const deadline = Date.now() + 20_000;
+      let hovers: vscode.Hover[] | undefined;
+      while (!hovers?.length && Date.now() < deadline) {
+        hovers = await completeEditorRequest(() => vscode.commands.executeCommand<vscode.Hover[]>(
+          "vscode.executeHoverProvider", doc.uri, at,
+        ), () => doc.version, deadline);
+        if (!hovers?.length) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert.ok(hovers?.length, `hover for ${name} is available`);
+      assert.deepStrictEqual(hovers.flatMap((hover) => hover.contents.map((content) =>
+        typeof content === "string" ? content : content.value)), [`\`\`\`kio\n${expected[index]}\n\`\`\``]);
+    }
+    const hints = await completeEditorRequest(() => vscode.commands.executeCommand<vscode.InlayHint[]>(
+      "vscode.executeInlayHintProvider", doc.uri,
+      new vscode.Range(doc.positionAt(0), doc.positionAt(source.length)),
+    ), () => doc.version, Date.now() + 5_000);
+    assert.ok(Array.isArray(hints), "the native inlay provider completes");
+    for (const type of expected) {
+      assert.ok(hints.some((hint) => hint.label === `: ${type}`), `inlay type ${type}`);
+    }
+    assert.ok(!vscode.languages.getDiagnostics(doc.uri).some((diagnostic) =>
+      diagnostic.source === "kio" && diagnostic.severity === vscode.DiagnosticSeverity.Error));
+  });
+
   test("native quick fixes apply without an AI extension and leave capability choices explicit", async () => {
     for (const [name, source, expected, title] of [
       [
@@ -494,7 +539,7 @@ suite("Kio extension — real kio lsp", () => {
       fs.mkdirSync(root);
       fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
       fs.writeFileSync(path.join(root, "support.kio"),
-        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n");
+        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n");
       fs.writeFileSync(path.join(root, "main.kio"), source);
       const doc = await openFixture(`${relative}/main.kio`);
       const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)

@@ -4502,7 +4502,10 @@ fn ok() -> . { () }
             Item::FnDef(d) => {
                 assert_eq!(d.sig.params.len(), 2);
                 match &d.sig.params[0] {
-                    SignatureParam::Type(tp) => assert_eq!(tp.name, "A"),
+                    SignatureParam::Type(tp) => {
+                        assert_eq!(tp.name, "A");
+                        assert_eq!(tp.written_name(), Some("A"));
+                    }
                     other => panic!("expected type param, got {other:?}"),
                 }
                 match &d.sig.params[1] {
@@ -4749,9 +4752,9 @@ fn ok() -> . { () }
                 assert_eq!(tps[0].name, "A");
                 assert_eq!(tps[0].kind, None);
                 assert_eq!(tps[1].name, "F");
-                assert_eq!(tps[1].kind, Some(Kind::arrow_chain(1)));
+                assert_eq!(tps[1].kind.as_deref(), Some(&Kind::arrow_chain(1)));
                 assert_eq!(tps[2].name, "G");
-                assert_eq!(tps[2].kind, Some(Kind::arrow_chain(2)));
+                assert_eq!(tps[2].kind.as_deref(), Some(&Kind::arrow_chain(2)));
             }
             other => panic!("expected FnDef, got {other:?}"),
         }
@@ -4787,8 +4790,14 @@ fn ok() -> . { () }
         let m = p(src);
         match &m.items[0] {
             Item::Newtype(d) => {
-                assert_eq!(d.type_params[0].kind, Some(Kind::arrow_chain(1)));
-                assert_eq!(d.type_params[1].kind, Some(Kind::arrow_chain(2)));
+                assert_eq!(
+                    d.type_params[0].kind.as_deref(),
+                    Some(&Kind::arrow_chain(1))
+                );
+                assert_eq!(
+                    d.type_params[1].kind.as_deref(),
+                    Some(&Kind::arrow_chain(2))
+                );
             }
             other => panic!("expected Newtype, got {other:?}"),
         }
@@ -5445,6 +5454,8 @@ fn ok() -> . { () }
             assert_eq!(d.type_params[0].name, "A");
             assert_eq!(d.existential_params.len(), 1);
             assert_eq!(d.existential_params[0].name, "U");
+            assert_eq!(d.type_params[0].written_name(), Some("A"));
+            assert_eq!(d.existential_params[0].written_name(), Some("U"));
         } else {
             panic!("expected Newtype");
         }
@@ -5546,8 +5557,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn type_function_rhs_can_be_product_chain() {
-        let m = p("module x; type F = A -> B & C;");
+    fn arrow_result_product_chain_requires_parentheses() {
+        let m = p("module x; type F = A -> (B & C);");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function { ret, .. } => {
@@ -5556,6 +5567,32 @@ fn ok() -> . { () }
                 other => panic!("expected Function, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn arrow_result_chains_are_grouped_in_every_type_expression_context() {
+        for result in ["B & C", "B | C", "& B &", "| B |", "&", "|"] {
+            for prefix in ["A", "(A)", "(A & B)", "(A | B)", "([A] A -> A)"] {
+                for source in [
+                    format!("module x; type F = {prefix} -> {result};"),
+                    format!("module x; fn f(value: {prefix} -> {result}) {{ () }}"),
+                    format!("module x; fn f() -> {prefix} -> {result} {{ () }}"),
+                    format!("module x; fn f() {{ .() -> {prefix} -> {result} {{ () }} }}"),
+                ] {
+                    let message = p_err(&source);
+                    if matches!(result, "B & C" | "B | C") {
+                        assert!(message.contains("right of `->`"), "{source}: {message}");
+                    }
+                }
+                p(&format!("module x; type F = {prefix} -> ({result});"));
+            }
+            if matches!(result, "B & C" | "B | C") {
+                p(&format!("module x; fn f() -> {result} {{ () }}"));
+                p(&format!("module x; fn f() {{ .() -> {result} {{ () }} }}"));
+            }
+        }
+        p("module x; type F = A -> B -> C;");
+        p("module x; type F = A -> [B] B & B;");
     }
 
     #[test]
@@ -6312,7 +6349,7 @@ fn ok() -> . { () }
     #[test]
     fn type_product_function_alias_keeps_product_domain_single_slot() {
         let m = p("module x; pub type Deps[St][Res][Str] = \
-             (((St -> St | Res) & St) -> Res) & ((Str & Str) -> Str);");
+             (((St -> (St | Res)) & St) -> Res) & ((Str & Str) -> Str);");
         let Item::TypeAlias(t) = &m.items[0] else {
             panic!("expected type alias");
         };
@@ -9516,6 +9553,171 @@ fn ok() -> . { () }
     // ---- placeholder lambdas -----------------------------------------
 
     #[test]
+    fn numbered_bindings_own_their_lexical_continuation() {
+        for (body, expected) in [
+            ("pair(x2, x1, x2)", 2),
+            ("let x2 = x1; x2", 1),
+            ("let x2 = x2; x2", 2),
+            (".(x2) { x1 }", 1),
+            ("let .(x2, x3) = x1; pair(x2, x3)", 1),
+            ("let .({field as x2}) = x1; x2", 1),
+            ("let .y. = (); pair(x1, y2)", 1),
+            ("let .x. = x2; x3", 2),
+            ("print(x2); let .x. = (); print(x3); ()", 2),
+            ("pair(x1, .y. { pair(x9, y1) })", 1),
+            ("pair(x1, .x. { x3 })", 1),
+            ("pair(x1, m.x9)", 1),
+            ("value.>x1", 1),
+            ("pair(x1, x9!(x2))", 2),
+            ("let x01 = x1; x01", 1),
+            ("{x1}", 1),
+            ("let .(<U> x2) = x1; x2", 1),
+        ] {
+            for stem in ["x", "_arg"] {
+                let body = body.replace('x', stem);
+                let source = format!("module m; fn run() {{ let .{stem}. = (); {body} }}");
+                let parsed = p(&source);
+                let Item::FnDef(def) = &parsed.items[0] else {
+                    panic!("function")
+                };
+                let Expr::Let {
+                    pattern: Some(pattern),
+                    ..
+                } = &def.body
+                else {
+                    panic!("numbered pattern")
+                };
+                assert_eq!(pattern.elems.len(), expected, "{source}");
+                assert_eq!(pattern.numbered.as_ref().unwrap().stem.name, stem);
+                let rendered = crate::pretty::pretty_module(&parsed);
+                assert!(rendered.contains(&format!("let .{stem}. =")), "{rendered}");
+                p(&rendered);
+                parse_lazy(&source)
+                    .and_then(|module| module.force_all())
+                    .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn numbered_bindings_do_not_claim_qualified_let_expressions() {
+        for body in [
+            "let.x <- value",
+            "let.x.>apply",
+            "let.x(value)",
+            "let.x.y()",
+            "let.x.y",
+            "let.x.fn()",
+            "let.x.fn",
+            "action! { let.x.y() }",
+            "action! { let.x.y }",
+            "action! { let.x.fn() }",
+            "action! { let.x.fn }",
+        ] {
+            let source = format!("module m; op _ <- _ {{ impl choose }}; fn run() {{ {body} }}");
+            let parsed = p(&source);
+            let rendered = crate::pretty::pretty_module(&parsed);
+            let compact = rendered.split_whitespace().collect::<String>();
+            assert!(
+                compact.contains(&body.split_whitespace().collect::<String>()),
+                "{rendered}"
+            );
+            p(&rendered);
+        }
+        for body in ["let.x. // path\n y()", "action! { let.x. // path\n y } "] {
+            let source = format!("module m; fn run() {{ {body} }}");
+            let formatted = crate::pretty::pretty_module(&p(&source));
+            assert_eq!(crate::pretty::pretty_module(&p(&formatted)), formatted);
+        }
+    }
+
+    #[test]
+    fn numbered_bindings_preserve_connective_comments() {
+        for body in [
+            "let // intro\n .x. // before\n = // after\n () // end\n; x1",
+            "action! { let // intro\n .x. // before\n = // after\n () // end\n; x1 }",
+            "action! { let // intro\n .x. // before\n <- // after\n () // end\n; x1 }",
+        ] {
+            let source = format!("module m; fn run() {{ {body} }}");
+            let formatted = crate::pretty::pretty_module(&p(&source));
+            assert_eq!(formatted.matches("// before").count(), 1, "{formatted}");
+            assert_eq!(formatted.matches("// after").count(), 1, "{formatted}");
+            assert_eq!(formatted.matches("// intro").count(), 1, "{formatted}");
+            assert_eq!(formatted.matches("// end").count(), 1, "{formatted}");
+            assert_eq!(crate::pretty::pretty_module(&p(&formatted)), formatted);
+        }
+    }
+
+    #[test]
+    fn numbered_bindings_reject_invalid_stems_indices_and_empty_owners() {
+        for body in [
+            "let .x1. = (); x11",
+            "let .x_. = (); x_1",
+            "let . x. = (); x1",
+            "let .x . = (); x1",
+            "let .x. = (); x0",
+            "let .x. = (); x01",
+            "let .x. = (); x4294967296",
+            "let .x. = (); x",
+            "let .x. = (); m.x1",
+            "let .x. = (); .y. { y1 }",
+            "let .x. = (); let x1 = (); x1",
+            "let .x. = (); let .x. = (); x1",
+            "let (.x.) = (); x1",
+            "let .x. : . = (); x1",
+        ] {
+            let source = format!("module m; fn run() {{ {body} }}");
+            assert!(parse(&source).is_err(), "{source}");
+            assert!(
+                parse_lazy(&source)
+                    .and_then(|module| module.force_all())
+                    .is_err(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn numbered_neutral_bindings_keep_each_source_order_owner() {
+        for connective in ["=", "<-"] {
+            let source = format!(
+                "module m; fn run() {{ action! {{ \
+                let .x. {connective} (); print(x2); \
+                let .x. {connective} x1; print(x3); \
+                let .y. {connective} (); pair(x2, y1) }} }}"
+            );
+            let parsed = p(&source);
+            let Item::FnDef(def) = &parsed.items[0] else {
+                panic!("function")
+            };
+            let Expr::BlockCall { blocks, .. } = &def.body else {
+                panic!("neutral block")
+            };
+            let arities: Vec<_> = blocks[0]
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    crate::ast::NeutralItem::Binding {
+                        pattern: Some(pattern),
+                        ..
+                    } => Some(pattern.elems.len()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(arities, [2, 3, 1]);
+            let formatted = crate::pretty::pretty_module(&parsed);
+            assert!(
+                formatted.contains(&format!("let .x. {connective}")),
+                "{formatted}"
+            );
+            p(&formatted);
+            parse_lazy(&source)
+                .and_then(|module| module.force_all())
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn placeholder_stems_preserve_source_references() {
         for stem in ["x", "arg", "_p", "x1_y", "t", "f"] {
             let source = format!("module m; fn run() {{ .{stem}. {{ pair({stem}2, {stem}1) }} }}");
@@ -9660,7 +9862,8 @@ fn ok() -> . { () }
         let bf = pb("cache ();\ntarget js { out \"out/js/\"; }");
         assert_eq!(bf.targets.len(), 1);
         let t = &bf.targets[0];
-        assert_eq!(t.id, "js");
+        assert_eq!(t.name(), "js");
+        assert_eq!(t.backend, "js");
         assert_eq!(t.entries.len(), 1);
         assert_eq!(t.entries[0].key, "out");
         assert_eq!(t.entries[0].value, "out/js/");
@@ -9672,7 +9875,34 @@ fn ok() -> . { () }
         // into `kio`, `-`, `prime` and the parser reassembles the run.
         let bf = pb("cache ();\ntarget kio-prime { out \"out/kio-prime/\"; }");
         assert_eq!(bf.targets.len(), 1);
-        assert_eq!(bf.targets[0].id, "kio-prime");
+        assert_eq!(bf.targets[0].name(), "kio-prime");
+    }
+
+    #[test]
+    fn build_block_named_targets_keep_backend_and_name_separate() {
+        let bf = pb(
+            r#"target (js, "w" "eb") { out "web" }; target (js, "worker") {};
+            target (kio-prime, "archive") {}; target (js, "js") {}"#,
+        );
+        assert_eq!(bf.targets[0].backend, "js");
+        assert_eq!(bf.targets[0].name(), "web");
+        assert_eq!(bf.targets[1].backend, "js");
+        assert_eq!(bf.targets[1].name(), "worker");
+        assert_eq!(bf.targets[2].backend, "kio-prime");
+        assert_eq!(bf.targets[2].name(), "archive");
+        assert_eq!(bf.targets[3].name.as_deref(), Some("js"));
+    }
+
+    #[test]
+    fn build_block_named_target_header_is_not_an_expression() {
+        for source in [
+            r#"target ("web", js) {}"#,
+            r#"target (js, web) {}"#,
+            r#"target (js) {}"#,
+            r#"target (js, "web", "worker") {}"#,
+        ] {
+            assert!(parse_build_block_body(source).is_err(), "{source}");
+        }
     }
 
     #[test]
@@ -9688,8 +9918,8 @@ fn ok() -> . { () }
              target js { out \"out/js/\"; }; \
              target wasm { out \"out/wasm/\"; }");
         assert_eq!(bf.targets.len(), 2);
-        assert_eq!(bf.targets[0].id, "js");
-        assert_eq!(bf.targets[1].id, "wasm");
+        assert_eq!(bf.targets[0].name(), "js");
+        assert_eq!(bf.targets[1].name(), "wasm");
     }
 
     #[test]
@@ -9708,10 +9938,10 @@ fn ok() -> . { () }
 
     #[test]
     fn build_block_quoted_target_id_rejected() {
-        // The old quoted form is rejected with a migration message
-        // naming the bare-identifier form.
         let msg = pb_err("cache ();\ntarget \"js\" { out \"out/\"; }");
-        assert!(msg.contains("bare identifier"), "got: {msg}");
+        assert!(msg.contains("name a backend first"), "got: {msg}");
+        assert!(msg.contains("target rust {"), "got: {msg}");
+        assert!(msg.contains("target (rust, \"native\")"), "got: {msg}");
     }
 
     #[test]
@@ -9792,7 +10022,7 @@ fn ok() -> . { () }
         let build = ef.build.expect("build block present");
         assert!(matches!(build.cache, BuildBlockCache::Disabled { .. }));
         assert_eq!(build.targets.len(), 1);
-        assert_eq!(build.targets[0].id, "js");
+        assert_eq!(build.targets[0].name(), "js");
         assert_eq!(ef.bridge.expect("bridge block").globs.len(), 1);
     }
 

@@ -1,0 +1,7 @@
+module main;
+
+fn make[Element](value: Element) -> [Element] Element -> Element {
+  .[Item](inner: Item) -> Item { inner }
+}
+
+pub fn bad() -> . { let pair = (make(()), make(())); pair }

@@ -6010,6 +6010,7 @@ fn substitute_retained_type(
                     Type::synth_path(vec![fresh.clone()], Vec::new(), param.span),
                 );
                 crate::ast::TypeParam {
+                    presentation: Default::default(),
                     name: fresh,
                     span: param.span,
                     kind: param.kind.clone(),
@@ -6620,9 +6621,10 @@ mod tests {
     fn forall_kind(name: &str, kind: Kind, body: Type<Routed>) -> Type<Routed> {
         Type::Forall {
             param: TypeParam {
+                presentation: Default::default(),
                 name: name.to_owned(),
                 span: span(),
-                kind: Some(kind),
+                kind: Some(Box::new(kind)),
             },
             body: Box::new(body),
             meta: meta(),
@@ -7262,6 +7264,7 @@ mod tests {
         let signature = Signature::from_groups(vec![
             SignatureGroup::Value(vec![value_param("x", nominal("api", "A"))]),
             SignatureGroup::Type(vec![TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: span(),
                 kind: None,
@@ -7315,6 +7318,7 @@ mod tests {
     #[test]
     fn callable_cut_retains_canonical_zero_slot_value_group() {
         let type_group = SignatureGroup::Type(vec![TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: span(),
             kind: None,
@@ -8283,14 +8287,19 @@ mod tests {
             unreachable!("the fixture helper constructs a newtype")
         };
         token_declaration.type_params.push(TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         token_declaration.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: span(),
-            kind: Some(Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star))),
+            kind: Some(Box::new(Kind::Arrow(
+                Box::new(Kind::Star),
+                Box::new(Kind::Star),
+            ))),
         });
         let package = package_with_items("api", vec![token]);
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
@@ -8371,9 +8380,10 @@ mod tests {
     #[test]
     fn live_nominal_projection_preserves_roles_kinds_and_transitive_newtypes() {
         let type_param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         };
         let Item::Newtype(mut wrapper) = public_newtype(
             "Wrapper",
@@ -8386,9 +8396,10 @@ mod tests {
         };
         wrapper.type_params.push(type_param.clone());
         wrapper.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "Hidden".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let boundary = product(
             nominal("types", "Count"),
@@ -8486,9 +8497,10 @@ mod tests {
         let alias = public_alias(
             "Capture",
             vec![TypeParam {
+                presentation: Default::default(),
                 name: "X".to_owned(),
                 span: span(),
-                kind: Some(Kind::Star),
+                kind: Some(Box::new(Kind::Star)),
             }],
             forall(
                 "A_n2",
@@ -8501,9 +8513,10 @@ mod tests {
             unreachable!("the helper constructs a newtype")
         };
         payload.type_params.push(TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let live_package = package_with_items("api", vec![alias, Item::Newtype(payload)]);
         let live = PreparedBoundaryCallableSites::collect_live(&live_package)
@@ -8613,9 +8626,10 @@ v(2) {
             unreachable!("newtype helper")
         };
         packed.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "T".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let package = package_with_items(
             "api",
@@ -8670,14 +8684,16 @@ v(2) {
             unreachable!("the helper constructs a newtype")
         };
         poly.type_params.push(TypeParam {
+            presentation: Default::default(),
             name: "F".to_owned(),
             span: span(),
-            kind: Some(Kind::arrow_chain(1)),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
         });
         poly.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "Hidden".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let package = package_with_items("api", vec![Item::Newtype(poly)]);
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
@@ -8733,9 +8749,10 @@ v(2) {
             unreachable!("the helper constructs a newtype")
         };
         binder_shadow.type_params.push(TypeParam {
+            presentation: Default::default(),
             name: "Comptime_bool".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let package = package_with_modules(vec![
             (
@@ -8865,14 +8882,16 @@ v(2) {
             unreachable!("the helper constructs a newtype")
         };
         payload.type_params.push(TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         payload.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "Hidden".to_owned(),
             span: span(),
-            kind: Some(Kind::Star),
+            kind: Some(Box::new(Kind::Star)),
         });
         let package = package_with_items(
             "api",
@@ -9493,9 +9512,10 @@ v(2) {
                 vec![host_type(
                     "Box",
                     vec![TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     }],
                     None,
                 )],
@@ -9669,9 +9689,10 @@ v(2) {
                 host_type(
                     "Box",
                     vec![TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     }],
                     None,
                 ),
@@ -9684,9 +9705,10 @@ v(2) {
                 host_type(
                     "Box",
                     vec![TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     }],
                     None,
                 ),
@@ -10491,9 +10513,10 @@ v(2) {
                 name: "Box".to_owned(),
                 name_span: span(),
                 type_params: vec![TypeParam {
+                    presentation: Default::default(),
                     name: "B".to_owned(),
                     span: span(),
-                    kind: Some(Kind::Star),
+                    kind: Some(Box::new(Kind::Star)),
                 }],
                 existential_params: Vec::new(),
                 payload: bare("B"),
@@ -10581,14 +10604,16 @@ v(2) {
                 name_span: span(),
                 type_params: vec![
                     TypeParam {
+                        presentation: Default::default(),
                         name: "A".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     },
                     TypeParam {
+                        presentation: Default::default(),
                         name: "B".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     },
                 ],
                 existential_params: Vec::new(),
@@ -11943,9 +11968,10 @@ v(2) {
                 items.push(host_type(
                     "Box",
                     vec![TypeParam {
+                        presentation: Default::default(),
                         name: "T".to_owned(),
                         span: span(),
-                        kind: Some(Kind::Star),
+                        kind: Some(Box::new(Kind::Star)),
                     }],
                     None,
                 ));
@@ -12048,6 +12074,7 @@ v(2) {
     fn type_application_never_rescans_a_frozen_source_range() {
         let signature = Signature::from_groups(vec![
             SignatureGroup::Type(vec![TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: span(),
                 kind: None,
@@ -12104,6 +12131,7 @@ v(2) {
         let interleaved = Signature::from_groups(vec![
             SignatureGroup::Value(vec![value_param("first", nominal("host", "A"))]),
             SignatureGroup::Type(vec![TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: span(),
                 kind: None,
@@ -12201,6 +12229,7 @@ v(2) {
     #[test]
     fn authoritative_projection_deeply_unfolds_aliases_without_losing_the_raw_cut() {
         let alias_param = TypeParam {
+            presentation: Default::default(),
             name: "A".to_owned(),
             span: span(),
             kind: None,
@@ -12229,6 +12258,7 @@ v(2) {
         ];
         let signature = Signature::from_groups(vec![
             SignatureGroup::Type(vec![TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: span(),
                 kind: None,
@@ -12499,6 +12529,7 @@ v(2) {
             unreachable!("test helper returned a newtype");
         };
         packed.existential_params.push(TypeParam {
+            presentation: Default::default(),
             name: "Hidden".to_owned(),
             span: span(),
             kind: None,

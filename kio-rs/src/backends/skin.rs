@@ -1774,6 +1774,7 @@ mod tests {
         let body = product(path("A"), path("B"));
         let ty = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: Span::new(0, 0),
                 kind: None,
@@ -1789,6 +1790,7 @@ mod tests {
     fn scoped_type_var_erasure_enters_nested_forall_without_touching_nominals() {
         let nested = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: Span::new(0, 0),
                 kind: None,
@@ -2106,6 +2108,7 @@ mod tests {
         // A `T` rebound by an enclosing `forall T.` is left untouched.
         let shadowed = Type::Forall {
             param: crate::ast::TypeParam {
+                presentation: Default::default(),
                 name: "T".to_owned(),
                 span: Span::new(0, 0),
                 kind: None,

@@ -8,4 +8,4 @@ host type Bool role(bool);
 
 host fn step(p0: (I32 & Str & Bool) -> I32) -> I32;
 
-host fn build(p0: I32 -> I32 & Str & Bool) -> I32;
+host fn build(p0: I32 -> (I32 & Str & Bool)) -> I32;

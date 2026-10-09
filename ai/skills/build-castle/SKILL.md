@@ -64,10 +64,9 @@ castle directories.
 The candidate gate tests whether documented Kio authoring and corpus
 runner documentation are sufficient for a worker to build and verify a
 castle. It is **not** a reason to move runner mechanics into public
-language docs. The builder's allowed and forbidden reading sets are
-stated once, in § Candidate-builder mode step 4; the supervisor may read
-the forbidden sources, but a fact discovered there is not builder-usable
-until it is routed to the correct durable home.
+language docs. The builder's documentation-reading policy is stated once,
+in § Candidate-builder mode step 4. Implementation inspection for integration
+or bug diagnosis is separate evidence, not proof that documentation sufficed.
 
 Measure size by the castle's own source as well as by integrated
 dependencies, but report the owned-source tier separately. Owned source
@@ -115,10 +114,11 @@ case layout for the shared file contract.
 ## Workflow
 
 This workflow is for the supervisor or for a one-off castle authoring
-task where the agent is not being used as a public-docs-only candidate
+task where the agent is not being used as a docs-first candidate
 builder. A spawned candidate builder follows § Candidate-builder mode
 instead: it is testing whether the public docs and runner docs are
-sufficient, so it must not use `ai/topics/` as Kio authoring guidance.
+sufficient. The documentation-reading policy in step 4 keeps that evidence
+distinct from repository maintenance and implementation inspection.
 The supervisor owns this workflow's `AGENTS.md` / topic-file reading
 before spawning the builder and turns any candidate-discovered gap into
 durable docs, runner docs, or skill guidance.
@@ -138,10 +138,9 @@ Do these in order. Steps 1–3 are mandatory reading before you touch any
    semantics, seed-as-fixture, and output readability.
 3. **Read [`ai/topics/kio-authoring.md`](../../topics/kio-authoring.md)**
    before editing `.kio` files (per the trigger table). It routes to the
-   public guides under [`docs/`](../../../docs/README.md) and carries the
-   agent deltas (the lowering mental model, fn-signature shape, package
-   skeleton, qualified-import default, `pub`-only-for-exports,
-   `&`-for-products). Its § Improving this guide is the authoring-feedback
+   portable [`KIO-FOR-AGENTS.md`](../../../KIO-FOR-AGENTS.md) workflow and
+   public guides, while retaining repository-specific obligations.
+   Its § Improving this guide is the authoring-feedback
    protocol this skill defers to (see § Doc-update discipline below).
 4. **Survey `test-data/poc/` up front.** Inspect the directory live —
    do **not** hardcode a module list; the corpus changes over time:
@@ -326,9 +325,9 @@ Do not, as part of building one castle:
   user to approve. Small `ai/topics/` sharpenings and small
   `docs/guides/` clarifications may land directly (see § Doc-update
   discipline);
-- let a **candidate builder** resolve an unclear language rule from
-  outside its allowed reading set (§ Candidate-builder mode step 4). The
-  builder reports the gap; the supervisor resolves it.
+- claim documentation success from compiler or fixture inspection without
+  recording the missing explanation and the separate diagnostic evidence
+  (§ Candidate-builder mode step 4).
 
 ## Candidate-builder mode
 
@@ -390,18 +389,24 @@ workflow.
    Do not let several builders create incomplete direct children under
    the same `test-data/castles/` tree: the castle orchestrator validates
    the whole direct-child corpus before applying a named filter, so one
-   incomplete sibling blocks every candidate's harness run. The builder
-   may read `docs/`,
-   `ci/infra/kio-test-runner-rs/README.md`,
-   `test-data/castles/README.md`, `TESTING.md` when needed for command
-   shape, and generated POC package docs from `kio doc build --md`. It
-   must not read `AGENTS.md`, `ai/**`, `specs/**`, `kio-rs/`, raw POC
-   source, existing goldens, supervisor scratchpads, or the supervisor's
-   private conclusions. (The skill system may require the builder to
-   load this `SKILL.md` before starting; that read is the only `ai/**`
-   exception and does not license browsing other `ai/**` files.) This
-   step is the single statement of the builder's allowed / forbidden
-   reading sets — other sections cite it rather than restating it.
+   incomplete sibling blocks every candidate's harness run.
+
+   **Documentation-reading policy:** follow mandatory repository and skill
+   instructions. Read the portable authoring guide, docs, and specs through
+   `kio manual`: start with `kio manual cat KIO-FOR-AGENTS.md` and
+   `kio manual cat docs/README.md`, discover paths with `kio manual tree`,
+   and begin ordinary language questions with the guides. Specs are available
+   for precise questions; record contradictions and ordinary language or idiom
+   guidance found only in the authoring guide/specs that the docs should teach.
+   Use the runner README, castle corpus README, `TESTING.md`, and generated
+   POC Kiodoc for their integration purposes. Source and fixture inspection
+   for integration or bug diagnosis is permitted, but record when it supplies
+   missing authoring knowledge instead of counting that as documentation
+   success. Do not use supervisor conclusions as a substitute for the reading
+   evidence. This policy tests the manual access path and learning material
+   separately; it does not impose a docs-only isolation boundary. A bounded
+   external docs-first authoring trial is a separate manual acceptance check,
+   not a restriction on every castle.
 5. **The builder** creates the candidate source and fixtures, runs
    `kio fmt <workdir>` to canonicalize the candidate (in-place;
    `--check` is the read-only form), then
@@ -410,7 +415,8 @@ workflow.
    `run.args`, and runs the named castle case through
    `ci/checks/orchestrators/castle-tests.sh` when practical. It hands
    back the full candidate plus exact commands run, outcomes, and every
-   point where documentation was missing, ambiguous, or misleading.
+   point where documentation was missing, ambiguous, misleading, or supplied
+   ordinary authoring knowledge only through the authoring guide/specs.
    The builder does **not** count missing corpus-runner mechanics as a
    public-doc gap when the supervisor brief supplied them. If the brief
    itself is unclear, that is a skill / corpus-contract issue for the
@@ -438,13 +444,13 @@ workflow.
    whether any planned castle family was blocked by documentation or
    runner protocol issues.
 
-Without execution-environment sandboxing this is not hard isolation:
-treat it as cooperative authoring. The builder reports what the allowed
-docs made possible; the supervisor enforces the repository contract.
+Treat this as cooperative authoring. The builder reports what the docs made
+possible and where other sources were needed; the supervisor enforces the
+repository contract.
 When sub-agents are unavailable, do not start a large batch. For a
 single castle, the supervisor may do the work only if it reports that
-candidate-builder isolation was unavailable and follows the same
-allowed-docs-first discipline.
+independent candidate review was unavailable and follows the same
+docs-first discipline.
 
 ## Doc-update discipline
 

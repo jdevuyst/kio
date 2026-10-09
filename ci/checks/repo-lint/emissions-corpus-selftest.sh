@@ -80,6 +80,23 @@ reset_fixture
 expect_pass 'baseline corpus'
 
 reset_fixture
+sed 's/target js/target (js, "js")/' "$fixture/js/case/workdir/case.pkg.kio" \
+  >"$fixture/js/case/workdir/case.new"
+mv "$fixture/js/case/workdir/case.new" "$fixture/js/case/workdir/case.pkg.kio"
+expect_pass 'paired header selects the bucket backend'
+
+sed 's/(js, "js")/(rust, "js")/' "$fixture/js/case/workdir/case.pkg.kio" \
+  >"$fixture/js/case/workdir/case.new"
+mv "$fixture/js/case/workdir/case.new" "$fixture/js/case/workdir/case.pkg.kio"
+expect_fail 'paired header uses backend rather than name' 'target must be js'
+
+reset_fixture
+sed 's/target js/target (js, "web")/' "$fixture/js/case/workdir/case.pkg.kio" \
+  >"$fixture/js/case/workdir/case.new"
+mv "$fixture/js/case/workdir/case.new" "$fixture/js/case/workdir/case.pkg.kio"
+expect_fail 'fixed build command needs the conventional target name' 'target name must match the backend'
+
+reset_fixture
 mv "$fixture/js" "$fixture/lua"
 expect_fail 'unknown backend' 'unknown corpus-root entry: lua'
 

@@ -9058,7 +9058,7 @@ mod tests {
         let mut module = parse_module(
             "module x; \
              host type I32 role(i32); \
-             host fn loop[S][R](step: S -> S | R, state: S) -> R; \
+             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
              fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
              rec(loop) fn value(n: I32) -> Box(I32) { \

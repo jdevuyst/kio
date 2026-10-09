@@ -164,10 +164,7 @@ See {base}/specs/cli.md#kio-lsp for the LSP subcommand's documented surface.";
 /// notification dispatch loop until `shutdown` / `exit`.
 pub fn run(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!(
-            "{}",
-            HELP_TEMPLATE.replace("{base}", crate::KIO_DOCS_BASE_URL)
-        );
+        println!("{}", crate::documentation_help(HELP_TEMPLATE));
         return ExitCode::Success;
     }
     if !args.is_empty() {

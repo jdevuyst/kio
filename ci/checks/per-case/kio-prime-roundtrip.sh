@@ -69,8 +69,9 @@ scratch_pkg="$scratch/case/$(basename "$pkg_file")"
 expected_exit=$(tr -d '[:space:]' <expected.exit)
 
 # Parse the copied manifest before deciding applicability. The helper emits a
-# canonical manifest only when a distinct selected target exists, with both
-# output roots redirected to check-owned relative paths.
+# canonical manifest only when a selected non-Prime backend target exists.
+# It retains that target's backend/configuration under a check-owned name and
+# adds a Prime target, with both output roots redirected to check-owned paths.
 prepare_status=0
 "$KIO_BIN" debug kio-prime-roundtrip-package \
   "$scratch_pkg" "$KIO_TARGET" >"$scratch_pkg.tmp" || prepare_status=$?
@@ -92,7 +93,7 @@ fi
 mv "$scratch_pkg.tmp" "$scratch_pkg"
 rm -rf "$scratch/case/__kio_roundtrip_target" "$scratch/case/__kio_roundtrip_prime"
 
-package_selector="./$(basename "$scratch_pkg")"
+package_name=$(basename "$scratch_pkg" .pkg.kio)
 direct="$scratch/case/__kio_roundtrip_target"
 emitted="$scratch/case/__kio_roundtrip_prime"
 combined_failed=0
@@ -103,7 +104,7 @@ combined_failed=0
 if [ "$expected_exit" = 0 ]; then
   if ! (
     cd "$scratch/case"
-    "$KIO_BIN" --no-cache build "$KIO_TARGET" kio-prime "$package_selector"
+    "$KIO_BIN" --no-cache build __kio_roundtrip_target __kio_roundtrip_prime --package "$package_name"
   ) >"$scratch/combined.log" 2>&1; then
     combined_failed=1
     rm -rf "$direct" "$emitted"
@@ -113,7 +114,7 @@ fi
 if [ "$expected_exit" != 0 ] || [ "$combined_failed" -ne 0 ]; then
   if ! (
     cd "$scratch/case"
-    "$KIO_BIN" --no-cache build "$KIO_TARGET" "$package_selector"
+    "$KIO_BIN" --no-cache build __kio_roundtrip_target --package "$package_name"
   ) >"$scratch/direct.log" 2>&1; then
     exit 0
   fi
@@ -124,7 +125,7 @@ if [ "$expected_exit" != 0 ] || [ "$combined_failed" -ne 0 ]; then
 
   if ! (
     cd "$scratch/case"
-    "$KIO_BIN" --no-cache build kio-prime "$package_selector"
+    "$KIO_BIN" --no-cache build __kio_roundtrip_prime --package "$package_name"
   ) >"$scratch/prime.log" 2>&1; then
     printf 'kio-prime-roundtrip: full compiler failed to emit Kio:\n' >&2
     cat "$scratch/prime.log" >&2
@@ -174,7 +175,7 @@ done
 
 if ! (
   cd "$emitted"
-  "$KIO_PRIME_BIN" --no-cache build "$KIO_TARGET" "$package_selector"
+  "$KIO_PRIME_BIN" --no-cache build __kio_roundtrip_target --package "$package_name"
 ) >"$scratch/reduced.log" 2>&1; then
   printf 'kio-prime-roundtrip: reduced compiler failed to build %s:\n' "$KIO_TARGET" >&2
   cat "$scratch/reduced.log" >&2

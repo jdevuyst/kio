@@ -1,0 +1,90 @@
+package shared_pkg;
+
+build {
+  cache "out/.kio-cache/";
+
+  target (js, "js-a") {
+    out "out/js-a/";
+    namespace "shared_a"
+  };
+
+  target (js, "js-b") {
+    out "out/js-b/";
+    namespace "shared_b"
+  };
+
+  target (ts, "ts-a") {
+    out "out/ts-a/";
+    namespace "shared_a"
+  };
+
+  target (ts, "ts-b") {
+    out "out/ts-b/";
+    namespace "shared_b"
+  };
+
+  target (python, "python-a") {
+    out "out/python-a/";
+    namespace "shared_a"
+  };
+
+  target (python, "python-b") {
+    out "out/python-b/";
+    namespace "shared_b"
+  };
+
+  target (java, "java-a") {
+    out "out/java-a/";
+    namespace "shared_a"
+  };
+
+  target (java, "java-b") {
+    out "out/java-b/";
+    namespace "shared_b"
+  };
+
+  target (rust, "rust-a") {
+    out "out/rust-a/";
+    namespace "shared_a"
+  };
+
+  target (rust, "rust-b") {
+    out "out/rust-b/";
+    namespace "shared_b"
+  };
+
+  target (go, "go-a") {
+    out "out/go-a/";
+    namespace "shared_a"
+  };
+
+  target (go, "go-b") {
+    out "out/go-b/";
+    namespace "shared_b"
+  };
+
+  target (swift, "swift-a") {
+    out "out/swift-a/";
+    namespace "SharedA"
+  };
+
+  target (swift, "swift-b") {
+    out "out/swift-b/";
+    namespace "SharedB"
+  };
+
+  target (haskell, "haskell-a") {
+    out "out/haskell-a/";
+    namespace "Data.Text"
+  };
+
+  target (haskell, "haskell-b") {
+    out "out/haskell-b/";
+    namespace "Data.Text.Runtime"
+  }
+}
+
+bridge {
+  greeter;
+  greeter/**
+}
