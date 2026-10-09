@@ -6,9 +6,9 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Comment-quality audit
 
-Code comments rot. [`ai/topics/comments.md`](../../topics/comments.md) is explicit about discipline at write-time ("default to no comments", "comment the WHY, not the WHAT", no task/fix/caller context) — but the project has no audit covering whether *existing* comments are still accurate. This skill is that audit.
+Anchor: [`ai/topics/comments.md` — Comment discipline](../../topics/comments.md). Its named rules govern comment purpose and context; this audit also checks whether existing comments remain accurate.
 
-The other audit skills touch comments tangentially: `audit-partial-implementations` catches stale-marker phrases (TODO / "for now" / "residual"); `audit-test-strategy` catches kio-rs internals in golden comments; `audit-skills` catches broken file references inside SKILL.md frontmatter. None of them check whether a comment that says *X does Y* is still true.
+The other audit skills touch comments tangentially: `audit-partial-implementations` catches stale-marker phrases (TODO / "for now" / "residual"); `audit-test-strategy` catches kio-rs internals in golden comments; `audit-skills` checks references and contract coverage in skill bodies. This audit owns whether a comment that says *X does Y* is still true.
 
 Read [`ai/topics/comments.md`](../../topics/comments.md) before starting; the comment-discipline heuristics this skill enforces (no WHAT-only comments, no historical residue, no commit-context references) reflect the project's settled style.
 

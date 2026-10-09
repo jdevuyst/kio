@@ -2,8 +2,8 @@
 
 This page is a faithful read-through of the elaborator proof-of-concept
 package at [`test-data/poc/elab/`](../../test-data/poc/elab/). That package is
-executable, `kio test`-checked, and built and run against every declared
-target in CI, so it is *ground truth*: every elaborator, rule, and law shown
+executable and `kio test`-checked, with the harness building and running it
+across supported targets under CI-selected coverage. It is *ground truth*: every elaborator, rule, and law shown
 here exists in the package exactly as written, and the laws below are the
 `equiv` blocks the package's demo entry discharges.
 
@@ -75,12 +75,12 @@ layout:
   integer/bool stringifiers. A user replaces these with their own host.
 
 The source-to-target coercion elaborators are all declared with the same call
-type — `[Source](Source)[Target] -> Target`: a single value parameter (the
+type — `[Source] Source -> [Target] Target`: a single value parameter (the
 source) and a target type-argument that follows the value, exactly
 the source-to-target shape the language mechanism specifies. Not every
 elaborator shares that shape — `match!`, `zip!` / `map!`, and `set!` / `get!`
-take a second value parameter, and `type_of!` takes none (only a type
-argument). A block call supplies the final value slots through the declared
+take a second value parameter, and `type_of!` takes a type argument and a
+Unit value. A block call supplies the final value slots through the declared
 blocks: `match! value { clauses }` projects its product block into the clause
 argument. The bang at the call site (`iso!`, `fit!`, `match!`, …)
 runs the declared `impl` over the reflected source value and target type;
@@ -296,7 +296,7 @@ and "miss" arm with it).
 ### `widen_prod!` — diagonal
 
 Extends the source to a wider product target by **duplicating source slots**
-(the diagonal) and synthesizing `__unit__` at `.`-typed target slots; the
+(the diagonal) and synthesizing the Unit value `()` at `.`-typed target slots; the
 source multiset must be a sub-multiset of the target's. The source-order
 duplication rule: target slot *k* of type `T` reads source slot *k* of type
 `T` if it exists, else source slot 0 of that type. This is the one spine form

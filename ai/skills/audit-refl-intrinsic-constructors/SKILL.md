@@ -4,107 +4,82 @@ description: Verify reflected intrinsic term constructors stay in 1-1 name corre
 allowed-tools: Read, Grep, Bash
 ---
 
-# Reflection Intrinsic Constructor Audit
+# Reflection intrinsic constructor audit
 
-This audit keeps the `__refl__` term-construction surface tidy:
+Anchors: [`specs/language.md` § Module system](../../../specs/language.md#module-system),
+**Compile-time helper import**, and [`specs/formal/elaboration.md` § 7.4. Elaborator bangs](../../../specs/formal/elaboration.md#74-elaborator-bangs),
+the `__comptime__` checked-term ABI. Read the applicable constructor contracts first.
+This audit distinguishes core `__term_*__` constructors from reflected
+intrinsic calls `__intrinsic_*__`. An intrinsic such as `__pair__` has the
+reflected constructor `__intrinsic_pair__`; inventory, typing, and evaluation
+must agree on that mapping.
 
-- core-language term constructors use `term_*`;
-- intrinsic-call term constructors use `__intrinsic_*__`;
-- every `__intrinsics__` value has exactly one reflected intrinsic constructor named by stripping the leading/trailing double underscores from the intrinsic name and wrapping the result as `__intrinsic_<name>__` (so `__pair__` → `__intrinsic_pair__`);
-- no legacy intrinsic-shaped `term_*` constructor is reintroduced.
+Default to source and existing evidence inspection. Name parity alone does not
+prove that a constructor evaluates or reconstructs the intended intrinsic.
 
-## 1. Run The Parity Check
+## 1. Inventory and name parity
 
-From the repo root, run:
+Read `PRIME_INTRINSICS` in `kio-rs/src/pass/resolve.rs`, the reflection schemes
+in `kio-rs/src/pass/typecheck_core/synth.rs`, and `ComptimeBuiltin`'s public-name
+mapping in `kio-rs/src/comptime.rs`. For each intrinsic, derive exactly one
+`__intrinsic_<name>__` spelling by stripping its enclosing double underscores.
+Compare both directions: missing and extra entries are findings. Check mapping
+multiplicity and inverse consistency, not just sets of strings found anywhere
+in a file. Comments and repeated references are not extra declarations.
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import sys
+Useful discovery:
 
-root = Path(".")
-resolve = (root / "kio-rs/src/pass/resolve.rs").read_text()
-synth = (root / "kio-rs/src/pass/typecheck_core/synth.rs").read_text()
-eval_rs = (root / "kio-rs/src/comptime.rs").read_text()
-
-match = re.search(r"pub const PRIME_INTRINSICS: &\[&str\] = &\[(.*?)\];", resolve, re.S)
-if not match:
-    print("could not find PRIME_INTRINSICS in kio-rs/src/pass/resolve.rs")
-    sys.exit(1)
-
-intrinsics = re.findall(r'"(__[A-Za-z0-9_]+__)"', match.group(1))
-expected = {
-    name: "__intrinsic_" + name.removeprefix("__").removesuffix("__") + "__"
-    for name in intrinsics
-}
-
-scheme_names = set(re.findall(r'"(__intrinsic_[A-Za-z0-9_]+__)"', synth))
-eval_names = set(re.findall(r'"(__intrinsic_[A-Za-z0-9_]+__)"', eval_rs))
-expected_names = set(expected.values())
-
-errors = []
-for intrinsic, refl_name in expected.items():
-    if refl_name not in scheme_names:
-        errors.append(f"{intrinsic} is missing reflection scheme {refl_name}")
-    if refl_name not in eval_names:
-        errors.append(f"{intrinsic} is missing evaluator arm {refl_name}")
-
-extra_scheme = sorted(scheme_names - expected_names)
-extra_eval = sorted(eval_names - expected_names)
-if extra_scheme:
-    errors.append("extra __intrinsic_*__ reflection scheme(s): " + ", ".join(extra_scheme))
-if extra_eval:
-    errors.append("extra __intrinsic_*__ evaluator arm(s): " + ", ".join(extra_eval))
-
-legacy = sorted(
-    set(
-        re.findall(
-            r'"(term_(?:left|right|either|product|fst|snd|absurd|if_then_else|mk_[A-Za-z0-9_]+))"',
-            synth + "\n" + eval_rs,
-        )
-    )
-)
-if legacy:
-    errors.append("legacy intrinsic-shaped term_* constructor(s): " + ", ".join(legacy))
-
-if errors:
-    print("\n".join(errors))
-    sys.exit(1)
-
-for intrinsic, refl_name in expected.items():
-    print(f"{intrinsic} -> {refl_name}")
-PY
+```sh
+rg -n 'PRIME_INTRINSICS|__intrinsic_' kio-rs/src/pass/resolve.rs \
+  kio-rs/src/pass/typecheck_core/synth.rs kio-rs/src/comptime.rs
 ```
 
-Findings:
+`comptime.rs` owns names and classifications, not evaluator dispatch. Do not
+describe finding a name there as finding an evaluator arm. Read each scheme
+against the intrinsic's argument/result contract; a matching spelling is not
+type-scheme parity.
 
-- **Missing reflected constructor** — an intrinsic in `PRIME_INTRINSICS` lacks its `__intrinsic_*__` scheme or evaluator arm.
-- **Extra reflected intrinsic constructor** — an `__intrinsic_*__` constructor exists without a matching `__intrinsics__` value.
-- **Legacy constructor name** — a reflected intrinsic call is exposed as `term_*` rather than `__intrinsic_*__`.
+## 2. Trace evaluation and reconstruction
 
-## 2. Check Elaborator POCs
+For each mapped constructor, follow its `ComptimeBuiltin` variant through
+`kio-rs/src/normalization.rs` and
+`kio-rs/src/normalization/execution/reflection.rs`: primitive application,
+direct evaluator lowering/execution where applicable, checked-term creation,
+and reconstruction into the corresponding ordinary intrinsic call. Mark a
+shared or delegated path explicitly rather than requiring a separate local
+match arm. An inventory entry, fallthrough, or unevaluated primitive is not a
+successful implementation of a reducible constructor.
 
-Run:
+Record existing unit and user-elaborator evidence that reaches each distinct
+path and checks its reconstructed term/type or observable behavior. A search
+hit or unexecuted test is source coverage, not execution evidence. Report
+missing paths and missing evidence separately. Any requested execution follows
+[`local-ci.md` § Local gate coverage](../../topics/local-ci.md#local-gate-coverage);
+this audit does not require a broad matrix or compiler build by default.
 
-```bash
-grep -R -nE '\bterm_(left|right|either|product|fst|snd|absurd|if_then_else|mk_[A-Za-z0-9_]+)\b' test-data/poc/elab/ || true
-grep -R -nE '__intrinsic_(left|right|either|pair|fst|snd|if_then_else|absurd)__' test-data/poc/elab/
-```
+## 3. Public vocabulary and examples
 
-Every first-command hit is a finding unless it is part of an unrelated local helper name rather than a `__refl__` import/call. The second command should show intrinsic-call constructors only under the `__intrinsic_*__` names.
+Inspect the compile-time helper contract and the worked elaborators under
+`test-data/poc/elab/`. Public imports use `__comptime__`; core term builders use
+the documented `__term_*__` names, while intrinsic-call builders use
+`__intrinsic_*__`. Search for old `__refl__` imports and bare `term_*` builders
+as drift candidates, distinguishing unrelated local helpers and intentional
+rejection tests. Classify canonical source owners rather than treating copied
+dependencies as independent definitions.
 
-## 3. Check The Spec
-
-Read `specs/language.md` around the user-defined elaborator hygiene paragraph. It must state:
-
-- generated elaborator terms are hygienic;
-- callers are not required to import `__intrinsics__` for intrinsic calls emitted by an elaborator;
-- reflected term constructors are split into core `term_*` constructors and intrinsic-call `__intrinsic_*__` constructors;
-- the listed `__intrinsic_*__` names mirror the `__intrinsics__` value names.
+Verify the documented hygienic expansion rule: callers do not acquire a
+requirement to import `__intrinsics__` merely because an elaborator emits an
+intrinsic call. Retain the distinction between core-language construction and
+intrinsic construction; do not widen the builtin surface to make the lists
+agree.
 
 ## 4. Report
 
-Group findings by file and rule. For each, cite the missing, extra, or wrongly named constructor and whether the mismatch appears in the scheme, evaluator, POC corpus, or spec.
+For each finding, cite the contract, constructor, source owner, and whether the
+defect concerns inventory, scheme, dispatch/reconstruction, public vocabulary,
+or evidence. Keep inspected source, existing execution receipts, and unverified
+paths distinct.
 
-**Default: report only.** If invoked with a fix-it directive, follow [`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md). Fixes should update the scheme, evaluator, POCs/goldens, and `specs/language.md` together, then run focused user-elaborator checks.
+**Default: report only.** For a fix directive, follow
+[`audit-fix-mode.md`](../../topics/audit-fix-mode.md). A builtin-module change
+still requires its specific approval; this audit supplies no such authority.

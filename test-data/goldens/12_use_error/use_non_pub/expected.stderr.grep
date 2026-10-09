@@ -1,2 +1,4 @@
 `secret`
 `helper`
+--> helper.kio:
+fn secret\(

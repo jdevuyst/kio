@@ -1,6 +1,6 @@
 #!/bin/sh
 # A missing explicit manifest is rejected despite a valid shallow decoy.
-# A custom script supplies a hermetic file:// repository. Selection fails
+# A custom script supplies a hermetic local Git repository. Selection fails
 # before a first lock or materialized tree is written, including under --force.
 set -u
 fail() {
@@ -23,7 +23,7 @@ GIT_COMMITTER_DATE='2020-01-01T00:00:00 +0000' \
   git -C "$repository" commit --quiet -m fixture || fail "commit fixture"
 {
   printf 'dependency lib;\n\nsource {\n'
-  printf '  git "file://%s";\n  ref "main";\n' "$repository"
+  printf '  git "%s";\n  ref "main";\n' "$repository"
   printf '  path "packages/missing/lib.pkg.kio"\n}\n'
 } > "$scratch/consumer/lib.dep.kio"
 cd "$scratch/consumer" || fail "enter consumer"

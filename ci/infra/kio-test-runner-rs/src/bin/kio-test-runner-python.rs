@@ -1571,6 +1571,8 @@ elif PROTOCOL == "nested-curried-roundtrip":
 elif PROTOCOL == "host-substituted-unit-callback":
     _print(_base("api").viaHost(module.kio_lift(lambda _unit: "callback")) + "\n")
 elif PROTOCOL == "returned-forall-call-by-value":
+    _base("main").main()
+elif PROTOCOL == "returned-forall-host-failure":
     run = _base("main").main
     run()
     try:
@@ -1940,6 +1942,9 @@ fn python_driver(protocol: RunnerProtocol) -> &'static str {
         }
         ProtocolExecution::Invoke(ExportDriver::ReturnedForallCallByValue) => {
             "returned-forall-call-by-value"
+        }
+        ProtocolExecution::Invoke(ExportDriver::ReturnedForallHostFailure) => {
+            "returned-forall-host-failure"
         }
         ProtocolExecution::Invoke(ExportDriver::FacadeSelectorCollisions) => {
             "facade-selector-collisions"

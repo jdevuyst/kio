@@ -1,0 +1,7 @@
+module testapi/fmt;
+
+import testapi(F32, F64, String);
+
+host fn f32_to_string(value: F32) -> String;
+
+host fn f64_to_string(value: F64) -> String;

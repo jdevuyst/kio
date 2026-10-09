@@ -4,6 +4,52 @@ use crate::ast::Routed;
 
 const RUNTIME: &str = include_str!("runtime.py");
 
+#[cfg(test)]
+mod runtime_tests {
+    use super::RUNTIME;
+
+    #[test]
+    fn product_projection_does_not_collect_argument_slots() {
+        let projection = RUNTIME
+            .split_once("def _product_slot(")
+            .unwrap()
+            .1
+            .split_once("def _sum_inject(")
+            .unwrap()
+            .0;
+        assert!(!projection.contains("_product_slots("));
+    }
+
+    #[test]
+    fn guest_binding_does_not_collect_argument_slots() {
+        let callable = RUNTIME
+            .split_once("class _KioFunction(KioFn):")
+            .unwrap()
+            .1
+            .split_once("class _KioPoly(")
+            .unwrap()
+            .0;
+        let guest = RUNTIME
+            .split_once("    def _make_fn(")
+            .unwrap()
+            .1
+            .split_once("    def eval(")
+            .unwrap()
+            .0;
+        assert!(!callable.contains("_product_slots("));
+        assert!(!guest.contains("_product_slots("));
+
+        let host = RUNTIME
+            .split_once("    def _host_fn_value(")
+            .unwrap()
+            .1
+            .split_once("    def _call_prepared_host(")
+            .unwrap()
+            .0;
+        assert!(host.contains("_product_slots("));
+    }
+}
+
 #[derive(Debug)]
 pub struct EmitError {
     pub message: String,

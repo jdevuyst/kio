@@ -106,6 +106,22 @@ check_surface() {
   printf '%s\n' "$cs_out" | grep -qF "Exit codes (per kio manual cat specs/exit-codes.md ($base/specs/exit-codes.md)" \
     || fail "kio $cs_words --help: missing offline-first Exit-codes block"
 
+  cs_codes=
+  case "$cs_words" in
+    fmt | sig | 'sig '*) cs_codes='1 2' ;;
+    build | check | test) cs_codes=1 ;;
+  esac
+  cs_exit=$(printf '%s\n' "$cs_out" | sed -n '/^Exit codes/,/^$/p')
+  for cs_code in $cs_codes; do
+    printf '%s\n' "$cs_exit" | grep -qE "(^|[[:space:]])${cs_code}([[:space:];.)]|$)" \
+      || fail "kio $cs_words --help: missing exit category $cs_code"
+  done
+  if [ "$cs_words" = dep ]; then
+    if printf '%s\n' "$cs_exit" | grep -qF 'no named dependency matched'; then
+      fail 'kio dep --help: an unknown dependency is not a successful selector'
+    fi
+  fi
+
   # §C2.3 — spec footer `See <BASE>/specs/cli.md#<anchor> …`.
   printf '%s\n' "$cs_out" | grep -qF "See kio manual cat specs/cli.md ($base/specs/cli.md#" \
     || fail "kio $cs_words --help: missing offline-first spec footer"

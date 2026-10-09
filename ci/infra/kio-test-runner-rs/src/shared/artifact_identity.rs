@@ -314,7 +314,13 @@ fn resolve(
     }
     let namespace = match backend {
         "js" | "ts" => package_name.to_owned(),
-        "python" => keyword_escape(package_name, PYTHON_KEYWORDS),
+        "python" => {
+            if PYTHON_KEYWORDS.contains(&package_name) || python_static_namespace(package_name) {
+                escape_default(package_name)
+            } else {
+                package_name.to_owned()
+            }
+        }
         "java" => {
             if JAVA_KEYWORDS.contains(&package_name)
                 || matches!(
@@ -388,7 +394,11 @@ fn kio_package_name(value: &str) -> bool {
 fn validate_explicit_namespace(backend: &str, value: &str) -> Result<(), String> {
     let valid = match backend {
         "js" | "ts" => ascii_ident(value),
-        "python" => ascii_ident(value) && !PYTHON_KEYWORDS.contains(&value),
+        "python" => {
+            ascii_ident(value)
+                && !PYTHON_KEYWORDS.contains(&value)
+                && !python_static_namespace(value)
+        }
         "java" => {
             let segments_ok = value.split('.').all(java_ident);
             let brand = pascal_case(value.rsplit('.').next().unwrap_or(value));
@@ -527,18 +537,27 @@ pub(crate) fn value_brand(namespace: &str) -> String {
     }
 }
 
+fn python_static_namespace(name: &str) -> bool {
+    name.strip_prefix("kio_static_v").is_some_and(|version| {
+        !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
 fn swift_support_brand_collision(name: &str) -> bool {
-    matches!(name, "KioUnit" | "Product" | "Sum")
-        || [
-            "KioFacade_",
-            "KioHostType_",
-            "KioHostTypeMk_",
-            "KioNewtype_",
-            "KioNewtypeMk_",
-            "KioForall_",
-        ]
-        .iter()
-        .any(|prefix| name.starts_with(prefix))
+    matches!(
+        name,
+        "KioUnit" | "KioNative" | "KioNativeConstructor" | "Product" | "Sum"
+    ) || [
+        "KioFacade_",
+        "KioHostType_",
+        "KioHostTypeMk_",
+        "KioHostTypeIdentity_",
+        "KioNewtype_",
+        "KioNewtypeMk_",
+        "KioForall_",
+    ]
+    .iter()
+    .any(|prefix| name.starts_with(prefix))
         || name.strip_prefix("KioApply").is_some_and(|arity| {
             !arity.is_empty() && arity.bytes().all(|byte| byte.is_ascii_digit())
         })
@@ -586,6 +605,10 @@ mod tests {
             ("ts", "greeter", "greeter"),
             ("python", "match", "match"),
             ("python", "class", "__kio_pkg_class"),
+            ("python", "kio_static_v1", "__kio_pkg_kio_ustatic_uv1"),
+            ("python", "kio_static_v23", "__kio_pkg_kio_ustatic_uv23"),
+            ("python", "kio_static_v", "kio_static_v"),
+            ("python", "kio_static_v2_extra", "kio_static_v2_extra"),
             ("java", "package", "__kio_pkg_package"),
             ("java", "shapes", "__kio_pkg_shapes"),
             ("rust", "two_part", "two_part"),
@@ -598,6 +621,13 @@ mod tests {
             ("go", "kio_sum", "kio_sum"),
             ("swift", "csv_reconcile", "CsvReconcile"),
             ("swift", "foundation", "KioPkg_Foundation"),
+            ("swift", "kio_native", "KioPkg_KioNative"),
+            (
+                "swift",
+                "kio_native_constructor",
+                "KioPkg_KioNativeConstructor",
+            ),
+            ("swift", "kio_native_extra", "KioNativeExtra"),
             ("haskell", "csv_reconcile", "CsvReconcile"),
             ("haskell", "main", "KioPkg_Main"),
         ];
@@ -715,6 +745,8 @@ mod tests {
         for (backend, accepted) in [
             ("js", "pkg_name"),
             ("python", "pkg_name"),
+            ("python", "kio_static_v"),
+            ("python", "kio_static_v2_extra"),
             ("java", "com.acme.pkg"),
             ("rust", "acme-pkg"),
             ("go", "acme_pkg"),
@@ -724,6 +756,9 @@ mod tests {
             ("go", "kio_sum"),
             ("go", "____"),
             ("swift", "AcmePkg"),
+            ("swift", "KioNativeExtra"),
+            ("swift", "KioNativeConstructorExtra"),
+            ("swift", "KioHostTypeIdentity"),
             ("haskell", "Com.Acme.Pkg"),
         ] {
             validate_explicit_namespace(backend, accepted)
@@ -732,11 +767,16 @@ mod tests {
         for (backend, rejected) in [
             ("js", "pkg/name"),
             ("python", "class"),
+            ("python", "kio_static_v1"),
+            ("python", "kio_static_v23"),
             ("java", "com.class.pkg"),
             ("rust", "match"),
             ("go", "main"),
             ("go", "_"),
             ("swift", "Foundation"),
+            ("swift", "KioNative"),
+            ("swift", "KioNativeConstructor"),
+            ("swift", "KioHostTypeIdentity_api__Box"),
             ("haskell", "Main"),
         ] {
             assert!(

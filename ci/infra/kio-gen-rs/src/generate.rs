@@ -19,21 +19,16 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use rand_chacha::ChaCha20Rng;
 
 use kio_gen::ast::{
-    Base, Program, Term, Type, UfcsKind, UserElaboratorCapture, UserElaboratorImplementation,
-    UserElaboratorSpec, UserElaboratorTemplate,
+    Base, Program, Term, Type, UfcsKind, UfcsSpelling, UserElaboratorCapture,
+    UserElaboratorImplementation, UserElaboratorSpec, UserElaboratorTemplate,
 };
 use kio_gen::render::term_uses_surface_forms;
 
 const SAMPLE_STRINGS: &[&str] = &["", "hello", "kio", "world", "foo", "bar", "baz", "x"];
 
-/// Reserved / keyword identifiers from popular languages that the
-/// generator deliberately picks for binding names every once in a
-/// while. The point is to exercise kio-rs's parser, typechecker, and
-/// (eventually) JS-codegen mangling on identifiers that collide with
-/// other languages' reserved words. JS is the live backend today —
-/// the kio-rs JS-emit path already mangles colliding identifiers
-/// (per `bootstrap.md` Open questions), so we want to keep it
-/// honest. Names are filtered to fit kio-rs's identifier rule
+/// Reserved / keyword identifiers exercise parsing, typechecking and
+/// collision-safe emitted bindings across the applicable backends.
+/// Names are filtered to fit kio-rs's identifier rule
 /// (`[a-z_][a-z0-9_]*`) and to avoid Kio contextual words the
 /// parser routes specially at binding positions.
 const RESERVED_NAMES: &[&str] = &[
@@ -384,8 +379,8 @@ fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32, surface_mode:
 
 /// The fixed nullary newtypes the generator can use, paired with the
 /// flat wrapper-function names declared in the generated root module. The
-/// wrappers exist because kio-rs doesn't yet support cross-module
-/// dotted-path access; the wrapper's name fills the `constructor` /
+/// wrappers match this generator's flat callee representation:
+/// the wrapper's name fills the `constructor` /
 /// `projector` slot of `Type::Nominal` and is used as the callee in
 /// generated `Term::App`s.
 pub fn nominal_catalog() -> Vec<Type> {
@@ -602,40 +597,35 @@ fn base_literal<R: Rng>(rng: &mut R, b: Base) -> Term {
     }
 }
 
-/// Maybe rewrap a freshly-generated `PolyCall` or `App` as a UFCS
-/// receiver-first call (per `specs/language.md` § UFCS). The
-/// receiver is the first value-arg of the underlying call; type
-/// arguments stay on the side channel because the surface form
-/// doesn't accept user-supplied type-args (the typer backsolves
-/// them from the receiver and the remaining value-args). Only
-/// fires in surface mode and only on calls with at least one
-/// value-arg.
-///
-/// kio-rs's UFCS resolution requires the receiver's monotype to
-/// equal the callee's first value-parameter type. The generator
-/// only emits well-typed calls, so a UFCS rewrap is safe: the
-/// receiver already has the right type by construction.
+/// Remove the selected endpoint value from an already typed ordinary call;
+/// the matching dot-splice spelling restores exactly that slot.
 fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term {
     if !surface_mode || !rng.gen_bool(0.2) {
         return term;
     }
+    let spelling = UfcsSpelling::ALL[rng.gen_range(0..4)];
+    let explicit_type_args = rng.gen_bool(0.5);
     match term {
         Term::PolyCall {
             name,
             type_args,
-            args,
+            mut args,
         } if !args.is_empty() => {
-            let mut iter = args.into_iter();
-            let receiver = iter.next().unwrap();
-            let rest_args: Vec<Term> = iter.collect();
+            let receiver = args.remove(if spelling.inserts_first() {
+                0
+            } else {
+                args.len() - 1
+            });
             Term::Ufcs {
                 receiver: Box::new(receiver),
                 callee_name: name,
-                rest_args,
+                rest_args: args,
                 callee_kind: UfcsKind::PolyCall { type_args },
+                spelling,
+                explicit_type_args,
             }
         }
-        Term::App(f, args) if !args.is_empty() => {
+        Term::App(f, mut args) if !args.is_empty() => {
             let name = match *f {
                 Term::Var(n) => n,
                 other => {
@@ -645,32 +635,35 @@ fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term 
                     return Term::App(Box::new(other), args);
                 }
             };
-            let mut iter = args.into_iter();
-            let receiver = iter.next().unwrap();
-            let rest_args: Vec<Term> = iter.collect();
+            let receiver = args.remove(if spelling.inserts_first() {
+                0
+            } else {
+                args.len() - 1
+            });
             Term::Ufcs {
                 receiver: Box::new(receiver),
                 callee_name: name,
-                rest_args,
+                rest_args: args,
                 callee_kind: UfcsKind::App,
+                spelling,
+                explicit_type_args: false,
             }
         }
         other => other,
     }
 }
 
-/// Maybe wrap `inner` in one of the 17 surface elaborator forms — the
-/// 9-form spine palette (`reorder_sum!`, `reorder_prod!`,
+/// Maybe wrap `inner` in one of the surface elaborator forms — the
+/// spine palette (`reorder_sum!`, `reorder_prod!`,
 /// `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`,
-/// `one_sum!`, `one_prod!`, `fit!`) or the 5-form algebraic palette
-/// (`iso!`, `into!`, `onto!`, `align!`, `atom!`).
+/// `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`, `fit!`)
+/// or the algebraic palette (`iso!`, `into!`, `onto!`, `align!`,
+/// `ease!`, `atom!`).
 ///
-/// Spine forms are the everyday palette (per `specs/language.md`
-/// § Spine-palette elaborators) and dominate the wrap choice; algebraic
+/// Spine forms are the everyday palette (see `docs/poc/elab.md`)
+/// and dominate the wrap choice; algebraic
 /// forms keep a low non-zero share to exercise the algebraic
-/// codepath without skewing coverage. Today's split: spine ~80%,
-/// algebraic ~20% (within the 10% of expressions that get wrapped
-/// at all). When neither subset has any per-form applicability at
+/// codepath without skewing coverage. When the selected subset has no per-form applicability at
 /// the inner type (`inner_ty`'s shape rules out every form on that
 /// side), the routine falls through to no wrap; this can happen on
 /// composite non-simple non-sum non-product types when the algebraic
@@ -680,14 +673,10 @@ fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term 
 /// the Kio' fallback (passthrough) is sound for every form — the
 /// inner expression's type *is* the result type, and each elaborator
 /// admits identity at every applicable position. Callers must
-/// invoke this at *check positions* — kio-rs's typer routes the
-/// elaborator call through `check_value_against` and rejects them in
-/// synth-only positions ("appears in synth-only position here")
-/// with exit 14. In practice that means the value-arg slots of
-/// intrinsic `PolyCall`s (where the type-arg pins the expected
-/// type) and the fn body (return-type position) — the let body /
-/// let RHS / `__either__` scrutinee / `__fst__` / `__snd__`
-/// scrutinee are synth positions and must NOT be wrapped here.
+/// invoke this at *check positions*, where an expected type makes
+/// the identity target determinate. The generator uses value-arg
+/// slots of intrinsic `PolyCall`s (whose type argument pins the
+/// expected type) and function bodies with declared return types.
 ///
 /// **Per-form applicability** (filtered by `inner_ty`'s outermost
 /// shape):

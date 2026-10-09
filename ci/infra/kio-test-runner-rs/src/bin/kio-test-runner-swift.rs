@@ -1028,9 +1028,8 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
     {
         return "struct KioRunnerReturnedForall: Env_testapi_main__produce_retImplementation {\n\
                 \ttypealias H = StubHost\n\
-                \tfunc specialize<KioType_0>(_ type: KioType_0.Type) -> KioType_0 {\n\
-                \t\t_ = type\n\
-                \t\treturn (KioUnit() as Any) as! KioType_0\n\
+                \tfunc specialize<KioType_0>(_: KioType_0.Type) -> KioUnit {\n\
+                \t\treturn KioUnit()\n\
                 \t}\n\
                 }\n\n"
             .to_owned();
@@ -1179,7 +1178,7 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
         .iter()
         .any(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit));
     if has_returned_forall_state {
-        out.push_str("var returnedForallProduced = false\nvar returnedForallFailed = false\n\n");
+        out.push_str("var returnedForallProduced = false\n\n");
     }
 
     out.push_str(&format!("struct StubHost: {handle}Host {{\n"));
@@ -1200,13 +1199,7 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
     }
     for (method, binding) in host.methods().zip(contract.host_fns) {
         let kind = canonical_kind(binding.body);
-        out.push_str(&render_method(
-            method,
-            binding,
-            &kind,
-            contract.host_types,
-            has_returned_forall_state,
-        ));
+        out.push_str(&render_method(method, binding, &kind, contract.host_types));
         out.push('\n');
     }
     out.push_str("}\n\n");
@@ -1777,12 +1770,10 @@ print(poly.specialize(asKioType: Int32.self)(Int32(73)))
             let api = module("api");
             format!("print({api}.viaHost({{ (_unit: KioUnit) -> String in \"callback\" }}))\n")
         }
-        ExportDriver::ReturnedForallCallByValue => format!(
-            "{main_ns}.main()\n\
-             {main_ns}.main()\n\
-             precondition(returnedForallFailed, \"produce did not fail\")\n\
-             print(\"caught\")\n"
-        ),
+        ExportDriver::ReturnedForallCallByValue => format!("{main_ns}.main()\n"),
+        ExportDriver::ReturnedForallHostFailure => {
+            "fatalError(\"returned-forall-host-failure requires catchable failures; Swift host methods are non-throwing\")\n".to_owned()
+        }
         ExportDriver::PublicWordNames => format!(
             "let wordApi = {root_ns}.wordApi\n\
              print(wordApi.readWord())\n\
@@ -1873,13 +1864,9 @@ fn render_method(
     binding: &HostFnBinding,
     kind: &CanonicalKind,
     host_types: &[HostTypeBinding],
-    has_returned_forall_state: bool,
 ) -> String {
     let sig = render_method_sig(m);
-    let mut body = render_swift_body_for_binding(binding, kind, m, host_types);
-    if has_returned_forall_state && matches!(binding.body, HostFnBodyKind::TraceUnit { .. }) {
-        body = format!("if !returnedForallFailed {{ {body} }}");
-    }
+    let body = render_swift_body_for_binding(binding, kind, m, host_types);
     format!("func {sig} {{\n{body}\n}}\n")
 }
 
@@ -2033,7 +2020,7 @@ fn render_swift_body_for_binding(
         }
         HostFnBodyKind::ReturnedForallUnit => {
             format!(
-                "if returnedForallProduced {{\n    print(\"throw\")\n    returnedForallFailed = true\n}} else {{\n    returnedForallProduced = true\n    print(\"produce\")\n}}\nreturn {}(KioRunnerReturnedForall())",
+                "precondition(!returnedForallProduced, \"produce called more than once\")\nreturnedForallProduced = true\nprint(\"produce\")\nreturn {}(KioRunnerReturnedForall())",
                 m.ret_type
             )
         }
@@ -2420,17 +2407,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn trace_unit_uses_failure_guard_only_with_returned_forall_state() {
-        for (protocol, guarded) in [
-            (RunnerProtocol::TypeOnlyStageTrace, false),
-            (RunnerProtocol::ReturnedForallCallByValue, true),
+    fn trace_unit_effects_are_not_suppressed_by_simulated_failure() {
+        for protocol in [
+            RunnerProtocol::TypeOnlyStageTrace,
+            RunnerProtocol::ReturnedForallCallByValue,
         ] {
             let host = swift_host_api_for_protocol(protocol);
             let driver = build_driver("TraceProbe", &host, protocol);
-            assert_eq!(driver.contains("var returnedForallFailed = false"), guarded);
-            assert_eq!(driver.contains("if !returnedForallFailed"), guarded);
+            assert!(!driver.contains("returnedForallFailed"), "{driver}");
             assert!(driver.contains("print(\"observe\")"));
             assert!(driver.contains("print(\"consume\")"));
+            assert!(!driver.contains("print(\"caught\")"));
         }
     }
 
@@ -2748,7 +2735,7 @@ mod tests {
             "{driver}"
         );
         assert!(
-            driver.contains("func specialize<KioType_0>(_ type: KioType_0.Type) -> KioType_0"),
+            driver.contains("func specialize<KioType_0>(_: KioType_0.Type) -> KioUnit"),
             "{driver}"
         );
         assert!(

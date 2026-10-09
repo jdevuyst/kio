@@ -2,8 +2,8 @@
 
 `varop` defines a delimited expression containing any number of comma-separated
 elements. It names ordinary functions that combine those elements from the
-left or right. This guide builds on [functions and newtypes](../tutorials/language.md)
-and [fixed operators](operators.md).
+left or right. This guide builds on [functions](../tutorials/language.md),
+[newtypes](declarations.md#nominal-newtypes), and [fixed operators](operators.md).
 
 <!--kio {harness=collections accumulate placeholder="__INSERT_CODE_HERE__"}
 bridge {

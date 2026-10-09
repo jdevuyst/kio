@@ -535,6 +535,36 @@ mod operator_suffix_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn boolean_literals_require_adjacent_marker() {
+        for literal in [". t", ".\nf", ".// keep\nt"] {
+            let source = format!("module x; fn f() {{ {literal} }}");
+            let error = super::parse(&source).expect_err("separated boolean marker");
+            assert!(error.diag().1.contains("immediately after `.`"), "{source}");
+        }
+        for literal in [".t", ".f"] {
+            super::parse(&format!("module x; fn f() {{ {literal} }}")).expect("adjacent marker");
+        }
+    }
+
+    #[test]
+    fn host_declarations_reject_scoped_visibility() {
+        for declaration in ["fn f() -> .;", "type T;"] {
+            let source = format!("module x; pub(x) host {declaration}");
+            let error = super::parse(&source).expect_err("host cannot be scoped");
+            assert!(
+                error
+                    .diag()
+                    .1
+                    .contains("host declarations cannot use `pub(path)`")
+            );
+            for modifier in ["host", "pub host", "host pub"] {
+                super::parse(&format!("module x; {modifier} {declaration}"))
+                    .expect("plain host visibility remains public");
+            }
+        }
+    }
+
     use super::*;
 
     fn tooling_keywords(probe: &ToolingProbe<'_>) -> Vec<(String, crate::span::Span)> {
@@ -1368,6 +1398,8 @@ mod tests {
                 vec!["fn", "type"],
             ),
             (KioFileKind::Module, "module app; pure host ", vec![]),
+            (KioFileKind::Module, "module app; pub(app) host ", vec![]),
+            (KioFileKind::Module, "module app; pub(app) host f", vec![]),
             (
                 KioFileKind::Module,
                 "module app; elab make: . { impl(",
@@ -1427,6 +1459,15 @@ mod tests {
                 .iter()
                 .any(|(keyword, _)| keyword == "host")
         );
+        let scoped_source = "module app; pub(app) ";
+        let scoped = probe_tooling_source(scoped_source, Some(scoped_source.len() as u32));
+        let keywords = &scoped
+            .facts
+            .cursor
+            .expect("scoped declaration cursor")
+            .keywords;
+        assert!(keywords.contains(&"fn") && keywords.contains(&"type"));
+        assert!(!keywords.contains(&"host"));
         let inverse = probe_tooling_source("module app; fn run() { host() }", None);
         assert!(inverse.parse_error.is_none());
         assert!(

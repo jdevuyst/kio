@@ -57,7 +57,7 @@ use crate::backends::product_rebuild::{
 };
 use crate::backends::public_names::{encode_host_identity, encode_source_identity, host_name_core};
 use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
-use crate::backends::skin::FunctionBoundaryAdapterPlan;
+use crate::backends::skin::{function_boundary_arity, runtime_param_name_groups};
 use crate::backends::{boundary_docs, doc};
 use crate::host_descriptor::{self, BoundRequirement, HostDescriptor, HostTypeDecl};
 use crate::pass::resolve::{
@@ -3552,7 +3552,7 @@ impl BodyShapeRegistry {
                 let arity = match &inner_fn {
                     Type::Function {
                         param, abi_arity, ..
-                    } => FunctionBoundaryAdapterPlan::new(param, *abi_arity).boundary_arity(),
+                    } => function_boundary_arity(param, *abi_arity),
                     _ => unreachable!("polymorphic function detection returns a function"),
                 };
                 (inner_fn, arity)
@@ -7176,35 +7176,6 @@ fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>
             crate::ast::SignatureGroupRef::Type(_) => None,
         })
         .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
-/// Internal erased runtime layers for a signature. Each type binder is a
-/// distinct nullary closure layer, each value group retains its binders, and
-/// an empty signature receives a nullary value layer.
-fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| Vec::new()));
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(param.name.as_str()),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
-    }
     if groups.is_empty() {
         groups.push(Vec::new());
     }

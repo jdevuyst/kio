@@ -3,8 +3,8 @@
 This page is a faithful read-through of the higher-kinded-types
 proof-of-concept package at
 [`test-data/poc/hkt/`](../../test-data/poc/hkt/). That package is
-executable, `kio test`-checked, and built and run against every declared
-target in CI, so it is *ground truth*: every newtype, instance, and
+executable and `kio test`-checked, with the harness building and running it
+across supported targets under CI-selected coverage. It is *ground truth*: every newtype, instance, and
 brand-generic operation shown here exists in the package exactly as written,
 and the program below is the one its `main` runs.
 
@@ -108,9 +108,10 @@ pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
 `Box[A] : A` and `Identity[A] : A` are the same value-level shape — a thin
 wrapper around `A` — but they are **nominally distinct** type constructors.
 The POC treats them as *brands*: their job is to carry a type-system
-identity, not to change the carrier's bytes. Lifting (`Box.mk_box`) and
-projecting (`Box.un_box`) a canonical type constructor are runtime identities
-on every backend; the brand lives only in the type system.
+identity. Constructing with `Box.mk_box` and then projecting with `Box.un_box`
+preserves the payload. Their runtime representation and
+conversion costs follow the [backend contracts](../../specs/backends/README.md),
+not a universal runtime-identity rule.
 
 Because `Box` and `Identity` differ only by name, they are the cleanest
 possible way to show that brand-generic code distinguishes type constructors
@@ -339,21 +340,21 @@ import derive(derive);
 ```
 
 The POC's use is the simplest possible derivation: pick the right base
-instance out of a candidate tuple. The target is elided as `_` because the
-function's return type pins it, and the candidate tuple lists both brands'
-functor builders:
+instance out of a candidate tuple. The leading `_` elides the `Candidates`
+type, which is inferred from the tuple listing both brands' functor builders.
+The trailing `Target` type argument is omitted and inferred from the function's
+return type:
 
 ```kio {@hkt}
-// Target elided as `_`; candidate tuple lists both functor builders.
+// Candidates type elided as `_`; target inferred from the return type.
 // `derive!` unifies each candidate's result type against the goal
 // `Functor(Identity)` and finds exactly one that fits — `identity_functor`.
 fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
 ```
 
-The candidate tuple is the value argument; the target type is the trailing
-slot and may be elided to `_` when the enclosing function's return type pins
-it. Because `_` marks the type slot rather than a value, it may sit ahead of
-the candidate tuple, as it does here. `derive!` reads `Functor(Identity)`
+The public call type is `[Candidates] Candidates -> [Target] Target`.
+The candidate tuple is the value argument; the leading `_` occupies its
+`Candidates` type slot, not the trailing `Target` slot. `derive!` reads `Functor(Identity)`
 from the return type, then unifies each candidate's result type against that
 goal: `box_functor` produces `Functor(Box)` (no match), `identity_functor`
 produces `Functor(Identity)` (match). Exactly one candidate fits, so resolution is unambiguous and the
@@ -422,8 +423,8 @@ surface-and-execution demonstration, not an algebraic library, so there is no
 behavioral law for `kio test` to discharge here. The functor and monad laws
 that *would* apply to these instances (identity, composition, left/right
 identity, associativity) are the standard ones; this POC demonstrates the
-*surface* that would carry them, not the law discharge. For how `equiv` laws
-are written and run over an HKT-flavored library, see
+*surface* that would carry them, not the law discharge. For the general syntax
+and workflow for writing and running `equiv` laws, see
 [Testing with `equiv`](../guides/equiv.md).
 
 ## Adopting the package

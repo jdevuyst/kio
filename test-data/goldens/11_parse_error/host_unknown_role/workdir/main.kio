@@ -1,0 +1,3 @@
+module main;
+
+host type Number role(no_such_role);

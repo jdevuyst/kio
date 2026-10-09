@@ -46,10 +46,16 @@ stopped teaching that snippet.
 
 The script's per-language compile steps must match the real toolchain set the
 per-backend runners use (same compilers, resolved the same mise-owned way)
-and must exercise static facade consumers and the JS worked host against the
+and must exercise static facade consumers, the JS worked host, and the Python
+typed host against the
 **current** facade shape. JS's other fences receive syntax checks; Python's
 facade-importing fences receive strict Pyright checks in addition to syntax
-checks, while its other fences receive syntax checks only. Declaration
+checks. Its complete typed-host fence also executes with an exact greeting
+assertion; selection must require exactly one executable fence and fail closed
+if it disappears or is renamed. Import/load fragments are not standalone
+runtime examples and must not be executed indiscriminately. The gate selftest
+must reject a stub-only runtime import, wrong output, and a missing selection.
+Python's other fences receive syntax checks only. Declaration
 illustrations must receive semantic checking, not `skipLibCheck` suppression.
 Summaries must distinguish these validation levels without claiming runtime
 execution for compile-only paths.

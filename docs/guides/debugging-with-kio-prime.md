@@ -49,7 +49,7 @@ disappears:
 | Elaborator calls such as `fit!`, `widen_sum!`, `narrow_prod!`, `one_prod!` | Explicit intrinsic trees; the elaborator call itself is gone |
 | Tuple literals and product projection | `__pair__`, `__fst__`, `__snd__` |
 | Sum construction and branching | `__left__`, `__right__`, `__either__` |
-| `if` / `else` | `__if_then_else__` |
+| Imported `if!` with its `else` block | `__if_then_else__` |
 | `match!` | A decision tree built from intrinsics and let-bound handlers |
 | `do` blocks | Nested calls to the receiver's `bind` |
 | Placeholder lambdas | Explicit lambdas with generated parameters |

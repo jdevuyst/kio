@@ -379,7 +379,7 @@ and rely on a backend to discover the problem.
 Type constructors such as `__type_product__`, `__type_sum__`,
 `__type_arrow__`, and `__type_forall__` build reflected types. Checked-term
 constructors such as `__term_fn__`, `__term_call__`, `__term_let__`, and
-`__term_pair__` build typed Kio' nodes.
+`__intrinsic_pair__` build typed Kio' nodes.
 
 This helper builds the checked identity function at any reflected type:
 
@@ -445,11 +445,28 @@ An elaborator does not gain arbitrary runtime values from its defining module.
 List each declaration whose reflected type or checked runtime term the
 implementation needs:
 
-```kio {ignore}
-pub elab checked : [Source] Source -> [Target] Target {
-  captures (I32, id_i32);
-  impl checked_impl
-}
+<!--kio {harness=captures placeholder="__INSERT_CODE_HERE__"}
+module guide/captures;
+
+import __comptime__;
+
+host type I32 role(i32);
+pub pure fn id_i32(value: I32) -> I32 { value }
+
+pure fn checked_impl(
+  , ct: __Comptime__
+  , i32_type: __Type__
+  , id_i32_term: __Checked_term__
+  , source: __Type__
+  , value: __Checked_term__
+  , target: __Type__ | .
+  ) -> __Checked_term__ { value }
+
+__INSERT_CODE_HERE__
+-->
+
+```kio {@captures}
+pub elab checked : [Source] Source -> [Target] Target { captures (I32, id_i32); impl checked_impl }
 ```
 
 The capture list prepends implementation parameters in exactly that order. A
@@ -458,18 +475,28 @@ quoted `__Checked_term__`. Capturing does not execute the declaration during
 elaboration, so host types and host functions may be captured for insertion
 into generated runtime code. The corresponding ABI starts:
 
-```kio {ignore}
+<!--kio {harness=capture_abi placeholder="__INSERT_CODE_HERE__"}
+module guide/capture_abi;
+
+import __comptime__;
+
+__INSERT_CODE_HERE__
+-->
+
+```kio {@capture_abi}
 pure fn checked_impl(
-  , ct: __Comptime__
-  , i32_type: __Type__
-  , id_i32_term: __Checked_term__
-  , source: __Type__
-  , value: __Checked_term__
-  , target: __Type__ | .
-  ) -> __Checked_term__ {
-  // ...
-}
+, ct: __Comptime__
+, i32_type: __Type__
+, id_i32_term: __Checked_term__
+, source: __Type__
+, value: __Checked_term__
+, target: __Type__ | .
+) -> __Checked_term__ { value }
 ```
+
+This illustrative body returns the reflected source term. It validates the
+ABI shape, not an arbitrary source-to-target coercion; the real body depends
+on the elaborator's purpose.
 
 Captures are explicit dependency injection for generated code. Their visibility
 must be at least that of the elaborator because generated code may retain them.

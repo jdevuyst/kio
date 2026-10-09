@@ -562,18 +562,8 @@ fn handle_auto_reload(
             println!("reloaded {}", joined.join(", "));
         }
         Err(failure) => {
-            let located = failure.primary_error();
-            let (span, message) = located.error.diag();
-            let loc = failure
-                .sources
-                .get(&located.file_path)
-                .map(|src| {
-                    let (line, col) = line_col(src, span.start);
-                    format!("{}:{line}:{col}", located.file_path.display())
-                })
-                .unwrap_or_else(|| located.file_path.display().to_string());
             eprintln!("reload failed — keeping the previous version:");
-            eprintln!("  {loc}: {message}");
+            crate::cmd::check::report_analysis_failure(&failure);
         }
     }
 }

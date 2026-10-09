@@ -116,6 +116,22 @@ occupy, and the correct disposition: delete it, keep it only in untracked
 session state, or move durable action-specific detail behind an existing sharp
 topic trigger.
 
+## 6. Instructions versus implementation records
+
+Check `ai/topics/` against
+[`repo-layout.md` § Evidence records](../../topics/repo-layout.md#evidence-records).
+Completed measurements, investigation dossiers and extended implementation
+proofs belong in `evidence/`; topics retain instructions, concise invariant
+reasoning, discovery inventories and resolving links. Classify by purpose,
+not words such as "proof" or the presence of a number. Do not move language
+meta-theory out of `specs/formal/` or library arguments out of `docs/poc/`.
+
+For migrations, compare the old and new records: preserve assumptions,
+controls, negative results, limitations and reproduction details, and check
+inbound links. Flag lost caveats, duplicate inventories and stale evidence
+presented as current validation. Relocation alone proves neither the argument
+nor the measured win. `audit-skills` checks the same boundary inside skills.
+
 ## How to report
 
 Group findings into:
@@ -124,7 +140,7 @@ Group findings into:
 2. **Broken trigger / pointer links** — AGENTS.md links to a non-existent `ai/topics/<file>.md`.
 3. **Orphan topic files** — `ai/topics/<file>.md` present but not referenced from AGENTS.md.
 4. **Stale cross-references** — `AGENTS.md § <X>` citations whose target no longer exists in AGENTS.md.
-5. **Content-placement violations** — situational tactics or topic-level detail in the universal core, or non-sharp routing entries.
+5. **Content-placement violations** — situational tactics or topic-level detail in the universal core, non-sharp routing, or implementation records stored as instructions.
 
 For each finding, cite file and line where applicable.
 

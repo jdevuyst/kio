@@ -156,29 +156,27 @@ Procedure (manual one-off; promote to a standing probe when convenient):
    want the run to continue and tally firings across the whole corpus
    rather than stopping at the first.
 
-2. Use the configured compiler cache per [`ai/topics/local-tools.md`](../../topics/local-tools.md)
-   § Compiler cache, then build kio with the probe and run the full
-   surface corpus plus the lib suite:
+2. Follow [`ai/topics/local-ci.md` § Local gate coverage](../../topics/local-ci.md#local-gate-coverage)
+   and the configured compiler cache in [`local-tools.md` § Compiler cache](../../topics/local-tools.md#compiler-cache).
+   Select existing exact surface cases that reach each instrumented entry and
+   relevant lib tests. Use anchored positional case filters with
+   `--impls=FULL_IMPL_MATRIX --all-cases` when cross-implementation evidence is
+   needed; the implementation selector does not scope cases. A compile-time
+   firing claim can instead use the focused compiler/lib path. Confirm the
+   selected assertion actually observes the probe, not an unrelated failure.
+   Broader corpus confirmation ordinarily uses `SAMPLE_IMPL`. Before any
+   effectively corpus-wide full matrix, explain why sampling plus bounded
+   witnesses is insufficient and obtain explicit user direction; this opt-in
+   probe is not standing authority for that cost.
 
-   ```sh
-   sh ci/checks/orchestrators/golden-tests.sh --impls=FULL_IMPL_MATRIX
-   ( cd kio-rs && sh ../ci/cargo.sh test --lib --all-features )
-   ```
-
-   (See [`ai/topics/local-ci.md`](../../topics/local-ci.md) for scoping;
-   `00_success` and the elaborator buckets are the load-bearing corpus.)
-
-3. **Finding:** any synth entry point that fires zero times across the
-   whole run has no covering test reaching it via a spec-current surface
-   spelling. Either the variant is dead (delete it, per § 3) or the
-   corpus is missing a golden for a live shape (add the golden — the
-   missing golden is itself the bug, per AGENTS.md Bugs surface).
-
-   The gate's discriminating power is the point: the surviving imported
-   `match!` fires `synth_user_elaborator` (hundreds of times across the
-   `match!` goldens), while a dead built-in `synth_match_elaborator`
-   fires zero. A name-based sweep cannot make that distinction; the
-   firing gate can.
+3. A selected witness that should reach an entry but records no firing is
+   missing that claimed coverage. Diagnose the witness and reachability;
+   zero firings in a bounded run do not prove that the whole corpus lacks
+   coverage or that the variant is dead. Reconcile the source-to-entry map
+   from §§ 1–3 and existing tests before classifying dead machinery versus
+   a live shape needing a regression. For example, an imported `match!`
+   witness should reach `synth_user_elaborator`; its library spelling does
+   not prove a dedicated built-in match branch remains reachable.
 
 4. Revert the probe (it is a throwaway instrumentation build, not a
    checked-in change; `KIO_DEBUG_*` naming follows AGENTS.md

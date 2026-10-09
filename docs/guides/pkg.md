@@ -440,10 +440,9 @@ Two things follow from committing the closure:
   source.
 
 The committed tree is **canonical**: it is byte-for-byte what `kio dep fetch`
-regenerates, because materialization pretty-prints each re-rooted module. A
-shared dependency therefore produces identical re-rooted bytes across every
-consumer that vendors it; content-addressed version control stores those bytes
-once, so the committed closures cost little history.
+regenerates for the chosen local root and adaptations, because materialization
+pretty-prints each re-rooted module. Different aliases, rehosts, or retypes can
+produce different bytes for consumers of the same shared dependency.
 
 These two properties — committed and canonical — are checked. A
 `dep-materialization` gate asserts that every package declaring a dependency
@@ -472,12 +471,56 @@ of them vendors its own copy of a shared `store` module that declares
 and `widget/store.Tag` — distinct nominal copies. A value minted as one cannot
 flow where the other is expected:
 
-```kio {ignore}
+<!--kio {file}
+module core;
+-->
+
+<!--kio {file}
+module widget;
+-->
+
+<!--kio {file}
+module core/store;
+
+host type I32 role(i32);
+pub newtype Tag : I32 { pub constructor mk_tag; pub projector un_tag }
+pub fn make_tag(value: I32) -> Tag { Tag.mk_tag(value) }
+pub fn tag_val(value: Tag) -> I32 { Tag.un_tag(value) }
+-->
+
+<!--kio {file}
+module widget/store;
+
+import core/store(I32);
+
+pub newtype Tag : I32 { pub constructor mk_tag; pub projector un_tag }
+pub fn make_tag(value: I32) -> Tag { Tag.mk_tag(value) }
+pub fn tag_val(value: Tag) -> I32 { Tag.un_tag(value) }
+-->
+
+<!--kio {file}
+module widget/relay;
+
+import core/store(I32);
+import widget/store(Tag, make_tag);
+
+pub fn relay_tag(value: I32) -> Tag { make_tag(value) }
+-->
+
+<!--kio {harness=nominal_copies file placeholder="__INSERT_CODE_HERE__"}
+module logger/nominal;
+
+__INSERT_CODE_HERE__
+-->
+
+```kio {@nominal_copies check_exit_code=14}
 import core/store(make_tag, tag_val);
-import widget/relay(relay_tag);   // relay_tag returns widget/store.Tag
+import widget/relay(relay_tag);
+
+// relay_tag returns widget/store.Tag
 
 // tag_val wants core/store.Tag, relay_tag gives widget/store.Tag — a type error
-let n = tag_val(relay_tag(7));
+fn mismatch() { let n = tag_val(relay_tag(7)); () }
 ```
 
 The fix is a `retype` clause in the dependency file, which reconciles the
@@ -592,11 +635,41 @@ A `pub` declaration is visible to the whole package and, when its module is
 bridged, to the host. A `pub` may instead carry a **scope restriction**, written
 `pub(<module-path>)`, to export only within a named subtree:
 
-```kio {ignore}
+<!--kio {file}
+module app;
+
+host type I32 role(i32);
+-->
+
+```kio {file}
 module app/internal;
+
+import app(I32);
 
 pub(app) newtype Token : I32 { pub constructor mk; pub projector un }
 ```
+
+<!--kio {file}
+module app/check;
+
+import app(I32);
+import app/internal(Token);
+
+pub fn roundtrip(value: I32) -> I32 { Token.un(Token.mk(value)) }
+-->
+
+<!--kio {harness=scoped_consumer file placeholder="__INSERT_CODE_HERE__"}
+module logger/scoped_check;
+
+import app(I32);
+import app/check(roundtrip);
+
+__INSERT_CODE_HERE__
+-->
+
+<!--kio {@scoped_consumer}
+fn check_roundtrip(value: I32) -> I32 { roundtrip(value) }
+-->
 
 `pub(app)` makes `Token` importable from `app` and anything beneath it, and
 sealed everywhere else in the package. The path must be a **prefix of the

@@ -24,7 +24,8 @@ usage() {
   cat <<EOF
 Usage: sh $PROG [--debounce=<seconds>] [--poll=<seconds>] [--once]
 
-Continuously rebuild the kio-rs debug binaries that local corpus checks consume.
+Continuously rebuild the ordinary kio-rs developer debug binaries.
+Corpus checks prepare separate compiler snapshots in their own persistent targets.
 The watcher debounces source edits and cancels an in-flight stale build before
 starting the next one. Cargo's own locks coordinate with any simultaneous local
 CI run. Builds go through ci/cargo.sh and inherit the caller's Cargo environment

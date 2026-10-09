@@ -53,11 +53,12 @@ import path, type checkers select `<ns>/__init__.pyi` as `<ns>`'s typed view,
 while Python selects the sibling `<ns>.py` runtime module. Every build emits
 the runtime and complete typing support together. The shared directory has no
 `__init__.pyi`: independently generated output roots contribute compatible
-namespace portions, including disjoint callable types. Definitions with the
-same semantic identity have identical contents. Bounded support filenames are
+namespace portions, including disjoint callable types. Completeness, schema
+separation and search-order composition follow the shared
+[static type declaration contract](README.md#shared-static-type-declarations).
+Bounded support filenames are
 locators only; imports retain exact definition identities and a locator
-collision fails rather than identifying distinct types. Incompatible support
-schemas use distinct support namespaces. These files contain no runtime code,
+collision fails rather than identifying distinct types. These files contain no runtime code,
 hold no shared state, and require no separate installation. Copy the complete
 output tree to retain type checking; the runtime `.py` alone remains usable
 by an untyped host.
@@ -403,7 +404,8 @@ Beside the runtime `<ns>.py`, `kio build python` emits a `<ns>/` typed-stub
 package — the Python analogue of the TypeScript backend's `.d.ts`. Its public
 `__init__.pyi` re-exports declarations from private `.pyi` shards. Callable and
 application definitions are re-exported from the shared immutable support
-closure, so independently generated packages retain the same static structural
+closure under the [shared static type declaration contract](README.md#shared-static-type-declarations),
+so independently generated packages retain the same static structural
 indices. Package handles, exact nominal declarations and their privacy remain
 package-owned. The package contains no runtime code and types exactly the
 public surface `create_<value-brand>` exposes, so a host that runs a static type checker

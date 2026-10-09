@@ -3,7 +3,7 @@
 # independent aliases. A shallow decoy must not affect explicit selection.
 # Runtime output proves fetch pinning, update, and same-commit selector
 # change/removal/addition. A missing selected manifest aborts all staged locks.
-# Custom scripting supplies the hermetic file:// repository and moving ref.
+# Custom scripting supplies the hermetic local Git repository and moving ref.
 # Direct Prime execution is excluded because ordinary calls infer type arguments.
 set -u
 
@@ -37,7 +37,7 @@ commit_fixture '2020-01-01T00:00:00 +0000' initial
 write_dependency() {
   {
     printf 'dependency %s;\n\nsource {\n' "$1"
-    printf '  git "file://%s";\n  ref "main"' "$repository"
+    printf '  git "%s";\n  ref "main"' "$repository"
     if [ -n "$2" ]; then
       printf ';\n  path "%s"' "$2"
     fi

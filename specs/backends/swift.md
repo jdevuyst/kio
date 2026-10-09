@@ -596,8 +596,8 @@ Swift uses [shared source-component word casing](README.md#source-derived-public
   remain distinct. An alias containing an exact host atom takes
   `<H: <Handle>Host>`.
 
-Field keys follow the 3-step key fallback ([`README.md`](README.md)); the
-positional fallback is `_<i>`.
+Structural `Product` and `Sum` use fixed binary child selectors `_0` and `_1`,
+not semantic spine-slot keys.
 
 ## Worked example
 

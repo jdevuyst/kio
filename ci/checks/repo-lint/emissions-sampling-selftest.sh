@@ -96,7 +96,7 @@ set -eu
 target_dir=$3
 shift 3
 expected='--all-features --bins'
-expected="$expected --config profile.dev.package.kio-lang.opt-level=1"
+expected="$expected --config profile.dev.package.kio-lang.opt-level=2"
 expected="$expected --config profile.dev.package.kio-lang.debug-assertions=true"
 expected="$expected --config profile.dev.package.kio-lang.overflow-checks=true"
 [ "$*" = "$expected" ]

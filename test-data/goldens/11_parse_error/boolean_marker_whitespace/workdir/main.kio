@@ -1,0 +1,5 @@
+module main;
+
+host type Bool role(bool);
+
+fn f() -> Bool { . t(Bool) }

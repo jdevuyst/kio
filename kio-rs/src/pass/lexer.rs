@@ -708,38 +708,42 @@ impl<'a> Lexer<'a> {
         let mut digits = String::new();
         self.consume_digit_run(&mut digits);
 
-        // Float case: a `.` followed by at least one digit.
-        let is_float = self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b'0'..=b'9'));
+        // A fractional part or an exponent makes the token a float.
+        let mut is_float =
+            self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b'0'..=b'9'));
 
         if is_float {
             digits.push('.');
             self.bump(); // consume the dot
             self.consume_digit_run(&mut digits);
+        }
 
-            // Optional exponent: e/E, optional sign, then digits.
-            if matches!(self.peek(), Some(b'e' | b'E')) {
-                let exp_start = self.pos;
-                let exp_marker = self.peek().unwrap();
+        // Optional exponent: e/E, optional sign, then digits.
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            is_float = true;
+            let exp_start = self.pos;
+            let exp_marker = self.peek().unwrap();
+            self.bump();
+            let sign = matches!(self.peek(), Some(b'+' | b'-'));
+            let sign_byte = if sign {
+                Some(self.peek().unwrap())
+            } else {
+                None
+            };
+            if sign {
                 self.bump();
-                let sign = matches!(self.peek(), Some(b'+' | b'-'));
-                let sign_byte = if sign {
-                    Some(self.peek().unwrap())
-                } else {
-                    None
-                };
-                if sign {
-                    self.bump();
-                }
-                if !matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.parse_err(exp_start, "exponent has no digits"));
-                }
-                digits.push(exp_marker as char);
-                if let Some(s) = sign_byte {
-                    digits.push(s as char);
-                }
-                self.consume_digit_run(&mut digits);
             }
+            if !matches!(self.peek(), Some(b'0'..=b'9')) {
+                return Err(self.parse_err(exp_start, "exponent has no digits"));
+            }
+            digits.push(exp_marker as char);
+            if let Some(s) = sign_byte {
+                digits.push(s as char);
+            }
+            self.consume_digit_run(&mut digits);
+        }
 
+        if is_float {
             return Ok(Token {
                 kind: TokenKind::FloatLit { digits },
                 span: self.span(start),
@@ -899,6 +903,34 @@ mod tests {
     fn empty_source_yields_no_tokens() {
         assert_eq!(kinds(""), Vec::<TokenKind>::new());
         assert_eq!(kinds("   \n\t  // a comment\n"), Vec::<TokenKind>::new());
+    }
+
+    #[test]
+    fn exponent_only_floats_use_the_shared_numeric_token() {
+        for (source, digits) in [
+            ("2e3", "2e3"),
+            ("2E+3", "2E+3"),
+            ("2e-3", "2e-3"),
+            ("2_0e1_0", "20e10"),
+            ("2.0e1_0", "2.0e10"),
+        ] {
+            let tokens = lex(source).expect("valid float");
+            assert_eq!(tokens.len(), 1, "{source}");
+            assert_eq!(
+                tokens[0].kind,
+                TokenKind::FloatLit {
+                    digits: digits.into()
+                }
+            );
+            assert_eq!(tokens[0].span, Span::new(0, source.len() as u32));
+        }
+        for source in ["2e", "2E+", "2e-", "2e_3", "2.0e"] {
+            let error = lex(source).expect_err("an exponent needs digits");
+            assert!(
+                error.diag().1.contains("exponent has no digits"),
+                "{source}"
+            );
+        }
     }
 
     #[test]

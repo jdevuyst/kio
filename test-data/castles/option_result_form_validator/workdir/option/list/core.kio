@@ -1,4 +1,5 @@
 /// Cons-list core with O(1) constructors, accessors, ordinary sum results, and fold-step helpers.
+/// A ready-to-use library module for your own Kio package.
 module option/list/core;
 
 import option/list/elab/match(match);

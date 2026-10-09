@@ -10,11 +10,15 @@ The test corpus exercises the effective authorized contract: the baseline specif
 
 Read `TESTING.md`, `test-data/README.md`, and `test-data/emissions/README.md` before starting.
 
+Start with source, test assertions, and existing execution receipts. Execution
+suggestions below are subject to § 7; this audit does not itself authorize a
+broad suite or full dynamic-Prime run.
+
 ## 1. Spec→test coverage
 
 For each behavior named in `specs/`:
 
-- `specs/language.md`, `specs/prime.md`, and `specs/formal/elaboration.md` — every surface form (operators, tuple literals, generic imported block calls including `if!`/`else`, `scope!`, `do!`, and `match!`, the reference coercion-elaborator palettes (algebraic `iso!` / `into!` / `onto!` / `align!` / `ease!` / `atom!`, spine `fit!`, `reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`), `derive!`, UFCS, `fn#`, `alias`, label sugar, `op`, `equiv`) should have a golden under `test-data/goldens/` exercising parse, typecheck, and (where applicable) build. Each elaborator should have at least one *subject-focused* golden whose source's primary purpose is that elaborator's defining rule, plus a boundary-rejection golden in the matching error tier. The coercion palettes and library-defined control forms are user-defined libraries; their per-form rule semantics are exercised and documented by the `test-data/poc/elab/` package and its case study `docs/poc/elab.md`, not by `specs/`.
+- `specs/language.md`, `specs/prime.md`, and `specs/formal/elaboration.md` — every surface form (operators, tuple literals, generic imported block calls including `if!`/`else`, `scope!`, `do!`, and `match!`, the reference coercion-elaborator palettes (algebraic `iso!` / `into!` / `onto!` / `align!` / `ease!` / `atom!`, spine `fit!`, `reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`), `derive!`, UFCS, `.stem. { ... }` placeholder lambdas, `literal` declarations, label sugar, `op`, `equiv`) should have a golden under `test-data/goldens/` exercising parse, typecheck, and (where applicable) build. Each elaborator should have at least one *subject-focused* golden whose source's primary purpose is that elaborator's defining rule, plus a boundary-rejection golden in the matching error tier. The coercion palettes and library-defined control forms are user-defined libraries; their per-form rule semantics are exercised and documented by the `test-data/poc/elab/` package and its case study `docs/poc/elab.md`, not by `specs/`.
 - `specs/grammar.md` — each production layer (Kio' / surface / package files) should have golden coverage in `test-data/goldens/`.
 - `specs/package.md` — each file kind and required field should have a golden that fails when the field is missing/wrong.
 - `specs/exit-codes.md` — each documented exit code should have at least one golden asserting it. Per-case checks live in `ci/checks/per-case/`.
@@ -26,7 +30,8 @@ Compile a list of un-covered behaviors.
 
 ### Expression-grammar compositionality
 
-Inspect and run `kio-rs/src/pass/parser/compositionality_tests.rs`. Its
+Inspect `kio-rs/src/pass/parser/compositionality_tests.rs` and its execution
+evidence; run a focused check only under § 7. Its
 declarative grammar-keyed matrices must stay aligned with the bounded
 `specs/grammar.md` inventory and cover eager/forced-lazy parsing, exact AST
 topology through pretty/reparse and formatter idempotence, raw versus typed
@@ -93,6 +98,18 @@ independently authored and durable.
 - Per-case assertion logic → `ci/checks/per-case/`.
 
 A misplaced test is a finding.
+
+### Supporting evidence
+
+Check that `TESTING.md`'s evidence pointer resolves and its placement guidance
+agrees with [`repo-layout.md` § Evidence records](../../topics/repo-layout.md#evidence-records)
+and [`evidence/README.md`](../../../evidence/README.md); its subject-page index
+must match the directory and link to existing records. Evidence records support
+decisions; they neither define contracts nor discharge executable regression
+coverage. Flag records counted as tests, historical measurements treated as
+current validation or ordinary speed thresholds, and duplicated inventories
+that have drifted. Changes to this boundary must keep the strategy and owning
+guidance paired.
 
 ### Determinism and timing
 
@@ -230,9 +247,33 @@ only to assert the exact public-spec or recorded-measurement fact named by its
 names, formatting, or declaration order. Verify exactly one empty marker per
 case, `host/` required only for `HOST_INTERFACE`, and no marker registry.
 
-## 7. Run the suites
+## 7. Execution scope and evidence
 
-Run `sh ci/checks/orchestrators/golden-tests.sh --all-cases`, `sh ci/checks/orchestrators/emissions-tests.sh`, and `sh ci/checks/orchestrators/generative-tests.sh` if the working tree supports it. Explicit all-case coverage includes the otherwise sampled dynamic-Prime pass; do not add conflicting global/root/leaf case policies or raw harness sampling overrides. Direct emissions run all cases by default; case sampling is not an audit substitute. Any failure is a finding (separately from coverage gaps).
+Reuse relevant receipts after checking their source identity, selected cases,
+implementations, assertions, and outcome. A missing or stale receipt is an
+evidence gap, not permission to launch every suite. Before any execution, read
+[`ai/topics/local-ci.md`](../../topics/local-ci.md), honor the user's execution
+scope, and identify the smallest check that can answer the concrete question.
+
+- Use anchored exact case selectors for focused golden runs. New or
+  behaviorally edited goldens require `FULL_IMPL_MATRIX --all-cases` for those
+  exact cases unless inherently single-implementation; selecting all
+  implementations does not authorize selecting all cases.
+- Scope emissions and generator probes to the specific evidence gap using the
+  harness's documented controls. A bounded run supports only its measured
+  scope; it does not prove corpus-wide absence or completeness.
+- When broad integration is authorized, use `ci/all.sh SAMPLE_IMPL` as the
+  baseline gate. Retain its normal dynamic-Prime sampling unless the concrete
+  shared-execution risk requires full dynamic coverage under the local-CI
+  policy. Neither this audit nor `--all-cases` is a blanket requirement to run
+  the whole corpus dynamically or across every backend.
+- Before an effectively corpus-wide full implementation matrix, aggregate the
+  scope across commands, explain why sampling plus exact representatives is
+  insufficient, and obtain explicit user direction. Splitting commands does
+  not bypass that checkpoint.
+
+Report executed failures separately from missing coverage and unexecuted
+checks. Never describe an inspected test or planned run as passing evidence.
 
 ## 8. Backend consistency
 

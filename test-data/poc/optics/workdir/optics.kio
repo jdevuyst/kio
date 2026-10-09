@@ -1,4 +1,5 @@
 /// Root module optics library defining lenses, prisms, isomorphisms, and their composition helpers.
+/// A ready-to-use library module for your own Kio package.
 module optics;
 
 import elab/match(match);
@@ -306,10 +307,8 @@ equiv swap_review_view[A][B](x: A & B) {
   x
 }
 
-// Restated over a concrete small spine — opaque leaf atoms `av`, `bv`,
-// `cv` in a concrete tuple shape — because product-eta does not fire on
-// a fully-opaque product parameter; the round-trip then discharges by
-// reconstruction.
+// The tuple-shaped round-trip checks reconstruction of the three
+// independently supplied leaf values.
 equiv assoc_view_review[A][B][C](av: A, bv: B, cv: C) {
   view_iso(assoc_iso(A, B, C), review_iso(assoc_iso(A, B, C), (av, (bv, cv))));
   (av, (bv, cv))

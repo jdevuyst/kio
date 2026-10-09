@@ -139,6 +139,8 @@ members are reachable under the type's module namespace through its
 
 ## Host record contract
 
+This realizes the shared [host-trait descriptor contract](README.md#8-host-trait-descriptor).
+
 The host record's shape mirrors the bridged modules' `host fn` surface: one
 nested object per module that declares host fns, and one property on that
 object per `host fn`. Nothing else is required — there are no implicit

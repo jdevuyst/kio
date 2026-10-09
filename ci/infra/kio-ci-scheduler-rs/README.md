@@ -42,6 +42,10 @@ lock: it intentionally coordinates this repository and its sibling worktrees,
 not unrelated repositories. Cargo invoked inside emitted projects or fixture
 crates remains direct so it cannot recursively acquire repository resources.
 
+`KIO_CI_SCHEDULE=DISABLE` explicitly bypasses resource admission. Process-tree
+supervision remains active; bypassing admission does not bypass cancellation
+or timeout ownership.
+
 ## State and crash consistency
 
 Each resource uses the same layout below `KIO_CI_SCHEDULE_DIR`:
@@ -246,5 +250,7 @@ evidence, but cannot prove advisory-lock semantics, inherited Unix descriptors,
 suspended Windows spawn/assignment, nested Jobs, breakaway, or complete Job
 draining.
 
-See `ai/topics/local-ci.md` for operator-facing scheduling behavior and
-`ai/topics/local-tools.md` for the Cargo and compiler-cache entry points.
+See [`TESTING.md` § Local iteration](../../../TESTING.md#local-iteration) for
+operator-facing concurrency controls, [`ci/cargo.sh`](../../cargo.sh) for the
+repository Cargo entry point, and [`INSTALL.md` § Build and check](../../../INSTALL.md#build-and-check)
+for compiler-cache setup.

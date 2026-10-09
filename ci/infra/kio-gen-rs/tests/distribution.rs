@@ -26,6 +26,60 @@ const N: u64 = 2000;
 const RUN_SEED: u64 = 0xD15D_D15D_D15D_D15D;
 
 #[test]
+fn ordinary_calls_generate_every_dot_splice_spelling() {
+    let mut seen = [None; 4];
+    let mut explicit = None;
+    let mut elided = None;
+    for i in 0..N {
+        let seed = program_seed(RUN_SEED, i);
+        let prog = generate::program_from_seed(seed);
+        if !prog.uses_surface {
+            continue;
+        }
+        let source = render::render_fn_def(&prog);
+        let bytes = source.as_bytes();
+        for (j, token) in [".>", ".>>", ".<", ".<<"].iter().enumerate() {
+            if source
+                .match_indices(token)
+                .any(|(at, _)| bytes.get(at + token.len()) != Some(&token.as_bytes()[1]))
+            {
+                seen[j].get_or_insert(seed);
+            }
+        }
+        if [".>id(I32)", ".>>id(I32)", "id(I32).<(", "id(I32).<<("]
+            .iter()
+            .any(|s| source.contains(s))
+        {
+            explicit.get_or_insert(seed);
+        }
+        if [".>id", ".>>id"].iter().any(|token| {
+            source
+                .match_indices(token)
+                .any(|(at, _)| bytes.get(at + token.len()) != Some(&b'('))
+        }) || ["id.<(", "id.<<("]
+            .iter()
+            .any(|token| source.contains(token))
+        {
+            elided.get_or_insert(seed);
+        }
+    }
+    for (token, seed) in [".>", ".>>", ".<", ".<<"].into_iter().zip(seen) {
+        assert!(seed.is_some(), "missing generated ordinary-call {token}");
+        println!("ordinary dot-splice {token}: first seed {seed:?}");
+    }
+    assert!(
+        explicit.is_some(),
+        "no explicitly instantiated ordinary UFCS id call"
+    );
+    println!("ordinary dot-splice explicit I32: first seed {explicit:?}");
+    assert!(
+        elided.is_some(),
+        "no type-argument-elided ordinary UFCS id call"
+    );
+    println!("ordinary dot-splice elided: first seed {elided:?}");
+}
+
+#[test]
 fn corpus_is_non_degenerate() {
     let progs: Vec<_> = (0..N)
         .map(|i| generate::program_from_seed(program_seed(RUN_SEED, i)))
@@ -820,7 +874,7 @@ fn body_has_fit(rendered: &str) -> bool {
 }
 
 fn body_has_ufcs(rendered: &str) -> bool {
-    rendered.contains(".>")
+    rendered.contains(".>") || rendered.contains(".<")
 }
 
 fn body_has_alias_lit(rendered: &str) -> bool {

@@ -4,17 +4,16 @@
 //! routed Kio package as backend-neutral IR and evaluates it with a small
 //! Python runtime. The host-facing boundary remains shaped by the shared
 //! backend contract: products and sums cross as keyed dictionaries,
-//! a newtype whose constructor and projector are both public crosses under
-//! its FFI key, every other public newtype crosses as a declaration-specific
-//! nominal carrier, function values are bridged at call time, and the package
-//! exposes a branded `create_<stem>(host)` factory (the module stem is the
+//! every explicit newtype crosses as a declaration-specific sealed nominal
+//! carrier, function values are bridged at call time, and the package
+//! exposes a branded `create_<value-brand>(host)` factory (the module stem is the
 //! package namespace — the kio package name by default, or the `namespace`
 //! build-block key).
 //!
 //! Alongside the runtime `<stem>.py`, the backend emits a `<stem>/` typed-stub
 //! package ([`stub`]) — the Python analogue of the TypeScript `.d.ts`. Its
 //! `__init__.pyi` and private shard modules contain declarations only (no
-//! runtime code), typing the same public surface `create_<stem>` exposes so a
+//! runtime code), typing the same public surface `create_<value-brand>` exposes so a
 //! pyright / mypy host checks the embedding at author time. Type checkers
 //! select the stub package while Python selects the sibling runtime module.
 

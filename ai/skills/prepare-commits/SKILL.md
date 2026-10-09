@@ -16,9 +16,20 @@ Inventory subjects, authors, net diffs and dependencies economically. Prefer far
 
 Present a concrete old-to-new grouping, boundary, order and proposed messages before execution. Subjects are short and name salient features, breaks, fixes, optimizations or refactors; bodies add only necessary technical impact, rationale and validation. Never put session links, scratchpad/evidence paths, orchestration or private context in messages. Relevant public technical references and required attribution/metadata remain appropriate. Keep detailed authority/review receipts separately available to the reviewer. Preserve original author attribution and meaningful co-authorship rather than assigning all consolidated work to the operator.
 
-Identify branches/worktrees/tags and later tasks that depend on old commits; propose how their references and evidence remain usable. State the recovery archive, verification plan and any uncertain merge/reorder boundary. Ask for explicit approval of this exact rewrite range/grouping/order/messages; until approved, return the proposal without creating commits, rewriting refs or changing worktrees. A proposal-only request ends here.
+Identify branches/worktrees/tags and later tasks that depend on old commits; propose how their references and evidence remain usable. State the recovery archive, author/committer timestamp policy, verification plan and any uncertain merge/reorder boundary. Ask for explicit approval of this exact rewrite range/grouping/order/messages; until approved, return the proposal without creating commits, rewriting refs or changing worktrees. A proposal-only request ends here.
 
 ## Execute only the approved preparation
+
+Use one local recovery archive per consolidation, named
+`archive/pre-consolidation-YYYY-MM-DD` using its UTC start date. For a distinct
+consolidation whose name is occupied, append the first unused `-2`, `-3`, etc.
+Preserve the original tip before rewriting. With explicit approval, an existing
+branch preserving that history may be renamed and reused as the archive.
+Follow-up amendments to the same consolidation reuse that archive: append
+recovery checkpoints for additional approved edits and retain the intervening
+prepared tips in its ancestry rather than replacing its history or creating
+another archive. Keep the archive local unless publication is explicitly
+requested; identify it in the proposal and completion report.
 
 Recheck the frozen source/ref state and publication boundary. Preserve recoverable original refs and the approved old-to-new grouping BEFORE rewriting; record the actual new commit-hash mapping during and after execution. Keep dependent branches and historical evidence intact under the approved dependency plan. Use an isolated preparation branch/worktree when needed. Apply only the approved plan, retaining the exact final tracked tree, file modes and symlinks; stop for a revised decision if conflicts or dependencies require a different grouping, order or source change. Never rewrite published main/release history or silently rewrite shared/dependent branches or broaden the range.
 

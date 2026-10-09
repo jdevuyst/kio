@@ -24,6 +24,17 @@ pub struct Contract<P = Prime>(PhantomData<P>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NoBody;
 
+/// Bodyless contracts retain compile-time imports as declaration-resolution
+/// metadata; they do not provide an executable Prime capability environment.
+pub(crate) fn check_imports(imports: &[crate::ast::Import]) -> Result<(), Error> {
+    for import in imports {
+        if !matches!(import.kind, crate::ast::ImportKind::Comptime) {
+            crate::prime::lower::check_imports(std::slice::from_ref(import))?;
+        }
+    }
+    Ok(())
+}
+
 /// Lower only the declared headers of an already-selected source module.
 /// The declaration walkers are the ordinary frontend walkers; they never
 /// receive a function definition or its discarded body.
@@ -210,4 +221,37 @@ where
     }
 
     const DISCHARGE: Option<ModuleDeferralCheck<Self>> = None;
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn contract_imports_preserve_metadata_without_relaxing_prime_modules() {
+        let comptime = crate::pass::parser::parse("module x; import __comptime__;")
+            .expect("parse compile-time import")
+            .imports;
+        super::check_imports(&comptime).expect("bodyless contract retains the type environment");
+        crate::prime::lower::check_imports(&comptime)
+            .expect_err("executable Prime cannot import compile-time capabilities");
+
+        let intrinsics = crate::pass::parser::parse("module x; import __intrinsics__;")
+            .expect("parse intrinsic import")
+            .imports;
+        super::check_imports(&intrinsics).expect("contract intrinsic import");
+        crate::prime::lower::check_imports(&intrinsics).expect("Prime intrinsic import");
+
+        for source in [
+            "module x; import provider({tag});",
+            "module x; import provider(op _ + _);",
+        ] {
+            let imports = crate::pass::parser::parse(source)
+                .expect("parse surface selector")
+                .imports;
+            let contract = super::check_imports(&imports)
+                .expect_err("bodyless contracts reject surface selectors");
+            let prime = crate::prime::lower::check_imports(&imports)
+                .expect_err("Prime rejects surface selectors");
+            assert_eq!(format!("{contract:?}"), format!("{prime:?}"));
+        }
+    }
 }

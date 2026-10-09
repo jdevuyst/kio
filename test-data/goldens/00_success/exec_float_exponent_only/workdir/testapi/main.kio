@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(F64, String);
+import testapi/arith(sub_f64);
+import testapi/fmt(f64_to_string);
+import testapi/io(print);
+
+pub fn main() {
+  print(f64_to_string(2e3(F64)));
+  print("\n"(String));
+  print(f64_to_string(-2E+3(F64)));
+  print("\n"(String));
+  print(f64_to_string(1.0e0_2(F64)));
+  print("\n"(String));
+  print(f64_to_string(1.5E+2(F64)));
+  print("\n"(String));
+  print(f64_to_string(1.5e+2(F64)));
+  print("\n"(String));
+  print(f64_to_string(sub_f64(1.5E-2(F64), 0.015(F64))));
+  print("\n"(String));
+  print(f64_to_string(sub_f64(1.5e-2(F64), 0.015(F64))));
+  print("\n"(String));
+  print(f64_to_string(1.5(F64)));
+  print("\n"(String))
+}

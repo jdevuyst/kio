@@ -25,12 +25,10 @@
 //! trees up to alpha- and eta-equivalence. The arms pass when their
 //! NFs are equal.
 //!
-//! Host items (host `fn`s, host types, host literals) flow through
-//! as opaque [`Value::Atom`]s with the dotted reference as the atom's
-//! identity. Anything the evaluator cannot reduce — pattern matches
-//! against host atoms, intrinsic-style applications without an
-//! elaboration entry — also residualizes structurally so two such
-//! sites with the same shape compare equal.
+//! Host value references remain opaque [`Value::Atom`]s, and host calls
+//! never execute. Literals have their own value forms. Intrinsic applications
+//! reduce whenever their rules apply; an opaque input can instead leave a
+//! structural residual, for example when a projection's pair is unknown.
 //!
 //! ## Coverage
 //!
@@ -78,8 +76,7 @@
 //!
 //! Stays as a residual (the § 3 residual-NF grammar, genuine opacity):
 //!
-//! - Free atoms — `equiv` parameters, unbound names, and host items
-//!   (host `fn`s / types / literals, reached as multi-segment paths) —
+//! - Free atoms — `equiv` parameters, unbound names, and host value references —
 //!   return a [`Value::Atom`] keyed by the dotted name.
 //! - Host calls and other applications whose callee is unreducible
 //!   (an atom or another stuck value), and eliminators whose scrutinee
@@ -17161,6 +17158,16 @@ mod tests {
         ));
         let ctx = EvalCtx::new();
         eval(equiv_terms(&m)[0], &Env::new(), &ctx)
+    }
+
+    #[test]
+    fn float_residuals_keep_source_spelling_before_native_emission() {
+        let original = eval_one("1.5E+2");
+        let canonical = eval_one("1.5e2");
+        assert!(matches!(&original, Value::FloatAtom(digits, _) if digits == "1.5E+2"));
+        assert!(matches!(&canonical, Value::FloatAtom(digits, _) if digits == "1.5e2"));
+        assert!(!nf_eq(&original, &canonical, &EvalCtx::new()));
+        assert!(nf_eq(&original, &eval_one("1.5E+2"), &EvalCtx::new()));
     }
 
     #[test]

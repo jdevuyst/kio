@@ -1,0 +1,7 @@
+module testapi;
+
+host type F32 role(f32);
+
+host type F64 role(f64);
+
+host type String role(str);

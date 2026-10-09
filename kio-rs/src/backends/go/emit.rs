@@ -34,7 +34,9 @@ use crate::backends::boundary_facade::{
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
 };
-use crate::backends::skin::{FfiDir, HostRoleTable, exact_host_role, host_role_table};
+use crate::backends::skin::{
+    FfiDir, HostRoleTable, exact_host_role, host_role_table, runtime_param_name_groups,
+};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
@@ -3635,35 +3637,6 @@ fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>
             crate::ast::SignatureGroupRef::Type(_) => None,
         })
         .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
-/// Runtime closure layers for a signature. Each type binder becomes its own
-/// empty layer, each value group keeps its parameter names, and a signature
-/// without any groups receives a nullary value stage.
-fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| Vec::new()));
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(param.name.as_str()),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
-    }
     if groups.is_empty() {
         groups.push(Vec::new());
     }

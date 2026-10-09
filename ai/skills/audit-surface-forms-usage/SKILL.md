@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Surface-form usage audit
 
-ai/topics/surface-forms.md enumerates conventions for `*.kio` files that are *not* the kio-prime subject: prefer the surface form over the Kio'-level intrinsic / desugared form. This skill audits the corpus for those conventions.
+Anchor: [`ai/topics/surface-forms.md` — Surface forms in non-Kio' files](../../topics/surface-forms.md). Its named preference rules govern `*.kio` files that are *not* the kio-prime subject: prefer the surface form over the Kio'-level intrinsic / desugared form. This skill audits the corpus for those conventions.
 
 The exception for intrinsic/desugared-form checks is files whose **subject is the intrinsic / desugared form itself** — typically goldens named `build_intrinsics`, `typecheck_intrinsics`, or per-feature roundtrip tests pinning the elaborated AST. Those keep the lower-level spelling. Detect subject-of-intrinsic files by name pattern or by an explicit comment in the case header; flag candidates rather than auto-excluding them. The Unit-result check below still applies in those files when the written result is incidental.
 
@@ -16,7 +16,7 @@ Read ai/topics/surface-forms.md before starting.
 
 In `*.kio` files outside the intrinsic-subject set, grep for:
 
-- `use __intrinsics__;` — should not appear except in intrinsic-subject files.
+- `import __intrinsics__;` — should not appear except in intrinsic-subject files.
 - `__intrinsic_*` direct calls — should not appear; the surface has operators, tuple literals, spine elaborators, `match!`, imported `if!`/`else`, etc.
 - `__either__`, `__if_then_else__`, `__pair__`, `__left__`, `__right__` — same; sum elimination goes through `match!`, product construction through tuple literals, sum construction through `widen_sum!`.
 
@@ -46,7 +46,7 @@ For each `*.kio` outside the intrinsic-subject set:
 
 - `let _ = e;` discarding a unit value where `e;` (expression statement) would work. Find every `let _ =` and check whether the RHS is unit-typed — if so, flag it. Reserve `let _ = e;` for genuinely non-unit values being deliberately discarded.
 - Explicit type-arguments that inference could fill. Find call-sites like `id(T, x)`, `Box.mk_box(T, v)`, `push(T, x, xs)` and check whether the type-arg is forced (case subject is the explicit-type-arg path) or could be elided.
-- Redundant `-> .` on ordinary named functions. Follow the preference in [`kio-authoring.md`](../../topics/kio-authoring.md) and its linked public tutorial: an omitted result defaults to Unit for a named function, unlike an anonymous function. Inventory `*.kio` and Kiodoc fences under `docs/`, including multiline/commented headers; a line-only grep is discovery, not completion. Classify each occurrence before reporting: incidental ordinary result (suggest omission), written result itself taught/asserted or needed for exact source/parser/formatter/diagnostic coverage (retain), grammar-required host declaration or recorded signature artifact (retain), derived dependency copy (report its canonical owner), or uncertain (flag for review). Check recursive declarations against their own grammar and case subject. A Prime marker or Kio' artifact alone does **not** require the written result; retain it only when that spelling is the subject. Do not rewrite hits automatically or treat function-type arrows and anonymous-result inference as this rule.
+- Redundant `-> .` on ordinary named functions. The [language tutorial, Type-only values](../../../docs/tutorials/language.md#type-only-values) explains that an omitted result defaults to Unit for a named function, unlike an anonymous function. Prefer omission when that written result is incidental. Inventory `*.kio` and Kiodoc fences under `docs/`, including multiline/commented headers; a line-only grep is discovery, not completion. Classify each occurrence before reporting: incidental ordinary result (suggest omission), written result itself taught/asserted or needed for exact source/parser/formatter/diagnostic coverage (retain), grammar-required host declaration or recorded signature artifact (retain), derived dependency copy (report its canonical owner), or uncertain (flag for review). Check recursive declarations against their own grammar and case subject. A Prime marker or Kio' artifact alone does **not** require the written result; retain it only when that spelling is the subject. Do not rewrite hits automatically or treat function-type arrows and anonymous-result inference as this rule.
 
 ## 4. docs/
 

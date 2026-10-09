@@ -2379,7 +2379,7 @@ impl<'a> Parser<'a> {
     /// - a boolean literal;
     /// - a bare word — a value-level identifier.
     ///
-    /// Per [`grammar.md` § Package files](../../../specs/grammar.md#package-files).
+    /// Per [`grammar.md` § Package files](../../../../specs/grammar.md#package-files).
     /// The caller validates which of these kinds the specific field
     /// accepts. The returned span covers the value tokens.
     fn parse_block_field_value(&mut self) -> Result<(crate::ast::BlockFieldValue, Span), Error> {
@@ -3439,7 +3439,7 @@ impl<'a> Parser<'a> {
     /// `docs { md "…"; support "…"; md_out "…"; html "…"; };`
     /// block. `md` is mandatory inside the block; `support` is
     /// repeatable; `md_out` and `html` are optional. Per
-    /// [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
+    /// [`specs/package.md` § Build target files](../../../../specs/package.md#build-target-files).
     fn docs_decl(
         &mut self,
         mut leading_trivia: Vec<Trivia>,
@@ -6038,6 +6038,7 @@ impl<'a> Parser<'a> {
                 });
                 let allowed = !(modifiers.host
                     || modifiers.purity.is_pure()
+                    || matches!(modifiers.vis, Visibility::PublicIn(_))
                     || matches!(context, DeclarationContext::TypeGroup { .. }));
                 let choices = [
                     ("fn", allowed),
@@ -6094,6 +6095,7 @@ impl<'a> Parser<'a> {
         let module = matches!(context, DeclarationContext::Module);
         let type_group = matches!(context, DeclarationContext::TypeGroup { .. });
         if (modifiers.purity.is_pure() && modifiers.host)
+            || (modifiers.host && matches!(modifiers.vis, Visibility::PublicIn(_)))
             || (type_group && (modifiers.purity.is_pure() || modifiers.host))
         {
             self.cursor_choices(CursorSlot::Grammar, &[]);
@@ -6107,7 +6109,10 @@ impl<'a> Parser<'a> {
             ("import", imports),
             ("pub", !modifiers.vis.is_pub()),
             ("pure", ordinary && !type_group),
-            ("host", ordinary && !type_group),
+            (
+                "host",
+                ordinary && !type_group && !matches!(modifiers.vis, Visibility::PublicIn(_)),
+            ),
             (
                 "fn",
                 !type_group && (module || modifiers.host || modifiers.vis.is_pub()),
@@ -6154,6 +6159,12 @@ impl<'a> Parser<'a> {
         if modifiers.host {
             // Host items are always public; `pub host` / `host pub` are
             // accepted but redundant. `pure host` is rejected.
+            if matches!(modifiers.vis, Visibility::PublicIn(_)) {
+                return Err(self.err(
+                    modifiers.vis_span.expect("scoped visibility has a source span"),
+                    "host declarations cannot use `pub(path)` visibility; host items are always public",
+                ));
+            }
             let start = self.peek_span().start;
             return if self.peek_ident_named("type") {
                 self.expect_ident_named("type")?;
@@ -12291,6 +12302,10 @@ impl<'a> Parser<'a> {
                 self.fn_placeholder_expr(dot_span.start, stem)
             }
             Some(TokenKind::Ident(s)) if s == "t" || s == "f" => {
+                if self.peek_span().start != dot_span.end {
+                    return Err(self
+                        .err_here("a boolean literal requires `t` or `f` immediately after `.`"));
+                }
                 let tok = self.advance();
                 let TokenKind::Ident(name) = tok.kind else {
                     unreachable!("just matched Ident")

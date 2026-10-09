@@ -2,8 +2,8 @@
 //!
 //! Public callable topology, semantic slots, structural shells, and nominal
 //! dependencies are planned once in [`crate::backends::boundary_facade`]. This
-//! module retains only reusable conversion algorithms and IR helpers: the
-//! [`SkinProfile`] driver, exact type reach and substitution utilities,
+//! module retains only reusable conversion algorithms and IR helpers:
+//! boundary arity, exact type reach and substitution utilities,
 //! canonical hashing, and the first-non-colliding key selector. A backend's
 //! public declaration catalog and naming policy stay in its prepared facade
 //! renderer; this module does not discover or register a second public shape
@@ -22,8 +22,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 /// conversion runs in one of two directions, and the direction flips
 /// across a function value's parameter leg (a value handed *into* an
 /// exported fn is converted the opposite way from the fn's result), so
-/// the driver threads the direction through the walk and each profile
-/// renders its leaves accordingly.
+/// each boundary converter threads the direction through its parameter
+/// and result conversions.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FfiDir {
     /// Host-facing skin shape → package-internal representation. Runs at
@@ -41,8 +41,8 @@ impl FfiDir {
     /// A function flowing `Out` (internal → host) receives host-shaped
     /// arguments that must be converted `In` before the internal body
     /// runs; a function flowing `In` is symmetric. Every backend's
-    /// function-leaf hook flips the same way, so the rule lives on the
-    /// shared direction rather than in each profile.
+    /// function conversion flips the same way, so the rule lives on the
+    /// shared direction.
     pub fn flip(self) -> FfiDir {
         match self {
             FfiDir::Out => FfiDir::In,
@@ -51,457 +51,31 @@ impl FfiDir {
     }
 }
 
-/// The two parameter partitions of a polymorphic-function newtype payload at
-/// the host boundary.
+/// The semantic parameter arity of a polymorphic-function newtype payload
+/// at the host boundary.
 ///
 /// The host sees the semantic right-spine product (except that a raw
 /// zero-arity domain remains zero slots), while the stored callable keeps the
 /// lowering ABI recorded by [`Type::Function::abi_arity`]. Recovery may pack
-/// several semantic slots into the stored callable's final argument, so these
-/// partitions must never be conflated.
-#[derive(Debug)]
-pub struct FunctionBoundaryAdapterPlan<'a> {
-    boundary_slots: Vec<&'a Type<Routed>>,
-    internal_slots: Vec<&'a Type<Routed>>,
-}
-
-impl<'a> FunctionBoundaryAdapterPlan<'a> {
-    pub(crate) fn new(param: &'a Type<Routed>, abi_arity: usize) -> Self {
-        let internal_slots = Type::right_spine_take(param, abi_arity);
-        assert_eq!(
-            internal_slots.len(),
-            abi_arity,
-            "Routed function parameter spine is shorter than its ABI arity"
-        );
-        let boundary_slots = if abi_arity == 0 {
-            Vec::new()
-        } else {
-            Type::right_spine_product(param)
-        };
-        assert!(
-            internal_slots.len() <= boundary_slots.len(),
-            "Routed function ABI has more slots than its semantic parameter spine"
-        );
-        Self {
-            boundary_slots,
-            internal_slots,
-        }
-    }
-
-    pub(crate) fn boundary_slots(&self) -> &[&'a Type<Routed>] {
-        &self.boundary_slots
-    }
-
-    #[cfg(test)]
-    pub(crate) fn internal_slots(&self) -> &[&'a Type<Routed>] {
-        &self.internal_slots
-    }
-
-    pub(crate) fn boundary_arity(&self) -> usize {
-        self.boundary_slots.len()
-    }
-
-    pub(crate) fn internal_arity(&self) -> usize {
-        self.internal_slots.len()
-    }
-
-    /// Repartition converted canonical boundary slots into the stored
-    /// callable's ABI arguments. Every leading ABI argument keeps one slot;
-    /// the final argument receives the right-nested remainder.
-    pub(crate) fn boundary_to_internal_args(
-        &self,
-        values: &[String],
-        pair: impl FnMut(&str, &str) -> String,
-    ) -> Vec<String> {
-        assert_eq!(values.len(), self.boundary_arity());
-        if self.internal_arity() == 0 {
-            return Vec::new();
-        }
-        let final_start = self.internal_arity() - 1;
-        let mut args = values[..final_start].to_vec();
-        args.push(right_nest_values(&values[final_start..], pair));
-        args
-    }
-
-    /// Rebuild the full semantic product from stored ABI arguments, then
-    /// flatten it back to canonical boundary slots.
-    pub(crate) fn internal_to_boundary_args(
-        &self,
-        values: &[String],
-        pair: impl FnMut(&str, &str) -> String,
-        mut project: impl FnMut(&str, usize, usize) -> String,
-    ) -> Vec<String> {
-        assert_eq!(values.len(), self.internal_arity());
-        if self.boundary_arity() == 0 {
-            return Vec::new();
-        }
-        let product = self.internal_product(values, pair);
-        if self.boundary_arity() == 1 {
-            return vec![product];
-        }
-        (0..self.boundary_arity())
-            .map(|index| project(&product, index, self.boundary_arity()))
-            .collect()
-    }
-
-    pub(crate) fn internal_product(
-        &self,
-        values: &[String],
-        pair: impl FnMut(&str, &str) -> String,
-    ) -> String {
-        assert_eq!(values.len(), self.internal_arity());
-        right_nest_values(values, pair)
-    }
-}
-
-fn right_nest_values(values: &[String], mut pair: impl FnMut(&str, &str) -> String) -> String {
-    let (last, prefix) = values
-        .split_last()
-        .expect("a non-zero function partition has at least one value");
-    let mut nested = last.clone();
-    for value in prefix.iter().rev() {
-        nested = pair(value, &nested);
-    }
-    nested
-}
-
-/// The per-backend variation points of the FFI boundary-wrapper.
-///
-/// A backend implements this against its own value representation; the
-/// shared [`convert`] driver walks the signature's type and calls these
-/// hooks at each leaf. The profile is the visitor: it carries the
-/// borrowed per-backend state (JS the resolved [`Package`], Rust its
-/// emitter-local shape registry plus the in-scope type-parameter set) as
-/// `&self` fields,
-/// and each leaf hook re-enters the driver through [`Self::convert`] to
-/// recurse into its slots. The driver never sees that state and never
-/// names a host construct, so a profile is free to choose any value
-/// representation its host language expresses — a JS tagged object, a
-/// Rust native enum, or a Swift native enum.
-///
-/// [`Package`]: crate::pass::resolve::Package
-pub trait SkinProfile {
-    /// The backend's emit-error type (each backend ships its own
-    /// `EmitError`).
-    type Err;
-
-    /// Re-enter the shared boundary-wrapper driver. Leaf hooks call
-    /// this to recurse into their slots; it is exactly [`convert`] with
-    /// `self` as the profile, surfaced as a method so a hook can write
-    /// `self.convert(slot, access, dir)`.
-    fn convert(&self, ty: &Type<Routed>, expr: &str, dir: FfiDir) -> Result<String, Self::Err>
-    where
-        Self: Sized,
-    {
-        convert(self, ty, expr, dir)
-    }
-
-    /// `true` when a value of type `ty` crosses the FFI boundary
-    /// unchanged — no per-leaf conversion is needed. The driver
-    /// short-circuits to an identity conversion (returns `expr`
-    /// verbatim) before dispatching.
-    ///
-    /// The complement is what the driver walks. The predicate is the
-    /// profile's because what counts as passthrough is a property of the
-    /// backend's value representation: JS passes atomics, type variables,
-    /// function values whose legs need no conversion, unit, bottom,
-    /// recursive newtypes, and comptime-opaque shapes; Rust additionally
-    /// passes every newtype (it mints structs, never wraps) and any
-    /// binary 2-slot compound whose slots are all atomic (its binary
-    /// mint already *is* the FFI mint).
-    fn is_passthrough(&self, ty: &Type<Routed>) -> bool;
-
-    /// Convert a newtype-typed slot at the boundary.
-    ///
-    /// `Some(rendered)` when the profile gives a newtype its own boundary
-    /// shape (JS wraps `{ <ffi_key>: payload }` on `Out` and unwraps on
-    /// `In`); `None` when the profile carries the newtype transparently
-    /// (Rust — the newtype's nominal struct *is* its boundary shape, so
-    /// the driver falls through to identity). The hook recurses into the
-    /// payload via [`Self::convert`].
-    ///
-    /// Reached only for a `Type::Path` that [`Self::is_passthrough`] did
-    /// **not** rule out — i.e. a non-recursive, non-comptime newtype
-    /// reference. A profile that never wraps returns `None` unconditionally.
-    fn convert_newtype(
-        &self,
-        ty: &Type<Routed>,
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<Option<String>, Self::Err>;
-
-    /// Convert a product-typed value at the boundary.
-    ///
-    /// `slots` is the type's right-spine factors (from
-    /// [`Type::right_spine_product`]); the hook keys them (via
-    /// [`assign_spine_keys`]), reads / builds its backend's product
-    /// carrier, and recurses into each slot through [`Self::convert`].
-    fn convert_product(
-        &self,
-        ty: &Type<Routed>,
-        slots: &[&Type<Routed>],
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, Self::Err>;
-
-    /// Convert a sum-typed value at the boundary.
-    ///
-    /// `slots` is the type's right-spine arms (from
-    /// [`Type::right_spine_sum`]). The hook owns the *sum carrier*: a JS
-    /// tagged object, a Rust native enum, or a Swift native enum. It recurses
-    /// into the inhabited arm through [`Self::convert`].
-    fn convert_sum(
-        &self,
-        ty: &Type<Routed>,
-        slots: &[&Type<Routed>],
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, Self::Err>;
-
-    /// Convert a function value whose legs differ in representation
-    /// across the boundary.
-    ///
-    /// The function value itself crosses verbatim, but a compound
-    /// parameter or return type has a host-facing shape on one side and
-    /// an internal shape on the other. The hook builds the bridging
-    /// wrapper, converting each parameter leg in the flipped direction
-    /// ([`FfiDir::flip`]) and the return leg in `dir`, recursing via
-    /// [`Self::convert`]. `param` / `ret` / `abi_arity` are the
-    /// function type's components; the parameter spine is recovered with
-    /// [`Type::right_spine_take`].
-    fn convert_function(
-        &self,
-        param: &Type<Routed>,
-        ret: &Type<Routed>,
-        abi_arity: usize,
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, Self::Err>;
-
-    /// Cast an already-`Out`-converted `expr` to the host-facing boundary
-    /// type of `ty`, or `None` when no cast is needed.
-    ///
-    /// An erased-static profile reaches a struct field / sum payload /
-    /// function leg through the universal body carrier. A slot whose boundary
-    /// type is *concrete* must be asserted to it (for example, Swift
-    /// `expr as! H.main__I32`). A slot whose boundary type
-    /// is itself the universal needs no cast (`None`). This is the one leaf
-    /// the shared [`Self::convert_out_into_typed`] default cannot supply: it
-    /// is the spelling of the host's downcast and the name of its universal
-    /// carrier, both per-backend.
-    ///
-    /// The default returns `None` — a host with no erased body (JS dynamic,
-    /// Rust nominal) never down-asserts an erased access, so it never calls
-    /// [`Self::convert_out_into_typed`] and inherits the no-op.
-    fn cast_to_boundary(
-        &self,
-        _expr: &str,
-        _ty: &Type<Routed>,
-    ) -> Result<Option<String>, Self::Err> {
-        Ok(None)
-    }
-
-    /// Assert an erased newtype payload access to the payload's exact host
-    /// spelling. Most payloads share [`Self::cast_to_boundary`]; an
-    /// outer-`forall` function is the exception because its newtype-member
-    /// public boundary canonicalizes the semantic product domain rather than
-    /// exposing the function node's stored `abi_arity` partition.
-    fn cast_newtype_payload_to_boundary(
-        &self,
-        expr: &str,
-        payload: &Type<Routed>,
-    ) -> Result<Option<String>, Self::Err> {
-        self.cast_to_boundary(expr, payload)
-    }
-
-    /// Convert `access` `Out` and, when the slot lands as a **concrete**
-    /// host type at the boundary (not the erased universal carrier), cast
-    /// the converted value to it via [`Self::cast_to_boundary`].
-    ///
-    /// The shared shape of the erased-static profile's typed-slot recovery:
-    /// an internal `[]any` access feeding a typed struct field / sum
-    /// payload / function leg yields the universal carrier, so a passthrough
-    /// atom's `convert` returns it unchanged but the typed boundary slot
-    /// needs its concrete type. A compound slot's `convert` already yields
-    /// the concrete struct / enum, so the cast is suppressed there
-    /// ([`Self::is_passthrough`] is false). The per-backend cast spelling and
-    /// universal-carrier name live in [`Self::cast_to_boundary`].
-    fn convert_out_into_typed(&self, ty: &Type<Routed>, access: &str) -> Result<String, Self::Err>
-    where
-        Self: Sized,
-    {
-        let conv = self.convert(ty, access, FfiDir::Out)?;
-        if self.is_passthrough(ty)
-            && let Some(cast) = self.cast_to_boundary(&conv, ty)?
-        {
-            return Ok(cast);
-        }
-        Ok(conv)
-    }
-
-    /// Bridge a **polymorphic-function newtype payload** — a dictionary
-    /// shape (`Functor[*F]` / `Monad[*F]`), a newtype over `[..](P) -> R` —
-    /// across a boundary whose canonical semantic slots may differ from the
-    /// stored callable partition recorded by `Type::Function::abi_arity`.
-    ///
-    /// The semantic callable is constructed and applied with the surface
-    /// slots (`mk_functor(.(step, m) {…})` / `fmap(d)(step, m)`), while
-    /// recovery may retain a closure with a coarser ABI partition. The
-    /// boundary adapter exposes the canonical slots and repartitions them
-    /// before the stored callable is invoked. Per `specs/backends/README.md`
-    /// § Function-type FFI canonicalization the boundary walks the
-    /// right-spine of the domain.
-    ///
-    /// Each backend's payload bridge differs (Swift uses the erased-static
-    /// adapter; JS spells the same plan dynamically), so this
-    /// is a per-backend leaf. The default is unreachable — it fires only
-    /// through the shared [`Self::convert_newtype_payload`], which a backend
-    /// that handles polymorphic payloads overrides and a backend that does
-    /// not never calls.
-    fn convert_poly_fn_payload(
-        &self,
-        _param: &Type<Routed>,
-        _ret: &Type<Routed>,
-        _plan: &FunctionBoundaryAdapterPlan<'_>,
-        _type_stages: usize,
-        _expr: &str,
-        _dir: FfiDir,
-    ) -> Result<String, Self::Err> {
-        unreachable!(
-            "convert_poly_fn_payload reached on a target that does not bridge \
-             polymorphic newtype payloads — the default convert_newtype_payload \
-             only reaches it for targets that override this leaf"
-        )
-    }
-
-    /// Convert a **newtype payload** across the FFI boundary.
-    ///
-    /// Identical to [`Self::convert`] except for a polymorphic-function
-    /// payload (a dictionary shape), which routes through
-    /// [`Self::convert_poly_fn_payload`] with the shared boundary/ABI adapter
-    /// plan. The peel-foralls / detect-function / partition scaffold is
-    /// shared; the function-case bridge is the per-backend leaf. A
-    /// non-function payload (the common case) converts directly.
-    fn convert_newtype_payload(
-        &self,
-        payload: &Type<Routed>,
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, Self::Err>
-    where
-        Self: Sized,
-    {
-        // The dictionary payload is `Forall(binders, Function(P, R))`; peel
-        // the rank-N binders to reach the function (the erased body carries
-        // no runtime shape for them).
-        let polymorphic = matches!(payload, Type::Forall { .. });
-        let mut type_stages = 0;
-        let mut inner = payload;
-        while let Type::Forall { body, .. } = inner {
-            type_stages += 1;
-            inner = body;
-        }
-        if polymorphic
-            && let Type::Function {
-                param,
-                ret,
-                abi_arity,
-                ..
-            } = inner
-            && !self.is_passthrough(payload)
-        {
-            let plan = FunctionBoundaryAdapterPlan::new(param, *abi_arity);
-            return self.convert_poly_fn_payload(param, ret, &plan, type_stages, expr, dir);
-        }
-        self.convert(payload, expr, dir)
-    }
-
-    /// Convert a newtype payload `Out` and recover a concrete boundary leaf
-    /// type when the erased-static body carries it as the universal value.
-    /// This is the newtype-payload analogue of
-    /// [`Self::convert_out_into_typed`]: its function case preserves the
-    /// outer-`forall` boundary partition before applying the ordinary leaf
-    /// cast.
-    fn convert_newtype_payload_out_into_typed(
-        &self,
-        payload: &Type<Routed>,
-        access: &str,
-    ) -> Result<String, Self::Err>
-    where
-        Self: Sized,
-    {
-        let conv = self.convert_newtype_payload(payload, access, FfiDir::Out)?;
-        if self.is_passthrough(payload)
-            && let Some(cast) = self.cast_newtype_payload_to_boundary(&conv, payload)?
-        {
-            return Ok(cast);
-        }
-        Ok(conv)
-    }
-}
-
-/// Walk `ty` over its right spine and emit a host-language expression that
-/// converts `expr` between the host-facing skin shape and the package's
-/// internal representation, in direction `dir`.
-///
-/// This is the shared *shape* of a profile-backed per-signature boundary
-/// wrapper. It is purely structural: it short-circuits passthrough
-/// types to identity, then dispatches on the type constructor and hands
-/// each leaf to `profile`. The profile's hooks own the backend's value
-/// representation and recurse back through this function, so callers share
-/// the walk while the rendered output is entirely the profile's.
-///
-/// - **Passthrough** ([`SkinProfile::is_passthrough`] true) → `expr`
-///   unchanged.
-/// - **Newtype** (`Type::Path`) → [`SkinProfile::convert_newtype`];
-///   `None` falls through to identity (the profile carries the newtype
-///   transparently).
-/// - **Product** / **Sum** → [`SkinProfile::convert_product`] /
-///   [`SkinProfile::convert_sum`], passing the right-spine slots.
-/// - **Function** → [`SkinProfile::convert_function`].
-/// - **Forall** → erase the binders and recurse on the body (the host
-///   supplies no type arguments).
-///
-/// A profile may override [`SkinProfile::convert`] for an atomic representation
-/// change before entering this driver. `Type::Unit` / `Type::Bottom` that reach
-/// the dispatch fall through to identity; `Type::Infer` / `Type::LabelSugar`
-/// are uninhabited at `Routed`.
-pub fn convert<P: SkinProfile>(
-    profile: &P,
-    ty: &Type<Routed>,
-    expr: &str,
-    dir: FfiDir,
-) -> Result<String, P::Err> {
-    if profile.is_passthrough(ty) {
-        return Ok(expr.to_owned());
-    }
-    match ty {
-        Type::Path { .. } => match profile.convert_newtype(ty, expr, dir)? {
-            Some(rendered) => Ok(rendered),
-            None => Ok(expr.to_owned()),
-        },
-        Type::Product { .. } => {
-            let slots = Type::right_spine_product(ty);
-            profile.convert_product(ty, &slots, expr, dir)
-        }
-        Type::Sum { .. } => {
-            let slots = Type::right_spine_sum(ty);
-            profile.convert_sum(ty, &slots, expr, dir)
-        }
-        Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } => profile.convert_function(param, ret, *abi_arity, expr, dir),
-        Type::Forall { body, .. } => convert(profile, body, expr, dir),
-        // Atomic leaves are either passthrough or handled by a profile's
-        // `convert` override; Infer / LabelSugar are uninhabited at Routed.
-        Type::Unit { .. } | Type::Bottom { .. } => Ok(expr.to_owned()),
-        Type::LabelSugar { ext, .. } => match *ext {},
-        Type::Infer { ext, .. } => match *ext {},
-        Type::Goal { ext, .. } => match *ext {},
-    }
+/// several semantic slots into the stored callable's final argument, so its
+/// ABI arity does not determine the host arity.
+pub(crate) fn function_boundary_arity(param: &Type<Routed>, abi_arity: usize) -> usize {
+    let internal_slots = Type::right_spine_take(param, abi_arity);
+    assert_eq!(
+        internal_slots.len(),
+        abi_arity,
+        "Routed function parameter spine is shorter than its ABI arity"
+    );
+    let boundary_slots = if abi_arity == 0 {
+        Vec::new()
+    } else {
+        Type::right_spine_product(param)
+    };
+    assert!(
+        internal_slots.len() <= boundary_slots.len(),
+        "Routed function ABI has more slots than its semantic parameter spine"
+    );
+    boundary_slots.len()
 }
 
 /// Assign a host-visible key to each of `slot_count` spine slots by
@@ -801,6 +375,35 @@ pub(crate) fn erase_scoped_type_vars(ty: &Type<Routed>, scope: &BTreeSet<String>
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
+}
+
+/// Binding layers for bodies whose erased type binders are nullary closures.
+/// Value groups retain their source names; an empty signature has one nullary
+/// value layer. This follows abstraction order, not public call inference.
+pub(crate) fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
+    let mut groups = Vec::new();
+    for group in sig.canonical_groups() {
+        match group {
+            crate::ast::SignatureGroupRef::Type(params) => {
+                groups.extend(params.iter().map(|_| Vec::new()));
+            }
+            crate::ast::SignatureGroupRef::Value(params) => {
+                groups.push(
+                    params
+                        .iter()
+                        .filter_map(|param| match param {
+                            crate::ast::SignatureParam::Value(param) => Some(param.name.as_str()),
+                            crate::ast::SignatureParam::Type(_) => None,
+                        })
+                        .collect(),
+                );
+            }
+        }
+    }
+    if groups.is_empty() {
+        groups.push(Vec::new());
+    }
+    groups
 }
 
 pub(crate) fn erase_signature_value_groups(
@@ -1241,7 +844,7 @@ pub(crate) fn exact_host_role(roles: &HostRoleTable, ty: &Type<Routed>) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Meta, PathSegment};
+    use crate::ast::{Meta, Param, PathSegment, Signature, SignatureGroup};
     use crate::span::Span;
     #[cfg(feature = "surface")]
     use crate::{
@@ -1261,6 +864,58 @@ mod tests {
             args: vec![],
             meta: meta(),
         }
+    }
+
+    #[test]
+    fn runtime_binding_groups_preserve_erased_and_value_stages() {
+        let type_param = |name: &str| TypeParam {
+            presentation: Default::default(),
+            name: name.to_owned(),
+            span: Span::new(0, 0),
+            kind: None,
+        };
+        let value_param = |name: &str| Param {
+            name: name.to_owned(),
+            ty: Some(Type::Unit { meta: meta() }),
+            pattern: (),
+            meta: meta(),
+        };
+        let signature = Signature::from_groups(vec![
+            SignatureGroup::Type(vec![type_param("A"), type_param("B")]),
+            SignatureGroup::Value(vec![value_param("left"), value_param("right")]),
+            SignatureGroup::Type(vec![type_param("C")]),
+            SignatureGroup::Value(vec![]),
+            SignatureGroup::Value(vec![value_param("__kio_tail")]),
+        ]);
+
+        assert_eq!(
+            runtime_param_name_groups(&signature),
+            vec![
+                vec![],
+                vec![],
+                vec!["left", "right"],
+                vec![],
+                vec![],
+                vec!["__kio_tail"],
+            ]
+        );
+        let type_only = Signature::from_groups(vec![SignatureGroup::Type(vec![
+            type_param("A"),
+            type_param("B"),
+        ])]);
+        assert_eq!(
+            runtime_param_name_groups(&type_only),
+            vec![Vec::<&str>::new(), Vec::new()]
+        );
+    }
+
+    #[test]
+    fn runtime_binding_empty_signature_has_one_nullary_layer() {
+        let signature = Signature::from_groups(vec![]);
+        assert_eq!(
+            runtime_param_name_groups(&signature),
+            vec![Vec::<&str>::new()]
+        );
     }
 
     fn qualified_path(module: &str, name: &str) -> Type<Routed> {
@@ -1320,41 +975,18 @@ mod tests {
     }
 
     #[test]
-    fn function_boundary_plan_separates_semantic_and_stored_partitions() {
+    fn function_boundary_arity_separates_semantic_and_stored_partitions() {
         let param = product(path("A"), product(path("B"), path("C")));
-        let plan = FunctionBoundaryAdapterPlan::new(&param, 1);
-        assert_eq!(plan.boundary_arity(), 3);
-        assert_eq!(plan.internal_arity(), 1);
-
-        let boundary = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
-        assert_eq!(
-            plan.boundary_to_internal_args(&boundary, |left, right| {
-                format!("pair({left},{right})")
-            }),
-            vec!["pair(a,pair(b,c))"]
-        );
-
-        let internal = vec!["packed".to_owned()];
-        assert_eq!(
-            plan.internal_to_boundary_args(
-                &internal,
-                |left, right| format!("pair({left},{right})"),
-                |value, index, arity| format!("slot({value},{index},{arity})"),
-            ),
-            vec!["slot(packed,0,3)", "slot(packed,1,3)", "slot(packed,2,3)",]
-        );
+        for abi_arity in 1..=3 {
+            assert_eq!(function_boundary_arity(&param, abi_arity), 3);
+        }
     }
 
     #[test]
-    fn function_boundary_plan_preserves_raw_zero_arity() {
+    fn function_boundary_arity_preserves_raw_zero_arity() {
         let unit = Type::Unit { meta: meta() };
-        let raw_zero = FunctionBoundaryAdapterPlan::new(&unit, 0);
-        assert_eq!(raw_zero.boundary_arity(), 0);
-        assert_eq!(raw_zero.internal_arity(), 0);
-
-        let substituted_unit_slot = FunctionBoundaryAdapterPlan::new(&unit, 1);
-        assert_eq!(substituted_unit_slot.boundary_slots(), vec![&unit]);
-        assert_eq!(substituted_unit_slot.internal_slots(), vec![&unit]);
+        assert_eq!(function_boundary_arity(&unit, 0), 0);
+        assert_eq!(function_boundary_arity(&unit, 1), 1);
     }
 
     #[cfg(feature = "surface")]
@@ -1583,209 +1215,6 @@ mod tests {
         assert!(matches!(chain.use_at(*right), ValueUse::Nominal(name)
             if name.module_segments() == ["main"] && name.name() == "Chain"));
     }
-    /// A profile that records every hook the driver invokes, so the
-    /// tests can pin the driver's dispatch (which arm, which slots,
-    /// which direction) without committing to any backend's value
-    /// representation. The leaf hooks recurse through the driver and
-    /// render a compact symbolic trace rather than real source.
-    ///
-    /// `passthrough` decides which `Path` names short-circuit; `wraps`
-    /// decides which non-passthrough `Path` names the newtype hook
-    /// wraps (vs. returns `None` to fall through to identity).
-    struct TraceProfile {
-        passthrough: fn(&str) -> bool,
-        wraps: bool,
-    }
-
-    impl TraceProfile {
-        fn path_name(ty: &Type<Routed>) -> String {
-            match ty {
-                Type::Path { segments, .. } => segments
-                    .last()
-                    .map(|s| s.as_str().to_owned())
-                    .unwrap_or_default(),
-                Type::Unit { .. } => "()".to_owned(),
-                _ => "?".to_owned(),
-            }
-        }
-    }
-
-    impl SkinProfile for TraceProfile {
-        type Err = String;
-
-        fn is_passthrough(&self, ty: &Type<Routed>) -> bool {
-            match ty {
-                Type::Unit { .. } | Type::Bottom { .. } => true,
-                Type::Path { segments, .. } => segments
-                    .last()
-                    .is_some_and(|s| (self.passthrough)(s.as_str())),
-                _ => false,
-            }
-        }
-
-        fn convert_newtype(
-            &self,
-            ty: &Type<Routed>,
-            expr: &str,
-            dir: FfiDir,
-        ) -> Result<Option<String>, String> {
-            if !self.wraps {
-                return Ok(None);
-            }
-            let name = Self::path_name(ty);
-            Ok(Some(format!("nt[{name},{dir:?}]({expr})")))
-        }
-
-        fn convert_product(
-            &self,
-            _ty: &Type<Routed>,
-            slots: &[&Type<Routed>],
-            expr: &str,
-            dir: FfiDir,
-        ) -> Result<String, String> {
-            let parts: Result<Vec<String>, String> =
-                slots.iter().map(|s| convert(self, s, expr, dir)).collect();
-            Ok(format!("prod[{dir:?}]({})", parts?.join(",")))
-        }
-
-        fn convert_sum(
-            &self,
-            _ty: &Type<Routed>,
-            slots: &[&Type<Routed>],
-            expr: &str,
-            dir: FfiDir,
-        ) -> Result<String, String> {
-            let parts: Result<Vec<String>, String> =
-                slots.iter().map(|s| convert(self, s, expr, dir)).collect();
-            Ok(format!("sum[{dir:?}]({})", parts?.join(",")))
-        }
-
-        fn convert_function(
-            &self,
-            param: &Type<Routed>,
-            ret: &Type<Routed>,
-            abi_arity: usize,
-            expr: &str,
-            dir: FfiDir,
-        ) -> Result<String, String> {
-            let param_slots = Type::right_spine_take(param, abi_arity);
-            let params: Result<Vec<String>, String> = param_slots
-                .iter()
-                .map(|p| convert(self, p, "p", dir.flip()))
-                .collect();
-            let ret_conv = convert(self, ret, "r", dir)?;
-            Ok(format!(
-                "fn[{dir:?}](({});{ret_conv})({expr})",
-                params?.join(",")
-            ))
-        }
-    }
-
-    fn never_passthrough(_: &str) -> bool {
-        false
-    }
-
-    fn passthrough_lowercase(name: &str) -> bool {
-        name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-    }
-
-    #[test]
-    fn driver_short_circuits_passthrough_to_identity() {
-        let p = TraceProfile {
-            passthrough: passthrough_lowercase,
-            wraps: true,
-        };
-        // A lowercase path is passthrough → identity, no hook fires.
-        let out = convert(&p, &path("i32"), "x", FfiDir::Out).unwrap();
-        assert_eq!(out, "x");
-        // Unit is passthrough by predicate.
-        assert_eq!(
-            convert(&p, &Type::Unit { meta: meta() }, "u", FfiDir::In).unwrap(),
-            "u"
-        );
-    }
-
-    #[test]
-    fn driver_routes_newtype_wrap_and_passthrough_policies() {
-        // A profile that wraps newtypes (JS-shaped).
-        let wrapping = TraceProfile {
-            passthrough: passthrough_lowercase,
-            wraps: true,
-        };
-        assert_eq!(
-            convert(&wrapping, &path("Meters"), "v", FfiDir::Out).unwrap(),
-            "nt[Meters,Out](v)"
-        );
-        // A profile that carries newtypes transparently (Rust-shaped):
-        // the `None` return falls the driver through to identity.
-        let transparent = TraceProfile {
-            passthrough: passthrough_lowercase,
-            wraps: false,
-        };
-        assert_eq!(
-            convert(&transparent, &path("Meters"), "v", FfiDir::Out).unwrap(),
-            "v"
-        );
-    }
-
-    #[test]
-    fn driver_walks_product_right_spine_into_slots() {
-        let p = TraceProfile {
-            passthrough: never_passthrough,
-            wraps: true,
-        };
-        // (A & B & C) flattens to a 3-slot product; each slot recurses
-        // through the newtype hook in the same direction.
-        let ty = product(path("A"), product(path("B"), path("C")));
-        let out = convert(&p, &ty, "v", FfiDir::Out).unwrap();
-        assert_eq!(out, "prod[Out](nt[A,Out](v),nt[B,Out](v),nt[C,Out](v))");
-    }
-
-    #[test]
-    fn driver_walks_sum_right_spine_into_arms() {
-        let p = TraceProfile {
-            passthrough: never_passthrough,
-            wraps: true,
-        };
-        let ty = sum(path("A"), sum(path("B"), path("C")));
-        let out = convert(&p, &ty, "v", FfiDir::In).unwrap();
-        assert_eq!(out, "sum[In](nt[A,In](v),nt[B,In](v),nt[C,In](v))");
-    }
-
-    #[test]
-    fn driver_flips_direction_across_function_param_leg() {
-        let p = TraceProfile {
-            passthrough: never_passthrough,
-            wraps: true,
-        };
-        // (A & B) -> C, abi_arity 2: params convert in the flipped
-        // direction (Out value → In params), return in the original.
-        let ty = function(product(path("A"), path("B")), path("C"), 2);
-        let out = convert(&p, &ty, "f", FfiDir::Out).unwrap();
-        assert_eq!(out, "fn[Out]((nt[A,In](p),nt[B,In](p));nt[C,Out](r))(f)");
-    }
-
-    #[test]
-    fn driver_erases_forall_binders_and_recurses_body() {
-        let p = TraceProfile {
-            passthrough: never_passthrough,
-            wraps: true,
-        };
-        let body = product(path("A"), path("B"));
-        let ty = Type::Forall {
-            param: crate::ast::TypeParam {
-                presentation: Default::default(),
-                name: "T".to_owned(),
-                span: Span::new(0, 0),
-                kind: None,
-            },
-            body: Box::new(body),
-            meta: meta(),
-        };
-        let out = convert(&p, &ty, "v", FfiDir::Out).unwrap();
-        assert_eq!(out, "prod[Out](nt[A,Out](v),nt[B,Out](v))");
-    }
-
     #[test]
     fn scoped_type_var_erasure_enters_nested_forall_without_touching_nominals() {
         let nested = Type::Forall {

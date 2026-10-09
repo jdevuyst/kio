@@ -1,11 +1,11 @@
 //! Type checking for full Kio (System F core + the elaboration-aware
-//! positions `if`/`else`, user-elaborator calls, and field syntax).
+//! positions for user-elaborator calls and field syntax).
 //!
 //! Most of the typer machinery is shared with the kio-prime binary's
 //! standalone Kio'-only typer through [`crate::pass::typecheck_core`]
 //! (`ModuleEnv<P>`, `TypeCtx<P>`, the synth/check/apply family,
 //! the `Typer<P>` dispatch trait, …). This module retains only the
-//! pieces that depend on the elaboration table — conditional elaboration construction,
+//! pieces that depend on the elaboration table — recursive-order obligations,
 //! user-elaborator action preparation, `synth_field_access` / `synth_field_update`
 //! — plus the [`Elaborations`]
 //! type itself and the `LoweredTyper` that wires `Typer<Lowered>`
@@ -46,8 +46,7 @@
 //!   are validated and their schemes flow through to the
 //!   consuming module; host items are ambient for their
 //!   owning root tree.
-//! - Elaborator-position elaborations (`if`/`else`, internal
-//!   elaboration forms, and user-defined elaborator calls) recorded
+//! - Field access/update and user-defined elaborator calls recorded
 //!   in [`Elaborations`] and substituted into the AST during the
 //!   `Lowered → Prime` transition by `crate::pass::substitute`.
 //! - Export signatures validated against the package
@@ -9500,7 +9499,7 @@ fn user_elaborator_template_to_elaboration(
                     recipe_computation = true;
                 }
             }
-            let mut capture_requalifier = user_elaborator_replay_requalifier(replay);
+            let mut capture_requalifier = None;
             let mut replay_aliases = HashMap::new();
             let mut generated_imports = Vec::new();
             for import in capture_imports {
@@ -9508,7 +9507,9 @@ fn user_elaborator_template_to_elaboration(
                     replay_aliases.insert(import.alias.clone(), None);
                     continue;
                 }
-                let alias = capture_requalifier.ensure_module_import(&import.module_path);
+                let alias = capture_requalifier
+                    .get_or_insert_with(|| user_elaborator_replay_requalifier(replay))
+                    .ensure_module_import(&import.module_path);
                 replay_aliases.insert(import.alias.clone(), Some(alias.clone()));
                 generated_imports.push(UserElaboratorTemplateGeneratedImport {
                     module_path: import.module_path.clone(),
@@ -11167,6 +11168,53 @@ mod tests {
 
     fn module(src: &str) -> Module {
         lowered_module(src)
+    }
+
+    #[test]
+    fn unrelated_elaborator_named_match_keeps_its_selected_behavior() {
+        let elaborator = "module unrelated; import __comptime__; \
+            pure fn select_second(_ct: __Comptime__, _a: __Type__, _b: __Type__, \
+                _first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ { second } \
+            pub elab match : [A][B] A -> B -> B { impl select_second; };";
+        for call in ["match!(.t, .f)", "(.t).>match!(.f)"] {
+            let main = format!(
+                "module main; import unrelated(match); \
+                 host type Flag role(bool); fn run() -> Flag {{ {call} }}"
+            );
+            let package = lowered_package(&[("unrelated.kio", elaborator), ("main.kio", &main)]);
+            let complete = check_package_preserving_normalization(&package)
+                .expect("the unrelated declaration supplies the ordinary call type")
+                .complete()
+                .expect("the selected elaboration also passes standalone Prime validation");
+            let source = complete.into_source();
+            let artifact = source
+                .eval_artifact()
+                .expect("completed evaluator artifact");
+            let module = artifact.module("main").expect("main evaluator module");
+            let body = module
+                .module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "run" => Some(&def.body),
+                    _ => None,
+                })
+                .expect("run body");
+            let ctx = crate::normalization::AuthenticatedEvalCtx::for_module(
+                artifact.prepare_module("main").expect("module preparation"),
+            );
+            assert!(
+                matches!(
+                    crate::normalization::eval_authenticated(
+                        body,
+                        &crate::normalization::Env::new(),
+                        &ctx
+                    ),
+                    crate::normalization::Value::Bool(false)
+                ),
+                "{call} must execute the unrelated implementation that selects its second input"
+            );
+        }
     }
 
     #[test]
@@ -17433,6 +17481,52 @@ fn generic_last() -> . {
     }
 
     #[test]
+    fn template_replay_initializes_capture_requalifier_only_for_external_imports() {
+        use crate::pass::typecheck_core::PrimeTypeRequalifier;
+
+        let module = lowered_module("module caller; import earlier/helper as _q0;");
+        let local = UserElaboratorTemplateGeneratedImport {
+            module_path: "caller".to_owned(),
+            alias: "local".to_owned(),
+        };
+        let external = UserElaboratorTemplateGeneratedImport {
+            module_path: "external/helper".to_owned(),
+            alias: "external".to_owned(),
+        };
+        for imports in [
+            vec![],
+            vec![local.clone()],
+            vec![local, external.clone(), external],
+        ] {
+            let has_external = imports.iter().any(|import| import.module_path != "caller");
+            let mut elaborations = Elaborations::new();
+            let before = PrimeTypeRequalifier::initialization_count_for_test();
+            replay_template_with_type_argument(
+                &module,
+                &mut elaborations,
+                &[],
+                crate::ast::Type::<UncheckedPrime>::Unit {
+                    meta: Meta::new(test_span()),
+                },
+                &imports,
+            );
+            assert_eq!(
+                PrimeTypeRequalifier::initialization_count_for_test() - before,
+                1 + usize::from(has_external),
+                "type replay owns one requalifier; captures need another only for external imports"
+            );
+            let generated = elaborations.generated_imports_for("caller");
+            if has_external {
+                assert_eq!(generated.len(), 1);
+                assert_eq!(generated[0].module_path, "external/helper");
+                assert_eq!(generated[0].alias, "_q1");
+            } else {
+                assert!(generated.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn replayed_template_types_reserve_imports_added_by_value_substitution() {
         let module = lowered_module("module caller; import __intrinsics__;");
         let span = test_span();
@@ -17766,9 +17860,7 @@ fn generic_last() -> . {
         // Host items are ordinary public declarations under normal
         // scoping. A consumer that selectively imports a `host fn` and a
         // role-bearing `host type` must see both: the host fn as a
-        // callable name (regression — a selective `import m(foo);`
-        // where `foo` is a host fn previously left `foo` unbound, since
-        // only qualified `m.foo` access resolved), and the host type as
+        // callable name, and the host type as
         // a role-bearing type its literal annotations can name.
         let producer = lowered_module(
             "module pkg/producer; \

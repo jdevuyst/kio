@@ -160,7 +160,7 @@ representation, with no pending semantic conversion, must keep that value
 without nesting another adapter. The guard must also prove all three
 nonidentity boundaries: a same-ABI edge with real argument, result, nominal,
 evaluation, or continuation conversion; a genuinely different function ABI;
-and genuine pending continuation work such as `rec(cont)`.
+and genuine pending continuation work such as `recur(cont)`.
 
 The runtime evidence records one exact program, fixed iteration count,
 expected structured result, and failure mode. It is causal only when that same

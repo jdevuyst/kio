@@ -165,10 +165,7 @@ export KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache
 
 `RUSTC_WRAPPER` covers Cargo; `KIO_TEST_RUNNER_COMPILER_WRAPPER` covers compatible direct compiler invocations from the Rust test runner.
 
-`sccache` does not require `CARGO_INCREMENTAL=0`. Choose Cargo incremental mode based on the work pattern:
-
-- For repeated edits and repeated `ci/all.sh` runs in one warm worktree, leave Cargo incremental compilation at its default unless measurement says otherwise. The worktree-local `target/` directory is usually the main accelerator, and incremental rebuilds can beat sccache hits for first-party crates.
-- For fresh/disposable worktrees or cross-worktree reuse, set `CARGO_INCREMENTAL=0` when using sccache. That lets sccache cache more first-party crate compilations and share them across worktrees, at the cost of giving up Cargo's local incremental artifacts.
+`sccache` does not require `CARGO_INCREMENTAL=0`. That variable disables Cargo's local incremental artifacts and lets sccache cache more first-party crate compilations. Choose the tradeoff for the work pattern described in [`local-performance.md`](local-performance.md#one-worktree) and [Multiple worktrees](local-performance.md#multiple-worktrees).
 
 Prefer environment variables over creating new local Cargo config files. They cover both direct shell commands and the `ci/` scripts, are easy to inspect in `ci/all.sh` startup output, and avoid per-worktree config drift:
 

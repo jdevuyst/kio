@@ -173,7 +173,7 @@ impl SurfaceToPrime for PrimeLower {
         _args: Vec<CallArg<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error> {
-        Err(prime_reject("`rec` call", meta.span))
+        Err(prime_reject("`recur` call", meta.span))
     }
 
     fn rewrite_expr_label_value(
@@ -305,6 +305,10 @@ impl SurfaceToPrime for PrimeLower {
     fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error> {
         Err(prime_reject("label `import` item", span))
     }
+
+    fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error> {
+        Err(prime_reject("`import __comptime__`", span))
+    }
 }
 
 #[cfg(test)]
@@ -330,6 +334,18 @@ mod tests {
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.path.segments, vec!["x"]);
         assert_eq!(lowered.items.len(), 1);
+    }
+
+    #[test]
+    fn lower_module_rejects_comptime_import() {
+        let module = parse_module("module x; import __comptime__; fn f() -> . { () }");
+        let msg = err_msg(lower_module(module).expect_err("comptime import is surface-only"));
+        assert!(msg.contains("`import __comptime__`"), "{msg}");
+        assert!(msg.contains("use the `kio` binary"), "{msg}");
+        lower_module(parse_module(
+            "module x; import __intrinsics__; fn f() -> . { () }",
+        ))
+        .expect("runtime intrinsics remain Prime");
     }
 
     #[test]

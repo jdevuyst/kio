@@ -24,7 +24,7 @@ class KioFn:
 
     @staticmethod
     def lift(body):
-        return _KioFunction(1, lambda args: body(args[0]), "host callable")
+        return _KioFunction(body)
 
     def __call__(self, domain):
         raise NotImplementedError("a host callable implements __call__")
@@ -150,7 +150,9 @@ def _product_slots(value, arity):
 def _product_slot(value, index, arity):
     if index < 0 or index >= arity:
         raise IndexError("product slot out of bounds")
-    return _product_slots(value, arity)[index]
+    for _ in range(index):
+        value = value["right"]
+    return value if index + 1 == arity else value["left"]
 
 
 def _sum_inject(payload, variant, variants):
@@ -180,9 +182,8 @@ def _sum_payload(value, variants):
 class _KioFunction(KioFn):
     __slots__ = ("__leaf",)
 
-    def __init__(self, arity, invoke, label):
-        del label
-        self.__leaf = lambda domain: invoke(_product_slots(domain, arity))
+    def __init__(self, invoke):
+        self.__leaf = invoke
 
     def __setattr__(self, name, value):
         if hasattr(self, name):
@@ -521,14 +522,15 @@ class _PackageRuntime:
         if use["kind"] == "function":
             layout = site["execution"]["root_uses"][use_id]["layout"]
 
-            def apply(source_args):
+            def apply(domain):
+                source_args = _product_slots(domain, layout["body_abi_arity"])
                 continuation = source_args[0]
                 continuation_use = use["slots"][0]
                 return self._apply_existential_continuation(
                     site, continuation_use, continuation, payload
                 )
 
-            return _KioFunction(layout["body_abi_arity"], apply, "newtype projector")
+            return _KioFunction(apply)
         raise RuntimeError("existential projector has no prepared continuation stage")
 
     def _apply_existential_continuation(
@@ -574,18 +576,22 @@ class _PackageRuntime:
         def layer(index, env):
             is_type, names = groups[index]
 
-            def invoke(args):
+            def invoke(domain):
                 local = dict(env)
                 if not is_type:
-                    for name, value in zip(names, args):
-                        local[name] = value
+                    for slot, name in enumerate(names):
+                        if slot + 1 == len(names):
+                            local[name] = domain
+                        else:
+                            local[name] = domain["left"]
+                            domain = domain["right"]
                 if index + 1 < len(groups):
                     return layer(index + 1, local)
                 return self.eval(module_key, fn_def["body"], local)
 
             if is_type:
-                return _KioPoly(lambda: invoke([]))
-            return _KioFunction(len(names), invoke, f"{module_key}.{fn_def['name']}")
+                return _KioPoly(lambda: invoke(None))
+            return _KioFunction(invoke)
 
         return layer(0, dict(base_env))
 
@@ -735,17 +741,18 @@ class _PackageRuntime:
             semantic = site["callable"]["head"][index]
             execution = site["execution"]["head"][index]
 
-            def invoke(args):
+            def invoke(domain):
                 next_stages = list(stages)
                 if execution["kind"] == "value":
+                    args = _product_slots(domain, execution["layout"]["body_abi_arity"])
                     next_stages.append((semantic, execution["layout"], args))
                 if index + 1 < len(site["execution"]["head"]):
                     return layer(index + 1, next_stages)
                 return self._call_prepared_host(site, next_stages)
 
             if execution["kind"] == "type":
-                return _KioPoly(lambda: invoke([]))
-            return _KioFunction(execution["layout"]["body_abi_arity"], invoke, f"host.{module_path}.{name}")
+                return _KioPoly(lambda: invoke(None))
+            return _KioFunction(invoke)
 
         return layer(0, [])
 

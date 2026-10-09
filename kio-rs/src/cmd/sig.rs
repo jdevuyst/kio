@@ -85,6 +85,7 @@ Exit codes (per {base}/specs/exit-codes.md): `kio sig status` reports 0
 but-compatible drift), or 82 (a recorded break, not yet sealed). The
 other subcommands exit 0 on success, 40 on a recording / build error,
 or the matching `1x` category for a package that doesn't typecheck.
+Invalid command-line arguments exit 2; I/O or internal errors exit 1.
 
 See {base}/specs/cli.md#kio-sig-subcommand for full command behavior.";
 

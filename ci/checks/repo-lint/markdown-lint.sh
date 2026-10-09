@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Lint every markdown file in the project's coverage glob:
-# root *.md, ai/**/*.md, specs/**/*.md, and docs/**/*.md. Uses
+# root *.md, ai/**/*.md, specs/**/*.md, docs/**/*.md, and evidence/**/*.md. Uses
 # markdownlint-cli2; config lives in .markdownlint.json at the repo root.
 #
 # Requires `markdownlint-cli2` on PATH. Install the pinned tool with:
@@ -16,4 +16,4 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 
 cd "$REPO_ROOT"
 
-markdownlint-cli2 '*.md' 'ai/**/*.md' 'specs/**/*.md' 'docs/**/*.md'
+markdownlint-cli2 '*.md' 'ai/**/*.md' 'specs/**/*.md' 'docs/**/*.md' 'evidence/**/*.md'

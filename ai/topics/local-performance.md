@@ -51,12 +51,12 @@ When `sccache` is the compiler wrapper, read those per-task CPU rows with one ca
 Cargo's worktree-local `target/` cache is the main accelerator for repeated Rust checks in one worktree. `cargo build` and `cargo test` share dependency artifacts at the default `dev` profile, and a populated `target/` lets Cargo skip most local crate rebuilds and link work on reruns.
 
 CI-prepared full and reduced compiler snapshots use package-only `kio-lang`
-opt-level 1 with debug assertions and overflow checks enabled. The shared
+opt-level 2 with debug assertions and overflow checks enabled. The shared
 `build_corpus_tool_binary` helper owns this choice; ordinary developer builds,
 Cargo tests, Clippy, dependencies and release profiles are unchanged. Keeping
 the dev output layout reuses each tool's existing persistent target without a
-second dependency tree. A warm target can retain both opt0 and opt1 package
-artifacts, so compiler preparation still needs disk and rebuild accounting.
+second dependency tree. A warm target can retain package artifacts for multiple
+optimization levels, so compiler preparation still needs disk and rebuild accounting.
 
 Account for rebuild time and disk separately for the full and reduced feature
 tuples; neither cost follows from the other or from compiler execution speed.
@@ -70,11 +70,11 @@ For Rust-heavy editing sessions, keep shared binaries warm during editing with:
 sh ci/watch-builds.sh
 ```
 
-The watcher debounces source edits, cancels stale in-flight builds, and reruns only `cargo build` for `kio-rs`, producing the `kio` and `kio-prime` debug binaries consumed by the local corpus checks. It intentionally does not run tests, clippy, format checks, golden tests, generative tests, or support-crate builds. If a final `ci/all.sh` starts while the watcher is active, Cargo's own internal locks keep its shared package state correct; set `KIO_CI_SERIALIZE_CARGO=1` only when local CPU or memory pressure makes whole-Cargo serialization preferable.
+The watcher debounces source edits, cancels stale in-flight builds, and reruns only `cargo build` for `kio-rs`, producing ordinary developer `kio` and `kio-prime` debug binaries and warming artifacts shared with ordinary Cargo tests. Corpus checks prepare separate immutable compiler snapshots in persistent `target/kio-corpus-tools/` targets; the watcher does not populate those targets or their full/reduced feature tuples. It may still share compiler-cache work. It intentionally does not run tests, clippy, format checks, golden tests, generative tests, or support-crate builds. If a final `ci/all.sh` starts while the watcher is active, Cargo's own internal locks keep its shared package state correct; set `KIO_CI_SERIALIZE_CARGO=1` only when local CPU or memory pressure makes whole-Cargo serialization preferable.
 
 Run the watcher with the same Cargo cache environment as the final gate. If a session uses `sccache` for `ci/all.sh`, use the same `RUSTC_WRAPPER` / `SCCACHE_DIR` setup for `ci/watch-builds.sh`.
 
-For one-time warmup, prefer `ci/watch-builds.sh` or a narrow build-only command that matches the final check's Rust binaries. A broad hygiene script is a poor warmup because it runs format, clippy, tests, and feature combinations before the gate runs them again.
+For one-time warmup, use a narrow build-only command matching the intended check's target, profile and features; the watcher is suitable for ordinary developer builds, not corpus snapshot preparation. A broad hygiene script is a poor warmup because it runs format, clippy, tests, and feature combinations before the gate runs them again.
 
 `sccache` is still useful, but it does not replace `target/`: a warm sccache with an empty `target/` still has to rebuild and link local crate artifacts, test harnesses, and feature configurations. For repeated checks in one warm worktree, do not force `CARGO_INCREMENTAL=0` unless measurement says it helps; that setting favors cross-worktree sccache reuse over Cargo's local incremental rebuilds. Clear `target/` only for disk pressure or a specific stale-artifact investigation.
 
@@ -134,6 +134,17 @@ for discovering completion.
 ## Debug probes
 
 Kio-owned debug, profiling, and timing-only switches use `kio debug ...`, `KIO_DEBUG_...` environment variables, or `--debug-...` command-line arguments. Keep their option documentation in this internal guidance layer or implementation-local comments, not in public `specs/` or `docs/`.
+
+`kio debug build-output-plan <target-name>` is the read-only configuration
+inventory used by the strict TS/Python artifact checks. It reuses build package
+discovery, manifest preparation, exact target-name selection and output-conflict
+validation without typechecking module bodies, emitting artifacts or writing
+caches. Its JSON rows contain `package_root`, `target`, actual `backend`,
+`output_dir` (the absolute configured access path) and `namespace` (the effective
+TS/Python namespace, or `null` for other backends). Rows are plans, not proof of
+emission. The checks validate private scratch ownership before clearing selected
+outputs and require every applicable namespace's artifacts after a successful
+build; unrelated copied outputs cannot satisfy those obligations.
 
 `KIO_DEBUG_TIMING=<list>` enables timing output for comma-, space-, or semicolon-separated categories. Accepted category tokens are `frontend`, `build`, `lsp`, `eval`, `derive`, and `all` (also `1`, `true`, or `yes`). Category-specific aliases exist when a single boolean switch is easier to pass through a tool: `KIO_DEBUG_FRONTEND_TIMING=1`, `KIO_DEBUG_BUILD_TIMING=1`, `KIO_DEBUG_LSP_TIMING=1`, `KIO_DEBUG_EVAL_TIMING=1`, and `KIO_DEBUG_DERIVE_MEMO=1`.
 
@@ -268,13 +279,11 @@ exact symptom is platform-specific:
 - **Prevention on both.** The shell, runner, and broad-gate entry points perform an early fail-fast probe and recheck an explicitly configured sccache through the generic readiness hook after any admission wait. That hook closes Unix lease descriptors or uses Windows Job breakaway before the explicit adapter runs. A wrapper configured through an uninspected Cargo config still relies on the required session-level check.
 - **Inherited progress descriptors are not a `ci/all.sh` completion dependency.** The progress reporter stops on an explicit sentinel rather than FIFO EOF, so a long-lived descendant cannot hold the final summary open merely by inheriting the FIFO. Keep that sentinel contract if the progress transport changes; compiler-lease inheritance is the remaining liveness hazard addressed here.
 
-If a daemon has retained a Unix lease or kept a Windows Job nonempty,
-`sccache --stop-server` releases that resource. Do that only with no build in
-flight, then export `SCCACHE_IDLE_TIMEOUT=0` and use
-`sccache --dist-status >/dev/null` outside any build to start it cleanly. Normal
-prevention is the same session-level check plus the repository entry points'
-early and generic post-admission readiness hook; see
-[`local-tools.md`](local-tools.md) § Scheduler-native Cargo serialization.
+If a daemon has retained a Unix lease or kept a Windows Job nonempty, follow
+the recovery procedure in [`local-tools.md`](local-tools.md#sccache-compiler-wrapper).
+Recover only with no build in flight; never stop or restart the daemon during
+a build. Prevention uses the required session-level check plus the repository
+entry points' early and generic post-admission readiness hook.
 
 Estimate peak as roughly one cold `kio-rs` rustc's resident size per concurrently building agent; compare that against available memory to choose between scheduler-native whole-Cargo serialization and the default or an explicitly measured fixed compiler capacity.
 
@@ -286,7 +295,7 @@ When the session genuinely ends and its branch has been fast-forwarded into `mai
 
 ## Multiple local sessions
 
-When several local sessions can work on disjoint files, let each run the scoped checks its change could break, then merge finished branches into an integration worktree off current `main` and run the final local gate once there. For Rust-heavy integration work, running `sh ci/watch-builds.sh` in that integration worktree while resolving and reviewing keeps the `kio-rs` build artifact warm without turning the warmer itself into a gate. That catches interactions between individually green branches before `main` moves while keeping the final gate's `target/` cache warm.
+When several local sessions can work on disjoint files, let each run the scoped checks its change could break, then merge finished branches into an integration worktree off current `main` and run the final local gate once there. For Rust-heavy integration work, running `sh ci/watch-builds.sh` in that integration worktree while resolving and reviewing keeps ordinary developer build artifacts warm without turning the warmer itself into a gate. The final gate catches interactions between individually green branches before `main` moves and reuses its own persistent corpus-tool targets; the watcher does not prewarm those snapshots.
 
 Fan out only disjoint file sets. Several sessions rewriting the same large file hand the integration worktree a textual merge problem, and the heavy Rust build cannot truly run in parallel across those edits anyway. Sequence shared-file work on a single accumulating branch in a warm worktree.
 

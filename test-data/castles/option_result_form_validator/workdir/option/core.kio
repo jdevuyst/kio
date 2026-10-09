@@ -1,4 +1,5 @@
 /// Root module Option core with labeled present values, sum bridges, and fold-step helpers.
+/// A ready-to-use library module for your own Kio package.
 module option/core;
 
 import option/elab/match(match);

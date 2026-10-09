@@ -166,7 +166,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             // to remember the sign separately — the parser sees one
             // `IntLit` / `FloatLit` token and validates against the
             // Literal production.
-            let lit_token = lex_numeric_literal(bytes, &mut i, start);
+            let lit_token = lex_numeric_literal(bytes, &mut i, start)?;
             tokens.push(lit_token);
             continue;
         }
@@ -208,10 +208,51 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
         if b == b'"' {
             i += 1;
             while i < bytes.len() && bytes[i] != b'"' {
-                if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                    i += 2;
-                } else {
-                    i += 1;
+                match bytes[i] {
+                    b'\n' => {
+                        return Err(LexError {
+                            offset: i,
+                            message: "unterminated string literal (newline)".into(),
+                        });
+                    }
+                    b'\\' => {
+                        let escape_start = i;
+                        i += 1;
+                        match bytes.get(i) {
+                            Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => {
+                                i += 1;
+                            }
+                            Some(b'u') => {
+                                i += 1;
+                                let mut code = 0u32;
+                                for _ in 0..4 {
+                                    let digit =
+                                        bytes.get(i).and_then(|b| (*b as char).to_digit(16));
+                                    let Some(digit) = digit else {
+                                        return Err(LexError {
+                                            offset: escape_start,
+                                            message: "a \\u escape requires four hex digits".into(),
+                                        });
+                                    };
+                                    code = code * 16 + digit;
+                                    i += 1;
+                                }
+                                if char::from_u32(code).is_none() {
+                                    return Err(LexError {
+                                        offset: escape_start,
+                                        message: "\\u escape is a UTF-16 surrogate (not a valid code point)".into(),
+                                    });
+                                }
+                            }
+                            _ => {
+                                return Err(LexError {
+                                    offset: escape_start,
+                                    message: "invalid or incomplete string escape".into(),
+                                });
+                            }
+                        }
+                    }
+                    _ => i += 1,
                 }
             }
             if i >= bytes.len() {
@@ -236,7 +277,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
         // `100` followed by the identifier `i32`, which the parser
         // then rejects.
         if b.is_ascii_digit() {
-            tokens.push(lex_numeric_literal(bytes, &mut i, start));
+            tokens.push(lex_numeric_literal(bytes, &mut i, start)?);
             continue;
         }
 
@@ -336,39 +377,54 @@ fn lex_op_run(bytes: &[u8], i: &mut usize, start: usize) -> Token {
 /// `start` byte offset is used for the produced span; pass the
 /// position of the leading `-` (if the leading-minus carve-out
 /// consumed one) or of the leading digit otherwise.
-fn lex_numeric_literal(bytes: &[u8], i: &mut usize, start: usize) -> Token {
-    while *i < bytes.len() && (bytes[*i].is_ascii_digit() || bytes[*i] == b'_') {
-        *i += 1;
-    }
+fn lex_numeric_literal(bytes: &[u8], i: &mut usize, start: usize) -> Result<Token, LexError> {
+    lex_digit_run(bytes, i);
     let mut is_float = false;
     // Fractional part: `.` followed by a digit (not `.@` or method
     // access on a literal, which Kio' forbids anyway).
     if *i + 1 < bytes.len() && bytes[*i] == b'.' && bytes[*i + 1].is_ascii_digit() {
         is_float = true;
         *i += 1;
-        while *i < bytes.len() && (bytes[*i].is_ascii_digit() || bytes[*i] == b'_') {
-            *i += 1;
-        }
+        lex_digit_run(bytes, i);
     }
     // Exponent.
     if *i < bytes.len() && (bytes[*i] == b'e' || bytes[*i] == b'E') {
         is_float = true;
+        let exponent_start = *i;
         *i += 1;
         if *i < bytes.len() && (bytes[*i] == b'+' || bytes[*i] == b'-') {
             *i += 1;
         }
-        while *i < bytes.len() && bytes[*i].is_ascii_digit() {
-            *i += 1;
+        if !bytes.get(*i).is_some_and(u8::is_ascii_digit) {
+            return Err(LexError {
+                offset: exponent_start,
+                message: "exponent has no digits".into(),
+            });
         }
+        lex_digit_run(bytes, i);
     }
     let kind = if is_float {
         TokenKind::FloatLit
     } else {
         TokenKind::IntLit
     };
-    Token {
+    Ok(Token {
         kind,
         span: Span { start, end: *i },
+    })
+}
+
+/// Digit separators occur only between digits; an invalid suffix remains a
+/// separate token and cannot become part of a LiteralCall.
+fn lex_digit_run(bytes: &[u8], i: &mut usize) {
+    while let Some(byte) = bytes.get(*i) {
+        if byte.is_ascii_digit()
+            || (*byte == b'_' && bytes.get(*i + 1).is_some_and(u8::is_ascii_digit))
+        {
+            *i += 1;
+        } else {
+            break;
+        }
     }
 }
 
@@ -401,6 +457,52 @@ fn prior_ends_expression(last: Option<&Token>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exponent_digits_and_separators_are_validated() {
+        for source in ["2e3", "2E+3", "2e-3", "2_0e1_0", "2.0e1_0"] {
+            let tokens = lex(source).expect("valid float");
+            assert_eq!(tokens.len(), 1, "{source}");
+            assert_eq!(tokens[0].kind, TokenKind::FloatLit, "{source}");
+            assert_eq!(
+                tokens[0].span,
+                Span {
+                    start: 0,
+                    end: source.len()
+                }
+            );
+        }
+        for source in ["2e", "2E+", "2e-", "2e_3", "2.0e"] {
+            assert!(
+                lex(source)
+                    .expect_err("missing exponent")
+                    .message
+                    .contains("exponent has no digits")
+            );
+        }
+        let tokens = lex("1__0").expect("invalid suffix stays a separate token");
+        assert_eq!(tokens[0].kind, TokenKind::IntLit);
+        assert_eq!(tokens[0].span.end, 1);
+        assert_eq!(tokens.len(), 2);
+    }
+
+    #[test]
+    fn strings_validate_json_escapes_and_reject_newlines() {
+        for source in [
+            r#""\q""#,
+            r#""\u12""#,
+            r#""\u12xz""#,
+            r#""\uD800""#,
+            "\"raw\nnewline\"",
+        ] {
+            assert!(lex(source).is_err(), "{source:?}");
+        }
+        for source in [r#""\"\\\/\b\f\n\r\t\u0041""#, "\"café中\""] {
+            let tokens = lex(source).expect("valid string");
+            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens[0].kind, TokenKind::StrLit);
+        }
+    }
 
     fn kinds(src: &str) -> Vec<TokenKind> {
         lex(src).unwrap().into_iter().map(|t| t.kind).collect()

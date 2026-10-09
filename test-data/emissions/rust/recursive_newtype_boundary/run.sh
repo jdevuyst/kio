@@ -1,42 +1,21 @@
 #!/bin/sh
-# SUBJECT: A mutually recursive public newtype boundary keeps exact nominal facades while its erased storage stays private.
+# SUBJECT: Rust hosts construct and project mutually recursive nominal carriers through exact Tree/Forest signatures and public marker facades.
+# CONTRACT: specs/backends/rust.md § Structural and nominal types; § Representation witness API, safety, and coherence; § Newtype namespaces
 set -eu
 
-scratch=$(mktemp -d "${TMPDIR:?}/emissions.rust.XXXXXX")
-trap 'rm -rf "$scratch"' EXIT INT TERM HUP
+scratch=$(mktemp -d "${TMPDIR:?}/emissions.rust-recursive-boundary.XXXXXX")
+trap 'rm -rf "$scratch"' 0 HUP INT TERM
 cp -R workdir "$scratch/workdir"
-rm -rf "$scratch/workdir/out"
+cp -R host "$scratch/host"
 
-cd "$scratch/workdir"
-"${KIO_BIN:?}" build "${KIO_TARGET:?}"
-lib_rs=$(cat out/rust/src/lib.rs)
-shapes_rs=$(cat out/rust/src/shapes.rs)
-for carrier in Tree Forest; do
-  printf '%s' "$shapes_rs" \
-    | grep -qF "pub struct $carrier<__KioHost:" || {
-    printf 'recursive_newtype_boundary: missing exact %s nominal carrier\n' "$carrier" >&2
-    exit 1
-  }
-  printf '%s' "$shapes_rs" \
-    | grep -qF "type Facade = crate::shapes::nominal::recursiveBoundary::$carrier<__KioHost>;" || {
-    printf 'recursive_newtype_boundary: %s marker does not select its exact nominal facade\n' "$carrier" >&2
-    exit 1
-  }
-done
-graft=$(printf '%s' "$lib_rs" | grep -E 'pub fn graft\(' || true)
-if ! printf '%s' "$graft" | grep -qF 'crate::shapes::nominal::recursiveBoundary::Tree<__KioHost>'; then
-  printf 'recursive_newtype_boundary: graft does not accept the exact Tree nominal facade\n' >&2
-  exit 1
-fi
-if [ "$(printf '%s' "$graft" | grep -oF 'crate::shapes::nominal::recursiveBoundary::Forest<__KioHost>' | wc -l)" -lt 2 ]; then
-  printf 'recursive_newtype_boundary: graft does not accept and return the exact Forest nominal facade\n' >&2
-  exit 1
-fi
-if printf '%s' "$graft" | grep -qF '::std::rc::Rc<dyn ::std::any::Any>'; then
-  printf 'recursive_newtype_boundary: graft leaked erased storage through its public facade\n' >&2
-  exit 1
-fi
 (
-  cd out/rust
-  cargo check --offline --quiet
+  cd "$scratch/workdir"
+  "${KIO_BIN:?}" build "${KIO_TARGET:?}"
 )
+rustc --edition=2024 -F unsafe-code --crate-name rust_recursive_newtype_boundary \
+  --crate-type=rlib "$scratch/workdir/out/rust/src/lib.rs" \
+  -o "$scratch/librust_recursive_newtype_boundary.rlib"
+rustc --edition=2024 "$scratch/host/main.rs" \
+  --extern "rust_recursive_newtype_boundary=$scratch/librust_recursive_newtype_boundary.rlib" \
+  -o "$scratch/host-probe.exe"
+"$scratch/host-probe.exe"

@@ -408,7 +408,7 @@ fn lower_pending(
 }
 
 fn lower_section(section: &SigModuleSection<Surface>) -> Result<SigModuleSection<Prime>, Error> {
-    crate::prime::lower::check_imports(&section.imports)?;
+    crate::pass::contract::check_imports(&section.imports)?;
     let items = section
         .items
         .iter()

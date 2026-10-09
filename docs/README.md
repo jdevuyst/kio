@@ -59,7 +59,7 @@ authors, not the starting point for products and sums.
 
 ## Case studies
 
-End-to-end read-throughs of the runnable proof-of-concept packages under [`test-data/poc/`](../test-data/poc/). Everything a page shows is real code from the package itself — checked and run on every CI run, never simplified for the page. Read one when you want the whole picture of how a body of Kio fits together, not just the slice a topic guide isolates.
+End-to-end read-throughs of the runnable proof-of-concept packages under [`test-data/poc/`](../test-data/poc/). Everything a page shows is real code from the package itself, never simplified for the page. The harness checks and runs these packages across supported targets under CI-selected coverage. Read one when you want the whole picture of how a body of Kio fits together, not just the slice a topic guide isolates.
 
 - [The optics library](poc/optics.md) — [`test-data/poc/optics/`](../test-data/poc/optics/): lenses, prisms, and isos as function pairs, the spine palette and `match!` in use, an operator DSL, and every `equiv` law.
 - [Higher-kinded types](poc/hkt.md) — [`test-data/poc/hkt/`](../test-data/poc/hkt/): kinded brands, first-class instance dictionaries, `do!` pipelines over an abstract type constructor, and a `derive!` instance pick.

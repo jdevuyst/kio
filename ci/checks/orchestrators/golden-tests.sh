@@ -587,23 +587,6 @@ if [ -n "$SELECTED_DYN_LOAD_PRIME" ]; then
   build_runner_feature dyn-load-prime
 fi
 
-# Build the dyn-load-prime driver once. The kio-test-runner-dyn-load-prime
-# runner drives this compiled JS module (the dyn_load_prime package plus a
-# driver module) as a dyn_load_prime host to load and drive each
-# DYN_LOAD_PRIME-marked case's Kio' image; the path is exported to the runner via
-# KIO_DYN_LOAD_PRIME_DRIVER_JS. Built only when the dyn-load-prime impl group is
-# selected (so a --impls=<list> that excludes it skips the cost).
-DYN_LOAD_PRIME_DRIVER_PUBLICATION="$REPO_ROOT/.kio-cache/goldens/dyn-load-prime-driver"
-if [ -n "$SELECTED_DYN_LOAD_PRIME" ]; then
-  KIO_DYN_LOAD_PRIME_DRIVER_JS=$(
-    sh "$REPO_ROOT/ci/infra/kio-test-runner-rs/dyn-load-prime-driver/build-driver.sh" \
-      "$KIO_BIN" \
-      "$REPO_ROOT/test-data/poc/dyn_load_prime/workdir" \
-      "$DYN_LOAD_PRIME_DRIVER_PUBLICATION"
-  )
-  export KIO_DYN_LOAD_PRIME_DRIVER_JS
-fi
-
 KIO_PRIME_CHECK_BIN="$TMP_ROOT/kio-prime-check"
 export KIO_PRIME_CHECK_BIN
 
@@ -720,5 +703,18 @@ prime_scope=$(coverage_policy_verification_scope_for_impl "$prime_impl_name")
 dyn_impl_name=${ALL_DYN_LOAD_PRIME_IMPLS%%"$TAB"*}
 dyn_scope=$(coverage_policy_verification_scope_for_impl "$dyn_impl_name")
 run_tests "$SELECTED_PRIME" prime "$prime_scope" || overall_status=$?
+
+# Only the dynamic phase consumes this driver; its preparation must not block
+# regular or direct-Prime execution. Keep failure propagation outside run_tests.
+if [ -n "$SELECTED_DYN_LOAD_PRIME" ]; then
+  DYN_LOAD_PRIME_DRIVER_PUBLICATION="$REPO_ROOT/.kio-cache/goldens/dyn-load-prime-driver"
+  KIO_DYN_LOAD_PRIME_DRIVER_JS=$(
+    sh "$REPO_ROOT/ci/infra/kio-test-runner-rs/dyn-load-prime-driver/build-driver.sh" \
+      "$KIO_BIN" \
+      "$REPO_ROOT/test-data/poc/dyn_load_prime/workdir" \
+      "$DYN_LOAD_PRIME_DRIVER_PUBLICATION"
+  )
+  export KIO_DYN_LOAD_PRIME_DRIVER_JS
+fi
 run_tests "$SELECTED_DYN_LOAD_PRIME" dyn-load-prime "$dyn_scope" || overall_status=$?
 exit "$overall_status"

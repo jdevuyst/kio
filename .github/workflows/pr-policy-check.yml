@@ -160,10 +160,27 @@ jobs:
 
             async function listDir(path) {
               try {
-                const res = await github.rest.repos.getContent({
-                  owner, repo, path, ref: pr.head.sha
+                // Contents listings can call submodules and dereferenced
+                // symlinks "file". Prove every ancestor and entry from Git
+                // modes instead, starting at the immutable event commit.
+                const commit = await github.rest.git.getCommit({
+                  owner, repo, commit_sha: pr.head.sha
                 });
-                return Array.isArray(res.data) ? res.data : null;
+                let sha = commit.data.tree.sha;
+                for (const segment of path.split('/')) {
+                  const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: sha });
+                  if (data.truncated || !Array.isArray(data.tree)) return null;
+                  const entry = data.tree.find(e => e.path === segment);
+                  if (!entry || entry.type !== 'tree' || entry.mode !== '040000') return null;
+                  sha = entry.sha;
+                }
+                const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: sha });
+                if (data.truncated || !Array.isArray(data.tree)) return null;
+                return data.tree.map(e => ({ name: e.path, sha: e.sha,
+                  type: e.type === 'tree' && e.mode === '040000' ? 'dir'
+                    : e.type === 'blob' && ['100644', '100755'].includes(e.mode) ? 'file'
+                      : e.mode === '120000' ? 'symlink' : `${e.type}/${e.mode}`
+                }));
               } catch (e) {
                 if (e.status === 404) return null;
                 throw e;

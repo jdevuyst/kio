@@ -28,4 +28,10 @@ Invoke the `review-commits` skill on the authenticated outgoing range, normally 
 
 Reauthenticate the destination and prepared/reviewed candidate; verify the exact outgoing range is fully signed off. Refuse an unsigned remote-main range. If the remote changed, reconsider range, publication boundary and applicable evidence before pushing; do not overwrite it. A clean tree or successful check never supplies rewrite, DCO or publication authority.
 
-Push only the resolved candidate to the explicitly requested remote/destination. No `--force`; `--force-with-lease` only for an explicitly requested force push under the separately approved shared-development-branch range/ref/dependent-consumer plan. Never use it to rewrite published main/release history.
+Push only the resolved candidate to the explicitly requested remote/destination.
+No `--force`. An exact `--force-with-lease` requires a separately approved
+range/ref/dependent-consumer plan: either a shared development branch, or the
+unreleased release-preparation tip under [`release`](../release/SKILL.md)'s
+recovery rules. The latter is allowed only before immutable publication and
+must preserve all earlier published main/release history. Recheck channel
+occupancy and certify changed content before that release-tip push.

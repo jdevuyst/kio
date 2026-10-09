@@ -34,13 +34,19 @@ and fatal-deprecation reasons; a newer version alone is insufficient. Complete
 justified upgrades and their validation, or report the skill's stop condition.
 Distinguish checked conclusions from detector failures and unknowns.
 
-Confirm the version choice rather than inferring patch versus minor from the
-amount of work. The canonical mirror inventory is
+Use the version supplied by the user; ask if none was supplied. Check it against
+published versions and the release's compatibility changes, and confirm with the
+user if it is unexpected or already occupied. Do not choose a different version
+automatically. The canonical mirror inventory is
 [`version-check.sh`](../../../ci/checks/repo-lint/version-check.sh): update every
 release-version mirror, including committed lockfiles and the release-pinned
 docs URL, together. Its fuzz and dist-tool pins are separate agreement sets.
 Present the exact README version-line replacement for approval before editing;
 the same exact-text gate applies to other protected public files.
+
+Prefer one concise release-preparation commit, such as `Release 0.2.0`, containing
+the version mirrors and related release fixes. Keep unrelated feature history
+separate and consolidate it only under an approved `prepare-commits` plan.
 
 Review the candidate changes and run the required local gates under the
 repository's [`local-ci.md`](../../topics/local-ci.md) rules. The broad baseline
@@ -126,10 +132,25 @@ receipt, with blocked/skipped channels explicitly identified.
 
 Before retrying, reconcile which versions and artifacts already exist. Retry only
 failed or unpublished arms after checking the workflow's idempotence; do not
-blindly rerun successful crate publishing. Preserve published source and artifact
-provenance. Follow-up fixes use new commits and, when required, a new version;
-moving a published tag or replacing history needs its own explicit decision.
-Deleting a tag does not undo registry publication.
+blindly rerun successful crate publishing. A GitHub Actions rerun uses the
+original source SHA: after a source amendment, launch the necessary checks on
+the new SHA instead of treating an old run's retry as validation of new code.
+
+Before immutable publication, fold required release repairs into the same
+release-preparation commit where practical, renewing affected review and checks.
+Amending an already-pushed release-preparation tip requires explicit approval
+of the commit/range, remote ref and dependent-consumer handling, plus fresh DCO
+certification for changed content. Preserve recovery history in the same
+consolidation archive where one exists and use an exact `--force-with-lease`.
+This narrow exception never rewrites earlier published main or release history.
+An ordinary release request does not supply rewrite or push authority.
+
+Once a registry or other immutable channel publishes an artifact, preserve its
+source and provenance. Report the affected channels and advise whether a new
+commit suffices or a user-selected patch version is needed. Never assume tag
+deletion, yanking or removal of a registry listing makes a version reusable;
+check the channel's actual rules before proposing recovery. Moving a published
+tag is not an ordinary retry and needs its own explicit decision.
 
 Remove only task-owned temporary resources within the requested authority and
 preserve useful failure evidence. Registry deletion needs an exact inventory of

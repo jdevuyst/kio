@@ -1,6 +1,6 @@
 module testapi/main;
 
-host fn produce(_unit: .) -> [A] A;
+host fn produce(_unit: .) -> [A] .;
 
 host fn observe(_unit: .) -> .;
 

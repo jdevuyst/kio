@@ -6,7 +6,9 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Kio authoring guidance audit
 
-Read `KIO-FOR-AGENTS.md`, `ai/topics/kio-authoring.md`, and the relevant
+Anchors: [`kio-authoring.md` § Repository authoring boundaries](../../topics/kio-authoring.md#repository-authoring-boundaries)
+and [§ Improving this guide](../../topics/kio-authoring.md#improving-this-guide).
+Read `KIO-FOR-AGENTS.md`, the anchor topic, and the relevant
 `AGENTS.md` triggers. The root guide owns portable agent authoring workflow;
 the topic owns only compiler-repository obligations. Neither replaces the
 public documentation catalog or specifications.

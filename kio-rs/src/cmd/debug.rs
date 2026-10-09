@@ -35,6 +35,8 @@ Subcommands:
   kio-prime-roundtrip-package <file> <target>
                  Prepare a copied package manifest for the internal
                  Kio' artifact round-trip check.
+  build-output-plan <target>
+                 Print selected target configuration as JSON without building.
   tokens <file>   Print the file's source tokenization as a
                   JSON array of { start, end, kind } records,
                   classified against the canonical token-kind
@@ -57,6 +59,8 @@ Subcommands:
   kio-prime-roundtrip-package <file> <target>
                  Prepare a copied package manifest for the internal
                  Kio' artifact round-trip check.
+  build-output-plan <target>
+                 Print selected target configuration as JSON without building.
   tokens <file>   Print the file's source tokenization as a
                   JSON array of { start, end, kind } records,
                   classified against the canonical token-kind
@@ -83,6 +87,10 @@ const ROUNDTRIP_TARGET_NAME: &str = "__kio_roundtrip_target";
 const ROUNDTRIP_PRIME_NAME: &str = "__kio_roundtrip_prime";
 
 pub fn run(args: &[String]) -> ExitCode {
+    // A target name is opaque, including spellings such as `--help`.
+    if args.first().is_some_and(|sub| sub == "build-output-plan") {
+        return run_build_output_plan(&args[1..]);
+    }
     let help = crate::documentation_help(HELP);
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{help}");
@@ -103,6 +111,33 @@ pub fn run(args: &[String]) -> ExitCode {
             eprintln!("{help}");
             ExitCode::Usage
         }
+    }
+}
+
+fn run_build_output_plan(args: &[String]) -> ExitCode {
+    let [target] = args else {
+        eprintln!("Usage: kio debug build-output-plan <target>");
+        return ExitCode::Usage;
+    };
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(error) => {
+            eprintln!("error: cannot read current directory: {error}");
+            return ExitCode::Internal;
+        }
+    };
+    match super::build::selected_output_plan(&cwd, target) {
+        Ok(plan) => match serde_json::to_string(&plan) {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::Success
+            }
+            Err(error) => {
+                eprintln!("error: cannot serialize build output plan: {error}");
+                ExitCode::Internal
+            }
+        },
+        Err(code) => code,
     }
 }
 

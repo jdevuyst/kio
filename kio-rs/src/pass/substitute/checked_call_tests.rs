@@ -7,7 +7,7 @@ fn visitor(elabs: &Elaborations) -> SubstituteVisitor<'_> {
         module_path: "m".to_owned(),
         module: None,
         package: None,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         comptime_lowering_mode: ComptimeLoweringMode::RuntimeErase,

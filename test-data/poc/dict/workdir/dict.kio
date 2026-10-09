@@ -1,4 +1,5 @@
 /// Ordered dictionaries with comparator-explicit updates, direct ascending folds, and comparator-applied literals.
+/// A ready-to-use library module for your own Kio package.
 module dict;
 
 import elab/match(match);

@@ -90,6 +90,21 @@ const host = {
 
 `host type` declarations need no runtime property; types are erased. A `role(...)` annotation admits the corresponding Kio literal syntax. The JavaScript backend represents host types carrying these roles with the JS value shapes listed below.
 
+| Role | JavaScript value |
+| --- | --- |
+| `str` | `string` |
+| `bool` | `boolean` |
+| `i8` … `i32` | `Number`, integer in the role's signed range |
+| `u8` … `u32` | `Number`, non-negative integer in the role's range |
+| `i64`, `i128` | `BigInt`, signed two's-complement at the role's width |
+| `u64`, `u128` | `BigInt`, non-negative and in the role's range |
+| `f32`, `f64` | `Number` |
+
+These are JavaScript FFI requirements, not additional literal-typing rules;
+see [Atomic types](../../specs/backends/js.md#atomic-types-governed-by-role).
+The host must supply values valid for each role. `Number` and `BigInt` are not
+interchangeable in JavaScript arithmetic.
+
 Named exported functions, host functions, and public newtype members follow
 their Kio source parameters. A parameter `cfg: Left & Right` is one JS object
 argument; separate parameter groups are combined into one native call. A

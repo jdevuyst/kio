@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 Audit skills exist to enforce load-bearing rules in AGENTS.md and its companion topic files under `ai/topics/`. They are only as useful as the coverage they provide — if a new rule lands and no skill is added to cover it, the rule becomes implicit; if a rule is removed but a skill still references it, the skill misleads. This skill is the self-bootstrapping check that catches both gaps.
 
-The repo's convention (per AGENTS.md design discussion) is that **skills point at AGENTS.md / ai/topics/, not the reverse**: each SKILL.md cites its anchor section, and AGENTS.md does not carry bookkeeping back-references. This audit relies on that convention.
+Skills cite their contract anchors; AGENTS.md and topics may also route readers to the relevant audits. Build the coverage map in both directions and check the substantive procedure, not just the presence of a skill name or link.
 
 Read AGENTS.md before starting; navigate to relevant `ai/topics/<topic>.md` files as the trigger table directs.
 
@@ -35,7 +35,15 @@ repository supplement; `audit-docs-drift` owns the offline learning path.
 
 Cross-reference. For each load-bearing section:
 
-- **Covered** — at least one audit skill names this section as its anchor.
+Backend quality/cost decisions in
+[`emit.md`](../../topics/emit.md#backend-quality-and-implementation-cost)
+are checked by `audit-compiler-performance` §§ 8–9; semantic propagation
+remains covered by `audit-backend-family-conformance`. `add-backend` must
+route admission through these checks, not turn optional techniques into
+universal acceptance requirements. Verify the procedures account for actual
+shared owners and consumers and allow evidence reuse.
+
+- **Covered** — at least one audit skill identifies this contract and has an applicable checking procedure. A name-only cross-reference does not establish coverage.
 - **Uncovered** — flag as a gap. The fix is either (a) extend an existing skill to cover the rule, or (b) add a new skill.
 
 For each audit skill:
@@ -51,8 +59,15 @@ For each `ai/skills/*/SKILL.md`:
 - Frontmatter has `name`, `description`, `allowed-tools` at minimum.
 - The `name` matches the directory.
 - `description` is a single line, specific enough to convey what the skill audits.
-- The body cites the AGENTS.md / `ai/topics/<topic>.md` section(s) it anchors against by section heading (so this very audit can find them).
+- The body identifies its governing contract precisely: an AGENTS.md named universal rule, a topic heading or named rule, or a direct normative spec / repository-contract section. A short single-subject topic may be cited by its title; do not require an unrelated AGENTS heading when the direct contract is clearer. Whole-file references to broad documents need a more precise anchor.
 - File references in the body point at files that exist.
+- Skills retain procedures and concise rationale, not completed investigation
+  dossiers, measurement receipts or extended implementation proofs. Those
+  records belong in `evidence/` under
+  [`repo-layout.md` § Evidence records](../../topics/repo-layout.md#evidence-records).
+  Check that links preserve discovery and that historical evidence is not
+  asserted as current validation. `audit-agents-md` owns the topic-file side
+  of this placement boundary.
 
 Hits are findings.
 
@@ -78,11 +93,13 @@ A rule may be load-bearing yet not warrant an audit skill — e.g. the rule is s
 - `audit-open-world` — the open-world argument for resolution/import/dispatch/inference syntax.
 - `audit-reports` (generator coverage procedure) — `kio-gen-rs`'s marginal coverage contribution (not its grammar-support currency).
 - `audit-spec-drift` / `audit-docs-drift` — `specs/grammar.md`, `specs/language.md`, `specs/prime.md`, `specs/style.md`, `specs/cli.md`, and their docs, drifting from the implementation over time.
-- `audit-test-strategy` — spec→test coverage generally.
-- `audit-cli-output` § B3 — only `kio lsp`'s printed-text output, not LSP protocol behavior.
+- `audit-test-strategy` — spec→test coverage, including file-kind routing and formatter/highlighter/editor evidence.
+- `audit-cli-output` — diagnostic quality, related locations, structured native-fix discovery/application/reanalysis, and `kio lsp`'s printed-text output.
 - `audit-lsp-completion` — `language-surface-tooling.md` § Completion currency: exact lexical/contextual candidate sets, insertion/retraction, current binding identity, and evidence coverage across LSP, terminal REPL, and browser/wasm completion. Its default is static; protocol execution is opt-in or scoped fix validation.
+- `audit-editor-tooling` — the remaining non-completion LSP request semantics, capabilities, document/provider identity, editor grammar integration and lifecycle correctness. It inventories existing source and real-client evidence; it does not launch harnesses by default or duplicate completion and native-fix audits.
+- `audit-compiler-performance` — LSP scheduling, cancellation, snapshot freshness and retention costs; this complements, rather than proves, protocol correctness.
 
-Genuinely uncovered by any skill, even partially: LSP protocol correctness outside completion (diagnostics, formatting, semantic tokens, hover, definition, references, prepare-rename, rename) and editor grammars/the VS Code extension (tree-sitter, TextMate, bundled grammar/configuration, fixtures, highlight corpus).
+This is a coverage map, not an acceptance receipt. Check each owner's actual procedure and evidence; newly added requests, consumers, or lifecycle states can expose narrower gaps even when the broad area has a named audit.
 
 **Documented carve-out: AGENTS.md § Universal rules ("Tooling friction feeds back into the instructions")** — a per-session process rule (when reality contradicts the instructions, propose an update to the owning file) whose output is session behavior, not repo state, so there is no static artifact for an audit to check. Its one checkable half — that any landed update passes the portability filter — is enforced by `audit-no-leak` against [`ai/topics/no-leak.md`](../../topics/no-leak.md) § The portability filter.
 

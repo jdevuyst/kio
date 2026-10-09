@@ -920,7 +920,7 @@ A bang call in a `pure fn` is therefore not accepted or rejected from a purity b
 
 - generated elaborator terms are hygienic — they bind and reference only what the elaborator builds, independent of names in scope at the call site;
 - a caller is **not** required to `import __intrinsics__;` for the intrinsic calls an elaborator emits on its behalf — the elaborator's output carries the intrinsic reference directly;
-- the reflected term constructors are split into core `term_*` constructors (for core-language terms) and intrinsic-call `__intrinsic_*__` constructors (for the reserved intrinsic values);
+- the reflected term constructors are split into core `__term_*__` constructors (for core-language terms) and intrinsic-call `__intrinsic_*__` constructors (for the reserved intrinsic values);
 - the `__intrinsic_*__` constructor names mirror the `__intrinsics__` value names — each `__name__` intrinsic has the constructor `__intrinsic_<name>__` (`__pair__` → `__intrinsic_pair__`).
 
 **Target type-argument.** A source-to-target elaborator takes its target as a

@@ -1,0 +1,17 @@
+package kio_native;
+
+build {
+  cache "out/.kio-cache/";
+
+  target swift {
+    out "out/swift/"
+  };
+
+  target kio-prime {
+    out "out/kio-prime/"
+  }
+}
+
+bridge {
+  main
+}

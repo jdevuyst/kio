@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # GitHub config audit
 
-`.github/` and `ci/` together carry the repo's automation contract. ai/topics/repo-layout.md describes both. This skill verifies they remain internally consistent and consistent with the documented organization.
+Anchors: [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)'s `.github/` and `ci/` entries and [`ai/topics/contributing.md`](../../topics/contributing.md)'s contribution-policy mirror set. This skill verifies those automation and policy contracts remain internally consistent.
 
 ## 1. Workflow → script references
 

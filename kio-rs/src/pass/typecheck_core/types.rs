@@ -3335,6 +3335,84 @@ mod tests {
         assert_path_name(inner_reference, &inner.name);
     }
 
+    #[test]
+    fn substitution_preserves_free_applied_heads_and_freshens_bound_applied_heads() {
+        let higher_kinded_forall = |name: &str, body| Ty::Forall {
+            param: crate::ast::TypeParam {
+                presentation: Default::default(),
+                name: name.to_owned(),
+                span: sp(),
+                kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
+            },
+            body: Box::new(body),
+            meta: Meta::new(sp()),
+        };
+        let unit = || Ty::Unit {
+            meta: Meta::new(sp()),
+        };
+        let ty = higher_kinded_forall(
+            "F_n2",
+            higher_kinded_forall(
+                "F",
+                func(
+                    path("X"),
+                    product(applied("F_n2", vec![unit()]), applied("F", vec![unit()])),
+                ),
+            ),
+        );
+        let rewritten = subst_type(
+            &ty,
+            &HashMap::from([("X".to_owned(), applied("F", vec![unit()]))]),
+        );
+
+        let Ty::Forall {
+            param: outer, body, ..
+        } = &rewritten
+        else {
+            panic!("expected outer higher-kinded binder")
+        };
+        let Ty::Forall {
+            param: inner, body, ..
+        } = body.as_ref()
+        else {
+            panic!("expected inner higher-kinded binder")
+        };
+        assert_eq!(outer.name, "F_n2");
+        assert_eq!(inner.name, "F_n3", "the applied outer head reserves F_n2");
+        assert_eq!(inner.kind, outer.kind);
+        let Ty::Function {
+            param: replacement,
+            ret,
+            ..
+        } = body.as_ref()
+        else {
+            panic!("expected the substituted function type")
+        };
+        let Ty::Product {
+            left: outer_reference,
+            right: inner_reference,
+            ..
+        } = ret.as_ref()
+        else {
+            panic!("expected both applied bound heads")
+        };
+        for (ty, expected) in [
+            (replacement.as_ref(), "F"),
+            (outer_reference.as_ref(), outer.name.as_str()),
+            (inner_reference.as_ref(), inner.name.as_str()),
+        ] {
+            let Ty::Path { segments, args, .. } = ty else {
+                panic!("expected applied head {expected}")
+            };
+            assert_eq!(segments.len(), 1);
+            assert_eq!(segments[0].as_str(), expected);
+            assert!(matches!(args.as_slice(), [Ty::Unit { .. }]));
+        }
+        let mut free = std::collections::HashSet::new();
+        collect_free_type_vars(&rewritten, &mut free);
+        assert_eq!(free, std::collections::HashSet::from(["F".to_owned()]));
+    }
+
     fn assert_path_name(ty: &Ty, expected: &str) {
         assert!(
             matches!(ty, Ty::Path { segments, .. } if segments.len() == 1 && segments[0].as_str() == expected),

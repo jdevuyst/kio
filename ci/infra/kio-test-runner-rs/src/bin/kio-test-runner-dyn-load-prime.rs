@@ -281,6 +281,7 @@ fn export_driver_execution_mode(driver: ExportDriver) -> Result<&'static str, &'
         | ExportDriver::NestedCurriedRoundtrip
         | ExportDriver::HostSubstitutedUnitCallback
         | ExportDriver::ReturnedForallCallByValue
+        | ExportDriver::ReturnedForallHostFailure
         | ExportDriver::FacadeSelectorCollisions
         | ExportDriver::PublicWordNames
         | ExportDriver::ModuleAliasScopeCollision
@@ -1155,6 +1156,7 @@ mod tests {
             ExportDriver::NestedCurriedRoundtrip,
             ExportDriver::HostSubstitutedUnitCallback,
             ExportDriver::ReturnedForallCallByValue,
+            ExportDriver::ReturnedForallHostFailure,
             ExportDriver::FacadeSelectorCollisions,
             ExportDriver::PublicWordNames,
             ExportDriver::ModuleAliasScopeCollision,

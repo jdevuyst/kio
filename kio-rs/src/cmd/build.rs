@@ -8,7 +8,7 @@
 //! output, keeping the checked paths tied to the actual output configuration.
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the
-// trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
+// trailing `.map(…)` to resolve `ParallelIterator` at the call site,
 // so the prelude is imported here under `parallel`; with the feature
 // off the sequential arm needs no import and rayon is absent.
 use crate::cmd::package_fanout::CapturedOutput;
@@ -133,8 +133,8 @@ options or a missing package-option value; 40 (build
 error) for a missing package file, a package file with no
 `build { ... }` block, unknown or ambiguous package name, unknown target
 name, key validation, codegen, or
-runtime-audit failures; the matching `1x` category code for Phase-1
-parse / use / type errors.
+runtime-audit failures; 1 on I/O or internal error; the matching `1x`
+category code for Phase-1 parse / use / type errors.
 
 See {base}/specs/cli.md#kio-build for full command behavior.";
 
@@ -353,6 +353,45 @@ fn resolve_package_dirs(cwd: &Path, selectors: &[String]) -> Result<Vec<PathBuf>
         }
     }
     Ok(dirs)
+}
+
+/// Configuration facts for the selected build targets, not evidence of emission.
+#[derive(Debug, serde::Serialize)]
+pub(super) struct PlannedOutput {
+    package_root: PathBuf,
+    target: String,
+    backend: String,
+    output_dir: PathBuf,
+    /// Only the two typed-sidecar backends use this internal inventory.
+    namespace: Option<String>,
+}
+
+pub(super) fn selected_output_plan(
+    cwd: &Path,
+    target_name: &str,
+) -> Result<Vec<PlannedOutput>, ExitCode> {
+    let package_dirs = resolve_package_dirs(cwd, &[])?;
+    let names = vec![target_name.to_owned()];
+    let plans: std::collections::BTreeMap<_, _> = package_dirs
+        .into_iter()
+        .map(|dir| {
+            let plan = output_guard::prepare(&dir, &names);
+            (dir, plan)
+        })
+        .collect();
+    for plan in plans.values() {
+        if let output_guard::PackagePlan::Failed { code, stderr, .. } = plan {
+            eprint!("{stderr}");
+            return Err(*code);
+        }
+    }
+    output_guard::validate_target_names(&plans, &names)
+        .and_then(|()| output_guard::validate(&plans))
+        .and_then(|()| output_guard::describe_outputs(&plans))
+        .map_err(|message| {
+            eprintln!("error: {message}");
+            ExitCode::Build
+        })
 }
 
 fn package_marker(pkg_dir: &Path, cap: &mut CapturedOutput) -> Result<PathBuf, ExitCode> {
@@ -2547,6 +2586,99 @@ mod tests {
 
     fn options(args: &[&str]) -> Result<BuildOptions, String> {
         parse_options(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn selected_output_plan_preserves_names_backends_namespaces_and_access_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        for (subdir, name, targets) in [
+            (
+                "a",
+                "alpha",
+                "target (ts, \"chosen\") { out \"typed space/\"; namespace \"Custom\" }; \
+                 target ts { out \"unselected/\" }",
+            ),
+            (
+                "b",
+                "class",
+                "target (python, \"chosen\") { out \"../python view/\" }",
+            ),
+            ("c", "other", "target (js, \"chosen\") { out \"runtime/\" }"),
+        ] {
+            let package = root.join(subdir);
+            fs::create_dir(&package).unwrap();
+            fs::write(
+                package.join(format!("{name}.pkg.kio")),
+                format!("package {name}; build {{ cache (); {targets} }}"),
+            )
+            .unwrap();
+            // Planning inventories this path but must not parse its contents.
+            fs::write(package.join("invalid.kio"), "not a Kio module").unwrap();
+        }
+        let plan = selected_output_plan(&root, "chosen").unwrap();
+        assert_eq!(plan.len(), 3);
+        assert_eq!(plan[0].package_root, root.join("a"));
+        assert_eq!(plan[0].target, "chosen");
+        assert_eq!(plan[0].backend, "ts");
+        assert_eq!(plan[0].namespace.as_deref(), Some("Custom"));
+        assert_eq!(plan[0].output_dir, root.join("a/typed space"));
+        assert_eq!(plan[1].backend, "python");
+        assert_eq!(plan[1].namespace.as_deref(), Some("__kio_pkg_class"));
+        assert_eq!(plan[1].output_dir, root.join("b/../python view"));
+        assert_eq!(plan[2].backend, "js");
+        assert_eq!(plan[2].namespace, None);
+        for row in &plan {
+            assert!(!row.output_dir.exists(), "planning must not create outputs");
+        }
+        let encoded = serde_json::to_string(&plan).unwrap();
+        let decoded: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded[0]["namespace"], "Custom");
+        assert_eq!(decoded[1]["namespace"], "__kio_pkg_class");
+        assert_eq!(decoded[2]["namespace"], serde_json::Value::Null);
+        assert!(selected_output_plan(&root, "absent").is_err());
+        let default_ts = selected_output_plan(&root, "ts").unwrap();
+        assert_eq!(default_ts.len(), 1);
+        assert_eq!(default_ts[0].namespace.as_deref(), Some("alpha"));
+    }
+
+    #[test]
+    fn selected_output_plan_rejects_conflicts_and_invalid_typed_namespaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("app.pkg.kio");
+        for source in [
+            "package app; build { target ts { out \"api.kio\" } }",
+            "package app; build { target ts { out \"out\"; namespace \"bad-name\" } }",
+            "package app; build { target ts { out \"out\"; namespace \"a\"; namespace \"b\" } }",
+            "package app; build { target ts { out \"out\"; out \"other\" } }",
+        ] {
+            fs::write(&manifest, source).unwrap();
+            fs::write(dir.path().join("api.kio"), "module api;").unwrap();
+            assert!(selected_output_plan(dir.path(), "ts").is_err());
+            assert_eq!(fs::read_to_string(&manifest).unwrap(), source);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_output_plan_keeps_a_leaf_symlink_access_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::create_dir(root.join("actual")).unwrap();
+        fs::write(root.join("actual/sentinel"), "untouched").unwrap();
+        std::os::unix::fs::symlink(root.join("actual"), root.join("alias")).unwrap();
+        fs::write(
+            root.join("app.pkg.kio"),
+            "package app; build { target (ts, \"--help\") { out \"alias\" } }",
+        )
+        .unwrap();
+        let plan = selected_output_plan(&root, "--help").unwrap();
+        assert_eq!(plan[0].output_dir, root.join("alias"));
+        assert!(root.join("alias").is_symlink());
+        assert_eq!(
+            fs::read_to_string(root.join("actual/sentinel")).unwrap(),
+            "untouched"
+        );
     }
 
     #[test]

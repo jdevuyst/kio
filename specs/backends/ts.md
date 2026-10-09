@@ -58,6 +58,9 @@ build {
   `<Handle>Apply` / `<Handle>Bind` protocol, and the `create<Handle>` factory.
   This is the only artifact the `ts` backend adds over `js`.
 
+These checker-only declarations remain package-local under the
+[shared static type declaration contract](README.md#shared-static-type-declarations).
+
 `<ns>` is the artifact's **namespace** — its module stem, shared by the `.js`
 and `.d.ts`: the kio package name by default, overridden by the `namespace`
 build-block key ([`specs/package.md` § Per-target keys](../package.md#per-target-keys)),

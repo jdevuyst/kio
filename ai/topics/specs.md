@@ -16,7 +16,7 @@ web URL, with fragments only on the web route.
 **A spec never carries a "future extension" note** — no deferred features, no "not yet supported", no sketches of unbuilt behavior; direction lives in `ROADMAP.md` and nowhere else. State a deliberate omission as present-tense contract ("there is no X; Y is the supported route"), with its error category when the omission is a rejection. Reservations (a spelling or range rejected today to keep design space open), concrete current-caveat banners, and the exact per-backend Host API stability field are the admissible exceptions; backend maturity and ad hoc stability banners are not. The full class catalogue is in [`no-future-extensions.md`](no-future-extensions.md).
 
 - **[`specs/prime.md`](../../specs/prime.md)** — **Kio'**, the small desugared subset that carries the formal semantics and is the self-hosting target. It is a strict subset of `language.md`: every Kio' program is a Kio program with the same meaning, and there are no Kio'-only productions, identifier classes, or semantic privileges.
-- **[`specs/language.md`](../../specs/language.md)** — the **full** Kio surface: everything in core plus syntactic sugar (tuple literals, multi-label construction, `labels`, `alias`, `.<marker>` placeholder lambdas, `op` user operators, UFCS), imported block elaborator calls (`if!`, `scope!`, `do!`, `match!`), and blockless elaborator calls (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`, the spine palette, `derive!`; `ease!` additionally serves as the variance-directed function-type adapter for `->`-typed source/target). Every surface feature notes how it relates to core.
+- **[`specs/language.md`](../../specs/language.md)** — the **full** Kio surface: everything in core plus syntactic sugar (tuple literals, multi-label construction, `labels`, `.stem.` placeholder lambdas and numbered bindings, fixed `op` and variadic `varop` operators, UFCS), imported block elaborator calls (`if!`, `scope!`, `do!`, `match!`), and blockless elaborator calls (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`, the spine palette, `derive!`; `ease!` additionally serves as the variance-directed function-type adapter for `->`-typed source/target). Every surface feature notes how it relates to core.
 - **[`specs/grammar.md`](../../specs/grammar.md)** — the canonical grammar productions for Kio and Kio', plus the package-file grammars. Organized in three layers (Kio' / Kio surface extensions / package files); `language.md` and `prime.md` cross-link into it for productions while keeping the prose narrative themselves.
 - **[`specs/package.md`](../../specs/package.md)** — the shape of a Kio package (package file, host declarations, the bridge block, build block).
 - **[`specs/cli.md`](../../specs/cli.md)** — the `kio` command-line program.
@@ -121,9 +121,10 @@ An authorized shared law is complete only after every shipping backend and
 semantically distinct occurrence has an applicability, conformance, and
 evidence result under [`ai/topics/emit.md`](emit.md) § Decision record and
 propagation gate. Land current normative prose with the conforming
-implementations and evidence. Keep rationale and incomplete rows in the owning
-engineering or tracking artifacts; an owned incremental residual does not make
-the shared contract complete.
+implementations and evidence. Keep implementation rationale and evidence in
+[`evidence/`](../../evidence/README.md); incomplete work stays in authorized
+tracking artifacts. An owned incremental residual does not make the shared
+contract complete.
 
 Out of scope:
 

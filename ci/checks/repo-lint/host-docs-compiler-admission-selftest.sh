@@ -53,7 +53,7 @@ cat >"$scratch/fake-kio" <<'EOF'
 #!/bin/sh
 set -eu
 [ "${1:-}" = build ]
-case "${2:-}" in java|ts) ;; *) exit 2 ;; esac
+case "${2:-}" in java|ts|python) ;; *) exit 2 ;; esac
 case ",${KIO_CI_SCHEDULE_HELD:-}," in
   *,compiler,*) ;;
   *)
@@ -72,6 +72,19 @@ case "$2" in
     printf 'export {};\n' >out/ts/greeter.d.ts
     printf 'export {};\n' >out/ts/greeter.js
     ;;
+  python)
+    mkdir -p out/python/greeter
+    printf 'class GreeterHost: ...\n' >out/python/greeter/__init__.pyi
+    cat >out/python/greeter.py <<'PY'
+import os
+from types import SimpleNamespace
+
+def create_greeter(host):
+    def main():
+        host.greeter.print(os.environ.get("KIO_TEST_GREETING", "hello from kio\n"))
+    return SimpleNamespace(greeter=SimpleNamespace(KioModule_main=SimpleNamespace(main=main)))
+PY
+    ;;
 esac
 EOF
 chmod +x "$scratch/fake-kio"
@@ -83,7 +96,7 @@ set -eu
 target_dir=$3
 shift 3
 expected='--all-features --bins'
-expected="$expected --config profile.dev.package.kio-lang.opt-level=1"
+expected="$expected --config profile.dev.package.kio-lang.opt-level=2"
 expected="$expected --config profile.dev.package.kio-lang.debug-assertions=true"
 expected="$expected --config profile.dev.package.kio-lang.overflow-checks=true"
 [ "$*" = "$expected" ]
@@ -290,5 +303,79 @@ grep -q "Cannot find name 'UndefinedType'" "$scratch/declaration.log" || {
   cat "$scratch/declaration.log" >&2; exit 1;
 }
 [ -e "$scratch/ts-kio-admitted" ]
+
+# An always-green checker deliberately cannot detect the stub-only runtime
+# import: only execution of the selected complete host can reject that defect.
+mkdir "$scratch/python-bin"
+printf '#!/bin/sh\nexit 0\n' >"$scratch/python-bin/pyright"
+printf '#!/bin/sh\nexit 1\n' >"$scratch/python-bin/mise"
+chmod +x "$scratch/python-bin/pyright" "$scratch/python-bin/mise"
+cat >"$scratch/python-good.md" <<'EOF'
+```kio {file}
+package greeter;
+```
+
+```python
+from greeter import create_greeter
+host = unresolved_fragment_host
+```
+
+```python
+from __future__ import annotations
+import sys
+from typing import TYPE_CHECKING
+from greeter import create_greeter
+if TYPE_CHECKING:
+    from greeter import GreeterHost
+class GreeterCapabilities:
+    def print(self, p0: str) -> None:
+        sys.stdout.write(p0)
+class Host:
+    greeter = GreeterCapabilities()
+def run(host: GreeterHost[str]) -> None:
+    create_greeter(host).greeter.KioModule_main.main()
+run(Host())
+```
+EOF
+run_python_fixture() {
+  PATH="$scratch/python-bin:$PATH" \
+    KIO_CI_SCHEDULE_DIR="$state" \
+    RUSTC_WRAPPER='' RUSTC_WORKSPACE_WRAPPER='' \
+    CARGO_BUILD_RUSTC_WRAPPER='' CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER='' \
+    KIO_TEST_RUNNER_COMPILER_WRAPPER='' \
+    KIO_TEST_FAKE_KIO="$scratch/fake-kio" \
+    KIO_TEST_KIO_ADMITTED="$scratch/python-kio-admitted" \
+    "$shell" "$fake_repo/ci/checks/orchestrators/host-docs-snippets.sh" python
+}
+cp "$scratch/python-good.md" "$fake_repo/docs/hosts/python.md"
+run_python_fixture >"$scratch/python-good.log" 2>&1 || {
+  cat "$scratch/python-good.log" >&2; exit 1;
+}
+grep -q 'typed host executed with output assertion' "$scratch/python-good.log"
+[ -e "$scratch/python-kio-admitted" ]
+
+sed 's/from greeter import create_greeter/from greeter import GreeterHost, create_greeter/' \
+  "$scratch/python-good.md" >"$fake_repo/docs/hosts/python.md"
+if run_python_fixture >"$scratch/python-import.log" 2>&1; then
+  printf 'host-docs-compiler-admission-selftest: stub-only runtime import passed\n' >&2
+  exit 1
+fi
+grep -q 'ImportError' "$scratch/python-import.log" || {
+  cat "$scratch/python-import.log" >&2; exit 1;
+}
+
+cp "$scratch/python-good.md" "$fake_repo/docs/hosts/python.md"
+if KIO_TEST_GREETING='wrong greeting' run_python_fixture >"$scratch/python-output.log" 2>&1; then
+  printf 'host-docs-compiler-admission-selftest: wrong typed-host output passed\n' >&2
+  exit 1
+fi
+grep -q 'typed host must print hello from kio' "$scratch/python-output.log"
+
+sed '/^run(Host())$/d' "$scratch/python-good.md" >"$fake_repo/docs/hosts/python.md"
+if run_python_fixture >"$scratch/python-selection.log" 2>&1; then
+  printf 'host-docs-compiler-admission-selftest: unselected typed host passed\n' >&2
+  exit 1
+fi
+grep -q 'expected one executable typed host, found 0' "$scratch/python-selection.log"
 
 printf 'host-docs-compiler-admission-selftest: ok\n'

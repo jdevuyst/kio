@@ -40,7 +40,7 @@ Tool requirements match what the root [`mise.toml`](../../mise.toml) / [`mise.lo
 
 Cargo invocations in `ci/` scripts use the `dev` profile (output under
 `target/debug/`). The shared corpus-tool helper gives only its full and reduced
-compiler keys (`kio-lsp-cli`, `kio-prime`) package-scoped `kio-lang` opt-level 1,
+compiler keys (`kio-lsp-cli`, `kio-prime`) package-scoped `kio-lang` opt-level 2,
 with debug assertions and overflow checks enabled. This applies to CI-prepared
 compiler snapshots, including those used by LSP/editor and subprocess tests;
 dependencies, runners and verifiers retain their ordinary dev settings.
@@ -584,20 +584,14 @@ the external supervisor and inspect `ci.log`; do not start a duplicate run.
 
 So: **never pipe a check's output through `head` / `tail` / `grep` as its primary capture.** Redirect the full stream to a file, then read whatever you want out of the file — including as many times as you need, with different filters. The same rule holds when backgrounding a long run: capture to a file, and read the file.
 
-Two reliable patterns:
+A reliable capture pattern:
 
 ```sh
 # Capture full output to a file; tail for display, exit on the real code.
 log=$(mktemp); sh ci/all.sh SAMPLE_IMPL >"$log" 2>&1; rc=$?; tail -30 "$log"; exit $rc
 ```
 
-```sh
-# Enable pipefail before the pipeline.
-set -o pipefail
-sh ci/all.sh SAMPLE_IMPL 2>&1 | tail -30
-```
-
-The first form is preferable when invoking from a non-interactive driver — the explicit `rc=$?` makes the exit code visible and avoids relying on a shell-option side-effect.
+The explicit `rc=$?` preserves the producer's exit status without relying on a shell-option side-effect. Read display excerpts from the retained file, not from a lossy primary pipeline.
 
 **Read what ran, not just what passed.** `0 failed` is not a result; it is a result *given* some set of work. Before reporting a check as green, read its summary lines and confirm the implementations and case counts you expected are actually there. A run that executed nothing reports no failures, and so does a run whose output you truncated — the two are indistinguishable from a filtered log, and only one of them is good news.
 

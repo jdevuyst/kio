@@ -7,7 +7,8 @@
 <!-- `Closes #N`. Kio accepts two kinds of PR (see CONTRIBUTING.md):
      - a contributed case: the PR touches only
        `test-data/contrib/<your-github-username>-<N>/`, where `N` is
-       your "Contribute an example program or library" issue;
+       your "Contribute an example program or library" or "Bug report"
+       issue. For follow-up changes to your case, you can reuse that issue;
      - a maintainer-invited change: the linked issue carries the
        `accepting prs` label.
      Anything else is auto-closed — immediately when it's opened or

@@ -71,8 +71,8 @@ The surface forms that must not survive are:
 - Elaborators (spine): `fit!`, `reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`
 - Bang-call with explicit target type (`elaborator!(e, T)`)
 - UFCS (`r.>m`, `r.>m(T)`)
-- `fn#` placeholder lambdas
-- `alias` literal aliases
+- `.stem. { ... }` placeholder lambdas
+- `literal` declarations
 - Label sugar (multi-label shorthand, `labels`)
 - Nonminting label forwarding (`type {name} = {target.name};`)
 - `op` user-operator bindings

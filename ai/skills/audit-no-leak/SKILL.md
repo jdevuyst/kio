@@ -14,7 +14,7 @@ These are mostly small, mechanical greps. Worth their own skill because the rule
 
 The rule governs the **public artifacts** only. Restrict every grep to:
 
-- `specs/`, `docs/` except `docs/blog/*.md`, `test-data/`, `kio-rs/`, `ci/`
+- `specs/`, `evidence/`, `docs/` except `docs/blog/*.md`, `test-data/`, `kio-rs/`, `ci/`
 - `README.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `TESTING.md`, `KIO-FOR-AGENTS.md`
 - commit messages (sweep the unpushed window, `git log @{u}..HEAD`, when reviewing a branch)
 
@@ -98,6 +98,7 @@ Public reader-facing files must not point readers into the agent-guidance layer:
 git grep -nE '(^|[^A-Za-z0-9_-])AGENTS\.md|ai/topics/|ai/skills/' -- \
   README.md ROADMAP.md INSTALL.md CONTRIBUTING.md TESTING.md KIO-FOR-AGENTS.md \
   ':(glob)specs/**/*.md' ':(glob)docs/**/*.md' \
+  ':(glob)evidence/**/*.md' \
   ':(exclude,glob)docs/blog/*.md' \
   ':(glob)test-data/**/*.md' ':(glob)ci/infra/**/*.md'
 ```

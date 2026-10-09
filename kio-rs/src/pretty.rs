@@ -55,6 +55,14 @@ use crate::pass::lexer::Trivia;
 /// (`specs/style.md`'s 100-column rules).
 const WIDTH: usize = 100;
 
+pub(crate) fn canonical_float_digits(digits: &str) -> String {
+    digits
+        .chars()
+        .filter(|&c| c != '+')
+        .map(|c| if c == 'E' { 'e' } else { c })
+        .collect()
+}
+
 pub fn pretty_module(m: &Module) -> String {
     render(&doc_module(m), WIDTH)
 }
@@ -931,11 +939,7 @@ fn doc_literal_alias_value(value: &LiteralAliasValue) -> Doc {
         LiteralAliasValue::Str { value, .. } => doc_string_literal(value),
         LiteralAliasValue::Int { digits, .. } => text(digits.clone()),
         LiteralAliasValue::Float { digits, .. } => {
-            let canonical: String = digits
-                .chars()
-                .filter(|&c| c != '+')
-                .map(|c| if c == 'E' { 'e' } else { c })
-                .collect();
+            let canonical = canonical_float_digits(digits);
             text(canonical)
         }
         LiteralAliasValue::Bool { value, .. } => text(if *value { ".t" } else { ".f" }),
@@ -1896,11 +1900,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
         } => {
             // Canonical float emission: lowercase `e`, drop leading
             // `+` after `e`. The lexer strips `_` separators already.
-            let canonical: String = digits
-                .chars()
-                .filter(|&c| c != '+')
-                .map(|c| if c == 'E' { 'e' } else { c })
-                .collect();
+            let canonical = canonical_float_digits(digits);
             concat(text(canonical), doc_literal_annotation(annotation))
         }
         Expr::BoolLit {

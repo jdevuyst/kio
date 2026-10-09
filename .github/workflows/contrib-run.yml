@@ -76,11 +76,10 @@ jobs:
             const number = context.payload.pull_request.number;
             const prefix = 'test-data/contrib/';
             const contribLabel = 'contrib case';
-            // pulls.listFiles truncates at 3000 with no signal; an
-            // `every(in-lane)` over a truncated list could miss a poisoned
-            // file past the cap. A real contrib case is a handful of files,
-            // so a PR at the cap is never valid — fail closed.
-            const LISTFILES_CAP = 3000;
+            const approved = context.payload.pull_request;
+            // Compare files appear only on page 1, capped at 300 with no
+            // completeness signal. Never admit a possibly truncated list.
+            const COMPARE_FILES_CAP = 300;
 
             // Gate 1 — the case must carry the `contrib case` sanction.
             // pr-policy-check applies it ONLY after the full case contract
@@ -103,13 +102,25 @@ jobs:
               return;
             }
 
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner, repo, pull_number: number, per_page: 100,
+            if (prData.head.sha !== approved.head.sha ||
+                prData.base.sha !== approved.base.sha) {
+              core.setFailed('PR base or head changed since approval; refusing to run.');
+              return;
+            }
+
+            // Live equality above rejects stale approval, but cannot bind
+            // a later mutable listFiles response. Only the immutable event
+            // pair determines the file set for the head checked out below.
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner, repo, basehead: `${approved.base.sha}...${approved.head.sha}`,
+              page: 1, per_page: 1,
             });
-            if (files.length === 0 || files.length >= LISTFILES_CAP) {
+            const files = comparison.files;
+            if (!Array.isArray(files) || comparison.truncated ||
+                files.length === 0 || files.length >= COMPARE_FILES_CAP) {
               core.setFailed(
-                `PR changes ${files.length} files; refusing to run a ` +
-                `non-contrib-sized PR.`);
+                'GitHub comparison did not provide a nonempty, complete file set ' +
+                'below its 300-file limit; refusing to run.');
               return;
             }
 
@@ -120,9 +131,11 @@ jobs:
             // could run attacker-controlled code. Belt-and-suspenders on top
             // of gate 1, closing the window where a label lags a push.
             const outside = files.filter(f =>
-              !(f.filename.startsWith(prefix) &&
+              !(typeof f.filename === 'string' && f.filename.startsWith(prefix) &&
+                (f.status !== 'renamed' || typeof f.previous_filename === 'string') &&
                 (f.previous_filename === undefined ||
-                 f.previous_filename.startsWith(prefix))));
+                 (typeof f.previous_filename === 'string' &&
+                  f.previous_filename.startsWith(prefix)))));
             if (outside.length > 0) {
               core.setFailed(
                 `PR touches ${outside.length} file(s) outside ${prefix} ` +
@@ -133,7 +146,8 @@ jobs:
             }
 
             const dirs = [...new Set(files
-              .map(f => f.filename.slice(prefix.length).split('/')[0])
+              .flatMap(f => [f.filename, f.previous_filename].filter(p => p !== undefined))
+              .map(p => p.slice(prefix.length).split('/')[0])
               .filter(Boolean))];
             if (dirs.length !== 1) {
               core.setFailed(

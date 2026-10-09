@@ -1,0 +1,5 @@
+module api;
+
+import provider(identity);
+
+pub fn keep() { () }

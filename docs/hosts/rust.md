@@ -190,7 +190,7 @@ represents it. A generated generic signature binds `A: KioType` and uses
 `A::Facade` for each value of type `A`. At a concrete host call,
 `KioNative<T>` selects the ordinary Rust facade `T`:
 
-```text
+```rust
 use greeter::shapes::KioNative;
 
 let result: String = pkg.greeter.api.id::<KioNative<String>>("hi".to_owned());
@@ -209,7 +209,7 @@ generic spelling shown by the generated signature or its stable `ffi` alias.
 Function values likewise have one stable public spelling everywhere. A unary
 `A -> B` value is `KioFn1<A, B>`, constructed from and invoked like this:
 
-```text
+```rust
 use greeter::shapes::{KioFn1, KioNative};
 
 let add_one = KioFn1::<KioNative<i32>, KioNative<i32>>::new(|x| x + 1);
@@ -269,7 +269,12 @@ The constructor-witness trait is intentionally not sealed, so a host can
 compose the generated marker algebra. Identity needs only its marker equation;
 the trait supplies the safe opaque-token bridge:
 
-```text
+```rust
+use greeter::shapes::{
+    KioType, KioTypeConstructor1, KioApplied1, KioApply1,
+    KioNative, KioStoredValue, KioValue,
+};
+
 #[derive(Clone)]
 struct Identity;
 
@@ -465,6 +470,14 @@ bridge {
   greeter;
   greeter/**;
 }
+-->
+
+<!--kio {file}
+module greeter/api;
+
+pub fn id[A](value: A) -> A { value }
+
+pub fn keep[*F][A](value: F(A) -> F(A)) -> (F(A) -> F(A)) { value }
 -->
 
 <!--kio {harness=greeter_rust_main file placeholder="__SNIPPET__"}

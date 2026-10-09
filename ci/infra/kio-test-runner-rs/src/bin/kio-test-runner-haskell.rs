@@ -862,10 +862,7 @@ fn haskell_method(
         HostFnBodyKind::InvokeSubstitutedUnitCallback { text } => {
             method(vec![format!("(() -> m {})", role(text))], role(text))
         }
-        HostFnBodyKind::ReturnedForallUnit => {
-            method(Vec::new(), "(forall (t :: Data.Kind.Type). m t)".to_owned())
-        }
-        HostFnBodyKind::ForallStageEffects => method(
+        HostFnBodyKind::ReturnedForallUnit | HostFnBodyKind::ForallStageEffects => method(
             Vec::new(),
             "(forall (t :: Data.Kind.Type). m ())".to_owned(),
         ),
@@ -1332,7 +1329,10 @@ fn build_driver(
     out.push_str("import qualified \"text\" Data.Text as T\n");
     out.push_str("import qualified \"text\" Data.Text.IO as TIO\n");
     out.push_str("import qualified \"base\" Data.String\n");
-    if needs_impredicative_identity || protocol == RunnerProtocol::HostForallStageEffects {
+    if needs_impredicative_identity
+        || needs_polymorphic_unit
+        || protocol == RunnerProtocol::HostForallStageEffects
+    {
         out.push_str("import qualified \"base\" Data.Kind\n");
     }
     out.push_str("import qualified \"base\" Data.Int\n");
@@ -1342,7 +1342,6 @@ fn build_driver(
     out.push_str("import qualified \"base\" Data.List\n");
     out.push_str("import qualified \"base\" Text.Read\n");
     if needs_polymorphic_unit {
-        out.push_str("import qualified \"base\" Unsafe.Coerce\n");
         out.push_str("import qualified \"base\" Control.Exception\n");
         out.push_str("import qualified \"base\" System.IO.Error\n");
     }
@@ -1372,9 +1371,8 @@ fn build_driver(
 
     if needs_polymorphic_unit {
         out.push_str(
-            "-- This fixed witness is observed only at Unit by its owning protocol.\n\
-             kioRunnerPolymorphicUnit :: forall a. IO a\n\
-             kioRunnerPolymorphicUnit = pure (Unsafe.Coerce.unsafeCoerce ())\n\n",
+            "kioRunnerPolymorphicUnit :: forall (a :: Data.Kind.Type). IO ()\n\
+             kioRunnerPolymorphicUnit = pure ()\n\n",
         );
     }
 
@@ -2355,7 +2353,10 @@ fn render_export_driver(
             "  {} pkg (\\() -> pure (T.pack \"callback\")) >>= TIO.putStrLn\n",
             pkg_export("testapi/api", "via_host"),
         ),
-        ExportDriver::ReturnedForallCallByValue => format!(
+        ExportDriver::ReturnedForallCallByValue => {
+            format!("  {} pkg\n", pkg_export("testapi/main", "main"))
+        }
+        ExportDriver::ReturnedForallHostFailure => format!(
             "  {main} pkg\n\
              \x20\x20result <- Control.Exception.try ({main} pkg) :: IO (Either IOError ())\n\
              \x20\x20case result of\n\
@@ -2635,7 +2636,7 @@ fn render_haskell_body_for_binding(
             "\\arg0 -> arg0 () >>= \\value -> pure (T.pack \"host/\" <> value)".to_owned()
         }
         HostFnBodyKind::ReturnedForallUnit => {
-            "do { produced <- Data.IORef.readIORef returnedForallProduced; if produced then do { TIO.putStrLn (T.pack \"throw\"); Control.Exception.throwIO (System.IO.Error.userError \"produce failed\") } else do { Data.IORef.writeIORef returnedForallProduced True; TIO.putStrLn (T.pack \"produce\"); pure kioRunnerPolymorphicUnit } }".to_owned()
+            "do { produced <- Data.IORef.readIORef returnedForallProduced; if produced then do { TIO.putStrLn (T.pack \"throw\"); Control.Exception.throwIO (System.IO.Error.userError \"produce failed\") } else do { Data.IORef.writeIORef returnedForallProduced True; TIO.putStrLn (T.pack \"produce\"); pure @IO @(forall (a :: Data.Kind.Type). IO ()) kioRunnerPolymorphicUnit } }".to_owned()
         }
         HostFnBodyKind::TraceUnit { text } => {
             format!("TIO.putStrLn (T.pack {text:?})")

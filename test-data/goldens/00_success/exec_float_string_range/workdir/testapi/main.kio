@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(F32, F64, String);
+import testapi/fmt(f32_to_string, f64_to_string);
+import testapi/io(print);
+
+pub fn main() {
+  print(f64_to_string(18446744073709551616.0(F64)));
+  print("\n"(String));
+  print(f64_to_string(-18446744073709551616.0(F64)));
+  print("\n"(String));
+  print(f32_to_string(18446744073709551616.0(F32)));
+  print("\n"(String));
+  print(f32_to_string(-18446744073709551616.0(F32)));
+  print("\n"(String))
+}

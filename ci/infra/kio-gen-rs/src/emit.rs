@@ -41,9 +41,16 @@ use rand_chacha::ChaCha20Rng;
 pub const GENERATED_CORE_MAIN_PROTOCOL: &str = "generated-core-main";
 pub const GENERATED_SURFACE_MAIN_PROTOCOL: &str = "generated-surface-main";
 pub const GENERATED_CONTROL_MAIN_PROTOCOL: &str = "generated-control-main";
+pub const GENERATED_RECURSION_MAIN_PROTOCOL: &str = "generated-recursion-main";
 
 pub fn program_protocol(prog: &Program) -> &'static str {
-    if prog.control_probe.is_some() {
+    if prog
+        .control_probe
+        .as_ref()
+        .is_some_and(crate::control::ControlProbe::has_recursion)
+    {
+        GENERATED_RECURSION_MAIN_PROTOCOL
+    } else if prog.control_probe.is_some() {
         GENERATED_CONTROL_MAIN_PROTOCOL
     } else {
         runner_protocol(prog.surface_mode)
@@ -213,10 +220,8 @@ pub fn add_elaborator_support_files(files: &mut Vec<(String, String)>) {
     }
 }
 
-// kio-rs doesn't yet support dotted-path value access through an
-// imported newtype, so each constructor / projector is wrapped in a
-// flat function defined alongside the newtype. Generated bodies call
-// those wrappers as ordinary functions.
+// Flat constructor/projector wrappers match the generator's nominal
+// callee representation. Generated bodies call those ordinary functions.
 const UTIL_KIO_BASE: &str = "\
 pub pure fn id[A](x: A) -> A { x }
 pub pure fn const1[A][B](x: A, y: B) -> A { x }
@@ -242,12 +247,8 @@ pub pure fn unbox_any[A](x: Box(A)) -> A { Box.un_box(A, x) }
 
 // Recursive newtypes that exercise strict-positivity and the
 // iso-recursive wrap/unwrap boundary in the typechecker. The
-// generator declares these but never builds values of them —
-// building values would need a way around the call-site complex-
-// type-arg limit (intrinsics like `__left__` would need a paren-
-// wrapped second type arg, and the parser routes paren-leading args
-// to value position) — bounded value generation through a different
-// path is a follow-up.
+// fixed declarations provide declaration/positivity coverage; the
+// generated terms do not construct values of these types.
 pub rec newtype Strlist : (. | (String & Strlist))
   { pub constructor mk_strlist; pub projector un_strlist }
 pub rec newtype Inttree : (. | (I32 & (Inttree & Inttree)))
@@ -618,6 +619,14 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     if prog.control_probe.is_some() {
         package_file = package_file.replace("  target rust {", "  target go { out \"out/go/\" };\n  target swift { out \"out/swift/\" };\n  target haskell { out \"out/haskell/\" };\n\n  target rust {");
         package_file = package_file.replace("  testapi\n", "  testapi;\n  testapi/io\n");
+        if prog
+            .control_probe
+            .as_ref()
+            .is_some_and(crate::control::ControlProbe::has_recursion)
+        {
+            package_file =
+                package_file.replace("  testapi/io\n", "  testapi/io;\n  testapi/iter\n");
+        }
     }
     let control_import = if prog.control_probe.is_some() {
         "import kio_gen_control as control_probe;\n"

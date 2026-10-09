@@ -665,14 +665,12 @@ import __comptime__;
 
 fn product_arity(ct: __Comptime__, typ: __Type__) -> __Type_arity__ {
   __type_product_spine_fold__(
-    , ct
-    , __Type_arity__
-    , typ
-    , __type_arity_zero__(ct)
-    , .(count: __Type_arity__, _member: __Type__) -> __Type_arity__ {
-        __type_arity_succ__(ct, count)
-      }
-    )
+  , ct
+  , __Type_arity__
+  , typ
+  , __type_arity_zero__(ct)
+  , .(count: __Type_arity__, _member: __Type__) -> __Type_arity__ { __type_arity_succ__(ct, count) }
+  )
 }"#,
         ),
         TermFn => Some(
@@ -700,23 +698,23 @@ fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__(., Fuel, rest)) }
 
 fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
   __structural_recur__(
-    , ct
-    , Fuel
-    , .
-    , __Type_arity__
-    , fuel
-    , ()
-    , .(recur: (Fuel & .) -> __Type_arity__, current: Fuel, _input: .) -> __Type_arity__ {
-        __either__(
-          , .
-          , Fuel
-          , __Type_arity__
-          , Fuel.un_fuel(current)
-          , .(_done: .) -> __Type_arity__ { __type_arity_zero__(ct) }
-          , .(rest: Fuel) -> __Type_arity__ { __type_arity_succ__(ct, recur(rest, ())) }
-          )
-      }
-    )
+  , ct
+  , Fuel
+  , .
+  , __Type_arity__
+  , fuel
+  , ()
+  , .(recur: (Fuel & .) -> __Type_arity__, current: Fuel, _input: .) -> __Type_arity__ {
+      __either__(
+      , .
+      , Fuel
+      , __Type_arity__
+      , Fuel.un_fuel(current)
+      , .(_done: .) -> __Type_arity__ { __type_arity_zero__(ct) }
+      , .(rest: Fuel) -> __Type_arity__ { __type_arity_succ__(ct, recur(rest, ())) }
+      )
+    }
+  )
 }"#,
         ),
         FillCtx => None,
@@ -804,6 +802,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn generated_guide_is_canonically_formatted() {
+        let guide = render_markdown_guide();
+        let document = crate::kiodoc::document::Document::build(
+            std::path::Path::new("builtin-modules.md"),
+            &guide,
+            crate::kiodoc::parse::scan(&guide),
+        )
+        .expect("generated builtin guide has valid Kiodoc structure");
+        let edits = crate::kiodoc::fmt::format_document(&guide, &document)
+            .expect("generated builtin guide has formattable examples");
+        assert!(
+            edits.is_empty(),
+            "generated builtin guide needs formatting: {edits:#?}"
+        );
     }
 
     #[test]

@@ -3,8 +3,8 @@
 This page is a faithful read-through of the dynamic-loading proof-of-concept
 package at
 [`test-data/poc/dyn_load_prime/`](../../test-data/poc/dyn_load_prime/). That
-package is executable, `kio test`-checked, and built and run against every
-declared target in CI, so it is *ground truth*: every type, function, and
+package is executable and `kio test`-checked, with the harness building and running it
+across supported targets under CI-selected coverage. It is *ground truth*: every type, function, and
 `equiv` law shown here exists in the package exactly as written, and the
 program below is the one its `main` runs.
 
@@ -15,8 +15,8 @@ Kio' source text the `kio-prime` backend already emits — the whole emitted
 tree, exactly as `kio build kio-prime` writes it. The capability rides
 entirely on the existential type Kio' already has. The same loader is also
 CI infrastructure: the dyn-load-prime differential
-([`TESTING.md`](../../TESTING.md) § Test layers) loads hundreds of golden
-images through it on every run and holds its interpreter to
+([`TESTING.md`](../../TESTING.md) § Test layers) loads eligible golden
+images through it under the run's selected coverage and holds its interpreter to
 compile-and-run's observable behavior.
 
 For the task-oriented tour of the same loop — produce an image, then load,

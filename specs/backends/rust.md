@@ -644,7 +644,9 @@ nominal carrier into an anonymous structural record or enum.
 
 Rust realizes the shared [facade-topology and execution-provenance
 contract](README.md#facade-topology-and-execution-provenance) through a
-compositional marker translation. Every saturated Kio type has a local sealed
+compositional marker translation, preserving the shared
+[generic substitution and opaque-constructor contract](README.md#generic-substitution-and-opaque-constructors).
+Every saturated Kio type has a local sealed
 marker implementing `KioType`; its associated `Facade` is the Rust value type
 that crosses the boundary. The canonical structural equations are:
 
@@ -923,9 +925,9 @@ there is no separate label-generated-vs-explicit namespace branch.
 
 The exposed surface is **namespaced by the declaring module's path**:
 the package surfaces a nested namespace field per path segment, so a
-`pub fn answer` in module `pkg/main` is reached as `package.main.answer()`,
-a `pub fn greet` in module `pkg/api` as `package.api.greet()`, and
-`pkg/util/text` contributes methods under `package.util.text`. Because the
+`pub fn answer` in module `pkg/main` is reached as `package.pkg.main.answer()`,
+a `pub fn greet` in module `pkg/api` as `package.pkg.api.greet()`, and
+`pkg/util/text` contributes methods under `package.pkg.util.text`. Because the
 namespace is preserved, two `pub fn main`s in different bridged modules
 (`a/main` and `b/main`) are distinct entries (`pkg.a.main.main()` and
 `pkg.b.main.main()`); there is no leaf-name collision and no rename.
@@ -990,7 +992,7 @@ markers/facades. Per-boundary `ffi` aliases name those same types. Neither
 naming process consults an occupancy or declaration-order claim schedule.
 
 This namespacing mirrors the JS backend's `pkg.<TypeName>.<member>`
-([`js.md` § Explicit newtype namespaces](js.md#explicit-newtype-namespaces)).
+([`js.md` § Public newtype namespaces](js.md#public-newtype-namespaces)).
 Hosts crossing backends see the same per-newtype namespace in every
 language.
 
@@ -1227,8 +1229,6 @@ exact marker, with no separate HKT body walk. A token-backed nominal or
 application codec transfers the existing private token directly; other codecs
 retain their declared
 allocation, clone, or structural-conversion cost.
-
-**Erased-mode body lowering at the construction site.** When a Kio lambda literal flows into a polymorphic-newtype-payload constructor — `Monad.mk_monad(Box, .[A][B](m, k) { k(Box.un_box(m)) })` — the bound types and value parameters use the universal representation while the nested callable stages follow the payload type. The concrete constructor's generated adapter performs its marker-directed lift / project while the body retains the opaque token. This behaves identically to a typed-throughout version because the typer rejects any operation that depends on a specific instantiation of `[A]` or `[B]` (binder-uniformity).
 
 **Multi-arity abstract type-constructor binders.** The scheme is uniform
 across arity: a dictionary that quantifies over `[**F]` uses

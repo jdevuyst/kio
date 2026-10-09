@@ -12,8 +12,10 @@ The fastest full environment is the dev container at
 
 - VS Code: open the checkout and choose "Reopen in Container".
 - GitHub Codespaces: open a Codespace from the repository.
-- Linux CI: uses the published dev container image, then installs
-  selected backend extras with `ci/impl-toolchain.sh`.
+- GitHub Pages: builds the website in the published dev container image.
+
+Linux CI runs directly on hosted Ubuntu, installing the pinned core tools
+and backend extras through mise and `ci/impl-toolchain.sh`.
 
 For a local setup without the dev container, install
 [mise](https://mise.jdx.dev), trust this checkout, and install the

@@ -6,6 +6,11 @@ use crate::ast::{
 use crate::pass::resolve::ResolvePhase;
 use crate::span::Span;
 
+#[cfg(all(test, feature = "surface"))]
+thread_local! {
+    static INITIALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct PrimeLocalTypeAlias {
     pub(crate) alias: String,
@@ -33,6 +38,11 @@ pub(crate) struct PrimeTypeRequalifier {
 }
 
 impl PrimeTypeRequalifier {
+    #[cfg(all(test, feature = "surface"))]
+    pub(crate) fn initialization_count_for_test() -> usize {
+        INITIALIZATIONS.get()
+    }
+
     pub(crate) fn new<P>(module: &Module<P>) -> Self
     where
         P: ResolvePhase,
@@ -44,6 +54,8 @@ impl PrimeTypeRequalifier {
     where
         P: ResolvePhase,
     {
+        #[cfg(all(test, feature = "surface"))]
+        INITIALIZATIONS.set(INITIALIZATIONS.get() + 1);
         let mut selective_leaf_module = HashMap::new();
         let mut module_aliases: HashMap<String, BTreeSet<String>> = HashMap::new();
         let mut used_names = HashSet::new();

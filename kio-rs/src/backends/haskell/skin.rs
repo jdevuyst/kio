@@ -4,19 +4,9 @@
 //! cross through package-branded closed families that reduce to right-nested
 //! pairs and `Either`, a host type is the exact associated type selected by
 //! the host, and a function is a native `arg -> m ret`. This module owns the
-//! shared boundary renderer ([`HaskellShapes`]) used by both Haskell body
-//! paths. It also provides the
-//! [`crate::backends::skin::SkinProfile`] that converts between those typed
-//! shapes and the universal fallback body's private carrier representation
-//! ([`HaskellSkin`]).
-//!
-//! The conversion is driven through the shared
-//! [`crate::backends::skin::convert`] driver, exactly as JS, Rust, and Swift
-//! drive theirs: [`HaskellSkin`] supplies the per-leaf hooks
-//! (`convert_product` / `convert_sum` / `convert_function` /
-//! `convert_newtype` / `is_passthrough`) and the shared driver walks the
-//! signature's type, flips direction across a function value's parameter
-//! leg, and recurses into each slot.
+//! boundary renderer ([`HaskellShapes`]) used by native emission. The
+//! prepared facade owns public callable topology; [`super::native`] renders
+//! conversions between those boundary shapes and native body values.
 //!
 //! ## Monad-polymorphic boundary
 //!
@@ -32,12 +22,10 @@ use crate::ast::{Kind, Newtype, PathSegment, Routed, Type, TypeParam};
 use crate::backends::boundary_facade::{
     BoundaryHostBindingOrigin, BoundaryHostTypeBinding, PreparedBoundaryCallableSites,
 };
-pub(super) use crate::backends::skin::erase_scoped_type_vars;
-use crate::backends::skin::{self, FfiDir, FunctionBoundaryAdapterPlan, SkinProfile};
-use crate::backends::skin::{TypeReachAction, canonical_type_string, is_comptime_type_name};
+use crate::backends::skin::{self, TypeReachAction, canonical_type_string};
 use crate::pass::resolve::Package;
 
-use super::emit::{EmitError, nest_kioprod, nest_kiosum};
+use super::emit::EmitError;
 use super::naming::{BoundaryId, BoundaryStep, HaskellName};
 
 fn scoped_shape_binders(ty: &Type<Routed>, scope: &[TypeParam]) -> Vec<TypeParam> {
@@ -484,10 +472,6 @@ impl<'p> HaskellShapes<'p> {
 
     pub(crate) fn structural_names(&self) -> &super::naming::StructuralNames {
         &self.structural_names
-    }
-
-    pub(crate) fn runtime_names(&self) -> &super::naming::RuntimeNames {
-        &self.runtime_names
     }
 
     pub(crate) fn standard_names(&self) -> &super::naming::StandardNames {
@@ -1011,22 +995,6 @@ impl<'p> HaskellShapes<'p> {
         Ok(format!("{family} '[{}]", rendered.join(", ")))
     }
 
-    /// `true` when a value of type `ty` crosses the boundary unchanged.
-    /// Type variables retain the universal representation; recursive and
-    /// existential nominal leaves retain their native carrier representation.
-    /// Structural parents still recurse. Unit and bottom are not passthrough:
-    /// the host boundary uses `()` / `Data.Void.Void`, while the universal body
-    /// uses private unit / universal carriers, so those slots convert.
-    pub fn is_passthrough(&self, ty: &Type<Routed>) -> bool {
-        self.is_passthrough_inner(ty, &mut BTreeSet::new(), None, &[])
-    }
-
-    /// Module-aware passthrough test (a bare newtype leaf resolves in the
-    /// referring module's scope), for the native body's boundary converter.
-    pub fn is_passthrough_in(&self, ty: &Type<Routed>, module: Option<&str>) -> bool {
-        self.is_passthrough_inner(ty, &mut BTreeSet::new(), module, &[])
-    }
-
     pub(crate) fn is_passthrough_scoped_in(
         &self,
         ty: &Type<Routed>,
@@ -1034,144 +1002,6 @@ impl<'p> HaskellShapes<'p> {
         module: Option<&str>,
     ) -> bool {
         self.is_passthrough_inner(ty, &mut BTreeSet::new(), module, scope)
-    }
-
-    pub(crate) fn fallback_bridgeable_in(&self, ty: &Type<Routed>, module: Option<&str>) -> bool {
-        self.fallback_bridgeable_inner(ty, &mut BTreeSet::new(), module)
-    }
-
-    fn fallback_bridgeable_inner(
-        &self,
-        ty: &Type<Routed>,
-        seen: &mut BTreeSet<String>,
-        module: Option<&str>,
-    ) -> bool {
-        if self.type_involves_comptime(ty, module, &mut BTreeSet::new(), &[]) {
-            return false;
-        }
-        match ty {
-            Type::Unit { .. } | Type::Bottom { .. } => true,
-            Type::Forall { .. } => false,
-            Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                self.fallback_bridgeable_inner(left, seen, module)
-                    && self.fallback_bridgeable_inner(right, seen, module)
-            }
-            Type::Function {
-                param,
-                ret,
-                abi_arity,
-                ..
-            } => {
-                Type::right_spine_take(param, *abi_arity)
-                    .into_iter()
-                    .all(|param| self.fallback_bridgeable_inner(param, seen, module))
-                    && self.fallback_bridgeable_inner(ret, seen, module)
-            }
-            Type::Path { .. } => {
-                if self.host_types.resolve(ty, module).is_some() {
-                    return false;
-                }
-                match resolve_newtype_in(ty, self.package, &self.resolution, module) {
-                    Some((declaration, owner)) => {
-                        if self.has_nominal_boundary_carrier(ty, module) {
-                            return false;
-                        }
-                        let key = format!("{owner}.{}", declaration.name);
-                        if !seen.insert(key.clone()) {
-                            return false;
-                        }
-                        let Some(payload) = instantiate_newtype_payload_in(
-                            declaration,
-                            ty,
-                            self.package,
-                            &owner,
-                            module,
-                            &BTreeSet::new(),
-                        ) else {
-                            seen.remove(&key);
-                            return false;
-                        };
-                        let bridgeable =
-                            self.fallback_bridgeable_inner(&payload, seen, Some(&owner));
-                        seen.remove(&key);
-                        bridgeable
-                    }
-                    None => false,
-                }
-            }
-            Type::LabelSugar { ext, .. } => match *ext {},
-            Type::Infer { ext, .. } => match *ext {},
-            Type::Goal { ext, .. } => match *ext {},
-        }
-    }
-
-    fn type_involves_comptime(
-        &self,
-        ty: &Type<Routed>,
-        module: Option<&str>,
-        visited: &mut BTreeSet<String>,
-        scope: &[TypeParam],
-    ) -> bool {
-        let recurse = |ty: &Type<Routed>,
-                       module: Option<&str>,
-                       visited: &mut BTreeSet<String>,
-                       scope: &[TypeParam]| {
-            self.type_involves_comptime(ty, module, visited, scope)
-        };
-        match ty {
-            Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                recurse(left, module, visited, scope) || recurse(right, module, visited, scope)
-            }
-            Type::Function { param, ret, .. } => {
-                recurse(param, module, visited, scope) || recurse(ret, module, visited, scope)
-            }
-            Type::Forall { param, body, .. } => {
-                let nested = extend_type_scope(scope, param);
-                recurse(body, module, visited, &nested)
-            }
-            Type::Bottom { .. } => false,
-            Type::Path { segments, args, .. } => {
-                if let [name] = segments.as_slice()
-                    && scope.iter().any(|param| param.name == name.as_str())
-                {
-                    return args.iter().any(|arg| recurse(arg, module, visited, scope));
-                }
-                if self.host_types.resolve(ty, module).is_some() {
-                    return false;
-                }
-                if let Some((declaration, owner)) =
-                    resolve_newtype_in(ty, self.package, &self.resolution, module)
-                {
-                    if self.has_nominal_boundary_carrier(ty, module) {
-                        return false;
-                    }
-                    let key = format!("{owner}.{}", declaration.name);
-                    if !visited.insert(key.clone()) {
-                        return false;
-                    }
-                    let bound = scope.iter().map(|param| param.name.clone()).collect();
-                    let result = instantiate_newtype_payload_in(
-                        declaration,
-                        ty,
-                        self.package,
-                        &owner,
-                        module,
-                        &bound,
-                    )
-                    .is_some_and(|payload| recurse(&payload, Some(&owner), visited, scope));
-                    visited.remove(&key);
-                    return result;
-                }
-                args.iter().any(|arg| recurse(arg, module, visited, scope))
-                    || segments
-                        .last()
-                        .is_some_and(|last| is_comptime_type_name(last.as_str()))
-            }
-            Type::Unit { .. } => false,
-            Type::LabelSugar { ext, .. } => match *ext {},
-            Type::Infer { ext, .. } => match *ext {},
-            Type::Goal { ext, .. } => match *ext {},
-        }
     }
 
     fn is_passthrough_inner(
@@ -1258,303 +1088,6 @@ impl<'p> HaskellShapes<'p> {
     }
 }
 
-/// The Haskell skin profile: the per-backend leaves of the boundary-wrapper
-/// walk for Haskell's value representation (`Product` / `Sum` family
-/// applications reduce to right-folded pairs / `Either` at the host boundary,
-/// with patterns and selectors providing the presentation; the universal
-/// carrier remains internal).
-pub struct HaskellSkin<'a> {
-    pub shapes: &'a HaskellShapes<'a>,
-    /// The module the converted item is declared in, so a bare newtype leaf
-    /// resolves to the right same-leaf newtype. At a package-surface position,
-    /// `None` permits only already-qualified identities to resolve.
-    pub module: Option<&'a str>,
-}
-
-impl SkinProfile for HaskellSkin<'_> {
-    type Err = EmitError;
-
-    /// Override the shared driver's atomic leaves whose public and universal
-    /// representations differ. Exact host types are handled natively and never
-    /// enter the universal floor.
-    fn convert(&self, ty: &Type<Routed>, expr: &str, dir: FfiDir) -> Result<String, EmitError> {
-        let runtime = self.shapes.runtime_names();
-        if matches!(ty, Type::Unit { .. }) {
-            return Ok(match dir {
-                // Native `()` -> internal private unit (the `()` value is run
-                // for effects upstream; here we just produce the rep).
-                FfiDir::In => format!("(({expr}) `seq` {})", runtime.unit),
-                // Internal private unit -> native `()`.
-                FfiDir::Out => format!("(({expr}) `seq` ())"),
-            });
-        }
-        if matches!(ty, Type::Bottom { .. }) {
-            return Ok(match dir {
-                FfiDir::In => format!(
-                    "({}.absurd ({expr}))",
-                    self.shapes.standard_names().data_void
-                ),
-                FfiDir::Out => {
-                    format!("(({expr}) `seq` error \"kio: bottom boundary reached\")")
-                }
-            });
-        }
-        skin::convert(self, ty, expr, dir)
-    }
-
-    fn is_passthrough(&self, ty: &Type<Routed>) -> bool {
-        self.shapes.is_passthrough_in(ty, self.module)
-    }
-
-    fn convert_newtype(
-        &self,
-        ty: &Type<Routed>,
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<Option<String>, EmitError> {
-        if let Some(binding) = self.shapes.host_types.resolve(ty, self.module) {
-            return Err(EmitError::unsupported(format!(
-                "Haskell universal body cannot erase exact host type `{}/{}`; the native body must render this package",
-                binding.module_path, binding.source_name
-            )));
-        }
-        // Haskell carries a newtype transparently (the newtype value shares
-        // its payload's private-carrier rep); the payload IS the boundary shape.
-        // Resolve in the converted item's module so a same-leaf newtype in
-        // another module never supplies the wrong payload.
-        let Some((d, owner)) = resolve_newtype_in(
-            ty,
-            self.shapes.package,
-            self.shapes.resolution(),
-            self.module,
-        ) else {
-            return Ok(None);
-        };
-        let Some(payload) = instantiate_newtype_payload_in(
-            d,
-            ty,
-            self.shapes.package,
-            &owner,
-            self.module,
-            &BTreeSet::new(),
-        ) else {
-            return Ok(None);
-        };
-        Ok(Some(self.convert(&payload, expr, dir)?))
-    }
-
-    fn convert_product(
-        &self,
-        _ty: &Type<Routed>,
-        slots: &[&Type<Routed>],
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, EmitError> {
-        match dir {
-            // Native right-nested pair -> internal product.
-            FfiDir::In => {
-                let mut parts = Vec::with_capacity(slots.len());
-                for (index, slot) in slots.iter().enumerate() {
-                    let access = super::native::tuple_proj(expr, index, slots.len());
-                    parts.push(self.convert(slot, &access, FfiDir::In)?);
-                }
-                Ok(nest_kioprod(self.shapes.runtime_names(), &parts))
-            }
-            // Internal product -> native right-nested pair.
-            FfiDir::Out => {
-                let n = slots.len();
-                let mut parts = Vec::with_capacity(n);
-                for (i, slot) in slots.iter().enumerate() {
-                    let access =
-                        format!("({} {i} {n} ({expr}))", self.shapes.runtime_names().project);
-                    parts.push(self.convert(slot, &access, FfiDir::Out)?);
-                }
-                Ok(super::native::nest_tuple_value(&parts))
-            }
-        }
-    }
-
-    fn convert_sum(
-        &self,
-        _ty: &Type<Routed>,
-        slots: &[&Type<Routed>],
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, EmitError> {
-        let n = slots.len();
-        match dir {
-            // Native `Either` -> internal nested-binary sum.
-            FfiDir::In => {
-                let mut arms = String::new();
-                for (k, slot) in slots.iter().enumerate() {
-                    let payload = self.convert(slot, "__c", FfiDir::In)?;
-                    let injected =
-                        nest_kiosum(self.shapes.runtime_names(), k, n, &format!("({payload})"));
-                    arms.push_str(&format!(
-                        "{} -> {injected}; ",
-                        super::native::either_pattern(k, n, "__c")
-                    ));
-                }
-                Ok(format!("(case ({expr}) of {{ {arms} }})"))
-            }
-            // Internal nested-binary sum -> native `Either`. Peel the tag-1
-            // remainder per arm: a non-final arm tests tag 0 and reads its
-            // payload, the final arm is the fully-peeled remainder.
-            FfiDir::Out => self.convert_sum_out(slots, expr, 0),
-        }
-    }
-
-    fn convert_function(
-        &self,
-        param: &Type<Routed>,
-        ret: &Type<Routed>,
-        abi_arity: usize,
-        expr: &str,
-        dir: FfiDir,
-    ) -> Result<String, EmitError> {
-        let plan = FunctionBoundaryAdapterPlan::new(param, abi_arity);
-        let boundary_tys = plan.boundary_slots();
-        let boundary_arity = plan.boundary_arity();
-        let internal_arity = plan.internal_arity();
-        // The native boundary follows the stored parameter partition; the
-        // internal closure uses the private function constructor and takes the stored ABI partition as
-        // one product param (or a single value when unary), returning
-        // a monadic private carrier. The shared plan is the sole authority for
-        // repartitioning those stored arguments into public facade slots.
-        let params: Vec<String> = (0..boundary_arity).map(|i| format!("__fp{i}")).collect();
-        match dir {
-            // Internal function -> native boundary function. Produce a native
-            // source-shaped lambda: convert each native slot `In` to
-            // the internal rep, repartition the canonical slots into the
-            // stored callable ABI, build its one Kio value-group product,
-            // call the internal function, and convert the internal result
-            // `Out` to the native boundary return.
-            FfiDir::Out => {
-                let boundary_values = boundary_tys
-                    .iter()
-                    .zip(&params)
-                    .map(|(ty, param)| self.convert(ty, param, FfiDir::In))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let internal_values =
-                    plan.boundary_to_internal_args(&boundary_values, |left, right| {
-                        format!(
-                            "({} [{left}, {right}])",
-                            self.shapes.runtime_names().product
-                        )
-                    });
-                let arg_internal = nest_kioprod(self.shapes.runtime_names(), &internal_values);
-                let ret_conv = self.convert(ret, "__fr", FfiDir::Out)?;
-                if boundary_arity == 0 {
-                    return Ok(format!(
-                        "({} ({expr}) {} >>= \\__fr -> pure ({ret_conv}))",
-                        self.shapes.runtime_names().call_function,
-                        self.shapes.runtime_names().unit,
-                    ));
-                }
-                let lam_params = plan
-                    .boundary_to_internal_args(&params, |left, right| format!("({left}, {right})"))
-                    .join(" ");
-                Ok(format!(
-                    "(\\{lam_params} -> {} ({expr}) ({arg_internal}) >>= \\__fr -> pure ({ret_conv}))",
-                    self.shapes.runtime_names().call_function,
-                ))
-            }
-            // Native boundary function -> internal function. It takes
-            // the stored product arg, reconstructs the canonical facade
-            // slots, converts each `Out` to its native boundary type, calls
-            // the native boundary fn, and converts its result `In` back to
-            // the internal rep.
-            FfiDir::In => {
-                let arg = "__fa";
-                let internal_values = match internal_arity {
-                    0 => Vec::new(),
-                    1 => vec![arg.to_owned()],
-                    arity => (0..arity)
-                        .map(|index| {
-                            format!(
-                                "({} {index} {arity} {arg})",
-                                self.shapes.runtime_names().project
-                            )
-                        })
-                        .collect(),
-                };
-                let boundary_values = plan.internal_to_boundary_args(
-                    &internal_values,
-                    |left, right| {
-                        format!(
-                            "({} [{left}, {right}])",
-                            self.shapes.runtime_names().product
-                        )
-                    },
-                    |value, index, arity| {
-                        format!(
-                            "({} {index} {arity} ({value}))",
-                            self.shapes.runtime_names().project
-                        )
-                    },
-                );
-                let mut natives = Vec::new();
-                for (ty, value) in boundary_tys.iter().zip(&boundary_values) {
-                    // Convert internal slot -> native param (Out direction).
-                    let native = self.convert(ty, value, FfiDir::Out)?;
-                    natives.push(paren_arg_expr(&native));
-                }
-                let natives = plan.boundary_to_internal_args(&natives, |left, right| {
-                    format!("({left}, {right})")
-                });
-                let call = if natives.is_empty() {
-                    format!("({expr})")
-                } else {
-                    format!("({expr}) {}", natives.join(" "))
-                };
-                // The native result is converted In to the internal rep.
-                let ret_conv = self.convert(ret, "__fr", FfiDir::In)?;
-                Ok(format!(
-                    "({} (\\{arg} -> ({call}) >>= \\__fr -> pure ({ret_conv})))",
-                    self.shapes.runtime_names().function,
-                ))
-            }
-        }
-    }
-}
-
-impl HaskellSkin<'_> {
-    /// Recursive peel for `convert_sum`'s `Out` direction: select the native
-    /// constructor for arm `k` (and deeper) from a nested-binary internal
-    /// sum `access`. A non-final arm tests its tag-0 head; the final arm is
-    /// the fully-peeled remainder.
-    fn convert_sum_out(
-        &self,
-        slots: &[&Type<Routed>],
-        access: &str,
-        k: usize,
-    ) -> Result<String, EmitError> {
-        let n = slots.len();
-        if k + 1 == n {
-            // Final arm: the fully-peeled value is the payload directly.
-            let payload = self.convert(slots[k], access, FfiDir::Out)?;
-            return Ok(super::native::either_inject(k, n, &payload));
-        }
-        let payload = self.convert(slots[k], "__cp", FfiDir::Out)?;
-        let arm = super::native::either_inject(k, n, &payload);
-        let rest = self.convert_sum_out(slots, "__cr", k + 1)?;
-        Ok(format!(
-            "(case {} ({access}) of {{ (__ct, __cp) -> case __ct of {{ 0 -> {arm}; _ -> let {{ __cr = __cp }} in {rest} }} }})",
-            self.shapes.runtime_names().match_tag,
-        ))
-    }
-}
-
-// The shared `convert` driver short-circuits `is_passthrough` types and
-// dispatches the rest. Role atoms and unit are NOT passthrough (they
-// convert), but they are `Type::Path` / `Type::Unit` — neither a product,
-// sum, nor function — so the driver would route them to `convert_newtype`
-// (Path) or identity (Unit). We intercept both in a wrapper around the
-// shared driver via `HaskellSkin::convert`'s default; instead, override
-// the Path/Unit handling by implementing the leaves to cover them. Because
-// the shared driver calls `convert_newtype` for every non-passthrough
-// `Type::Path`, the scalar handling lives there.
-
 pub(super) fn haskell_type_var(name: &str) -> String {
     let mut out = String::from("t_");
     let mut initial = true;
@@ -1595,19 +1128,6 @@ fn paren_arg(ty: &str) -> String {
         return t.to_owned();
     }
     if (t.starts_with('(') && t.ends_with(')')) || (t.starts_with('[') && t.ends_with(']')) {
-        return t.to_owned();
-    }
-    format!("({t})")
-}
-
-/// Parenthesize a rendered Haskell expression in an argument position
-/// (wrap if it contains a space and is not already wrapped).
-fn paren_arg_expr(expr: &str) -> String {
-    let t = expr.trim();
-    if !t.contains(' ') {
-        return t.to_owned();
-    }
-    if t.starts_with('(') && t.ends_with(')') {
         return t.to_owned();
     }
     format!("({t})")

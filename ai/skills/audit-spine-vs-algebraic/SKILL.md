@@ -1,12 +1,12 @@
 ---
 name: audit-spine-vs-algebraic
-description: Verify algebraic-elaborator names (iso!/into!/onto!/align!/atom!/ease!) appear in goldens and POCs only where the algebraic form is the subject — everything else uses spine forms (reorder_*, narrow_*, widen_*, flatten_*, one_*, fit!)
+description: Audit spine-first elaborator usage in goldens, POCs, and docs, retaining algebraic-subject cases and ordinary single-component atom! picks.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Spine-vs-algebraic usage audit
 
-ai/topics/surface-forms.md enumerates the broader "prefer the higher-level form unless the file's *subject* is the lower-level form" discipline. This skill specializes the same rule to the spine vs. algebraic elaborator palette: once the spine palette has landed, the algebraic-elaborator bang-calls (`iso!`, `into!`, `onto!`, `align!`, `atom!`, `ease!`) appear in goldens **only when the golden's subject is the algebraic elaborator itself**. Everything else — match cases, structural-coercion cases, error-handling cases, optics cases, row-record cases — uses spine forms (`reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`, `fit!`).
+Anchor: [`ai/topics/surface-forms.md`](../../topics/surface-forms.md), **Single-elaborator coercions use the axis-specific form; multi-elaborator coercions use `fit!`** and **Prefer `atom!` only for picking a single value from an aggregate**. Algebraic bang-calls (`iso!`, `into!`, `onto!`, `align!`, `ease!`, and broader DNF uses of `atom!`) are subject-gated. Ordinary single-component `atom!` picks are an explicit exception, valid outside algebraic-subject files. Other ordinary coercions use the spine palette appropriate to their shape.
 
 Read ai/topics/surface-forms.md and `docs/poc/elab.md` before starting.
 
@@ -26,7 +26,7 @@ grep -rnE '\b(iso|into|onto|align|atom|ease)!' test-data/poc/
 
 The `goldens/` scan's first `grep -v` excludes `00_success/` and equivalent success-tier goldens whose name starts `exec_<form>_` / `typecheck_<form>_`. The second excludes failure-tier goldens (`15_elaborator_error/iso_rejects_collapse`, etc.) whose directory leaf begins with one of the form names. Refine the patterns to match the live corpus — verify directory naming via `ls test-data/goldens/00_success/ | grep -E '^(exec|typecheck)_(iso|into|onto|align|atom|ease)_'` and `ls test-data/goldens/15_elaborator_error/` before relying on the regex.
 
-The `poc/` scan needs one naming exclusion: `test-data/poc/elab/`, whose demo entry point (`workdir/demo/elab/main.kio`) opens with a header comment stating its subject IS the elaborator mechanism itself (spine, row, tuple, and algebraic elaborators, `derive`, `match`, `show`) — every algebraic-form hit there is expected and passes. The remaining POC topics are data-structure libraries (`list/`, `option/`, `result/`, `queue/`, …), none of which has an algebraic elaborator as its subject. Every algebraic-form hit under `test-data/poc/` outside `elab/` is a finding unless the file carries an explicit `// subject: <form>!'s …` comment marking the form as the local test subject.
+The `poc/` scan includes `test-data/poc/elab/`, whose worked example teaches the elaborator mechanism itself. Classify the actual call's purpose; other POC topics can also contain focused subject cases. Outside that subject, retain ordinary single-component `atom!` picks and flag other algebraic uses unless a local test explicitly exercises the form. A path or search hit alone is not a finding.
 
 Run the equivalent scan over `docs/` for Kiodoc fences and over `kio-rs/tests/` for any in-Rust inline `.kio` snippets:
 
@@ -34,13 +34,14 @@ Run the equivalent scan over `docs/` for Kiodoc fences and over `kio-rs/tests/` 
 grep -rnE '\b(iso|into|onto|align|atom|ease)!' docs/ kio-rs/tests/
 ```
 
-The docs corpus is pedagogical — snippets using algebraic forms outside an algebraic-elaborator subject page teach the wrong style.
+The docs corpus is pedagogical — apply the same subject and ordinary-`atom!` exceptions before judging a snippet's style.
 
 ## 2. Classify hits
 
 For each hit, decide:
 
 - **Subject-of-algebraic-form** — the enclosing file's purpose is to assert behavior of the algebraic elaborator. Pass.
+- **Ordinary single-component `atom!` pick** — an aggregate projection such as `r.>atom!(Field)`. Pass; no subject marker is required. Redundant result-collapse and atomic-identity uses belong to `audit-surface-forms-usage`.
 - **Pre-migration residual** — a golden that pre-dates the spine palette and hasn't been migrated yet. Flag for migration per the cheatsheet below.
 - **Inadvertent algebraic use** — a newly authored golden whose subject is not the algebraic form. Flag as a discipline violation.
 
@@ -54,7 +55,7 @@ Group findings by file and rule. For each:
 - Which algebraic form leaked (`iso!`, `into!`, …).
 - The spine-form rewrite per the migration cheatsheet below; when multiple rewrites are plausible, list them in order of preference.
 
-Skip files identified as subject-of-algebraic-form; if the classification is uncertain, list those separately.
+Skip subject-of-algebraic-form uses and ordinary single-component `atom!` picks; if the classification is uncertain, list those separately.
 
 ## Migration cheatsheet
 

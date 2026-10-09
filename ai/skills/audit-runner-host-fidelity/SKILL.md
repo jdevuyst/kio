@@ -109,8 +109,11 @@ legal inputs**, because it misleads a host author and rots silently. When the
 output coincides only because of a constraint, state the constraint
 (module/subdirectory/package segments are lowercase per
 `specs/language.md` § Naming conventions, so a Rust "lower-cased" step would
-be vacuous; JS genuinely upper-cases) — and still flag any description that
-claims a step the mangler doesn't take.
+be vacuous) — and still flag any description that claims a step the mangler
+doesn't take. JS public host-module keys preserve lowercase slash-only paths
+with `/` replaced by `_`; paths containing a source underscore use the
+injective `KioModule_...` encoding. Do not substitute the internal emitted
+module-name transform for that public rule.
 
 ## 3. Package-surface navigation parity
 
@@ -139,6 +142,14 @@ The host-fn bodies the runner supplies must be ordinary host code — a plain tr
 - Synthesized canonical bodies and protocol-specific bodies are legitimate — a host's body is its own business. **Not** a finding.
 - JS I/O delegating to native globals via the embedding engine. **Not** a finding.
 - **Finding:** a body that only works through a non-published coupling — reading a package-internal symbol, depending on emit order, or installing the callable under a key the package's documented lookup would not read.
+- For normal returns, check values against the declared host type, including
+  Unit and every admitted type argument of a polymorphic value. A cast that fabricates the
+  result for only the fixture's chosen specialization is not a valid host.
+- Failure witnesses must use the host interface's actual failure mechanism and
+  leave subsequent effects observable. A flag that suppresses later calls' output
+  cannot prove unwinding. Separate positive coverage from failure coverage when
+  that failure mechanism does not apply to a host interface; do not fabricate
+  an exception or silently change the interface to fit the test.
 
 ## 5. Shape-naming through documented aliases
 

@@ -28,10 +28,8 @@
 # type-check, so the check skips. Only a case that builds and emits a
 # stub package is type-checked.
 #
-# The check builds into a private scratch copy of `workdir` (the artifact
-# cache makes the rebuild cheap and the output matches what the case run
-# produces); a custom `run.sh` golden that builds elsewhere is still
-# covered as long as `kio build python` emits a stub package under `out/python/`.
+# The check builds a private copy and checks each selected package's
+# configured output and effective namespace from the compiler's build plan.
 #
 # POSIX sh only.
 
@@ -75,6 +73,18 @@ if [ ! -d workdir ]; then
   exit 0
 fi
 
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+helper=$script_dir/../../infra/typed-output-check.mjs
+# Resolve the pinned runtime before entering a scratch directory without mise config.
+if command -v mise >/dev/null 2>&1 && NODE=$(cd "$script_dir" && mise which node 2>/dev/null) && [ -n "$NODE" ]; then
+  :
+elif command -v node >/dev/null 2>&1; then
+  NODE=$(command -v node)
+else
+  printf 'pyright-strict: node is required to read the output plan\n' >&2
+  exit 2
+fi
+
 # Build the python target in a private scratch copy of `workdir`, never
 # in `workdir` itself: `kio build python` writes the package's on-disk
 # caches (and the emitted output) under the package's `out/` directory,
@@ -82,70 +92,31 @@ fi
 # run that follows this check. The scratch copy is removed on exit.
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT INT TERM HUP
-cp -R workdir/. "$scratch/" || exit 2
-cd "$scratch" || exit 2
+copied_workdir=$scratch/work
+mkdir "$copied_workdir"
+cp -R workdir/. "$copied_workdir/" || exit 2
+cd "$copied_workdir" || exit 2
+
+plan=$scratch/typed-output-plan.json
+if ! "$KIO_BIN" debug build-output-plan "$KIO_TARGET" >"$plan" 2>"$scratch/plan.log"; then
+  if ! "$KIO_BIN" build "$KIO_TARGET" >/dev/null 2>&1; then
+    exit 0
+  fi
+  printf 'pyright-strict: successful build has no valid output plan:\n' >&2
+  sed 's/^/    /' "$scratch/plan.log" >&2
+  exit 1
+fi
+"$NODE" "$helper" prepare "$copied_workdir" "$plan" python || exit 1
 
 # A non-zero status means the case does not build (an error-bucket
 # fixture); there is no stub package to type-check, so skip — the case run
 # itself asserts the expected build error.
-if ! "$KIO_BIN" build python >/dev/null 2>&1; then
+if ! "$KIO_BIN" build "$KIO_TARGET" >/dev/null 2>&1; then
   exit 0
 fi
 
-# Strict mode + the backend's target version (`specs/backends/python.md`
-# § Language version) come from a config rather than a file-wide directive.
-# The emitter may still attach the declaration-local Pyright ignores admitted
-# by `specs/backends/python.md` § Typed stub. Pyright discovers this config by
-# walking up from the analyzed file.
-cat >pyrightconfig.json <<'JSON'
-{ "typeCheckingMode": "strict", "pythonVersion": "3.10" }
-JSON
-
-# Type-check each emitted stub package as one recursive Pyright input. The
-# sibling runtime `.py` is an untyped interpreter and is not part of the
-# contract this check gates.
-status=0
-for entrypoint in out/python/*/__init__.pyi; do
-  [ -f "$entrypoint" ] || continue
-  stub_dir=${entrypoint%/__init__.pyi}
-  found_shard=0
-  for shard in "$stub_dir"/_kio_stub_*.pyi; do
-    [ -f "$shard" ] || continue
-    found_shard=1
-    shard_name=${shard##*/}
-    shard_module=${shard_name%.pyi}
-    if ! grep -Fqx "from .$shard_module import *" "$entrypoint"; then
-      # shellcheck disable=SC2016 # backticks and printf placeholders are literal text
-      printf 'pyright-strict: `%s` does not re-export `%s`\n' \
-        "$entrypoint" "$shard_name" >&2
-      status=1
-    fi
-  done
-  if [ "$found_shard" = 0 ]; then
-    # shellcheck disable=SC2016 # backticks and the printf placeholder are literal text
-    printf 'pyright-strict: `%s` has no generated declaration shard\n' "$stub_dir" >&2
-    status=1
-  fi
-  if ! $PYRIGHT "$stub_dir" >"$scratch/pyright.log" 2>&1; then
-    # shellcheck disable=SC2016 # backticks are literal text; %s is a printf placeholder
-    printf 'pyright-strict: `%s` failed strict type-check:\n' "$stub_dir" >&2
-    sed 's/^/    /' "$scratch/pyright.log" >&2
-    status=1
-  fi
-done
-
-# Every Python runtime needs its own typed view. Check by namespace rather
-# than accepting the presence of any stub package in the output directory:
-# a complete `alpha` must not hide a missing `beta`.
-for runtime in out/python/*.py; do
-  [ -f "$runtime" ] || continue
-  namespace=${runtime##*/}
-  namespace=${namespace%.py}
-  if [ ! -f "out/python/$namespace/__init__.pyi" ]; then
-    # shellcheck disable=SC2016 # backticks and the printf placeholder are literal text
-    printf 'pyright-strict: `%s` has no generated stub package\n' "$runtime" >&2
-    status=1
-  fi
-done
-
-exit "$status"
+case "$PYRIGHT" in
+  'npx --no-install pyright') set -- npx --no-install pyright ;;
+  *) set -- "$PYRIGHT" ;;
+esac
+"$NODE" "$helper" check "$copied_workdir" "$plan" python "$@"

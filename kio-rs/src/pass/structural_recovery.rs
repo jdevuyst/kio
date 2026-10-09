@@ -258,12 +258,9 @@ impl RecoveryCtx {
 /// `__if_then_else__`, and sub-product recoveries mint. The `ctx` borrow points at the
 /// module-scoped read-only [`RecoveryCtx`].
 ///
-/// A fresh `Recoverer` is minted per module in
-/// [`recover_package`]'s per-module fan-out: the `fresh` counter is
-/// scoped to one module's recovery, so two modules' counters never
-/// alias. Every synthetic name (`__rec<N>`) is lexically bound within
-/// the recovered expression that contains it, so per-module counters give
-/// the same observable shape as a shared counter would.
+/// A fresh `Recoverer` is minted per module in [`recover_package`]'s
+/// per-module fan-out. Synthetic names (`__rec<N>`) are lexical locals;
+/// each named function owns its counter, including nested closures.
 struct Recoverer<'a> {
     fresh: u32,
     ctx: &'a RecoveryCtx,
@@ -333,10 +330,12 @@ impl<'a> Recoverer<'a> {
 
     fn recover_fn_def(&mut self, d: &FnDef<Prime>) -> FnDef<Enriched> {
         let saved = self.locals.len();
+        let saved_fresh = std::mem::replace(&mut self.fresh, 0);
         self.locals
             .extend(d.sig.value_param_names().map(str::to_owned));
         let body = self.recover_expr(&d.body);
         self.locals.truncate(saved);
+        self.fresh = saved_fresh;
         FnDef {
             vis: d.vis.clone(),
             purity: d.purity,
@@ -530,7 +529,7 @@ impl<'a> Recoverer<'a> {
                 meta,
             } => Expr::FloatLit {
                 occurrence: Default::default(),
-                digits: digits.clone(),
+                digits: crate::pretty::canonical_float_digits(digits),
                 annotation: convert_type::<Prime, Enriched>(annotation),
                 meta: convert_meta(meta),
             },
@@ -1769,7 +1768,7 @@ fn classify_intrinsic<'a>(name: &str, args: &'a [CallArg<Prime>]) -> Option<Intr
 /// second rule.
 fn type_arg_type(arg: &CallArg<Prime>) -> Cow<'_, Type<Prime>> {
     match arg {
-        CallArg::Type(t) => Cow::Owned(erase_comptime_type_arg(t.clone())),
+        CallArg::Type(t) => Cow::Borrowed(t),
         CallArg::Value(e) => {
             let ty = crate::pass::typecheck_core::expr_to_type_arg(e).unwrap_or_else(|_| {
                 unreachable!(
@@ -1780,64 +1779,8 @@ fn type_arg_type(arg: &CallArg<Prime>) -> Cow<'_, Type<Prime>> {
                  upstream pass changed the call's argument shape after typecheck."
                 )
             });
-            Cow::Owned(erase_comptime_type_arg(ty))
+            Cow::Owned(ty)
         }
-    }
-}
-
-fn erase_comptime_type_arg(ty: Type<Prime>) -> Type<Prime> {
-    match ty {
-        Type::Path {
-            segments,
-            args,
-            meta,
-        } => {
-            if args.is_empty()
-                && let [single] = segments.as_slice()
-                && let Some(builtin) =
-                    crate::comptime::ComptimeBuiltin::from_public_name(single.as_str())
-                && let Some(erasure) = builtin.runtime_erasure()
-            {
-                return match erasure {
-                    crate::comptime::ComptimeRuntimeErasure::Bottom => Type::Bottom { meta },
-                    crate::comptime::ComptimeRuntimeErasure::Unit => Type::Unit { meta },
-                };
-            }
-            Type::Path {
-                segments,
-                args: args.into_iter().map(erase_comptime_type_arg).collect(),
-                meta,
-            }
-        }
-        Type::Product { left, right, meta } => Type::Product {
-            left: Box::new(erase_comptime_type_arg(*left)),
-            right: Box::new(erase_comptime_type_arg(*right)),
-            meta,
-        },
-        Type::Sum { left, right, meta } => Type::Sum {
-            left: Box::new(erase_comptime_type_arg(*left)),
-            right: Box::new(erase_comptime_type_arg(*right)),
-            meta,
-        },
-        Type::Function {
-            param,
-            ret,
-            meta,
-            abi_arity,
-            caps,
-        } => Type::Function {
-            param: Box::new(erase_comptime_type_arg(*param)),
-            ret: Box::new(erase_comptime_type_arg(*ret)),
-            meta,
-            abi_arity,
-            caps,
-        },
-        Type::Forall { param, body, meta } => Type::Forall {
-            param,
-            body: Box::new(erase_comptime_type_arg(*body)),
-            meta,
-        },
-        other => other,
     }
 }
 
@@ -2439,6 +2382,129 @@ mod tests {
             )),
             0,
             "no `__either__` call should survive recovery"
+        );
+    }
+
+    #[test]
+    fn recovery_preserves_ordinary_comptime_spelled_type_parameters() {
+        let recovered = ["A", "Comptime_bool", "Comptime_str"].map(|name| {
+            let module = recover_one(
+                "x/main",
+                &format!(
+                    "module x/main; import __intrinsics__; \
+                     pub fn pick[{name}](value: {name} | {name}) -> {name} {{ \
+                       __either__({name}, {name}, {name}, value, \
+                         .(left: {name}) {{ left }}, .(right: {name}) {{ right }}) \
+                     }}"
+                ),
+                None,
+            );
+            let Expr::EnrichedMatch { result_ty, .. } = fn_body(&module, "pick") else {
+                panic!("the intrinsic must recover as a match");
+            };
+            match result_ty {
+                Type::Path { segments, args, .. } if args.is_empty() => Some(segments.join("/")),
+                _ => None,
+            }
+        });
+        assert_eq!(
+            recovered,
+            ["A", "Comptime_bool", "Comptime_str"].map(|name| Some(name.to_owned())),
+            "ordinary type parameters retain their resolved meaning regardless of spelling"
+        );
+    }
+
+    #[test]
+    fn recovery_canonicalizes_float_emission_without_changing_prime_literals() {
+        let spellings = [
+            ("2E+3", "2e3"),
+            ("2e+3", "2e3"),
+            ("2E-3", "2e-3"),
+            ("-1.5E+2", "-1.5e2"),
+            ("1.5e-2", "1.5e-2"),
+            ("1.5", "1.5"),
+        ];
+        let recovered = spellings.map(|(source, _)| {
+            let parsed = parse(&format!(
+                "module x; host type Number role(f64); fn f() -> Number {{ {source}(Number) }}"
+            ))
+            .expect("parse Prime source");
+            let module = crate::prime::lower::lower_module(parsed).expect("Prime syntax");
+            let package =
+                Package::build(Path::new(""), vec![(PathBuf::from("x.kio"), module)], None)
+                    .expect("package");
+            package.resolve_imports().expect("imports");
+            package.check_in_body_resolution().expect("resolution");
+            let prime = crate::prime::typer::check_package(&package).expect("Prime checking");
+            let Item::FnDef(def) = &prime.module("x").unwrap().module().items[1] else {
+                panic!("function follows host type");
+            };
+            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == source));
+            let enriched = recover_package(&prime);
+            let Expr::FloatLit { digits, .. } = fn_body(&enriched.module("x").unwrap().module, "f")
+            else {
+                panic!("recovered float literal");
+            };
+            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == source));
+            digits.clone()
+        });
+        assert_eq!(
+            recovered,
+            spellings.map(|(_, canonical)| canonical.to_owned())
+        );
+    }
+
+    #[test]
+    fn recovery_temporary_names_belong_to_the_named_function() {
+        let subject = "fn target(p: . & . & .) -> . & . { __snd__(., . & ., p) }";
+        let shapes = [
+            "",
+            "fn unrelated(p: . & . & .) -> . & . { __snd__(., . & ., p) }",
+        ]
+        .map(|prefix| {
+            let module = recover_one(
+                "x/main",
+                &format!("module x/main; import __intrinsics__; {prefix} {subject}"),
+                None,
+            );
+            let Expr::Let {
+                name, value, body, ..
+            } = fn_body(&module, "target")
+            else {
+                panic!("sub-product recovery must introduce a temporary");
+            };
+            assert!(matches!(value.as_ref(), Expr::Path { segments, .. } if segments[0] == "p"));
+            let Expr::EnrichedTuple { items, .. } = body.as_ref() else {
+                panic!("recovered tail is a tuple of bound projections");
+            };
+            let projections = items
+                .iter()
+                .map(|item| {
+                    let Expr::EnrichedProject {
+                        target,
+                        index,
+                        arity,
+                        ..
+                    } = item
+                    else {
+                        panic!("tail entry is a projection");
+                    };
+                    let Expr::Path { segments, .. } = target.as_ref() else {
+                        panic!("projection targets the generated binder");
+                    };
+                    assert_eq!(segments.len(), 1);
+                    assert_eq!(segments[0].as_str(), name);
+                    (segments[0].name.clone(), *index, *arity)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(projections.len(), 2);
+            assert_eq!((projections[0].1, projections[1].1), (1, 2));
+            assert!(projections.iter().all(|(_, _, arity)| *arity == 3));
+            (name.clone(), projections)
+        });
+        assert_eq!(
+            shapes[0], shapes[1],
+            "unrelated functions cannot renumber local binders"
         );
     }
 

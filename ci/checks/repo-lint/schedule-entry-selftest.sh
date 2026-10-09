@@ -931,7 +931,7 @@ EOF
   # Both compiler cohorts keep their profile choice across admission routes;
   # the independently built grammar verifier remains an ordinary dev tool.
   printf '%s\n' \
-    profile.dev.package.kio-lang.opt-level=1 \
+    profile.dev.package.kio-lang.opt-level=2 \
     profile.dev.package.kio-lang.debug-assertions=true \
     profile.dev.package.kio-lang.overflow-checks=true \
     >"$scratch/expected-compiler-profile"

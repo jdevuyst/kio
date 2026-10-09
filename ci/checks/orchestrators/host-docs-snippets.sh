@@ -42,8 +42,10 @@
 # fence that imports the facade (`from greeter import …`) gets a strict
 # pyright type-check against the freshly-built stub on top of the syntax
 # check, so a stub-symbol rename the page still spells the old way fails
-# here (docs/hosts/python.md § Type-checked hosting). Every other python
-# fence is syntax-checked only.
+# here (docs/hosts/python.md § Type-checked hosting). That section's complete
+# typed host also executes against the runtime with asserted greeting output;
+# stub-only type imports must not become runtime dependencies. Other Python
+# fences retain their syntax/type checks without being executed as fragments.
 #
 # `kio` is built from `kio-rs/` and snapshotted into an orchestrator-owned
 # temp path, so a concurrent `cargo build` in another bucket cannot
@@ -72,7 +74,8 @@ Usage: sh $0 [<lang>...]
 
 Validate the host-language code fences in docs/hosts/<lang>.md by
 building each page's Kio example package, checking syntax or types as
-appropriate, and executing the JavaScript worked host against its facade.
+appropriate, and executing the JavaScript worked host and Python typed host
+against their facades.
 
 With no arguments, every page is checked. Positional <lang> arguments
 (java go rust swift haskell ts js python) restrict the run to those
@@ -283,7 +286,8 @@ compile_python() {
   hraw=$1; nf=$2; art=$3; cw=$4
   PYRIGHT=$(resolve_pyright)
   [ -n "$PYRIGHT" ] || { printf 'FAIL python: required pyright unavailable\n' >&2; return 1; }
-  v=0; i=1
+  printf 'hello from kio\n' > "$cw/expected"
+  executed=0; v=0; i=1
   while [ "$i" -le "$nf" ]; do
     f="$hraw/host_$i"; i=$((i + 1))
     cp "$f" "$cw/snippet.py"
@@ -308,10 +312,26 @@ compile_python() {
         printf '  ----- pyright output -----\n' >&2; sed 's/^/  /' "$cw/log" >&2
         printf '%s\n' "$v" > "$cw/validated"; return 1
       fi
+      # The complete typed-host example, not import/load fragments elsewhere
+      # on the page. Requiring exactly one prevents a moved or removed example
+      # from silently losing runtime coverage.
+      if grep -q '^def run(host:' "$f" && grep -q '^run(Host())$' "$f"; then
+        if ! ( cd "$d" && python3 -B snippet.py ) >"$cw/stdout" 2>"$cw/log"; then
+          report_fail python "$f" "$cw/log"; printf '%s\n' "$v" > "$cw/validated"; return 1
+        fi
+        if ! cmp -s "$cw/expected" "$cw/stdout"; then
+          printf 'FAIL python: typed host must print hello from kio\n' >&2
+          sed 's/^/  /' "$cw/stdout" >&2
+          printf '%s\n' "$v" > "$cw/validated"; return 1
+        fi
+        executed=$((executed + 1))
+      fi
     fi
     v=$((v + 1))
   done
-  printf '%s\n' "$v" > "$cw/validated"; return 0
+  printf '%s\n' "$v" > "$cw/validated"
+  [ "$executed" = 1 ] || { printf 'FAIL python: expected one executable typed host, found %s\n' "$executed" >&2; return 1; }
+  return 0
 }
 
 compile_rust() {
@@ -328,17 +348,21 @@ compile_rust() {
     f="$hraw/host_$i"; i=$((i + 1))
     if grep -q 'fn main' "$f"; then                       # complete program
       cp "$f" "$cw/d.rs"; ct=bin
+    elif grep -qE '^(let[[:space:]]|assert(_eq|_ne)?!)' "$f"; then
+      ct=statements                                        # imports followed by statements
     else
       case "$(first_code_line "$f")" in
         use\ *|impl\ *|struct\ *|enum\ *|trait\ *|pub\ *|fn\ *|type\ *|const\ *|mod\ *|"#["*)
           cp "$f" "$cw/d.rs"; ct=lib ;;                    # top-level items
-        *)                                                 # statements → harness
-          { printf 'use greeter::host::GreeterHost;\n#[derive(Clone)] struct MyHost;\n'
-            printf 'impl GreeterHost for MyHost { type greeter__String = String; fn greeter__print(&self, s: Self::greeter__String) { let _ = s; } }\n'
-            printf 'fn main() {\n'
-            grep -q 'let pkg' "$f" || printf 'let pkg = greeter::create_greeter(MyHost);\nlet _ = &pkg;\n'
-            cat "$f"; printf '\n}\n'; } > "$cw/d.rs"; ct=bin ;;
+        *) ct=statements ;;
       esac
+    fi
+    if [ "$ct" = statements ]; then
+      { printf 'use greeter::host::GreeterHost;\n#[derive(Clone)] struct MyHost;\n'
+        printf 'impl GreeterHost for MyHost { type greeter__String = String; fn greeter__print(&self, s: Self::greeter__String) { let _ = s; } }\n'
+        printf 'fn main() {\n'
+        grep -q 'let pkg' "$f" || printf 'let pkg = greeter::create_greeter(MyHost);\nlet _ = &pkg;\n'
+        cat "$f"; printf '\n}\n'; } > "$cw/d.rs"; ct=bin
     fi
     if run_compiler rustc "$cw/d.rs" --extern greeter="$rlib" \
          --edition=2024 -C debuginfo=0 --crate-type=$ct --emit=metadata \
@@ -693,7 +717,7 @@ for page in $PAGES; do
     fi
     case "$page" in
       js) level='syntax checked; worked host executed with output and Unit-result assertions' ;;
-      python) level='syntax checked; facade-importing fences strict type checked' ;;
+      python) level='syntax checked; facade-importing fences strict type checked; typed host executed with output assertion' ;;
       *) level='compiled/type checked (including documented self-contained illustrations)' ;;
     esac
     SUMMARY="$SUMMARY\n  $page: $validated/$nfences host fences $level"

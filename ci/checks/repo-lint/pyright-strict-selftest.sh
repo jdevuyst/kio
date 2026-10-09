@@ -6,6 +6,12 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 CHECK=$REPO_ROOT/ci/checks/per-case/pyright-strict.sh
+if command -v mise >/dev/null 2>&1 && SELFTEST_NODE=$(cd "$REPO_ROOT" && mise which node 2>/dev/null) && [ -n "$SELFTEST_NODE" ]; then
+  :
+else
+  SELFTEST_NODE=$(command -v node)
+fi
+export SELFTEST_NODE
 scratch_parent=${TMPDIR:-"$REPO_ROOT/target"}
 mkdir -p "$scratch_parent"
 fixture=$(mktemp -d "$scratch_parent/pyright-strict-selftest.XXXXXX")
@@ -16,6 +22,14 @@ mkdir -p "$fixture/bin" "$fixture/case/workdir"
 cat >"$fixture/bin/kio" <<'SH'
 #!/bin/sh
 set -eu
+if [ "$*" = 'debug build-output-plan python' ]; then
+  printf '[{"package_root":"%s","target":"python","backend":"python","output_dir":"%s/out/python","namespace":"alpha"}' "$PWD" "$PWD"
+  if [ "${KIO_FAKE_STUB_SCENARIO:-missing-beta}" = missing-beta ]; then
+    printf ',{"package_root":"%s","target":"python","backend":"python","output_dir":"%s/out/python","namespace":"beta"}' "$PWD" "$PWD"
+  fi
+  printf ']\n'
+  exit 0
+fi
 [ "$1" = build ]
 [ "$2" = python ]
 case ${KIO_FAKE_STUB_SCENARIO:-missing-beta} in
@@ -53,6 +67,7 @@ cat >"$fixture/bin/mise" <<'SH'
 #!/bin/sh
 set -eu
 [ "$1" = which ]
+[ "$2" != node ] || { printf '%s\n' "$SELFTEST_NODE"; exit 0; }
 [ "$2" = pyright ]
 printf '%s\n' "$FAKE_PYRIGHT"
 SH

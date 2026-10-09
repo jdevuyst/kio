@@ -18,13 +18,11 @@
 # does not build successfully (the error buckets — parse / type /
 # totality / … — whose subject is the build error itself), `kio build
 # ts` fails before emitting a `.d.ts`, exactly as the case run's own
-# build does; there is no skin to type-check, so the check skips. Only a
-# case that builds and emits a `.d.ts` is type-checked.
+# build does; there is no skin to type-check, so the check skips. Every
+# successful build must emit its declaration sidecar and type-check it.
 #
-# The check builds into the case's `workdir` (the artifact cache makes
-# the rebuild cheap and the output matches what the case run produces);
-# a custom `run.sh` golden that builds elsewhere is still covered as
-# long as `kio build ts` emits a `.d.ts` under `out/ts/`.
+# The check builds a private copy and checks each selected package's
+# configured output and effective namespace from the compiler's build plan.
 #
 # POSIX sh only.
 
@@ -67,6 +65,18 @@ if [ ! -d workdir ]; then
   exit 0
 fi
 
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+helper=$script_dir/../../infra/typed-output-check.mjs
+# Resolve the pinned runtime before entering a scratch directory without mise config.
+if command -v mise >/dev/null 2>&1 && NODE=$(cd "$script_dir" && mise which node 2>/dev/null) && [ -n "$NODE" ]; then
+  :
+elif command -v node >/dev/null 2>&1; then
+  NODE=$(command -v node)
+else
+  printf 'tsc-strict: node is required to read the output plan\n' >&2
+  exit 2
+fi
+
 # Build the TS target in a private scratch copy of `workdir`, never in
 # `workdir` itself: `kio build ts` writes the package's on-disk caches
 # (and the emitted output) under the package's `out/` directory, and
@@ -75,38 +85,31 @@ fi
 # The scratch copy is removed on exit.
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT INT TERM HUP
-cp -R workdir/. "$scratch/" || exit 2
-cd "$scratch" || exit 2
+copied_workdir=$scratch/work
+mkdir "$copied_workdir"
+cp -R workdir/. "$copied_workdir/" || exit 2
+cd "$copied_workdir" || exit 2
+
+plan=$scratch/typed-output-plan.json
+if ! "$KIO_BIN" debug build-output-plan "$KIO_TARGET" >"$plan" 2>"$scratch/plan.log"; then
+  if ! "$KIO_BIN" build "$KIO_TARGET" >/dev/null 2>&1; then
+    exit 0
+  fi
+  printf 'tsc-strict: successful build has no valid output plan:\n' >&2
+  sed 's/^/    /' "$scratch/plan.log" >&2
+  exit 1
+fi
+"$NODE" "$helper" prepare "$copied_workdir" "$plan" ts || exit 1
 
 # A non-zero status means the case does not build (an error-bucket
 # fixture); there is no `.d.ts` to type-check, so skip — the case run
 # itself asserts the expected build error.
-if ! "$KIO_BIN" build ts >/dev/null 2>&1; then
+if ! "$KIO_BIN" build "$KIO_TARGET" >/dev/null 2>&1; then
   exit 0
 fi
 
-# Type-check every emitted `.d.ts` under the TS output directory. The
-# target's `out` is `out/ts/` across the corpus; glob defensively so a
-# package whose `out` differs is still covered.
-found=0
-status=0
-for dts in out/ts/*.d.ts; do
-  [ -f "$dts" ] || continue
-  found=1
-  if ! $TSC --strict --noEmit "$dts" >"$scratch/tsc.log" 2>&1; then
-    # shellcheck disable=SC2016 # backticks are literal text; %s is a printf placeholder
-    printf 'tsc-strict: `%s` failed `tsc --strict --noEmit`:\n' "$dts" >&2
-    sed 's/^/    /' "$scratch/tsc.log" >&2
-    status=1
-  fi
-done
-
-# A build that succeeded but emitted no `.d.ts` is fine: a package with
-# no exports and no host items still has a well-formed empty skin, but a
-# package that produces no `out/ts/` at all (e.g. a no-export package
-# the JS backend skips) leaves nothing to check.
-if [ "$found" = 0 ]; then
-  exit 0
-fi
-
-exit "$status"
+case "$TSC" in
+  'npx --no-install tsc') set -- npx --no-install tsc ;;
+  *) set -- "$TSC" ;;
+esac
+"$NODE" "$helper" check "$copied_workdir" "$plan" ts "$@" --strict --noEmit

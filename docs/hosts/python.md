@@ -263,9 +263,15 @@ factory carries that same selection into `Greeter[str]`, so the host contract,
 callbacks, exports, and newtype surfaces cannot drift apart:
 
 ```python
-import sys
+from __future__ import annotations
 
-from greeter import GreeterHost, create_greeter  # pyright resolves the stub package
+import sys
+from typing import TYPE_CHECKING
+
+from greeter import create_greeter
+
+if TYPE_CHECKING:
+    from greeter import GreeterHost  # pyright resolves the stub package
 
 class GreeterCapabilities:
     def print(self, p0: str) -> None:

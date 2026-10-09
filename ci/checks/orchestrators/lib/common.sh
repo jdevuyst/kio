@@ -89,7 +89,7 @@ build_corpus_tool_binary() {
   case "$bctb_key" in
     kio-lsp-cli|kio-prime)
       set -- "$@" \
-        --config 'profile.dev.package.kio-lang.opt-level=1' \
+        --config 'profile.dev.package.kio-lang.opt-level=2' \
         --config 'profile.dev.package.kio-lang.debug-assertions=true' \
         --config 'profile.dev.package.kio-lang.overflow-checks=true'
       ;;

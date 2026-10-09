@@ -196,6 +196,72 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
     Ok(())
 }
 
+/// Describe the same selected manifests without parsing or checking module bodies.
+pub(super) fn describe_outputs(
+    plans: &BTreeMap<PathBuf, PackagePlan>,
+) -> Result<Vec<PlannedOutput>, String> {
+    let mut outputs = Vec::new();
+    for plan in plans.values() {
+        let PackagePlan::Ready { inputs, selected } = plan else {
+            return Err("cannot describe a failed package plan".to_owned());
+        };
+        if selected.is_empty() {
+            continue;
+        }
+        let package = &inputs.manifest.package_file;
+        let block = package.build.as_ref().expect("selected build block");
+        for &index in selected {
+            let target = &block.targets[index];
+            let mut entries = target.entries.iter().filter(|entry| entry.key == "out");
+            let entry = entries
+                .next()
+                .ok_or_else(|| "selected target has no `out`".to_owned())?;
+            if entries.next().is_some() || Path::new(&entry.value).is_absolute() {
+                return Err("selected target needs exactly one relative `out`".to_owned());
+            }
+            // Emission removes and recreates a configured leaf symlink. Keep
+            // its access path; the conflict preflight separately checks aliases.
+            let output_dir = inputs.root.join(&entry.value);
+            let namespace = if matches!(target.backend.as_str(), "ts" | "python") {
+                let mut namespaces = target
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.key == "namespace");
+                let explicit = namespaces.next();
+                if namespaces.next().is_some() {
+                    return Err("selected target has duplicate `namespace`".to_owned());
+                }
+                let value = match (target.backend.as_str(), explicit) {
+                    ("ts", Some(entry)) => {
+                        backends::namespace::validate_js_namespace(&entry.value)?;
+                        entry.value.clone()
+                    }
+                    ("python", Some(entry)) => {
+                        backends::namespace::validate_python_namespace(&entry.value)?;
+                        entry.value.clone()
+                    }
+                    ("ts", None) => backends::namespace::default_js_namespace(&package.name),
+                    ("python", None) => {
+                        backends::namespace::default_python_namespace(&package.name)
+                    }
+                    _ => unreachable!("only typed-sidecar backends compute a namespace"),
+                };
+                Some(value)
+            } else {
+                None
+            };
+            outputs.push(PlannedOutput {
+                package_root: inputs.root.clone(),
+                target: target.name().to_owned(),
+                backend: target.backend.clone(),
+                output_dir,
+                namespace,
+            });
+        }
+    }
+    Ok(outputs)
+}
+
 /// Resolve existing aliases before interpreting `..`; a missing tail needs no
 /// filesystem creation. Leaf symlinks intentionally receive the same conservative
 /// alias check as existing parent directories.

@@ -35,7 +35,7 @@
 //! `specs/cli.md` § `kio test`.
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the
-// trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
+// trailing `.map(…)` to resolve `ParallelIterator` at the call site,
 // so the prelude is imported here under `parallel`; with the feature
 // off the sequential arm needs no import and rayon is absent.
 use crate::ast::{Expr, Item, Lowered, UncheckedPrime};
@@ -81,7 +81,8 @@ Exit codes (per {base}/specs/exit-codes.md): 0 if every equiv passes
 normal-form groups; 16 if evaluated structural recursion fails its Totality
 check; another matching `1x` category code for compile-time failures
 (parse / use / name-res / type errors); 2 on CLI usage error
-(unknown selector, or no .kio files in the current directory).
+(unknown selector, or no .kio files in the current directory);
+1 on I/O or internal error.
 
 See {base}/specs/cli.md#kio-test-module for full command behavior.";
 

@@ -1,4 +1,5 @@
 /// Persistent vector library with indexed updates, bulk operations, operators, and canonical List interop.
+/// A ready-to-use library module for your own Kio package.
 module library/vec;
 
 import library/core(

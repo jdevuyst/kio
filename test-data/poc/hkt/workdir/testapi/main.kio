@@ -1,3 +1,5 @@
+/// Higher-kinded types worked example, NOT a drop-in library: it demonstrates
+/// kinded brands, instance dictionaries, and do-block syntax together.
 module testapi/main;
 
 import elab/derive(derive);

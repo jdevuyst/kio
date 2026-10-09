@@ -2155,7 +2155,8 @@ fn render_export_driver(
                 "\tfmt.Println({api}.ViaHost(func(_ {ns}.Unit) string {{ return \"callback\" }}))\n"
             )
         }
-        ExportDriver::ReturnedForallCallByValue => {
+        ExportDriver::ReturnedForallCallByValue => format!("\t{}.Main()\n", module("main")),
+        ExportDriver::ReturnedForallHostFailure => {
             let main = module("main");
             format!(
                 "\t{main}.Main()\n\
@@ -2479,7 +2480,7 @@ fn render_go_body_for_binding(
                 go_host_member(binding.module, binding.leaf)
             );
             format!(
-                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {stage}(host, func() {ns}.Value {{ return {ns}.Atom({ns}.Unit{{}}) }})"
+                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {stage}(host, func() {ns}.Unit {{ return {ns}.Unit{{}} }})"
             )
         }
         HostFnBodyKind::ForallStageEffects => {
@@ -2946,6 +2947,36 @@ const WRAP128_DECL: &str = "var kioMod128 = new(big.Int).Lsh(big.NewInt(1), 128)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn returned_forall_stage_returns_the_public_unit_shape() {
+        for protocol in [
+            RunnerProtocol::ReturnedForallCallByValue,
+            RunnerProtocol::ReturnedForallHostFailure,
+        ] {
+            let contract = protocol.contract();
+            let selection = GoHostBindingSelection::new(contract);
+            let binding = contract
+                .host_fns
+                .iter()
+                .find(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
+                .expect("returned-forall producer");
+            let method = go_method(binding, "fixture", &selection);
+            let body = render_go_body_for_binding(
+                binding,
+                &canonical_kind(binding.body),
+                &method,
+                "fixture",
+                &selection,
+            );
+            assert!(
+                body.contains("NewEnv_Testapi_main__produce_retStage(host, func() fixture.Unit { return fixture.Unit{} })"),
+                "{body}"
+            );
+            assert!(!body.contains("fixture.Value"), "{body}");
+            assert!(!body.contains("fixture.Atom"), "{body}");
+        }
+    }
 
     #[test]
     fn main_call_uses_the_exact_declaring_module() {

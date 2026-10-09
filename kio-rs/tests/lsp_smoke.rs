@@ -2507,30 +2507,17 @@ fn lsp_hover_returns_type_on_expression() {
 
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
-    // Retry hover a few times — the analysis may still be in flight.
-    let mut result = Value::Null;
-    for _ in 0..5 {
-        result = send_hover(&mut lsp, &uri, 2, 21);
-        if !result.is_null() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-
-    if !result.is_null() {
-        // contents.value should mention the unit type `.`.
-        let value = result
-            .get("contents")
-            .and_then(|c| c.get("value"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        assert!(
-            value.contains("."),
-            "hover on the unit value should show `.`; got: {result:?}"
-        );
-    }
-    // Null is also acceptable — the position index may not yet have
-    // an entry at the exact byte offset for the `()` literal.
+    let result = send_hover(&mut lsp, &uri, 2, 21);
+    assert!(!result.is_null(), "hover on the unit value must exist");
+    let value = result
+        .get("contents")
+        .and_then(|c| c.get("value"))
+        .and_then(Value::as_str)
+        .expect("hover contents.value must be a string");
+    assert!(
+        value.contains("."),
+        "hover on the unit value should show `.`; got: {result:?}"
+    );
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -3177,9 +3164,6 @@ fn lsp_hover_returns_null_for_whitespace() {
     let uri = path_to_file_uri(&main_path);
 
     open_and_wait_for_analysis(&mut lsp, &uri, source);
-    // Give the analysis extra time so a non-null hover on line 1
-    // would have a chance to appear if we're wrong.
-    std::thread::sleep(Duration::from_millis(400));
 
     let result = send_hover(&mut lsp, &uri, 1, 0);
     assert!(

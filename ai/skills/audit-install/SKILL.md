@@ -110,7 +110,7 @@ done
 
 ## 3. Backend-extra bootstrap coverage
 
-`ci/impl-toolchain.sh` is the selector-to-tool mapping that Linux CI uses after the core devcontainer image starts. `INSTALL.md` must document the same local route for selected backend extras.
+`ci/impl-toolchain.sh` is the selector-to-tool mapping used by Linux CI directly on the hosted Ubuntu runner after mise provisions the core tools. The ordinary gate does not run inside the published devcontainer. `INSTALL.md` must document the same local route for selected backend extras; audit the devcontainer's separate provisioning path against the same tool ownership.
 
 - `INSTALL.md` names `ci/impl-toolchain.sh install <impls>` for Linux backend extras and `ci/impl-toolchain.sh extra-mise-tools <impls> | xargs mise install --locked -y` for macOS backend extras.
 - `INSTALL.md` says Linux system packages are installed through `mise bootstrap packages apply` with manager-qualified specs such as `apt:...`, not by direct user-facing `apt-get install` instructions.

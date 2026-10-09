@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # POC ⇄ case-study sync audit
 
-`docs/poc/<x>.md` case studies and `test-data/poc/<x>/` packages are **pairs**: each case study is a reference-grade read-through bounded by its backing package. The contract — `docs ⊆ POC`, backed, and covered — is documented in [`ai/topics/docs.md`](../../topics/docs.md) § Keeping a case study paired with its POC. This skill verifies the pair stays in sync. The POC is the ground truth (it is `kio check` + `kio test` + per-backend-`main`-run checked on every CI run); the prose is derivative, so every divergence is a docs bug unless the POC itself is wrong.
+`docs/poc/<x>.md` case studies and `test-data/poc/<x>/` packages are **pairs**: each case study is a reference-grade read-through bounded by its backing package. The contract — `docs ⊆ POC`, backed, and covered — is documented in [`ai/topics/docs.md`](../../topics/docs.md) § Keeping a case study paired with its POC. This skill verifies the pair stays in sync. The POC is the ground truth, with `kio check`, `kio test`, and per-backend `main` execution covered through the POC harness under its configured case and implementation selection. A sampled run does not execute every case on every backend. The prose is derivative, so every divergence is a docs bug unless the POC itself is wrong.
 
 Read [`ai/topics/docs.md`](../../topics/docs.md) and [`test-data/poc/README.md`](../../../test-data/poc/README.md) before starting.
 

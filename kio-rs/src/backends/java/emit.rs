@@ -46,6 +46,32 @@ use super::skin::{
 
 const RUNTIME: &str = include_str!("runtime.java");
 
+#[cfg(test)]
+mod runtime_tests {
+    use super::RUNTIME;
+
+    #[test]
+    fn guest_binding_does_not_collect_argument_slots() {
+        let guest = RUNTIME
+            .split_once("    private Object layer(")
+            .unwrap()
+            .1
+            .split_once("    private Object nextLayer(")
+            .unwrap()
+            .0;
+        assert!(!guest.contains("productSlots("));
+
+        let host = RUNTIME
+            .split_once("    private Object hostLayer(")
+            .unwrap()
+            .1
+            .split_once("    private Object nextHostLayer(")
+            .unwrap()
+            .0;
+        assert!(host.contains("productSlots("));
+    }
+}
+
 fn java_site_support_origin(site: PreparedBoundaryCallableSite<'_>) -> BoundaryFacadeSupportOrigin {
     match site.origin() {
         PreparedBoundaryCallableOriginRef::Live(_) => BoundaryFacadeSupportOrigin::Live,

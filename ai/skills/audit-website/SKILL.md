@@ -61,6 +61,16 @@ The smoke must fail on visible Kiodoc fence attributes (`{ignore}`, `{variant=..
 
 V1 has no run buttons and no Kiodoc Phase 2 run-marker schema. Do not require run-marker checks until that feature lands.
 
+## 10. Landing-page visual review
+
+For landing-page changes, verify the rendered candidate was visually reviewed
+by an agent or user under [`ai/topics/readme.md`](../../topics/readme.md)
+§ Landing-page visual review. Inspect the review evidence for the changed
+content and surrounding layout at relevant viewport sizes. Builds, smoke tests
+and DOM assertions are not substitutes for this review; report missing visual
+evidence explicitly. This does not require a rendered review of ordinary README
+edits or authorize changing protected wording.
+
 ## How to report
 
 Group findings into:

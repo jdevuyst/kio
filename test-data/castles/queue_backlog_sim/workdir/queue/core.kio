@@ -1,4 +1,5 @@
 /// Root module FIFO queue core with two-list representation, invariant predicates, and loop-step helpers.
+/// A ready-to-use library module for your own Kio package.
 module queue/core;
 
 import queue/elab/match(match);

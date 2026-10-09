@@ -63,6 +63,11 @@ impl Block {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ControlProbe {
+    Surface {
+        control: Box<ControlProbe>,
+        types: TypeProbe,
+        recursion: Option<RecursionProbe>,
+    },
     Sequence(Sequence),
     Blocks {
         first: Block,
@@ -71,6 +76,67 @@ pub enum ControlProbe {
         reverse: bool,
         nested: bool,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeProbe {
+    Staged {
+        spelling: crate::ast::UfcsSpelling,
+        explicit: bool,
+        first: String,
+        last: String,
+    },
+    HigherRank {
+        selected: String,
+    },
+    HigherKinded {
+        wrapped: bool,
+        selected: String,
+    },
+    Existential {
+        payload: u8,
+        explicit_open: bool,
+        first: String,
+        last: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum RecursionMode {
+    Tail,
+    Pending,
+    Poly,
+    PolyPending,
+    Escape,
+    PolyEscape,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecursionProbe {
+    pub mode: RecursionMode,
+    pub mutual: bool,
+    pub depth: u8,
+}
+
+impl TypeProbe {
+    pub fn initial_value(&self) -> &str {
+        match self {
+            Self::Staged { first, .. } | Self::Existential { first, .. } => first,
+            Self::HigherRank { selected } | Self::HigherKinded { selected, .. } => selected,
+        }
+    }
+}
+
+impl ControlProbe {
+    pub fn has_recursion(&self) -> bool {
+        matches!(
+            self,
+            Self::Surface {
+                recursion: Some(_),
+                ..
+            }
+        )
+    }
 }
 
 fn value<R: Rng>(rng: &mut R, label: &str) -> Value {
@@ -121,7 +187,7 @@ fn block<R: Rng>(rng: &mut R, tag: &str) -> Block {
 }
 
 pub fn sample<R: Rng>(rng: &mut R) -> ControlProbe {
-    if rng.gen_bool(0.5) {
+    let control = if rng.gen_bool(0.5) {
         ControlProbe::Sequence(sequence(rng, true, "standalone"))
     } else {
         ControlProbe::Blocks {
@@ -131,6 +197,44 @@ pub fn sample<R: Rng>(rng: &mut R) -> ControlProbe {
             reverse: rng.gen_bool(0.5),
             nested: rng.gen_bool(0.25),
         }
+    };
+    let selected = format!("type-selected-{}\n", rng.gen_range(0..32));
+    let other = format!("type-other-{}\n", rng.gen_range(0..32));
+    let types = match rng.gen_range(0..4) {
+        0 => TypeProbe::Staged {
+            spelling: crate::ast::UfcsSpelling::ALL[rng.gen_range(0..4)],
+            explicit: rng.gen_bool(0.5),
+            first: selected,
+            last: other,
+        },
+        1 => TypeProbe::HigherRank { selected },
+        2 => TypeProbe::HigherKinded {
+            wrapped: rng.gen_bool(0.5),
+            selected,
+        },
+        _ => TypeProbe::Existential {
+            payload: rng.gen_range(0..3),
+            explicit_open: rng.gen_bool(0.5),
+            first: selected,
+            last: other,
+        },
+    };
+    let recursion = rng.gen_bool(0.5).then(|| RecursionProbe {
+        mode: [
+            RecursionMode::Tail,
+            RecursionMode::Pending,
+            RecursionMode::Poly,
+            RecursionMode::PolyPending,
+            RecursionMode::Escape,
+            RecursionMode::PolyEscape,
+        ][rng.gen_range(0..6)],
+        mutual: rng.gen_bool(0.5),
+        depth: rng.gen_range(0..=3),
+    });
+    ControlProbe::Surface {
+        control: Box::new(control),
+        types,
+        recursion,
     }
 }
 
@@ -201,6 +305,22 @@ fn observe(block: &Block, out: &mut String) {
 pub fn expected_stdout(probe: &ControlProbe) -> String {
     let mut out = String::new();
     match probe {
+        ControlProbe::Surface {
+            control,
+            types,
+            recursion,
+        } => {
+            out.push_str(&expected_stdout(control));
+            let value = match control.as_ref() {
+                ControlProbe::Sequence(sequence) => sequence_value(sequence, &mut String::new()),
+                ControlProbe::Blocks { .. } => types.initial_value().to_string(),
+                ControlProbe::Surface { .. } => unreachable!("one surface-probe wrapper"),
+            };
+            out.push_str(&value);
+            if let Some(recursion) = recursion {
+                out.push_str(&recursion_stdout(recursion, &value));
+            }
+        }
         ControlProbe::Sequence(sequence) => {
             let result = sequence_value(sequence, &mut out);
             out.push_str(&result);
@@ -227,6 +347,45 @@ pub fn expected_stdout(probe: &ControlProbe) -> String {
             }
         }
     }
+    out
+}
+
+pub fn recursion_stdout(probe: &RecursionProbe, selected: &str) -> String {
+    let mut out = String::new();
+    let step = match probe.mode {
+        RecursionMode::Tail | RecursionMode::Poly => "step\n",
+        RecursionMode::Pending | RecursionMode::PolyPending => "before\n",
+        RecursionMode::Escape | RecursionMode::PolyEscape => {
+            out.push_str("saved\n");
+            "escape\n"
+        }
+    };
+    for level in 0..probe.depth {
+        if probe.mutual {
+            out.push_str(if level % 2 == 0 { "walk:" } else { "bounce:" });
+        }
+        out.push_str(step);
+    }
+    if probe.mutual {
+        out.push_str(if probe.depth.is_multiple_of(2) {
+            "walk:"
+        } else {
+            "bounce:"
+        });
+    }
+    out.push_str("base\n");
+    if matches!(
+        probe.mode,
+        RecursionMode::Pending | RecursionMode::PolyPending
+    ) {
+        for level in (0..probe.depth).rev() {
+            if probe.mutual {
+                out.push_str(if level % 2 == 0 { "walk:" } else { "bounce:" });
+            }
+            out.push_str("after\n");
+        }
+    }
+    out.push_str(selected);
     out
 }
 

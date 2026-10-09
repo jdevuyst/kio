@@ -98,13 +98,21 @@ Let's add one function and call it from `main`: a `greeting` function that build
 
 First, the new function — deliberately typed on one cramped line so we have something for the formatter to fix in the next step:
 
-```kio {ignore}
+```text
 fn greeting(name: String) -> String {string_concat("hello, "(String),name)}
 ```
 
 `greeting` concatenates a literal prefix with its argument. That call needs one more host capability — string concatenation — so add its declaration alongside the existing `host` lines in `main.kio`:
 
-```kio {ignore}
+<!--kio {harness=concat_declaration placeholder="__INSERT_CODE_HERE__"}
+module guide/concat;
+
+host type String role(str);
+
+__INSERT_CODE_HERE__
+-->
+
+```kio {@concat_declaration}
 host fn string_concat(p0: String, p1: String) -> String;
 ```
 
@@ -176,8 +184,8 @@ type. In an editor using `kio lsp`, the corresponding type-position
 diagnostics offer quick fixes that preserve comments, nested type arguments,
 and component grouping. Applying a fix rechecks the edited document.
 
-Recursive-call diagnostics can add a missing `rec` marker or correct missing
-or unnecessary `poly` and `cont` annotations. These editor fixes preserve
+Recursive-call diagnostics can add a missing `recur` marker or correct missing
+or unnecessary `poly`, `cont`, and `escape` annotations. These editor fixes preserve
 comments and are offered only when rechecking validates the repair without
 introducing new errors.
 The function's `rec(path)` declaration still needs your chosen loop capability;

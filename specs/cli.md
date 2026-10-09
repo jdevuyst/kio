@@ -468,7 +468,7 @@ Concretely, the server advertises:
 - `semanticTokensProvider = { legend: { tokenTypes: […], tokenModifiers: […] }, full: true, range: false }`. The legend and token/modifier encoding are documented in the `textDocument/semanticTokens/full` entry below.
 - `renameProvider = { prepareProvider: true }`. The server supports both `textDocument/prepareRename` and `textDocument/rename`; see entries below.
 - `inlayHintProvider = { resolveProvider: false }`. The server supports `textDocument/inlayHint`; see entry below.
-- `signatureHelpProvider = { triggerCharacters: ["(", ","] }`. The server supports `textDocument/signatureHelp`; see entry below.
+- `signatureHelpProvider = { triggerCharacters: ["(", ",", "{"] }`. The server supports `textDocument/signatureHelp`; see entry below.
 - `codeActionProvider = { codeActionKinds: ["quickfix", "source.fixAll", "refactor.rewrite"], resolveProvider: true }`. The server supports eager quick fixes for diagnostics that carry materialized edits, compatible diagnostic fix-all edits, lazy quick fixes resolved through `codeAction/resolve`, and the nested-call UFCS refactoring.
 
 And handles:
@@ -649,7 +649,7 @@ unhealthy. Protocol tracing remains opt-in through `kio.trace.server`.
 
 ## `kio repl [<selector>...]`
 
-Opens an interactive prompt for inspecting the Kio modules in a directory — query types and purity, read doc-comments, print canonical source, browse, and navigate cross-references. Modules load by their module path (FQN); a `*.pkg.kio` package file is optional and never gates the REPL. Loading or refreshing a module checks the directory snapshot through parsing, operator folding and surface lowering, name resolution, and Lowered typechecking. Bare-expression queries additionally substitute the recorded completions and validate the resulting Prime artifact; normalization uses the checked Lowered expression and the host-independent reduction relation. The REPL never executes the package against a host. Every turn is either a *meta-command* (a line beginning with `:`) or a bare-input query classified as a name, expression, and/or loaded module path; bare compound expressions print their synthesized type and residual normal form — the `:t` and `:normalize` views together.
+Opens an interactive prompt for inspecting the Kio modules in a directory — query types and purity, read doc-comments, print canonical source, browse, and navigate cross-references. Modules load by their module path (FQN); a `*.pkg.kio` package file is optional and never gates the REPL. Loading or refreshing a module checks the directory snapshot through parsing, operator folding and surface lowering, name resolution, and Lowered typechecking. Bare-expression queries additionally substitute the recorded completions and validate the resulting Prime artifact; normalization consumes Kio'-shaped terms and uses the host-independent reduction relation. The REPL never executes the package against a host. Every turn is either a *meta-command* (a line beginning with `:`) or a bare-input query classified as a name, expression, and/or loaded module path; bare compound expressions print their synthesized type and residual normal form — the `:t` and `:normalize` views together.
 
 The prompt is two-line: the **current module's path** renders above the `kio>` input symbol — or `(no module — :load <module-path> to begin)` when no module has been loaded yet — so the user always sees which scope a bare-name query resolves against.
 

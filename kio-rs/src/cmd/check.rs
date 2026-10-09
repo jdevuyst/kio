@@ -2,8 +2,8 @@
 //!
 //! Walks the current working directory, finds every `*.kio` source
 //! file, and routes each to the matching parser entry point: modules
-//! and the package's `<name>.pkg.kio` are parsed and checked here. Prints a
-//! `<path>:<line>:<col>: <message>` diagnostic to stderr. On success,
+//! and the package's `<name>.pkg.kio` are parsed and checked here. Renders
+//! source diagnostics to stderr. On success,
 //! exits 0 with no output.
 //!
 //! The bulk lives in [`compile_package`], which `kio build` also calls to
@@ -17,7 +17,7 @@
 //! `prime_only` selects the impl.
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the
-// trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
+// trailing `.map(…)` to resolve `ParallelIterator` at the call site,
 // so the prelude is imported here under `parallel`; with the feature
 // off the sequential arm needs no import and rayon is absent.
 use crate::path_display::{DisplayPath, display_path_from_root};
@@ -227,7 +227,8 @@ path (`pkg/utils/string`) or a filename path (`src/utils.kio`).
 
 Exit codes (per {base}/specs/exit-codes.md): 0 on success; the matching
 category code (`1x` parse / use / type / …) on failure; 2 on CLI usage
-error (unknown selector, or no .kio files in the current directory).
+error (unknown selector, or no .kio files in the current directory);
+1 on I/O or internal error.
 
 Options:
   -h, --help    Show this help and exit.
@@ -9899,12 +9900,9 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
             .next()
             .expect("one projection analysis per recursive group");
         debug_assert_eq!(analyzed_span, group.meta.span);
-        let analysis = analysis.ok_or_else(|| {
-            Error::internal(
-                group.meta.span,
-                "a labels-free contract projection must have a representable recursive partition",
-            )
-        })?;
+        let analysis = analysis.expect(
+            "labels-free contract projection preserves an identity-owner recursive partition",
+        );
         partitioned.extend(crate::pass::resolve::emit_type_rec_partition(
             group, &analysis,
         ));
@@ -10249,9 +10247,69 @@ mod prime_only_contract_surface_tests {
 #[cfg(all(test, feature = "surface", feature = "prime", feature = "cli"))]
 mod contract_surface_tests {
     use super::*;
+    use crate::ast::Item;
     use crate::error::Error;
     use crate::pass::full::FullPipeline;
     use crate::prime::pipeline::PrimePipeline;
+
+    #[test]
+    fn labels_free_contract_projection_handles_empty_acyclic_and_cyclic_groups() {
+        for (declarations, expected_items, expected_groups, expected_self_recursive) in [
+            ("rec { labels { tag: . }; }", 0, 0, 0),
+            ("rec { type Plain = .; }", 1, 0, 0),
+            (
+                "rec { newtype Node : Node { constructor make; projector read; }; }",
+                1,
+                0,
+                1,
+            ),
+            (
+                "rec { labels { tag: . }; newtype Node : Node { constructor make; projector read; }; }",
+                1,
+                0,
+                1,
+            ),
+            (
+                "rec { newtype Left : Right { constructor left; projector read_left; }; newtype Right : Left { constructor right; projector read_right; }; }",
+                1,
+                1,
+                0,
+            ),
+        ] {
+            let mut module = crate::pass::parser::parse(&format!("module api; {declarations}"))
+                .expect("parse the written projection subject");
+            select_contract_declarations(&mut module)
+                .expect("labels-free projection has an identity owner partition");
+            assert_eq!(module.items.len(), expected_items, "{declarations}");
+            assert_eq!(
+                module
+                    .items
+                    .iter()
+                    .filter(|item| matches!(
+                        item,
+                        Item::Newtype(newtype) if newtype.rec_span.is_some()
+                    ))
+                    .count(),
+                expected_self_recursive,
+                "{declarations}"
+            );
+            let groups = module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::TypeRecGroup(group) => Some(group),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(groups.len(), expected_groups, "{declarations}");
+            assert!(groups.iter().all(|group| {
+                group
+                    .members
+                    .iter()
+                    .all(|member| !matches!(member, crate::ast::TypeRecMember::Labels(..)))
+            }));
+        }
+    }
 
     #[test]
     fn live_producer_keeps_real_function_headers_without_bodies() {
@@ -10967,8 +11025,7 @@ mod contract_surface_tests {
     /// surface forms must yield the
     /// **identical** contract digest on `kio` (FullPipeline) and `kio-prime`
     /// (PrimePipeline). The contract is the signature surface, so bodies
-    /// never enter it; before the fix the kio-prime path ran a full lowering
-    /// and rejected the surface body with "is not part of Kio'".
+    /// never enter it.
     #[test]
     fn surface_fn_dep_contract_is_identical_across_pipelines() {
         let tmp = tempfile::tempdir().unwrap();

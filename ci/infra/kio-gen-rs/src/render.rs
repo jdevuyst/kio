@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use kio_gen::ast::{Base, Program, Term, Type, UfcsKind};
+use kio_gen::ast::{Base, Program, Term, Type, UfcsKind, UfcsSpelling};
 
 const MATCH_SOURCE_BINDER_PREFIX: &str = "_gen_match_source";
 
@@ -722,56 +722,49 @@ fn render_term_opts_with_context(
             callee_name,
             rest_args,
             callee_kind,
+            spelling,
+            explicit_type_args,
         } => {
+            let receiver = render_term_opts_with_context(receiver, opts, context);
+            let mut values: Vec<String> = rest_args
+                .iter()
+                .map(|x| render_term_opts_with_context(x, opts, context))
+                .collect();
+            let types: Vec<String> = match callee_kind {
+                UfcsKind::PolyCall { type_args } => type_args
+                    .iter()
+                    .map(|ty| render_type_opts(ty, opts))
+                    .collect(),
+                UfcsKind::App => Vec::new(),
+            };
             if opts.surface {
-                // `r.>m` when no further args; `r.>m(args)` when
-                // there are more. UFCS does not accept user-supplied
-                // type-args at the surface (the spec is value-args
-                // only; type-args are backsolved from the receiver
-                // and value-args), so the trailing parens hold only
-                // value-args.
-                if rest_args.is_empty() {
-                    format!(
-                        "{}.>{callee_name}",
-                        render_term_opts_with_context(receiver, opts, context)
-                    )
+                let mut parts = if *explicit_type_args {
+                    types
                 } else {
-                    let rest: Vec<String> = rest_args
-                        .iter()
-                        .map(|x| render_term_opts_with_context(x, opts, context))
-                        .collect();
-                    format!(
-                        "{}.>{callee_name}({})",
-                        render_term_opts_with_context(receiver, opts, context),
-                        rest.join(", ")
-                    )
+                    Vec::new()
+                };
+                parts.extend(values);
+                let callee = if parts.is_empty() {
+                    callee_name.clone()
+                } else {
+                    format!("{callee_name}({})", parts.join(", "))
+                };
+                match spelling {
+                    UfcsSpelling::ReceiverFirst => format!("({receiver}).>{callee}"),
+                    UfcsSpelling::ReceiverLast => format!("({receiver}).>>{callee}"),
+                    UfcsSpelling::CalleeLast => format!("{callee}.<({receiver})"),
+                    UfcsSpelling::CalleeFirst => format!("{callee}.<<({receiver})"),
                 }
             } else {
-                match callee_kind {
-                    UfcsKind::PolyCall { type_args } => {
-                        let mut parts: Vec<String> = type_args
-                            .iter()
-                            .map(|ty| render_type_opts(ty, opts))
-                            .collect();
-                        parts.push(render_term_opts_with_context(receiver, opts, context));
-                        parts.extend(
-                            rest_args
-                                .iter()
-                                .map(|x| render_term_opts_with_context(x, opts, context)),
-                        );
-                        format!("{callee_name}({})", parts.join(", "))
+                match spelling {
+                    UfcsSpelling::ReceiverFirst | UfcsSpelling::CalleeFirst => {
+                        values.insert(0, receiver)
                     }
-                    UfcsKind::App => {
-                        let mut parts: Vec<String> =
-                            vec![render_term_opts_with_context(receiver, opts, context)];
-                        parts.extend(
-                            rest_args
-                                .iter()
-                                .map(|x| render_term_opts_with_context(x, opts, context)),
-                        );
-                        format!("{callee_name}({})", parts.join(", "))
-                    }
+                    UfcsSpelling::ReceiverLast | UfcsSpelling::CalleeLast => values.push(receiver),
                 }
+                let mut parts = types;
+                parts.extend(values);
+                format!("{callee_name}({})", parts.join(", "))
             }
         }
         Term::FnPlaceholder { params, ret, body } => {

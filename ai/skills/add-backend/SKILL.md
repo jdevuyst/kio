@@ -178,9 +178,15 @@ label. Different peers may be useful for different concerns. Trace representativ
 paths through shared preparation, emission, the public facade, and the independent
 runner; inspect the corresponding regression and emission tests.
 
-Record a short reuse map: shared helpers to call and their preconditions,
-applicable optimizations with their measurements and firing tests, and pitfalls
-with the tests that guard them. Use Step 3 and the hard-won lessons below as
+Record a short reuse map covering the backend-relevant entries in the
+[performance inventory](../../topics/implementation.md#compiler-performance-architecture)
+and applicable shared API and architecture decisions. Follow
+[Backend quality and implementation cost](../../topics/emit.md#backend-quality-and-implementation-cost):
+identify shared owners and preconditions, required properties, optional-cost
+trade-offs, existing evidence and guarding tests. Account for each relevant
+entry through inheritance, independent realization, structural absence or a
+concrete optional-cost decision; neither copying every optimization nor a new
+experiment for every entry is required. Use Step 3 and the hard-won lessons as
 navigation aids, not substitutes for inspecting callers. Existing code is
 implementation evidence, not contract authority: verify applicability against
 the target host's capabilities and the governing specs before reusing it.
@@ -464,9 +470,9 @@ ABI arity, or another producer-side side channel.
 ## Step 3 — Plug into shared infrastructure; do not re-port
 
 The reuse story is the whole point: a new backend re-ports **nothing** of the
-IR walk, the upstream recovery passes, the boundary-wrapper signature walk,
-the 3-step key fallback, the right-spine decomposition, or (for typed
-bodies) the body-type reconstruction walk. The framework convention is in
+IR walk, the upstream recovery passes, the boundary callable topology and
+execution layouts, the 3-step key fallback, the right-spine decomposition, or
+(for typed bodies) the body-type reconstruction walk. The framework convention is in
 [`kio-rs/src/backends/mod.rs`](../../../kio-rs/src/backends/mod.rs)'s module
 docstring (read it first — it defines `Profile`, `RuntimeSupport`, the
 per-module `par_iter` fan-out, and the runtime-support convention). **There
@@ -482,9 +488,9 @@ The plug-in points, in the order a new backend fills them:
    `RUNTIME_SUPPORT_FILE_PATH` plus its canonical fixed-content const or
    namespace-binding content function (if `RuntimeSupport::EmbeddedFile`), and
    `pub mod emit;` (+ `skin`, `runtime`, …). Inspect `go/` and `haskell/` as
-   contrasting current examples, including the latter's split `SkinProfile` /
-   `ReconProfile`, but copy only the plug-in points justified by the new
-   backend's independently classified regions.
+   contrasting current examples, including Haskell's native body renderer and
+   shared `ReconProfile` implementation, but copy only the plug-in points
+   justified by the new backend's independently classified regions.
 2. **`kio-rs/src/backends/<lang>/emit.rs`** — the BODY: `lower_package`, a
    `BodyEmitter` (term lowering / expression emission), exact host-type binding
    and literal emission appropriate to the target, and the exported-surface
@@ -765,9 +771,9 @@ new subproject, so no new version mirror is needed. The deliverables:
    measured win** — at the corpus's per-file scale the compile is dominated
    by compiler startup + frontend, not codegen, so in-compile parallelism has
    nothing to parallelize. The Swift and Rust runners both measured exactly
-   this (a wash on each) and ship without it; the recorded measurements live
-   in the [`audit-compiler-performance`](../audit-compiler-performance/SKILL.md)
-   § 8 registry — the standing instance of `AGENTS.md` § Universal rules —
+   this (a wash on each) and ship without it; the
+   [runner-profile evidence](../../../evidence/compiler-performance.md#runner-compile-profiles)
+   records the Rust comparison — a standing instance of `AGENTS.md` § Universal rules —
    "Optimizations are justified, not assumed." The acceleration is the cache.
 8. **Protocol host-body completeness gate.** Add a mechanical runner test
    (unit test or CI check) that enumerates every `RunnerProtocol` the new
@@ -1122,6 +1128,11 @@ Run each and resolve its findings:
   It also audits cross-backend decisions against the semantic-applicability
   ledger; a family divergence cannot excuse an unsupported or degraded feature
   or an applicable peer left unassessed.
+- [`audit-compiler-performance`](../audit-compiler-performance/SKILL.md) §§ 1,
+  8–9, scoped to the backend and its shared consumers — account for relevant
+  existing mechanisms, validate retained optional speed complexity, and
+  discharge required scaling and execution evidence. This does not invoke an
+  unrelated whole-compiler audit.
 - [`audit-corpus`](../audit-corpus/SKILL.md) shared §§ 1–6 and Emissions 0–5 — the new
   backend is not quietly left out of the corpus (no per-backend opt-out
   lacking a mutual-cite, no deleted/bucket-bumped golden, no source reshape to
@@ -1379,7 +1390,10 @@ The backend is accepted only when **all** of the following hold:
     benefit, while a rejected optimization leaves no production complexity.
     Deep finite `rec(loop)` execution also passes the causally established
     fixed-depth host-stack witness on the backend, including structured state
-    with a carried function slot.
+    with a carried function slot. The reuse map accounts for relevant existing
+    mechanisms and shared API/architecture decisions, with no unresolved
+    required property or evidence. Optional-cost decisions follow the owning
+    guidance and do not waive semantic or public-API acceptance.
 13. The backend spec and host guide carry matching `Host API stability:
     evolving` fields, and the backend API stability repo lint passes. The
     compatibility status supplies no credit toward any preceding acceptance

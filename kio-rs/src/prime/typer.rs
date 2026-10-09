@@ -782,6 +782,12 @@ pub(crate) fn check_normalized_package_with_timing(
 ) -> Result<ValidatedPrimePackage, LocatedError> {
     #[cfg(feature = "cli")]
     let check_start = timing.as_ref().map(|_| std::time::Instant::now());
+    // Imports are phase-independent AST data, so assembled and cached Prime
+    // packages need the same boundary check as freshly parsed text.
+    for (_, entry) in normalized.package().modules() {
+        crate::prime::lower::check_imports(&entry.module.imports)
+            .map_err(|error| LocatedError::new(entry.file_path.clone(), error))?;
+    }
     let mut elaborations = PrimeElaborations::default();
     let type_interner = std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default());
     let typecheck_scope =
@@ -1020,7 +1026,14 @@ fn bake_expr(
             bake_expr(body, elabs, module_path, requalifier, type_binders);
             type_binders.truncate(mark);
         }
-        Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+        Expr::Let {
+            ty, value, body, ..
+        } => {
+            bake_expr(value, elabs, module_path, requalifier, type_binders);
+            bake_expr(body, elabs, module_path, requalifier, type_binders);
+            *ty = None;
+        }
+        Expr::Seq { value, body, .. } => {
             bake_expr(value, elabs, module_path, requalifier, type_binders);
             bake_expr(body, elabs, module_path, requalifier, type_binders);
         }
@@ -1295,6 +1308,97 @@ mod tests {
             .diag()
             .1
             .to_owned()
+    }
+
+    #[test]
+    fn receiving_prime_rejects_assembled_comptime_import() {
+        let mut package = build_package("module x; fn f() -> . { () }");
+        let imports = parse("module x; import __comptime__;")
+            .expect("full syntax")
+            .imports;
+        package
+            .modules_mut()
+            .next()
+            .expect("module x")
+            .module
+            .imports = imports;
+        let error = check_package(&package).expect_err("AST assembly cannot grant comptime");
+        assert_eq!(error.file_path, PathBuf::from("x.kio"));
+        assert!(matches!(error.error, Error::Parse(_)));
+        assert!(error.error.diag().1.contains("`import __comptime__`"));
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn validated_prime_erases_let_annotations_after_contextual_completion() {
+        use crate::ast::{Expr, SignatureParam};
+        use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
+        use crate::pipeline::Pipeline;
+
+        let source = "module x;
+            import __intrinsics__;
+            newtype Box[A] <B> : A & B { constructor make; projector open; }
+            fn f() -> . -> . {
+                ();
+                let .(g: . -> .) = .(x) { (); let .(y: .) = x; y };
+                let .(pair: . & .) = __pair__(., ., (), ());
+                let .(boxed: Box(.)) = Box.make(., pair);
+                let .(first: [A][B] (A & B) -> A) = __fst__;
+                g
+            }";
+        let parsed = parse(source).expect("full source parses");
+        let (modules, _) = crate::pass::full::FullPipeline::lower_package(
+            vec![(PathBuf::from("x.kio"), parsed)],
+            None,
+        )
+        .expect("full lowering");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        package.resolve_imports().expect("imports");
+        package.check_in_body_resolution().expect("resolution");
+        let prime = crate::pass::typecheck_full::check_package(&package).expect("full checking");
+
+        #[derive(Default)]
+        struct Inspect {
+            lets: usize,
+            sequences: usize,
+            completed_lambda_params: usize,
+        }
+        impl TypecheckVisitMut<Prime> for Inspect {
+            fn visit_expr(&mut self, expr: &mut Expr<Prime>) {
+                match expr {
+                    Expr::Let { ty, .. } => {
+                        self.lets += 1;
+                        assert!(
+                            ty.is_none(),
+                            "validated Prime retains a surface let annotation"
+                        );
+                    }
+                    Expr::Seq { .. } => self.sequences += 1,
+                    Expr::FnExpr { sig, .. } => {
+                        for param in &sig.params {
+                            if let SignatureParam::Value(param) = param {
+                                assert!(
+                                    param.ty.is_some(),
+                                    "contextual lambda parameter was not baked"
+                                );
+                                self.completed_lambda_params += 1;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                walk_expr(self, expr);
+            }
+        }
+        let mut inspect = Inspect::default();
+        inspect.visit_package(&mut prime.package().clone());
+        assert_eq!(inspect.lets, 5, "nested and outer lets are inspected");
+        assert!(inspect.sequences >= 2, "both sequence bodies are inspected");
+        assert!(inspect.completed_lambda_params >= 1);
+
+        check_package(prime.package()).expect("fresh standalone check without let annotations");
+        let emitted = crate::backends::kio_prime::emit_module(prime.module("x").expect("module x"));
+        check_package(&build_package(&emitted)).expect("emitted and reparsed Prime checks");
     }
 
     fn intrinsic_value_record_count(package: &Package<Prime>) -> usize {

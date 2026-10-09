@@ -2442,7 +2442,7 @@ impl CallableSpec {
 }
 
 /// One element of a `op` pattern. Slot kinds determine
-/// associativity (per [§ Operators](specs/language.md#operators));
+/// associativity (per [§ Operators](../../specs/language.md#operators));
 /// op tokens are the literal operator strings between slots.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpPart {

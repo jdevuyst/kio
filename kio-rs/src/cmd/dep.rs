@@ -85,8 +85,8 @@ Options:
   -h, --help         Show this help and exit.
 
 Exit codes (per {base}/specs/exit-codes.md): 0 on success / no-op (the
-package declares no dependency, or no named dependency matched after a
-note); 2 on CLI usage error (missing / unknown subcommand, unknown
+package declares no dependency, or selected dependencies are up to date);
+2 on CLI usage error (missing / unknown subcommand, unknown
 flag); 30 on dependency error (a fetch / clone / ref-resolution
 failure, a stale lockfile, an unknown named dependency, a blocked
 sealed-contract break on `update`); 1 on internal error.

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import { siteUrl } from '../.vitepress/site.mjs'
 import { createMarkdownRenderer } from 'vitepress'
 import { withHeadingIds } from '../.vitepress/search-content.mjs'
@@ -179,8 +180,9 @@ function buildLanguages(hostItems) {
   })
 }
 
-function runKiodocBuild() {
-  const result = spawnSync('cargo', [
+export function runKiodocBuild() {
+  const result = spawnSync('sh', [
+    path.join(repoRoot, 'ci', 'cargo.sh'),
     'run',
     '--quiet',
     '--manifest-path',
@@ -200,8 +202,9 @@ function runKiodocBuild() {
   }
 }
 
-function runKio(args, options = {}) {
-  const result = spawnSync('cargo', [
+export function runKio(args, options = {}) {
+  const result = spawnSync('sh', [
+    path.join(repoRoot, 'ci', 'cargo.sh'),
     'run',
     '--quiet',
     '--manifest-path',
@@ -714,4 +717,7 @@ async function main() {
   console.log(`prepare-docs: generated docs for ${languages.length} host languages, ${blogEntries.length} blog post(s)`)
 }
 
-await main()
+if (process.argv[1] && fs.existsSync(process.argv[1])
+    && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+  await main()
+}

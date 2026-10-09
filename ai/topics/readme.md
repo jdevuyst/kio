@@ -1,6 +1,6 @@
 # `README.md`
 
-Trigger: editing `README.md`.
+Trigger: editing `README.md` or `website/.vitepress/theme/components/Landing.vue`.
 
 `README.md` is the public entry point on GitHub. Rules:
 
@@ -8,3 +8,13 @@ Trigger: editing `README.md`.
 - **Treat the supported-host-language count as derived data.** If the lead mentions how many host languages Kio supports, derive the number from `specs/backends/*.md` excluding `specs/backends/README.md`, and link the sentence to `docs/hosts/`. The website uses the same host-language set; [`audit-website`](../skills/audit-website/SKILL.md) checks that `README.md`, `docs/README.md`, generated website language data, and the landing page stay in sync.
 - **When a `ROADMAP.md` thread settles into a spec, consider adding a Features bullet** — but only for properties a passer-by would care about (type-system guarantees, design pillars, portability claims), not implementation details.
 - **Keep it brief.** README is an entry point, not a tutorial. Build instructions, worked examples, and reference material belong in `specs/`, `docs/`, or `test-data/poc/`.
+
+## Landing-page visual review
+
+Render landing-page changes and have an agent or user visually inspect the
+candidate before landing. Check the changed content in its surrounding layout,
+including wrapping, spacing, clipping and overflow at relevant viewport sizes.
+Record the review and any remaining issues with the change's validation evidence.
+A successful build, smoke test or DOM assertion does not establish that the
+page looks good. This visual gate is for the landing page, not ordinary README
+edits; protected exact-wording approval remains a separate requirement.

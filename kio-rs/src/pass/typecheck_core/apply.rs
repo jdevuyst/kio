@@ -33319,9 +33319,46 @@ mod tests {
             .0;
         let checked = crate::pass::typecheck_full::check_package_preserving_normalization(&package)
             .expect("the enclosing concrete result should instantiate the returned forall");
-        let prime =
-            crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
-                .expect("the contextual returned-Forall result should pass standalone Prime");
+        let substituted = checked.substituted();
+        {
+            let witness = substituted
+                .package()
+                .module("main")
+                .expect("substituted main module")
+                .module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "witness" => Some(def),
+                    _ => None,
+                })
+                .expect("substituted returned-Forall witness");
+            let crate::ast::Expr::Call { callee, args, .. } = &witness.body else {
+                panic!("substitution must retain the outer contextual call")
+            };
+            assert!(
+                matches!(callee.as_ref(), crate::ast::Expr::Path { segments, .. }
+                    if segments.len() == 1 && segments[0].as_str() == "accept"),
+                "the outer call must remain the source's contextual accept call: {callee:?}"
+            );
+            let [
+                crate::ast::CallArg::Value(crate::ast::Expr::Let {
+                    ty: Some(materialized_ty),
+                    ..
+                }),
+            ] = args.as_slice()
+            else {
+                panic!(
+                    "substitution must materialize the contextual successor in accept's sole argument: {args:?}"
+                )
+            };
+            assert!(
+                !type_contains_goal(materialized_ty) && !type_contains_infer(materialized_ty),
+                "the materialized contextual result must contain neither goals nor `_`: {materialized_ty:?}"
+            );
+        }
+        let prime = crate::pass::typecheck_full::validate_substituted_package(substituted)
+            .expect("the contextual returned-Forall result should pass standalone Prime");
         assert_eq!(
             direct_lambda_work(),
             DirectLambdaWork {
@@ -33345,17 +33382,12 @@ mod tests {
                 _ => None,
             })
             .expect("Prime returned-Forall witness");
-        let crate::ast::Expr::Let {
-            ty: Some(materialized_ty),
-            value,
-            ..
-        } = &witness.body
-        else {
+        let crate::ast::Expr::Let { ty, value, .. } = &witness.body else {
             panic!("Prime witness should materialize its contextual successor once")
         };
         assert!(
-            !type_contains_goal(materialized_ty) && !type_contains_infer(materialized_ty),
-            "the materialized contextual result must contain neither goals nor `_`: {materialized_ty:?}"
+            ty.is_none(),
+            "standalone Prime validation must consume the contextual let annotation"
         );
         let crate::ast::Expr::Call {
             callee: immediate_call,

@@ -54,7 +54,7 @@ Grep `docs/` for symbol names, keywords, syntax forms, or elaborator names. Cros
 - A teaching-purposes naming choice (fine if explained).
 - A stale reference to a removed/renamed feature (flag).
 
-Particular suspects to grep: any keyword or intrinsic name; every elaborator name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if` / `else` / `fn#` / `alias` / `labels` / `op` / `equiv` usage.
+Particular suspects to grep: any keyword or intrinsic name; every elaborator name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if!` / `else` / `.stem.` / `literal` / `labels` / `op` / `equiv` usage.
 
 ## 5. Standalone learning path
 

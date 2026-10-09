@@ -19,7 +19,8 @@ const source = lines.map(line => line.slice(12)).join('\n');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const policy = new AsyncFunction('github', 'context', 'core', source);
 
-async function check({ name, dir, followUp, rejected }) {
+async function check({ name, dir, followUp, rejected, library = false,
+  entryMode = '100644', ancestorMode = '040000', truncatedAt, missing = false }) {
   const casePath = `test-data/contrib/${dir}`;
   const added = [], removed = [], failures = [], comments = [];
   const context = {
@@ -84,19 +85,39 @@ async function check({ name, dir, followUp, rejected }) {
           }
           assert.equal(args.ref, 'head');
           if (args.path === casePath) return { data: [
-            ...['README.md', 'run.args', 'expected.stdout', 'expected.exit', 'expected.stderr']
-              .map(name => ({ name, type: 'file' })),
+            ...['README.md', library ? 'run.test-only' : 'run.args', 'expected.stdout', 'expected.exit', 'expected.stderr']
+              .map(name => ({ name, type: 'file', ...(name === 'README.md' && entryMode === '160000'
+                ? { submodule_git_url: 'https://example.invalid/module.git' } : {}) })),
             { name: 'workdir', type: 'dir', sha: 'tree' }
           ] };
-          assert.equal(args.path, `${casePath}/expected.exit`, 'unexpected content request');
-          return { data: { type: 'file', content: Buffer.from('0\n').toString('base64') } };
+          assert([`${casePath}/expected.exit`, `${casePath}/expected.stdout`].includes(args.path), 'unexpected content request');
+          return { data: { type: 'file', content: Buffer.from(args.path.endsWith('expected.exit') ? '0\n' : '').toString('base64') } };
         }
       },
       git: {
+        async getCommit(args) {
+          request(args); assert.equal(args.commit_sha, 'head');
+          return { data: { tree: { sha: 'root' } } };
+        },
         async getTree(args) {
-          request(args); assert.equal(args.tree_sha, 'tree');
+          request(args);
+          if (args.tree_sha !== 'tree') {
+            assert.equal(args.recursive, undefined);
+            if (missing) throw Object.assign(new Error('missing tree'), { status: 404 });
+            const ancestry = { root: ['test-data', 'test-data'], 'test-data': ['contrib', 'contrib'], contrib: [dir, 'case'] };
+            const child = ancestry[args.tree_sha];
+            const tree = child ? [{ path: child[0], sha: child[1],
+              type: args.tree_sha === 'contrib' && ancestorMode !== '040000' ? 'blob' : 'tree',
+              mode: args.tree_sha === 'contrib' ? ancestorMode : '040000' }]
+              : ['README.md', library ? 'run.test-only' : 'run.args', 'expected.stdout', 'expected.exit', 'expected.stderr']
+                .map(path => ({ path, type: path === 'README.md' && entryMode === '160000' ? 'commit' : 'blob',
+                  mode: path === 'README.md' ? entryMode : '100644', sha: path }))
+                .concat({ path: 'workdir', type: 'tree', mode: '040000', sha: 'tree' });
+            assert(child || args.tree_sha === 'case', 'unexpected tree request');
+            return { data: { truncated: truncatedAt === args.tree_sha, tree } };
+          }
           assert.equal(args.recursive, 'true');
-          return { data: { truncated: false, tree: [
+          return { data: { truncated: truncatedAt === 'tree', tree: [
             { path: 'app.pkg.kio', type: 'blob', mode: '100644', sha: 'package' },
             { path: 'main.kio', type: 'blob', mode: '100644', sha: 'module' }
           ] } };
@@ -104,7 +125,7 @@ async function check({ name, dir, followUp, rejected }) {
         async getBlob(args) {
           request(args);
           assert(['package', 'module'].includes(args.file_sha), 'unexpected blob request');
-          const text = args.file_sha === 'package' ? 'package app;\n' : 'module main;\n';
+          const text = args.file_sha === 'package' ? 'package app;\n' : `module main;\n${library ? 'equiv identity x = x;\n' : ''}`;
           return { data: { encoding: 'base64', content: Buffer.from(text).toString('base64') } };
         }
       }
@@ -128,7 +149,18 @@ async function check({ name, dir, followUp, rejected }) {
     { name: 'uppercase new case', dir: 'Alice-42', followUp: false, rejected: true },
     { name: 'uppercase follow-up', dir: 'Alice-42', followUp: true, rejected: true },
     { name: 'lowercase follow-up / no linked issue', dir: 'alice-42', followUp: true, rejected: false },
-    { name: 'wrong-owner follow-up', dir: 'bob-42', followUp: true, rejected: true }
+    { name: 'wrong-owner follow-up', dir: 'bob-42', followUp: true, rejected: true },
+    { name: 'regular executable file', dir: 'alice-42', entryMode: '100755', rejected: false },
+    { name: 'regular library', dir: 'alice-42', library: true, rejected: false },
+    { name: 'top-level gitlink new case', dir: 'alice-42', entryMode: '160000', rejected: true },
+    { name: 'top-level gitlink follow-up', dir: 'alice-42', followUp: true, entryMode: '160000', rejected: true },
+    { name: 'top-level symlink', dir: 'alice-42', entryMode: '120000', rejected: true },
+    { name: 'unknown blob mode', dir: 'alice-42', entryMode: '100600', rejected: true },
+    { name: 'symlink case ancestor', dir: 'alice-42', ancestorMode: '120000', rejected: true },
+    { name: 'truncated ancestry tree', dir: 'alice-42', truncatedAt: 'root', rejected: true },
+    { name: 'truncated case tree', dir: 'alice-42', truncatedAt: 'case', rejected: true },
+    { name: 'truncated workdir tree', dir: 'alice-42', truncatedAt: 'tree', rejected: true },
+    { name: 'missing ancestry tree', dir: 'alice-42', missing: true, rejected: true }
   ]) {
     try {
       await check(fixture);

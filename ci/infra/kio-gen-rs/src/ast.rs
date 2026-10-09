@@ -369,19 +369,14 @@ pub enum Term {
     Fit {
         inner: Box<Term>,
     },
-    /// UFCS wrapper around a call. Surface mode renders as
-    /// `receiver.>callee_name` (when `rest_args` is empty) or
-    /// `receiver.>callee_name(rest_args...)` (when there are extra
-    /// value-args). Kio' mode falls back to the underlying call
-    /// shape: `callee_name(<type_args>, receiver, rest_args...)`
-    /// for a `PolyCall`-style callee, or `callee_name(receiver,
-    /// rest_args...)` for an `App`-style callee. `callee_kind`
-    /// records which shape to emit.
+    /// Dot-splice wrapper retaining the original call's argument order.
     Ufcs {
         receiver: Box<Term>,
         callee_name: String,
         rest_args: Vec<Term>,
         callee_kind: UfcsKind,
+        spelling: UfcsSpelling,
+        explicit_type_args: bool,
     },
     /// Placeholder-lambda `.arg. { body }`. The body references each
     /// param via `Term::Placeholder { index }`. Surface mode renders
@@ -434,7 +429,7 @@ pub enum Term {
     },
 }
 
-/// Kind of callee for a UFCS receiver-first call. Decides the Kio'
+/// Kind of callee for a UFCS call. Decides the Kio'
 /// fallback rendering — a polymorphic intrinsic with `type_args`
 /// vs. a plain `Var`-headed application — without re-deriving the
 /// shape from the underlying term.
@@ -446,6 +441,27 @@ pub enum UfcsKind {
     /// `callee_name(receiver, rest_args...)` — the fallback shape
     /// for an env-bound free function reached via `Var`.
     App,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UfcsSpelling {
+    ReceiverFirst,
+    ReceiverLast,
+    CalleeLast,
+    CalleeFirst,
+}
+
+impl UfcsSpelling {
+    pub const ALL: [Self; 4] = [
+        Self::ReceiverFirst,
+        Self::ReceiverLast,
+        Self::CalleeLast,
+        Self::CalleeFirst,
+    ];
+
+    pub fn inserts_first(self) -> bool {
+        matches!(self, Self::ReceiverFirst | Self::CalleeFirst)
+    }
 }
 
 /// Safe reflected-ABI implementation template for a generated

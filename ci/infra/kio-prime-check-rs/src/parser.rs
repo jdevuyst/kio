@@ -9,8 +9,8 @@
 //!
 //! Call-argument lists accept either expressions or types (per
 //! `specs/prime.md` § Grammar's `CallArg` production), since the
-//! callee's signature is what disambiguates the two; the grammar
-//! makes no syntactic distinction.
+//! spelling-defined type and value roles disambiguate name-shaped arguments
+//! before declaration lookup.
 //!
 //! Naming-convention enforcement is syntax-local: declaration heads,
 //! binders, type-expression paths, selective imports, and ambiguous raw
@@ -382,9 +382,10 @@ impl Parser {
         Ok(())
     }
 
-    fn decl_modifiers(&mut self) -> Result<(bool, bool), ParseError> {
+    fn decl_modifiers(&mut self) -> Result<(bool, bool, Option<Span>), ParseError> {
         let mut saw_vis = false;
         let mut saw_pure = false;
+        let mut scoped_vis = None;
         loop {
             if self.ident_named("pub") {
                 let span = self.tokens[self.pos].span;
@@ -392,6 +393,9 @@ impl Parser {
                     return self.err_at(span, "duplicate `pub` modifier");
                 }
                 saw_vis = true;
+                if matches!(self.peek_kind_at(1), Some(TokenKind::LParen)) {
+                    scoped_vis = Some(span);
+                }
                 self.eat_vis()?;
             } else if self.ident_named("pure") {
                 let span = self.tokens[self.pos].span;
@@ -404,7 +408,7 @@ impl Parser {
                 break;
             }
         }
-        Ok((saw_vis, saw_pure))
+        Ok((saw_vis, saw_pure, scoped_vis))
     }
 
     fn expect_ident_named(&mut self, name: &str) -> Result<(), ParseError> {
@@ -599,10 +603,6 @@ impl Parser {
             }
         }
         any
-    }
-
-    fn expect_ident(&mut self, what: &str) -> Result<String, ParseError> {
-        self.expect_ident_with_span(what).map(|(s, _)| s)
     }
 
     fn expect_ident_with_span(&mut self, what: &str) -> Result<(String, Span), ParseError> {
@@ -898,8 +898,11 @@ impl Parser {
     /// ordinary identifier. See `kio-rs`'s `item_modifiers` /
     /// `host_decl_follows`.
     fn item(&mut self) -> Result<(), ParseError> {
-        let (vis, pure) = self.decl_modifiers()?;
+        let (vis, pure, scoped_vis) = self.decl_modifiers()?;
         if self.ident_named("host") && self.host_decl_follows() {
+            if let Some(span) = scoped_vis {
+                return self.err_at(span, "host declarations cannot use `pub(path)` visibility");
+            }
             if pure {
                 let host_fn = self.ident_named_at(1, "fn")
                     || (self.ident_named_at(1, "pub") && self.ident_named_at(2, "fn"));
@@ -996,7 +999,7 @@ impl Parser {
         }
         let mut members = 0usize;
         while !matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
-            let (_, pure) = self.decl_modifiers()?;
+            let (_, pure, _) = self.decl_modifiers()?;
             if pure {
                 return self.err(
                     "a bare `rec { ... }` type group admits only `type` and `newtype` declarations",
@@ -1083,9 +1086,8 @@ impl Parser {
     /// A host type is an opaque nominal type the host supplies; the
     /// optional `role(...)` annotation pins its literal role. The optional
     /// source-compatible `{ owned }` block selects no alternate facade.
-    /// Neither annotation affects how references to the type parse, so the verifier
-    /// accepts any role identifier (the closed role-kind set is a
-    /// static check, not a grammar constraint).
+    /// The role name comes from the grammar's closed vocabulary; whether its
+    /// host type has admissible parameters remains a semantic check.
     fn host_type_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `host type`")?;
         Self::validate_type_name(&name, span)?;
@@ -1094,7 +1096,25 @@ impl Parser {
         }
         if self.eat_ident_named("role") {
             self.expect_kind(&TokenKind::LParen, "`(` opening `role` annotation")?;
-            self.expect_ident("role name")?;
+            let (role, span) = self.expect_ident_with_span("role name")?;
+            if !matches!(
+                role.as_str(),
+                "i8" | "i16"
+                    | "i32"
+                    | "i64"
+                    | "i128"
+                    | "u8"
+                    | "u16"
+                    | "u32"
+                    | "u64"
+                    | "u128"
+                    | "f32"
+                    | "f64"
+                    | "bool"
+                    | "str"
+            ) {
+                return self.err_at(span, format!("unknown `role` kind `{role}`"));
+            }
             self.expect_kind(&TokenKind::RParen, "`)` closing `role` annotation")?;
         }
         if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
@@ -1832,6 +1852,7 @@ impl Parser {
             }
             Some(TokenKind::LParen) => self.paren_expr(),
             Some(TokenKind::SymbolRun(run)) if run == "." || run.starts_with(".[") => {
+                let dot_end = self.current_offset() + 1;
                 if run == "." {
                     self.advance();
                 } else {
@@ -1842,6 +1863,11 @@ impl Parser {
                 }
                 match self.peek_kind() {
                     Some(TokenKind::Ident(s)) if s == "t" || s == "f" => {
+                        if self.current_offset() != dot_end {
+                            return self.err(
+                                "a boolean literal requires `t` or `f` immediately after `.`",
+                            );
+                        }
                         self.advance();
                         self.expect_literal_annotation("boolean")
                     }
@@ -1954,6 +1980,51 @@ mod tests {
         match parse_module(src) {
             Ok(_) => panic!("expected parse error, got ok"),
             Err(e) => e.message,
+        }
+    }
+
+    #[test]
+    fn host_roles_use_the_closed_grammar_vocabulary() {
+        for role in [
+            "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64",
+            "bool", "str",
+        ] {
+            ok(&format!("module x; host type T role({role});"));
+        }
+        assert!(err("module x; host type T role(no_such_role);").contains("unknown `role`"));
+    }
+
+    #[test]
+    fn host_declarations_reject_scoped_visibility() {
+        for declaration in ["fn f() -> .;", "type T;"] {
+            assert!(
+                err(&format!("module x; pub(x) host {declaration}"))
+                    .contains("host declarations cannot use `pub(path)`")
+            );
+            for modifier in ["host", "pub host", "host pub"] {
+                ok(&format!("module x; {modifier} {declaration}"));
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_literals_require_adjacent_marker() {
+        for literal in [". t", ".\nf", ".// keep\nt"] {
+            assert!(
+                err(&format!("module x; fn f() {{ {literal}(Bool) }}"))
+                    .contains("immediately after `.`")
+            );
+        }
+        ok("module x; fn f() { .t(Bool) } fn g() { .f(Bool) }");
+    }
+
+    #[test]
+    fn numeric_separators_stay_between_digits() {
+        for literal in ["1__0", "1_", "1.0__1", "1.0e1__0", "1e1_"] {
+            let _ = err(&format!("module x; fn f() {{ {literal}(Number) }}"));
+        }
+        for literal in ["1_0", "1.0_1", "1.0e1_0", "2e3", "2E-3"] {
+            ok(&format!("module x; fn f() {{ {literal}(Number) }}"));
         }
     }
 

@@ -63,7 +63,7 @@ Prefer to build it yourself? `cargo install kio-lang --bin kio`. Prebuilt archiv
 - **UFCS calls** — any function can be called receiver-first: `r.>f(x)` is exactly `f(r, x)`, with four dot-splice variants (`.>`, `.>>`, `.<`, `.<<`) that place the receiver in different argument slots. Blockless elaborator calls support UFCS too; block calls use their direct `name! … { … }` form.
 - **User-defined operators** — Kio has no built-in operators, so they are all yours to define. An `op` binds a pattern of symbol tokens and operand slots to a function, and can be prefix, infix, postfix, or n-ary — `+`, right-associating `::`, a ternary `? :`, and so on. `varop` adds a bracketed, variadic form that folds elements through a step function, handy for lists, dicts, and other collections.
 - **Strongly normalizing core** — every well-typed program in Kio', the desugared core, terminates (excluding host execution).
-- **User-visible elaboration** — every surface program reduces to Kio', and `:normalize` in the REPL prints the residual normal form, so you can see exactly what a program became.
+- **User-visible elaboration** — well-typed surface programs elaborate to Kio'. The REPL's `:normalize` prints an expression's residual normal form: simplified as far as possible, leaving values such as literals, unevaluated host calls, and intrinsic operations that cannot yet reduce.
 - **Provable equivalence (`equiv`)** — an `equiv` block asserts that two or more expressions reduce to the same normal form under shared type and value binders; `kio test` discharges it by normalizing in Kio'. The check is decidable and exhaustive — nothing runs, nothing is sampled — so algebraic laws, refactors, and optimizations are proven at build time.
 
 ## Tooling

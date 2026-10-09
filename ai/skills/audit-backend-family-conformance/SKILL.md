@@ -16,6 +16,12 @@ families before starting. The README is the source of truth for the family
 list, member backends, and family-required shared idioms; this skill does not
 hardcode them.
 
+For optional optimization choices, pair this audit with
+[`audit-compiler-performance`](../audit-compiler-performance/SKILL.md) §§ 8–9
+under [`emit.md` § Backend quality and implementation cost](../../topics/emit.md#backend-quality-and-implementation-cost).
+Keep semantic conformance distinct from adoption of a speed technique; compare
+shared owners and actual consumers rather than requiring identical mechanisms.
+
 ## 1. Family declaration
 
 For each `specs/backends/*.md` other than `README.md`, check:

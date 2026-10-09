@@ -3801,7 +3801,7 @@ if [ "$unit_count" -gt 1 ] && [ "$PROGRESS_INTERVAL" -gt 0 ] \
       # foreground child of this subshell: killing the subshell does not kill
       # it, so it is reparented to init and keeps every inherited descriptor
       # open — stdout, stderr, and under ci/all.sh the progress fd. A piped
-      # invocation (`... 2>&1 | tail`, which ai/topics/local-ci.md teaches)
+      # invocation with a downstream reader waiting for EOF
       # would then block on the pipe's write end for the rest of the interval
       # after the run had already finished: a run that looks wedged when it
       # is done, which is the failure this heartbeat exists to prevent.

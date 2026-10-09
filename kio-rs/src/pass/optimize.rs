@@ -2543,12 +2543,9 @@ fn types_equal(a: &CallArg<Enriched>, b: &CallArg<Enriched>) -> bool {
 ///   `then`-branch selection; the `else` branch is dead.
 /// - `EnrichedConditional(BoolLit(false), t, e)` → `e`. Symmetric.
 ///
-/// **Out-of-scope** (would require deeper analysis): arithmetic on
-/// integer literals (host-typed), string concatenation, and
-/// pure-fn-applied-to-literals folding via cross-fn inlining. These
-/// would require running the `normalization` partial-evaluator over
-/// enriched IR; today's evaluator is Lowered-only, so the deeper
-/// folding is queued behind that port.
+/// Literal roles do not specify the host's arithmetic or string-operation
+/// behavior, so those host operations remain opaque rather than being
+/// evaluated from the literal syntax alone.
 fn constant_fold(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     match e {
         Expr::EnrichedConditional {

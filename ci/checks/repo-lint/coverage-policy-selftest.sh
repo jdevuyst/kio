@@ -470,6 +470,9 @@ printf 'driver\n' >>"$KIO_TEST_DIRECT_BUILD_LOG"
   exit 91
 }
 [ "$("$1")" = snapshot-cli ]
+if [ "${KIO_TEST_DIRECT_DRIVER_STATUS:-0}" -ne 0 ]; then
+  exit "$KIO_TEST_DIRECT_DRIVER_STATUS"
+fi
 publication=$3
 mkdir -p "$publication"
 : >"$publication/driver.js"
@@ -485,6 +488,10 @@ for run_arg in "$@"; do
     --dyn-load-prime-only) mode=dyn-load-prime ;;
   esac
 done
+printf 'phase %s\n' "$mode" >>"$KIO_TEST_DIRECT_BUILD_LOG"
+if [ "$mode" = dyn-load-prime ]; then
+  [ -f "${KIO_DYN_LOAD_PRIME_DRIVER_JS:-}" ] || exit 94
+fi
 tab=$(printf '\t')
 printf 'CALL%s%s\n' "$tab" "$mode" >>"$KIO_TEST_DIRECT_RUN_LOG"
 for run_arg in "$@"; do
@@ -509,6 +516,7 @@ for run_arg in "$@"; do
       ;;
   esac
 done
+[ "$mode" != "${KIO_TEST_DIRECT_FAIL_MODE:-}" ] || exit 29
 EOF
 chmod +x "$direct_repo/ci/schedule.sh" "$direct_repo/ci/cargo.sh" \
   "$direct_repo/ci/run-tests.sh" \
@@ -642,6 +650,25 @@ assert_eq 1 "$(direct_arg_prefix_count dyn-load-prime --case-seed=)" \
   'implicit sample obtains a seed'
 assert_eq 0 "$(direct_arg_count dyn-load-prime --case-seed=)" \
   'implicit sample seed is nonempty'
+assert_eq 'phase regular
+phase prime
+driver
+phase dyn-load-prime' \
+  "$(grep -E '^(phase |driver$)' "$direct_build_log")" \
+  'dynamic driver is prepared only at its consuming phase'
+
+KIO_TEST_DIRECT_DRIVER_STATUS=17 run_direct_golden deferred-driver-failure 17 \
+  --impls=kio@js,kio-prime@js,dyn-load-prime@kio-prime
+assert_direct_calls 1 1 0 deferred-driver-failure
+assert_eq 'phase regular
+phase prime
+driver' \
+  "$(grep -E '^(phase |driver$)' "$direct_build_log")" \
+  'driver failure retains completed earlier phases and prevents dynamic execution'
+
+KIO_TEST_DIRECT_FAIL_MODE=regular run_direct_golden earlier-phase-failure 29 \
+  --impls=kio@js,kio-prime@js,dyn-load-prime@kio-prime
+assert_direct_calls 1 1 1 earlier-phase-failure
 
 for sample_policy in --sample-cases --case-coverage=goldens:sample; do
   run_direct_golden explicit-sample 0 --impls=FULL_IMPL_MATRIX \

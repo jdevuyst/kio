@@ -873,8 +873,8 @@ pub(crate) fn emit_type_rec_partition<P: Phase>(
 /// Project each Surface recursive type group onto the declaration graph the
 /// active language pipeline can validate. Full Kio expands atomic `labels`
 /// declarations before projecting them back onto their written owners; the
-/// Prime-only build rejects surface forms and analyzes its lowered groups
-/// directly.
+/// Prime-only build lowers and analyzes the groups directly. Neither path
+/// validates unrelated module imports or function bodies.
 #[cfg(all(feature = "cli", feature = "surface"))]
 pub(crate) fn projected_surface_type_rec_analyses(
     module: &crate::ast::Module<crate::ast::Surface>,
@@ -886,20 +886,23 @@ pub(crate) fn projected_surface_type_rec_analyses(
 pub(crate) fn projected_surface_type_rec_analyses(
     module: &crate::ast::Module<crate::ast::Surface>,
 ) -> Result<Vec<(Span, Option<TypeRecAnalysis>)>, Error> {
-    let prime = crate::prime::lower::lower_module(module.clone())?;
-    Ok(prime
+    module
         .items
-        .into_iter()
+        .iter()
         .filter_map(|item| {
             let crate::ast::Item::TypeRecGroup(group) = item else {
                 return None;
             };
-            Some((
-                group.meta.span,
-                Some(analyze_type_rec_members(&group.members)),
-            ))
+            Some(
+                crate::prime::lower::lower_type_rec_group(group.clone()).map(|group| {
+                    (
+                        group.meta.span,
+                        Some(analyze_type_rec_members(&group.members)),
+                    )
+                }),
+            )
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(all(feature = "cli", not(feature = "surface"), not(feature = "prime")))]
@@ -4764,7 +4767,11 @@ impl<P: ResolvePhase> Package<P> {
                                 ),
                             ),
                         };
-                        return Err(err);
+                        return Err(err.with_secondary_in_file(
+                            target.file_path.clone(),
+                            declaration.name_and_span().1,
+                            format!("`{name}` is declared here"),
+                        ));
                     }
                 }
                 Ok(())
@@ -7883,6 +7890,28 @@ mod tests {
                 );
             }
             other => panic!("expected Use, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inaccessible_import_labels_the_exact_provider_declaration() {
+        for modifier in ["", "pub(pkg) "] {
+            let provider = format!(
+                "module pkg/provider;\n// 😀 source owner\n{modifier}fn secret() -> . {{ () }}\n"
+            );
+            let caller = "module consumer;\nimport pkg/provider(secret);\n";
+            let p = pkg(vec![&provider, caller]).unwrap();
+            let error = p.resolve_imports().unwrap_err();
+            assert_eq!(error.file_path, module_file_path(caller));
+            let diagnostic = error.error.diagnostic();
+            let [label] = diagnostic.secondary() else {
+                panic!("expected one provider label: {diagnostic:?}");
+            };
+            assert_eq!(label.file, Some(module_file_path(&provider)));
+            let declaration = &provider[label.span.start as usize..label.span.end as usize];
+            assert!(declaration.contains("fn secret()"), "{declaration}");
+            assert_eq!(label.text, "`secret` is declared here");
+            assert!(diagnostic.fixes().is_empty());
         }
     }
 

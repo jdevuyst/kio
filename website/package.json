@@ -14,7 +14,7 @@
     "preview": "vitepress preview --host 127.0.0.1",
     "smoke": "node scripts/smoke-built-site.mjs",
     "audit": "node scripts/audit-website.mjs",
-    "preaudit": "node --test scripts/search-content.test.mjs"
+    "preaudit": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

@@ -86,7 +86,7 @@ declarations and `rehost` express the same boundary.
 
 ## Module documentation
 
-Every root-package POC library `*.kio` file is copyable library source. It must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: `pub fn`, `pub type`, `pub literal`, `pub alias`, `pub newtype`, `pub labels`, `pub op`, `pub fold`, and `pub elab`.
+Every root-package POC library `*.kio` file is copyable library source. It must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: `pub fn`, `pub type`, `pub literal`, `pub newtype`, `pub labels`, `pub op`, `pub varop`, and `pub elab`.
 
 Demo modules, host adapters, materialized dependency roots, and `testapi` modules are not part of the root library documentation requirement. A demo may still document its public entry points, but the required adopter-grade `///` surface is the root package's own library surface.
 

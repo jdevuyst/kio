@@ -1,6 +1,34 @@
 use super::*;
 use crate::ast::{Meta, Prime, TypeRecGroup};
 
+#[test]
+#[cfg(feature = "cli")]
+fn projected_type_rec_analysis_keeps_import_validation_at_the_module_boundary() {
+    let module = crate::pass::parser::parse(
+        "module api; import __comptime__; \
+         rec { \
+             newtype Left : . | Right { constructor left; projector read_left; }; \
+             newtype Right : . | Left { constructor right; projector read_right; }; \
+         }",
+    )
+    .expect("parse a recursive declaration graph with compile-time import metadata");
+    let Item::TypeRecGroup(group) = &module.items[0] else {
+        panic!("fixture must contain the recursive group")
+    };
+    let analyses = projected_surface_type_rec_analyses(&module)
+        .expect("group analysis does not validate a module's capability imports");
+    let [(span, Some(analysis))] = analyses.as_slice() else {
+        panic!("one identity-owner recursive group must be analyzed")
+    };
+    assert_eq!(*span, group.meta.span);
+    assert_eq!(analysis.edges, [vec![1], vec![0]]);
+    assert_eq!(analysis.cyclic_components.len(), 1);
+    assert_eq!(analysis.cyclic_components[0].len(), 2);
+    assert!(analysis.alias_cycle.is_none());
+    crate::prime::lower::lower_module(module)
+        .expect_err("the unchanged module still cannot become executable Prime");
+}
+
 fn independent_group(count: usize) -> (String, TypeRecGroup<Prime>, TypeRecAnalysis) {
     let mut source = String::from("module x;\nrec {\n");
     for index in 0..count {

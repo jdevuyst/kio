@@ -1,0 +1,5 @@
+module main;
+
+host type Text role(str);
+
+fn f() -> Text { "\q"(Text) }

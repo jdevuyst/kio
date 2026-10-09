@@ -95,6 +95,10 @@ literals, functions, pairs, sum injections, newtype constructors, opaque
 atoms, stuck applications and conditionals, expression-statement sequences,
 and symbolic sum case splits.
 
+Literals are already values, not blocked computations. Intrinsics reduce
+whenever their rules apply, but can remain residual when symbolic inputs hide
+needed information, such as the pair required by a product projection.
+
 This is deliberately not a concrete evaluator. The residual records exactly
 the structure Kio can justify without inventing facts about symbolic inputs or
 the host.

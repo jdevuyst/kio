@@ -1,4 +1,6 @@
 /// A worked example of dynamic loading: load a guest package from its raw emitted Kio' image, then call its exports through the record surface.
+/// NOT a drop-in library: this entry demonstrates loading and interpreting a
+/// precompiled package through a concrete host adapter.
 module testapi/main;
 
 import defaults(default_host_adapter, instantiate_checked_default, instantiate_default);

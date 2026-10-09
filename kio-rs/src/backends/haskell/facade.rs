@@ -13,10 +13,10 @@ use crate::ast::{Meta, Routed, Type, TypeParam};
 use crate::backends::boundary_facade::{
     BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
     BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryNewtypePayloadPlan,
-    BoundaryNewtypeSurface, BoundaryNominalDeclaration, BoundaryNominalDependencies,
-    CallableExecutionLayout, CallableExecutionStage, CallableSourceParamAdapter,
-    CallableValueStageLayout, FacadeBinderId, FacadeKind, FacadeUse, FacadeUseId,
-    PreparedBoundaryCallableSite, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
+    BoundaryNominalDeclaration, BoundaryNominalDependencies, CallableExecutionLayout,
+    CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeBinderId,
+    FacadeKind, FacadeUse, FacadeUseId, PreparedBoundaryCallableSite,
+    PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
 
 use super::naming::{BoundaryId, BoundaryRoot, BoundaryStep, ItemId, ModuleId, StructuralKey};
@@ -153,24 +153,6 @@ pub(crate) struct HaskellFacadeSite {
     entry: HaskellCallableEntry,
 }
 
-/// Haskell's exact realization decision for one prepared public newtype.
-///
-/// The shared inventory, rather than a second source walk, determines which
-/// declarations participate in the host contract.  Native body metadata may
-/// still inspect the selected declaration by exact identity after this cut.
-#[derive(Clone, Debug)]
-pub(crate) struct HaskellPublicNewtype {
-    surface: BoundaryNewtypeSurface,
-    has_type_params: bool,
-    has_existential_params: bool,
-}
-
-impl HaskellPublicNewtype {
-    pub(crate) fn requires_nominal_carrier(&self) -> bool {
-        self.has_type_params || self.has_existential_params || self.surface.uses_nominal_carrier()
-    }
-}
-
 impl HaskellFacadeSite {
     pub(crate) fn id(&self) -> &BoundaryFacadeSiteId {
         &self.id
@@ -185,7 +167,6 @@ impl HaskellFacadeSite {
 #[derive(Clone, Debug)]
 pub(crate) struct HaskellFacadeCatalog {
     sites: BTreeMap<BoundaryFacadeSiteId, HaskellFacadeSite>,
-    public_newtypes: BTreeMap<QualifiedTypeName, HaskellPublicNewtype>,
     boundary_types: BTreeMap<BoundaryId, Type<Routed>>,
     function_layouts: BTreeMap<BoundaryId, CallableValueStageLayout>,
     structural_occurrences: BTreeMap<BoundaryId, HaskellStructuralOccurrence>,
@@ -198,19 +179,6 @@ impl HaskellFacadeCatalog {
     ) -> Self {
         let mut catalog = Self {
             sites: BTreeMap::new(),
-            public_newtypes: prepared
-                .public_newtypes()
-                .map(|newtype| {
-                    (
-                        newtype.name().clone(),
-                        HaskellPublicNewtype {
-                            surface: newtype.surface().clone(),
-                            has_type_params: !newtype.type_params().is_empty(),
-                            has_existential_params: !newtype.existential_params().is_empty(),
-                        },
-                    )
-                })
-                .collect(),
             boundary_types: BTreeMap::new(),
             function_layouts: BTreeMap::new(),
             structural_occurrences: BTreeMap::new(),
@@ -232,18 +200,6 @@ impl HaskellFacadeCatalog {
         self.sites.values()
     }
 
-    pub(crate) fn public_newtypes(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = (&QualifiedTypeName, &HaskellPublicNewtype)> + ExactSizeIterator
-    {
-        self.public_newtypes.iter()
-    }
-
-    pub(crate) fn public_newtype(&self, module: &str, name: &str) -> Option<&HaskellPublicNewtype> {
-        let name = QualifiedTypeName::new(module_segments(module), name)?;
-        self.public_newtypes.get(&name)
-    }
-
     pub(crate) fn host_site(&self, module: &str, name: &str) -> &HaskellFacadeSite {
         self.site(
             module,
@@ -260,12 +216,6 @@ impl HaskellFacadeCatalog {
                 name: name.to_owned(),
             },
         )
-    }
-
-    pub(crate) fn exact_site(&self, id: &BoundaryFacadeSiteId) -> &HaskellFacadeSite {
-        self.sites
-            .get(id)
-            .unwrap_or_else(|| panic!("missing prepared Haskell facade site {id:?}"))
     }
 
     pub(crate) fn newtype_constructor_site(

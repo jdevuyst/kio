@@ -26,6 +26,7 @@ Four storage scopes have different blast radii:
 The default run is worktree-local only. **Never** touches:
 
 - `~/.cargo/registry/`, `~/.cargo/git/`, `~/.npm/`, `~/.cache/sccache/` — out of repo. Slower to re-download / re-populate and not the source of worktree-local disk pressure.
+- `~/.cache/tree-sitter/wasi-sdk/` — machine-shared downloaded SDK, outside the default worktree wipe; see [`local-tools.md`](../../topics/local-tools.md#tree-sitter-webassembly-builds).
 - The shared test-runner artifact cache under `~/.cache/kio/` (or `$XDG_CACHE_HOME/kio/`) — machine-wide, shared across worktrees; clearing it is a separate explicit step (below), not part of the default wipe.
 - The CI scheduler bootstrap cache below the Git common directory — shared by sibling worktrees; clearing it is a separate explicit step (below), not part of the default wipe.
 - Docker images and BuildKit cache — daemon-wide, shared across builds; clearing them is a separate explicit step (below), not part of the default wipe.
@@ -37,14 +38,16 @@ The default run is worktree-local only. **Never** touches:
 | --- | --- |
 | `kio-rs/target/` | `cargo build` against `~/.cargo/registry/` (local). |
 | `kio-rs/fuzz/target/` (if present) | `cargo +nightly fuzz build`. |
+| `kio-repl-wasm/target/` | Native and WebAssembly builds in that workspace. |
 | `ci/infra/kio-ci-scheduler-rs/target/` | `cargo build` in the crate. |
 | `ci/infra/kio-gen-rs/target/` | `cargo build` in the crate. |
 | `ci/infra/kio-prime-check-rs/target/` | `cargo build` in the crate. |
 | `ci/infra/kio-test-runner-rs/target/` | `cargo build --no-default-features --features {js,rust}` per the hygiene script. |
-| `.kio-cache/` (`goldens/`, `kio-gen/`, `kiodoc/`, `poc/`) | Worktree-local artifact-cache tree, present when a job pinned `--cache-base` worktree-local. Content-addressed; re-warms case-by-case. Distinct from the shared cache under `~/.cache/kio/`. |
+| `.kio-cache/` (`goldens/`, `kio-gen/`, `kiodoc/`, `poc/`) | Worktree-pinned runner artifacts plus default persistent Dynamic-Prime driver publication under `goldens/dyn-load-prime-driver/`. Content-addressed; re-warms on demand. Distinct from the shared runner cache under `~/.cache/kio/`. |
 | `test-data/goldens/**/out/` (incl. the kio build cache `out/.kio-cache/`) | Re-created on next `kio build` per golden. |
 | `test-data/poc/**/out/` (incl. the kio build cache `out/.kio-cache/`) | Re-created on next `kio build` per POC. |
 | `ci/infra/highlight-agreement-js/node_modules/` | `npm install` against `~/.npm` (local). |
+| `website/node_modules/` | `npm install`. |
 | `tools/vscode-kio/node_modules/` | `npm install`. |
 | `tools/tree-sitter-kio/node_modules/` | `npm install`. |
 | `tools/tree-sitter-kio/build/` | `npm install` plus the tree-sitter regen step. |
@@ -121,6 +124,8 @@ esac
 
 Print disk free before. Sum the sizes of each target. Wipe. Print disk free after. Report freed bytes.
 
+Keep the listed paths without trailing slashes and do not resolve cache symlinks: a linked cache is removed as a link, never by deleting its shared target.
+
 ```sh
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
@@ -129,13 +134,13 @@ before_avail=$(df --output=avail -B1 . | tail -1)
 
 # Sum sizes of what's about to go (silently skip absent paths).
 du -shc \
-  kio-rs/target kio-rs/fuzz/target \
+  kio-rs/target kio-rs/fuzz/target kio-repl-wasm/target \
   ci/infra/kio-ci-scheduler-rs/target \
   ci/infra/kio-gen-rs/target \
   ci/infra/kio-prime-check-rs/target \
   ci/infra/kio-test-runner-rs/target \
   .kio-cache \
-  ci/infra/highlight-agreement-js/node_modules \
+  ci/infra/highlight-agreement-js/node_modules website/node_modules \
   tools/vscode-kio/node_modules \
   tools/tree-sitter-kio/node_modules tools/tree-sitter-kio/build \
   2>/dev/null | tail -1
@@ -148,13 +153,13 @@ find test-data/poc -type d -name out -prune -print0 2>/dev/null \
 
 # Wipe.
 rm -rf \
-  kio-rs/target kio-rs/fuzz/target \
+  kio-rs/target kio-rs/fuzz/target kio-repl-wasm/target \
   ci/infra/kio-ci-scheduler-rs/target \
   ci/infra/kio-gen-rs/target \
   ci/infra/kio-prime-check-rs/target \
   ci/infra/kio-test-runner-rs/target \
   .kio-cache \
-  ci/infra/highlight-agreement-js/node_modules \
+  ci/infra/highlight-agreement-js/node_modules website/node_modules \
   tools/vscode-kio/node_modules \
   tools/tree-sitter-kio/node_modules tools/tree-sitter-kio/build
 

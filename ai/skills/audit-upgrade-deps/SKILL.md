@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # upgrade-deps coverage audit
 
-[`upgrade-deps`](../upgrade-deps/SKILL.md) discovers the repo's dependency surface from a fixed set of **ecosystem handlers** (Cargo → `Cargo.toml`, npm → `package.json`, mise → tracked `mise*.toml [tools]`, Actions → workflow `uses:` pins) and bumps what it finds. Discovery keeps it current for new manifest *instances* automatically; what it cannot self-detect is a new manifest *kind* it has no handler for, or a handler that has gone stale. This audit pins the handler set against reality. The shape mirrors [`audit-agents-md`](../audit-agents-md/SKILL.md) §2–§3 (no-dangling + no-orphan).
+Anchor: [`upgrade-deps` § What counts as a dependency — discover, don't hard-code](../upgrade-deps/SKILL.md#what-counts-as-a-dependency--discover-dont-hard-code). That workflow discovers the repo's dependency surface from **ecosystem handlers** (Cargo → `Cargo.toml`, npm → `package.json`, mise → tracked `mise*.toml [tools]`, Actions → workflow `uses:` pins) and bumps what it finds. Discovery keeps it current for new manifest *instances* automatically; what it cannot self-detect is a new manifest *kind* it has no handler for, or a handler that has gone stale. This audit pins the handler set against reality. The shape mirrors [`audit-agents-md`](../audit-agents-md/SKILL.md) §2–§3 (no-dangling + no-orphan).
 
 ## 1. No orphan — every real manifest kind is handled
 

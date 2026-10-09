@@ -1,0 +1,5 @@
+module main;
+
+host type Number role(f64);
+
+fn f() -> Number { 1.0e(Number) }

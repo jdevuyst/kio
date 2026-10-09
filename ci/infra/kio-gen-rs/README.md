@@ -29,7 +29,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
     prog.pkg.kio               # five targets; invoked control probes declare all eight
     prog.kio                   # module prog; generated host mirror + helpers + fn gen(...)
     *.kio         # elaborator support files in surface-mode cases
-  run.args                     # exact generated core, surface, or control protocol
+  run.args                     # exact generated core, surface, control, or recursion protocol
   run.sh                       # valid I32 results: capture execution, then kio test
   expected.stdout              # independently modelled control trace, otherwise empty
   expected.exit                # single integer exit code
@@ -68,6 +68,27 @@ not compute expectations or interpret the general generated AST.
 
 The control domain includes three sequence receivers, zero through three bind/action steps, lexical lets/references/shadows, bounded nesting, and all nine ordered product/thunk/sequence descriptor pairs. Probe cases declare JS, TS, Python, Java, Rust, Go, Swift and Haskell targets. Invalid cases, including unshrunken mutations, drop the probe; `--prime-only` never creates it. Seeded semantic distribution assertions print first witness seeds, while literal trace tests, deterministic source/stdout/protocol checks and actual cross-backend execution provide independent coverage. Existing handwritten control goldens remain unchanged.
 
+Each sampled control schedule also carries an invoked finite type probe:
+staged universal application, a higher-rank function argument, higher-kinded
+projection through either of two constructors, or existential packing and
+opening. Existential payloads pair a hidden seed with its `Hidden -> String`
+observer; the opening invokes that observer and returns its result. The seed
+varies across a scalar, a product with distinct selected fields, and a nominal
+wrapper. Opening varies between explicit CPS and existential `let` syntax.
+Sequence probes pass their actual selected value through the type probe;
+block probes supply a sampled string after observing their blocks. The type
+probe's result is printed and passed into any recursive probe, whose returned
+value is also printed.
+
+Optional finite recursion probes select `generated-recursion-main`, which adds
+the standard `testapi/iter.loop` and `testapi/iter.loop_reentry` capabilities to
+the control contract. Fuel ranges from zero through three. Singleton and mutual
+functions exercise tail calls, pending work, changed type arguments with and
+without pending work, and escaped
+callbacks, including changed type arguments across an escape. Escaped callbacks
+run after the creating call returns. An independent fuel-and-mode trace records
+every step, base case, pending continuation, and selected value.
+
 ## Cross-implementation agreement
 
 `ci/run-tests.sh` natively handles multiple implementations via repeated `--impl-def=` flags. Its [command reference](../../run-tests.sh) defines the implementation-descriptor schema. The script asserts every impl matches `expected.stdout`, `expected.exit`, and the case's stderr policy, and prints a divergent-cases table when impls disagree.
@@ -100,8 +121,9 @@ Layer (2) of the self-tests asserts that the corpus hits every **coverable** exi
 
 - **1 (internal error)** — unreachable from well-formed input; if the generator triggers it, that's an implementation bug, not coverage signal. (This was one of the value propositions in practice — see "Bugs found" below.)
 - **2 (CLI usage error)** — about how `kio` is invoked, not Kio source.
-- **10 / 20 / 40 (non-specific fallback buckets)** — reaching them is a sign the impl failed to classify, not a coverage target.
-- **16 (totality error)** — kio-gen doesn't yet emit the productions that trigger this category (strict-positivity violations, non-exhaustive `match`, unreachable clauses). A candidate mutator if the harness keeps growing.
+- **10 (non-specific compile error)** — the mutators isolate a more specific compile category.
+- **20 / 40 (bridge / build error)** — the mutator catalog changes module source inside an otherwise valid fixed package and build contract.
+- **16 (totality error)** — the catalog preserves positive recursive types and structural recursion. Non-exhaustive and unreachable `match!` clauses belong to elaborator category 15.
 
 ## Surface coverage
 
@@ -114,9 +136,9 @@ same as for exit codes: when a form is added to the surface and the
 generator doesn't grow to cover it in the same change, the
 distribution test should be the thing that fails.
 
-**Covered today:** the Kio' core (defns, lambdas, applications, type
-and value paths, intrinsic calls) plus every surface form in
-`specs/language.md`:
+The generation inventory combines freely composed typed terms with bounded
+invoked probes. Its distribution assertions cover the following production
+cells; fixed support declarations supply their explicitly described helpers:
 
 - Tuple literals `(a, b, ...)`.
 - `if`/`else` conditionals.
@@ -146,12 +168,19 @@ and value paths, intrinsic calls) plus every surface form in
   - **Algebraic palette** (6 forms): `iso!`, `into!`, `onto!`,
     `align!`, `ease!`, `atom!`. `atom!` restricts to atomic targets
     per the spec's single-arm rule; the other five admit identity
-    at every type (generated types are monomorphic, so `ease!`'s
+    at every type (the freely composed term domain uses monomorphic targets, so `ease!`'s
     polymorphic-source/target rejection never applies).
-- UFCS — `r.>m` and `r.>m(rest)` chains, emitted by occasionally
-  rewrapping a generated `PolyCall` or `App` whose first
-  value-arg matches the callee's first param type. UFCS is
-  value-args only (type-args are backsolved by the typer).
+- UFCS — all four spellings, `.>`, `.>>`, `.<`, and `.<<`, with bare
+  receiver-only forms and nonempty argument tails. Rewrapping a generated
+  `PolyCall` or `App` removes the appropriate endpoint value and preserves
+  the original call order in the core rendering. Polymorphic calls vary
+  explicit and inferred type arguments. A finite staged probe places a type
+  binder after the first value slot and observes the selected first value.
+- Higher-rank function values, higher-kinded application, and nominal
+  existentials use the invoked type-probe domain described above.
+- Recursive function singletons and groups, plus `recur`, `recur(cont)`,
+  `recur(poly)`, `recur(poly, cont)`, `recur(escape)`, and `recur(poly, escape)`, use the finite
+  recursion-probe domain described above.
 - `.arg.` placeholder lambdas — emitted at function-typed targets
   where one of the params has the function's declared return
   type. The body is the identity-on-that-slot `.arg. { argN }`. Kio'

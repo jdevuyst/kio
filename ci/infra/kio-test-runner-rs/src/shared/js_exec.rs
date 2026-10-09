@@ -430,9 +430,9 @@ fn run_js_protocol<'js>(
         ProtocolExecution::Invoke(ExportDriver::HostSubstitutedUnitCallback) => {
             run_host_substituted_unit_callback_js(ctx, pkg_obj, protocol)
         }
-        ProtocolExecution::Invoke(ExportDriver::ReturnedForallCallByValue) => {
-            run_returned_forall_call_by_value_js(ctx, pkg_obj, protocol)
-        }
+        ProtocolExecution::Invoke(
+            ExportDriver::ReturnedForallCallByValue | ExportDriver::ReturnedForallHostFailure,
+        ) => run_returned_forall_call_by_value_js(ctx, pkg_obj, protocol),
         ProtocolExecution::Invoke(ExportDriver::FacadeSelectorCollisions) => {
             run_facade_selector_collisions_js(ctx, pkg_obj, protocol)
         }
@@ -520,18 +520,23 @@ fn run_returned_forall_call_by_value_js<'js>(
         .set("__kio_protocol_pkg__", pkg_obj.clone())
         .map_err(|e| format!("installing protocol package binding: {e}"))?;
     let main = export_base_js_expr(protocol, "main");
+    let failure_check = if protocol == RunnerProtocol::ReturnedForallHostFailure {
+        r#"try {
+    run();
+    throw new Error("produce did not throw");
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "produce failed") throw error;
+    __kio_host_print__("caught\n");
+  }"#
+    } else {
+        ""
+    };
     let script = format!(
         r#"
 (() => {{
   const run = {main}.main;
   run();
-  try {{
-    run();
-    throw new Error("produce did not throw");
-  }} catch (error) {{
-    if (!(error instanceof Error) || error.message !== "produce failed") throw error;
-    __kio_host_print__("caught\n");
-  }}
+  {failure_check}
 }})()
 "#
     );
@@ -2221,17 +2226,17 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             "() => { __kio_host_print__('create\\n'); return { advance: () => { __kio_host_print__('apply\\n'); return null; } }; }".to_owned()
         }
         HostFnBodyKind::TraceUnit { text } => format!(
-            "() => {{ __kio_host_print__({} + '\\n'); }}",
+            "() => {{ __kio_host_print__({} + '\\n'); return null; }}",
             js_string_literal(text)
         ),
         HostFnBodyKind::StagedUnitCall => {
-            "(_value) => { __kio_host_print__('staged Unit host call\\n'); }".to_owned()
+            "(_value) => { __kio_host_print__('staged Unit host call\\n'); return null; }".to_owned()
         }
         HostFnBodyKind::UnreachableI32Print { .. } => {
             "(_n) => { throw new Error('unreachable host function'); }".to_owned()
         }
-        HostFnBodyKind::Print { .. } => "(s) => __kio_host_print__(s)".to_owned(),
-        HostFnBodyKind::Eprint { .. } => "(s) => __kio_host_eprint__(s)".to_owned(),
+        HostFnBodyKind::Print { .. } => "(s) => { __kio_host_print__(s); return null; }".to_owned(),
+        HostFnBodyKind::Eprint { .. } => "(s) => { __kio_host_eprint__(s); return null; }".to_owned(),
         HostFnBodyKind::Exit { .. } => "(n) => __kio_host_exit__(n)".to_owned(),
         HostFnBodyKind::Loop => {
             "(step, s) => { while (true) { const out = step(s); \
@@ -2259,7 +2264,7 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             render_numeric_to_string_value(value.fixture.role())
         }
         HostFnBodyKind::BoolToString { .. } => "(v) => String(v)".to_owned(),
-        HostFnBodyKind::PrintI32 { .. } => "(n) => __kio_host_print__(String(n))".to_owned(),
+        HostFnBodyKind::PrintI32 { .. } => "(n) => { __kio_host_print__(String(n)); return null; }".to_owned(),
         HostFnBodyKind::InstanceMark { .. } => "(n) => { __kio_host_print__(__exchange_label + ': ' + String(n) + '\\n'); return null; }".to_owned(),
         HostFnBodyKind::StringToInt { .. } => {
             "(s) => { if (!/^[+-]?\\d+$/.test(s)) return { _1: null }; \
@@ -2570,6 +2575,80 @@ mod tests {
     }
 
     #[test]
+    fn unit_host_bodies_preserve_effects_and_return_null() {
+        let cases = [
+            (
+                "print",
+                HostFnBodyKind::Print {
+                    string: role(RoleFixture::String),
+                },
+                "'printed'",
+                "printed",
+                "",
+            ),
+            (
+                "eprint",
+                HostFnBodyKind::Eprint {
+                    string: role(RoleFixture::String),
+                },
+                "'error'",
+                "",
+                "error",
+            ),
+            (
+                "print_i32",
+                HostFnBodyKind::PrintI32 {
+                    value: role(RoleFixture::I32),
+                },
+                "37",
+                "37",
+                "",
+            ),
+            (
+                "trace_unit",
+                HostFnBodyKind::TraceUnit { text: "observe" },
+                "",
+                "observe\n",
+                "",
+            ),
+            (
+                "staged_unit_call",
+                HostFnBodyKind::StagedUnitCall,
+                "null",
+                "staged Unit host call\n",
+                "",
+            ),
+        ];
+        let runtime = Runtime::new().expect("runtime");
+        let mut failures = Vec::new();
+        for (name, body, arguments, stdout, stderr) in cases {
+            let body = rendered_body(name, body);
+            let context = Context::full(&runtime).expect("context");
+            let valid = context.with(|ctx| {
+                // Native print helpers return Rust (), hence JS undefined.
+                // The public host body must supply the declared Unit value.
+                ctx.eval::<bool, _>(format!(
+                    "let stdout = '', stderr = ''; \
+                     const __kio_host_print__ = s => {{ stdout += s; }}; \
+                     const __kio_host_eprint__ = s => {{ stderr += s; }}; \
+                     const value = ({body})({arguments}); \
+                     value === null && stdout === {} && stderr === {}",
+                    js_string_literal(stdout),
+                    js_string_literal(stderr),
+                ))
+                .expect("execute Unit host body")
+            });
+            if !valid {
+                failures.push(name);
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "invalid Unit host bodies: {failures:?}"
+        );
+    }
+
+    #[test]
     fn instance_mark_returns_js_unit_and_captures_its_host_label() {
         let binding = RunnerProtocol::SameArtifactExchange.contract().host_fns[2];
         let body = render_js_host_fn_value(&binding);
@@ -2825,7 +2904,7 @@ mod tests {
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
         assert!(s.contains("\"testapi_io\": ({"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 
     /// An exact testapi contract spanning several modules nests each
@@ -2840,7 +2919,7 @@ mod tests {
         assert!(s.contains("\"testapi_text\": ({"));
         assert!(s.contains("\"testapi_arith\": ({"));
         assert!(s.contains("\"testapi_iter\": ({"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
         assert!(s.contains("\"add\": (a, b) => Number(BigInt.asIntN(32"));
     }
 
@@ -2987,7 +3066,7 @@ mod tests {
             "\"callStep\": (step, seed) => step({ _0: seed, _1: { _0: 'compound-callback', _1: true } })"
         ));
         assert!(s.contains("\"makePair\": (build, seed) => build(seed)._0"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 
     #[test]
@@ -2996,7 +3075,7 @@ mod tests {
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
         assert!(s.contains("\"makeStep\": (delta) => ((n) => Number(BigInt.asIntN(32"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 
     #[test]
@@ -3006,7 +3085,7 @@ mod tests {
         let s = build_host_record_expression(&host, protocol);
         assert!(s.contains("\"boxMake\": (v) => ({ value: v })"));
         assert!(s.contains("\"boxGet\": (box) => box.value"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 
     #[test]
@@ -3016,7 +3095,7 @@ mod tests {
         let s = build_host_record_expression(&host, protocol);
         assert!(s.contains("\"makePair\": (n, s) => ({ _0: n, _1: s })"));
         assert!(s.contains("\"sumToString\": (v) => ('_0' in v ? String(v._0) : v._1)"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 
     /// The testapi `host-type-roundtrip` protocol nests its bespoke
@@ -3032,6 +3111,6 @@ mod tests {
         assert!(s.contains("\"makeToken\": (n) => ({ value: n })"));
         assert!(s.contains("\"tokenValue\": (token) => token.value"));
         assert!(s.contains("\"testapi_io\": ({"));
-        assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
+        assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 }

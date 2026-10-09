@@ -1,0 +1,23 @@
+signature contract v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        import __comptime__;
+        host fn old(value: __Type__) -> Comptime_bool;
+        pub fn keep() -> .
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      module api {
+        old
+      }
+    }
+  }
+}

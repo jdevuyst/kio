@@ -123,6 +123,7 @@ pub enum ExportDriver {
     NestedCurriedRoundtrip,
     HostSubstitutedUnitCallback,
     ReturnedForallCallByValue,
+    ReturnedForallHostFailure,
     FacadeSelectorCollisions,
     PublicWordNames,
     ModuleAliasScopeCollision,
@@ -460,10 +461,9 @@ pub enum HostFnBodyKind {
     InvokeSubstitutedUnitCallback {
         text: HostRoleRef,
     },
-    /// Return one rank-N value whose only protocol-owned observation is at
-    /// Unit on the first call, then fail on the second call. The first host
-    /// call is performed once before the returned type application stages are
-    /// used twice; the second failure must propagate back through the package.
+    /// Return a total `[A] .` value on the first call. A repeated producer call
+    /// fails; catchable hosts additionally exercise that failure through the
+    /// package in the separate host-failure protocol.
     ReturnedForallUnit,
     /// Create a total `[A] .` value without entering its type stage.
     /// Creation emits `create`; each selection independently emits `apply`.
@@ -879,7 +879,7 @@ impl HostFnBodyKind {
             Self::InvokeSubstitutedUnitCallback { text } => {
                 format!("((. -> {})) -> {}", role(text), role(text))
             }
-            Self::ReturnedForallUnit => "(.) -> [#0] #0".to_owned(),
+            Self::ReturnedForallUnit => "(.) -> [#0] .".to_owned(),
             Self::ForallStageEffects => "() -> ([#0] .)".to_owned(),
             Self::TraceUnit { .. } => "() -> .".to_owned(),
             Self::StagedUnitCall => "[#0] (#0) -> [#1] (.) -> .".to_owned(),
@@ -1037,6 +1037,7 @@ pub const EMPTY_API_MAIN_PROTOCOL_NAME: &str = "empty-api-main";
 pub const GENERATED_CORE_MAIN_PROTOCOL_NAME: &str = "generated-core-main";
 pub const GENERATED_SURFACE_MAIN_PROTOCOL_NAME: &str = "generated-surface-main";
 pub const GENERATED_CONTROL_MAIN_PROTOCOL_NAME: &str = "generated-control-main";
+pub const GENERATED_RECURSION_MAIN_PROTOCOL_NAME: &str = "generated-recursion-main";
 pub const EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME: &str = "export-namespace-roundtrip";
 pub const EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "export-callback-roundtrip";
 pub const EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME: &str = "export-module-roundtrip";
@@ -1086,6 +1087,7 @@ pub const HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-interleav
 pub const NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME: &str = "nested-curried-roundtrip";
 pub const HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME: &str = "host-substituted-unit-callback";
 pub const RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME: &str = "returned-forall-call-by-value";
+pub const RETURNED_FORALL_HOST_FAILURE_PROTOCOL_NAME: &str = "returned-forall-host-failure";
 pub const HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME: &str = "host-forall-stage-effects";
 pub const TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME: &str = "type-only-stage-trace";
 pub const EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME: &str = "export-type-only-roundtrip";
@@ -1215,6 +1217,7 @@ pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
     NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME,
     HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME,
     RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME,
+    RETURNED_FORALL_HOST_FAILURE_PROTOCOL_NAME,
     HOST_STAGED_UNIT_CALL_PROTOCOL_NAME,
     FACADE_SELECTOR_COLLISIONS_PROTOCOL_NAME,
     PUBLIC_WORD_NAMES_PROTOCOL_NAME,
@@ -1262,6 +1265,7 @@ pub enum RunnerProtocol {
     GeneratedCoreMain,
     GeneratedSurfaceMain,
     GeneratedControlMain,
+    GeneratedRecursionMain,
     ExportNamespaceRoundtrip,
     ExportCallbackRoundtrip,
     ExportModuleRoundtrip,
@@ -1415,10 +1419,13 @@ pub enum RunnerProtocol {
     /// explicit Unit value before returning the resulting Text.
     HostSubstitutedUnitCallback,
     /// `00_success/ffi_returned_forall_call_by_value` — a host call returning
-    /// `[A] A` is captured before a later host effect, then instantiated at
+    /// `[A] .` is captured before a later host effect, then instantiated at
     /// Unit twice. The fixed trace proves the original host call occurs once
     /// and each returned type application is call-by-value.
     ReturnedForallCallByValue,
+    /// The same positive stage sequence followed by a second invocation whose
+    /// producer failure really unwinds on hosts with catchable failures.
+    ReturnedForallHostFailure,
     /// Host-created `[A] .` values stay inert until selected, including when
     /// discarded; repeated selections execute their body independently.
     HostForallStageEffects,
@@ -1704,6 +1711,12 @@ const FNS_GENERATED_OBSERVATION: &[HostFnBinding] = &[host_fn(
 )];
 const FNS_GENERATED_CONTROL: &[HostFnBinding] =
     &[FNS_PRINT_STRING[0], FNS_GENERATED_OBSERVATION[0]];
+const FNS_GENERATED_RECURSION: &[HostFnBinding] = &[
+    FNS_PRINT_STRING[0],
+    FNS_GENERATED_OBSERVATION[0],
+    host_fn("testapi/iter", "loop", HostFnBodyKind::Loop),
+    host_fn("testapi/iter", "loop_reentry", HostFnBodyKind::LoopReentry),
+];
 const EXCHANGE_NUMBER: HostRoleRef = HostRoleRef::new("testapi", "Number", RoleFixture::I32);
 const EXCHANGE_BOX: HostTypeIdentity = HostTypeIdentity::new("testapi", "Box");
 const TYPES_SAME_ARTIFACT_EXCHANGE: &[HostTypeBinding] = &[
@@ -3715,6 +3728,7 @@ impl RunnerProtocol {
         Self::GeneratedCoreMain,
         Self::GeneratedSurfaceMain,
         Self::GeneratedControlMain,
+        Self::GeneratedRecursionMain,
         Self::ExportNamespaceRoundtrip,
         Self::ExportCallbackRoundtrip,
         Self::ExportModuleRoundtrip,
@@ -3751,6 +3765,7 @@ impl RunnerProtocol {
         Self::NestedCurriedRoundtrip,
         Self::HostSubstitutedUnitCallback,
         Self::ReturnedForallCallByValue,
+        Self::ReturnedForallHostFailure,
         Self::HostForallStageEffects,
         Self::HostStagedUnitCall,
         Self::TypeOnlyStageTrace,
@@ -3854,6 +3869,7 @@ impl RunnerProtocol {
             Self::GeneratedCoreMain => GENERATED_CORE_MAIN_PROTOCOL_NAME,
             Self::GeneratedSurfaceMain => GENERATED_SURFACE_MAIN_PROTOCOL_NAME,
             Self::GeneratedControlMain => GENERATED_CONTROL_MAIN_PROTOCOL_NAME,
+            Self::GeneratedRecursionMain => GENERATED_RECURSION_MAIN_PROTOCOL_NAME,
             Self::ExportNamespaceRoundtrip => EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportCallbackRoundtrip => EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportModuleRoundtrip => EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME,
@@ -3892,6 +3908,7 @@ impl RunnerProtocol {
             Self::NestedCurriedRoundtrip => NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostSubstitutedUnitCallback => HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME,
             Self::ReturnedForallCallByValue => RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME,
+            Self::ReturnedForallHostFailure => RETURNED_FORALL_HOST_FAILURE_PROTOCOL_NAME,
             Self::HostForallStageEffects => HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME,
             Self::HostStagedUnitCall => HOST_STAGED_UNIT_CALL_PROTOCOL_NAME,
             Self::TypeOnlyStageTrace => TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME,
@@ -4025,6 +4042,7 @@ impl RunnerProtocol {
             GENERATED_CORE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedCoreMain),
             GENERATED_SURFACE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedSurfaceMain),
             GENERATED_CONTROL_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedControlMain),
+            GENERATED_RECURSION_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedRecursionMain),
             EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportNamespaceRoundtrip),
             EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportCallbackRoundtrip),
             EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportModuleRoundtrip),
@@ -4065,6 +4083,7 @@ impl RunnerProtocol {
             NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::NestedCurriedRoundtrip),
             HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME => Ok(Self::HostSubstitutedUnitCallback),
             RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME => Ok(Self::ReturnedForallCallByValue),
+            RETURNED_FORALL_HOST_FAILURE_PROTOCOL_NAME => Ok(Self::ReturnedForallHostFailure),
             HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME => Ok(Self::HostForallStageEffects),
             HOST_STAGED_UNIT_CALL_PROTOCOL_NAME => Ok(Self::HostStagedUnitCall),
             TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME => Ok(Self::TypeOnlyStageTrace),
@@ -4253,6 +4272,12 @@ impl RunnerProtocol {
                 FNS_GENERATED_CONTROL,
                 false,
             ),
+            Self::GeneratedRecursionMain => invoke_contract(
+                ExportDriver::Main { module: "prog" },
+                TYPES_GENERATED_SURFACE,
+                FNS_GENERATED_RECURSION,
+                false,
+            ),
 
             Self::ExportNamespaceRoundtrip => invoke_contract(
                 ExportDriver::NamespaceRoundtrip,
@@ -4428,6 +4453,12 @@ impl RunnerProtocol {
             ),
             Self::ReturnedForallCallByValue => invoke_contract(
                 ExportDriver::ReturnedForallCallByValue,
+                NO_HOST_TYPES,
+                FNS_RETURNED_FORALL_CALL_BY_VALUE,
+                true,
+            ),
+            Self::ReturnedForallHostFailure => invoke_contract(
+                ExportDriver::ReturnedForallHostFailure,
                 NO_HOST_TYPES,
                 FNS_RETURNED_FORALL_CALL_BY_VALUE,
                 true,
@@ -5245,7 +5276,7 @@ mod tests {
         );
         assert_eq!(
             contract.host_fns[0].body.canonical_prime_signature(),
-            "(.) -> [#0] #0"
+            "(.) -> [#0] ."
         );
         assert_eq!(
             contract.host_fns[1].body,
@@ -5255,6 +5286,21 @@ mod tests {
             contract.host_fns[2].body,
             HostFnBodyKind::TraceUnit { text: "consume" }
         );
+    }
+
+    #[test]
+    fn returned_forall_failure_reuses_the_honest_positive_host_contract() {
+        let positive = RunnerProtocol::ReturnedForallCallByValue.contract();
+        let protocol = RunnerProtocol::ReturnedForallHostFailure;
+        let failure = protocol.contract();
+        assert_eq!(RunnerProtocol::parse(protocol.name()), Ok(protocol));
+        assert_eq!(failure.host_types, positive.host_types);
+        assert_eq!(failure.host_fns, positive.host_fns);
+        assert_eq!(
+            failure.execution,
+            ProtocolExecution::Invoke(ExportDriver::ReturnedForallHostFailure)
+        );
+        assert!(!protocol.supports_dyn_load_prime());
     }
 
     #[test]
@@ -5344,6 +5390,7 @@ mod tests {
     fn trace_unit_protocols_use_the_canonical_unit_domain() {
         for protocol in [
             RunnerProtocol::ReturnedForallCallByValue,
+            RunnerProtocol::ReturnedForallHostFailure,
             RunnerProtocol::TypeOnlyStageTrace,
         ] {
             let traces = protocol
@@ -5925,6 +5972,14 @@ mod tests {
             RunnerProtocol::GeneratedControlMain.main_module(),
             Some("prog")
         );
+        let recursion = RunnerProtocol::GeneratedRecursionMain.contract();
+        assert_eq!(recursion.host_types, surface.host_types);
+        assert_eq!(&recursion.host_fns[..2], control.host_fns);
+        assert_eq!(recursion.host_fns, FNS_GENERATED_RECURSION);
+        assert_eq!(
+            RunnerProtocol::GeneratedRecursionMain.main_module(),
+            Some("prog")
+        );
     }
 
     #[test]
@@ -6115,6 +6170,10 @@ mod tests {
             (
                 RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME,
                 RunnerProtocol::ReturnedForallCallByValue,
+            ),
+            (
+                RETURNED_FORALL_HOST_FAILURE_PROTOCOL_NAME,
+                RunnerProtocol::ReturnedForallHostFailure,
             ),
             (
                 HOST_STAGED_UNIT_CALL_PROTOCOL_NAME,
@@ -6309,6 +6368,7 @@ mod tests {
             RunnerProtocol::NestedCurriedRoundtrip,
             RunnerProtocol::HostSubstitutedUnitCallback,
             RunnerProtocol::ReturnedForallCallByValue,
+            RunnerProtocol::ReturnedForallHostFailure,
             RunnerProtocol::HostStagedUnitCall,
             RunnerProtocol::TypeOnlyStageTrace,
             RunnerProtocol::ExportNewtypeIgnoredArgumentRoundtrip,

@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use kio_gen::ast::{Base, Program, Term, Type, UfcsKind};
+use kio_gen::ast::{Base, Program, Term, Type, UfcsKind, UfcsSpelling};
 use kio_gen::{emit, generate, program_seed, render, shrink};
 
 fn initial_env() -> HashMap<String, Type> {
@@ -61,6 +61,86 @@ fn type_param_payload_equality_is_deep() {
 }
 
 const SAMPLE_SEEDS: u64 = 200;
+
+#[test]
+fn ufcs_directions_preserve_distinct_argument_types_and_core_order() {
+    let env = HashMap::from([("number".into(), Type::i32()), ("text".into(), Type::str())]);
+    for spelling in UfcsSpelling::ALL {
+        for explicit_type_args in [false, true] {
+            let first = matches!(
+                spelling,
+                UfcsSpelling::ReceiverFirst | UfcsSpelling::CalleeFirst
+            );
+            let term = Term::Ufcs {
+                receiver: Box::new(Term::Var(if first { "number" } else { "text" }.into())),
+                callee_name: "const1".into(),
+                rest_args: vec![Term::Var(if first { "text" } else { "number" }.into())],
+                callee_kind: UfcsKind::PolyCall {
+                    type_args: vec![Type::i32(), Type::str()],
+                },
+                spelling,
+                explicit_type_args,
+            };
+            assert_eq!(type_of(&term, &env).unwrap(), Type::i32());
+            assert_eq!(
+                render::render_term_opts(&term, &render::RenderOpts { surface: false }),
+                "const1(I32, String, number, text)"
+            );
+            let args = if explicit_type_args {
+                "I32, String, "
+            } else {
+                ""
+            };
+            let expected = match spelling {
+                UfcsSpelling::ReceiverFirst => format!("(number).>const1({args}text)"),
+                UfcsSpelling::ReceiverLast => format!("(text).>>const1({args}number)"),
+                UfcsSpelling::CalleeLast => format!("const1({args}number).<(text)"),
+                UfcsSpelling::CalleeFirst => format!("const1({args}text).<<(number)"),
+            };
+            assert_eq!(
+                render::render_term_opts(&term, &render::RenderOpts { surface: true }),
+                expected
+            );
+            let Term::Ufcs {
+                mut receiver,
+                callee_name,
+                rest_args,
+                callee_kind,
+                explicit_type_args,
+                ..
+            } = term
+            else {
+                unreachable!()
+            };
+            *receiver = Term::Var(if first { "text" } else { "number" }.into());
+            let wrong = Term::Ufcs {
+                receiver,
+                callee_name,
+                rest_args,
+                callee_kind,
+                spelling,
+                explicit_type_args,
+            };
+            assert!(
+                type_of(&wrong, &env).is_err(),
+                "wrong receiver type accepted for {spelling:?}"
+            );
+        }
+        let bare = Term::Ufcs {
+            receiver: Box::new(Term::Var("number".into())),
+            callee_name: "id".into(),
+            rest_args: vec![],
+            callee_kind: UfcsKind::PolyCall {
+                type_args: vec![Type::i32()],
+            },
+            spelling,
+            explicit_type_args: false,
+        };
+        let rendered = render::render_term_opts(&bare, &render::RenderOpts { surface: true });
+        assert!(!rendered.contains("id()"));
+        assert_eq!(type_of(&bare, &env).unwrap(), Type::i32());
+    }
+}
 
 #[test]
 fn generated_support_exercises_ordinary_and_marked_type_names() {
@@ -643,13 +723,21 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             callee_name,
             rest_args,
             callee_kind,
+            spelling,
+            ..
         } => {
             // UFCS is a rendering rewrap around an underlying call.
             // Selfcheck retypes through the recorded fallback
-            // shape: a `PolyCall` with `(type_args, receiver,
-            // rest_args)` or an `App` with `(receiver, rest_args)`.
-            let mut args = vec![(**receiver).clone()];
-            args.extend(rest_args.iter().cloned());
+            // shape, restoring the receiver to its recorded endpoint slot.
+            let mut args = rest_args.clone();
+            match spelling {
+                UfcsSpelling::ReceiverFirst | UfcsSpelling::CalleeFirst => {
+                    args.insert(0, (**receiver).clone())
+                }
+                UfcsSpelling::ReceiverLast | UfcsSpelling::CalleeLast => {
+                    args.push((**receiver).clone())
+                }
+            }
             let reconstructed = match callee_kind {
                 UfcsKind::PolyCall { type_args } => Term::PolyCall {
                     name: callee_name.clone(),

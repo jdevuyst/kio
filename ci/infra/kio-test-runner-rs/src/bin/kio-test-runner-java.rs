@@ -852,7 +852,7 @@ fn java_returned_forall_type(binding: &HostFnBinding) -> String {
         ("testapi/main", "produce"),
         "the Java returned-forall oracle names its exact protocol site"
     );
-    java_forall_stage("V1;e0;q*b0;")
+    format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;"))
 }
 
 /// The protocol's exact [`HostApi`], rendered for Java. Member identity,
@@ -1339,8 +1339,9 @@ fn build_driver_source(
         );
     }
     if needs_float {
+        // Long.MAX_VALUE rounds up to 2^63 as a double, so that bound is exclusive.
         out.push_str(
-            "  static String floatToString(double value) {\n    if (value == Math.rint(value) && !Double.isInfinite(value)) {\n      return Long.toString((long) value);\n    }\n    return Double.toString(value);\n  }\n\n",
+            "  static String floatToString(double value) {\n    if (value == Math.rint(value) && value >= -0x1.0p63 && value < 0x1.0p63) {\n      return Long.toString((long) value);\n    }\n    return Double.toString(value);\n  }\n\n",
         );
     }
     if needs_wrap {
@@ -1840,7 +1841,8 @@ fn render_export_driver(
         ExportDriver::HostSubstitutedUnitCallback => {
             format!("    System.out.println({api_ns}.viaHost(_unit -> \"callback\"));\n")
         }
-        ExportDriver::ReturnedForallCallByValue => format!(
+        ExportDriver::ReturnedForallCallByValue => format!("    {main_ns}.main();\n"),
+        ExportDriver::ReturnedForallHostFailure => format!(
             "    {main_ns}.main();\n\
                  try {{\n\
                    {main_ns}.main();\n\
@@ -2228,7 +2230,7 @@ fn render_java_body_for_binding(
         }
         HostFnBodyKind::ReturnedForallUnit => {
             format!(
-                "if (returnedForallProduced) {{\n      System.out.println(\"throw\");\n      throw new IllegalStateException(\"produce failed\");\n    }}\n    returnedForallProduced = true;\n    System.out.println(\"produce\");\n    return new {}() {{\n      @Override\n      @SuppressWarnings(\"unchecked\")\n      public <KioPolyType_0> KioPolyType_0 advance() {{\n        return (KioPolyType_0) new Shapes.Unit();\n      }}\n    }};",
+                "if (returnedForallProduced) {{\n      System.out.println(\"throw\");\n      throw new IllegalStateException(\"produce failed\");\n    }}\n    returnedForallProduced = true;\n    System.out.println(\"produce\");\n    return new {}() {{\n      @Override\n      public <KioPolyType_0> Shapes.Unit advance() {{\n        return new Shapes.Unit();\n      }}\n    }};",
                 m.ret_type
             )
         }
@@ -2819,7 +2821,7 @@ mod tests {
             .find(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
             .expect("returned-forall binding");
         let method = java_method(binding, contract.host_types);
-        let expected = java_forall_stage("V1;e0;q*b0;");
+        let expected = format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;"));
 
         assert_eq!(method.ret_type, expected);
         let body = render_java_body_for_binding(
@@ -2830,13 +2832,10 @@ mod tests {
         );
         assert!(body.contains(&format!("return new {expected}()")), "{body}");
         assert!(
-            body.contains("public <KioPolyType_0> KioPolyType_0 advance()"),
+            body.contains("public <KioPolyType_0> Shapes.Unit advance()"),
             "{body}"
         );
-        assert!(
-            body.contains("return (KioPolyType_0) new Shapes.Unit();"),
-            "{body}"
-        );
+        assert!(body.contains("return new Shapes.Unit();"), "{body}");
     }
 
     #[test]
@@ -2952,5 +2951,33 @@ mod tests {
 
         assert_eq!(cmp_body("lt", "i32"), "return p0 < p1;");
         assert_eq!(cmp_body("leq", "f64"), "return p0 <= p1;");
+    }
+
+    #[test]
+    fn float_formatting_only_narrows_values_in_the_long_range() {
+        let protocol = RunnerProtocol::TestApiFloatF32F64;
+        let driver = build_driver_source(
+            &java_host_api_for_protocol(protocol),
+            protocol,
+            &EmittedPackage {
+                namespace: "float_fixture".to_owned(),
+                handle: "FloatFixture".to_owned(),
+                ns_dir: PathBuf::new(),
+            },
+        );
+        assert!(
+            driver.contains("value == Math.rint(value) && value >= -0x1.0p63 && value < 0x1.0p63"),
+            "the integral rendering path must exclude saturating long casts"
+        );
+        assert!(driver.contains("return Double.toString(value);"));
+        assert_eq!(
+            numeric_to_string_body("f32"),
+            "return Driver.floatToString((double) p0);"
+        );
+        assert_eq!(
+            numeric_to_string_body("f64"),
+            "return Driver.floatToString(p0);"
+        );
+        assert_eq!(numeric_to_string_body("i64"), "return String.valueOf(p0);");
     }
 }

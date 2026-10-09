@@ -908,7 +908,7 @@ Read those as three explicit requests to imported code:
 - `widen_sum!` injects a value into a target sum that contains its type.
 - `one_prod!` picks a slot out of a product by target type.
 
-That is enough for this tutorial. The full spine palette includes `reorder_*`, `narrow_*`, `widen_*`, `flatten_*`, `one_*`, and `fit!`; the checked implementations and per-form examples live in [Using libraries](../guides/using-libraries.md). The [structural sums guide](../guides/sums.md) covers `match!` in depth, and [Error handling](../guides/error-handling.md) shows how sums compose into explicit failure flow.
+That is enough for this tutorial. The full spine palette includes `reorder_*`, `narrow_*`, `widen_*`, `flatten_*`, `one_*`, and `fit!`; the checked implementations and per-form examples live in [the elaborator case study](../poc/elab.md). [Using libraries](../guides/using-libraries.md) explains how to adopt them. The [structural sums guide](../guides/sums.md) covers `match!` in depth, and [Error handling](../guides/error-handling.md) shows how sums compose into explicit failure flow.
 
 ## Chapter 10 — Where to go from here
 
@@ -918,7 +918,7 @@ The next layer is in [docs/guides/](../guides/), in roughly dependency order:
 
 - [Structural sums and pattern matching](../guides/sums.md) — the full vocabulary for sum types, including the more interesting `match!` patterns.
 - [UFCS calls](../guides/ufcs.md) — the four receiver-splice spellings and how they map back to ordinary calls.
-- [Using libraries](../guides/using-libraries.md) — checked imported elaborator examples, including the structural helpers used throughout the docs.
+- [Using libraries](../guides/using-libraries.md) — adopting imported libraries; [the elaborator case study](../poc/elab.md) supplies checked per-form examples of the structural helpers.
 - [Operators](../guides/operators.md) — fixed operator patterns and recursive / greedy slots.
 - [Variadic operators](../guides/variadic-operators.md) — four fold modes, element order, and collection literals.
 - [Structural products and row types](../guides/products.md) — how `&` plus type variables expresses row polymorphism and field update.

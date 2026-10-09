@@ -10,10 +10,8 @@
 //! Every parametric or recursive source newtype has one declaration-stable
 //! nominal carrier head. A nullary, nonrecursive, nonexistential newtype is
 //! transparent. Existential newtypes are GADTs whose CPS projector is the
-//! target of [`Expr::LowCpsProjectorApply`]. A package whose remaining
-//! phase-abstract shapes cannot be represented natively may use the
-//! private universal-carrier floor when its public boundary remains exact.
-//! Both paths share one typed FFI skin.
+//! target of [`Expr::LowCpsProjectorApply`]. The shared typed FFI skin
+//! connects these bodies to the package host contract.
 //!
 //! Where an erased-static backend (Go, Rust, Swift) erases an
 //! existential's sealed binders to its universal value and recovers
@@ -52,29 +50,6 @@ use crate::backends::boundary_facade::{
     CallableValueStageLayout,
 };
 use crate::backends::skin::FfiDir;
-
-/// Intentional native-body exclusions. The set is empty: reconstruction and
-/// rendering failures are emission errors, not evidence for another body path.
-#[derive(Debug, Clone)]
-pub enum NativeUnsupported {}
-
-impl NativeUnsupported {
-    pub(crate) fn reason(&self) -> &str {
-        match *self {}
-    }
-
-    /// Emit the fall-back reason to stderr when `KIO_DEBUG_HASKELL_NATIVE`
-    /// is set — a debug-only surface for diagnosing why a package took the
-    /// private-carrier body instead of the native one.
-    pub fn trace(&self, package_name: &str) {
-        if std::env::var_os("KIO_DEBUG_HASKELL_NATIVE").is_some() {
-            eprintln!(
-                "kio[haskell-native]: `{package_name}` -> universal-carrier body: {}",
-                self.reason()
-            );
-        }
-    }
-}
 
 /// A carrier newtype rendered as a native type constructor. Carries every
 /// type param (a transformer carrier such as `State_t[S][*M][A]` has a
@@ -167,27 +142,24 @@ enum NewtypeMemberKind {
 
 /// Render the package's native body section — nominal type declarations,
 /// every module fn at its reconstructed native type, and the native
-/// export wrappers. Only an explicit [`NativeUnsupported`] can select the
-/// private-carrier fallback; emission errors propagate separately.
-/// The header / host record / structural family API are the
-/// caller's (identical in both paths); this returns the type
-/// decls followed by the `mod_*` / `exp_*` definitions.
+/// export wrappers. Reconstruction and rendering failures propagate as
+/// emission errors. The caller assembles these pieces around the shared
+/// structural family API.
 pub(crate) fn render_native_body<'a>(
     package: &'a Package<Routed>,
     names: &'a super::emit::HaskellNames,
     public_ffi_decls: &str,
     prepared: &crate::backends::boundary_facade::PreparedBoundaryCallableSites,
-) -> Result<Result<NativeRender, NativeUnsupported>, EmitError> {
+) -> Result<NativeRender, EmitError> {
     let ctx = NativeCtx::build(package, names, prepared)?;
-    Ok(Ok(ctx.render(public_ffi_decls)?))
+    ctx.render(public_ffi_decls)
 }
 
 /// The native render's output pieces, slotted into the package module
 /// `<Ns>.hs` by the caller around the shared skin.
 pub struct NativeRender {
     /// The host value record at exact native types. Generic host functions
-    /// quantify their Kio type parameters directly instead of erasing them
-    /// into the universal fallback representation.
+    /// quantify their Kio type parameters directly.
     pub host_record: String,
     /// Nominal `newtype` / `data` declarations and their helpers, in
     /// deterministic order.
@@ -1115,8 +1087,7 @@ impl<'a> NativeCtx<'a> {
             // transparent: it is its payload type, with identity constructor
             // and projector. Parametric and recursive source newtypes emit
             // their declaration-stable nominal carriers below; existential
-            // source newtypes use the separate nominal carrier table. The
-            // private universal fallback remains a distinct representation.
+            // source newtypes use the separate nominal carrier table.
             if !c.opaque {
                 continue;
             }
@@ -4426,7 +4397,7 @@ impl NativeExprEmitter<'_> {
     /// nullary, nonrecursive, nonexistential field newtype is transparent;
     /// parametric and recursive field newtypes use their declaration-stable
     /// nominal carrier projector. Existential field access is rejected before
-    /// this IR, and the private universal fallback remains distinct.
+    /// this IR.
     fn build_field_get(
         &self,
         target_ty: &Type<Routed>,

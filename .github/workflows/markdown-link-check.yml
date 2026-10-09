@@ -26,8 +26,8 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411  # v2.8.0
         with:
-          # Cover root README/CONTRIBUTING/ROADMAP/AGENTS, specs/, and docs/.
-          args: --no-progress --verbose './*.md' 'specs/**/*.md' 'docs/**/*.md'
+          # Cover root README/CONTRIBUTING/ROADMAP/AGENTS, specs/, docs/, and evidence/.
+          args: --no-progress --verbose './*.md' 'specs/**/*.md' 'docs/**/*.md' 'evidence/**/*.md'
           # Never fail the workflow — this avoids stale external-link
           # rot from showing up as a red CI status on the repo. Broken
           # links surface in the run output, and the issue-sync step

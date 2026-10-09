@@ -115,17 +115,99 @@ The [case study](../poc/dyn_load_prime.md) and the package under
 the module set the loader exposes. Once linked, the loader's API is
 ordinary `pub fn`s your host calls.
 
+For example, add `docs_loader.dep.kio` at your consumer package root:
+
+```kio {variant=dependency}
+dependency docs_loader;
+
+source {
+  git "https://github.com/jdevuyst/kio/";
+  ref "main";
+  path "test-data/poc/dyn_load_prime/workdir/dyn_load_prime.pkg.kio"
+}
+```
+
+Then run `kio dep fetch` from that root and commit the dependency file, lock,
+and materialized `docs_loader/` tree. The local alias determines your imports:
+
+```kio {}
+module consumer/loader_api;
+
+import docs_loader/defaults(instantiate_default);
+import docs_loader/loader(Diag, Image, Loaded);
+import docs_loader/loader/scan(load_package);
+import docs_loader/testapi(String);
+
+pub fn instantiate_image(im: Image) -> Loaded | Diag { instantiate_default(im) }
+```
+
+For a complete bridge, this simple consumer package exposes the loader's
+entire public module tree as well as its own entry module:
+
+```kio {variant=package}
+package consumer;
+
+bridge {
+  consumer/**;
+  docs_loader/**
+}
+```
+
+This deliberately broad bridge makes every plain-public loader declaration
+host-visible, not just `instantiate_image`; it also includes the named types
+reached by the exported signatures. A narrower facade must retain that
+[type closure](../../specs/package.md#the-bridge-block).
+The loader needs the host
+types `I32`, `String`, `Bool`, `F64`, and opaque `Scalar`, together with the
+functions declared in its `testapi/arith`, `fmt`, `io`, `iter`, `scalar`, and
+`text` modules. Supply those capabilities through your chosen backend's host
+interface; the [host guides](../README.md#host-integrations) explain that interface.
+The loader's committed list/elaborator dependencies already route their host
+requirements through its own adapters. A consumer using existing capability
+modules can instead apply ordinary [rehost clauses](pkg.md#rehosting-a-dependencys-host-items-with-rehost)
+for the matching declarations. The standard guest adapter in
+`instantiate_default` does not implement these outer host capabilities for you;
+the [case study](../poc/dyn_load_prime.md) distinguishes that adapter from a
+custom guest vocabulary.
+
+<!--kio {harness=load_image placeholder="__INSERT_CODE_HERE__"}
+module guide/load;
+
+import docs_loader/loader/scan(load_package);
+import docs_loader/loader(Lr_image, Lr_diag, un_load_outcome);
+import docs_loader/testapi(String);
+import elab/match(match);
+
+fn check_load(image_text: String) {
+  __INSERT_CODE_HERE__
+}
+-->
+
+<!--kio {harness=instantiate_image placeholder="__INSERT_CODE_HERE__"}
+module guide/instantiate;
+
+import docs_loader/defaults(instantiate_default);
+import docs_loader/loader(Image, Loaded, Diag);
+import elab/match(match);
+
+fn check_instantiate(im: Image) {
+  __INSERT_CODE_HERE__
+}
+-->
+
 ## Load the image text
 
 Read the image's emitted Kio' source text — the bytes from
 `out/kio-prime/` — and hand it to the loader. You get back a **load
 outcome**: a loaded image, or a diagnostic when the text is malformed.
 
-```kio {ignore}
+```kio {@load_image}
 // `image_text` is the emitted tree the host read from out/kio-prime/.
 match! un_load_outcome(load_package(image_text)) {
-  .(im: Lr_image) { /* a loaded image — check and instantiate it below */ };
-  .(d: Lr_diag) { /* malformed image: report the diagnostic */ }
+  .(im: Lr_image) { () };
+  // check and instantiate the loaded image below
+  .(d: Lr_diag) { () }
+  // report the malformed-image diagnostic
 }
 ```
 
@@ -289,11 +371,13 @@ descriptor; a successfully minted value fires only after receiving the runtime
 values in every declared application group. The callback set is fixed per
 instantiation; the case study's callback section shows the whole pattern.
 
-```kio {ignore}
+```kio {@instantiate_image}
 // `im` is the loaded image from the load step.
 match! instantiate_default(im) {
-  .(handle: Loaded) { /* open the existential and call exports */ };
-  .(d: Diag) { /* a host requirement or top-level binding failed: report why */ }
+  .(handle: Loaded) { () };
+  // open the existential and call exports
+  .(d: Diag) { () }
+  // report the host requirement or top-level binding failure
 }
 ```
 

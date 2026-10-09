@@ -590,7 +590,7 @@ fn terminal(expr: &EvalExpr, local: impl FnOnce(usize) -> Option<Value>) -> Valu
         EvalExpr::NewtypeMember(member) => Value::NewtypeMember(member.clone()),
         EvalExpr::Const(value) => value.clone(),
         EvalExpr::Local(slot) => {
-            local(*slot).unwrap_or_else(|| Value::Atom(format!("<bad-local-{slot}>")))
+            local(*slot).expect("compiled local slot exists in the active evaluation layout")
         }
         EvalExpr::Atom(name) => Value::Atom(name.clone()),
         _ => unreachable!("terminal classification precedes reduction"),
@@ -923,7 +923,11 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
         let values: Vec<_> = slots
             .iter()
-            .filter_map(|slot| self.local(*slot).cloned())
+            .map(|slot| {
+                self.local(*slot)
+                    .expect("compiled capture slot exists in the active evaluation layout")
+                    .clone()
+            })
             .collect();
         if let Some(metrics) = self.ctx.metrics.as_deref() {
             metrics.record_capture_vec(values.len());
@@ -992,7 +996,11 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 }
                 let captured: Vec<Value> = captured_slots
                     .iter()
-                    .filter_map(|slot| self.local(*slot).cloned())
+                    .map(|slot| {
+                        self.local(*slot)
+                            .expect("compiled capture slot exists in the active evaluation layout")
+                            .clone()
+                    })
                     .collect();
                 if let Some(metrics) = ctx.metrics.as_deref() {
                     metrics.record_capture_vec(captured.len());
@@ -2610,6 +2618,52 @@ mod tests {
         let data = EvalRef::new(DataValue::new(name, Vec::new()));
         let weak = data.downgrade();
         (Value::Data(data), weak)
+    }
+
+    #[test]
+    #[should_panic(expected = "compiled local slot exists in the active evaluation layout")]
+    fn compiled_slot_missing_local_panics() {
+        eval(
+            &EvalExpr::Local(0),
+            &mut EvalSlots::root(Vec::new()),
+            &EvalCtx::new(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "compiled capture slot exists in the active evaluation layout")]
+    fn compiled_slot_missing_closure_capture_panics() {
+        let expr = EvalExpr::FnExpr {
+            function: test_eval_function(&[], EvalExpr::Unit),
+            captured_slots: vec![0].into(),
+            empty_closure_cache: Arc::new(OnceLock::new()),
+        };
+        eval(&expr, &mut EvalSlots::root(Vec::new()), &EvalCtx::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "compiled capture slot exists in the active evaluation layout")]
+    fn compiled_slot_missing_direct_call_capture_panics() {
+        let expr = EvalExpr::CallFnExpr {
+            function: test_eval_function(&[], EvalExpr::Unit),
+            captured_slots: vec![0].into(),
+            args: Vec::new(),
+        };
+        eval(&expr, &mut EvalSlots::root(Vec::new()), &EvalCtx::new());
+    }
+
+    #[test]
+    fn compiled_slot_bound_local_and_explicit_atom_remain_values() {
+        let ctx = EvalCtx::new();
+        let mut slots = EvalSlots::root(vec![Value::Bool(true)]);
+        assert!(matches!(
+            eval(&EvalExpr::Local(0), &mut slots, &ctx),
+            Value::Bool(true)
+        ));
+        assert!(matches!(
+            eval(&EvalExpr::Atom("free".into()), &mut slots, &ctx),
+            Value::Atom(name) if name == "free"
+        ));
     }
 
     #[test]

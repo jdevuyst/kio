@@ -67,19 +67,11 @@ and [`exec_either_handler_factory_order`](../../test-data/goldens/00_success/exe
 Private firing, shadowing, callable-argument, and cache-equivalence guards live
 beside the shared passes and enriched cache.
 
-The measured dispatch witness executes the same host-output assertion before
-and after this change. Instrumenting its generated JS function entries counted
-ordinary pure factory invocations falling from 9 to 5; `relay` and the unknown
-callback factory each remained at 1. This is avoided runtime work, not an
-end-to-end runtime-speed claim. A bounded debug-build ABBA comparison of
-`test-data/poc/elab` with `build js --no-cache` measured summed Enriched
-preparation at 18.16/22.84/19.97/21.41 ms (baseline/changed/changed/baseline),
-whole-command elapsed time at 37.18/36.05/45.69/53.91 s, and maximum RSS at
-344444/314952/346128/321100 KiB. The runs shared compiler resources with other
-work: they bound observed preparation and memory cost, but do not establish a
-whole-compiler or CI speedup. Each queried expression is visited once by the
-proof; declaration facts are indexed per consumer module, without traversing
-callee bodies or solving a package-wide effect graph.
+The [dispatch measurement record](../../evidence/backend-performance.md#callable-purity-dispatch-recovery)
+retains the avoided-work counts and bounded compiler-cost evidence. Each
+queried expression is visited once by the proof; declaration facts are indexed
+per consumer module, without traversing callee bodies or solving a package-wide
+effect graph.
 
 ## Runtime model — the body and the FFI skin
 
@@ -238,6 +230,51 @@ planning at the universal or capability-cohort level; use a family helper only
 when all family members genuinely share its contract; keep rendering syntax
 and unique integration leaves in the backend.
 
+### Backend quality and implementation cost
+
+Prefer trustworthy, maintainable backends and usable host APIs over maximal
+speed. Required semantics, ownership, callable stages, stack safety and
+practical generated-code scaling remain acceptance obligations. Distinguish
+those properties from an optional technique that improves speed, allocation
+or size. A known optional win may be declined when its added implementation,
+review and maintenance burden is not worthwhile: record the known benefit,
+simpler realization, concrete extra state or invariants, and conditions that
+would reopen the choice. No fresh benchmark is needed merely to rediscover
+that win. This does not excuse a broken required property, unexplained large
+resource gap, or unmeasured complexity retained for speed.
+
+Use the existing [performance inventory](implementation.md#compiler-performance-architecture)
+and shared backend guidance to discover relevant mechanisms and decisions.
+Keep durable rationale, applicability conclusions, measurements and their
+limits in [evidence](../../evidence/README.md), organized by subject; retain
+current rules and procedures here and public contracts in the specs. Link the
+owning evidence record instead of copying receipts into topics or skills.
+The record identifies the concern, preconditions, actual owners and consumers,
+evidence and reassessment conditions. Sharing earns credit when one owner
+implements a common decision; host-specific rendering and representation
+leaves may remain local.
+
+The [semantic propagation gate](#decision-record-and-propagation-gate) still
+covers every applicable backend and distinct occurrence. One shared owner's
+causal evidence may serve its actual consumers, but does not replace their
+required executing workflows. Reuse evidence while its source, representation,
+workload and toolchain assumptions remain relevant. Structural absence of a
+cost can be established from the path; a claim that a host optimizer removes
+generated work needs appropriate artifact, operation or runtime evidence.
+
+At admission, account for relevant inventory entries and shared API and
+architecture decisions through inheritance, independent realization,
+structural absence or an explicit optional-cost trade-off. Accounting does
+not require copying every technique or repeating its historical experiment;
+unresolved required evidence still blocks completion. At change time,
+reassess affected decisions, consumers and exclusions, including opportunities
+to consolidate duplicate semantic work. During audits, challenge a bounded
+selection using new backend lessons, changed assumptions, weak evidence or
+previously unexamined owners. Record the selection, outcome and limits so
+later reviews can vary their attention. Improvement includes simplifying and
+removing unnecessary machinery. Existing scope and contract-authority gates
+still govern follow-up work.
+
 ### Stable host release and capability floor
 
 Backend admission, and any explicitly authorized re-baseline of an existing
@@ -308,12 +345,14 @@ Emitter behavior, tests, audit findings, and similarities among peers are
 evidence; none can create or broaden a behavioral contract, and discovering a
 shared defect does not authorize fixing unrelated occurrences.
 
-For each settled reusable backend decision, preserve a durable record in its
-owning tracked artifacts. Record the authority, backend-neutral law, rationale
-and rejected alternatives, semantic applicability predicate, open-world and
-evaluation consequences, evidence, and every normative, implementation, test,
-guidance, and audit destination. A scratchpad may stage that work but is not
-the durable record.
+For each settled reusable backend decision, preserve its rationale and
+evidence in the appropriate subject record under [evidence/](../../evidence/README.md).
+Record the governing authority, backend-neutral law, rejected alternatives,
+semantic applicability predicate, open-world and evaluation consequences,
+evidence, and the normative, implementation, test, guidance and audit
+destinations. Current public contracts remain in specs; current procedures
+remain in topics and skills. Link the record from those owning instructions
+without duplicating it.
 
 Build the propagation ledger by enumerating every shipping backend and every
 semantically distinct occurrence to which the predicate may apply. The current
@@ -344,7 +383,7 @@ normative heading (including any `**Applies when:**` clause) and records only
 its host realization on the per-backend page; it does not copy the general law
 or state behavior its implementation does not provide.
 
-The skin's **backend-neutral structural conventions** have one code home each. Prepared boundary topology and live execution provenance live in [`crate::backends::boundary_facade`](../../kio-rs/src/backends/boundary_facade.rs); the legacy type-walking profiles and pure structural helpers live in [`crate::backends::skin`](../../kio-rs/src/backends/skin.rs) and its neighbours. Participating emitters consume the narrow planning surface, profile trait, or pure helper their independently classified representation requires; a backend-specific realization remains explicit where the host's representation calls for one:
+The skin's **backend-neutral structural conventions** have one code home each. Prepared boundary topology and live execution provenance live in [`crate::backends::boundary_facade`](../../kio-rs/src/backends/boundary_facade.rs); reusable conversion and structural helpers live in [`crate::backends::skin`](../../kio-rs/src/backends/skin.rs) and its neighbours. Participating emitters consume the narrow planning surface or pure helper their independently classified representation requires; a backend-specific realization remains explicit where the host's representation calls for one:
 
 - The **right-spine walk** over `&` / `|` is a pure `Type` operation — [`Type::right_spine_product`](../../kio-rs/src/ast.rs) / `Type::right_spine_sum`; emitters call it directly (Rust's `right_spine_walk_*` collect the borrowed walk into owned slots for its private body conversion).
 - The **3-step key fallback** applies when the host facade exposes keyed
@@ -357,7 +396,7 @@ The skin's **backend-neutral structural conventions** have one code home each. P
   resolves a bare leaf from ambient package contents. The pure `skin` helpers
   remain available only to non-public/internal conversion code whose input is
   not a prepared facade occurrence.
-- The **per-signature boundary-wrapper driver** is `skin::convert` over the `skin::SkinProfile` trait: it walks a signature's type, short-circuits passthrough leaves, dispatches on the type constructor, and flips the conversion direction (`skin::FfiDir::flip`) across a function value's parameter leg. The walk is shared; the *leaves* are the profile's hooks (`is_passthrough`, `convert_newtype`, `convert_product`, `convert_sum`, `convert_function`), each holding the backend's private value representation and recursing back through the driver. Its remaining production profiles are JS's `JsSkin` and Haskell's `HaskellSkin`; public sites on every backend consume the prepared facade first, while Rust, Go, Java, Python, and Swift use backend-specific prepared-plan converters. Rust retains the pure `right_spine_walk_*` helpers for its private marker-directed conversion. TypeScript reuses JavaScript runtime emission.
+- **Boundary conversion** consumes the prepared callable topology and paired execution layouts; target-specific converters realize those plans against each host's representations. A function value's parameter leg reverses the conversion direction through the shared `skin::FfiDir::flip` rule. Canonical value structure lives in `value_plan`; Rust also retains the pure `right_spine_walk_*` helpers for its private marker-directed conversion. Haskell's native converter uses its prepared facade and `HaskellShapes` type renderer. TypeScript reuses JavaScript runtime emission.
 - The **prepared boundary facade** is the sole public shape catalog. It records semantic uses, generic structural shell identities, exact nominal dependencies, declaration-head stages, paired live execution layouts, and retained source-compatibility provenance once. Every backend consumes the applicable facts for its public host contract and keeps only host syntax and private erased-body conversion leaves locally; a backend without keyed presentation need not consume the shell's semantic-key identity. A retained site keeps frozen semantic declarations but cannot acquire package execution authority; a backend may render only an explicitly deprecated, genuinely optional compatibility shim when its removal policy requires one.
 - Rust's marker facade follows Kio's binary product/sum tree compositionally:
   `KioProduct<A,T>::Facade = Product<A::Facade,T::Facade>`, so substituting
@@ -366,7 +405,7 @@ The skin's **backend-neutral structural conventions** have one code home each. P
   the analogous right-nested equation. These are backend realizations, not a
   family-wide choice between flat and recursive public structural carriers;
   each backend's specification owns that representation decision.
-- The Haskell emitter gives a parametric source newtype one **declaration-stable nominal head** wherever it represents the newtype as typed host code. Saturation, facade-vs-native-body reachability, and payload classification (ordinary function versus dictionary-shaped function included) must not choose a different identity on those typed paths. Haskell keeps only nullary, nonrecursive, nonexistential newtypes transparent there; parametric, recursive, and existential declarations remain nominal, with public construction and projection mediated by the source members' wrappers. A private universal fallback may still carry the value in its erased body representation; that carrier is not another typed newtype head and does not change fallback eligibility.
+- The Haskell emitter gives a parametric source newtype one **declaration-stable nominal head** wherever it represents the newtype as typed host code. Saturation, facade-vs-native-body reachability, and payload classification (ordinary function versus dictionary-shaped function included) must not choose a different identity on those typed paths. Haskell keeps only nullary, nonrecursive, nonexistential newtypes transparent there; parametric, recursive, and existential declarations remain nominal, with public construction and projection mediated by the source members' wrappers.
 - The **`host_descriptor`** contract shape lives in [`crate::host_descriptor`](../../kio-rs/src/host_descriptor.rs); `render_js_host_factory_prelude_names` and `render_rust_host_trait` render it in their own surface syntax.
 - **Opaque host-type bindings are declaration-keyed but non-injective.**
   The exact module path and declaration name select the descriptor entry and,
@@ -420,65 +459,17 @@ does not justify flattening a product parameter.
 
 #### Facade topology and execution provenance decision record
 
-The authority is the pre-existing public contract in
-[`specs/backends/README.md`](../../specs/backends/README.md): function-type FFI
-canonicalization fixes callable stages, and § Deprecated host items already
-makes a removal re-emit codegen-only and unreachable from package code. The
-facade-topology heading names that combined invariant; it does not change what
-host or package code may call.
+The exact live or frozen signature owns each boundary's semantic stages and
+dependency closure; only a live site carries package execution authority.
+Retained declarations remain optional, deprecated source compatibility
+surfaces under the applicable backend contract. Preserve that distinction in
+shared preparation and every consumer.
 
-The semantic predicate is any live host function, exported function, or
-public-newtype-member boundary site, plus a removed host function whose frozen
-boundary declarations a backend preserves for source stability. The exact
-current or frozen signature owns the semantic stages and dependency closure;
-only a live site owns package execution authority. A retained callable can
-therefore remain syntactically addressable either as an optional deprecated
-structural property with no generated body (TypeScript), or as a deprecated
-trapping default (Java, Rust, and Swift). A new host must neither implement nor
-select it, and it never becomes live package dispatch. Reconstructing either
-fact from generated spelling was rejected because it conflates presentation
-with semantic identity. This is
-open-world: adding an unrelated declaration cannot alter an existing site's
-scheme, provenance, or dependencies. It also preserves evaluation because only
-the exact live scheme can contribute executable stages.
-
-The propagation ledger separates live callable sites from the retained-removal
-occurrence because only the latter varies by backend. The live rows use two
-all-backend workflows:
-[`ffi_host_poly_function_newtype_roundtrip`](../../test-data/goldens/00_success/ffi_host_poly_function_newtype_roundtrip/)
-executes a host callback, a public polymorphic-newtype value in both directions,
-and a package export, while
-[`ffi_newtype_visibility_facade`](../../test-data/goldens/00_success/ffi_newtype_visibility_facade/)
-exercises host-facing public-newtype-member sites across the visibility
-combinations.
-
-| Backend | Occurrence | Applicability | Conformance | Evidence |
-| --- | --- | --- | --- | --- |
-| JS | live callable sites | applies | conforms — current declarations build the facade and host dispatch | complete workflow — both shared all-backend facade workflows |
-| JS | removed host function | not applicable — no frozen declaration is preserved | not applicable — incompatible retained epochs likewise create no generated JS surface | predicate proof — current-only host scan; [`deprecated_host_fn_removal`](../../test-data/emissions/js/deprecated_host_fn_removal/) asserts the removed property is absent and the live property remains |
-| TypeScript | live callable sites | applies | conforms — the `.d.ts` and shared JS runtime use the current interface | complete workflow — both shared all-backend workflows through the typed facade |
-| TypeScript | retained removed host function | applies | conforms with the published incompatible-epoch source-edit caveat — the `.d.ts` keeps each representable exact callable as an optional deprecated property with a visibly deprecated transitive type closure; incompatible same-identity epochs are omitted, while the shared JS runtime stays current-only | complete workflow — [`deprecated_host_fn_source_compatibility`](../../test-data/emissions/ts/deprecated_host_fn_source_compatibility/) type-checks unchanged and current-only hosts under `--strict`; [`deprecated_host_fn_shape`](../../test-data/emissions/ts/deprecated_host_fn_shape/) checks markers, optionality, transitive support, and runtime inertness; the shared incompatible-epoch witness checks complete root and closure omission |
-| Python | live callable sites | applies | conforms — current declarations build namespace entries and validation | complete workflow — both shared all-backend facade workflows |
-| Python | history-only host declarations | applies | conforms — Python 3.10 stdlib cannot mark a retained stub declaration deprecated, so both the `.pyi` stub package and `.py` omit the complete history-only closure and current-host validation remains live-only | complete causal workflow — the mixed live/retained unit rejects leaked roots, adapters, carriers, and generic propagation; the sealed-history build test proves a valid history shares the live-only cache while malformed history is still rejected; [`deprecated_host_fn_shape`](../../test-data/emissions/python/deprecated_host_fn_shape/) checks both artifacts and [`deprecated_host_fn_live_only`](../../test-data/emissions/python/deprecated_host_fn_live_only/) executes a current host |
-| Java | live callable sites | applies | conforms — live descriptor methods build the interpreter adapter | complete workflow — both shared all-backend facade workflows |
-| Java | retained removed host function and dependencies | applies | conforms with the published source-edit caveats — deprecated throwing defaults and each emitted deprecated transitive dependency remain source-only; removed host roots leave package generics, dependent retained signatures use a deprecated declaration-owned carrier, incompatible epochs omit affected methods/types, and the interpreter adapter stays live-only | complete workflow — focused units cover support, live dominance, deprecated transitive members and current-host optionality; [`deprecated_host_fn_source_compatibility`](../../test-data/emissions/java/deprecated_host_fn_source_compatibility/) compiles unchanged and live-only external hosts and runs both through the live export |
-| Rust | live callable sites | applies | conforms — live descriptor methods supply package host calls | complete workflow — both shared all-backend facade workflows |
-| Rust | retained removed host function and dependencies | applies | conforms when the frozen signature is nameable — the trait default and transitive support are deprecated and inert; a removed associated host type, an incompatible declaration epoch, and every dependent retained surface are omitted under the published source-edit caveats | complete workflow — [`deprecated_host_fn_shape`](../../test-data/emissions/rust/deprecated_host_fn_shape/) checks the durable declaration and markers; [`deprecated_host_fn_source_compatibility`](../../test-data/emissions/rust/deprecated_host_fn_source_compatibility/) compiles unchanged and live-only hosts and runs both through the live export; focused units check live dominance and dependent omission |
-| Go | live callable sites | applies | conforms — the live origin owns bounded converter capabilities | complete workflow — both shared all-backend facade workflows; [`facade_generic_shell_reuse`](../../test-data/emissions/go/facade_generic_shell_reuse/) compiles and runs the same host against baseline and unrelated-declaration builds |
-| Go | retained removed host function and dependencies | applies | conforms with the published source-edit caveats — every representable retained-only alias, shell, carrier, and constructor has a standard deprecation directive and exposes no live capability; removed host roots leave package generics, and incompatible epochs omit affected roots/types | complete workflow — [`deprecated_host_fn_source_compatibility`](../../test-data/emissions/go/deprecated_host_fn_source_compatibility/) compiles unchanged and live-only hosts, runs both through the live export, and checks retained aliases; [`deprecated_host_fn_shape`](../../test-data/emissions/go/deprecated_host_fn_shape/) checks markers and absence of the removed method; focused units check live dominance and current-host selection |
-| Swift | live callable sites | applies | conforms — the current protocol supplies package dispatch | complete workflow — both shared all-backend facade workflows |
-| Swift | retained removed host function and dependencies | applies | conforms with the published incompatible-epoch source-edit caveat — every representable protocol requirement has a deprecated trapping default, removed host types have deprecated concrete defaults, every emitted transitive declaration is deprecated, incompatible epochs omit affected roots/types, and adapters/dispatch remain live-only | complete workflow — focused emitter units and [`deprecated_host_fn_type_compatibility`](../../test-data/emissions/swift/deprecated_host_fn_type_compatibility/) check old/current host compilation, markers, defaults, live dominance, and runtime inertness |
-| Haskell | live callable sites | applies | conforms — the host record and both body paths use live functions only | complete workflow — both shared all-backend facade workflows |
-| Haskell | removed host function and retained host type | applies | conforms with the published source-edit caveats — no removed record field is emitted; a representable retained associated type is natively deprecated, privately defaulted, optional, and type-only; incompatible type epochs omit affected equations/types | complete workflow — both record renderers consume only live sites; [`deprecated_host_type_compatibility`](../../test-data/emissions/haskell/deprecated_host_type_compatibility/) observes the old equation's warning and compiles a current instance that omits it under `-Werror=deprecations` |
-
-Normative policy lives in the shared facade-topology and deprecated-item
-headings; each backend page references them and records only its host
-realization. Shared preparation lives in `boundary_facade`; legacy emitters may
-prove the same law through their existing descriptor and conversion paths.
-The focused shared `retained_roots_omit_incompatible_same_name_newtype_epochs`
-witness constructs two incompatible frozen payload declarations at one exact
-identity and proves that both retained roots and their carrier/shell closure
-are omitted before any backend can render an inexact compatibility surface.
+The [decision and propagation evidence](../../evidence/backend-decisions.md#facade-topology-and-execution-provenance)
+records the governing spec, rationale, open-world argument, backend/occurrence
+ledger and focused workflows. Reassess affected rows when the contract,
+representation or consumer path changes; the record does not authorize a
+different public contract.
 
 ### Retained host declarations
 
@@ -559,13 +550,39 @@ exercises real native artifacts, and Java's
 [`bounded_public_type_names`](../../test-data/emissions/java/bounded_public_type_names/)
 compiles long product, sum, and forall declarations beside a readable control.
 
-Haskell native-body emission separates ordinary `EmitError` failures from
-explicit `NativeUnsupported` eligibility. Its intentional unsupported set is
-empty. Reconstruction gaps and unhandled Routed nodes propagate as errors;
-they do not silently select the retained universal renderer. Direct universal
-facade tests cover that renderer's boundary obligations without fabricating a
-source-level fallback witness. This is Haskell's body-selection mechanism, not
-a change to another backend's native or interpreted execution strategy.
+**Haskell body polymorphism.** Native body polymorphism preserves Kio's one-binder application tree through
+two deliberately different representations. A statically known declaration
+may use its direct Haskell scheme: adjacent declaration groups `[A][B](p: P)`
+followed by an effectful body returning `R` use
+`forall a. forall b. P -> m R`.
+
+The resolved type alone does not locate the body action. Effectful declarations
+can have the same call type `[A] P -> [B] Q -> R` while placing that action at
+different stages. If `[B](q: Q)` is another declaration group, the direct
+scheme is `forall a. P -> forall b. Q -> m R`: the body runs only after `Q`.
+If the declaration groups end after `[A](p: P)` and its effectful body returns a
+value of type `[B] Q -> R`, the direct scheme is
+`forall a. P -> m (forall b. m (Q -> m R))`: that body runs after `P`, and the
+returned first-class value supplies the later uniform binder stage.
+
+An escaped or otherwise first-class polymorphic value uses a uniform internal
+callable ABI with one monadic stage per `forall`. Thus `[A][B] P -> R` is
+`forall a. m (forall b. m (P -> m R))`. An adapter from a direct declaration
+pure-lifts the two work-free type stages and leaves the declaration call at the
+value stage. Both `[A] P -> [B] Q -> R` declarations above adapt to
+`forall a. m (P -> m (forall b. m (Q -> m R)))`: the first pure-lifts the
+work-free stage after `P`, while the second preserves its real action there.
+This uniform representation keeps same-typed values substitutable without
+consulting their origin.
+Boundary wrappers introduce or consume these internal stages while keeping
+type parameters out of the term-level host ABI. In particular, the compact
+native `forall`s in a public host-record field are its host-facing scheme, not
+the representation of a first-class callable inside the package body.
+
+Haskell renders package bodies at native types. Reconstruction gaps and
+unhandled Routed nodes propagate as `EmitError` failures; they do not select
+another renderer. Private universal carriers and boundary conversions remain
+implementation support.
 
 Haskell boundary aliases, patterns, selectors, exact host-type families and
 nominal heads use role-tagged readable paths. Shared
@@ -644,6 +661,8 @@ documented public carrier mechanisms; a Rust proof is not family-wide
 realization evidence.
 Allocation, cloning, performance, debugging, and layout effects remain
 separate observable questions and require their own evidence.
+
+**Rust erased-mode body lowering at the construction site.** When a Kio lambda literal flows into a polymorphic-newtype-payload constructor — `Monad.mk_monad(Box, .[A][B](m, k) { k(Box.un_box(m)) })` — the bound types and value parameters use the universal representation while the nested callable stages follow the payload type. The concrete constructor's generated adapter performs its marker-directed lift / project while the body retains the opaque token. This behaves identically to a typed-throughout version because the typer rejects any operation that depends on a specific instantiation of `[A]` or `[B]` (binder-uniformity).
 
 The `RuntimeSupport::EmbeddedFile` convention names shared body fragments once in an emitter-written file rather than inlining them at every call site. Rust uses it for the private storage operations behind `KioStoredValue`; generated `KioType` conversions are the typed seam and raw erased-token construction/downcast remains crate-private (default `Rc`, thread-safe `Arc + Send + Sync`). Go's erased body uses the same convention to name the canonical `Unit` (`struct{}` — Go has no built-in unit value) once in `kio_runtime.go`.
 

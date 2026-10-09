@@ -1,4 +1,5 @@
 /// Root module vector-tree core with bounds, path, frame, and spine helpers used by loop-driven vector operations.
+/// A ready-to-use library module for your own Kio package.
 module vec/core;
 
 import vec/elab/control(scope);

@@ -2,8 +2,8 @@
 
 This page is a faithful read-through of the optics proof-of-concept package
 at [`test-data/poc/optics/`](../../test-data/poc/optics/). That package is
-executable, `kio test`-checked, and run end to end against every declared
-target in CI, so it is *ground truth*: every type, function, operator, and
+executable and `kio test`-checked, with the harness building and running it
+across supported targets under CI-selected coverage. It is *ground truth*: every type, function, operator, and
 law shown here exists in the package exactly as written, and the laws are
 discharged by the `equiv` blocks at the bottom of the library file.
 
@@ -148,10 +148,9 @@ import elab/match(match);
 
 Two of these carry almost the entire library:
 
-- **`one_prod!(p, T)`** extracts the single component of type `T` out of a
+- **`one_prod!(p, T)`** extracts the first component of type `T` out of a
   product `p`. It is how every combinator pulls a getter or setter back out
-  of the pair an optic *is*. It is well-defined precisely when exactly one
-  spine slot of `p` has type `T`.
+  of the pair an optic *is*. It selects the first matching spine slot of `p`.
 - **`widen_sum!(v, T)`** injects a value `v` into a wider sum type `T` — the
   injection that builds an `(A | .)` "hit", drops to the `()` "miss" arm, or
   lands a value at a chosen arm of a sum.
@@ -198,7 +197,7 @@ A **lens** focuses on a part `A` that is *always present* inside a container
 part back:
 
 ```kio {@optics}
-type Lens[S][A] = (S -> A) & ((A & S) -> S);
+pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
 ```
 
 A `Lens(S, A)` is the product of a getter `S -> A` and a setter
@@ -211,11 +210,11 @@ lets `one_prod!` pick each one out of the pair unambiguously.
 The three core lens combinators pull the two functions out and apply them:
 
 ```kio {@optics}
-fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod!(l, S -> A)(x) }
+pub fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod!(l, S -> A)(x) }
 
-fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod!(l, (A & S) -> S)(new_a, x) }
+pub fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod!(l, (A & S) -> S)(new_a, x) }
 
-fn over[S][A](l: Lens(S, A), f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
+pub fn over[S][A](l: Lens(S, A), f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
 ```
 
 `one_prod!(l, S -> A)` picks the getter and applies it to `x`;
@@ -233,13 +232,13 @@ The library ships three concrete lenses. The first two focus a positional
 component of a pair:
 
 ```kio {@optics}
-fn fst_lens[A][B] -> Lens(A & B, A) {
+pub fn fst_lens[A][B] -> Lens(A & B, A) {
   let get = .((x: A, _y: B)) -> A { x };
   let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
   (get, put)
 }
 
-fn snd_lens[A][B] -> Lens(A & B, B) {
+pub fn snd_lens[A][B] -> Lens(A & B, B) {
   let get = .((_x: A, y: B)) -> B { y };
   let put = .(new_b: B, (x: A, _y: B)) -> A & B { (x, new_b) };
   (get, put)
@@ -258,7 +257,7 @@ The third concrete lens is the identity lens, which focuses the whole
 container — it is the unit of lens composition:
 
 ```kio {@optics}
-fn id_lens[A] -> Lens(A, A) {
+pub fn id_lens[A] -> Lens(A, A) {
   let get = .(x: A) -> A { x };
   let put = .(new_a: A, _old: A) -> A { new_a };
   (get, put)
@@ -275,7 +274,7 @@ The point of optics is that they *compose*. A lens `S → A` and a lens
 `A → B` make a lens `S → B`:
 
 ```kio {@optics}
-fn compose_lens[S][A][B](outer: Lens(S, A), inner: Lens(A, B)) -> Lens(S, B) {
+pub fn compose_lens[S][A][B](outer: Lens(S, A), inner: Lens(A, B)) -> Lens(S, B) {
   let get = .(x: S) -> B { view(inner, view(outer, x)) };
   let put =
     .(new_b: B, x: S) -> S { let focus = view(outer, x); set(outer, set(inner, new_b, focus), x) };
@@ -298,7 +297,7 @@ returns `(A | .)`, with the `()` arm meaning "this is not the focused case".
 Its constructor injects an `A` back into `S`:
 
 ```kio {@optics}
-type Prism[S][A] = (S -> (A | .)) & (A -> S);
+pub type Prism[S][A] = (S -> (A | .)) & (A -> S);
 ```
 
 ### preview, review, over_prism
@@ -308,9 +307,9 @@ the same `one_prod!` projection the lens combinators use, picking the right
 half of the pair by type:
 
 ```kio {@optics}
-fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> (A | .))(x) }
+pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> (A | .))(x) }
 
-fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
+pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
 ```
 
 `over_prism` applies a function through the prism when the source is in the
@@ -318,7 +317,7 @@ matching arm, and leaves it unchanged otherwise. This is where `match!`
 eliminates the `(A | .)` that `preview` produces:
 
 ```kio {@optics}
-fn over_prism[S][A](p: Prism(S, A), f: A -> A, x: S) -> S {
+pub fn over_prism[S][A](p: Prism(S, A), f: A -> A, x: S) -> S {
   match! preview(p, x) {
     (.(av: A) { review(p, f(av)) }, .(_u: .) { x })
   }
@@ -337,7 +336,7 @@ source's left arm to the target's `A` arm and the right arm to `()`; each
 `widen_sum!`. Its review is a single left-injection:
 
 ```kio {@optics}
-fn left_prism[A][B] -> Prism(A | B, A) {
+pub fn left_prism[A][B] -> Prism(A | B, A) {
   let pre =
     .(x: A | B) -> A | . {
       match! x {
@@ -348,7 +347,7 @@ fn left_prism[A][B] -> Prism(A | B, A) {
   (pre, rev)
 }
 
-fn right_prism[A][B] -> Prism(A | B, B) {
+pub fn right_prism[A][B] -> Prism(A | B, B) {
   let pre =
     .(x: A | B) -> B | . {
       match! x {
@@ -386,7 +385,7 @@ exactly this when it composes prisms (see § The deep-prism tour).
 Two prisms compose into a prism for a nested focus:
 
 ```kio {@optics}
-fn compose_prism[S][A][B](psa: Prism(S, A), pab: Prism(A, B)) -> Prism(S, B) {
+pub fn compose_prism[S][A][B](psa: Prism(S, A), pab: Prism(A, B)) -> Prism(S, B) {
   let pre =
     .(x: S) -> B | . {
       match! preview(psa, x) {
@@ -410,7 +409,7 @@ An **iso** is the strongest optic — a bijection. Both directions are total;
 neither can miss:
 
 ```kio {@optics}
-type Iso[S][A] = (S -> A) & (A -> S);
+pub type Iso[S][A] = (S -> A) & (A -> S);
 ```
 
 `view_iso` and `review_iso` are mutual inverses. That contract is a usage
@@ -422,12 +421,12 @@ the library honor it, and the `equiv` laws check it.
 The elimination strategy here differs from the lens and prism combinators,
 and the reason is worth dwelling on. An iso's two components can have the
 *same* type: when `S` and `A` coincide, both the forward `S -> A` and the
-backward `A -> S` are `S -> S`. So `one_prod!` — which needs a *distinct*
-slot type to pick a component — cannot tell them apart. The iso combinators
+backward `A -> S` are `S -> S`. So `one_prod!` selects the first matching
+slot and cannot select the second by type alone. The iso combinators
 therefore use `match!` *positional* destructuring instead:
 
 ```kio {@optics}
-fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
+pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
   let fwd =
     match! i {
       .(f: S -> A, _b: A -> S) { f }
@@ -435,7 +434,7 @@ fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
   fwd(x)
 }
 
-fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
+pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
   let bwd =
     match! i {
       .(_f: S -> A, b: A -> S) { b }
@@ -443,7 +442,7 @@ fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
   bwd(v)
 }
 
-fn over_iso[S][A](i: Iso(S, A), f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
+pub fn over_iso[S][A](i: Iso(S, A), f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
 ```
 
 `match! i { .(f: S -> A, _b: A -> S) { f } }` binds the pair positionally — `f` is the first
@@ -463,13 +462,13 @@ The library ships two concrete isos. `swap_iso` swaps the components of a
 pair; `assoc_iso` re-associates a left-nested triple to the right:
 
 ```kio {@optics}
-fn swap_iso[A][B] -> Iso(A & B, B & A) {
+pub fn swap_iso[A][B] -> Iso(A & B, B & A) {
   let to = .((x: A, y: B)) -> B & A { (y, x) };
   let from = .((y: B, x: A)) -> A & B { (x, y) };
   (to, from)
 }
 
-fn assoc_iso[A][B][C] -> Iso((A & B) & C, A & B & C) {
+pub fn assoc_iso[A][B][C] -> Iso((A & B) & C, A & B & C) {
   let to = .(((av: A, bv: B), cv: C)) -> A & B & C { (av, (bv, cv)) };
   let from = .((av: A, (bv: B, cv: C))) -> (A & B) & C { ((av, bv), cv) };
   (to, from)
@@ -489,7 +488,7 @@ Two isos compose into one round-trip conversion. The forward map runs both
 forward; the backward map runs both backward, inside-out:
 
 ```kio {@optics}
-fn compose_iso[S][A][B](isa: Iso(S, A), iab: Iso(A, B)) -> Iso(S, B) {
+pub fn compose_iso[S][A][B](isa: Iso(S, A), iab: Iso(A, B)) -> Iso(S, B) {
   let to = .(x: S) -> B { view_iso(iab, view_iso(isa, x)) };
   let from = .(v: B) -> S { review_iso(isa, review_iso(iab, v)) };
   (to, from)
@@ -502,13 +501,13 @@ Because an iso is both lossless *and* total, every iso *is* a lens and *is* a
 prism. The library provides the two forward coercions:
 
 ```kio {@optics}
-fn iso_to_lens[S][A](i: Iso(S, A)) -> Lens(S, A) {
+pub fn iso_to_lens[S][A](i: Iso(S, A)) -> Lens(S, A) {
   let get = .(x: S) -> A { view_iso(i, x) };
   let put = .(new_a: A, _old: S) -> S { review_iso(i, new_a) };
   (get, put)
 }
 
-fn iso_to_prism[S][A](i: Iso(S, A)) -> Prism(S, A) {
+pub fn iso_to_prism[S][A](i: Iso(S, A)) -> Prism(S, A) {
   let pre = .(x: S) -> A | . { widen_sum!(view_iso(i, x), A | .) };
   let rev = .(v: A) -> S { review_iso(i, v) };
   (pre, rev)
@@ -816,10 +815,7 @@ transformed:
 
 ```text
 equiv left_over_review[A][B](v: A, f: A -> A) {
-  preview(
-    , left_prism(A, B)
-    , over_prism(left_prism(A, B), f, review(left_prism(A, B), v))
-    );
+  preview(left_prism(A, B), over_prism(left_prism(A, B), f, review(left_prism(A, B), v)));
   widen_sum!(f(v), A | .)
 }
 ```
@@ -844,9 +840,8 @@ equiv swap_swap_view[A][B](x: A & B) {
 
 The `assoc_iso` round-trips (`assoc_view_review`, `assoc_review_view`) are
 restated over a concrete tuple shape — opaque leaf atoms `av`, `bv`, `cv` in
-a *built* `(av, (bv, cv))` rather than a single fully-opaque product parameter
-— because product-eta does not fire on a fully-opaque product; the round-trip
-then discharges by reconstruction. And `over_iso`'s defining
+a *built* `(av, (bv, cv))` rather than a single fully-opaque product parameter.
+Reconstruction checks these round trips. And `over_iso`'s defining
 equation is checked on `swap_iso`:
 
 ```text

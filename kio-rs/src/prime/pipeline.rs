@@ -33,7 +33,7 @@ impl Pipeline for PrimePipeline {
     fn lower_contract_module(
         module: Module<Surface>,
     ) -> Result<Module<Self::ContractPhase>, crate::error::Error> {
-        lower::check_imports(&module.imports)?;
+        crate::pass::contract::check_imports(&module.imports)?;
         crate::pass::contract::lower_module(
             module,
             lower::lower_contract_signature,

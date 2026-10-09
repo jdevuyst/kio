@@ -1,4 +1,5 @@
 /// Option helpers with host-backed folds over canonical lists, Bool predicates, filters, and operators.
+/// A ready-to-use library module for your own Kio package.
 module option/option;
 
 import option/core(

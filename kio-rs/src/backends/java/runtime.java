@@ -500,8 +500,15 @@
       }
       return (Shapes.Fn1<Object, Object>) domain -> {
         Map<String, Object> local = new LinkedHashMap<>(env);
-        List<Object> values = productSlots(domain, stage.names().size());
-        for (int i = 0; i < values.size(); i++) local.put(stage.names().get(i), values.get(i));
+        for (int i = 0; i < stage.names().size(); i++) {
+          if (i + 1 == stage.names().size()) {
+            local.put(stage.names().get(i), domain);
+          } else {
+            Shapes.Product<?, ?> pair = (Shapes.Product<?, ?>) domain;
+            local.put(stage.names().get(i), pair.left());
+            domain = pair.right();
+          }
+        }
         return nextLayer(module, def, stages, index, local, compiled.child(plan, "result"));
       };
     }

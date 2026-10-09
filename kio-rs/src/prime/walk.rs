@@ -157,6 +157,9 @@ pub trait SurfaceToPrime {
     /// label elaborator must consume them before Kio'.
     fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error>;
 
+    /// Consume or reject the compile-time-only builtin import.
+    fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error>;
+
     // -------------------------------------------------------------
     // Dispatchers (default impls). Implementers rarely override
     // these; they dispatch each variant to either a `lower_*`
@@ -205,9 +208,12 @@ pub trait SurfaceToPrime {
         })
     }
 
-    /// Reject every surface-only selective import item at the Kio' boundary.
+    /// Reject every surface-only import at the Kio' boundary.
     fn check_imports(&mut self, imports: &[crate::ast::Import]) -> Result<(), Error> {
         for u in imports {
+            if matches!(u.kind, crate::ast::ImportKind::Comptime) {
+                self.rewrite_import_comptime(u.span)?;
+            }
             if let crate::ast::ImportKind::Selective { items, .. } = &u.kind {
                 for it in items {
                     match it {

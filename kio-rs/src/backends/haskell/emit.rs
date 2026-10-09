@@ -3,31 +3,15 @@
 //! Consumes a `Package<Routed>` (post-recovery + post-resolution-lowering)
 //! and produces a self-contained Haskell package as a [`HaskellPackage`].
 //!
-//! ## Body representation — native types, with a universal floor
+//! ## Body representation
 //!
-//! Two body renderings share one typed FFI skin (the host record, structural
-//! families and boundary patterns, exported wrappers — identical whichever
-//! body a package gets):
+//! The native body ([`super::native`]) renders Routed IR at its Haskell
+//! types: an abstract application `F(A)` becomes `f a`, parametric source
+//! newtypes retain declaration-stable nominal heads, and host types remain
+//! exact associated-family applications. Private universal carriers and
+//! their conversions support the typed FFI skin ([`super::runtime`]).
 //!
-//! - The **native `f a`** body ([`super::native`]) renders the Routed IR
-//!   at its native Haskell types: a kind-`*→*` carrier `F(A)` becomes a
-//!   real type-constructor application `f a`, and each parametric source
-//!   newtype has one declaration-stable nominal Haskell head. Concrete host
-//!   types remain exact associated-family applications throughout.
-//! - The **private universal-carrier** body (this module) is the floor every
-//!   emitter reproduces — a **native** universal value ADT
-//!   ([`super::runtime`]), not the erased `Any` / `interface{}` of Swift /
-//!   Go. Products use a native slot vector, sums a native tag + payload
-//!   matched by native `case`, scalars use native
-//!   `Integer` / `Double` / `Text` / `Bool` inside typed constructors, a
-//!   closure a native carrier-to-monadic-carrier function. No `Data.Dynamic`,
-//!   no `unsafeCoerce`, no carrier-walk — HKT carriers ride Haskell's own
-//!   type-constructor application. Every body expression evaluates to
-//!   a monadic private carrier. A package with concrete host types must use the
-//!   native body; the universal floor cannot erase a host-selected type.
-//!
-//! Both bridge Kio's **strict** evaluation into Haskell's **lazy** host the
-//! same way:
+//! Kio's strict evaluation is preserved in Haskell's lazy host:
 //!
 //! - **Effect order** sequences through the monad. A host call is `m a`;
 //!   the body sequences sub-expressions with `>>=` (a `do` block) so host
@@ -42,25 +26,20 @@
 //!
 //! The **skin** is the host's typed contract — the `Host h m` value record,
 //! the closed product / sum families and flat patterns the FFI surfaces, the
-//! exported surface — driven through the shared [`crate::backends::skin`]
-//! framework via a [`super::skin::HaskellSkin`]. Every emitted function is
+//! exported surface. The prepared facade plans its topology,
+//! [`super::skin::HaskellShapes`] renders its types, and [`super::native`]
+//! renders body-to-boundary conversions. Every emitted function is
 //! **monad-polymorphic** (`Monad m => …`); the host record is a value
 //! record of `m`-returning functions (not a typeclass); the exported
 //! surface is `Monad m => …`.
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use crate::ast::{Expr, Kind, Routed, Type, TypeParam};
-use crate::backends::boundary_facade::{
-    BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, CallableSourceParamAdapter,
-    PreparedBoundaryCallableSites,
-};
+use crate::ast::{Kind, Routed, Type, TypeParam};
+use crate::backends::boundary_facade::{BoundaryFacadeSiteOwner, PreparedBoundaryCallableSites};
 use crate::backends::haskell::facade::{
     HaskellCallableHeadStage, HaskellFacadeCatalog, HaskellStructuralOccurrence,
 };
-use crate::backends::skin::{FfiDir, SkinProfile};
 use crate::pass::resolve::Package;
 
 use super::naming::{
@@ -208,20 +187,6 @@ fn render_pkg_hs(
     names: &HaskellNames,
     prepared: &PreparedBoundaryCallableSites,
 ) -> Result<String, EmitError> {
-    // Collect every module fn as a `(haskell-name, module-key, &FnDef)`
-    // triple, in deterministic order.
-    let mut fns: Vec<(String, &str, &crate::ast::FnDef<Routed>)> = Vec::new();
-    for (module_key, entry) in package.modules() {
-        for item in &entry.module.items {
-            if let crate::ast::Item::FnDef(f) = item {
-                fns.push((module_fn_name(module_key, &f.name), module_key, f));
-            }
-        }
-    }
-    fns.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let exports = collect_exports(package, facade, shapes);
-
     // The export list: create<Handle>, the host record + its accessor, the
     // package handle, the structural family names, and every export wrapper.
     // `mod_*` functions implement the body and are intentionally absent from
@@ -234,9 +199,22 @@ fn render_pkg_hs(
         names.product_family.clone(),
         names.sum_family.clone(),
     ];
-    for e in &exports {
-        export_list.push(e.wrapper_name.clone());
+    let mut wrapper_names = Vec::new();
+    for site in facade.sites().filter(|site| site.entry().is_live()) {
+        let module = site.id().module_segments().join("/");
+        match site.id().owner() {
+            BoundaryFacadeSiteOwner::HostFunction { .. } => {}
+            BoundaryFacadeSiteOwner::ExportedFunction { name } => {
+                wrapper_names.push(export_wrapper_name(&module, name));
+            }
+            BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member }
+            | BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
+                wrapper_names.push(export_newtype_wrapper_name(&module, newtype, member));
+            }
+        }
     }
+    wrapper_names.sort();
+    export_list.extend(wrapper_names);
 
     // The FFI boundary aliases: a stable-named `type` synonym per compound
     // boundary slot (and a per-arm `pattern` synonym for a sum slot), so a
@@ -258,67 +236,17 @@ fn render_pkg_hs(
     shared_decls.push('\n');
     let mut decls = String::new();
 
-    // Try the native-HKT body first. The universal floor remains valid only
-    // when every public host function, exported function, and exported
-    // newtype member has an exactly bridgeable boundary. Only intentional
-    // native ineligibility selects it; emitter failures propagate unchanged.
-    let mut extra_pragmas: Vec<&str> = Vec::new();
-    match super::native::render_native_body(package, names, &ffi.decls, prepared)? {
-        Ok(native) => {
-            for name in &native.export_names {
-                export_list.push(name.clone());
-            }
-            extra_pragmas = native.extra_pragmas;
-            decls.push_str(&native.host_record);
-            decls.push('\n');
-            decls.push_str(&shared_decls);
-            decls.push_str(&native.type_decls);
-            decls.push_str(&native.module_fns);
-            decls.push_str(&native.export_wrappers);
-        }
-        Err(not_native) => {
-            if let Some(blocker) = fallback_facade_blocker(facade, shapes) {
-                return Err(EmitError::unsupported(format!(
-                    "Haskell native body is required because the universal body cannot preserve the exact public boundary at {blocker}: {}",
-                    not_native.reason(),
-                )));
-            }
-            let pkg_name = package
-                .package_file()
-                .map(|p| p.package_name.as_str())
-                .unwrap_or("<package>");
-            not_native.trace(pkg_name);
-            decls.push_str(&render_host_record(
-                package, prepared, shapes, facade, names,
-            )?);
-            decls.push('\n');
-            decls.push_str(&shared_decls);
-            // Fan out the per-module-fn rendering. Each fn body is
-            // self-contained over the private universal-carrier model.
-            let pieces: Result<Vec<String>, EmitError> = crate::maybe_into_par_iter!(fns.clone())
-                .map(|(name, module_key, f)| {
-                    render_module_fn(&name, module_key, f, shapes, package, names)
-                })
-                .collect();
-            let mut pieces = pieces?;
-            pieces.sort();
-            for p in pieces {
-                decls.push('\n');
-                decls.push_str(&p);
-            }
-
-            // Export wrappers (typed boundary entry points).
-            let mut export_pieces = Vec::new();
-            for e in &exports {
-                let body = render_export_wrapper(e, shapes, facade, names)?;
-                let doc = prepared
-                    .site(&e.facade_site)
-                    .and_then(|site| crate::backends::boundary_docs::callable(package, site));
-                export_pieces.push((body, doc));
-            }
-            decls.push_str(&render_documented_declarations(export_pieces));
-        }
+    let native = super::native::render_native_body(package, names, &ffi.decls, prepared)?;
+    for name in &native.export_names {
+        export_list.push(name.clone());
     }
+    let extra_pragmas = native.extra_pragmas;
+    decls.push_str(&native.host_record);
+    decls.push('\n');
+    decls.push_str(&shared_decls);
+    decls.push_str(&native.type_decls);
+    decls.push_str(&native.module_fns);
+    decls.push_str(&native.export_wrappers);
 
     decls.push('\n');
     decls.push_str(&super::runtime_declarations(
@@ -422,87 +350,20 @@ pub(super) fn documented_field(doc: Option<&crate::ast::DocComment>, signature: 
     out.replace('\n', "\n    ")
 }
 
-fn fallback_facade_blocker(
-    facade: &HaskellFacadeCatalog,
-    shapes: &super::skin::HaskellShapes<'_>,
-) -> Option<String> {
-    // The prepared public-newtype cut is authoritative. Every surface that
-    // requires a nominal carrier, including an opaque surface, would lose its
-    // host-visible abstraction in the identity fallback wrapper.
-    for (name, newtype) in facade.public_newtypes() {
-        if newtype.requires_nominal_carrier() {
-            return Some(format!(
-                "exported newtype `{}/{}`",
-                name.module_segments().join("/"),
-                name.name()
-            ));
-        }
-    }
-
-    // The realized prepared sites are the sole callable inventory.  The
-    // universal body may inspect their exact Haskell slot types, but it must
-    // not rediscover which raw declarations are public.
-    for site in facade.sites() {
-        let entry = site.entry();
-        if !entry.is_live() {
-            continue;
-        }
-        let module = site.id().module_segments().join("/");
-        let label = fallback_site_label(site.id());
-        let mut argument_index = 0usize;
-        for stage in entry.stages() {
-            match stage {
-                HaskellCallableHeadStage::Type(_) => {
-                    return Some(format!("{label} (generic binder)"));
-                }
-                HaskellCallableHeadStage::Value { slots, .. } => {
-                    for slot in slots {
-                        if !shapes.fallback_bridgeable_in(slot.ty(), Some(&module)) {
-                            return Some(format!("{label} argument {argument_index}"));
-                        }
-                        argument_index += 1;
-                    }
-                }
-            }
-        }
-        if !shapes.fallback_bridgeable_in(entry.returned().ty(), Some(&module)) {
-            return Some(format!("{label} return"));
-        }
-    }
-    None
-}
-
-fn fallback_site_label(site: &BoundaryFacadeSiteId) -> String {
-    let module = site.module_segments().join("/");
-    match site.owner() {
-        BoundaryFacadeSiteOwner::HostFunction { name } => {
-            format!("host fn `{module}/{name}`")
-        }
-        BoundaryFacadeSiteOwner::ExportedFunction { name } => {
-            format!("export `{module}/{name}`")
-        }
-        BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, .. }
-        | BoundaryFacadeSiteOwner::NewtypeProjector { newtype, .. } => {
-            format!("exported newtype `{module}/{newtype}`")
-        }
-    }
-}
-
 #[cfg(all(test, feature = "surface"))]
-mod fallback_facade_tests {
+mod facade_tests {
     use std::path::{Path, PathBuf};
 
-    use crate::ast::{Expr, HostFnParam, Item, Kind, Meta, Routed, SignatureParam, Type};
+    use crate::ast::{Expr, HostFnParam, Item, Kind, Routed, SignatureParam, Type};
     use crate::backends::haskell::naming::{
         BoundaryId, BoundaryRoot, BoundaryStep, HaskellName, ItemId, ModuleItemId, StructuralKey,
         SumPatternId,
     };
-    use crate::backends::skin::{FfiDir, SkinProfile};
     use crate::pass::full::FullPipeline;
     use crate::pass::resolve::{Package, PackageFileEntry};
     use crate::pipeline::Pipeline;
 
-    use super::{HaskellNames, fallback_facade_blocker, rank_n_pattern_shape, render_pkg_hs};
+    use super::{HaskellNames, rank_n_pattern_shape, render_pkg_hs};
 
     fn module_fn(module: &str, item: &str) -> String {
         HaskellName::ModuleFn(ModuleItemId::new(module, item)).render()
@@ -630,40 +491,6 @@ mod fallback_facade_tests {
         ))
     }
 
-    fn blocker(source: &str) -> Option<String> {
-        let package = routed_package_files_with_bridge(&[("api.kio", source)], "**;");
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare Haskell blocker facade");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        fallback_facade_blocker(&facade, &shapes)
-    }
-
-    fn required_nominal_blocker(source: &str, name: &str) -> Option<String> {
-        let package = routed_package_files_with_bridge(&[("api.kio", source)], "**;");
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare Haskell nominal-blocker facade");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        assert!(
-            facade
-                .public_newtype("api", name)
-                .expect("the bridged public newtype is in the prepared inventory")
-                .requires_nominal_carrier()
-        );
-        fallback_facade_blocker(&facade, &shapes)
-    }
-
     fn render(source: &str) -> Result<String, super::EmitError> {
         render_files(&[("api.kio", source)])
     }
@@ -728,7 +555,7 @@ mod fallback_facade_tests {
     }
 
     #[test]
-    fn native_docs_cover_native_and_universal_declaration_renderers() {
+    fn native_docs_cover_declaration_renderers() {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
@@ -751,28 +578,6 @@ mod fallback_facade_tests {
             assert!(native.contains(&format!("-- | {marker}")), "{native}");
         }
         assert!(!native.contains("PRIVATEDOC"));
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare declarations");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        let host = super::render_host_record(&package, &prepared, &shapes, &facade, &names)
-            .expect("universal host declaration");
-        assert!(host.contains("-- | HOSTFNDOC"));
-        let export = super::collect_exports(&package, &facade, &shapes)
-            .into_iter()
-            .find(|entry| matches!(&entry.target, super::ExportTarget::ModuleFn { .. }))
-            .expect("ordinary export");
-        let export = super::render_export_wrapper(&export, &shapes, &facade, &names)
-            .expect("universal export declaration");
-        let site = prepared.sites().find(|site| matches!(site.site().owner(), crate::backends::boundary_facade::BoundaryFacadeSiteOwner::ExportedFunction { .. })).expect("selected export");
-        let doc = crate::backends::boundary_docs::callable(&package, site);
-        let export = super::render_documented_declarations(vec![(export, doc)]);
-        assert!(export.starts_with("\n-- | EXPORTDOC\n"));
         assert!(!super::references_standard(
             "-- | Alias.value\nf = ()",
             "Alias"
@@ -794,30 +599,6 @@ mod fallback_facade_tests {
         let package = routed_package_files_with_bridge(&[("api.kio", source)], "api;");
         let native = render_package(&package).expect("native docs ordering");
         assert!(native.find("-- | ZZZ").unwrap() < native.find("-- | AAA").unwrap());
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare declarations");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        let pieces = super::collect_exports(&package, &facade, &shapes)
-            .iter()
-            .rev()
-            .map(|entry| {
-                let body = super::render_export_wrapper(entry, &shapes, &facade, &names)
-                    .expect("universal export");
-                let site = prepared.site(&entry.facade_site).expect("prepared export");
-                (
-                    body,
-                    crate::backends::boundary_docs::callable(&package, site),
-                )
-            })
-            .collect();
-        let universal = super::render_documented_declarations(pieces);
-        assert!(universal.find("-- | ZZZ").unwrap() < universal.find("-- | AAA").unwrap());
         let plain = super::render_documented_declarations(vec![
             ("zeta :: ()\n".to_owned(), None),
             ("alpha :: ()\n".to_owned(), None),
@@ -924,7 +705,7 @@ v(2) {
     }
 
     #[test]
-    fn native_emitter_errors_do_not_select_the_universal_body() {
+    fn native_emitter_errors_propagate() {
         let mut package = routed_package("module api; fn native_error() -> . { () }");
         inject_unknown_newtype_constructor(&mut package);
         let error = render_package(&package).expect_err("native emitter errors propagate");
@@ -1289,18 +1070,6 @@ v(2) {
     }
 
     #[test]
-    fn generic_or_rank_n_public_surface_requires_native_body() {
-        assert!(
-            blocker("module api; pub fn same[A](x: A) -> A { x }")
-                .is_some_and(|item| item.contains("generic binder"))
-        );
-        assert!(
-            blocker("module api; pub fn keep(f: [A] A -> A) -> . { () }")
-                .is_some_and(|item| item.contains("argument 0"))
-        );
-    }
-
-    #[test]
     fn public_foralls_stage_only_when_the_polymorphism_is_first_class() {
         let package = routed_package_files_with_bridge(
             &[(
@@ -1378,65 +1147,6 @@ v(2) {
         // slot is later instantiated with Unit; the shared planner pins that
         // occurrence and the nested callback adapter consumes its layout.
         assert!(alias.contains(":: m ()"), "{alias}");
-    }
-
-    #[test]
-    fn universal_function_adapter_preserves_product_and_unit_parameters() {
-        let package = routed_package("module api;");
-        let names = HaskellNames::derive("FallbackProbe");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
-        let skin = crate::backends::haskell::skin::HaskellSkin {
-            shapes: &shapes,
-            module: Some("api"),
-        };
-        let span = crate::span::Span::new(0, 0);
-        let unit = || Type::<Routed>::Unit {
-            meta: Meta::new(span),
-        };
-        let function = |param, abi_arity| Type::Function {
-            param: Box::new(param),
-            ret: Box::new(unit()),
-            meta: Meta::new(span),
-            abi_arity,
-            caps: Default::default(),
-        };
-
-        let product = Type::Product {
-            left: Box::new(unit()),
-            right: Box::new(unit()),
-            meta: Meta::new(span),
-        };
-        let product = skin
-            .convert(&function(product, 1), "internal", FfiDir::Out)
-            .expect("convert packed product-domain function");
-        assert!(product.contains("\\(__fp0, __fp1) ->"), "{product}");
-        assert!(
-            product.contains(&format!(
-                "{} (internal) (({} [",
-                names.runtime_names.call_function, names.runtime_names.product
-            )),
-            "{product}"
-        );
-
-        let direct_unit = skin
-            .convert(&function(unit(), 0), "direct", FfiDir::Out)
-            .expect("convert direct-Unit function");
-        assert!(!direct_unit.contains("\\__fp"), "{direct_unit}");
-        assert!(
-            direct_unit.contains(&format!(
-                "{} (direct) {}",
-                names.runtime_names.call_function, names.runtime_names.unit
-            )),
-            "{direct_unit}"
-        );
-
-        let substituted_unit = skin
-            .convert(&function(unit(), 1), "substituted", FfiDir::Out)
-            .expect("convert established slot instantiated with Unit");
-        assert!(
-            substituted_unit.contains("\\__fp0 ->"),
-            "{substituted_unit}"
-        );
     }
 
     #[test]
@@ -1969,46 +1679,6 @@ v(2) {
             emitted.pkg_hs.contains(&module_fn("hidden", "hidden_pair")),
             "unbridged definitions must remain available to the package body:\n{}",
             emitted.pkg_hs
-        );
-    }
-
-    #[test]
-    fn unbridged_public_values_do_not_block_the_universal_fallback() {
-        let package = routed_package_files_with_bridge(
-            &[
-                (
-                    "api.kio",
-                    "module api; pub fn keep(value: .) -> . { value }",
-                ),
-                (
-                    "hidden.kio",
-                    "module hidden; pub fn hidden_generic[A](value: A) -> A { value }",
-                ),
-            ],
-            "api;",
-        );
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare selected Haskell facade");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-
-        assert_eq!(fallback_facade_blocker(&facade, &shapes), None);
-    }
-
-    #[test]
-    fn private_generic_body_does_not_poison_exact_public_facade() {
-        assert_eq!(
-            blocker(
-                "module api; \
-                 fn private_same[A](x: A) -> A { x } \
-                 pub fn public_pair(x: . & .) -> . & . { x }",
-            ),
-            None,
         );
     }
 
@@ -2630,7 +2300,7 @@ v(2) {
     }
 
     #[test]
-    fn native_and_universal_renderers_publish_the_same_structural_facade() {
+    fn native_renderer_publishes_the_structural_facade() {
         const PUBLIC_FACADE: &str = "\
             host fn exchange(value: (. & .) | .) -> (. & .) | .; \
             pub fn roundtrip(value: (. & .) | .) -> (. & .) | . { exchange(value) } \
@@ -2653,28 +2323,6 @@ v(2) {
             "{native_signature}"
         );
 
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(
-                &native_package,
-            )
-            .expect("prepare universal host facade");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &native_package,
-            &names,
-            &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        let mut universal =
-            super::render_host_record(&native_package, &prepared, &shapes, &facade, &names)
-                .expect("universal host facade");
-        for export in super::collect_exports(&native_package, &facade, &shapes) {
-            universal.push_str(
-                &super::render_export_wrapper(&export, &shapes, &facade, &names)
-                    .expect("universal export facade"),
-            );
-        }
-
         for name in [
             host_field("api", "exchange"),
             export_wrapper("api", "roundtrip"),
@@ -2689,12 +2337,12 @@ v(2) {
                     .unwrap_or_else(|| panic!("missing `{name}` signature"))
                     .to_owned()
             };
-            assert_eq!(signature(&native), signature(&universal), "{name}");
+            assert!(!signature(&native).contains(&names.runtime_names.opaque));
         }
     }
 
     #[test]
-    fn universal_renderer_resolves_scoped_module_function_import() {
+    fn native_renderer_resolves_scoped_module_function_import() {
         let package = routed_package_files(&[
             (
                 "api/internal.kio",
@@ -2706,201 +2354,16 @@ v(2) {
                  pub fn run() -> . { message() }",
             ),
         ]);
-        let names = HaskellNames::derive("FallbackProbe");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
-        let function = package
-            .module("api/main")
-            .expect("importing module")
-            .module
-            .items
-            .iter()
-            .find_map(|item| match item {
-                Item::FnDef(function) if function.name == "run" => Some(function),
-                _ => None,
-            })
-            .expect("importing function");
-
-        let rendered = super::render_module_fn(
-            &module_fn("api/main", "run"),
-            "api/main",
-            function,
-            &shapes,
-            &package,
-            &names,
-        )
-        .expect("universal module function");
+        let rendered = render_package(&package).expect("native scoped import");
+        let caller = module_fn("api/main", "run");
+        let equation = rendered
+            .lines()
+            .find(|line| line.starts_with(&format!("{caller} _pkg")))
+            .expect("the importing function's equation");
         let provider = module_fn("api/internal", "message");
         let importer = module_fn("api/main", "message");
-        assert!(rendered.contains(&provider), "{rendered}");
-        assert!(!rendered.contains(&importer), "{rendered}");
-    }
-
-    #[test]
-    fn universal_renderer_preserves_written_type_abstraction_stages() {
-        let package = routed_package(
-            "module api; \
-             host fn observe() -> .; \
-             fn single[A] { observe() } \
-             fn adjacent[A][B] { observe() } \
-             fn explicit[A]() { observe() } \
-             fn plain() { () } \
-             fn anonymous() -> [A][B] . { .[A][B] { observe() } }",
-        );
-        let names = HaskellNames::derive("FallbackProbe");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
-        for (name, closures) in [
-            ("single", 0),
-            ("adjacent", 1),
-            ("explicit", 1),
-            ("plain", 0),
-            ("anonymous", 2),
-        ] {
-            let function = package
-                .module("api")
-                .unwrap()
-                .module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(function) if function.name == name => Some(function),
-                    _ => None,
-                })
-                .unwrap();
-            let rendered = super::render_module_fn(
-                &module_fn("api", name),
-                "api",
-                function,
-                &shapes,
-                &package,
-                &names,
-            )
-            .expect("existing universal renderer accepts the typed function");
-            assert_eq!(
-                rendered
-                    .matches(&format!("{} (", names.runtime_names.function))
-                    .count(),
-                closures,
-                "{name}: {rendered}"
-            );
-            if name != "plain" {
-                let effect = rendered.find(&host_field("api", "observe")).unwrap();
-                assert_eq!(
-                    rendered[..effect]
-                        .matches(&format!("{} (", names.runtime_names.function))
-                        .count(),
-                    closures,
-                    "the effect stays inside every residual stage: {rendered}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn universal_renderer_specializes_type_stages_before_value_calls() {
-        let package = routed_package_files(&[
-            (
-                "helpers.kio",
-                "module helpers; pub fn identity[A](value: A) -> A { value }",
-            ),
-            (
-                "api.kio",
-                "module api; import helpers as h; \
-                 fn identity[A](value: A) -> A { value } \
-                 fn named() { identity(., ()) } \
-                 fn qualified() { h.identity(., ()) } \
-                 fn local() { let saved = identity; saved(., ()) } \
-                 fn indirect() { .[A](value: A) { value }(., ()) }",
-            ),
-        ]);
-        let names = HaskellNames::derive("FallbackProbe");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
-        for (name, applications) in [
-            ("named", 1),
-            ("qualified", 1),
-            ("local", 2),
-            ("indirect", 2),
-        ] {
-            let function = package
-                .module("api")
-                .unwrap()
-                .module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(function) if function.name == name => Some(function),
-                    _ => None,
-                })
-                .unwrap();
-            let rendered = super::render_module_fn(
-                &module_fn("api", name),
-                "api",
-                function,
-                &shapes,
-                &package,
-                &names,
-            )
-            .expect("render typed generic call");
-            assert_eq!(
-                rendered.matches(&names.runtime_names.call_function).count(),
-                applications,
-                "{name}: {rendered}"
-            );
-        }
-    }
-
-    #[test]
-    fn universal_type_only_module_calls_do_not_invent_value_stages() {
-        let package = routed_package_files(&[
-            (
-                "helpers.kio",
-                "module helpers; pub fn make[A] -> A -> A { .(value: A) { value } }",
-            ),
-            (
-                "api.kio",
-                "module api; import helpers as h; \
-             fn make[A] -> A -> A { .(value: A) { value } } \
-             fn many[A][B] -> A -> A { .(value: A) { value } } \
-             fn delayed[A]() -> A -> A { .(value: A) { value } } \
-             fn named() { make(., ()) } \
-             fn qualified() { h.make(., ()) } \
-             fn adjacent() { many(., ., ()) } \
-             fn explicit_unit() { delayed(., (), ()) }",
-            ),
-        ]);
-        let names = HaskellNames::derive("FallbackProbe");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
-        for (name, applications) in [
-            ("named", 1),
-            ("qualified", 1),
-            ("adjacent", 2),
-            ("explicit_unit", 2),
-        ] {
-            let function = package
-                .module("api")
-                .unwrap()
-                .module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(function) if function.name == name => Some(function),
-                    _ => None,
-                })
-                .unwrap();
-            let rendered = super::render_module_fn(
-                &module_fn("api", name),
-                "api",
-                function,
-                &shapes,
-                &package,
-                &names,
-            )
-            .expect("universal rendering of a valid typed module call");
-            assert_eq!(
-                rendered.matches(&names.runtime_names.call_function).count(),
-                applications,
-                "{name}: {rendered}"
-            );
-        }
+        assert!(equation.contains(&provider), "{equation}");
+        assert!(!equation.contains(&importer), "{equation}");
     }
 
     #[test]
@@ -2930,7 +2393,7 @@ v(2) {
     }
 
     #[test]
-    fn bottom_boundary_is_void_in_native_and_universal_facades() {
+    fn bottom_boundary_is_void_in_native_facade() {
         let native_source = "module api; \
             import __intrinsics__; \
             host fn stop(value: .) -> !; \
@@ -2978,50 +2441,6 @@ v(2) {
         assert!(without_bottom.contains(&standard_hs(
             "import qualified \"base\" Data.Void as %VOID%"
         )));
-
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(
-                &native_package,
-            )
-            .expect("prepare universal Bottom facade");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &native_package,
-            &names,
-            &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        let mut universal =
-            super::render_host_record(&native_package, &prepared, &shapes, &facade, &names)
-                .expect("universal Bottom host facade");
-        for export in super::collect_exports(&native_package, &facade, &shapes) {
-            universal.push_str(
-                &super::render_export_wrapper(&export, &shapes, &facade, &names)
-                    .expect("universal Bottom export facade"),
-            );
-        }
-        assert!(
-            universal.contains(&standard_hs(&format!(
-                "{} :: m %VOID%.Void",
-                host_field("api", "stop")
-            ))),
-            "{universal}"
-        );
-        assert!(
-            universal.contains(&standard_hs("%VOID%.absurd")),
-            "{universal}"
-        );
-        let stop_public = export_wrapper("api", "stop_public");
-        let wrapper = universal
-            .split(&format!("{stop_public} ::"))
-            .nth(1)
-            .expect("stop export wrapper");
-        let effect = wrapper.find("__f0 <-").expect("effectful package call");
-        let unreachable = wrapper
-            .find("kio: bottom boundary reached")
-            .expect("explicit impossible universal conversion");
-        assert!(effect < unreachable, "{wrapper}");
     }
 
     #[test]
@@ -3098,77 +2517,7 @@ v(2) {
     }
 
     #[test]
-    fn generic_public_facade_blocks_the_universal_route() {
-        assert_eq!(
-            blocker("module api; pub fn public_same[A](value: A) -> A { value }"),
-            Some("export `api/public_same` (generic binder)".to_owned())
-        );
-    }
-
-    #[test]
-    fn every_required_public_nominal_blocks_the_fallback() {
-        for (source, name) in [
-            (
-                "module api; pub newtype Secret : . { constructor mk; projector un; };",
-                "Secret",
-            ),
-            (
-                "module api; pub newtype Box[A] : A { constructor mk; projector un; };",
-                "Box",
-            ),
-            (
-                "module api; pub newtype Pack <A> : A { constructor mk; projector un; };",
-                "Pack",
-            ),
-            (
-                "module api; pub rec newtype Tree : (. | (Tree)) { constructor mk; projector un; };",
-                "Tree",
-            ),
-        ] {
-            assert_eq!(
-                required_nominal_blocker(source, name),
-                Some(format!("exported newtype `api/{name}`"))
-            );
-        }
-    }
-
-    #[test]
-    fn public_nominal_members_block_an_inexact_fallback() {
-        for (source, name) in [
-            (
-                "module api; pub newtype Input : . { pub constructor mk; projector un; };",
-                "Input",
-            ),
-            (
-                "module api; pub newtype Output : . { constructor mk; pub projector un; };",
-                "Output",
-            ),
-            (
-                "module api; pub newtype Box[A] : A { pub constructor mk; projector un; };",
-                "Box",
-            ),
-            (
-                "module api; pub newtype Pack <A> : A { constructor mk; pub projector un; };",
-                "Pack",
-            ),
-            (
-                "module api; pub rec newtype Tree : (. | (Tree)) { pub constructor mk; projector un; };",
-                "Tree",
-            ),
-        ] {
-            assert_eq!(
-                blocker(source),
-                Some(format!("exported newtype `api/{name}`"))
-            );
-        }
-        assert_eq!(
-            blocker("module api; pub newtype Token : . { pub constructor mk; pub projector un; };"),
-            None,
-        );
-    }
-
-    #[test]
-    fn native_emitter_errors_precede_public_fallback_blockers() {
+    fn native_emitter_errors_propagate_for_public_nominals() {
         for (surface, declaration) in [
             (
                 "opaque",
@@ -3183,8 +2532,7 @@ v(2) {
                 "pub newtype Output : . { constructor mk_output; pub projector un_output; };",
             ),
         ] {
-            // An invalid routed owner pins emitter-error ownership, not
-            // source eligibility for the alternative renderer.
+            // An invalid routed owner pins native emitter-error ownership.
             let source = format!(
                 "module api; {declaration} \
                  fn native_error() -> . {{ () }}"
@@ -3294,19 +2642,7 @@ v(2) {
     }
 
     #[test]
-    fn public_nominal_carrier_blocks_before_its_callable_use() {
-        assert_eq!(
-            blocker(
-                "module api; \
-                 pub rec newtype Tree : (. | (Tree)) { constructor mk; projector un; }; \
-                 pub fn keep(value: Tree) -> Tree { value }"
-            ),
-            Some("exported newtype `api/Tree`".to_owned())
-        );
-    }
-
-    #[test]
-    fn universal_host_record_resolves_bare_newtypes_in_the_declaring_module() {
+    fn native_host_record_resolves_bare_newtypes_in_the_declaring_module() {
         let sources = [
             (
                 "left.kio",
@@ -3330,17 +2666,7 @@ v(2) {
             ),
         ];
         let package = routed_package_files_with_bridge(&sources, "caller; left; right;");
-        let names = HaskellNames::derive("FallbackProbe");
-        let prepared =
-            crate::backends::boundary_facade::PreparedBoundaryCallableSites::collect_live(&package)
-                .expect("prepare universal host record");
-        let shapes = crate::backends::haskell::skin::HaskellShapes::new_with_prepared(
-            &package, &names, &prepared,
-        );
-        let facade =
-            crate::backends::haskell::facade::HaskellFacadeCatalog::new(&prepared, &shapes);
-        let output = super::render_host_record(&package, &prepared, &shapes, &facade, &names)
-            .expect("universal host record");
+        let output = render_package(&package).expect("native host record");
         let carrier =
             crate::backends::haskell::skin::nominal_haskell_type_name("KioCarrier", "left", "Same");
         assert!(
@@ -3473,113 +2799,6 @@ v(2) {
     }
 }
 
-/// Render the `<Handle>Host h m` value record: one field per `host fn`,
-/// typed `<args> -> m <ret>`. A `()` return is `m ()`. The record is a
-/// value of monad-returning functions (the host supplies the bodies), not
-/// a typeclass.
-///
-/// Generic and rank-N fields retain their ordinary Haskell polymorphism;
-/// the record never chooses a representation from a Kio role.
-fn render_host_record(
-    package: &Package<Routed>,
-    prepared: &PreparedBoundaryCallableSites,
-    shapes: &super::skin::HaskellShapes<'_>,
-    facade: &HaskellFacadeCatalog,
-    names: &HaskellNames,
-) -> Result<String, EmitError> {
-    // Per-backend limitation (`specs/backends/haskell.md` § Deprecated host
-    // items > Host-fn removal is not source-stable on Haskell): the `Host h m`
-    // record is built from the *live* host-fn set only. A Haskell record field
-    // carries no per-field default, so a removed host fn cannot be kept
-    // settable-but-optional as a deprecated Rust trait method can. Dropping
-    // the field breaks an existing host's record literal; keeping it forces
-    // every new host to initialise it. Host-fn removal is source-breaking.
-    let mut fields: Vec<String> = Vec::new();
-    for site in facade.sites() {
-        let BoundaryFacadeSiteOwner::HostFunction { name } = site.id().owner() else {
-            continue;
-        };
-        let entry = site.entry();
-        if !entry.is_live() {
-            continue;
-        }
-        let module = site.id().module_segments().join("/");
-        let field = host_field_name(&module, name);
-        let mut scope = Vec::new();
-        let mut arg_tys = Vec::new();
-        for stage in entry.stages() {
-            match stage {
-                HaskellCallableHeadStage::Type(param) => {
-                    scope = super::skin::extend_type_scope(&scope, param);
-                }
-                HaskellCallableHeadStage::Value { slots, .. } => {
-                    for slot in slots {
-                        arg_tys.push(shapes.boundary_alias_haskell_type_in(
-                            facade,
-                            slot.boundary(),
-                            slot.ty(),
-                            &scope,
-                            Some(&module),
-                        )?);
-                    }
-                }
-            }
-        }
-        let ret_ty = shapes.boundary_alias_haskell_type_in(
-            facade,
-            entry.returned().boundary(),
-            entry.returned().ty(),
-            &scope,
-            Some(&module),
-        )?;
-        let mut ty = String::new();
-        if !scope.is_empty() {
-            ty.push_str("forall ");
-            ty.push_str(
-                &scope
-                    .iter()
-                    .map(|param| super::skin::kinded_haskell_binder(param, shapes.standard_names()))
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
-            ty.push_str(". ");
-        }
-        for a in &entry.source_parameters(&arg_tys) {
-            ty.push_str(&fn_arg_paren(a));
-            ty.push_str(" -> ");
-        }
-        ty.push_str(&format!("m {}", ty_arg_paren(&ret_ty)));
-        let doc = prepared
-            .site(site.id())
-            .and_then(|site| crate::backends::boundary_docs::callable(package, site));
-        fields.push(documented_field(doc, &format!("{field} :: {ty}")));
-    }
-
-    let mut out = String::new();
-    out.push_str(
-        "-- The host record: a value record of m-returning functions, one\n\
-         -- field per `host fn`. The host supplies the field values; the\n\
-         -- package calls them through the record. Monad-polymorphic in m.\n",
-    );
-    let kind = &names.standard_names.data_kind;
-    out.push_str(&format!(
-        "data {ty} (h :: {kind}.Type) (m :: {kind}.Type -> {kind}.Type) = {ty}\n",
-        ty = names.host_ty
-    ));
-    if fields.is_empty() {
-        // An empty record is still well-kinded: `<Handle>Host h m` mentions
-        // `m`, so the package handle and the monad-polymorphic exports
-        // type-check even with no host fields.
-        out.push_str("  {\n");
-        out.push_str("  }\n");
-    } else {
-        out.push_str("  { ");
-        out.push_str(&fields.join("\n  , "));
-        out.push_str("\n  }\n");
-    }
-    Ok(out)
-}
-
 /// Render the `<Handle> h m` handle: owns the host record for the package's
 /// lifetime. Module fns and exports are reached as top-level functions
 /// taking the package.
@@ -3611,93 +2830,6 @@ fn render_create_package(names: &HaskellNames) -> String {
          {factory} :: forall h m. ({host_types} h, Monad m) => {host_ty} h m -> {handle} h m\n\
          {factory} h = {handle} {{ pkgHost = h }}\n"
     )
-}
-
-/// Render one module fn as a monad-polymorphic top-level function:
-/// `name :: Monad m => <Handle> h m -> <private> -> … -> m <private>`.
-/// The body is produced through the body visitor and threaded through `m`.
-fn render_module_fn(
-    name: &str,
-    module_key: &str,
-    f: &crate::ast::FnDef<Routed>,
-    shapes: &super::skin::HaskellShapes<'_>,
-    package: &Package<Routed>,
-    names: &HaskellNames,
-) -> Result<String, EmitError> {
-    let entry = package
-        .module(module_key)
-        .expect("module function must belong to its package module");
-    let selective_imports = build_selective_imports(&entry.module, package);
-    let qualified_imports = build_qualified_imports(&entry.module.imports);
-    // Each type binder and value group contributes a runtime stage. Type
-    // stages have no value binders; the body remains behind every stage.
-    let value_groups = runtime_param_name_groups(&f.sig);
-    let mut emitter = BodyEmitter::new(module_key, &selective_imports, &qualified_imports, shapes);
-    for g in &value_groups {
-        for n in g {
-            emitter.locals.push((*n).to_owned());
-        }
-    }
-    let body = emitter.emit_expr(&f.body)?;
-
-    // Wrap later groups (curry) into nested closures. The first group's
-    // binders are the top-level params; each later group becomes
-    // a private function constructor returned from the previous.
-    let first = value_groups.first().cloned().unwrap_or_default();
-    let mut acc = body;
-    for g in value_groups.iter().skip(1).rev() {
-        acc = format!("pure {}", emitter.wrap_group_lambda(g, acc));
-    }
-
-    let mut params = String::new();
-    for n in &first {
-        params.push(' ');
-        params.push_str(&haskell_local_ident(n));
-    }
-
-    let mut out = String::new();
-    out.push_str(&format!(
-        "-- Module fn `{}` in module `{module_key}`. Monad-polymorphic; the\n\
-         -- body sequences host effects through m and produces its value\n\
-         -- with `pure`.\n",
-        f.name
-    ));
-    let arity = first.len();
-    let opaque = &names.runtime_names.opaque;
-    let arg_tys = format!("{opaque} h m -> ").repeat(arity);
-    let handle = &names.handle;
-    let host_types = &names.host_types_ty;
-    out.push_str(&format!(
-        "{name} :: forall h m. ({host_types} h, Monad m) => {handle} h m -> {arg_tys}m ({opaque} h m)\n"
-    ));
-    out.push_str(&format!("{name} _pkg{params} = {acc}\n"));
-    Ok(out)
-}
-
-/// Private runtime stages: each type binder is erased to a Unit-taking
-/// closure, and each written value group retains exactly its value binders.
-fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Value(params) => groups.push(
-                params
-                    .iter()
-                    .filter_map(|p| match p {
-                        crate::ast::SignatureParam::Value(vp) => Some(vp.name.as_str()),
-                        crate::ast::SignatureParam::Type(_) => None,
-                    })
-                    .collect(),
-            ),
-            crate::ast::SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| Vec::new()));
-            }
-        }
-    }
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
 }
 
 /// The injective Haskell value name for module fn `leaf` in `module_key`.
@@ -3770,231 +2902,6 @@ fn balanced_wrap(t: &str, open: char, close: char) -> bool {
         }
     }
     depth == 0
-}
-
-type SelectiveImports = BTreeMap<String, String>;
-type QualifiedImports = BTreeMap<String, String>;
-
-fn build_qualified_imports(imports: &[crate::ast::Import]) -> QualifiedImports {
-    let mut out = BTreeMap::new();
-    for u in imports {
-        if let crate::ast::ImportKind::Qualified { path, alias } = &u.kind {
-            let path_str = path
-                .segments
-                .iter()
-                .map(|s| s.name.as_str())
-                .collect::<Vec<_>>()
-                .join("/");
-            out.insert(alias.clone(), path_str);
-        }
-    }
-    out
-}
-
-fn build_selective_imports(
-    importer: &crate::ast::Module<Routed>,
-    package: &Package<Routed>,
-) -> SelectiveImports {
-    crate::backends::selective_module_fn_import_owners(importer, package)
-        .into_iter()
-        .map(|(name, owner)| {
-            let target = module_fn_name(&owner, &name);
-            (name, target)
-        })
-        .collect()
-}
-
-// =========================================================================
-// Exports — typed boundary entry points.
-// =========================================================================
-
-/// One exported item — a `pub fn` or a `pub newtype` member — rendered as
-/// a typed boundary wrapper that converts native boundary args to
-/// the private carrier, calls the internal module fn, and converts the result
-/// back to the native boundary type.
-struct ExportEntry {
-    /// The wrapper's injective Haskell ABI name.
-    wrapper_name: String,
-    /// Exact shared facade site; source spellings never have to be recovered
-    /// from the rendered wrapper name.
-    facade_site: BoundaryFacadeSiteId,
-    /// The declaring module's slash-path — the scope a bare newtype leaf in
-    /// the param / return types resolves against (so a same-leaf newtype in
-    /// another module never supplies the wrong boundary type).
-    module: String,
-    /// The internal target the wrapper calls.
-    target: ExportTarget,
-    /// Every value param's declared type across all value groups, in
-    /// declaration order — the flat wrapper parameter list.
-    param_types: Vec<Option<Type<Routed>>>,
-    /// Value-group sizes, in order. The opaque body renders group 0's
-    /// params as the module fn's top-level binders and each later group
-    /// as one private function layer over one argument (a product when the
-    /// group has two or more params); the wrapper applies accordingly.
-    group_sizes: Vec<usize>,
-    /// The declared return type.
-    ret_type: Type<Routed>,
-}
-
-enum ExportTarget {
-    /// Calls module-fn `mangled`.
-    ModuleFn { mangled: String },
-    /// A non-generic, non-existential transparent newtype member on the
-    /// universal-body fallback. Generic and existential members require the
-    /// native exact wrapper and are rejected before this path renders.
-    TransparentNewtype,
-    /// A public newtype whose prepared surface requires a nominal carrier.
-    /// The universal body must never render this target as identity.
-    NominalNewtype,
-}
-
-fn collect_exports(
-    package: &Package<Routed>,
-    facade: &HaskellFacadeCatalog,
-    shapes: &super::skin::HaskellShapes<'_>,
-) -> Vec<ExportEntry> {
-    let mut out = Vec::new();
-    for site in facade.sites() {
-        if !site.entry().is_live() {
-            continue;
-        }
-        let module = site.id().module_segments().join("/");
-        match site.id().owner() {
-            BoundaryFacadeSiteOwner::HostFunction { .. } => {}
-            BoundaryFacadeSiteOwner::ExportedFunction { name } => {
-                let f = exact_exported_function(package, &module, name);
-                let groups = value_group_param_types(&f.sig);
-                out.push(ExportEntry {
-                    wrapper_name: export_wrapper_name(&module, name),
-                    facade_site: site.id().clone(),
-                    module: module.clone(),
-                    target: ExportTarget::ModuleFn {
-                        mangled: module_fn_name(&module, name),
-                    },
-                    param_types: groups.iter().flatten().cloned().collect(),
-                    group_sizes: groups.iter().map(Vec::len).collect(),
-                    ret_type: signature_ret_type(&f.sig, &f.ret),
-                });
-            }
-            BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member }
-            | BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
-                let declaration = exact_newtype_declaration(package, &module, newtype);
-                let public = facade
-                    .public_newtype(&module, newtype)
-                    .expect("a prepared newtype-member site has public inventory metadata");
-                let target = if public.requires_nominal_carrier()
-                    || !shapes.fallback_bridgeable_in(&declaration.payload, Some(&module))
-                {
-                    ExportTarget::NominalNewtype
-                } else {
-                    ExportTarget::TransparentNewtype
-                };
-                out.push(ExportEntry {
-                    wrapper_name: export_newtype_wrapper_name(&module, newtype, member),
-                    facade_site: site.id().clone(),
-                    module: module.clone(),
-                    target,
-                    param_types: vec![Some(declaration.payload.clone())],
-                    group_sizes: vec![1],
-                    ret_type: declaration.payload.clone(),
-                });
-            }
-        }
-    }
-    out.sort_by(|a, b| a.wrapper_name.cmp(&b.wrapper_name));
-    out
-}
-
-fn exact_exported_function<'p>(
-    package: &'p Package<Routed>,
-    module: &str,
-    name: &str,
-) -> &'p crate::ast::FnDef<Routed> {
-    package
-        .module(module)
-        .and_then(|entry| {
-            entry.module.items.iter().find_map(|item| match item {
-                crate::ast::Item::FnDef(function) if function.name == name => Some(function),
-                _ => None,
-            })
-        })
-        .unwrap_or_else(|| {
-            unreachable!("prepared Haskell export `{module}/{name}` has no exact declaration")
-        })
-}
-
-fn exact_newtype_declaration<'p>(
-    package: &'p Package<Routed>,
-    module: &str,
-    name: &str,
-) -> &'p crate::ast::Newtype<Routed> {
-    let entry = package.module(module).unwrap_or_else(|| {
-        unreachable!("prepared Haskell public newtype `{module}/{name}` has no source module")
-    });
-    for item in &entry.module.items {
-        let mut found = None;
-        crate::pass::resolve::for_each_item_declaration(item, |declaration| {
-            if let Some(candidate) = declaration.newtype()
-                && candidate.name == name
-            {
-                found = Some(candidate);
-            }
-        });
-        if let Some(declaration) = found {
-            return declaration;
-        }
-    }
-    unreachable!("prepared Haskell public newtype `{module}/{name}` has no exact declaration")
-}
-
-/// Every value group's param types, in declaration order — one inner
-/// vec per group, flattened by the exported wrapper
-/// (`specs/backends/README.md` § Function-type FFI canonicalization).
-/// The native-typed internal module fn is curried, so the wrapper
-/// passes all args in one saturated application.
-fn value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<Option<Type<Routed>>>> {
-    let mut scope = BTreeSet::new();
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                for param in params {
-                    if let crate::ast::SignatureParam::Type(param) = param {
-                        scope.insert(param.name.clone());
-                    }
-                }
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(
-                                param
-                                    .ty
-                                    .as_ref()
-                                    .map(|ty| super::skin::erase_scoped_type_vars(ty, &scope)),
-                            ),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
-    }
-    groups
-}
-
-fn signature_ret_type(sig: &crate::ast::Signature<Routed>, ret: &Type<Routed>) -> Type<Routed> {
-    let scope: BTreeSet<String> = sig
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            crate::ast::SignatureParam::Type(param) => Some(param.name.clone()),
-            crate::ast::SignatureParam::Value(_) => None,
-        })
-        .collect();
-    super::skin::erase_scoped_type_vars(ret, &scope)
 }
 
 // =========================================================================
@@ -5056,1298 +3963,4 @@ fn render_rank_n_sum_pattern(
         declaration,
         vec![view_type_id, matched_id, no_match_id, view_fn_id],
     )
-}
-
-/// Render one exported item as a typed boundary wrapper. Params are native
-/// boundary types converted `In` to the private carrier; the result is the
-/// internal module-fn call converted `Out` to the native boundary type. A
-/// `()`-returning export returns `m ()`.
-fn render_export_wrapper(
-    e: &ExportEntry,
-    shapes: &super::skin::HaskellShapes<'_>,
-    facade: &HaskellFacadeCatalog,
-    names: &HaskellNames,
-) -> Result<String, EmitError> {
-    let module = Some(e.module.as_str());
-    let skin = super::skin::HaskellSkin { shapes, module };
-    let name = &e.wrapper_name;
-    let handle = &names.handle;
-    let entry = facade.exact_site(&e.facade_site).entry();
-    let scope = entry
-        .stages()
-        .iter()
-        .filter_map(|stage| match stage {
-            HaskellCallableHeadStage::Type(param) => Some(param.clone()),
-            HaskellCallableHeadStage::Value { .. } => None,
-        })
-        .collect::<Vec<_>>();
-
-    // Newtype identity: payload in, payload out (runtime-identity). The
-    // wrapper threads the value through the package monad.
-    if let ExportTarget::TransparentNewtype = e.target {
-        let (slots, layout) = entry
-            .stages()
-            .iter()
-            .find_map(|stage| match stage {
-                HaskellCallableHeadStage::Value {
-                    slots,
-                    execution: Some(layout),
-                } => Some((slots.as_slice(), layout)),
-                _ => None,
-            })
-            .expect("a live newtype member has a prepared value stage");
-        let [source] = layout.source_params() else {
-            unreachable!("a newtype member has one source parameter")
-        };
-        let mut param_tys = Vec::with_capacity(slots.len());
-        for slot in slots {
-            param_tys.push(shapes.boundary_alias_haskell_type_in(
-                facade,
-                slot.boundary(),
-                slot.ty(),
-                &scope,
-                module,
-            )?);
-        }
-        let arg_names = (0..slots.len())
-            .map(|index| format!("arg{index}"))
-            .collect::<Vec<_>>();
-        let range = source.facade_slots();
-        let value = match source.adapter() {
-            CallableSourceParamAdapter::UnitValue => {
-                assert!(range.is_empty());
-                "()".to_owned()
-            }
-            CallableSourceParamAdapter::Identity => {
-                assert_eq!(range.len(), 1);
-                arg_names[range.start].clone()
-            }
-            CallableSourceParamAdapter::RightNest => {
-                super::native::nest_tuple_value(&arg_names[range])
-            }
-        };
-        let ret_ty = shapes.boundary_alias_haskell_type_in(
-            facade,
-            entry.returned().boundary(),
-            entry.returned().ty(),
-            &scope,
-            module,
-        )?;
-        let kind = &shapes.standard_names().data_kind;
-        let mut sig = format!(
-            "{name} :: forall (h :: {kind}.Type) (m :: {kind}.Type -> {kind}.Type). ({} h, Monad m) => {handle} h m",
-            names.host_types_ty,
-        );
-        for param_ty in &entry.source_parameters(&param_tys) {
-            sig.push_str(" -> ");
-            sig.push_str(&fn_arg_paren(param_ty));
-        }
-        sig.push_str(&format!(" -> m {}", ty_arg_paren(&ret_ty)));
-        let params = entry
-            .source_parameters(&arg_names)
-            .iter()
-            .map(|arg| format!(" {arg}"))
-            .collect::<String>();
-        return Ok(format!("{sig}\n{name} _pkg{params} = pure ({value})\n"));
-    }
-
-    if let ExportTarget::NominalNewtype = e.target {
-        unreachable!(
-            "fallback_facade_blocker must reject prepared nominal newtype export `{}` before \
-             universal Haskell wrapper rendering",
-            e.wrapper_name
-        );
-    }
-
-    let ExportTarget::ModuleFn { mangled } = &e.target else {
-        unreachable!("newtype export targets handled above")
-    };
-
-    let mut param_decls: Vec<String> = Vec::new();
-    let mut param_sig_tys: Vec<String> = Vec::new();
-    let mut call_args: Vec<String> = Vec::new();
-    let mut prelude: Vec<String> = Vec::new();
-    let mut source_offset = 0usize;
-    let mut public_offset = 0usize;
-    let mut value_stage_index = 0usize;
-    for stage in entry.stages() {
-        let HaskellCallableHeadStage::Value {
-            slots,
-            execution: Some(layout),
-        } = stage
-        else {
-            continue;
-        };
-        let group_size = e.group_sizes[value_stage_index];
-        value_stage_index += 1;
-        let source_group = &e.param_types[source_offset..source_offset + group_size];
-        source_offset += group_size;
-        assert_eq!(source_group.len(), layout.source_params().len());
-
-        for slot in slots {
-            let pname = format!("arg{public_offset}");
-            public_offset += 1;
-            param_sig_tys.push(shapes.boundary_alias_haskell_type_in(
-                facade,
-                slot.boundary(),
-                slot.ty(),
-                &scope,
-                module,
-            )?);
-            param_decls.push(pname);
-        }
-        let stage_public_start = public_offset - slots.len();
-        for (source, pty) in layout.source_params().iter().zip(source_group) {
-            let range = source.facade_slots();
-            let internal = match (source.adapter(), pty) {
-                (CallableSourceParamAdapter::UnitValue, _) => {
-                    assert!(range.is_empty());
-                    names.runtime_names.unit.clone()
-                }
-                (CallableSourceParamAdapter::Identity, Some(ty)) => {
-                    assert_eq!(range.len(), 1);
-                    skin.convert(
-                        ty,
-                        &param_decls[stage_public_start + range.start],
-                        FfiDir::In,
-                    )?
-                }
-                (CallableSourceParamAdapter::Identity, None) => {
-                    assert_eq!(range.len(), 1);
-                    param_decls[stage_public_start + range.start].clone()
-                }
-                (CallableSourceParamAdapter::RightNest, Some(ty)) => {
-                    let parts = Type::right_spine_product(ty);
-                    assert_eq!(parts.len(), range.len());
-                    let converted = parts
-                        .into_iter()
-                        .zip(range)
-                        .map(|(part, index)| {
-                            skin.convert(part, &param_decls[stage_public_start + index], FfiDir::In)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    nest_kioprod(&names.runtime_names, &converted)
-                }
-                (CallableSourceParamAdapter::RightNest, None) => {
-                    unreachable!("an untyped source parameter cannot own a product adapter")
-                }
-            };
-            let kv = format!("__kv{}", call_args.len());
-            prelude.push(format!("      let {{ {kv} = {internal} }}"));
-            call_args.push(kv);
-        }
-    }
-    assert_eq!(source_offset, e.param_types.len());
-    assert_eq!(public_offset, param_decls.len());
-    assert_eq!(value_stage_index, e.group_sizes.len());
-
-    // Group 0's kvs saturate the module fn's top-level binders; each
-    // later group is one private function layer applied through the runtime
-    // helper — one argument per group (a private product
-    // when the group has two or more params), mirroring the body
-    // emitter's `emit_apply`.
-    let g0 = e.group_sizes.first().copied().unwrap_or(call_args.len());
-    let call = if call_args.is_empty() || g0 == 0 {
-        format!("{mangled} _pkg")
-    } else {
-        format!("{mangled} _pkg {}", call_args[..g0].join(" "))
-    };
-    let mut chain: Vec<String> = Vec::new();
-    let mut chain_offset = g0;
-    for (gi, size) in e.group_sizes.iter().enumerate().skip(1) {
-        let prev = if gi == 1 {
-            "__f0".to_owned()
-        } else {
-            format!("__f{}", gi - 1)
-        };
-        let argv = if *size == 1 {
-            call_args[chain_offset].clone()
-        } else {
-            let prod = format!("__gp{gi}");
-            chain.push(format!(
-                "      let {{ {prod} = {} }}",
-                nest_kioprod(
-                    &names.runtime_names,
-                    &call_args[chain_offset..chain_offset + size]
-                )
-            ));
-            prod
-        };
-        chain.push(format!(
-            "      __f{gi} <- {} {prev} {argv}",
-            names.runtime_names.call_function
-        ));
-        chain_offset += size;
-    }
-    let final_var = if e.group_sizes.len() > 1 {
-        format!("__f{}", e.group_sizes.len() - 1)
-    } else {
-        "__f0".to_owned()
-    };
-
-    // Build the signature.
-    let kind = &shapes.standard_names().data_kind;
-    let mut forall = vec![
-        format!("(h :: {kind}.Type)"),
-        format!("(m :: {kind}.Type -> {kind}.Type)"),
-    ];
-    forall.extend(
-        scope
-            .iter()
-            .map(|param| super::skin::kinded_haskell_binder(param, shapes.standard_names())),
-    );
-    let mut sig = format!(
-        "{name} :: forall {}. ({} h, Monad m) => {handle} h m",
-        forall.join(" "),
-        names.host_types_ty
-    );
-    for pty in &entry.source_parameters(&param_sig_tys) {
-        sig.push_str(" -> ");
-        sig.push_str(&fn_arg_paren(pty));
-    }
-    let ret_bty = shapes.boundary_alias_haskell_type_in(
-        facade,
-        entry.returned().boundary(),
-        entry.returned().ty(),
-        &scope,
-        module,
-    )?;
-    sig.push_str(&format!(" -> m {}", ty_arg_paren(&ret_bty)));
-
-    let param_decls = entry.source_parameters(&param_decls);
-    let params_str = if param_decls.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", param_decls.join(" "))
-    };
-
-    let mut body = String::new();
-    let emit_head = |body: &mut String| {
-        body.push_str(&format!("{name} _pkg{params_str} = do\n"));
-        for p in &prelude {
-            body.push_str(p);
-            body.push('\n');
-        }
-        body.push_str(&format!("      __f0 <- {call}\n"));
-        for c in &chain {
-            body.push_str(c);
-            body.push('\n');
-        }
-    };
-    if matches!(entry.returned().ty(), Type::Unit { .. }) {
-        // Run the internal fn for its effects, discard the unit value.
-        emit_head(&mut body);
-        body.push_str(&format!("      _ <- pure {final_var}\n"));
-        body.push_str("      pure ()\n");
-    } else if shapes.is_passthrough_in(&e.ret_type, module) {
-        emit_head(&mut body);
-        body.push_str(&format!("      pure {final_var}\n"));
-    } else {
-        let converted = skin.convert(&e.ret_type, "__r", FfiDir::Out)?;
-        emit_head(&mut body);
-        body.push_str(&format!("      let {{ __r = {final_var} }}\n"));
-        body.push_str(&format!("      pure ({converted})\n"));
-    }
-
-    Ok(format!("{sig}\n{body}"))
-}
-
-// =========================================================================
-// Body visitor.
-// =========================================================================
-
-/// Walks a module fn body and renders a Haskell expression of type
-/// a monadic private carrier — the value lifted into the package's monad. Host /
-/// module calls reach `pkgHost _pkg` / the top-level module-fn functions.
-struct BodyEmitter<'a, 'p> {
-    /// In-scope Kio binder names, pushed/popped as the walk descends into
-    /// `let` / `fn` / match-arm scopes. Carried so a future scope-sensitive
-    /// rendering (shadowing-aware identifiers) has the binder stack.
-    locals: Vec<String>,
-    module_key: &'a str,
-    selective_imports: &'a SelectiveImports,
-    qualified_imports: &'a QualifiedImports,
-    shapes: &'a super::skin::HaskellShapes<'p>,
-    /// A monotonic counter for fresh `do`-bind / lambda variable names.
-    fresh: std::cell::Cell<usize>,
-}
-
-impl<'a, 'p> BodyEmitter<'a, 'p> {
-    fn new(
-        module_key: &'a str,
-        selective_imports: &'a SelectiveImports,
-        qualified_imports: &'a QualifiedImports,
-        shapes: &'a super::skin::HaskellShapes<'p>,
-    ) -> Self {
-        BodyEmitter {
-            locals: Vec::new(),
-            module_key,
-            selective_imports,
-            qualified_imports,
-            shapes,
-            fresh: std::cell::Cell::new(0),
-        }
-    }
-
-    fn fresh_var(&self, prefix: &str) -> String {
-        let n = self.fresh.get();
-        self.fresh.set(n + 1);
-        format!("__{prefix}{n}")
-    }
-
-    /// Render one Routed-phase expression to a monadic private carrier
-    /// expression.
-    fn emit_expr(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
-        match e {
-            crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-            Expr::Unit { .. } => Ok(format!("pure {}", self.shapes.runtime_names().unit)),
-            // Pre-Routed forms are gone by Routed (extension is `Never`).
-            Expr::Path { ext, .. }
-            | Expr::Call { ext, .. }
-            | Expr::Tuple { ext, .. }
-            | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
-            | Expr::Elaborator { ext, .. }
-            | Expr::RecOrder { ext, .. }
-            | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
-            | Expr::Ufcs { ext, .. }
-            | Expr::OpChain { ext, .. }
-            | Expr::RecCall { ext, .. } => match *ext {},
-
-            Expr::StrLit { value, .. } => Ok(format!(
-                "pure ({} {})",
-                self.shapes.runtime_names().text,
-                haskell_text_lit(value, self.shapes.standard_names())
-            )),
-            Expr::IntLit {
-                digits, annotation, ..
-            } => {
-                let _ = annotation;
-                Ok(format!(
-                    "pure ({} ({}))",
-                    self.shapes.runtime_names().int,
-                    int_lit(digits)
-                ))
-            }
-            Expr::FloatLit {
-                digits, annotation, ..
-            } => {
-                let _ = annotation;
-                Ok(format!(
-                    "pure ({} ({}))",
-                    self.shapes.runtime_names().double,
-                    float_lit(digits)
-                ))
-            }
-            Expr::BoolLit { value, .. } => {
-                let b = if *value { "True" } else { "False" };
-                Ok(format!("pure ({} {b})", self.shapes.runtime_names().bool_))
-            }
-            Expr::LowBoundRef { name, .. } => Ok(format!("pure {}", haskell_local_ident(name))),
-
-            Expr::Let {
-                name, value, body, ..
-            } => self.emit_let(name, value, body),
-            Expr::Seq { value, body, .. } => self.emit_seq(value, body),
-
-            Expr::LowHostCall {
-                name,
-                module_path,
-                args,
-                sig,
-                ret_ty,
-                ..
-            } => self.emit_low_host_call(name, module_path, args, sig, ret_ty),
-
-            Expr::EnrichedTuple { items, .. } => self.emit_tuple(items),
-            Expr::EnrichedProject {
-                target,
-                index,
-                arity,
-                ..
-            } => self.emit_project(target, *index, *arity),
-            Expr::EnrichedFieldGet {
-                target,
-                index,
-                arity,
-                ..
-            } => self.emit_project(target, *index, *arity),
-            Expr::EnrichedInject {
-                payload,
-                variant,
-                variants,
-                ..
-            } => self.emit_inject(payload, *variant, *variants),
-            Expr::EnrichedMatch {
-                scrutinee, arms, ..
-            } => self.emit_match(scrutinee, arms),
-            Expr::EnrichedConditional {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => self.emit_conditional(cond, then_branch, else_branch),
-
-            Expr::LowModuleCall {
-                mangled,
-                type_args,
-                args,
-                sig,
-                ..
-            } => self.emit_module_call(mangled, type_args.len(), args, sig),
-            Expr::LowQualifiedModuleCall {
-                mangled,
-                type_args,
-                args,
-                sig,
-                ..
-            } => self.emit_qualified_module_call(mangled, type_args.len(), args, sig),
-            Expr::LowNewtypeCtor { payload, .. } => self.emit_expr(payload),
-            Expr::LowNewtypeProj { target, .. } => self.emit_expr(target),
-            Expr::LowQualifiedNewtypeMember { payload, .. } => self.emit_expr(payload),
-            Expr::LowAbsurdCall { value_arg, .. } => {
-                let v = self.fresh_var("absurd");
-                let arg = self.emit_expr(value_arg)?;
-                Ok(format!(
-                    "({arg} >>= \\{v} -> {v} `seq` error \"kio: __absurd__ reached\")"
-                ))
-            }
-            Expr::FnExpr { sig, body, .. } => self.emit_fn_expr(sig, body),
-            Expr::LowClosureCall {
-                name,
-                type_args,
-                args,
-                ..
-            } => {
-                let callee = format!("pure {}", haskell_local_ident(name));
-                let callee = self.emit_erased_type_applications(callee, type_args.len())?;
-                self.emit_apply(&callee, args)
-            }
-            Expr::LowIndirectCall {
-                callee,
-                type_args,
-                args,
-                ..
-            } => {
-                let c = self.emit_expr(callee)?;
-                let c = self.emit_erased_type_applications(c, type_args.len())?;
-                self.emit_apply(&c, args)
-            }
-            Expr::LowTypeApplication { callee, .. } => {
-                let c = self.emit_expr(callee)?;
-                self.emit_apply(&c, &[])
-            }
-            Expr::LowHostFnValueRef {
-                name,
-                module_path,
-                sig,
-                ret_ty,
-                ..
-            } => self.emit_host_fn_value_ref(name, module_path, sig, ret_ty),
-            Expr::LowModuleFnValueRef { mangled, sig, .. } => {
-                self.emit_module_fn_value_ref(mangled, sig)
-            }
-            Expr::LowCpsProjectorApply {
-                receiver,
-                continuation,
-                continuation_ty,
-                ..
-            } => self.emit_cps_projector_apply(receiver, continuation, continuation_ty),
-        }
-    }
-
-    /// `let name = value in body` — force the bound value (Kio strictness)
-    /// and thread effects through `m`. The value's monadic result is bound
-    /// with `>>=`, forced with the private strictness helper, and the body continues.
-    fn emit_let(
-        &mut self,
-        name: &str,
-        value: &Expr<Routed>,
-        body: &Expr<Routed>,
-    ) -> Result<String, EmitError> {
-        let v = self.emit_expr(value)?;
-        let ident = haskell_local_ident(name);
-        self.locals.push(name.to_owned());
-        let b = self.emit_expr(body)?;
-        self.locals.pop();
-        // Forcing the bound value to WHNF makes a `let` evaluate when Kio's strict semantics
-        // says, not lazily on first use.
-        Ok(format!(
-            "({v} >>= \\{ident}_raw -> let {{ {ident} = {} {ident}_raw }} in {ident} `seq` ({b}))",
-            self.shapes.runtime_names().force
-        ))
-    }
-
-    /// `value; body` — run `value` for its effects (forcing its result),
-    /// then evaluate `body`.
-    fn emit_seq(&mut self, value: &Expr<Routed>, body: &Expr<Routed>) -> Result<String, EmitError> {
-        let v = self.emit_expr(value)?;
-        let b = self.emit_expr(body)?;
-        let tmp = self.fresh_var("seq");
-        Ok(format!("({v} >>= \\{tmp} -> {tmp} `seq` ({b}))"))
-    }
-
-    /// `LowHostCall` → sequence each value-arg (monadic), convert it `Out`
-    /// to the native boundary type, call the typed host field, and
-    /// convert the result `In` back to the private carrier. A `()`-returning
-    /// host fn yields private unit.
-    fn emit_low_host_call(
-        &mut self,
-        name: &str,
-        module_path: &str,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-        ret_ty: &Type<Routed>,
-    ) -> Result<String, EmitError> {
-        let member = host_field_name(module_path, name);
-        let param_tys = host_sig_value_param_types(sig);
-        let ret_ty = signature_ret_type(sig, ret_ty);
-        if param_tys.len() != args.len() {
-            return Err(EmitError::unsupported(format!(
-                "Haskell emitter: host fn `{name}` arity mismatch ({} params, {} args)",
-                param_tys.len(),
-                args.len()
-            )));
-        }
-        // Evaluate each arg to its native boundary value, in order, binding
-        // through `>>=` so effects fire left-to-right.
-        let mut binds = String::new();
-        let mut call_args: Vec<String> = Vec::new();
-        let skin = super::skin::HaskellSkin {
-            shapes: self.shapes,
-            module: Some(module_path),
-        };
-        for (a, pty) in args.iter().zip(param_tys.iter()) {
-            let va = self.emit_expr(a)?;
-            let tmp = self.fresh_var("a");
-            binds.push_str(&format!("{va} >>= \\{tmp} -> "));
-            // Convert the private carrier to the host's native arg type.
-            let native = match pty {
-                Some(t) => skin.convert(t, &tmp, FfiDir::Out)?,
-                None => tmp.clone(),
-            };
-            call_args.push(ty_arg_paren(&native));
-        }
-        let call_args_str = if call_args.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", call_args.join(" "))
-        };
-        let call = format!("{member} (pkgHost _pkg){call_args_str}");
-        let ret = self.fresh_var("r");
-        let result = if matches!(&ret_ty, Type::Unit { .. }) {
-            format!(
-                "{call} >>= \\{ret} -> {ret} `seq` pure {}",
-                self.shapes.runtime_names().unit
-            )
-        } else if self.shapes.is_passthrough_in(&ret_ty, Some(module_path)) {
-            // The host returns a native value that IS the internal rep
-            // (unit / type-var). Pass it through.
-            format!("{call} >>= \\{ret} -> pure {ret}")
-        } else {
-            // Convert the host's native return `In` to the internal rep.
-            let converted = skin.convert(&ret_ty, &ret, FfiDir::In)?;
-            format!("{call} >>= \\{ret} -> pure ({converted})")
-        };
-        Ok(format!("({binds}{result})"))
-    }
-
-    /// A product `(A & B & …)` literal → the nested-binary internal value
-    /// after sequencing each element's effects in order. An n-ary product
-    /// is right-folded into private `[head, tail]` cons cells (the same
-    /// representation the projection helper and JS / Go bodies use), the last
-    /// slot held bare; a 1-slot product is the bare value (no wrap).
-    fn emit_tuple(&mut self, items: &[Expr<Routed>]) -> Result<String, EmitError> {
-        let refs: Vec<&Expr<Routed>> = items.iter().collect();
-        self.emit_tuple_refs(&refs)
-    }
-
-    fn emit_tuple_refs(&mut self, items: &[&Expr<Routed>]) -> Result<String, EmitError> {
-        if items.is_empty() {
-            return Ok(format!("pure {}", self.shapes.runtime_names().unit));
-        }
-        let mut binds = String::new();
-        let mut slots: Vec<String> = Vec::new();
-        for item in items {
-            let v = self.emit_expr(item)?;
-            let tmp = self.fresh_var("t");
-            binds.push_str(&format!("{v} >>= \\{tmp} -> "));
-            slots.push(tmp);
-        }
-        Ok(format!(
-            "({binds}pure {})",
-            nest_kioprod(self.shapes.runtime_names(), &slots)
-        ))
-    }
-
-    /// Project slot `index` (of `arity`) from a product.
-    fn emit_project(
-        &mut self,
-        target: &Expr<Routed>,
-        index: usize,
-        arity: usize,
-    ) -> Result<String, EmitError> {
-        let t = self.emit_expr(target)?;
-        let tmp = self.fresh_var("p");
-        Ok(format!(
-            "({t} >>= \\{tmp} -> pure ({} {index} {arity} {tmp}))",
-            self.shapes.runtime_names().project
-        ))
-    }
-
-    /// Inject `payload` as variant `variant` of `variants` → the
-    /// nested-binary tagged value (the same representation the JS / Go
-    /// backends use, and the shape the recovery's `__left__` / `__right__`
-    /// chains and the `loop` `s | r` ABI assume): a right-tagged sum wraps
-    /// `variant` times around the left-tagged payload — or the bare payload
-    /// after the wraps for the final variant, so the right-most arm is the
-    /// nested remainder. A 1-variant sum is the bare payload.
-    fn emit_inject(
-        &mut self,
-        payload: &Expr<Routed>,
-        variant: usize,
-        variants: usize,
-    ) -> Result<String, EmitError> {
-        let p = self.emit_expr(payload)?;
-        let tmp = self.fresh_var("i");
-        Ok(format!(
-            "({p} >>= \\{tmp} -> pure {})",
-            nest_kiosum(self.shapes.runtime_names(), variant, variants, &tmp)
-        ))
-    }
-
-    /// Match on a nested-binary sum scrutinee. Tag 0 selects this arm and tag 1
-    /// selects the remainder, so arm `k` is reached
-    /// by peeling the tag-1 remainder `k` times: a non-final arm tests its
-    /// peeled head's tag 0 and binds the head's payload; the final arm binds
-    /// the fully-peeled value directly (it is the bare remainder). This is
-    /// the shape the recovery's `__left__` / `__right__` chains and the host
-    /// `loop`'s `s | r` ABI assume — a flat tag would collapse a sub-sum (a
-    /// `A | (B | C)` widening) and lose its nesting.
-    fn emit_match(
-        &mut self,
-        scrutinee: &Expr<Routed>,
-        arms: &[crate::ast::EnrichedArm<Routed>],
-    ) -> Result<String, EmitError> {
-        let n = arms.len();
-        if n == 0 {
-            unreachable!(
-                "Haskell emitter: EnrichedMatch with no arms; structural_recovery builds every \
-                 EnrichedMatch from a sum's variants (recover_either / recover_dynamic_right \
-                 yield >= 2 arms) and routes an uninhabited scrutinee through \
-                 __absurd__/LowAbsurdCall, so a zero-arm match is unreachable"
-            );
-        }
-        let s = self.emit_expr(scrutinee)?;
-        let sv = self.fresh_var("m");
-        let body = self.emit_match_arms(&sv, arms, 0)?;
-        Ok(format!("({s} >>= \\{sv} -> {body})"))
-    }
-
-    /// Render the match-arm chain for arms `[k..]`, where `access` names the
-    /// (already tag-1-peeled `k` times) sub-scrutinee expression. The
-    /// non-final arm tests its tag-0 head and binds the head payload; the
-    /// final arm binds the remaining value directly.
-    fn emit_match_arms(
-        &mut self,
-        access: &str,
-        arms: &[crate::ast::EnrichedArm<Routed>],
-        k: usize,
-    ) -> Result<String, EmitError> {
-        let n = arms.len();
-        let arm = &arms[k];
-        let ident = haskell_local_ident(&arm.param);
-        if k + 1 == n {
-            // Final arm: the fully-peeled value is the payload directly.
-            self.locals.push(arm.param.clone());
-            let b = self.emit_expr(&arm.body)?;
-            self.locals.pop();
-            return Ok(format!(
-                "(let {{ {ident} = {access} }} in {ident} `seq` ({b}))"
-            ));
-        }
-        // Non-final arm: `access` is a tagged payload; tag 0 selects
-        // this arm (binding `payload`), tag 1 recurses into the payload.
-        let tagv = self.fresh_var("tag");
-        let payv = self.fresh_var("pay");
-        self.locals.push(arm.param.clone());
-        let b = self.emit_expr(&arm.body)?;
-        self.locals.pop();
-        let rest = self.emit_match_arms(payv.as_str(), arms, k + 1)?;
-        Ok(format!(
-            "(let {{ ({tagv}, {payv}) = {} ({access}) }} in case {tagv} of {{ 0 -> let {{ {ident} = {payv} }} in {ident} `seq` ({b}); _ -> {rest} }})",
-            self.shapes.runtime_names().match_tag
-        ))
-    }
-
-    /// `if cond then t else e` → narrow the scrutinee to `Bool`, then a
-    /// native `if`/`then`/`else`.
-    fn emit_conditional(
-        &mut self,
-        cond: &Expr<Routed>,
-        then_branch: &Expr<Routed>,
-        else_branch: &Expr<Routed>,
-    ) -> Result<String, EmitError> {
-        let c = self.emit_expr(cond)?;
-        let t = self.emit_expr(then_branch)?;
-        let e = self.emit_expr(else_branch)?;
-        let cv = self.fresh_var("c");
-        Ok(format!(
-            "({c} >>= \\{cv} -> if {} {cv} then ({t}) else ({e}))",
-            self.shapes.runtime_names().as_bool
-        ))
-    }
-
-    /// Lower a Kio closure `.(x, y) { body }` to a private function value.
-    /// Each runtime stage becomes one private function constructor; an `n>=2` group
-    /// destructures the single product param into its binders. The closure
-    /// returns the monadic private carrier.
-    fn emit_fn_expr(
-        &mut self,
-        sig: &crate::ast::Signature<Routed>,
-        body: &Expr<Routed>,
-    ) -> Result<String, EmitError> {
-        let groups = runtime_param_name_groups(sig);
-        let mut pushed = 0usize;
-        for g in &groups {
-            for n in g {
-                self.locals.push((*n).to_owned());
-                pushed += 1;
-            }
-        }
-        let body_src = self.emit_expr(body);
-        for _ in 0..pushed {
-            self.locals.pop();
-        }
-        let mut acc = body_src?;
-        // Wrap each runtime stage as a private function, innermost stage first.
-        // The lambda body must produce the monadic private carrier. The
-        // innermost wrap already has that shape; every outer group's `inner`
-        // is the previous bare function value, so it must lift with `pure` to meet
-        // that kind (the currying `emit_module_fn` applies to its later
-        // groups).
-        for (i, g) in groups.iter().rev().enumerate() {
-            let inner = if i == 0 { acc } else { format!("pure {acc}") };
-            acc = self.wrap_group_lambda(g, inner);
-        }
-        // A closure value is itself a pure private-carrier function.
-        Ok(format!("pure {acc}"))
-    }
-
-    /// Wrap a monadic private-carrier `inner` in the private function constructor for
-    /// one value group. A 1-binder group binds the param directly; an
-    /// `n>=2` group binds a fresh product and projects each binder.
-    fn wrap_group_lambda(&self, g: &[&str], inner: String) -> String {
-        if g.len() == 1 {
-            let id = haskell_local_ident(g[0]);
-            return format!(
-                "({} (\\{id} -> {inner}))",
-                self.shapes.runtime_names().function
-            );
-        }
-        if g.is_empty() {
-            // A nullary group: a thunk that ignores its (unit) arg.
-            let v = self.fresh_var("z");
-            return format!(
-                "({} (\\{v} -> {v} `seq` {inner}))",
-                self.shapes.runtime_names().function
-            );
-        }
-        let n = g.len();
-        let prod = self.fresh_var("g");
-        let mut lets = String::new();
-        for (i, b) in g.iter().enumerate() {
-            let id = haskell_local_ident(b);
-            lets.push_str(&format!(
-                "let {{ {id} = {} {i} {n} {prod} }} in ",
-                self.shapes.runtime_names().project
-            ));
-        }
-        format!(
-            "({} (\\{prod} -> {lets}{inner}))",
-            self.shapes.runtime_names().function
-        )
-    }
-
-    /// Apply a monadic private-carrier callee to a sequence of args. Kio currying
-    /// is one product-arg per group at the ABI; a multi-arg group is built
-    /// into a single product. We apply one arg at a time: each
-    /// application evaluates the callee to a private function, the arg to a value,
-    /// then calls.
-    fn emit_apply(&mut self, callee: &str, args: &[Expr<Routed>]) -> Result<String, EmitError> {
-        // Evaluate the callee once.
-        let cv = self.fresh_var("f");
-        let mut binds = format!("{callee} >>= \\{cv} -> ");
-        if args.is_empty() {
-            // A nullary Kio closure call `f()` — a `() -> R` closure applied
-            // to the unit argument the empty value group passes at the ABI.
-            // The function was emitted taking a unit param, so apply it to
-            // private unit.
-            return Ok(format!(
-                "({binds}{} {cv} {})",
-                self.shapes.runtime_names().call_function,
-                self.shapes.runtime_names().unit
-            ));
-        }
-        // Build the single argument (Kio ABI: one product per call group;
-        // here `args` is the flat value-arg list of one group).
-        let argv = if args.len() == 1 {
-            let v = self.emit_expr(&args[0])?;
-            let tmp = self.fresh_var("x");
-            binds.push_str(&format!("{v} >>= \\{tmp} -> "));
-            tmp
-        } else {
-            // Multiple args = a product param.
-            let mut slots: Vec<String> = Vec::new();
-            for a in args {
-                let v = self.emit_expr(a)?;
-                let tmp = self.fresh_var("x");
-                binds.push_str(&format!("{v} >>= \\{tmp} -> "));
-                slots.push(tmp);
-            }
-            let prod = self.fresh_var("xp");
-            binds.push_str(&format!(
-                "let {{ {prod} = {} }} in ",
-                nest_kioprod(self.shapes.runtime_names(), &slots)
-            ));
-            prod
-        };
-        Ok(format!(
-            "({binds}{} {cv} {argv})",
-            self.shapes.runtime_names().call_function
-        ))
-    }
-
-    fn emit_erased_type_applications(
-        &mut self,
-        mut callee: String,
-        count: usize,
-    ) -> Result<String, EmitError> {
-        for _ in 0..count {
-            callee = self.emit_apply(&callee, &[])?;
-        }
-        Ok(callee)
-    }
-
-    fn emit_qualified_module_call(
-        &mut self,
-        mangled: &str,
-        type_arg_count: usize,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let (alias, leaf) = mangled.split_once('.').ok_or_else(|| {
-            EmitError::unsupported(format!(
-                "Haskell emitter: qualified module call `{mangled}` is not `<alias>.<leaf>`"
-            ))
-        })?;
-        let module_key = self.qualified_imports.get(alias).ok_or_else(|| {
-            EmitError::unsupported(format!(
-                "Haskell emitter: qualified-call alias `{alias}` has no `import … as {alias};` mapping"
-            ))
-        })?;
-        let fn_name = module_fn_name(module_key, leaf);
-        self.emit_grouped_module_call(&fn_name, type_arg_count, args, sig)
-    }
-
-    fn emit_module_call(
-        &mut self,
-        mangled: &str,
-        type_arg_count: usize,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let fn_name = match self.selective_imports.get(mangled) {
-            Some(m) => m.clone(),
-            None => module_fn_name(self.module_key, mangled),
-        };
-        self.emit_grouped_module_call(&fn_name, type_arg_count, args, sig)
-    }
-
-    /// Call a top-level module fn. The first group's args become positional
-    /// private-carrier parameters; later groups apply through the returned
-    /// function value. Under-application yields a partial function value.
-    fn emit_grouped_module_call(
-        &mut self,
-        fn_name: &str,
-        type_arg_count: usize,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let group_arities = value_group_arities(sig);
-        let first = group_arities.first().copied().unwrap_or(0);
-
-        let mut binds = String::new();
-        // A generic module entry consumes its first erased type stage;
-        // specialize the remaining type stages before applying value groups.
-        let staged_callee = if type_arg_count > 0 {
-            let callee =
-                self.emit_erased_type_applications(format!("{fn_name} _pkg"), type_arg_count - 1)?;
-            if !sig.has_value_group() {
-                assert!(
-                    args.is_empty(),
-                    "a routed type-only head has no value arguments"
-                );
-                return Ok(callee);
-            }
-            let bound = self.fresh_var("typed");
-            binds.push_str(&format!("{callee} >>= \\{bound} -> "));
-            Some(bound)
-        } else {
-            None
-        };
-        // Evaluate all value args (monadic), in order.
-        let mut argvs: Vec<String> = Vec::new();
-        for a in args {
-            let v = self.emit_expr(a)?;
-            let tmp = self.fresh_var("x");
-            binds.push_str(&format!("{v} >>= \\{tmp} -> "));
-            argvs.push(tmp);
-        }
-
-        if args.len() < first {
-            // Under-applied: build a private function capturing the args so far and
-            // taking the rest of the first group as its single param. The
-            // function receives one private carrier: when one arg is missing, the
-            // param IS that arg; when two+ are missing, the param is a
-            // product the closure projects each remaining slot from.
-            let missing = first - args.len();
-            let prod = self.fresh_var("pp");
-            let mut proj_args = argvs.clone();
-            if missing == 1 {
-                proj_args.push(prod.clone());
-            } else {
-                for i in 0..missing {
-                    proj_args.push(format!(
-                        "({} {i} {missing} {prod})",
-                        self.shapes.runtime_names().project
-                    ));
-                }
-            }
-            let inner = match &staged_callee {
-                Some(callee) => format!(
-                    "{} {callee} {}",
-                    self.shapes.runtime_names().call_function,
-                    nest_kioprod(self.shapes.runtime_names(), &proj_args)
-                ),
-                None => format!("{fn_name} _pkg {}", proj_args.join(" ")),
-            };
-            return Ok(format!(
-                "({binds}pure ({} (\\{prod} -> {inner})))",
-                self.shapes.runtime_names().function
-            ));
-        }
-
-        // Fully (or over-) applied. The first `first` args are positional;
-        // remaining groups apply through the returned private function.
-        let first_args = &argvs[..first];
-        let mut call = if let Some(callee) = staged_callee {
-            format!(
-                "{} {callee} {}",
-                self.shapes.runtime_names().call_function,
-                nest_kioprod(self.shapes.runtime_names(), first_args)
-            )
-        } else if first_args.is_empty() {
-            format!("{fn_name} _pkg")
-        } else {
-            format!("{fn_name} _pkg {}", first_args.join(" "))
-        };
-        let mut consumed = first;
-        for arity in group_arities.iter().skip(1) {
-            if consumed >= argvs.len() {
-                break;
-            }
-            let slice = &argvs[consumed..(consumed + arity).min(argvs.len())];
-            let arg = nest_kioprod(self.shapes.runtime_names(), slice);
-            // `call` returns a private function in the package monad; apply it.
-            let fv = self.fresh_var("g");
-            call = format!(
-                "({call} >>= \\{fv} -> {} {fv} {arg})",
-                self.shapes.runtime_names().call_function
-            );
-            consumed += arity;
-        }
-        Ok(format!("({binds}{call})"))
-    }
-
-    /// `LowHostFnValueRef` → a private function forwarding through the host record
-    /// with the same FFI conversion as a direct host call.
-    fn emit_host_fn_value_ref(
-        &mut self,
-        name: &str,
-        module_path: &str,
-        sig: &crate::ast::Signature<Routed>,
-        ret_ty: &Type<Routed>,
-    ) -> Result<String, EmitError> {
-        let member = host_field_name(module_path, name);
-        let param_tys = host_sig_value_param_types(sig);
-        let ret_ty = signature_ret_type(sig, ret_ty);
-        let skin = super::skin::HaskellSkin {
-            shapes: self.shapes,
-            module: Some(module_path),
-        };
-        // The host fn's value form takes its value params as a single
-        // group (curried into one product param when arity >= 2).
-        let arity = param_tys.len();
-        let arg = self.fresh_var("p");
-        // Extract each native arg from the product param (or use it
-        // directly when unary).
-        let mut natives: Vec<String> = Vec::new();
-        for (i, pty) in param_tys.iter().enumerate() {
-            let slot = if arity == 1 {
-                arg.clone()
-            } else {
-                format!(
-                    "({} {i} {arity} {arg})",
-                    self.shapes.runtime_names().project
-                )
-            };
-            let native = match pty {
-                Some(t) => skin.convert(t, &slot, FfiDir::Out)?,
-                None => slot,
-            };
-            natives.push(ty_arg_paren(&native));
-        }
-        let natives_str = if natives.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", natives.join(" "))
-        };
-        let call = format!("{member} (pkgHost _pkg){natives_str}");
-        let rv = self.fresh_var("hr");
-        let body = if matches!(&ret_ty, Type::Unit { .. }) {
-            format!(
-                "{call} >>= \\{rv} -> {rv} `seq` pure {}",
-                self.shapes.runtime_names().unit
-            )
-        } else if self.shapes.is_passthrough_in(&ret_ty, Some(module_path)) {
-            format!("{call} >>= \\{rv} -> pure {rv}")
-        } else {
-            let converted = skin.convert(&ret_ty, &rv, FfiDir::In)?;
-            format!("{call} >>= \\{rv} -> pure ({converted})")
-        };
-        Ok(format!(
-            "pure ({} (\\{arg} -> {body}))",
-            self.shapes.runtime_names().function
-        ))
-    }
-
-    /// `LowModuleFnValueRef` → a private function forwarding to the resolved
-    /// module-fn function. The module fn's first group is the product
-    /// param of the closure value.
-    fn emit_module_fn_value_ref(
-        &mut self,
-        mangled: &str,
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let fn_name = match self.selective_imports.get(mangled) {
-            Some(m) => m.clone(),
-            None => module_fn_name(self.module_key, mangled),
-        };
-        let first = runtime_param_name_groups(sig).first().map_or(0, Vec::len);
-        let arg = self.fresh_var("p");
-        let mut call_args: Vec<String> = Vec::new();
-        for i in 0..first {
-            if first == 1 {
-                call_args.push(arg.clone());
-            } else {
-                call_args.push(format!(
-                    "({} {i} {first} {arg})",
-                    self.shapes.runtime_names().project
-                ));
-            }
-        }
-        let call = if call_args.is_empty() {
-            format!("{fn_name} _pkg")
-        } else {
-            format!("{fn_name} _pkg {}", call_args.join(" "))
-        };
-        // Later groups apply on the returned private function; the value-form
-        // exposes the first group as the closure param and returns whatever
-        // the call returns (a further function for multi-group fns).
-        Ok(format!(
-            "pure ({} (\\{arg} -> {call}))",
-            self.shapes.runtime_names().function
-        ))
-    }
-
-    /// CPS-projector-apply: an existential newtype projection in CPS form.
-    /// The receiver's payload is handed to the continuation. For the
-    /// non-HKT corpus the newtype is runtime-identity, so this is `cont
-    /// receiver` — evaluate the receiver, apply the continuation to the
-    /// unwrapped payload.
-    fn emit_cps_projector_apply(
-        &mut self,
-        receiver: &Expr<Routed>,
-        continuation: &Expr<Routed>,
-        continuation_ty: &Type<Routed>,
-    ) -> Result<String, EmitError> {
-        let recv = self.emit_expr(receiver)?;
-        let cont = self.emit_expr(continuation)?;
-        let rv = self.fresh_var("cr");
-        let mut cv = self.fresh_var("ck");
-        let (type_stages, callable) = continuation_ty.peel_leading_foralls();
-        let Type::Function { abi_arity, .. } = callable else {
-            unreachable!("a routed CPS projector continuation has a function type")
-        };
-        assert!(
-            *abi_arity <= 1,
-            "a routed CPS projector continuation has zero or one ABI slot"
-        );
-        let mut body = format!("{cont} >>= \\{cv} -> ");
-        for _ in 0..type_stages {
-            let next = self.fresh_var("ct");
-            body.push_str(&format!(
-                "{} {cv} {} >>= \\{next} -> ",
-                self.shapes.runtime_names().call_function,
-                self.shapes.runtime_names().unit
-            ));
-            cv = next;
-        }
-        let payload = if *abi_arity == 0 {
-            self.shapes.runtime_names().unit.as_str()
-        } else {
-            &rv
-        };
-        body.push_str(&format!(
-            "{} {cv} {payload}",
-            self.shapes.runtime_names().call_function
-        ));
-        Ok(format!("({recv} >>= \\{rv} -> {body})"))
-    }
-}
-
-fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    let arities: Vec<usize> = sig
-        .canonical_groups()
-        .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter(|p| matches!(p, crate::ast::SignatureParam::Value(_)))
-                    .count(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
-        })
-        .collect();
-    if arities.is_empty() { vec![0] } else { arities }
-}
-
-pub(super) fn host_sig_value_param_types(
-    sig: &crate::ast::Signature<Routed>,
-) -> Vec<Option<Type<Routed>>> {
-    value_group_param_types(sig).into_iter().flatten().collect()
-}
-
-// =========================================================================
-// Literal + identifier helpers.
-// =========================================================================
-
-/// Render a Kio integer literal as a Haskell `Integer` expression
-/// (parenthesized negatives handled by the caller). The private integer
-/// constructor carries `Integer`, so the literal is exact at every width.
-fn int_lit(digits: &str) -> String {
-    digits.to_owned()
-}
-
-/// Build the nested-binary internal product value from already-rendered
-/// slot expressions. An n-ary product is right-folded into private
-/// `[head, tail]` cons cells (the representation the projection helper
-/// reads, matching the JS / Go bodies), the last slot held bare; a 1-slot
-/// product is the bare slot (no wrap), and an empty product is private unit.
-pub(super) fn nest_kioprod(
-    runtime_names: &super::naming::RuntimeNames,
-    slots: &[String],
-) -> String {
-    match slots {
-        [] => runtime_names.unit.clone(),
-        [only] => only.clone(),
-        [head, rest @ ..] => format!(
-            "({} [{head}, {}])",
-            runtime_names.product,
-            nest_kioprod(runtime_names, rest)
-        ),
-    }
-}
-
-/// Build the nested-binary internal sum value injecting an already-rendered
-/// `payload` as `variant` of `variants`: a right-tagged value wraps `variant`
-/// times around a left-tagged payload, or the bare payload after the
-/// wraps for the final variant (the right-most arm is the nested
-/// remainder). A 1-variant sum is the bare payload. Matches the JS / Go
-/// encoding the private tag helper reads.
-pub(super) fn nest_kiosum(
-    runtime_names: &super::naming::RuntimeNames,
-    variant: usize,
-    variants: usize,
-    payload: &str,
-) -> String {
-    let mut acc = if variant + 1 < variants {
-        format!("({} 0 ({payload}))", runtime_names.sum)
-    } else {
-        payload.to_owned()
-    };
-    for _ in 0..variant {
-        acc = format!("({} 1 ({acc}))", runtime_names.sum);
-    }
-    acc
-}
-
-/// Render a Kio float literal as a Haskell `Double` expression.
-fn float_lit(digits: &str) -> String {
-    // Haskell requires a digit before `.` and after; Kio digits already
-    // carry a well-formed decimal. Ensure a leading-`.`/trailing-`.` is not
-    // produced — Kio's lexer disallows those, so pass through.
-    digits.to_owned()
-}
-
-/// Render a Kio string value as a Haskell `Text` value without relying on
-/// `OverloadedStrings`. The standard-module qualifier is allocated for this
-/// package, so a facade named `Data.Text` cannot capture the reference.
-fn haskell_text_lit(value: &str, standard_names: &super::naming::StandardNames) -> String {
-    format!(
-        "({}.pack {})",
-        standard_names.data_text,
-        haskell_string_lit(value)
-    )
-}
-
-/// Render a Kio string value as a Haskell double-quoted `String` literal.
-fn haskell_string_lit(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('"');
-    for ch in value.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 || (c as u32) == 0x7f => {
-                out.push_str(&format!("\\{}", c as u32))
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-/// The Haskell local identifier for a Kio binder `name`. Prefixed with `k_`
-/// so it never collides with a Haskell keyword or the emitter's own
-/// identifiers, and sanitized to the Haskell identifier grammar.
-fn haskell_local_ident(name: &str) -> String {
-    let mut s = String::with_capacity(name.len() + 2);
-    s.push_str("k_");
-    for c in name.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' || c == '\'' {
-            s.push(c);
-        } else {
-            s.push('_');
-        }
-    }
-    s
 }

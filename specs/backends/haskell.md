@@ -260,7 +260,7 @@ depending on its nested carrier spelling. See § FFI surface.
 
 The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface)
 uses Haddock comments on exported signatures, host-record fields, associated
-host types, and minted nominal newtypes, for both body representations.
+host types, and minted nominal newtypes.
 Transparent newtypes without a nominal declaration have no separate type
 slot. Authored markup is rendered as Haddock, with unresolved references
 and native control syntax retained as inert text. Existing representation
@@ -370,7 +370,9 @@ instance: Kio dictionaries remain Kio values and are not translated into
 Haskell typeclasses. Plain data shapes carry no `m`; function results and
 first-class type-application stages do.
 
-Structural shapes under generic binders remain fully typed. A product or
+Structural shapes under generic binders follow the shared
+[generic substitution and opaque-constructor contract](README.md#generic-substitution-and-opaque-constructors)
+and remain fully typed. A product or
 sum that mentions scoped parameters adds those parameters to its stable
 `Host_…` alias in lexical binder order, preserving both repeated occurrences
 and binder kinds. The alias expands through `<Handle>Product` or
@@ -430,11 +432,9 @@ hatch keeps a removed field settable-but-optional**. This is a genuine
 limitation of the Haskell record construct, not deferred work. The Haskell
 backend therefore **re-emits nothing** for a removed `host fn`; the emitter
 builds the `<Handle>Host h m` record from the *live* `host fn` set alone in
-both `render_host_record` implementations: the universal fallback in
-[`kio-rs/src/backends/haskell/emit.rs`](../../kio-rs/src/backends/haskell/emit.rs)
-and the native path in
+`render_host_record` in
 [`kio-rs/src/backends/haskell/native.rs`](../../kio-rs/src/backends/haskell/native.rs).
-Both emitter comments cite this subsection in turn. A host migrating across a
+A host migrating across a
 `host fn` removal edits its `Host { … }` literal to drop the field.
 
 Removing a `host type` uses the marker class's defaultable associated-type
@@ -537,20 +537,14 @@ the Haskell instantiations:
   inherited unchanged. Each package exports its own marker class, so one
   local marker may implement two packages' contracts without merging
   same-named host types. Native `__absurd__` elimination is
-  `Data.Void.absurd`. Because the universal body fallback erases bottom
-  internally, both its `__absurd__` elimination and its internal-to-public
-  bottom conversion use explicit unreachable failures after the producing
-  effects have run. A host `exit(n)` propagates through the process exit code
+  `Data.Void.absurd`. A host `exit(n)` propagates through the process exit code
   (the host's `exit` field maps to `System.Exit`).
 
 ## Body model
 
 How the emitter renders the package body is an **emitter-internal** concern,
-not part of the host contract: the typed FFI skin (§ Host record contract,
-§ Package API, § FFI surface) is identical whichever way the body is rendered,
-so a host never observes the choice. The rendering mechanics — the
-native-vs-fallback strategy and its trigger cases — live in the emitter, not on
-this page.
+not part of the host contract. Rendering must preserve the typed FFI contract
+(§ Host record contract, § Package API, § FFI surface).
 
 The boundary does not expose or derive authority from that internal choice.
 Every concrete Kio host type remains the exact associated family selected by
@@ -558,40 +552,12 @@ Every concrete Kio host type remains the exact associated family selected by
 quantification. An internal universal representation, when used, is not a
 substitute for either public type identity.
 
-Native body polymorphism preserves Kio's one-binder application tree through
-two deliberately different representations. A statically known declaration
-may use its direct Haskell scheme: adjacent declaration groups `[A][B](p: P)`
-followed by an effectful body returning `R` use
-`forall a. forall b. P -> m R`.
-
-The resolved type alone does not locate the body action. Effectful declarations
-can have the same call type `[A] P -> [B] Q -> R` while placing that action at
-different stages. If `[B](q: Q)` is another declaration group, the direct
-scheme is `forall a. P -> forall b. Q -> m R`: the body runs only after `Q`.
-If the declaration groups end after `[A](p: P)` and its effectful body returns a
-value of type `[B] Q -> R`, the direct scheme is
-`forall a. P -> m (forall b. m (Q -> m R))`: that body runs after `P`, and the
-returned first-class value supplies the later uniform binder stage.
-
-An escaped or otherwise first-class polymorphic value uses a uniform internal
-callable ABI with one monadic stage per `forall`. Thus `[A][B] P -> R` is
-`forall a. m (forall b. m (P -> m R))`. An adapter from a direct declaration
-pure-lifts the two work-free type stages and leaves the declaration call at the
-value stage. Both `[A] P -> [B] Q -> R` declarations above adapt to
-`forall a. m (P -> m (forall b. m (Q -> m R)))`: the first pure-lifts the
-work-free stage after `P`, while the second preserves its real action there.
-This uniform representation keeps same-typed values substitutable without
-consulting their origin.
-Boundary wrappers introduce or consume these internal stages while keeping
-type parameters out of the term-level host ABI. In particular, the compact
-native `forall`s in a public host-record field are its host-facing scheme, not
-the representation of a first-class callable inside the package body.
-
-A body fallback is admissible only when every public host-function slot,
-exported function slot, and exported newtype member remains exactly
-bridgeable through that representation. A private body construct may choose
-a different internal route without changing the facade; an inexact public
-slot makes emission fail rather than weakening its type.
+Observable application stages and effect timing follow the shared
+[function-type FFI canonicalization](README.md#function-type-ffi-canonicalization)
+and [call-by-value contract](README.md#9-call-by-value-evaluation-order).
+Every public host-function slot, exported function slot and exported newtype
+member remains exactly bridgeable regardless of body strategy; an inexact
+public slot makes emission fail rather than weakening its type.
 
 ## FFI surface
 

@@ -1591,6 +1591,13 @@ fn build_driver_for_protocol(
                         Some(r) => format!("pkg.{r}.main"),
                         None => "pkg.main".to_owned(),
                     };
+                    format!("    {main_ns}.main();\n")
+                }
+                ExportDriver::ReturnedForallHostFailure => {
+                    let main_ns = match &export_root {
+                        Some(r) => format!("pkg.{r}.main"),
+                        None => "pkg.main".to_owned(),
+                    };
                     format!(
                         "    {main_ns}.main();\n\
                          \x20   match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {main_ns}.main())) {{\n\
@@ -2555,21 +2562,7 @@ fn render_rust_body_for_binding(binding: &HostFnBinding, m: &TraitMethod) -> Str
                  println!(\"produce\"); \
                  struct Impl; \
                  impl crate::ffi::env::{member}::ret_impl<StubHost> for Impl {{ \
-                     fn specialize<A: crate::shapes::KioType>(&self) -> A::Facade {{ \
-                         /* `[A] A` has no total terminating inhabitant. This fixture-specific \
-                         primitive is exercised only at Unit. The generated stage adapter \
-                         invokes it with an erased marker whose facade is `KioStoredValue`; this \
-                         guard checks that convention, not that A is Unit. A facade alias can \
-                         pass the guard and then deterministically panic during marker decoding. */ \
-                         if ::std::any::TypeId::of::<A::Facade>() \
-                             != ::std::any::TypeId::of::<crate::shapes::KioStoredValue>() \
-                         {{ \
-                             panic!(\"returned forall fixture called outside erased ingress\"); \
-                         }} \
-                         crate::shapes::KioValue::<A>::from_stored( \
-                             crate::shapes::KioValue::<crate::shapes::KioUnit>::pack(()).into_stored(), \
-                         ).unpack() \
-                     }} \
+                     fn specialize<A: crate::shapes::KioType>(&self) {{}} \
                  }} \
                  crate::ffi::env::{member}::ret::<StubHost>::new(Impl) \
                  }}"
@@ -3066,7 +3059,7 @@ mod tests {
     }
 
     #[test]
-    fn returned_forall_uses_typed_value_ingress_without_raw_storage_escape() {
+    fn returned_forall_uses_a_total_unit_implementation() {
         let protocol = RunnerProtocol::ReturnedForallCallByValue;
         let contract = protocol.contract();
         let api = host_api_for_protocol(protocol);
@@ -3084,10 +3077,9 @@ mod tests {
         let body = render_rust_body_for_binding(binding, produce);
         assert!(body.contains("testapi_main__produce::ret_impl<StubHost>"));
         assert!(body.contains("testapi_main__produce::ret::<StubHost>::new(Impl)"));
-        assert!(body.contains("TypeId::of::<A::Facade>()"));
-        assert!(body.contains("TypeId::of::<crate::shapes::KioStoredValue>()"));
-        assert!(body.contains("KioValue::<crate::shapes::KioUnit>::pack(())"));
-        assert!(body.contains("KioValue::<A>::from_stored"));
+        assert!(body.contains("fn specialize<A: crate::shapes::KioType>(&self) {}"));
+        assert!(!body.contains("TypeId"));
+        assert!(!body.contains("from_stored"));
         assert!(!body.contains("__KioErasedType"));
         assert!(!body.contains("Rc::new(())"));
         assert!(!body.contains("dyn ::std::any::Any"));

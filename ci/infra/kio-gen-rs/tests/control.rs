@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 
 use kio_gen::{
-    control::{self, Block, ControlProbe, Descriptor, Payload, Receiver, Sequence, Step, Value},
+    control::{
+        self, Block, ControlProbe, Descriptor, Payload, Receiver, RecursionMode, RecursionProbe,
+        Sequence, Step, TypeProbe, Value,
+    },
     emit, generate, mutate, program_seed, shrink,
 };
 
 fn sequences(probe: &ControlProbe) -> Vec<&Sequence> {
     match probe {
+        ControlProbe::Surface { control, .. } => sequences(control),
         ControlProbe::Sequence(s) => vec![s],
         ControlProbe::Blocks { first, second, .. } => [first, second]
             .into_iter()
@@ -108,13 +112,18 @@ fn invoked_control_distribution_covers_semantic_catalog() {
                 }
             }
         }
+        let control = if let ControlProbe::Surface { control, .. } = probe {
+            control.as_ref()
+        } else {
+            probe
+        };
         if let ControlProbe::Blocks {
             first,
             second,
             label,
             nested,
             reverse,
-        } = probe
+        } = control
         {
             witness(format!(
                 "pair:{:?}:{:?}",
@@ -203,6 +212,8 @@ fn invalid_unshrunken_shrunken_and_prime_programs_have_no_runtime_probe() {
                     !files
                         .iter()
                         .any(|(path, content)| path.contains("kio_gen_control")
+                            || path.contains("kio_gen_types")
+                            || path.contains("kio_gen_recursion")
                             || content.contains("control_probe.run()"))
                 );
             }
@@ -241,4 +252,248 @@ fn probe_manifest_and_bridge_match_all_backend_print_protocol() {
         emit::program_protocol(&p),
         emit::GENERATED_CONTROL_MAIN_PROTOCOL
     );
+}
+
+#[test]
+fn invoked_type_and_recursion_probes_cover_grammar_cells() {
+    let mut seen = HashMap::<String, u64>::new();
+    for i in 0..4000 {
+        let seed = program_seed(0xC017_2015, i);
+        let p = generate::program_from_seed(seed);
+        let Some(ControlProbe::Surface {
+            types, recursion, ..
+        }) = &p.control_probe
+        else {
+            continue;
+        };
+        let files = emit::render_package_files(&p);
+        let source = &files
+            .iter()
+            .find(|(path, _)| path == "workdir/kio_gen_types.kio")
+            .unwrap()
+            .1;
+        assert!(source.contains("pub fn transform(input: String) -> String"));
+        let key = match types {
+            TypeProbe::Staged {
+                spelling,
+                explicit,
+                first,
+                last,
+            } => {
+                assert_ne!(first, last);
+                assert!(source.contains("fn staged(prefix: String)[A](value: A) -> String"));
+                assert!(source.contains("let selected = "));
+                format!("staged:{spelling:?}:{explicit}")
+            }
+            TypeProbe::HigherRank { .. } => {
+                assert!(source.contains("transform: [A] A -> A"));
+                assert!(source.contains("apply(identity,"));
+                "higher-rank-value".into()
+            }
+            TypeProbe::HigherKinded { wrapped, .. } => {
+                assert!(source.contains("fn apply[*F][A](value: F(A), project: [B] F(B) -> B)"));
+                assert!(source.contains("{ apply("));
+                format!("higher-kinded:{wrapped}")
+            }
+            TypeProbe::Existential {
+                payload,
+                explicit_open,
+                first,
+                last,
+            } => {
+                assert!(*payload < 3);
+                assert_ne!(first, last);
+                assert!(source.contains("newtype Packed <Hidden> : Hidden & (Hidden -> String)"));
+                assert!(source.contains("observe(seed)"));
+                assert!(source.contains("let selected = open(packed); selected"));
+                assert_eq!(source.contains("let .(<Hidden> packet)"), !explicit_open);
+                assert_eq!(
+                    source.contains("Packed.get(packed)(String, .[Hidden]"),
+                    *explicit_open
+                );
+                format!("existential:{payload}:{explicit_open}")
+            }
+        };
+        seen.entry(key).or_insert(seed);
+        let manifest = &files
+            .iter()
+            .find(|(path, _)| path == "workdir/prog.pkg.kio")
+            .unwrap()
+            .1;
+        assert_eq!(manifest.contains("  testapi/iter\n"), recursion.is_some());
+        assert_eq!(
+            emit::program_protocol(&p),
+            if recursion.is_some() {
+                emit::GENERATED_RECURSION_MAIN_PROTOCOL
+            } else {
+                emit::GENERATED_CONTROL_MAIN_PROTOCOL
+            }
+        );
+        if let Some(probe) = recursion {
+            assert!(probe.depth <= 3);
+            let source = &files
+                .iter()
+                .find(|(path, _)| path == "workdir/kio_gen_recursion.kio")
+                .unwrap()
+                .1;
+            assert!(source.contains("{ walk(") || source.contains("; saved()"));
+            assert!(source.contains("match! current { (\n.(rest: Counter)"));
+            assert!(source.contains("},\n.(_unit: .)"));
+            assert_eq!(source.contains("fn bounce"), probe.mutual);
+            assert_eq!(
+                source.contains("recur(cont)"),
+                probe.mode == RecursionMode::Pending
+            );
+            assert_eq!(
+                source.contains("recur(poly)"),
+                probe.mode == RecursionMode::Poly
+            );
+            assert_eq!(
+                source.contains("recur(poly, cont)"),
+                probe.mode == RecursionMode::PolyPending
+            );
+            assert_eq!(
+                source.contains("recur(escape)"),
+                probe.mode == RecursionMode::Escape
+            );
+            assert_eq!(
+                source.contains("recur(poly, escape)"),
+                probe.mode == RecursionMode::PolyEscape
+            );
+            if matches!(
+                probe.mode,
+                RecursionMode::Escape | RecursionMode::PolyEscape
+            ) {
+                assert!(source.contains("; io.print(\"saved\\n\"); saved()"));
+            }
+            seen.entry(format!(
+                "recursion:{:?}:{}:{}",
+                probe.mode, probe.mutual, probe.depth
+            ))
+            .or_insert(seed);
+        }
+    }
+    for spelling in kio_gen::ast::UfcsSpelling::ALL {
+        for explicit in [false, true] {
+            assert!(seen.contains_key(&format!("staged:{spelling:?}:{explicit}")));
+        }
+    }
+    for key in [
+        "higher-rank-value",
+        "higher-kinded:false",
+        "higher-kinded:true",
+    ] {
+        assert!(seen.contains_key(key), "missing {key}");
+    }
+    for payload in 0..3 {
+        for explicit in [false, true] {
+            assert!(seen.contains_key(&format!("existential:{payload}:{explicit}")));
+        }
+    }
+    for mode in [
+        RecursionMode::Tail,
+        RecursionMode::Pending,
+        RecursionMode::Poly,
+        RecursionMode::PolyPending,
+        RecursionMode::Escape,
+        RecursionMode::PolyEscape,
+    ] {
+        for mutual in [false, true] {
+            for depth in 0..=3 {
+                assert!(
+                    seen.contains_key(&format!("recursion:{mode:?}:{mutual}:{depth}")),
+                    "missing {mode:?}/{mutual}/{depth}"
+                );
+            }
+        }
+    }
+    let mut witnesses: Vec<_> = seen.into_iter().collect();
+    witnesses.sort();
+    for (key, seed) in witnesses {
+        println!("surface grammar witness {key}: seed={seed}");
+    }
+}
+
+#[test]
+fn finite_recursion_oracle_counts_iterations_and_pending_work() {
+    let mut probe = RecursionProbe {
+        mode: RecursionMode::Tail,
+        mutual: false,
+        depth: 0,
+    };
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "base\nchosen\n"
+    );
+    probe.depth = 3;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "step\nstep\nstep\nbase\nchosen\n"
+    );
+    probe.mode = RecursionMode::Pending;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "before\nbefore\nbefore\nbase\nafter\nafter\nafter\nchosen\n"
+    );
+    probe.mode = RecursionMode::Escape;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "saved\nescape\nescape\nescape\nbase\nchosen\n"
+    );
+    probe.mode = RecursionMode::PolyEscape;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "saved\nescape\nescape\nescape\nbase\nchosen\n"
+    );
+    probe.mode = RecursionMode::PolyPending;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "before\nbefore\nbefore\nbase\nafter\nafter\nafter\nchosen\n"
+    );
+    probe.mutual = true;
+    assert_eq!(
+        control::recursion_stdout(&probe, "chosen\n"),
+        "walk:before\nbounce:before\nwalk:before\nbounce:base\nwalk:after\nbounce:after\nwalk:after\nchosen\n"
+    );
+}
+
+#[test]
+fn existential_oracle_preserves_the_selected_sequence_value() {
+    for payload in 0..3 {
+        for explicit_open in [false, true] {
+            let probe = ControlProbe::Surface {
+                control: Box::new(ControlProbe::Sequence(Sequence {
+                    receiver: Receiver::Direct,
+                    initial: "control\n".into(),
+                    steps: vec![Step::Let(Value::Literal("selected\n".into()))],
+                    result: Value::Current,
+                })),
+                types: TypeProbe::Existential {
+                    payload,
+                    explicit_open,
+                    first: "first\n".into(),
+                    last: "last\n".into(),
+                },
+                recursion: None,
+            };
+            assert_eq!(control::expected_stdout(&probe), "selected\nselected\n");
+            let files = kio_gen::control_render::files(&probe);
+            let runtime = &files
+                .iter()
+                .find(|(p, _)| p == "workdir/kio_gen_control.kio")
+                .unwrap()
+                .1;
+            assert!(runtime.contains("let value = control_value(); io.print(value); let selected = type_probe.transform(value); io.print(selected)"));
+            assert!(runtime.contains("Box.get(result) }"));
+            let types = &files
+                .iter()
+                .find(|(p, _)| p == "workdir/kio_gen_types.kio")
+                .unwrap()
+                .1;
+            assert!(types.contains("observe(seed)"));
+            if payload == 1 {
+                assert!(types.contains("((\"last\\n\", input)"));
+            }
+        }
+    }
 }

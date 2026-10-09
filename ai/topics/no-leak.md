@@ -15,6 +15,7 @@ This page is the general principle those three specialize, plus the full catalog
 The rule governs the **public project artifacts** — the files a clone publishes and an outside reader consumes — with one explicit exception: hand-written `docs/blog/*.md` post bodies are outside this rule. Their authorial context may be personal, session-relative, or process-oriented, and they may link to any tracked repository path. Their separate stability rule requires GitHub file and directory links to pin a full commit ID rather than a moving branch or tag.
 
 - `specs/`
+- `evidence/`
 - `docs/` except `docs/blog/*.md`
 - `README.md`, `ROADMAP.md`, `INSTALL.md`, `KIO-FOR-AGENTS.md`
 - `kio-rs/` source and its comments (and any future compiler crate)

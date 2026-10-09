@@ -556,9 +556,9 @@ pub fn substitute_module_for_eval(
         module_path: module_path.to_owned(),
         module: Some(module),
         package,
-        prime_type_requalifier: Some(crate::pass::typecheck_core::PrimeTypeRequalifier::new(
-            module,
-        )),
+        prime_type_requalifier: PrimeRequalifier::Active(
+            crate::pass::typecheck_core::PrimeTypeRequalifier::new(module),
+        ),
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -579,7 +579,7 @@ fn substitute_package_file_for_eval(
         module_path: format!("__package_file__:{package_name}"),
         module: None,
         package: None,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -608,7 +608,7 @@ pub fn substitute_expr_for_eval(
         module_path: module_path.to_owned(),
         module,
         package,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -649,22 +649,22 @@ pub(super) fn substitute_expr_with_completed_source_bindings(
             module_path: module_path.to_owned(),
             module: Some(module),
             package,
-            prime_type_requalifier: Some(crate::pass::typecheck_core::PrimeTypeRequalifier::new(
-                module,
-            )),
+            prime_type_requalifier: PrimeRequalifier::Deferred,
             type_binders: Vec::new(),
             prime_requalifier_seeded: false,
             source_bindings,
             comptime_lowering_mode: ComptimeLoweringMode::EvalPreserve,
         };
         let pre_prime = visitor.walk_expr(expr).expect(INFALLIBLE);
-        visitor.seed_prime_type_requalifier();
-        let mut requalifier = visitor
-            .prime_type_requalifier
-            .take()
-            .expect("replayed elaboration has a Prime type requalifier");
-        let imports = requalifier.take_imports();
-        let aliases = requalifier.take_local_aliases();
+        let (imports, aliases) = match visitor.prime_type_requalifier {
+            PrimeRequalifier::Active(mut requalifier) => {
+                (requalifier.take_imports(), requalifier.take_local_aliases())
+            }
+            PrimeRequalifier::Deferred => (Vec::new(), Vec::new()),
+            PrimeRequalifier::Disabled => {
+                unreachable!("replayed elaboration enables Prime type requalification")
+            }
+        };
         (pre_prime, imports, aliases)
     };
     record_replayed_prime_bindings(elabs, module_path, imports, aliases);
@@ -701,7 +701,7 @@ pub fn substitute_type_for_eval(
         module_path: module_path.to_owned(),
         module,
         package,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -729,7 +729,7 @@ pub fn substitute_signature_for_eval(
         module_path: module_path.to_owned(),
         module,
         package,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -762,7 +762,7 @@ pub fn substitute_fn_def_for_eval(
         module_path: module_path.to_owned(),
         module,
         package,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -803,9 +803,9 @@ pub(crate) fn substitute_module_with_path_in_package(
         module_path: module_path.to_owned(),
         module: Some(module),
         package,
-        prime_type_requalifier: Some(crate::pass::typecheck_core::PrimeTypeRequalifier::new(
-            module,
-        )),
+        prime_type_requalifier: PrimeRequalifier::Active(
+            crate::pass::typecheck_core::PrimeTypeRequalifier::new(module),
+        ),
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -837,7 +837,7 @@ pub(crate) fn substitute_package_file_with_pkg(
         module_path: format!("__package_file__:{package_name}"),
         module: None,
         package: None,
-        prime_type_requalifier: None,
+        prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,
         source_bindings: None,
@@ -913,6 +913,13 @@ fn record_replayed_prime_bindings(
     elabs.record_generated_type_aliases(module_path, &aliases);
 }
 
+#[allow(clippy::large_enum_variant)] // Preserve the visitor's existing inline requalifier ownership.
+enum PrimeRequalifier {
+    Disabled,
+    Deferred,
+    Active(crate::pass::typecheck_core::PrimeTypeRequalifier),
+}
+
 struct SubstituteVisitor<'a> {
     elabs: &'a Elaborations,
     source_bindings:
@@ -930,7 +937,7 @@ struct SubstituteVisitor<'a> {
     /// unrecorded; `None` falls back to a `package`-keyed lookup.
     module: Option<&'a Module<Lowered>>,
     package: Option<&'a Package<Lowered>>,
-    prime_type_requalifier: Option<crate::pass::typecheck_core::PrimeTypeRequalifier>,
+    prime_type_requalifier: PrimeRequalifier,
     type_binders: Vec<String>,
     prime_requalifier_seeded: bool,
     comptime_lowering_mode: ComptimeLoweringMode,
@@ -1120,13 +1127,13 @@ impl<'a> SubstituteVisitor<'a> {
         &mut self,
         recorded: &crate::pass::typecheck_core::RecordedTypeResolution<Lowered>,
     ) -> Result<Type<PrePrime>, Error> {
-        self.seed_prime_type_requalifier();
-        if recorded.identity_canonical
-            && let Some(requalifier) = &mut self.prime_type_requalifier
-        {
-            let bound = self.type_binders.iter().cloned().collect();
-            let rewritten = requalifier.rewrite(&recorded.resolved, &bound);
-            return self.walk_type(&rewritten);
+        if recorded.identity_canonical {
+            self.seed_prime_type_requalifier();
+            if let PrimeRequalifier::Active(requalifier) = &mut self.prime_type_requalifier {
+                let bound = self.type_binders.iter().cloned().collect();
+                let rewritten = requalifier.rewrite(&recorded.resolved, &bound);
+                return self.walk_type(&rewritten);
+            }
         }
         self.walk_type(&recorded.resolved)
     }
@@ -1135,7 +1142,14 @@ impl<'a> SubstituteVisitor<'a> {
         if self.prime_requalifier_seeded {
             return;
         }
-        if let Some(requalifier) = &mut self.prime_type_requalifier {
+        if matches!(self.prime_type_requalifier, PrimeRequalifier::Deferred) {
+            self.prime_type_requalifier =
+                PrimeRequalifier::Active(crate::pass::typecheck_core::PrimeTypeRequalifier::new(
+                    self.module
+                        .expect("deferred requalification has its input module"),
+                ));
+        }
+        if let PrimeRequalifier::Active(requalifier) = &mut self.prime_type_requalifier {
             for import in self.elabs.generated_imports_for(&self.module_path) {
                 requalifier.add_generated_import(&import.module_path, &import.alias);
             }
@@ -1419,7 +1433,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                 imports.push(generated_import_clause(import));
             }
         }
-        if let Some(requalifier) = &mut self.prime_type_requalifier {
+        if let PrimeRequalifier::Active(requalifier) = &mut self.prime_type_requalifier {
             imports.extend(requalifier.take_imports());
             let mut aliases = self
                 .elabs
@@ -2901,6 +2915,203 @@ mod tests {
     }
 
     #[test]
+    fn replayed_input_without_canonical_types_skips_requalifier_initialization() {
+        let parsed = parse("module owner; host type Hidden[A]; type Kioq0 = .;")
+            .expect("parse owner with reserved names");
+        let (modules, _) =
+            FullPipeline::lower_package(vec![(module_file_path("owner"), parsed)], None)
+                .expect("lower owner");
+        let module = &modules[0].1;
+        let span = Span::new(0, 0);
+        let expr = Expr::<Lowered>::Unit {
+            source_trivia: Default::default(),
+            occurrence: Default::default(),
+            meta: Meta::new(span),
+        };
+        let mut elabs = Elaborations::new();
+        let before =
+            crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test();
+        let result =
+            substitute_expr_for_replayed_elaboration(&expr, &mut elabs, "owner", None, module);
+        assert_eq!(
+            result,
+            Expr::<PrePrime>::Unit {
+                source_trivia: Default::default(),
+                occurrence: Default::default(),
+                meta: Meta::new(span),
+            }
+        );
+        assert!(elabs.prime_requalification_imports_for("owner").is_empty());
+        assert!(elabs.generated_type_aliases_for("owner").is_empty());
+        assert_eq!(
+            crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test()
+                - before,
+            0,
+            "an input without canonical recorded types has no requalifier work"
+        );
+    }
+
+    #[test]
+    fn replayed_input_requalification_matches_eager_binding_boundaries() {
+        let parsed = parse(
+            "module owner; import provider as dep; host type Hidden[A]; \
+             type Kioq0 = .; type Qp0_s0 = .;",
+        )
+        .expect("parse owner with import, local nominal and allocator collisions");
+        let provider = parse("module provider; pub host type External;")
+            .expect("parse imported nominal owner");
+        let (modules, _) = FullPipeline::lower_package(
+            vec![
+                (module_file_path("owner"), parsed),
+                (module_file_path("provider"), provider),
+            ],
+            None,
+        )
+        .expect("lower owner and dependency");
+        let module = &modules
+            .iter()
+            .find(|(_, module)| module_path_key(&module.path) == "owner")
+            .expect("owner module")
+            .1;
+        let span = Span::new(0, 0);
+        let unit = Type::<Lowered>::Unit {
+            meta: Meta::new(span),
+        };
+        let call = Expr::synth_call(
+            Expr::Path {
+                occurrence: Default::default(),
+                segments: vec![PathSegment::new("__left__", span)],
+                meta: Meta::new(span),
+                ext: (),
+            },
+            vec![
+                CallArg::Type(Type::Infer {
+                    meta: Meta::new(span),
+                    ext: (),
+                }),
+                CallArg::Type(Type::Infer {
+                    meta: Meta::new(span),
+                    ext: (),
+                }),
+                CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
+                    occurrence: Default::default(),
+                    meta: Meta::new(span),
+                }),
+            ],
+            span,
+        )
+        .with_fresh_occurrence();
+        let shadowed = Expr::FnExpr {
+            occurrence: Default::default(),
+            sig: Signature::from_parts(
+                ["Hidden", "dep"]
+                    .into_iter()
+                    .map(|name| {
+                        SignatureParam::Type(TypeParam {
+                            name: name.to_owned(),
+                            kind: None,
+                            span,
+                            presentation: Default::default(),
+                        })
+                    })
+                    .collect(),
+                vec![SignatureGroupKind::Type { len: 2 }],
+            ),
+            ret_ty: None,
+            body: Box::new(call.clone()),
+            meta: Meta::new(span),
+            caps: (),
+        };
+        let mut lazy = Elaborations::new();
+        let mut eager = Elaborations::new();
+        for elabs in [&mut lazy, &mut eager] {
+            for (slot, ty) in [
+                Type::synth_path(
+                    vec!["owner".to_owned(), "Hidden".to_owned()],
+                    vec![unit.clone()],
+                    span,
+                ),
+                Type::synth_path(
+                    vec!["provider".to_owned(), "External".to_owned()],
+                    Vec::new(),
+                    span,
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                elabs.record_type_resolution(
+                    "owner",
+                    call.site().id,
+                    slot,
+                    crate::pass::typecheck_core::InternedType::fresh_canonical(ty),
+                );
+            }
+        }
+        // Repeating the shadowed input must seed the alias just published by
+        // its predecessor; the final unshadowed input resets lexical binders.
+        for input in [&shadowed, &shadowed, &call] {
+            let before =
+                crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test();
+            let actual =
+                substitute_expr_for_replayed_elaboration(input, &mut lazy, "owner", None, module);
+            assert_eq!(
+                crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test()
+                    - before,
+                1,
+                "multiple canonical slots initialize their one input requalifier once"
+            );
+            let (expected, imports, aliases) = {
+                let mut visitor = SubstituteVisitor {
+                    elabs: &eager,
+                    source_bindings: None,
+                    module_path: "owner".to_owned(),
+                    module: Some(module),
+                    package: None,
+                    prime_type_requalifier: PrimeRequalifier::Active(
+                        crate::pass::typecheck_core::PrimeTypeRequalifier::new(module),
+                    ),
+                    type_binders: Vec::new(),
+                    prime_requalifier_seeded: false,
+                    comptime_lowering_mode: ComptimeLoweringMode::EvalPreserve,
+                };
+                let expected = visitor.walk_expr(input).expect(INFALLIBLE);
+                visitor.seed_prime_type_requalifier();
+                let PrimeRequalifier::Active(mut requalifier) = visitor.prime_type_requalifier
+                else {
+                    panic!("eager reference retains its initialized requalifier")
+                };
+                (
+                    expected,
+                    requalifier.take_imports(),
+                    requalifier.take_local_aliases(),
+                )
+            };
+            record_replayed_prime_bindings(&mut eager, "owner", imports, aliases);
+            assert_eq!(actual, expected);
+            assert_eq!(
+                lazy.prime_requalification_imports_for("owner"),
+                eager.prime_requalification_imports_for("owner"),
+            );
+            assert_eq!(
+                lazy.generated_type_aliases_for("owner"),
+                eager.generated_type_aliases_for("owner"),
+            );
+        }
+        let [alias] = lazy.generated_type_aliases_for("owner") else {
+            panic!("repeated input retains one generated local alias")
+        };
+        assert_eq!(alias.alias, "Kioq1");
+        assert_eq!(alias.params[0].name, "Qp0_s1");
+        let [import] = lazy.prime_requalification_imports_for("owner") else {
+            panic!("shadowed authored import requires one generated import")
+        };
+        assert_eq!(import.module_path, "provider");
+        assert_eq!(import.alias, "_q2");
+    }
+
+    #[test]
     fn eval_preserve_keeps_explicit_generated_binding_paths() {
         let span = Span::new(3, 9);
         let mut elabs = Elaborations::new();
@@ -2930,7 +3141,7 @@ mod tests {
             module_path: "x/main".to_owned(),
             module: None,
             package: None,
-            prime_type_requalifier: None,
+            prime_type_requalifier: PrimeRequalifier::Disabled,
             type_binders: vec!["T".to_owned()],
             prime_requalifier_seeded: false,
             source_bindings: None,
@@ -2956,7 +3167,10 @@ mod tests {
             vec!["_qsite_0", "original", "T"],
             "a canonical module-path head must not be reinterpreted as a generated alias"
         );
-        assert!(visitor.prime_type_requalifier.is_none());
+        assert!(matches!(
+            visitor.prime_type_requalifier,
+            PrimeRequalifier::Disabled
+        ));
 
         visitor.type_binders.clear();
         let generated_import_ty = Type::synth_path(
@@ -3738,7 +3952,7 @@ mod tests {
             module_path: "x/main".to_owned(),
             module: None,
             package: None,
-            prime_type_requalifier: None,
+            prime_type_requalifier: PrimeRequalifier::Disabled,
             type_binders: Vec::new(),
             prime_requalifier_seeded: false,
             source_bindings: None,

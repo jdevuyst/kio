@@ -279,7 +279,8 @@ For each finding, cite the generated-name family, construction site, lexical
 scope, colliding legal spelling, and missing or failing evidence.
 
 **Default: report only.** If invoked with a fix-it directive, follow
-[`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md). Keep
-independent allocator families in separate commits, add the focused
-regression before claiming the family fixed, and never make a public golden
-implementation-shaped to force a private name.
+[`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md). Keep each
+allocator family's ownership and evidence separately reviewable; publication
+grouping follows that workflow's coherent-commit policy, not a commit per
+family. Add the focused regression before claiming the family fixed, and
+never make a public golden implementation-shaped to force a private name.

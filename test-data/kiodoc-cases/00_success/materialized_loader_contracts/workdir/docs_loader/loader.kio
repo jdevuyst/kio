@@ -2231,8 +2231,7 @@ fn push_hostfns_scope_for(
 // Each layout's body scope matches the runtime environment after the
 // closure is applied and the projection lets run (see `wrap_fn`), so de
 // Bruijn resolution falls out without a post-hoc shift.
-
-// The number of value parameters, as a host i32.
+/// Returns the number of value parameters as a host i32.
 pub fn pnames_len(params: Pnames) -> I32 { length(Pnames.get(params)) }
 
 // Push the value-param names onto `base` in **declaration order**, so the
@@ -4699,6 +4698,8 @@ fn name_has_one_dot(name: String) -> Bool {
 
 fn mfirst_none() -> Mfirst_hit { {mfirst_hit = widen_sum!((), . | (Omember & Bool))} }
 
+/// Resolves a qualified or unqualified export name on the image's bridge surface,
+/// returning the unique match, absence, or the ambiguous candidate names.
 pub fn find_export(im: Image, name: String) -> Export_find {
   let qualified = name_is_qualified(name);
   let loop_result =

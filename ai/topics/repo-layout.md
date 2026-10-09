@@ -19,6 +19,7 @@ Pointer: read when navigating the repo or adding new top-level files / directori
   `ci/all.sh` orchestrates every gating script for local dev and for the Linux GitHub sampled gate; each gating script is also independently invokable. `ci/all.sh` auto-discovers gating scripts across those three buckets (excluding `checks/per-case/`), so adding a new gating check means placing the script in the right bucket. The macOS / Windows workflow job is an explicit portability subset; add a script there only when that check needs hosted-runner OS coverage.
 - `reports/` — POSIX shell scripts for **reporting** harnesses. Runnable locally as `sh reports/all.sh` (umbrella) or `sh reports/<name>.sh` directly. Sibling to `ci/`, not a child: `ci/` holds gating scripts that block merge on failure; `reports/` holds analyses whose output is information for human triage, not a gating signal. Today: `mutation.sh` (cargo-mutants over the semantic core: typer, elaborator registry, substitute pass, evaluator/normalizer, and Prime path, with bounded exploratory and authenticated deterministic-campaign modes), `fuzz.sh` (cargo-fuzz over the parser and lexer; nightly Rust), `kio-gen-coverage-delta.sh` (cargo-llvm-cov coverage delta for generated cases), and `equiv-eval-reachability.sh` (a direct, non-gating LLVM source locator used deliberately when auditing evaluator-test confidence). The first three are driven by their corresponding `audit-*` skills; the evaluator locator remains directly invokable rather than becoming a per-change gate.
 - `specs/` — authoritative specifications; see [`ai/topics/specs.md`](specs.md) for the file-by-file list.
+- [`evidence/`](../../evidence/README.md) — durable implementation arguments, measurements and decision rationale, organized by subject. Instructions route here rather than storing completed investigations themselves; see § Evidence records below.
 - `KIO-FOR-AGENTS.md` — portable agent workflow for authoring Kio in any project, also available through `kio manual`; repository-only obligations live in [`kio-authoring.md`](kio-authoring.md).
 - `docs/` — pedagogical material for Kio (tutorials, topic guides, host integration guides); see [`ai/topics/docs.md`](docs.md).
 - `kio-rs/` — Rust implementation of Kio (Cargo project): compiler and CLI. Package name `kio-rs`, binaries `kio` and `kio-prime` (see [`ai/topics/implementation.md`](implementation.md)). The `fuzz/` subdirectory is a separate cargo-fuzz crate (`kio-rs-fuzz`, `publish = false`) holding the libFuzzer targets for `reports/fuzz.sh` — its own workspace, requires nightly Rust to build.
@@ -26,3 +27,33 @@ Pointer: read when navigating the repo or adding new top-level files / directori
 - `website/` — VitePress static site. Build scripts derive docs pages from `docs/README.md` plus `kio doc build --html`, derive the host-language list from `specs/backends/*.md`, build the `kio-repl-wasm` bundle into VitePress public assets, and publish through the Pages workflow.
 - `test-data/` — Kio source and fixtures consumed by CI: cross-implementation goldens under `test-data/goldens/`, backend-specific public-host and durable-artifact evidence under `test-data/emissions/`, highlight fixtures at `test-data/highlight-corpus/`, Kiodoc cases at `test-data/kiodoc-cases/`, adopter-grade POCs at `test-data/poc/`, composed-program castles at `test-data/castles/`, and community contributions at `test-data/contrib/`. The harness, per-case checks, orchestrators, and support crates all live under `ci/`. Strategy is in [`TESTING.md`](../../TESTING.md); operational contracts are in [`test-data/README.md`](../../test-data/README.md) and [`test-data/emissions/README.md`](../../test-data/emissions/README.md). **Goldens are language-level fixtures, not implementation tests**: case-owned code never inspects, transforms, imports, or native-compiles generated host-backend files, and comments use spec/language vocabulary rather than implementation names. A golden may hand opaque artifacts to a documented fixed runner protocol; Kio' is the specified backend-neutral phase-artifact exception. Emission cases are one-backend `HOST_INTERFACE` or `ARTIFACT_SHAPE` evidence and never substitute for cross-backend runtime coverage or private unit/mutation tests.
 - `LICENSE-MIT`, `LICENSE-APACHE` — dual-licensed under MIT or Apache-2.0 at the user's option, mirroring the Rust project's convention.
+
+## Evidence records
+
+Keep durable implementation-specific arguments, informal proofs, measurements
+and decision rationale in `evidence/`. Preserve their claim, assumptions,
+examined code or version, method, controls, results and limitations, with
+resolving code/test links and reproduction details where available. Mark
+missing metadata or unverified conclusions explicitly; moving a record is not
+revalidating it. Raw logs, transcripts and transient coordination are not this
+directory's purpose. Apply the [no-leak rule](no-leak.md).
+
+Use subject pages and a small index, not a second mechanism inventory. The
+[performance inventory](implementation.md#compiler-performance-architecture)
+remains the discovery route for implemented mechanisms. Topics and skills own
+instructions, audit procedures and concise maintenance invariants; link them
+to evidence rather than copying receipts into either layer. When an affected
+assumption changes, update or mark the record superseded without presenting
+historical measurements as current validation.
+
+Evidence supports a decision; it does not authorize a contract change. Public
+contracts remain in `specs/`, language meta-theory in `specs/formal/`, library
+arguments with their `docs/poc/` case studies, and executable reporting
+harnesses in `reports/`. Executable regressions stay in their test layer.
+
+Keep `evidence/README.md` accurate when adding, moving or retiring subject pages
+or changing the directory's purpose. Changes to evidence placement or its
+relationship to tests must also keep this guidance and the short pointer in
+[`TESTING.md` § Philosophy](../../TESTING.md#philosophy) aligned, without duplicating
+the evidence inventory. [`audit-test-strategy`](../skills/audit-test-strategy/SKILL.md)
+checks the index, links and placement boundary.
