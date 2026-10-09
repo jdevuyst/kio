@@ -17,9 +17,9 @@ op - __ { impl neg }
 // composition `- y + 100` parsing without parens.
 op _ + __ { impl add_i32 }
 
-fn print_i32(n: I32) -> . { print(i32_to_string(n)); print("\n") }
+fn print_i32(n: I32) { print(i32_to_string(n)); print("\n") }
 
-pub fn main() -> . {
+pub fn main() {
   // Shape 1: prefix-op applied to a numeric literal with whitespace
   // separating the `-` from the digit. The leading-minus carve-out
   // documented in `specs/grammar.md` § Notes (Kio surface) only

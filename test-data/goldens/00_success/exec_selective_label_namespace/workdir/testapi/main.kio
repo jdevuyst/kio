@@ -7,4 +7,4 @@ import types(Item);
 
 pub fn keep(value: Item) -> Item { value }
 
-pub fn main() -> . { print(item()); print({item = "label\n"(String)}.?{item}) }
+pub fn main() { print(item()); print({item = "label\n"(String)}.?{item}) }

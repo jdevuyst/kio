@@ -32,4 +32,4 @@ fn single_dnf_branch(xs: Dnf_branch_list) -> Dnf_branch | . {
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -53,27 +53,14 @@ use crate::backends::boundary_facade::{
 };
 use crate::backends::skin::FfiDir;
 
-/// Signals that a package is not (yet) renderable at native types, so the
-/// caller falls back to the universal private-carrier body. Not an error —
-/// the fallback body is a correct rendering; this just routes the package
-/// to it.
+/// Intentional native-body exclusions. The set is empty: reconstruction and
+/// rendering failures are emission errors, not evidence for another body path.
 #[derive(Debug, Clone)]
-pub struct NotNative {
-    /// Why the package is not native-eligible. Surfaced only under the
-    /// `KIO_DEBUG_HASKELL_NATIVE` env trace ([`NotNative::trace`]); the
-    /// production fallback is silent and correct.
-    reason: String,
-}
+pub enum NativeUnsupported {}
 
-impl NotNative {
+impl NativeUnsupported {
     pub(crate) fn reason(&self) -> &str {
-        &self.reason
-    }
-
-    fn new(reason: impl Into<String>) -> Self {
-        NotNative {
-            reason: reason.into(),
-        }
+        match *self {}
     }
 
     /// Emit the fall-back reason to stderr when `KIO_DEBUG_HASKELL_NATIVE`
@@ -83,19 +70,9 @@ impl NotNative {
         if std::env::var_os("KIO_DEBUG_HASKELL_NATIVE").is_some() {
             eprintln!(
                 "kio[haskell-native]: `{package_name}` -> universal-carrier body: {}",
-                self.reason
+                self.reason()
             );
         }
-    }
-}
-
-/// A native-emit failure (an `EmitError` raised mid-render because the
-/// native path reached a shape it cannot render at native types)
-/// becomes a [`NotNative`] signal: the whole package falls back to the
-/// universal private-carrier body rather than emitting a half-native module.
-impl From<EmitError> for NotNative {
-    fn from(e: EmitError) -> Self {
-        NotNative::new(e.message)
     }
 }
 
@@ -190,8 +167,9 @@ enum NewtypeMemberKind {
 
 /// Render the package's native body section — nominal type declarations,
 /// every module fn at its reconstructed native type, and the native
-/// export wrappers — or signal [`NotNative`] for the private-carrier
-/// fallback. The header / host record / structural family API are the
+/// export wrappers. Only an explicit [`NativeUnsupported`] can select the
+/// private-carrier fallback; emission errors propagate separately.
+/// The header / host record / structural family API are the
 /// caller's (identical in both paths); this returns the type
 /// decls followed by the `mod_*` / `exp_*` definitions.
 pub(crate) fn render_native_body<'a>(
@@ -199,9 +177,9 @@ pub(crate) fn render_native_body<'a>(
     names: &'a super::emit::HaskellNames,
     public_ffi_decls: &str,
     prepared: &crate::backends::boundary_facade::PreparedBoundaryCallableSites,
-) -> Result<NativeRender, NotNative> {
+) -> Result<Result<NativeRender, NativeUnsupported>, EmitError> {
     let ctx = NativeCtx::build(package, names, prepared)?;
-    ctx.render(public_ffi_decls)
+    Ok(Ok(ctx.render(public_ffi_decls)?))
 }
 
 /// The native render's output pieces, slotted into the package module
@@ -569,6 +547,7 @@ impl<'p> NativeTypes<'p> {
 
 struct NativeCtx<'a> {
     package: &'a Package<Routed>,
+    prepared: &'a crate::backends::boundary_facade::PreparedBoundaryCallableSites,
     /// Newtypes keyed by their exact `<module>.<name>` identity.
     /// qualified key (never the bare leaf): two same-leaf newtypes in
     /// different modules hold distinct entries, so a reference resolves to
@@ -601,8 +580,8 @@ impl<'a> NativeCtx<'a> {
     fn build(
         package: &'a Package<Routed>,
         names: &'a super::emit::HaskellNames,
-        prepared: &crate::backends::boundary_facade::PreparedBoundaryCallableSites,
-    ) -> Result<Self, NotNative> {
+        prepared: &'a crate::backends::boundary_facade::PreparedBoundaryCallableSites,
+    ) -> Result<Self, EmitError> {
         let shapes = super::skin::HaskellShapes::new_with_prepared(package, names, prepared);
         let facade = HaskellFacadeCatalog::new(prepared, &shapes);
         let types = NativeTypes::build(
@@ -614,6 +593,7 @@ impl<'a> NativeCtx<'a> {
 
         let mut ctx = NativeCtx {
             package,
+            prepared,
             types,
             effects: HashMap::new(),
             exact_constraints: BTreeMap::new(),
@@ -823,7 +803,7 @@ impl<'a> NativeCtx<'a> {
         None
     }
 
-    fn render(&self, _public_ffi_decls: &str) -> Result<NativeRender, NotNative> {
+    fn render(&self, _public_ffi_decls: &str) -> Result<NativeRender, EmitError> {
         let host_record = self.render_host_record()?;
         let type_decls = self.render_type_decls()?;
 
@@ -1073,9 +1053,16 @@ impl<'a> NativeCtx<'a> {
                 ty.push_str(" -> ");
             }
             ty.push_str(&format!("m {}", paren_ty(&ret)));
-            fields.push(format!(
-                "{} :: {ty}",
-                super::emit::host_field_name(&module_path, name)
+            let doc = self
+                .prepared
+                .site(site.id())
+                .and_then(|site| crate::backends::boundary_docs::callable(self.package, site));
+            fields.push(super::emit::documented_field(
+                doc,
+                &format!(
+                    "{} :: {ty}",
+                    super::emit::host_field_name(&module_path, name)
+                ),
             ));
         }
 
@@ -1130,6 +1117,7 @@ impl<'a> NativeCtx<'a> {
                 format!(" {}", decl_tyvars.join(" "))
             };
             let payload = self.render_carrier_payload(c, module)?;
+            self.push_newtype_doc(&mut out, module, &c.kio_name);
             out.push_str(&format!(
                 "-- Nominal representation of Kio newtype `{}`.\n",
                 c.kio_name
@@ -1178,6 +1166,7 @@ impl<'a> NativeCtx<'a> {
         module: Option<&str>,
     ) -> Result<String, EmitError> {
         let mut out = String::new();
+        self.push_newtype_doc(&mut out, module, &e.kio_name);
         let head_tyvars = hs_tyvars(&e.type_params);
         let head_decl_tyvars = hs_kinded_tyvars(&e.type_params, self.shapes.standard_names());
         let head_decl_sp = if head_decl_tyvars.is_empty() {
@@ -1652,8 +1641,7 @@ impl<'a> NativeCtx<'a> {
     /// recursive, and existential members cross through their abstract nominal
     /// carriers.
     fn render_export_wrappers(&self) -> Result<String, EmitError> {
-        let mut out = String::new();
-        let mut pieces: Vec<String> = Vec::new();
+        let mut pieces = Vec::new();
         for site in self.facade.sites() {
             let entry = site.entry();
             if !entry.is_live() {
@@ -1664,7 +1652,10 @@ impl<'a> NativeCtx<'a> {
                 BoundaryFacadeSiteOwner::HostFunction { .. } => {}
                 BoundaryFacadeSiteOwner::ExportedFunction { name } => {
                     let function = self.exported_function_declaration(&module, name);
-                    pieces.push(self.render_fn_export(&module, function)?);
+                    pieces.push((
+                        self.render_fn_export(&module, function)?,
+                        function.doc.as_ref(),
+                    ));
                 }
                 BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
                     let declaration = self.types.newtype_declaration(&module, newtype);
@@ -1672,11 +1663,14 @@ impl<'a> NativeCtx<'a> {
                         declaration.constructor.name, *member,
                         "prepared Haskell constructor identity matches its exact declaration"
                     );
-                    pieces.push(self.render_newtype_member_export(
-                        &module,
-                        declaration,
-                        &declaration.constructor,
-                    )?);
+                    pieces.push((
+                        self.render_newtype_member_export(
+                            &module,
+                            declaration,
+                            &declaration.constructor,
+                        )?,
+                        None,
+                    ));
                 }
                 BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
                     let declaration = self.types.newtype_declaration(&module, newtype);
@@ -1684,20 +1678,18 @@ impl<'a> NativeCtx<'a> {
                         declaration.projector.name, *member,
                         "prepared Haskell projector identity matches its exact declaration"
                     );
-                    pieces.push(self.render_newtype_member_export(
-                        &module,
-                        declaration,
-                        &declaration.projector,
-                    )?);
+                    pieces.push((
+                        self.render_newtype_member_export(
+                            &module,
+                            declaration,
+                            &declaration.projector,
+                        )?,
+                        None,
+                    ));
                 }
             }
         }
-        pieces.sort();
-        for p in pieces {
-            out.push('\n');
-            out.push_str(&p);
-        }
-        Ok(out)
+        Ok(super::emit::render_documented_declarations(pieces))
     }
 
     fn exported_function_declaration(&self, module: &str, name: &str) -> &FnDef<Routed> {
@@ -1712,6 +1704,23 @@ impl<'a> NativeCtx<'a> {
             .unwrap_or_else(|| {
                 unreachable!("prepared Haskell export `{module}/{name}` has no exact declaration")
             })
+    }
+
+    fn push_newtype_doc(&self, out: &mut String, module: Option<&str>, leaf: &str) {
+        let Some(module) = module else { return };
+        let name = crate::backends::boundary_facade::QualifiedTypeName::new(
+            module.split('/').map(str::to_owned).collect(),
+            leaf.to_owned(),
+        )
+        .expect("a selected Haskell newtype has a qualified name");
+        let doc = self
+            .prepared
+            .public_newtype(&name)
+            .and_then(|entry| crate::backends::boundary_docs::newtype(self.package, entry));
+        if doc.is_some() {
+            super::emit::push_doc(out, doc, "");
+            out.push_str("--\n");
+        }
     }
 
     fn render_fn_export(&self, module_key: &str, f: &FnDef<Routed>) -> Result<String, EmitError> {

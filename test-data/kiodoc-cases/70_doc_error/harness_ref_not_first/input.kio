@@ -8,4 +8,4 @@
 /// ```
 module doctest/trailing_self_ref;
 
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }

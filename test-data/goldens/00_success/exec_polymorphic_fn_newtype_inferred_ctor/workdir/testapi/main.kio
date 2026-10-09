@@ -11,7 +11,7 @@ fn box_functor() -> Functor(Box) {
   Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
 }
 
-pub fn main() -> . {
+pub fn main() {
   let functor = box_functor();
   let value = Box.mk_box("inferred ctor ok\n"(String));
   let mapped = Functor.fmap(functor)(String, String, .(s) { s }, value);

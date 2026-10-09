@@ -3,7 +3,7 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-fn mark(message: String) -> . { print(message) }
+fn mark(message: String) { print(message) }
 
 fn marked[A](message: String, value: A) -> A { mark(message); value }
 
@@ -19,7 +19,7 @@ fn effect_after_a(_unit: .)[A] -> [B] B -> B {
 
 fn produce_once(_unit: .) -> [A] A -> A { mark("produce\n"(String)); .[A](value: A) -> A { value } }
 
-pub fn main() -> . {
+pub fn main() {
   mark("pair start\n"(String));
   let after_b = effect_after_b(());
   let after_a = effect_after_a(());

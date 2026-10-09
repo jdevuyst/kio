@@ -3,4 +3,4 @@ module main;
 import elab(invoke);
 import host(loop);
 
-rec(loop) fn run(value: .) -> . { invoke!(.[A](_value: A) { rec run(value) }) }
+rec(loop) fn run(value: .) { invoke!(.[A](_value: A) { rec run(value) }) }

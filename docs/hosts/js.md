@@ -35,6 +35,14 @@ out/js/greeter.js
 
 The emitted code targets ECMAScript 2020: ES modules plus `BigInt` literals for wide integers.
 
+### Generated documentation
+
+Kio docs appear as JSDoc on exported function and newtype properties. The
+factory also lists documented host requirements and package functions by their
+property paths. Erased host types have no separate declaration. At-signs and
+comment terminators use visible backslash escapes instead of becoming JSDoc
+instructions. See [boundary documentation](../../specs/backends/js.md#boundary-documentation).
+
 ## Loading the package
 
 A JS host brings the package online in three steps.
@@ -185,7 +193,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n") }
+pub fn main() { print("hello from kio\n") }
 ```
 
 Build and run:

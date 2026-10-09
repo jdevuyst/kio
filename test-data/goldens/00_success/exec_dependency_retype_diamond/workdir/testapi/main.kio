@@ -15,4 +15,4 @@ import testapi(I32);
 import testapi/fmt(print_i32);
 import widget/relay(relay_tag);
 
-pub fn main() -> . { let .(via_widget: I32) = tag_val(relay_tag(7(I32))); print_i32(via_widget) }
+pub fn main() { let .(via_widget: I32) = tag_val(relay_tag(7(I32))); print_i32(via_widget) }

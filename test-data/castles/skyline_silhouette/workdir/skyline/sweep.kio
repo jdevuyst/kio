@@ -79,7 +79,7 @@ fn finish(steps: lst.List(Step), points: lst.List(Point)) -> Trace {
 
 rec(loop) {
   pub fn run(es: lst.List(events.Event)) -> Trace {
-    rec walk(es, ms.empty(), 0, lst.nil(Step, ()), lst.nil(Point, ()))
+    rec walk(es, ms.empty(), 0, lst.nil(Step), lst.nil(Point))
   };
   fn walk(
     , es: lst.List(events.Event)

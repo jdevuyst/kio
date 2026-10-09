@@ -19,13 +19,13 @@ import testapi/iter(loop);
 /// cannot express.
 pub rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
 
-pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, tail: List(A)) -> List(A) {
   List.mk_list(widen_sum!((head, tail), . | (A & List(A))))
 }
 
-pub fn of1[A](a: A) -> List(A) { cons(a, nil(A, ())) }
+pub fn of1[A](a: A) -> List(A) { cons(a, nil(A)) }
 
 pub fn of2[A](a: A, b: A) -> List(A) { cons(a, of1(b)) }
 
@@ -61,11 +61,11 @@ pub rec(loop) fn append[A](xs: List(A), ys: List(A)) -> List(A) {
 /// the whole of the `Limit` operator's semantics.
 pub rec(loop) fn take[A](n: I32, xs: List(A)) -> List(A) {
   if! leq_i32(n, 0) {
-    nil(A, ())
+    nil(A)
   } else match! xs.>List.un_list {
     (
       , .(x: A, rest: List(A)) { cons(x, rec(cont) take(sub_i32(n, 1), rest)) }
-      , .(_empty: .) { nil(A, ()) }
+      , .(_empty: .) { nil(A) }
       )
   }
 }

@@ -95,7 +95,7 @@ rec(loop) fn set_at(t: Tree, node: I32, lo: I32, hi: I32, i: I32, v: I32) -> Agg
 /// into `out` -- the moment the deferred work finally lands. The push counter
 /// still moves (that count is the point), but nothing here counts as a visit:
 /// the drain is a reporting pass, not a scripted operation.
-rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) -> . {
+rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) {
   if! is_leaf(lo, hi) {
     array_set(out, lo, agg_sum(node_agg(t, node)))
   } else {
@@ -108,7 +108,7 @@ rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) -> 
 
 fn last_leaf(t: Tree) -> I32 { sub_i32(leaf_count(t), 1) }
 
-pub fn range_add(t: Tree, l: I32, r: I32, x: I32) -> . {
+pub fn range_add(t: Tree, l: I32, r: I32, x: I32) {
   let _root = add_at(t, 0, 0, last_leaf(t), l, r, x);
   ()
 }
@@ -119,10 +119,7 @@ pub fn query_sum(t: Tree, l: I32, r: I32) -> I32 { agg_sum(query(t, l, r)) }
 
 pub fn query_min(t: Tree, l: I32, r: I32) -> I32 { agg_min(query(t, l, r)) }
 
-pub fn point_set(t: Tree, i: I32, v: I32) -> . {
-  let _root = set_at(t, 0, 0, last_leaf(t), i, v);
-  ()
-}
+pub fn point_set(t: Tree, i: I32, v: I32) { let _root = set_at(t, 0, 0, last_leaf(t), i, v); () }
 
 /// Settle the whole tree into a plain array of leaf values.
-pub fn drain(t: Tree, out: Array(I32)) -> . { drain_at(t, 0, 0, last_leaf(t), out) }
+pub fn drain(t: Tree, out: Array(I32)) { drain_at(t, 0, 0, last_leaf(t), out) }

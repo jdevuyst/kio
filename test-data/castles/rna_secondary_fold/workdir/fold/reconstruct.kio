@@ -11,7 +11,7 @@ import testapi/array as array;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn enqueue(stack: Array(plan.Interval), i: I32, j: I32) -> . {
+fn enqueue(stack: Array(plan.Interval), i: I32, j: I32) {
   if! numbers.less(i, j) {
     array.array_push(stack, {lo = i, hi = j})
   } else {

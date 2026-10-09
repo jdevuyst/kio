@@ -47,15 +47,15 @@ pub fn noted(text: String) -> Event { widen_sum!(text, Event) }
 
 fn num(value: I32) -> String { int_to_string(value) }
 
-pub fn line(text: String) -> . { print(cat(text, "\n")) }
+pub fn line(text: String) { print(cat(text, "\n")) }
 
-pub fn blank() -> . { print("\n") }
+pub fn blank() { print("\n") }
 
-pub fn heading(text: String) -> . { line(cat3("-- ", text, " --")) }
+pub fn heading(text: String) { line(cat3("-- ", text, " --")) }
 
-pub fn labeled(label: String, value: String) -> . { line(cat3(label, ": ", value)) }
+pub fn labeled(label: String, value: String) { line(cat3(label, ": ", value)) }
 
-fn counted(label: String, value: I32) -> . { labeled(label, num(value)) }
+fn counted(label: String, value: I32) { labeled(label, num(value)) }
 
 pub fn yes_no(flag: Bool) -> String {
   if! flag {
@@ -74,9 +74,9 @@ fn cell(slot: I32) -> String {
   }
 }
 
-pub fn pipeline_header() -> . { line("cyc |  IF  ID  EX MEM  WB | event") }
+pub fn pipeline_header() { line("cyc |  IF  ID  EX MEM  WB | event") }
 
-pub fn pipeline_row(m: Machine, event: Event) -> . {
+pub fn pipeline_row(m: Machine, event: Event) {
   let stages =
     cat3(
       , cat(cell(m.?{st_if}), " ")
@@ -89,7 +89,7 @@ pub fn pipeline_row(m: Machine, event: Event) -> . {
   }
 }
 
-rec(loop) fn listing_walk(code: Array(Instr), index: I32) -> . {
+rec(loop) fn listing_walk(code: Array(Instr), index: I32) {
   if! int_lt(index, array_len(code)) {
     line(cat(
       , left(slot_text(index), add_i32(1, digits(index)), 6)
@@ -101,7 +101,7 @@ rec(loop) fn listing_walk(code: Array(Instr), index: I32) -> . {
   }
 }
 
-pub fn program_listing(code: Array(Instr)) -> . { listing_walk(code, 0) }
+pub fn program_listing(code: Array(Instr)) { listing_walk(code, 0) }
 
 /// Instructions per cycle, scaled to permille and truncated -- there are
 /// no floats in this host env, and a ratio printed as a whole number of
@@ -125,7 +125,7 @@ fn audit_text(m: Machine) -> String {
   cat3(num(sub_i32(m.?{cycle}, m.?{retired})), " == ", num(m.?{bubbles}))
 }
 
-pub fn counters(m: Machine) -> . {
+pub fn counters(m: Machine) {
   counted("cycles", m.?{cycle});
   counted("instructions retired", m.?{retired});
   counted("stall cycles", m.?{stalls});
@@ -164,15 +164,13 @@ rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
   }
 }
 
-pub fn dump_registers(caption: String, regs: Array(I32)) -> . {
-  labeled(caption, reg_walk(regs, 0, ""))
-}
+pub fn dump_registers(caption: String, regs: Array(I32)) { labeled(caption, reg_walk(regs, 0, "")) }
 
-pub fn dump_memory(caption: String, mem: Array(I32)) -> . { labeled(caption, mem_walk(mem, 0, "")) }
+pub fn dump_memory(caption: String, mem: Array(I32)) { labeled(caption, mem_walk(mem, 0, "")) }
 
 fn arrow(from_value: I32, to_value: I32) -> String { cat3(num(from_value), " -> ", num(to_value)) }
 
-pub fn headline(off: Machine, on: Machine) -> . {
+pub fn headline(off: Machine, on: Machine) {
   labeled("cycles", arrow(off.?{cycle}, on.?{cycle}));
   counted("cycles saved by forwarding", sub_i32(off.?{cycle}, on.?{cycle}));
   labeled("stall cycles", arrow(off.?{stalls}, on.?{stalls}));

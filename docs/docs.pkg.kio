@@ -7,6 +7,8 @@ build {
     md ".";
     support "../test-data/poc/elab/workdir";
     support "../test-data/poc/dict/workdir";
-    support "../test-data/poc/list/workdir"
+    support "../test-data/poc/list/workdir";
+    support "../test-data/poc/optics/workdir";
+    support "../test-data/kiodoc-cases/00_success/materialized_loader_contracts/workdir"
   }
 }

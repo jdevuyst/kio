@@ -91,6 +91,8 @@ enum PythonNewtypeSurfaceIr {
 struct PythonBoundarySiteIr {
     module: Vec<String>,
     owner: PythonBoundaryOwnerIr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    doc: Option<String>,
     callable: PythonCallablePlanIr,
     nominals: Vec<PythonNominalIr>,
     execution: PythonCallableExecutionIr,
@@ -553,7 +555,7 @@ pub(crate) fn python_package_ir(
     let package_ir = package_ir(package).map_err(str::to_owned)?;
     let prepared = PreparedBoundaryCallableSites::collect(package, replayed)
         .map_err(|error| format!("cannot prepare Python boundary: {error}"))?;
-    let boundary = python_boundary_ir(&prepared)?;
+    let boundary = python_boundary_ir(package, &prepared)?;
     Ok(PythonRuntimePackageIr {
         package: package_ir,
         boundary,
@@ -561,6 +563,7 @@ pub(crate) fn python_package_ir(
 }
 
 fn python_boundary_ir(
+    package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
 ) -> Result<PythonBoundaryIr, String> {
     let host_bindings = prepared
@@ -678,6 +681,15 @@ fn python_boundary_ir(
                 .collect();
             Ok(PythonBoundarySiteIr {
                 module: site.site().module_segments().to_vec(),
+                doc: if matches!(
+                    site.site().owner(),
+                    BoundaryFacadeSiteOwner::ExportedFunction { .. }
+                ) {
+                    super::boundary_docs::callable(package, site)
+                        .map(|doc| super::doc::render(doc, super::doc::Dialect::PlainText))
+                } else {
+                    None
+                },
                 owner: match site.site().owner() {
                     BoundaryFacadeSiteOwner::HostFunction { name } => {
                         PythonBoundaryOwnerIr::HostFunction { name: name.clone() }

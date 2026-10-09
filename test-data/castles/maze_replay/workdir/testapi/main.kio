@@ -24,7 +24,7 @@ import testapi/text(string_concat);
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
-fn line(label: String, value: String) -> . { print(cat(label, cat(": ", cat(value, "\n")))) }
+fn line(label: String, value: String) { print(cat(label, cat(": ", cat(value, "\n")))) }
 
 fn num(n: I32) -> String { int_to_string(n) }
 
@@ -69,7 +69,7 @@ fn yes_no(b: Bool) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let seed = read_int(0);
   let w = read_int(1);
   let h = read_int(1);

@@ -12,4 +12,4 @@ import testapi/two as t2;
 // happens to read `A`. Before the identity-exact label-slot fix the
 // projection read the wrong slot and the two constructors collapsed onto
 // one module's `A`, so this printed "from two".
-pub fn main() -> . { print({t2.a = "from two\n", l1.a = "from labs1\n"}.?{l1.a}) }
+pub fn main() { print({t2.a = "from two\n", l1.a = "from labs1\n"}.?{l1.a}) }

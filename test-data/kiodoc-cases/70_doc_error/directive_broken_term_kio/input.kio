@@ -4,4 +4,4 @@
 /// This is also broken: [`@source also_missing`].
 module brokendir/main;
 
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }

@@ -11,6 +11,6 @@ literal max_size = 100;
 
 literal greeting = "hello alias\n";
 
-fn print_int(n: Int) -> . { let s = int_to_string(n); let l = print(s); print("\n") }
+fn print_int(n: Int) { let s = int_to_string(n); let l = print(s); print("\n") }
 
-pub fn main() -> . { let g = print(greeting); print_int(max_size) }
+pub fn main() { let g = print(greeting); print_int(max_size) }

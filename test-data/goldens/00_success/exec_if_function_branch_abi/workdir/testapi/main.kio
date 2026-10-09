@@ -12,7 +12,7 @@ fn choose(flag: Bool) -> (String & . & .) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let selected = choose(.t);
   print(selected(("if-result\n", print("if-arg\n"), print("if-third\n"))))
 }

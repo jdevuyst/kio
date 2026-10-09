@@ -57,16 +57,17 @@
 //! phase and the `label_elab` step that follows. See
 //! [`crate::prime::pipeline::PrimePipeline`] for the wiring.
 
+mod recursion_fixes;
 pub mod walk;
 
 use crate::ast::{
     CallArg, Desugared, ElaboratorCall, ElaboratorKind, Equiv, Expr, FieldAccessLabel,
     FieldUpdateLabel, FnDef, Import, ImportKind, Item, LabelValueLabel, LiteralAlias,
     LiteralAliasValue, Meta, Module, ModulePath, Newtype, NodeId, Op, PackageFile, Param,
-    ParamPattern, ParamPatternElem, PathSegment, PlaceholderState, RecCallMode, RecGroup,
-    RecOrderDisposition, RecOrderPlan, RecOrderTailRequirement, RecOrderTypeFlow, RowLetEntry,
-    Signature, SignatureParam, Surface, Type, TypeMember, TypeParam, TypeRecGroup, TypeRecMember,
-    VariadicOperator,
+    ParamPattern, ParamPatternElem, PathSegment, PlaceholderState, RecCallMode, RecCallSyntax,
+    RecGroup, RecOrderDisposition, RecOrderPlan, RecOrderTailRequirement, RecOrderTypeFlow,
+    RowLetEntry, Signature, SignatureParam, Surface, Type, TypeMember, TypeParam, TypeRecGroup,
+    TypeRecMember, VariadicOperator,
 };
 use crate::error::Error;
 use crate::pass::desugar::walk::SurfaceToDesugared;
@@ -1984,6 +1985,18 @@ impl DesugarVisitor {
     ) -> Result<FnDef<Desugared>, Error> {
         let initial_state = self.rec_initial_state(member, ctx)?;
         let step = self.rec_step_fn(ctx)?;
+        let selected_path = Span::new(
+            loop_path
+                .first()
+                .expect("rec loop path is nonempty")
+                .span
+                .start,
+            loop_path
+                .last()
+                .expect("rec loop path is nonempty")
+                .span
+                .end,
+        );
         let body = Expr::synth_call(
             Expr::Path {
                 occurrence: Default::default(),
@@ -1998,7 +2011,8 @@ impl DesugarVisitor {
                 CallArg::Value(initial_state),
             ],
             member.meta.span,
-        );
+        )
+        .with_call_diagnostic(crate::ast::RecLoopDiagnostic::Loop { selected_path });
         Ok(FnDef {
             // Carry the member's full visibility — including a
             // `pub(<module-path>)` scope — onto the wrapper `fn`, so the
@@ -2389,12 +2403,16 @@ impl DesugarVisitor {
                 type_args,
             )
         };
-        let state = self.rec_wrap_state(member, ctx.state_type_args.clone(), type_args, payload);
-        let state = inject_sum_arm(
+        let diagnostic = crate::ast::RecLoopDiagnostic::InitialStateResult;
+        let state = self
+            .rec_wrap_state(member, ctx.state_type_args.clone(), type_args, payload)
+            .with_call_diagnostic(diagnostic);
+        let state = inject_sum_arm_with_diagnostic(
             state,
             &rec_state_arm_types(ctx),
             member.index,
             member.meta.span,
+            diagnostic,
         );
         Ok(state)
     }
@@ -2439,8 +2457,9 @@ impl DesugarVisitor {
                 callee,
                 args,
                 meta,
+                ext,
                 ..
-            } => self.transform_rec_call(modes, callee, args, meta.span, current_member, ctx),
+            } => self.transform_rec_call(modes, callee, args, meta.span, ext, current_member, ctx),
             Expr::RowLet {
                 entries,
                 value,
@@ -3505,6 +3524,7 @@ impl DesugarVisitor {
         current_member: &RecMemberPlan,
         type_args: &[Type<Desugared>],
         modes: &[RecCallMode],
+        site: recursion_fixes::CallSite<'_>,
         span: Span,
     ) -> Result<(), Error> {
         self.validate_rec_header_poly_mode(
@@ -3512,6 +3532,7 @@ impl DesugarVisitor {
             &current_member.type_params,
             type_args,
             modes,
+            site,
             span,
         )
     }
@@ -3522,23 +3543,36 @@ impl DesugarVisitor {
         current_type_params: &[TypeParam],
         type_args: &[Type<Desugared>],
         modes: &[RecCallMode],
+        site: recursion_fixes::CallSite<'_>,
         span: Span,
     ) -> Result<(), Error> {
         let is_poly = !rec_type_args_are_current(current_type_params, type_args, span);
         let has_poly = modes.contains(&RecCallMode::Poly);
         if is_poly && !has_poly {
-            return Err(Error::parse(
-                span,
-                format!("recursive call to `{}` changes type parameters", name),
-            )
-            .with_help("write `rec(poly) name(T, ...)` for polymorphic recursion"));
+            return Err(recursion_fixes::mode(
+                Error::parse(
+                    span,
+                    format!("recursive call to `{}` changes type parameters", name),
+                )
+                .with_help("write `rec(poly) name(T, ...)` for polymorphic recursion"),
+                site,
+                modes,
+                RecCallMode::Poly,
+                true,
+            ));
         }
         if has_poly && !is_poly {
-            return Err(Error::parse(
-                span,
-                "`rec(poly)` is only needed when the recursive call changes type parameters",
-            )
-            .with_help("remove `poly` from this recursive call"));
+            return Err(recursion_fixes::mode(
+                Error::parse(
+                    span,
+                    "`rec(poly)` is only needed when the recursive call changes type parameters",
+                )
+                .with_help("remove `poly` from this recursive call"),
+                site,
+                modes,
+                RecCallMode::Poly,
+                false,
+            ));
         }
         Ok(())
     }
@@ -3555,6 +3589,7 @@ impl DesugarVisitor {
                 callee,
                 args,
                 meta,
+                ext,
                 ..
             } => {
                 validate_rec_escape_absent(modes, meta.span).ok()?;
@@ -3565,8 +3600,18 @@ impl DesugarVisitor {
                 let (type_args, _) = self
                     .rec_call_parts(member, args.clone(), meta.span, ctx)
                     .ok()?;
-                self.validate_rec_poly_mode(member, current_member, &type_args, modes, meta.span)
-                    .ok()?;
+                self.validate_rec_poly_mode(
+                    member,
+                    current_member,
+                    &type_args,
+                    modes,
+                    recursion_fixes::CallSite {
+                        syntax: ext,
+                        callee: callee.span,
+                    },
+                    meta.span,
+                )
+                .ok()?;
                 Some(instantiate_rec_ret_ty(member, &type_args))
             }
             Expr::Tuple { items, meta, .. } => {
@@ -3598,22 +3643,34 @@ impl DesugarVisitor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn transform_rec_call(
         &mut self,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
         args: Vec<CallArg<Surface>>,
         span: Span,
+        syntax: RecCallSyntax,
         current_member: &RecMemberPlan,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
         validate_rec_escape_absent(&modes, span)?;
+        let site = recursion_fixes::CallSite {
+            syntax: &syntax,
+            callee: callee.span,
+        };
         if modes.contains(&RecCallMode::Cont) {
-            return Err(Error::parse(
-                span,
-                "`rec(cont)` is only needed for recursive calls that are not in tail position",
-            )
-            .with_help("remove `cont` from this tail-position recursive call"));
+            return Err(recursion_fixes::mode(
+                Error::parse(
+                    span,
+                    "`rec(cont)` is only needed for recursive calls that are not in tail position",
+                )
+                .with_help("remove `cont` from this tail-position recursive call"),
+                site,
+                &modes,
+                RecCallMode::Cont,
+                false,
+            ));
         }
         let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
             return Err(Error::name_res(
@@ -3625,7 +3682,7 @@ impl DesugarVisitor {
             ));
         };
         let (type_args, values) = self.rec_call_parts(member, args, span, ctx)?;
-        self.validate_rec_poly_mode(member, current_member, &type_args, &modes, span)?;
+        self.validate_rec_poly_mode(member, current_member, &type_args, &modes, site, span)?;
         let values = values
             .into_iter()
             .map(|value| {
@@ -3672,12 +3729,14 @@ impl DesugarVisitor {
                 callee,
                 args,
                 meta,
+                ext,
                 ..
             } => self.transform_rec_call_cps(
                 modes,
                 callee,
                 args,
                 meta.span,
+                ext,
                 current_member,
                 cont,
                 position,
@@ -4649,23 +4708,34 @@ impl DesugarVisitor {
         callee: PathSegment,
         args: Vec<CallArg<Surface>>,
         span: Span,
+        syntax: RecCallSyntax,
         current_member: &RecMemberPlan,
         cont: RecCpsContinuation,
         position: RecCallPosition,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
         validate_rec_escape_absent(&modes, span)?;
+        let site = recursion_fixes::CallSite {
+            syntax: &syntax,
+            callee: callee.span,
+        };
         match (position, modes.contains(&RecCallMode::Cont)) {
             (RecCallPosition::Tail, true) => {
-                return Err(Error::parse(
+                return Err(recursion_fixes::mode(Error::parse(
                     span,
                     "`rec(cont)` is only needed for recursive calls that are not in tail position",
                 )
-                .with_help("remove `cont` from this tail-position recursive call"));
+                .with_help("remove `cont` from this tail-position recursive call"), site, &modes, RecCallMode::Cont, false));
             }
             (RecCallPosition::NonTail, false) => {
-                return Err(Error::parse(span, "recursive call is not in tail position")
-                    .with_help("write `rec(cont) name(...)` for a non-tail recursive call"));
+                return Err(recursion_fixes::mode(
+                    Error::parse(span, "recursive call is not in tail position")
+                        .with_help("write `rec(cont) name(...)` for a non-tail recursive call"),
+                    site,
+                    &modes,
+                    RecCallMode::Cont,
+                    true,
+                ));
             }
             _ => {}
         }
@@ -4679,7 +4749,7 @@ impl DesugarVisitor {
             ));
         };
         let (type_args, values) = self.rec_call_parts(member, args, span, ctx)?;
-        self.validate_rec_poly_mode(member, current_member, &type_args, &modes, span)?;
+        self.validate_rec_poly_mode(member, current_member, &type_args, &modes, site, span)?;
         self.transform_rec_call_cps_values(
             member,
             type_args,
@@ -4910,15 +4980,28 @@ impl DesugarVisitor {
             crate::ast::Expr::BlockCall { .. } => {
                 unreachable!("trailing blocks are projected before desugaring")
             }
-            Expr::RecCall { modes, meta, .. } => {
+            Expr::RecCall {
+                modes,
+                meta,
+                callee,
+                ext,
+                ..
+            } => {
                 validate_rec_escape_absent(modes, meta.span)?;
                 if modes.contains(&RecCallMode::Cont) {
                     Ok(())
                 } else {
-                    Err(
+                    Err(recursion_fixes::mode(
                         Error::parse(meta.span, "recursive call is not in tail position")
                             .with_help("write `rec(cont) name(...)` for a non-tail recursive call"),
-                    )
+                        recursion_fixes::CallSite {
+                            syntax: ext,
+                            callee: callee.span,
+                        },
+                        modes,
+                        RecCallMode::Cont,
+                        true,
+                    ))
                 }
             }
             Expr::Path { segments, meta, .. } => {
@@ -4941,13 +5024,16 @@ impl DesugarVisitor {
                     && segments.len() == 1
                     && self.is_unshadowed_rec_member(&segments[0].name, ctx)
                 {
-                    return Err(Error::parse(
-                        meta.span,
-                        format!(
-                            "recursive call to `{}` must be written as a tail-position \
-                             `rec {}(...)` call",
-                            segments[0].name, segments[0].name
+                    return Err(recursion_fixes::missing_marker(
+                        Error::parse(
+                            meta.span,
+                            format!(
+                                "recursive call to `{}` must be written as an annotated \
+                                 `rec {}(...)` call",
+                                segments[0].name, segments[0].name
+                            ),
                         ),
+                        segments[0].span.start,
                     ));
                 }
                 self.validate_no_bad_rec_names(callee, ctx)?;
@@ -5286,7 +5372,9 @@ impl SurfaceToDesugared for DesugarVisitor {
         Err(Error::parse(
             meta.span,
             "`rec` calls are only allowed inside a `rec(loop)` function",
-        ))
+        )
+        .with_help("declare the enclosing recursive function with `rec(path) fn`, where `path` names your chosen loop capability")
+        .with_note("the loop capability is an ordinary value of type `[S][R] ((S -> S | R) & S) -> R`; recursive calls still require their `rec` markers"))
     }
 
     fn rewrite_expr_op_chain(
@@ -5345,6 +5433,7 @@ impl SurfaceToDesugared for DesugarVisitor {
     fn visit_expr_call(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: Meta { span, .. },
@@ -6494,17 +6583,34 @@ fn inject_sum_arm(
     index: usize,
     span: Span,
 ) -> Expr<Desugared> {
+    inject_sum_arm_with_diagnostic(
+        value,
+        arms,
+        index,
+        span,
+        crate::ast::RecLoopDiagnostic::None,
+    )
+}
+
+fn inject_sum_arm_with_diagnostic(
+    value: Expr<Desugared>,
+    arms: &[Type<Desugared>],
+    index: usize,
+    span: Span,
+    diagnostic: crate::ast::RecLoopDiagnostic,
+) -> Expr<Desugared> {
     if arms.len() == 1 {
         return value;
     }
     let left_ty = arms[0].clone();
     let right_ty = build_sum_right_fold(arms[1..].to_vec(), span);
-    if index == 0 {
+    let result = if index == 0 {
         call_intrinsic_with_type_args("__left__", vec![left_ty, right_ty], vec![value], span)
     } else {
-        let nested = inject_sum_arm(value, &arms[1..], index - 1, span);
+        let nested = inject_sum_arm_with_diagnostic(value, &arms[1..], index - 1, span, diagnostic);
         call_intrinsic_with_type_args("__right__", vec![left_ty, right_ty], vec![nested], span)
-    }
+    };
+    result.with_call_diagnostic(diagnostic)
 }
 
 fn inject_step_continue(
@@ -7018,12 +7124,14 @@ fn rename_paths(
         }
         Expr::Call {
             occurrence: _,
+            diagnostic,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic,
             callee: Box::new(rename_paths(*callee, renames)),
             args: args
                 .into_iter()

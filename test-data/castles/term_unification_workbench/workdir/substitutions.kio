@@ -15,7 +15,7 @@ pub labels Binding = { key: I32, replacement: term.Term };
 
 pub type Substitution = lists.List(Binding);
 
-pub fn empty() -> Substitution { lists.nil() }
+pub fn empty() -> Substitution { lists.nil(_) }
 
 pub fn lookup(bindings: Substitution, id: I32) -> term.Term | . {
   match! traversal.find(.(binding) { arith.eq_i32(binding.?{key}, id) }, bindings) {
@@ -41,7 +41,7 @@ rec(loop) {
             rec descend(
               , bindings
               , first
-              , lists.cons({symbol, completed = lists.nil(), remaining = rest}, parents)
+              , lists.cons({symbol, completed = lists.nil(_), remaining = rest}, parents)
               )
           };
           .(_empty: .) { rec ascend(bindings, original, parents) }
@@ -72,7 +72,7 @@ rec(loop) {
 }
 
 pub fn apply(bindings: Substitution, original: term.Term) -> term.Term {
-  descend(bindings, original, lists.nil())
+  descend(bindings, original, lists.nil(_))
 }
 
 pub fn extend(bindings: Substitution, id: I32, value: term.Term) -> Substitution {

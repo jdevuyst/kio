@@ -10,4 +10,4 @@ import testapi/io(print);
 // bridge, so the bridge-scoped emit prunes it. Were `sink` emitted, its
 // `discard` host requirement would leak into the host interface and the
 // rust / go targets would fail to build.
-pub fn main() -> . { print(pick(("dependency works\n"(String), "discarded"(String)))) }
+pub fn main() { print(pick(("dependency works\n"(String), "discarded"(String)))) }

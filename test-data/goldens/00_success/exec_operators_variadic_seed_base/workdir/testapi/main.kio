@@ -29,7 +29,7 @@ varop [! !] { foldl1 keep_left seed }
 
 varop [% %] { foldr1 keep_entry seed_entry }
 
-pub fn main() -> . {
+pub fn main() {
   print([* "a", "b", "c" *]);
   print("\n");
   print([* "solo" *]);

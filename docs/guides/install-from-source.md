@@ -46,13 +46,31 @@ The extension looks for the `kio` binary in three places, in this order:
 2. The `KIO_BIN` environment variable.
 3. `kio` on your `PATH`.
 
-The first one that resolves to an existing executable wins. If you built with `cargo build --release --bin kio` and haven't put the binary on your `PATH`, set `kio.server.path` to its absolute location in your VS Code settings:
+The first nonempty explicit selection wins; otherwise the extension searches `PATH`. If you built with `cargo build --release --bin kio` and haven't put the binary on your `PATH`, set `kio.server.path` to its absolute location in your VS Code settings:
 
 ```jsonc
 "kio.server.path": "/absolute/path/to/kio-rs/target/release/kio"
 ```
 
-Changing `kio.server.path` requires a window reload (Developer: Reload Window) before the extension picks up the new binary.
+Changing `kio.server.path` restarts the language server with the selected binary.
+In a remote workspace or Codespace, the path names a binary in that environment.
+An invalid explicit setting or `KIO_BIN` prevents fallback to another compiler.
+
+The Kio language status shows whether the server is starting, connected, or
+unavailable. **Kio: Restart Language Server** retries with the current settings;
+**Kio: Show Language Server Output** opens startup and failure details. After
+changing the extension host's environment, reload the window so it inherits
+those changes. Browser-only extension hosts provide highlighting and display
+that mode without an installation warning; a browser connected to a remote
+Node workspace can run the language server there.
+
+An unavailable compiler or a server that cannot start produces an actionable
+notification. Unexpected exits receive a bounded automatic retry; repeated
+failures leave an unavailable status and a manual retry action. Dismissing a
+notification keeps the status and Output commands available. Ordinary source
+diagnostics and differing compiler version numbers do not produce availability
+warnings. The `kio.trace.server` setting enables additional protocol logging;
+its default is `off`, and verbose traces can include source text.
 
 ## Format on save
 

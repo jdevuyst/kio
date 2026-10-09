@@ -16,7 +16,7 @@ import testapi/text(string_concat);
 // pinning (the I32 and Bool end up in the right positions).
 fn reshape(p: (String & I32) & Bool) -> Bool & I32 { fit!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let r = reshape((("preserved", 99), .t));
   // Pick out the I32 and Bool slots and stringify.
   let n = one_prod!(r, I32);

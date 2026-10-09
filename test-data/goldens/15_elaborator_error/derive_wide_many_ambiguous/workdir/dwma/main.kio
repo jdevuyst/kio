@@ -66,4 +66,4 @@ fn bad() -> Render(Wanted) {
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

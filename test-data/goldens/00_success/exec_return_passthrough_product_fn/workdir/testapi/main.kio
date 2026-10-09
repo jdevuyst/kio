@@ -14,7 +14,7 @@ fn make_iife() -> (String & String) -> String {
   .() { id((String & String) -> String, .(left: String, right: String) -> String { left }) }()
 }
 
-pub fn main() -> . {
+pub fn main() {
   let f = make();
   let g = make_iife();
   print(string_concat(

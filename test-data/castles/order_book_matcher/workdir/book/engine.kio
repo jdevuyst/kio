@@ -108,7 +108,7 @@ rec(loop) fn cross(taker: I32, side: Side, cap: Cap, remaining: I32, makers: Arr
 }
 
 /// A limit order crosses first and rests with whatever survives.
-fn take_limit(step: I32, b: Book, r: Limit_req) -> . {
+fn take_limit(step: I32, b: Book, r: Limit_req) {
   let side = limit_side(r);
   let price = limit_price(r);
   let qty = limit_qty(r);
@@ -134,7 +134,7 @@ fn take_limit(step: I32, b: Book, r: Limit_req) -> . {
 
 /// A market order names no price, so it crosses until it is filled or the
 /// book runs out. It never rests: what the book could not fill is gone.
-fn take_market(step: I32, b: Book, r: Market_req) -> . {
+fn take_market(step: I32, b: Book, r: Market_req) {
   let side = market_side(r);
   let qty = market_qty(r);
   let id = take_id(b);
@@ -165,7 +165,7 @@ fn locate(b: Book, id: I32) -> Array(Order) & I32 {
   }
 }
 
-fn take_cancel(step: I32, b: Book, id: I32) -> . {
+fn take_cancel(step: I32, b: Book, id: I32) {
   print(report.cancel_header(step, id));
   let .(queue: Array(Order), index: I32) = locate(b, id);
   if! is_found(index) {
@@ -180,7 +180,7 @@ fn take_cancel(step: I32, b: Book, id: I32) -> . {
 }
 
 /// An amend may only shrink an order. See `report.no_growth_reason`.
-fn take_amend(step: I32, b: Book, r: Amend_req) -> . {
+fn take_amend(step: I32, b: Book, r: Amend_req) {
   let id = amend_id(r);
   let target = amend_qty(r);
   print(report.amend_header(step, id, target));
@@ -201,7 +201,7 @@ fn take_amend(step: I32, b: Book, r: Amend_req) -> . {
   print(report.book_line(b))
 }
 
-fn apply_event(step: I32, b: Book, e: Event) -> . {
+fn apply_event(step: I32, b: Book, e: Event) {
   match! e {
     (
       , .(l: Limit) { take_limit(step, b, limit_of(l)) }
@@ -215,7 +215,7 @@ fn apply_event(step: I32, b: Book, e: Event) -> . {
 /// The event's position in the flow is also the arrival sequence a
 /// resting order keeps, which is why it is passed down rather than
 /// counted again in the book.
-rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) -> . {
+rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) {
   if! leq_i32(event_count(events), i) {
     ()
   } else {
@@ -226,7 +226,7 @@ rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) -> . {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   let b = new_book();
   print("== transcript ==\n\n");
   replay(0, b, arrivals());

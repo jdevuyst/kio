@@ -11,7 +11,7 @@ newtype Box[A] : A { constructor box; projector unbox }
 
 fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
 
-rec(loop) fn go(n: I32) -> . {
+rec(loop) fn go(n: I32) {
   if! leq_i32(n, 0) {
     print("base\n")
   } else {
@@ -23,4 +23,4 @@ rec(loop) fn go(n: I32) -> . {
   }
 }
 
-pub fn main() -> . { go(1) }
+pub fn main() { go(1) }

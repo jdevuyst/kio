@@ -569,13 +569,10 @@ where
 // Top-level item schemes (fn / host fn / newtype member)
 // =========================================================================
 
-/// Build a synth result for a top-level `fn` reference, choosing
-/// between [`Synth::value`] and [`Synth::scheme`] based on whether
-/// the fn carries any type parameters.
-///
-/// A fn with type-params synthesizes as a polymorphic scheme; a
-/// monomorphic fn synthesizes as a function type so the callee
-/// can flow into both call positions and `fn`-shaped contexts.
+/// Build a synth result for a top-level `fn` reference. Type parameters
+/// plus an exposed `forall* -> function` spine establish a complete
+/// callable scheme. Other references retain their exact public type as
+/// values; ordinary structural consumers expand alias-hidden frontiers.
 ///
 /// Phase-polymorphic via the same `Clone` bound as the rest of the
 /// builders.
@@ -585,7 +582,12 @@ where
 {
     let has_type_params = d.sig.has_type_params();
     let ty = d.sig.signature_ty(d.ret.clone(), span);
-    if has_type_params {
+    if has_type_params
+        && matches!(
+            ty.peel_leading_foralls().1,
+            crate::ast::Type::Function { .. }
+        )
+    {
         Synth::complete_scheme(ty)
     } else {
         Synth::value(ty)
@@ -627,13 +629,6 @@ where
         &d.ret,
         declaring_module,
     );
-    let has_type_params = sig.has_type_params();
-    let ty = super::aliases::follow_type_reexports_deep(&sig.signature_ty(ret, span), package);
-    let result = if has_type_params {
-        Synth::canonical_complete_scheme(ty)
-    } else {
-        Synth::canonical_value(ty)
-    };
     let source = package
         .and_then(|package| package.module(&declaring_module.path.segments.join("/")))
         .map(|entry| {
@@ -642,6 +637,19 @@ where
                 span: Span::new(d.meta.span.start, d.ret.span().end),
             })
         });
+    let signature_span = source.as_ref().map_or(span, |source| source.span);
+    let has_type_params = sig.has_type_params();
+    let ty =
+        super::aliases::follow_type_reexports_deep(&sig.signature_ty(ret, signature_span), package);
+    let result = if has_type_params
+        && matches!(
+            ty.peel_leading_foralls().1,
+            crate::ast::Type::Function { .. }
+        ) {
+        Synth::canonical_complete_scheme(ty)
+    } else {
+        Synth::canonical_value(ty)
+    };
     Synth {
         ty: result.ty.with_requirement_source(source),
         ..result
@@ -665,7 +673,7 @@ where
 /// parameters are renamed to `_p0`, `_p1`, … so the typer's value-arg
 /// matching at the call site has stable names; spans on every
 /// signature element are aliased to the call site so diagnostics
-/// surface there rather than at the package-file declaration.
+/// surface there when the declaring source file is unavailable.
 ///
 /// Phase-polymorphic with the same `TypeLabelSugar = Never` bound
 /// as [`clone_with_span`].
@@ -733,6 +741,18 @@ pub fn synth_env_fn_def_in_module<P>(
 where
     P: crate::pass::resolve::ExportContractPhase + Clone,
 {
+    let source = package
+        .and_then(|package| package.module(&declaring_module.path.segments.join("/")))
+        .map(|entry| {
+            std::sync::Arc::new(super::intern::RequirementSource {
+                file: entry.file_path.clone(),
+                span: Span::new(d.meta.span.start, d.ret.span().end),
+            })
+        });
+    // Empty value groups synthesize a Unit domain without a written type span.
+    // Its explanation belongs to the real header, never to caller offsets in
+    // the declaring file. Without that file, retain the call-site fallback.
+    let signature_span = source.as_ref().map_or(span, |source| source.span);
     let mut binder_kinds = std::collections::HashMap::new();
     let signature_params: Vec<crate::ast::SignatureParam<P>> = d
         .params
@@ -743,26 +763,40 @@ where
                 binder_kinds.insert(tp_.name.clone(), tp_.effective_kind());
                 crate::ast::SignatureParam::Type(crate::ast::TypeParam {
                     name: tp_.name.clone(),
-                    span,
+                    span: if source.is_some() { tp_.span } else { span },
                     kind: tp_.kind.clone(),
                 })
             }
             crate::ast::HostFnParam::Value(vp_) => {
+                let ty = if source.is_some() {
+                    vp_.ty.clone()
+                } else {
+                    clone_with_span(&vp_.ty, span)
+                };
                 crate::ast::SignatureParam::Value(crate::ast::Param {
                     name: vp_.name.clone().unwrap_or_else(|| format!("_p{i}")),
                     ty: Some(crate::pass::resolve::qualify_contract_type_in_module(
-                        &clone_with_span(&vp_.ty, span),
+                        &ty,
                         declaring_module,
                         &binder_kinds,
                     )),
                     pattern: Default::default(),
-                    meta: Meta::new(span),
+                    meta: if source.is_some() {
+                        vp_.meta.clone()
+                    } else {
+                        Meta::new(span)
+                    },
                 })
             }
         })
         .collect();
+    let ret = if source.is_some() {
+        d.ret.clone()
+    } else {
+        clone_with_span(&d.ret, span)
+    };
     let ret = crate::pass::resolve::qualify_contract_type_in_module(
-        &clone_with_span(&d.ret, span),
+        &ret,
         declaring_module,
         &binder_kinds,
     );
@@ -771,7 +805,7 @@ where
         .any(|p| matches!(p, crate::ast::SignatureParam::Type(_)));
     let sig = crate::ast::Signature::from_parts(signature_params, d.param_groups.clone());
     let ty = super::aliases::follow_type_reexports_deep(
-        &crate::ast::Type::synth_scheme_from_signature(&sig, ret, span),
+        &crate::ast::Type::synth_scheme_from_signature(&sig, ret, signature_span),
         package,
     );
     let synth = if has_type_params {
@@ -779,7 +813,11 @@ where
     } else {
         Synth::value(ty)
     };
-    synth.with_canonical_identity()
+    let synth = synth.with_canonical_identity();
+    Synth {
+        ty: synth.ty.with_requirement_source(source),
+        ..synth
+    }
 }
 
 /// Project the function param-type onto N fn-value-param bindings,
@@ -1176,8 +1214,11 @@ where
     let mut binder_names = ambient_binders.clone();
     let mut value_param_types = Vec::new();
     let mut source_value_index = 0usize;
-    let implicit_value_group =
-        (!plan.signature.has_value_group()).then_some(crate::ast::SignatureGroupRef::Value(&[]));
+    let implicit_value_group = plan
+        .group_refs()
+        .next()
+        .is_none()
+        .then_some(crate::ast::SignatureGroupRef::Value(&[]));
     for group in plan.group_refs().chain(implicit_value_group) {
         expected_layer = normalize_fn_shape_expected(expected_layer, holes.as_ref());
         match group {
@@ -1544,13 +1585,7 @@ where
     })();
     tcx.restore(mark);
     let (body_ty, value_param_types) = synthesized?;
-    Ok(finish_synth_fn_from_body_type(
-        full,
-        plan.signature,
-        body_ty,
-        value_param_types,
-        tcx,
-    ))
+    finish_synth_fn_from_body_type(full, plan.signature, body_ty, value_param_types, tcx)
 }
 
 pub(crate) fn finish_synth_fn_from_body_type<'m, P>(
@@ -1559,20 +1594,18 @@ pub(crate) fn finish_synth_fn_from_body_type<'m, P>(
     body_ty: super::InternedType<P>,
     value_param_types: Vec<super::InternedType<P>>,
     tcx: &mut TypeCtx<'m, '_, P>,
-) -> Synth<P>
+) -> Result<Synth<P>, Error>
 where
     P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
+    let ty = build_fn_type_from_body_type(sig, body_ty, &value_param_types, full.span(), tcx);
+    if !sig.has_value_group() {
+        super::types::compute_checked_kind(&ty, full.span(), tcx)?;
+    }
     for (index, ty) in value_param_types.iter().enumerate() {
         <P::Typer as Typer<P>>::record_fn_param_type(full.site(), index, ty.clone(), tcx);
     }
-    Synth::canonical_value(build_fn_type_from_body_type(
-        sig,
-        body_ty,
-        value_param_types,
-        full.span(),
-        tcx,
-    ))
+    Ok(Synth::canonical_value(ty))
 }
 
 /// Build the exact anonymous-function type after its body has completed.
@@ -1581,7 +1614,7 @@ where
 pub(crate) fn build_fn_type_from_body_type<P>(
     sig: &crate::ast::Signature<P>,
     body_ty: super::InternedType<P>,
-    value_param_types: Vec<super::InternedType<P>>,
+    value_param_types: &[super::InternedType<P>],
     fn_span: Span,
     tcx: &TypeCtx<'_, '_, P>,
 ) -> crate::ast::Type<P>
@@ -1596,7 +1629,7 @@ where
     // Function(P1, body_ty)))`, not `Forall([A], Function(Product(P0,
     // P1), body_ty))`.
     let mut binder_names = tcx.in_scope_type_param_binders();
-    let mut value_iter = value_param_types.into_iter();
+    let mut value_iter = value_param_types.iter();
     let resolved_params: Vec<crate::ast::SignatureParam<P>> = sig
         .params
         .iter()
@@ -1751,6 +1784,8 @@ where
                 tcx,
             );
         },
+        #[cfg(feature = "lsp")]
+        |span, binding, tcx| <P::Typer as Typer<P>>::record_selected_role(span, binding, tcx),
     )
 }
 
@@ -1767,6 +1802,7 @@ pub(crate) fn synth_path_with_binder_recorder<'m, 'e, P>(
         Option<usize>,
         &mut TypeCtx<'m, 'e, P>,
     ),
+    #[cfg(feature = "lsp")] mut record_selected_role: impl FnMut(Span, &str, &mut TypeCtx<'m, 'e, P>),
 ) -> Result<Synth<P>, Error>
 where
     P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
@@ -1886,9 +1922,29 @@ where
                 }
                 super::RoleResolution::Missing | super::RoleResolution::Unique(_) => None,
             };
-            if let Some(scheme) =
-                intrinsic_scheme_resolved(head, span, bool_role, ambiguity.as_deref())
-            {
+            #[cfg(feature = "lsp")]
+            let mut selected_role = None;
+            if let Some(scheme) = intrinsic_scheme_resolved_observed(
+                head,
+                span,
+                bool_role,
+                ambiguity.as_deref(),
+                |binding| {
+                    #[cfg(feature = "lsp")]
+                    {
+                        selected_role = Some(binding);
+                    }
+                    #[cfg(not(feature = "lsp"))]
+                    let _ = binding;
+                },
+            ) {
+                #[cfg(feature = "lsp")]
+                if scheme.is_ok()
+                    && tcx.env.typecheck_scope.collects_source_dependencies()
+                    && let Some(binding) = selected_role
+                {
+                    record_selected_role(head_span, binding, tcx);
+                }
                 record_binder_at(
                     head_span,
                     ResolvedBinderKind::Intrinsic,
@@ -1920,12 +1976,6 @@ where
         if let Some(error) = type_name_in_value_position(segments, span, tcx) {
             return Err(error);
         }
-        // No scope contains `head`. The resolver catches this for
-        // regular module bodies (with a tighter "unbound name" error),
-        // but bridge adapter bodies don't go through the resolver, so
-        // we surface the name-resolution failure here instead — with
-        // the same `did you mean …?` near-miss suggestion, drawn from
-        // the fns and imports the adapter body can call.
         let mut candidates: Vec<&str> = tcx
             .env
             .fn_defs
@@ -1936,18 +1986,20 @@ where
             .collect();
         candidates.sort_unstable();
         candidates.dedup();
-        let err =
-            Error::name_res(span, format!("unbound name `{head}`")).with_unresolved_name(head);
-        return Err(
-            match crate::error::closest_name(head, candidates.iter().copied()) {
-                Some(near) => err
-                    .with_help(format!(
-                        "a name `{near}` is in scope — did you mean `{near}`?"
-                    ))
-                    .with_suggestion(span, near.to_owned()),
-                None => err,
-            },
-        );
+        let mut error = Error::name_res(span, format!("unbound name `{head}`"))
+            .with_unresolved_name(head)
+            .requiring_current_fixes();
+        if let Some((near, unique)) =
+            crate::error::closest_name_with_uniqueness(head, candidates.iter().copied())
+        {
+            error = error.with_help(format!(
+                "a name `{near}` is in scope — did you mean `{near}`?"
+            ));
+            if unique {
+                error = error.with_suggestion(head_span, near);
+            }
+        }
+        return Err(error);
     }
     if segments.len() == 2 {
         let head = segments[0].as_str();
@@ -2409,15 +2461,24 @@ pub(crate) fn unique_role_admitted_type_at<P: crate::ast::Phase>(
     }
 }
 
-pub(crate) fn unique_role_admitted_interned_at<P>(
+pub(crate) fn unique_role_admitted_resolution_at<P>(
     shape: crate::ast::RoleShape,
     span: Span,
     tcx: &TypeCtx<'_, '_, P>,
-) -> Option<super::InternedType<P>>
+) -> Option<super::LiteralResolution<P>>
 where
     P: TyperPhase + Clone,
 {
     let resolved = unique_role_admitted_type_at(shape, tcx.env, tcx.local_item_cutoff(), span)?;
+    #[cfg(feature = "lsp")]
+    let lexical_role = if tcx.env.typecheck_scope.collects_source_dependencies() {
+        let crate::ast::Type::Path { segments, .. } = &resolved else {
+            unreachable!("a selected role is represented by its visible type binding")
+        };
+        Some(segments[0].name.clone())
+    } else {
+        None
+    };
     let resolved = match resolved {
         crate::ast::Type::Path {
             segments,
@@ -2430,7 +2491,11 @@ where
         },
         other => other,
     };
-    Some(super::InternedType::fresh_with_identity(resolved, true))
+    Some(super::LiteralResolution {
+        ty: super::InternedType::fresh_with_identity(resolved, true),
+        #[cfg(feature = "lsp")]
+        lexical_role,
+    })
 }
 
 /// The tier-3 diagnostic for a literal whose host type
@@ -2513,8 +2578,9 @@ where
 {
     let span = site.span;
     let resolved = synth_literal_unrecorded(shape, annotation, span, tcx)?;
-    <P::Typer as Typer<P>>::record_literal_resolution(site, resolved.clone(), tcx);
-    Ok(resolved)
+    let ty = resolved.ty.clone();
+    <P::Typer as Typer<P>>::record_literal_resolution(site, resolved, tcx);
+    Ok(ty)
 }
 
 /// Resolve a literal in synthesis mode without publishing its selected host
@@ -2525,7 +2591,7 @@ pub(crate) fn synth_literal_unrecorded<'m, P>(
     annotation: Option<&crate::ast::Type<P>>,
     span: Span,
     tcx: &TypeCtx<'m, '_, P>,
-) -> Result<super::InternedType<P>, Error>
+) -> Result<super::LiteralResolution<P>, Error>
 where
     P: TyperPhase + Clone,
 {
@@ -2534,7 +2600,9 @@ where
         && !matches!(annot, crate::ast::Type::Infer { .. })
     {
         let resolved = check_literal_annotation(shape, annot, tcx.env)?;
-        return Ok(super::InternedType::fresh(resolved));
+        return Ok(super::LiteralResolution::contextual(
+            super::InternedType::fresh(resolved),
+        ));
     }
     // Tier 3 — the unique host type (or, in the rehosted-module case,
     // the unique role-inheriting `type` alias) whose role the shape
@@ -2542,7 +2610,7 @@ where
     // if tier 3 finds no unique candidate, the literal is a type error
     // (tier 4). Shared with the `substitute` pass's bare-literal
     // fill-in via [`unique_role_admitted_type`].
-    let Some(resolved) = unique_role_admitted_interned_at(shape, span, tcx) else {
+    let Some(resolved) = unique_role_admitted_resolution_at(shape, span, tcx) else {
         return Err(literal_resolution_error(
             shape,
             tcx.env,
@@ -2574,8 +2642,9 @@ where
 {
     let span = site.span;
     let resolved = resolve_literal_against_unrecorded(shape, annotation, expected, span, tcx)?;
-    <P::Typer as Typer<P>>::record_literal_resolution(site, resolved.clone(), tcx);
-    Ok(resolved)
+    let ty = resolved.ty.clone();
+    <P::Typer as Typer<P>>::record_literal_resolution(site, resolved, tcx);
+    Ok(ty)
 }
 
 /// Resolve a literal in checking mode without publishing the resolution.
@@ -2587,7 +2656,7 @@ pub(crate) fn resolve_literal_against_unrecorded<'m, P>(
     expected: &super::InternedType<P>,
     span: Span,
     tcx: &TypeCtx<'m, '_, P>,
-) -> Result<super::InternedType<P>, Error>
+) -> Result<super::LiteralResolution<P>, Error>
 where
     P: TyperPhase + Clone,
 {
@@ -2597,7 +2666,7 @@ where
         && segments[0].as_str() == "__Diagnostic_text__"
         && args.is_empty()
     {
-        return Ok(expected.clone());
+        return Ok(super::LiteralResolution::contextual(expected.clone()));
     }
     // Tier 1 — explicit annotation. It must itself be a shape-admitted
     // host type; the equality against `expected` is the caller's job
@@ -2607,7 +2676,9 @@ where
         && !matches!(annot, crate::ast::Type::Infer { .. })
     {
         let resolved = check_literal_annotation(shape, annot, tcx.env)?;
-        return Ok(super::InternedType::fresh(resolved));
+        return Ok(super::LiteralResolution::contextual(
+            super::InternedType::fresh(resolved),
+        ));
     }
     // Tier 2 — the expected type, when it is a role-bearing host type
     // (or a `type` alias that inherits a role from one) whose role the
@@ -2620,7 +2691,7 @@ where
         tcx.env,
     );
     if tier2_hit {
-        return Ok(expected.clone());
+        return Ok(super::LiteralResolution::contextual(expected.clone()));
     }
     // Neither tier applies — fall back to unrecorded synthesis (tier 3 / 4).
     // The enclosing caller publishes the selected type exactly once.
@@ -3342,6 +3413,19 @@ pub(crate) fn intrinsic_scheme_resolved<P>(
 where
     P: crate::ast::Phase + Clone,
 {
+    intrinsic_scheme_resolved_observed(name, span, bool_role, bool_role_ambiguity, |_| {})
+}
+
+fn intrinsic_scheme_resolved_observed<'r, P>(
+    name: &str,
+    span: Span,
+    bool_role: super::RoleResolution<'r>,
+    bool_role_ambiguity: Option<&str>,
+    mut observe_role: impl FnMut(&'r str),
+) -> Option<Result<Synth<P>, Error>>
+where
+    P: crate::ast::Phase + Clone,
+{
     let a = || ty_path::<P>("a", span);
     let b = || ty_path::<P>("b", span);
     let c = || ty_path::<P>("c", span);
@@ -3445,6 +3529,7 @@ where
             };
             let bool_ty =
                 crate::ast::Type::synth_path(vec![bool_name.to_owned()], Vec::new(), span);
+            observe_role(bool_name);
             let unit_to_a = || ty_func(vec![], a(), span);
             (
                 vec![
@@ -3486,6 +3571,127 @@ where
 mod tests {
     use super::*;
     use crate::ast::{Lowered, Surface};
+
+    #[cfg(feature = "prime")]
+    #[test]
+    fn host_requirement_spans_keep_written_and_empty_domains_in_their_source() {
+        use crate::ast::{Item, Type};
+        use crate::pass::resolve::Package;
+        use std::path::{Path, PathBuf};
+
+        for declaration in [
+            "pub host fn tick() -> .;",
+            "pub host fn later(value: .)() -> .;",
+            "pub host fn generic[A](value: A)() -> A;",
+        ] {
+            let module = crate::prime::lower::lower_module(
+                crate::pass::parser::parse(&format!("module provider;\n{declaration}\n")).unwrap(),
+            )
+            .unwrap();
+            let package = Package::build(
+                Path::new(""),
+                vec![(PathBuf::from("provider.kio"), module)],
+                None,
+            )
+            .unwrap();
+            let empty_package = Package::build(Path::new(""), Vec::new(), None).unwrap();
+            let module = &package.module("provider").unwrap().module;
+            let Item::HostFn(host) = &module.items[0] else {
+                panic!("expected the host declaration");
+            };
+            let header = Span::new(host.meta.span.start, host.ret.span().end);
+            let caller = Span::new(800, 806);
+            for (owner, owned) in [
+                (Some(&package), true),
+                (None, false),
+                (Some(&empty_package), false),
+            ] {
+                let result = synth_env_fn_def_in_module(host, module, owner, caller);
+                let fallback = synth_env_fn_def(host, caller);
+                assert_eq!(
+                    display_type(result.ty.as_type()),
+                    display_type(fallback.ty.as_type())
+                );
+                assert_eq!(result.complete_scheme, fallback.complete_scheme);
+                assert_eq!(
+                    result.inferred_type_arg_suffix,
+                    fallback.inferred_type_arg_suffix
+                );
+                assert!(result.ty.identity_is_canonical());
+                assert_eq!(result.is_scheme, declaration.contains("[A]"));
+                let source = result.ty.requirement_source();
+                assert_eq!(source.is_some(), owned);
+                if let Some(source) = source {
+                    assert_eq!(source.file, Path::new("provider.kio"));
+                    assert_eq!(source.span, header);
+                }
+                let mut ty = result.ty.as_type();
+                let mut value_index = 0;
+                while let Type::Forall { param, body, .. } = ty {
+                    let crate::ast::HostFnParam::Type(written) = &host.params[0] else {
+                        panic!("expected a written type binder");
+                    };
+                    assert_eq!(param.span, if owned { written.span } else { caller });
+                    value_index += 1;
+                    ty = body;
+                }
+                for group in &host.param_groups {
+                    let crate::ast::SignatureGroupKind::Value { len: count } = group else {
+                        continue;
+                    };
+                    let Type::Function { param, ret, .. } = ty else {
+                        panic!("expected the value group's function layer");
+                    };
+                    let expected = if !owned {
+                        caller
+                    } else if *count == 0 {
+                        header
+                    } else {
+                        let crate::ast::HostFnParam::Value(written) = &host.params[value_index]
+                        else {
+                            panic!("expected a written value parameter");
+                        };
+                        written.ty.span()
+                    };
+                    assert_eq!(param.span(), expected, "{declaration}");
+                    value_index += *count;
+                    ty = ret;
+                }
+                assert_eq!(ty.span(), if owned { host.ret.span() } else { caller });
+            }
+        }
+    }
+
+    #[cfg(feature = "prime")]
+    #[test]
+    fn unresolved_synthesis_name_keeps_tied_help_without_a_machine_edit() {
+        for (declarations, unique) in [
+            ("fn helper() { () }", true),
+            ("fn helper() { () } fn heaper() { () }", false),
+        ] {
+            let module = crate::prime::lower::lower_module(
+                crate::pass::parser::parse(&format!("module main; {declarations}")).unwrap(),
+            )
+            .unwrap();
+            let env = super::super::ModuleEnv::build(&module, None, None, None).unwrap();
+            let span = Span::new(76, 89);
+            let head_span = Span::new(80, 85);
+            let segments = vec![crate::ast::PathSegment::new("heper".to_owned(), head_span)];
+            let mut elaborations = crate::prime::typer::PrimeElaborations::default();
+            let mut context = TypeCtx::new(&env, &mut elaborations);
+            let error = match synth_path(&segments, span, &mut context) {
+                Err(error) => error,
+                Ok(_) => panic!("the unresolved path must fail synthesis"),
+            };
+            assert_eq!(error.diagnostic().span, span);
+            assert!(error.diagnostic().help().unwrap().contains("did you mean"));
+            assert_eq!(error.diagnostic().fixes().len(), usize::from(unique));
+            if unique {
+                assert_eq!(error.diagnostic().fixes()[0].edits[0].span, head_span);
+                assert_eq!(error.diagnostic().fixes()[0].edits[0].replacement, "helper");
+            }
+        }
+    }
 
     #[cfg(feature = "prime")]
     #[test]

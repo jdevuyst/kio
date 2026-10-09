@@ -8,7 +8,7 @@ import testapi/fmt as fmt;
 import testapi/io(print);
 import testapi/text(string_concat);
 
-pub fn main() -> . {
+pub fn main() {
   let a = model.bin_a();
   let b = model.bin_b();
   let c = model.bin_c();
@@ -18,9 +18,8 @@ pub fn main() -> . {
   print(report.bin_line(b));
   print(report.bin_line(c));
   print(report.bin_line(d));
-  print(string_concat(
-    , "discrepancy="
-    , string_concat(fmt.int_to_string(audit.discrepancy(a, b, c, d)), "\n")
-    ));
+  print(fmt.int_to_string(audit.discrepancy(a, b, c, d))
+    .>string_concat("\n")
+    .>>string_concat("discrepancy="));
   print("summary ok=1 missing=2 overage=1\n")
 }

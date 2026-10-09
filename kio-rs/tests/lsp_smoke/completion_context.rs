@@ -70,6 +70,26 @@ fn exact_labels(result: &Value) -> Vec<&str> {
 }
 
 #[test]
+fn lsp_type_only_completion_keeps_binder_positions_and_scopes_distinct() {
+    for (tail, expected) in [
+        ("fn fresh[|", vec![]),
+        ("fn fresh[A|", vec![]),
+        ("fn fresh[A] -> |", vec!["A", "Existing"]),
+        ("fn fresh() { let lambda = .[|", vec![]),
+        ("fn fresh() { let lambda = .[B|", vec![]),
+        ("fn fresh() { let lambda = .[B] -> |", vec!["B", "Existing"]),
+        (
+            "fn fresh() { let lambda = .[B] { .(value: |",
+            vec!["B", "Existing"],
+        ),
+    ] {
+        let source = format!("module app;\npub type Existing = .;\n{tail}");
+        let completion = open_change_and_complete("", &source);
+        assert_eq!(exact_labels(&completion), expected, "{tail}: {completion}");
+    }
+}
+
+#[test]
 fn lsp_protocol_neutral_block_completion_tracks_lexical_scope() {
     let mut failures = Vec::new();
     for (body, expected, forbidden) in [

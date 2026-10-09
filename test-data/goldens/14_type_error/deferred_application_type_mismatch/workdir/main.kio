@@ -6,6 +6,6 @@ host type Witness;
 
 host fn make[A]() -> A | Other;
 
-fn consume[T](_value: T & Witness) -> . { () }
+fn consume[T](_value: T & Witness) { () }
 
-fn reject() -> . { consume(make()) }
+fn reject() { consume(make()) }

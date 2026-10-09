@@ -309,4 +309,4 @@ fn join_csv(xs: Run) -> String {
     )
 }
 
-pub fn main() -> . { let sorted = mergesort(make_input()); print(join_csv(sorted)); print("\n") }
+pub fn main() { let sorted = mergesort(make_input()); print(join_csv(sorted)); print("\n") }

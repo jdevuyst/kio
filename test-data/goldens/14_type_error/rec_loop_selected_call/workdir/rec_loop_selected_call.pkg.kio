@@ -1,0 +1,9 @@
+package rec_loop_selected_call;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}

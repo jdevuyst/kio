@@ -7,7 +7,7 @@ import testapi/io(print);
 
 fn apply[A][B](f: (A & A) -> B, x: A, y: A) -> B { f(x, y) }
 
-pub fn main() -> . {
+pub fn main() {
   // Each stem owns its numbered references. Binding annotations
   // supply the expected parameter and result types.
   let .(hash_lambda: (I32 & I32) -> I32) = .x. { add_i32(x1, x2) };

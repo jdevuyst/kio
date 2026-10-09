@@ -12,4 +12,4 @@ import testapi/io(print);
 // edge.
 pub fn greeting() -> String { first("git dependency works\n"(String), "discarded\n"(String)) }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

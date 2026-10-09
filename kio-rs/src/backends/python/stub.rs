@@ -102,7 +102,7 @@ pub fn lower_package_to_stub_with_signature(
             .map_err(|error| EmitError {
                 message: format!("cannot prepare Python boundary: {error}"),
             })?;
-    PreparedPythonStub::new(&prepared, pascal_case(ns), ns).render()
+    PreparedPythonStub::new(package, &prepared, pascal_case(ns), ns).render()
 }
 
 /// Render the package's `<ns>/` typed-stub package for filesystem emission.
@@ -149,7 +149,7 @@ struct PreparedSurfaceTree {
 
 enum PreparedSurfaceNode {
     Interior(PreparedSurfaceTree),
-    Fn(FnSig),
+    Fn(FnSig, Option<String>),
 }
 
 impl PreparedSurfaceTree {
@@ -265,6 +265,7 @@ struct PythonTypedDictDefinition {
 }
 
 struct PreparedPythonStub<'a> {
+    package: &'a Package<Routed>,
     prepared: &'a PreparedBoundaryCallableSites,
     handle: String,
     namespace: String,
@@ -283,7 +284,12 @@ struct PreparedPythonStub<'a> {
 }
 
 impl<'a> PreparedPythonStub<'a> {
-    fn new(prepared: &'a PreparedBoundaryCallableSites, handle: String, namespace: &str) -> Self {
+    fn new(
+        package: &'a Package<Routed>,
+        prepared: &'a PreparedBoundaryCallableSites,
+        handle: String,
+        namespace: &str,
+    ) -> Self {
         // Python 3.10's stdlib-only type-stub surface has no recognized
         // deprecation marker. Per `specs/backends/python.md` § History-only
         // generated names are not source-stable on Python, omit retained
@@ -303,6 +309,7 @@ impl<'a> PreparedPythonStub<'a> {
         // rescanning every callable site for every carrier.
         let live_newtype_representatives = LiveNewtypeRepresentatives::new(prepared);
         Self {
+            package,
             prepared,
             handle,
             namespace: namespace.to_owned(),
@@ -476,8 +483,12 @@ impl<'a> PreparedPythonStub<'a> {
             }
             let applied = format!("{class_name}[{}]", params.join(", "));
             let definition = format!(
-                "class {class_name}(typing.Generic[{}]):\n    @classmethod\n    def from_native(cls, value: object, /) -> {applied}: ...\n    def to_native(self, /) -> object: ...\n",
-                params.join(", ")
+                "class {class_name}(typing.Generic[{}]):\n{}    @classmethod\n    def from_native(cls, value: object, /) -> {applied}: ...\n    def to_native(self, /) -> object: ...\n",
+                params.join(", "),
+                stub_doc(
+                    super::super::boundary_docs::host_type(self.package, binding),
+                    "    "
+                )
             );
             self.declaration_defs.insert(class_name, definition);
         }
@@ -588,6 +599,14 @@ impl<'a> PreparedPythonStub<'a> {
                     )
                 }
             };
+            let mut definition = definition;
+            if let Some(doc) = super::super::boundary_docs::newtype(self.package, &entry) {
+                let at = definition
+                    .find('\n')
+                    .expect("a class declaration has a body")
+                    + 1;
+                definition.insert_str(at, &stub_doc(Some(doc), "    "));
+            }
             self.declaration_defs.insert(class_name, definition);
         }
         Ok(())
@@ -619,20 +638,31 @@ impl<'a> PreparedPythonStub<'a> {
             let nested_name = format!("_{host_name}_{namespace}");
             let mut methods = Vec::new();
             let mut needs_getattr = false;
+            let mut fallback_docs = Vec::new();
             for site in sites {
                 let BoundaryFacadeSiteOwner::HostFunction { name } = site.site().owner() else {
                     unreachable!()
                 };
                 let name = host_name_core(name);
                 if is_spellable(&name) {
-                    methods.push((name, self.render_prepared_callable(site)?));
+                    methods.push((
+                        name,
+                        self.render_prepared_callable(site)?,
+                        super::super::boundary_docs::callable(self.package, site),
+                    ));
                 } else {
                     needs_getattr = true;
+                    if let Some(doc) = super::super::boundary_docs::callable(self.package, site) {
+                        fallback_docs.push(format!(
+                            "{name}:\n{}",
+                            super::super::doc::render(doc, super::super::doc::Dialect::PlainText)
+                        ));
+                    }
                 }
             }
             let mut signatures = methods
                 .iter()
-                .map(|(_, signature)| signature.clone())
+                .map(|(_, signature, _)| signature.clone())
                 .collect::<Vec<_>>();
             let (locals, arguments) = self.localize_protocol_typevars(
                 &format!("Host_{namespace}"),
@@ -647,16 +677,16 @@ impl<'a> PreparedPythonStub<'a> {
                 format!("typing.Protocol[{}]", locals.join(", "))
             };
             nested.push_str(&format!("class {nested_name}({bases}):\n"));
-            for ((name, _), signature) in methods.iter().zip(&signatures) {
-                nested.push_str(&format!(
-                    "    def {name}(self{}) -> {}: ...{}\n",
-                    positional_method_params(&signature.params),
-                    signature.ret,
-                    signature.pyright_suppression()
+            for ((name, _, doc), signature) in methods.iter().zip(&signatures) {
+                nested.push_str(&stub_method(
+                    name,
+                    signature,
+                    stub_doc(*doc, "        ").as_str(),
                 ));
+                nested.push('\n');
             }
             if needs_getattr {
-                nested.push_str("    def __getattr__(self, name: str) -> object: ...\n");
+                nested.push_str(&stub_getattr(&fallback_docs));
             } else if signatures.is_empty() {
                 nested.push_str("    ...\n");
             }
@@ -792,7 +822,12 @@ impl<'a> PreparedPythonStub<'a> {
             }
             tree.insert(
                 &path,
-                PreparedSurfaceNode::Fn(self.render_prepared_callable(site)?),
+                PreparedSurfaceNode::Fn(
+                    self.render_prepared_callable(site)?,
+                    super::super::boundary_docs::callable(self.package, site).map(|doc| {
+                        super::super::doc::render(doc, super::super::doc::Dialect::PlainText)
+                    }),
+                ),
             );
         }
         let mut out = String::new();
@@ -810,6 +845,7 @@ impl<'a> PreparedPythonStub<'a> {
         let roots = self.root_typevars();
         let mut members = Vec::new();
         let mut needs_getattr = false;
+        let mut fallback_docs = Vec::new();
         for (segment, child) in &tree.entries {
             match child {
                 PreparedSurfaceNode::Interior(children) => {
@@ -834,16 +870,18 @@ impl<'a> PreparedPythonStub<'a> {
                         needs_getattr = true;
                     }
                 }
-                PreparedSurfaceNode::Fn(sig) => {
+                PreparedSurfaceNode::Fn(sig, doc) => {
                     if is_spellable(segment) {
-                        members.push(format!(
-                            "    def {segment}(self{}) -> {}: ...{}",
-                            positional_method_params(&sig.params),
-                            sig.ret,
-                            sig.pyright_suppression()
-                        ));
+                        let framed = doc
+                            .as_deref()
+                            .map(|body| stub_body_doc(body, "        "))
+                            .unwrap_or_default();
+                        members.push(stub_method(segment, sig, &framed));
                     } else {
                         needs_getattr = true;
+                        if let Some(doc) = doc {
+                            fallback_docs.push(format!("{segment}:\n{doc}"));
+                        }
                     }
                 }
             }
@@ -862,7 +900,7 @@ impl<'a> PreparedPythonStub<'a> {
                 out.push('\n');
             }
             if needs_getattr {
-                out.push_str("    def __getattr__(self, name: str) -> object: ...\n");
+                out.push_str(&stub_getattr(&fallback_docs));
             }
         }
         out.push('\n');
@@ -1970,6 +2008,47 @@ struct FnSig {
     suppress_invalid_typevar_use: bool,
 }
 
+fn stub_doc(doc: Option<&crate::ast::DocComment>, indent: &str) -> String {
+    doc.map(|doc| {
+        stub_body_doc(
+            &super::super::doc::render(doc, super::super::doc::Dialect::PlainText),
+            indent,
+        )
+    })
+    .unwrap_or_default()
+}
+
+fn stub_body_doc(body: &str, indent: &str) -> String {
+    format!("{indent}{}\n", super::super::doc::python_docstring(body))
+}
+
+fn stub_getattr(docs: &[String]) -> String {
+    if docs.is_empty() {
+        "    def __getattr__(self, name: str) -> object: ...\n".to_owned()
+    } else {
+        format!(
+            "    def __getattr__(self, name: str) -> object:\n{}        ...\n",
+            stub_body_doc(&docs.join("\n\n"), "        ")
+        )
+    }
+}
+
+fn stub_method(name: &str, signature: &FnSig, doc: &str) -> String {
+    let head = format!(
+        "    def {name}(self{}) -> {}:",
+        positional_method_params(&signature.params),
+        signature.ret
+    );
+    if doc.is_empty() {
+        format!("{head} ...{}", signature.pyright_suppression())
+    } else {
+        format!(
+            "{head}{}\n{doc}        ...",
+            signature.pyright_suppression()
+        )
+    }
+}
+
 impl FnSig {
     fn pyright_suppression(&self) -> &'static str {
         if self.suppress_invalid_typevar_use {
@@ -2632,7 +2711,7 @@ mod tests {
             "bridge { main; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
-        let mut stub = PreparedPythonStub::new(&prepared, "Greeter".to_owned(), "greeter");
+        let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         let mut signatures = vec![FnSig {
             params: vec![
                 "Root".to_owned(),
@@ -2686,7 +2765,7 @@ mod tests {
             "bridge { main; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
-        let mut stub = PreparedPythonStub::new(&prepared, "Greeter".to_owned(), "greeter");
+        let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.root_bindings = (0..WIDTH)
             .map(|index| {
                 (
@@ -2755,7 +2834,7 @@ mod tests {
             "bridge { main; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
-        let mut stub = PreparedPythonStub::new(&prepared, "Greeter".to_owned(), "greeter");
+        let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.root_bindings = ["First", "Second"]
             .into_iter()
             .map(|name| {
@@ -2853,6 +2932,7 @@ mod tests {
     }
 
     fn render_with_representative_index_work(
+        package: &Package<Routed>,
         prepared: &PreparedBoundaryCallableSites,
     ) -> (String, PythonRepresentativeIndexWork) {
         PYTHON_REPRESENTATIVE_INDEX_WORK.with(|slot| {
@@ -2862,7 +2942,8 @@ mod tests {
                 "the Python representative-index work ledger is already active"
             );
             let rendered =
-                PreparedPythonStub::new(prepared, "Greeter".to_owned(), "greeter").render();
+                PreparedPythonStub::new(package, prepared, "Greeter".to_owned(), "greeter")
+                    .render();
             let work = slot
                 .replace(None)
                 .expect("the Python representative-index work ledger is active");
@@ -2912,7 +2993,7 @@ mod tests {
             );
         }
 
-        let (rendered, indexed_work) = render_with_representative_index_work(&prepared);
+        let (rendered, indexed_work) = render_with_representative_index_work(&pkg, &prepared);
         for name in &names {
             assert!(
                 rendered.contains(&format!("class KioNewtype_{}(", exact_qtn_frame(name))),

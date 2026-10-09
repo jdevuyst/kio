@@ -149,6 +149,19 @@
 
 (comment_line)            @comment.line
 (comment_doc)             @comment.doc
+(doc_reference)           @comment.doc.reference
+(doc_directive)           @comment.doc.directive
+(doc_fence)               @comment.doc.fence
+(doc_code)                @comment.doc.code
+(doc_kio_code)            @comment.doc.code
+(doc_kio_self_code)       @comment.doc.code
+(doc_heading)             @comment.doc.heading
+(doc_emphasis)            @comment.doc.emphasis
+(doc_strong)              @comment.doc.strong
+(doc_marker)              @comment.doc.marker
+(doc_link)                @comment.doc.link
+(doc_attribute)           @comment.doc.attribute
+(doc_literal_fallback)    @comment.doc.fallback
 
 (bracket_lparen)          @punctuation.bracket
 (bracket_rparen)          @punctuation.bracket

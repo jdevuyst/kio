@@ -8,7 +8,7 @@ fn identity[A](value: A) -> A { value }
 
 fn produce[A](callback: . -> A) -> A { callback(()) }
 
-fn exercise(left: String, right: String) -> . {
+fn exercise(left: String, right: String) {
   let .(first, second) = retain!((identity(left), identity(right)));
   io.print(first);
   io.print(second);
@@ -24,4 +24,4 @@ fn exercise(left: String, right: String) -> . {
   io.print(from_call)
 }
 
-pub fn main() -> . { exercise("left\n", "right\n") }
+pub fn main() { exercise("left\n", "right\n") }

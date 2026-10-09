@@ -24,7 +24,7 @@ fn run(v: Pack) -> I32 { Pack.get(v)(unpack) }
 
 fn run_in_order() -> I32 { Pack.get(marked_pack(0))(marked_continuation(())) }
 
-pub fn main() -> . {
+pub fn main() {
   print(i32_to_string(run(make_pack(0))));
   print("\n"(String));
   print(i32_to_string(run_in_order()));

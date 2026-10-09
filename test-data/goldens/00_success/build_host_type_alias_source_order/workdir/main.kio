@@ -4,6 +4,6 @@ host type Hidden[A];
 
 host fn get() -> Hidden(.);
 
-fn consume[T](value: T) -> . { () }
+fn consume[T](value: T) { () }
 
-pub fn make[Hidden]() -> . { consume(get()) }
+pub fn make[Hidden]() { consume(get()) }

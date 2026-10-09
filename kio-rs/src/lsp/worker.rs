@@ -485,7 +485,7 @@ fn run_worker(
     cancellations: CancellationRegistry,
 ) {
     let mut backlog = VecDeque::new();
-    let user_elaborator_memos = LspUserElaboratorMemos::default();
+    let user_elaborator_memos = LspUserElaboratorMemos::for_editor();
     loop {
         let msg = match backlog.pop_front() {
             Some(msg) => Ok(msg),
@@ -556,7 +556,7 @@ fn requests_substitute(left: &WorkRequest, right: &WorkRequest) -> bool {
 
 #[cfg(test)]
 fn run_one(req: WorkRequest) -> Option<WorkerResult> {
-    let user_elaborator_memos = LspUserElaboratorMemos::default();
+    let user_elaborator_memos = LspUserElaboratorMemos::for_editor();
     run_one_with_memos(req, &user_elaborator_memos)
 }
 

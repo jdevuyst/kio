@@ -42,7 +42,7 @@ rec(loop) fn read_tokens(remaining: I32, reversed: lists.List(String)) ->
 
 pub fn frame() -> lists.List(String) | String {
   match! count() {
-    .(n: I32) { read_tokens(n, lists.nil()) };
+    .(n: I32) { read_tokens(n, lists.nil(_)) };
     .(error: String) { error.>widen_sum! }
   }
 }

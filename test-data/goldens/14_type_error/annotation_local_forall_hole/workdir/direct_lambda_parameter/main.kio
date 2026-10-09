@@ -1,5 +1,5 @@
 module main;
 
-fn consume(wrapper: ([A] A -> A) -> .) -> . { () }
+fn consume(wrapper: ([A] A -> A) -> .) { () }
 
-fn partial() -> . { consume(.(function: [B] _) { () }) }
+fn partial() { consume(.(function: [B] _) { () }) }

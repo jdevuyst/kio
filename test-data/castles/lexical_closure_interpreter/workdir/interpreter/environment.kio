@@ -9,7 +9,7 @@ import testapi(Bool, String);
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub fn empty() -> values.Environment { lists.nil() }
+pub fn empty() -> values.Environment { lists.nil(_) }
 
 pub fn extend(name: String, value: values.Value, environment: values.Environment) -> values.Environment {
   lists.cons((name, value), environment)

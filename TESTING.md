@@ -76,6 +76,31 @@ eligibility remains unchanged for unmarked cases; implementation and case
 sampling still apply to marked cases. These rows assert a compiler diagnostic,
 not emitted host behavior. See the [marker contract](test-data/README.md#golden-test-case-layout).
 
+## Corpus and expected-output maintenance
+
+Changing how a test demonstrates behavior is different from changing the
+behavior it protects. Before implementing a breaking change to accepted or
+rejected programs, behavior, or public host/tool contracts, present its concrete
+impact and alternatives and obtain explicit approval. Do not migrate source,
+add annotations, weaken assertions or refresh expectations to conceal an
+unapproved break. An approved break may carry an explicitly scoped migration;
+passing the migrated corpus is evidence, not approval of the break.
+
+Behavior-preserving cleanups may modernize examples without freezing the whole
+corpus, but retain focused coverage of older forms that remain supported.
+Preserve each case's subject and applicable coverage, including bug reproducers;
+an unchanged runtime result alone does not prove that an annotation or rewrite
+preserved the inference or syntax behavior the original source exercised.
+
+A golden records test evidence; it does not turn every printed word into a
+compatibility promise. Human-readable `stderr` wording and layout, and their
+expectations, may change without separate approval when the diagnostic category,
+meaning and useful information remain intact, even if the test also checks a
+specific exit code. This is not permission to remove useful context or relax
+explicitly contracted output or machine-readable formats. Apply the
+[structured-content versus rendered-text distinction](specs/diagnostics.md#two-layers-structured-content-vs-rendered-text)
+and keep the test's semantic assertions intact.
+
 ## Decision tree — "I want to test X. Where does it go?"
 
 - **New surface form** (e.g., a new sugar form, a new keyword) — golden under `test-data/goldens/00_success/` exercising the form end-to-end; cargo test if a typer/parser internal invariant warrants direct coverage; consider whether the generative-test mutator should learn the form.

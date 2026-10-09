@@ -181,7 +181,7 @@ rec(loop) fn render(e: Expr) -> String {
   }
 }
 
-fn emit_case(name: String, expr_value: Expr) -> . {
+fn emit_case(name: String, expr_value: Expr) {
   let simplified = simplify(expr_value);
   print(line("case ", name));
   print(line("before: ", render(expr_value)));
@@ -197,7 +197,7 @@ fn gamma() -> Expr { mul(add(lit(1), lit(2)), add(var_x(), var_y())) }
 
 fn delta() -> Expr { add(add(var_z(), mul(lit(3), lit(0))), mul(lit(4), lit(5))) }
 
-pub fn run() -> . {
+pub fn run() {
   print("symbolic simplifier\n\n");
   emit_case("alpha", alpha());
   print("\n");

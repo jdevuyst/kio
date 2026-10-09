@@ -14,7 +14,7 @@ fn render_code(code: I32 | .) -> String {
 
 fn pipe(a: String, b: String) -> String { string_concat(a, string_concat("|", b)) }
 
-pub fn main() -> . {
+pub fn main() {
   let s = "abcdef";
   let len = int_to_string(string_len(s));
   let part = string_slice(s, 1, 4);

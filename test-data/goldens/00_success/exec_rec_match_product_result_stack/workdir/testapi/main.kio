@@ -10,7 +10,7 @@ fn first(report: Report) -> I32 { report.?{first} }
 
 fn second(report: Report) -> I32 { report.?{second} }
 
-pub fn main() -> . {
+pub fn main() {
   let tail = descend(5000);
   let pending = descend_pending(4);
   print("[");

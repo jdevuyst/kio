@@ -26,7 +26,7 @@ rec(loop) fn choose_partner(
   , i: I32
   , j: I32
   , k: I32
-  ) -> . {
+  ) {
   if! arith.leq_i32(k, j) {
     if! bases.pair_allowed(sequence, i, k, min_loop) {
       let inside = score(
@@ -59,7 +59,7 @@ rec(loop) fn fill_diagonal(
   , program: plan.Program
   , span: I32
   , i: I32
-  ) -> . {
+  ) {
   let j = arith.sub_i32(arith.add_i32(i, span), 1);
   if! numbers.less(j, program.?{length}) {
     let cell = numbers.index(program.?{length}, i, j);
@@ -75,7 +75,7 @@ rec(loop) fn fill_diagonal(
   }
 }
 
-rec(loop) fn fill_spans(sequence: Array(String), min_loop: I32, program: plan.Program, span: I32) -> . {
+rec(loop) fn fill_spans(sequence: Array(String), min_loop: I32, program: plan.Program, span: I32) {
   if! arith.leq_i32(span, program.?{length}) {
     fill_diagonal(sequence, min_loop, program, span, 0);
     rec fill_spans(sequence, min_loop, program, arith.add_i32(span, 1))

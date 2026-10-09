@@ -389,12 +389,29 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
 
     fn record_literal_resolution<'m>(
         literal_site: crate::ast::ExpressionSite,
-        resolved: InternedType,
+        resolved: crate::pass::typecheck_core::LiteralResolution<Lowered>,
         tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
     ) {
         let mp = tcx.env.module_path.clone();
+        #[cfg(feature = "lsp")]
+        if let Some(binding) = resolved.lexical_role {
+            tcx.elaborations
+                .record_selected_role(&mp, literal_site.span, binding);
+        }
         tcx.elaborations
-            .record_literal_resolution(&mp, literal_site.id, resolved);
+            .record_literal_resolution(&mp, literal_site.id, resolved.ty);
+    }
+
+    #[cfg(feature = "lsp")]
+    fn record_selected_role<'m>(
+        span: Span,
+        binding: &str,
+        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
+    ) {
+        if tcx.env.typecheck_scope.collects_source_dependencies() {
+            tcx.elaborations
+                .record_selected_role(&tcx.env.module_path, span, binding.to_owned());
+        }
     }
 
     fn record_fn_param_type<'m>(
@@ -2124,7 +2141,6 @@ fn complete_user_elaborator_abi(
     let mut adapter_slots = Vec::new();
     let mut residual_layers = Vec::new();
     let mut residual_prefix_type_params = Vec::new();
-    let mut residual_prefix_has_value_layer = false;
     let mut residual_reflection_binders = Vec::new();
     let mut generated_type_names = generated_elaborator_type_names(layout, typed, tcx);
     let mut type_mode_index = 0usize;
@@ -2322,7 +2338,6 @@ fn complete_user_elaborator_abi(
         if !value_layer_consumed {
             if layer.value_param.is_some() {
                 let mut type_params = std::mem::take(&mut residual_prefix_type_params);
-                residual_prefix_has_value_layer = false;
                 type_params.extend(residual_type_params);
                 residual_layers.push(crate::pass::substitute::EtaLayer {
                     type_params,
@@ -2330,7 +2345,6 @@ fn complete_user_elaborator_abi(
                     has_value_layer: true,
                 });
             } else {
-                residual_prefix_has_value_layer |= typed_layer.is_some();
                 residual_prefix_type_params.extend(residual_type_params);
             }
         } else {
@@ -2344,7 +2358,7 @@ fn complete_user_elaborator_abi(
         residual_layers.push(crate::pass::substitute::EtaLayer {
             type_params: residual_prefix_type_params,
             value_params: Vec::new(),
-            has_value_layer: residual_prefix_has_value_layer,
+            has_value_layer: false,
         });
     }
     assert_eq!(
@@ -3712,6 +3726,20 @@ impl TyperPhase for Lowered {
     type Elaborations = Elaborations;
     type Typer = LoweredTyper;
 
+    fn new_elaborations(
+        scope: &crate::pass::typecheck_core::PackageTypecheckScope<Self>,
+    ) -> Elaborations {
+        #[cfg(feature = "lsp")]
+        if scope.collects_refactoring_facts() {
+            let mut elaborations = Elaborations::new();
+            elaborations.position_index = PositionIndex::for_refactoring();
+            return elaborations;
+        }
+        #[cfg(not(feature = "lsp"))]
+        let _ = scope;
+        Elaborations::new()
+    }
+
     fn merge_elaborations(target: &mut Self::Elaborations, source: Self::Elaborations) {
         target.merge(source);
     }
@@ -3908,7 +3936,7 @@ pub(crate) fn check_normalized_package_collect_errors_with_scope(
 ) -> Result<CheckedLoweredPackage, Vec<LocatedError>> {
     check_normalized_package_with_scope_and_execution(
         normalized,
-        typecheck_scope,
+        typecheck_scope.with_source_dependencies(),
         crate::pass::typecheck_core::TypecheckExecution::AllowParallel,
     )
 }
@@ -3932,7 +3960,7 @@ fn check_normalized_package_with_scope_and_execution(
     typecheck_scope: std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>,
     execution: crate::pass::typecheck_core::TypecheckExecution,
 ) -> Result<CheckedLoweredPackage, Vec<LocatedError>> {
-    let mut elaborations = Elaborations::new();
+    let mut elaborations = Lowered::new_elaborations(&typecheck_scope);
     crate::pass::typecheck_core::check_package_modules_with_typecheck_scope_collect_errors_with_execution(
         normalized.package(),
         &mut elaborations,
@@ -3951,6 +3979,8 @@ mod presentation;
 pub(crate) mod publication;
 pub(crate) mod rec_quote;
 mod rec_quote_source;
+#[cfg(feature = "lsp")]
+mod refactoring_facts;
 pub use crate::pass::binder_presentation::TypeBinderScope;
 pub(crate) use rec_quote::QuotedPublicRecipe;
 
@@ -3980,6 +4010,8 @@ struct RecordedCallPlan {
 /// typer.
 #[derive(Debug, Default)]
 pub struct Elaborations {
+    #[allow(clippy::box_collection)] // Keep the ordinary no-rec layout to one pointer.
+    rec_loop_diagnostics: Option<Box<Vec<RecLoopDiagnosticRecord>>>,
     /// Sparse, occurrence-keyed public type inventory for recursive quotation.
     /// Entries become readable only when their ordinary publication closes.
     rec_quote: Option<Box<rec_quote::RecQuoteCaptures>>,
@@ -4023,6 +4055,8 @@ pub struct Elaborations {
     /// and `backends::kio_prime` then need no resolution of their own.
     literal_resolutions:
         HashMap<(String, crate::ast::ExpressionOccurrenceId), RecordedTypeResolution>,
+    #[cfg(feature = "lsp")]
+    source_role_uses: Vec<(String, Span, String)>,
     /// Checked value-parameter types for `Expr::FnExpr` nodes. These
     /// are needed when a lambda was checked against a call-site
     /// expected function type and its parameter type is not recoverable
@@ -4055,6 +4089,15 @@ pub struct Elaborations {
     /// target)` so structurally identical obligations are comparable
     /// across sites before glue production.
     deferred: Vec<DeferredElaboration>,
+}
+
+#[derive(Debug)]
+pub(crate) struct RecLoopDiagnosticRecord {
+    pub(crate) outer_call: crate::ast::ExpressionOccurrenceId,
+    pub(crate) selected_path: Span,
+    pub(crate) actual_type: InternedType,
+    pub(crate) initial_result_sites: Vec<crate::ast::ExpressionOccurrenceId>,
+    pub(crate) callee_binder_goals: Vec<crate::ast::TypeGoalRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -4210,7 +4253,7 @@ pub(crate) fn evaluate_ready_user_elaborator_action<'m>(
         &tcx.env.memo,
     )?;
     let result_ty = match &computed {
-        Ok(template) => crate::ast::convert_type::<UncheckedPrime, Lowered>(&template.result_ty),
+        Ok(template) => crate::ast::convert_type::<UncheckedPrime, Lowered>(template.result_ty()),
         Err(message) => return Err(Error::elaborator(obligation.span, message.clone())),
     };
     check_well_formed_type(&result_ty)?;
@@ -4438,8 +4481,7 @@ pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
         public_terminal_result.identity_is_canonical(),
         ordinary_terminal_result.identity_is_canonical(),
     )?;
-    let checked_ty = checked.clone_type();
-    let lowered_checked_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(&checked_ty);
+    let lowered_checked_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(checked.ty());
     crate::pass::typecheck_core::require_type_equiv_state(
         &lowered_checked_ty,
         checked_result.as_type(),
@@ -4452,7 +4494,6 @@ pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
         Some(checked_result),
         Some(Ok(trusted_user_elaborator_template(
             checked.as_ref().clone(),
-            checked_ty,
         ))),
     );
     obligation.quoted_public_recipe = quoted_public_recipe;
@@ -4603,13 +4644,12 @@ pub(crate) fn complete_ready_fills_user_elaborator_action(
             return Err(Error::totality(span, message));
         }
     };
-    let result_ty = checked.clone_type();
-    let lowered_result_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(&result_ty);
+    let lowered_result_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(checked.ty());
     check_well_formed_type(&lowered_result_ty)?;
     let lowered_result_ty = InternedType::fresh_canonical(lowered_result_ty);
     evaluation.obligation.result_ty = Some(lowered_result_ty.clone());
     evaluation.obligation.precomputed_template =
-        Some(Ok(trusted_user_elaborator_template(checked, result_ty)));
+        Some(Ok(trusted_user_elaborator_template(checked)));
     Ok((evaluation.obligation, lowered_result_ty, returned_context))
 }
 
@@ -4684,6 +4724,8 @@ pub struct PositionIndex {
     /// Raw call-argument slots that parsed as values but were
     /// reclassified as type arguments during typechecking.
     value_at_type_slots: HashSet<(String, Span, usize)>,
+    #[cfg(feature = "lsp")]
+    refactoring: Option<Box<refactoring_facts::RefactoringFacts>>,
 }
 
 #[derive(Debug, Clone)]
@@ -4702,7 +4744,7 @@ pub(crate) struct InlayTypeArguments {
 /// Path variants mirror [`crate::pass::typecheck_core::synth_path`]. Contextual
 /// trailing labels are published from the validated source declaration scope
 /// after checking, before the editor snapshot becomes visible.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedBinder {
     /// A continuation label belongs to one descriptor of the selected
     /// elaborator, independently of another declaration's label spelling.
@@ -4887,6 +4929,8 @@ impl PositionIndex {
     /// covers parallel walks separately. See [`Self::merge`].
     pub fn record_type(&mut self, module_path: &str, span: Span, ty: Type) {
         let key = (module_path.to_owned(), span);
+        #[cfg(feature = "lsp")]
+        self.observe_type(&key, &ty, false, None);
         self.canonical_types.remove(&key);
         self.type_binders.remove(&key);
         self.types.insert(key, ty);
@@ -4900,12 +4944,15 @@ impl PositionIndex {
         binders: impl Into<TypeBinderScope>,
     ) {
         let key = (module_path.to_owned(), span);
+        let binders = binders.into();
+        #[cfg(feature = "lsp")]
+        self.observe_type(&key, &ty, ty.identity_is_canonical(), Some(&binders));
         if ty.identity_is_canonical() {
             self.canonical_types.insert(key.clone());
         } else {
             self.canonical_types.remove(&key);
         }
-        self.type_binders.insert(key.clone(), binders.into());
+        self.type_binders.insert(key.clone(), binders);
         self.types.insert(key, ty.clone_type());
     }
 
@@ -4930,7 +4977,10 @@ impl PositionIndex {
     /// `span` inside `module_path`. Overwrites prior entries —
     /// see [`Self::record_type`] for the rationale.
     pub fn record_binder(&mut self, module_path: &str, span: Span, binder: ResolvedBinder) {
-        self.binders.insert((module_path.to_owned(), span), binder);
+        let key = (module_path.to_owned(), span);
+        #[cfg(feature = "lsp")]
+        self.observe_binder(&key, &binder);
+        self.binders.insert(key, binder);
     }
 
     pub(crate) fn record_binder_declaration(
@@ -4941,6 +4991,8 @@ impl PositionIndex {
     ) {
         self.record_declaration_site_only(module_path, span, &binder);
         let key = (module_path.to_owned(), span);
+        #[cfg(feature = "lsp")]
+        self.observe_binder(&key, &binder);
         self.binders.insert(key.clone(), binder);
         self.binder_declarations.insert(key);
     }
@@ -5181,12 +5233,23 @@ impl PositionIndex {
         for ((module_path, old_span), new_span) in remaps {
             let old_key = (module_path.clone(), *old_span);
             let new_key = (module_path.clone(), *new_span);
+            self.remap_refactoring_position(&old_key, &new_key);
             if let Some(binder) = self.binders.remove(&old_key) {
+                self.observe_binder(&new_key, &binder);
                 self.binders.insert(new_key.clone(), binder);
             }
             if self.binder_declarations.remove(&old_key) {
                 self.binder_declarations.insert(new_key.clone());
                 if let Some(ty) = self.types.remove(&old_key) {
+                    if self.refactoring.is_some() {
+                        let scope = self.type_binders.get(&old_key).cloned();
+                        self.observe_type(
+                            &new_key,
+                            &ty,
+                            self.canonical_types.contains(&old_key),
+                            scope.as_ref(),
+                        );
+                    }
                     self.types.insert(new_key.clone(), ty);
                 }
                 if self.canonical_types.remove(&old_key) {
@@ -5214,6 +5277,7 @@ impl PositionIndex {
         let mut removed_by_module: HashMap<&str, HashSet<Span>> = HashMap::new();
         for (module_path, span) in declarations {
             let key = (module_path.to_owned(), span);
+            self.invalidate_refactoring_position(&key);
             self.binders.remove(&key);
             self.binder_declarations.remove(&key);
             self.types.remove(&key);
@@ -5250,6 +5314,7 @@ impl PositionIndex {
             }
         }
         for key in remove {
+            self.invalidate_refactoring_position(&key);
             self.binders.remove(&key);
         }
         let binders = &self.binders;
@@ -5282,6 +5347,8 @@ impl PositionIndex {
     /// typing preserves that order by merging function shards in item order.
     /// Call-argument groups refine only the same occurrence and stage.
     pub fn merge(&mut self, other: PositionIndex) {
+        #[cfg(feature = "lsp")]
+        self.merge_refactoring_coverage(other.refactoring);
         for presentation in other.binder_presentations {
             if !self
                 .binder_presentations
@@ -5292,6 +5359,15 @@ impl PositionIndex {
             }
         }
         for (key, ty) in other.types {
+            #[cfg(feature = "lsp")]
+            if self.refactoring.is_some() {
+                self.observe_type(
+                    &key,
+                    &ty,
+                    other.canonical_types.contains(&key),
+                    other.type_binders.get(&key),
+                );
+            }
             if !other.canonical_types.contains(&key) {
                 self.canonical_types.remove(&key);
             }
@@ -5303,6 +5379,8 @@ impl PositionIndex {
         self.canonical_types.extend(other.canonical_types);
         self.type_binders.extend(other.type_binders);
         for (key, binder) in other.binders {
+            #[cfg(feature = "lsp")]
+            self.observe_binder(&key, &binder);
             self.binders.insert(key, binder);
         }
         self.binder_declarations.extend(other.binder_declarations);
@@ -5360,8 +5438,131 @@ impl PositionIndex {
 }
 
 impl Elaborations {
+    pub(crate) fn rec_loop_diagnostic_checkpoint(&self) -> usize {
+        self.rec_loop_diagnostics
+            .as_ref()
+            .map_or(0, |records| records.len())
+    }
+
+    pub(crate) fn record_rec_loop_diagnostic(&mut self, source: &Expr, actual_type: &InternedType) {
+        let Expr::Call {
+            diagnostic: crate::ast::RecLoopDiagnostic::Loop { selected_path },
+            args,
+            ..
+        } = source
+        else {
+            return;
+        };
+        fn result_sites(source: &Expr, sites: &mut Vec<crate::ast::ExpressionOccurrenceId>) {
+            let Expr::Call {
+                diagnostic: crate::ast::RecLoopDiagnostic::InitialStateResult,
+                args,
+                ..
+            } = source
+            else {
+                return;
+            };
+            sites.push(source.site().id);
+            for argument in args {
+                if let CallArg::Value(value) = argument {
+                    result_sites(value, sites);
+                }
+            }
+        }
+        let records = self
+            .rec_loop_diagnostics
+            .get_or_insert_with(Default::default);
+        if records
+            .iter()
+            .any(|record| record.outer_call == source.site().id)
+        {
+            return;
+        }
+        let mut initial_result_sites = Vec::new();
+        for argument in args {
+            if let CallArg::Value(value) = argument {
+                result_sites(value, &mut initial_result_sites);
+            }
+        }
+        records.push(RecLoopDiagnosticRecord {
+            outer_call: source.site().id,
+            selected_path: *selected_path,
+            actual_type: actual_type.clone(),
+            initial_result_sites,
+            callee_binder_goals: Vec::new(),
+        });
+    }
+
+    pub(crate) fn record_rec_loop_binder_goals(
+        &mut self,
+        call_site: crate::ast::ExpressionOccurrenceId,
+        goals: impl Iterator<Item = crate::ast::TypeGoalRef>,
+    ) {
+        if let Some(records) = &mut self.rec_loop_diagnostics
+            && let Some(record) = records
+                .iter_mut()
+                .find(|record| record.outer_call == call_site)
+        {
+            for goal in goals {
+                if !record.callee_binder_goals.contains(&goal) {
+                    record.callee_binder_goals.push(goal);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn finish_rec_loop_diagnostics<T>(
+        &mut self,
+        checkpoint: usize,
+        result: Result<T, Error>,
+    ) -> Result<T, Error> {
+        use crate::error::{CallFailureOperation, TypeFailureOrigin};
+        let result = result.map_err(|mut error| {
+            if let Some(origin) = error.type_failure_origin()
+                && let Some(records) = &self.rec_loop_diagnostics
+                && let Some(record) = records[checkpoint..]
+                    .iter()
+                    .rev()
+                    .find(|record| match origin {
+                        TypeFailureOrigin::Application {
+                            call_site,
+                            operation,
+                        } => {
+                            record.outer_call == call_site
+                                || (operation == CallFailureOperation::Result
+                                    && record.initial_result_sites.contains(&call_site))
+                        }
+                        TypeFailureOrigin::UnresolvedGoal(goal) => {
+                            record.callee_binder_goals.contains(&goal)
+                        }
+                    })
+            {
+                error = error.with_rec_loop_context(
+                    record.selected_path,
+                    &display_type(&record.actual_type),
+                );
+                if let Some(source) = record.actual_type.requirement_source() {
+                    error = error.with_secondary_in_file(
+                        source.file.clone(),
+                        source.span,
+                        "the selected loop's type is declared here",
+                    );
+                }
+            }
+            if checkpoint == 0 {
+                error.clear_type_failure_origin();
+            }
+            error
+        });
+        if let Some(records) = &mut self.rec_loop_diagnostics {
+            records.truncate(checkpoint);
+        }
+        result
+    }
+
     pub fn new() -> Self {
         Self {
+            rec_loop_diagnostics: None,
             rec_quote: None,
             entries: HashMap::new(),
             rec_order_runtime: HashMap::new(),
@@ -5370,6 +5571,8 @@ impl Elaborations {
             value_at_type_slot_index: HashMap::new(),
             call_plans: HashMap::new(),
             literal_resolutions: HashMap::new(),
+            #[cfg(feature = "lsp")]
+            source_role_uses: Vec::new(),
             fn_param_types: HashMap::new(),
             generated_imports: HashMap::new(),
             prime_requalification_imports: HashMap::new(),
@@ -5952,6 +6155,17 @@ impl Elaborations {
             .insert((module_path.to_owned(), literal_id), resolved.into());
     }
 
+    #[cfg(feature = "lsp")]
+    pub(crate) fn record_selected_role(&mut self, module_path: &str, span: Span, binding: String) {
+        self.source_role_uses
+            .push((module_path.to_owned(), span, binding));
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn source_role_uses(&self) -> &[(String, Span, String)] {
+        &self.source_role_uses
+    }
+
     /// Look up the typer's resolved type for the literal at
     /// `literal_id` inside module `module_path`.
     pub(crate) fn literal_resolution_for(
@@ -6113,6 +6327,8 @@ impl Elaborations {
             self.record_generated_type_aliases(&module_path, &aliases);
         }
         self.position_index.merge(other.position_index);
+        #[cfg(feature = "lsp")]
+        self.source_role_uses.extend(other.source_role_uses);
         self.deferred.extend(other.deferred);
     }
 }
@@ -8245,6 +8461,38 @@ fn use_name_survives_eval_filter(
     })
 }
 
+fn filtered_eval_module(
+    module: &Module,
+    selected: &std::collections::BTreeSet<EvalFnIdentity>,
+    module_path: &str,
+    item_count: usize,
+) -> Module {
+    let items = module
+        .items
+        .iter()
+        .take(item_count)
+        .filter(|item| match item {
+            Item::FnDef(def) => selected.contains(&EvalFnIdentity {
+                module_path: module_path.to_owned(),
+                name: def.name.clone(),
+            }),
+            _ => true,
+        });
+    #[cfg(test)]
+    let items = items.inspect(|item| eval_module_copy_tests::record_item_clone(item));
+    Module {
+        path: module.path.clone(),
+        imports: module.imports.clone(),
+        items: items.cloned().collect(),
+        meta: module.meta.clone(),
+        doc: module.doc.clone(),
+    }
+}
+
+#[cfg(test)]
+#[path = "typecheck_full/eval_module_copy_tests.rs"]
+mod eval_module_copy_tests;
+
 fn filtered_eval_package(
     package: &LoweredPackage,
     selected: &std::collections::BTreeSet<EvalFnIdentity>,
@@ -8253,17 +8501,12 @@ fn filtered_eval_package(
 ) -> Result<LoweredPackage, Error> {
     let mut modules = std::collections::BTreeMap::new();
     for (path, entry) in package.modules() {
-        let mut module = entry.module.clone();
-        if path == root_module_path {
-            module.items.truncate(root_item_cutoff + 1);
-        }
-        module.items.retain(|item| match item {
-            Item::FnDef(def) => selected.contains(&EvalFnIdentity {
-                module_path: path.to_owned(),
-                name: def.name.clone(),
-            }),
-            _ => true,
-        });
+        let item_count = if path == root_module_path {
+            root_item_cutoff + 1
+        } else {
+            entry.module.items.len()
+        };
+        let mut module = filtered_eval_module(&entry.module, selected, path, item_count);
         module.imports.retain_mut(|import_| {
             let ImportKind::Selective { items, from } = &mut import_.kind else {
                 return true;
@@ -8419,15 +8662,12 @@ fn staged_user_elaborator_artifact(
             .map_err(LocatedError::into_error)?;
         Ok((artifact, root_expr))
     } else {
-        let mut module = root_module.clone();
-        module.items.truncate(root_item_cutoff + 1);
-        module.items.retain(|item| match item {
-            Item::FnDef(def) => selected.contains(&EvalFnIdentity {
-                module_path: root_env.module_path.clone(),
-                name: def.name.clone(),
-            }),
-            _ => true,
-        });
+        let module = filtered_eval_module(
+            root_module,
+            &selected,
+            &root_env.module_path,
+            root_item_cutoff + 1,
+        );
         let module =
             substitute::substitute_module_for_eval(&module, &staged, &root_env.module_path, None);
         let scope = crate::pass::resolve::TopLevelScope::build(&module)?;
@@ -9212,8 +9452,7 @@ fn compute_user_elaborator_template<'m>(
                     )));
                 }
             }
-            let result_ty = checked.clone_type();
-            Ok(Ok(trusted_user_elaborator_template(checked, result_ty)))
+            Ok(Ok(trusted_user_elaborator_template(checked)))
         }
         Err(UserElaboratorDecodeError::Diagnostic(message)) => Ok(Err(message)),
         Err(UserElaboratorDecodeError::Type(message)) => Err(Error::type_(request.span, message)),
@@ -9500,9 +9739,8 @@ fn user_elaborator_template_to_elaboration(
 
 fn trusted_user_elaborator_template(
     checked: crate::normalization::CheckedTerm,
-    result_ty: crate::ast::Type<UncheckedPrime>,
 ) -> UserElaboratorTemplate {
-    UserElaboratorTemplate { result_ty, checked }
+    UserElaboratorTemplate { checked }
 }
 
 fn user_elaborator_result_type_verification_key(
@@ -9554,8 +9792,8 @@ fn verify_user_elaborator_template_memo<'m>(
     match (cached, fresh) {
         (Ok(cached), Ok(fresh)) => {
             assert_eq!(
-                user_elaborator_result_type_verification_key(&cached.result_ty),
-                user_elaborator_result_type_verification_key(&fresh.result_ty),
+                user_elaborator_result_type_verification_key(cached.result_ty()),
+                user_elaborator_result_type_verification_key(fresh.result_ty()),
                 "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo returned a different result type"
             );
             let (artifact, _) = user_elaborator_eval_artifact(
@@ -9705,7 +9943,11 @@ fn decode_user_elaborator_result(
 // `intrinsic_scheme` lives in `crate::pass::typecheck_core`. Imported via
 // the use clause at the top of this module.
 
-pub(crate) fn bool_role_type(span: Span, tcx: &TypeCtx<'_, '_>) -> Result<Type, Error> {
+pub(crate) fn bool_role_type(
+    span: Span,
+    tcx: &TypeCtx<'_, '_>,
+    #[cfg(feature = "lsp")] mut record_selected_role: impl FnMut(&str),
+) -> Result<Type, Error> {
     let bool_name = match tcx.resolve_exact_role(Role::Bool) {
         crate::pass::typecheck_core::RoleResolution::Unique(name) => name,
         crate::pass::typecheck_core::RoleResolution::Missing => {
@@ -9736,6 +9978,10 @@ pub(crate) fn bool_role_type(span: Span, tcx: &TypeCtx<'_, '_>) -> Result<Type, 
             ));
         }
     };
+    #[cfg(feature = "lsp")]
+    if tcx.env.typecheck_scope.collects_source_dependencies() {
+        record_selected_role(bool_name);
+    }
     Ok(Type::synth_path(
         vec![bool_name.to_owned()],
         Vec::new(),
@@ -9768,6 +10014,446 @@ mod tests {
     use crate::pass::resolve::Package;
     use crate::pipeline::Pipeline;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn rec_loop_diagnostic_scratch_is_lazy_and_retains_exact_sites() {
+        let mut elaborations = Elaborations::new();
+        assert!(elaborations.rec_loop_diagnostics.is_none());
+        let outer_call = crate::ast::ExpressionOccurrence::fresh().key();
+        let initial = crate::ast::ExpressionOccurrence::fresh().key();
+        let goal = crate::ast::TypeGoalRef::for_test(0, 1, 2);
+        let selected_path = Span::new(3, 7);
+        let actual_type = InternedType::fresh(Type::Unit {
+            meta: Meta::new(selected_path),
+        });
+        elaborations.rec_loop_diagnostics = Some(Box::new(vec![RecLoopDiagnosticRecord {
+            outer_call,
+            selected_path,
+            actual_type: actual_type.clone(),
+            initial_result_sites: vec![initial],
+            callee_binder_goals: vec![goal],
+        }]));
+        let records = elaborations.rec_loop_diagnostics.take().unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.outer_call, outer_call);
+        assert_eq!(record.selected_path, selected_path);
+        assert_eq!(record.actual_type, actual_type);
+        assert_eq!(record.initial_result_sites, [initial]);
+        assert_eq!(record.callee_binder_goals, [goal]);
+        assert!(elaborations.rec_loop_diagnostics.is_none());
+    }
+
+    #[test]
+    fn rec_loop_diagnostic_goal_collection_is_lazy_and_idempotent() {
+        let call_site = crate::ast::ExpressionOccurrence::fresh().key();
+        let goal = crate::ast::TypeGoalRef::for_test(0, 1, 2);
+        let visits = std::cell::Cell::new(0);
+        let goals = || std::iter::once(goal).inspect(|_| visits.set(visits.get() + 1));
+        let mut elaborations = Elaborations::new();
+        elaborations.record_rec_loop_binder_goals(call_site, goals());
+        assert_eq!(visits.get(), 0);
+        let source = Expr::synth_call(
+            Expr::Unit {
+                occurrence: Default::default(),
+                meta: Meta::new(Span::new(0, 1)),
+            },
+            Vec::new(),
+            Span::new(0, 1),
+        )
+        .with_fresh_occurrence()
+        .with_call_diagnostic(crate::ast::RecLoopDiagnostic::Loop {
+            selected_path: Span::new(0, 1),
+        });
+        let actual = InternedType::fresh(Type::Unit {
+            meta: Meta::new(Span::new(0, 1)),
+        });
+        elaborations.record_rec_loop_diagnostic(&source, &actual);
+        elaborations.record_rec_loop_diagnostic(&source, &actual);
+        elaborations.record_rec_loop_binder_goals(call_site, goals());
+        assert_eq!(visits.get(), 0);
+        elaborations.record_rec_loop_binder_goals(source.site().id, goals());
+        elaborations.record_rec_loop_binder_goals(source.site().id, goals());
+        assert_eq!(visits.get(), 2);
+        let records = elaborations.rec_loop_diagnostics.as_ref().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].callee_binder_goals, [goal]);
+    }
+
+    #[test]
+    fn rec_loop_diagnostic_terminal_modes_keep_body_goals_distinct_and_drain_scratch() {
+        let valid = "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; ";
+        let wrong = "module main; host fn drive[S][R](step: S -> S | R, state: S, extra: .) -> R; ";
+        for (prefix, body, is_loop_error) in [
+            (
+                valid,
+                "host fn phantom[T](x: .) -> .; rec(drive) fn again(x: .) { phantom(x) }",
+                false,
+            ),
+            (wrong, "rec(drive) fn again(x: .) { rec again(x) }", true),
+        ] {
+            let source = format!("{prefix}{body}");
+            let package = lowered_package(&[("main.kio", &source)]);
+            for preflight in [false, true] {
+                let (elaborations, _, result) =
+                    check_retained_function_at_terminal_mode(&package, "main", "again", preflight);
+                let error = result.expect_err("the isolated typing defect must fail");
+                assert_eq!(
+                    error.diag().1.contains("the selected `rec` loop"),
+                    is_loop_error,
+                    "{error:?}"
+                );
+                assert_eq!(error.exit_code(), crate::exit_code::ExitCode::Type);
+                assert!(error.type_failure_origin().is_none());
+                assert_eq!(elaborations.rec_loop_diagnostic_checkpoint(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn rec_loop_diagnostic_hints_erase_to_identical_validated_prime() {
+        use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
+        struct Erase {
+            count: usize,
+        }
+        impl TypecheckVisitMut<Lowered> for Erase {
+            fn visit_expr(&mut self, expression: &mut Expr) {
+                if let Expr::Call { diagnostic, .. } = expression {
+                    if !matches!(diagnostic, crate::ast::RecLoopDiagnostic::None) {
+                        self.count += 1;
+                    }
+                    *diagnostic = crate::ast::RecLoopDiagnostic::None;
+                }
+                walk_expr(self, expression);
+            }
+        }
+        let package = lowered_package(&[(
+            "main.kio",
+            "module main; \
+            host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+            rec(drive) { fn first(x: .) { rec second(x) }; fn second(x: .) { rec first(x) } }",
+        )]);
+        let mut plain = package.clone();
+        let mut erase = Erase { count: 0 };
+        for entry in plain.modules_mut() {
+            for item in &mut entry.module.items {
+                if let Item::FnDef(definition) = item {
+                    erase.visit_expr(&mut definition.body);
+                }
+            }
+        }
+        assert!(erase.count >= 4);
+        let marked = check_package_preserving_normalization(&package).expect("marked program");
+        assert_eq!(marked.elaborations().rec_loop_diagnostic_checkpoint(), 0);
+        let marked =
+            validate_substituted_package(marked.substituted()).expect("validate marked Prime");
+        let plain = check_package(&plain).expect("validate plain Prime");
+        for (path, entry) in marked.modules() {
+            assert_eq!(
+                postcard::to_allocvec(&entry.module).unwrap(),
+                postcard::to_allocvec(&plain.module(path).unwrap().module).unwrap(),
+                "diagnostic hints must not change the phase artifact",
+            );
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_records_only_actual_lexical_fallback_when_enabled() {
+        let main = "module main; import roles as r; type Number = r.Value; \
+            fn identity[A](value: A) -> A { value } \
+            fn inferred() -> . { let value = identity(identity(1)); () } \
+            fn expected() -> r.Value { 2 } \
+            fn explicit() -> . { let value = 3(r.Value); () }";
+        let package = lowered_package(&[
+            ("roles.kio", "module roles; pub host type Value role(i32);"),
+            ("main.kio", main),
+        ]);
+        let ordinary = check_package_preserving_normalization(&package).expect("ordinary check");
+        assert!(ordinary.elaborations().source_role_uses().is_empty());
+        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+        let scope =
+            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                &normalized,
+                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+            );
+        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
+            .expect("LSP opt-in check");
+        assert_eq!(
+            checked.elaborations().source_role_uses(),
+            &[(
+                "main".to_owned(),
+                source_span(main, "1"),
+                "Number".to_owned(),
+            )]
+        );
+        validate_substituted_package(checked.substituted()).expect("ordinary phase artifact");
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_retained_calls_publish_once_and_rollback_failed_roots() {
+        for second in [".", "!"] {
+            let source = format!(
+                "module main; host type Number role(i32); \
+                fn identity[A](value: A) -> A {{ value }} \
+                host fn consume[A](first: A, second: {second}) -> .; \
+                fn run() -> . {{ consume(identity(identity(1)), ()) }}"
+            );
+            let package = lowered_package(&[("main.kio", &source)]);
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let scope =
+                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                    &normalized,
+                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+                )
+                .with_source_dependencies();
+            let module = &normalized.package().module("main").unwrap().module;
+            let env = ModuleEnv::build_with_typecheck_scope(
+                module,
+                None,
+                None,
+                Some(normalized.package()),
+                scope,
+            )
+            .expect("environment");
+            let run = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "run" => Some(def),
+                    _ => None,
+                })
+                .unwrap();
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations);
+            let result = synth_expr(&run.body, &mut tcx);
+            if second == "!" {
+                result
+                    .err()
+                    .expect("the second argument rejects the whole application");
+                assert!(elaborations.source_role_uses().is_empty());
+            } else {
+                result.expect("completed application");
+                assert_eq!(
+                    elaborations.source_role_uses(),
+                    &[(
+                        "main".to_owned(),
+                        source_span(&source, "1"),
+                        "Number".to_owned(),
+                    )]
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_observes_only_the_intrinsic_scheme_that_consumes_bool() {
+        let main = "module main; import __intrinsics__; import roles as r; \
+            type Choice = r.Value; host fn flag() -> r.Value; \
+            fn plain() -> . & . { __pair__(., ., (), ()) } \
+            fn direct() -> . { __if_then_else__(., flag(), .() { () }, .() { () }) } \
+            fn value() -> . { let choose = __if_then_else__(.); choose(flag(), .() { () }, .() { () }) }";
+        let package = lowered_package(&[
+            ("roles.kio", "module roles; pub host type Value role(bool);"),
+            ("main.kio", main),
+        ]);
+        let ordinary = check_package_preserving_normalization(&package).expect("ordinary check");
+        assert!(ordinary.elaborations().source_role_uses().is_empty());
+        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+        let scope =
+            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                &normalized,
+                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+            );
+        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
+            .expect("observed intrinsic uses");
+        let mut actual = checked.elaborations().source_role_uses().to_vec();
+        actual.sort_by_key(|(_, span, _)| span.start);
+        let expected: Vec<_> = main
+            .match_indices("__if_then_else__")
+            .map(|(start, name)| {
+                (
+                    "main".to_owned(),
+                    Span::new(start as u32, (start + name.len()) as u32),
+                    "Choice".to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+        validate_substituted_package(checked.substituted()).expect("ordinary phase artifact");
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_bool_selection_rolls_back_with_failed_outer_calls() {
+        for second in [".", "!"] {
+            let source = format!(
+                "module main; import __intrinsics__; \
+                host type Flag role(bool); host fn flag() -> Flag; \
+                host fn consume(first: ., second: {second}) -> .; \
+                fn run() -> . {{ consume(__if_then_else__(., flag(), .() {{ () }}, .() {{ () }}), ()) }}"
+            );
+            let package = lowered_package(&[("main.kio", &source)]);
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let scope =
+                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                    &normalized,
+                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+                )
+                .with_source_dependencies();
+            let module = &normalized.package().module("main").unwrap().module;
+            let env = ModuleEnv::build_with_typecheck_scope(
+                module,
+                None,
+                None,
+                Some(normalized.package()),
+                scope,
+            )
+            .expect("environment");
+            let run = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "run" => Some(def),
+                    _ => None,
+                })
+                .unwrap();
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations);
+            let result = synth_expr(&run.body, &mut tcx);
+            if second == "!" {
+                result
+                    .err()
+                    .expect("the second argument rejects the whole application");
+                assert!(elaborations.source_role_uses().is_empty());
+            } else {
+                result.expect("completed application");
+                assert_eq!(
+                    elaborations.source_role_uses(),
+                    &[(
+                        "main".to_owned(),
+                        source_span(&source, "__if_then_else__"),
+                        "Flag".to_owned(),
+                    )]
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_reflected_conditional_commits_only_with_its_outer_root() {
+        let elaborator = "module elab; import __comptime__; \
+            pure fn select_impl(ct: __Comptime__, fills: __Fill_ctx__, \
+                _condition_type: __Type__, result_type: __Type__, condition: __Checked_term__, \
+                callback: __Checked_term__, fallback: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
+                let result = __term_call__(ct, __term_type__(ct, callback), callback, __term_unit__(ct)); \
+                let fills = __fill__(ct, fills, result_type, __term_type__(ct, result)); \
+                (__intrinsic_if_then_else__(ct, result_type, condition, \
+                    .() -> __Checked_term__ { result }, .() -> __Checked_term__ { fallback }), fills) \
+            } \
+            pub elab select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
+        for second in [".", "!"] {
+            let main = format!(
+                "module main; import elab(select); \
+                host type Flag role(bool); host fn flag() -> Flag; \
+                host fn consume(first: ., second: {second}) -> .; \
+                fn run() -> . {{ consume(select!(flag(), .() {{ () }}, ()), ()) }}"
+            );
+            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let scope =
+                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                    &normalized,
+                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+                )
+                .with_source_dependencies();
+            let module = &normalized.package().module("main").unwrap().module;
+            let env = ModuleEnv::build_with_typecheck_scope(
+                module,
+                None,
+                None,
+                Some(normalized.package()),
+                scope,
+            )
+            .expect("environment");
+            let run = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "run" => Some(def),
+                    _ => None,
+                })
+                .unwrap();
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations);
+            let result = synth_expr(&run.body, &mut tcx);
+            if second == "!" {
+                result
+                    .err()
+                    .expect("the second argument rejects the whole application");
+                assert!(elaborations.source_role_uses().is_empty());
+            } else {
+                result.expect("completed reflected conditional");
+                let roles = elaborations.source_role_uses();
+                assert_eq!(roles.len(), 1, "{roles:?}");
+                assert_eq!((&*roles[0].0, &*roles[0].2), ("main", "Flag"));
+                assert_eq!(roles[0].1.start, source_span(&main, "select!(").start);
+            }
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_lint_direct_let_literal_and_bare_intrinsic_value_are_observed() {
+        let source = "module main; import __intrinsics__; \
+            host type Number role(i32); host type Flag role(bool); \
+            fn run() -> . { let value = 1; let choose = __if_then_else__; () }";
+        let package = lowered_package(&[("main.kio", source)]);
+        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+        let scope =
+            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                &normalized,
+                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+            );
+        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
+            .expect("direct values");
+        let mut actual = checked.elaborations().source_role_uses().to_vec();
+        actual.sort_by_key(|(_, span, _)| span.start);
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    "main".to_owned(),
+                    source_span(source, "1"),
+                    "Number".to_owned()
+                ),
+                (
+                    "main".to_owned(),
+                    source_span(source, "__if_then_else__"),
+                    "Flag".to_owned()
+                ),
+            ]
+        );
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_role_layout_scope_and_literal() {
+        use crate::ast::Lowered;
+        use crate::pass::typecheck_core::{InternedType, LiteralResolution, PackageTypecheckScope};
+        eprintln!(
+            "source role layout: scope={} literal={} previous_literal_result={} elaborations={}",
+            std::mem::size_of::<PackageTypecheckScope<Lowered>>(),
+            std::mem::size_of::<LiteralResolution<Lowered>>(),
+            std::mem::size_of::<InternedType<Lowered>>(),
+            std::mem::size_of::<Elaborations>(),
+        );
+        let empty = Elaborations::new();
+        assert_eq!(empty.source_role_uses.capacity(), 0);
+    }
 
     #[test]
     fn projected_value_slot_ranges_follow_the_frozen_call_layer() {
@@ -16512,7 +17198,7 @@ fn generic_last() -> . {
             arg,
             unit.clone(),
         );
-        let template = Ok(trusted_user_elaborator_template(checked, unit));
+        let template = Ok(trusted_user_elaborator_template(checked));
         let memo = crate::pass::typecheck_core::MemoCtx::default();
         let mut replay = UserElaboratorReplayEnv {
             module_path: "caller",
@@ -16651,7 +17337,7 @@ fn generic_last() -> . {
             },
             unit.clone(),
         );
-        let template = Ok(trusted_user_elaborator_template(checked, unit));
+        let template = Ok(trusted_user_elaborator_template(checked));
         let current_capture_imports = [UserElaboratorTemplateGeneratedImport {
             module_path: "current/helper".to_owned(),
             alias: "_q0".to_owned(),
@@ -16698,17 +17384,17 @@ fn generic_last() -> . {
             let ty = crate::ast::Type::<UncheckedPrime>::Unit {
                 meta: Meta::new(span),
             };
-            trusted_user_elaborator_template(
-                crate::normalization::CheckedTerm::template_value(0, ty.clone()),
-                ty,
-            )
+            trusted_user_elaborator_template(crate::normalization::CheckedTerm::template_value(
+                0,
+                ty.clone(),
+            ))
         };
         let first = template_at(Span::new(10, 11));
         let second = template_at(Span::new(90, 91));
 
         assert_eq!(
-            TypeMemoKey::from_type(&first.result_ty),
-            TypeMemoKey::from_type(&second.result_ty),
+            TypeMemoKey::from_type(first.result_ty()),
+            TypeMemoKey::from_type(second.result_ty()),
         );
         assert_eq!(
             user_elaborator_template_verification_expr(&first),
@@ -16716,8 +17402,8 @@ fn generic_last() -> . {
         );
 
         let function_at = |abi_arity| crate::ast::Type::<UncheckedPrime>::Function {
-            param: Box::new(first.result_ty.clone()),
-            ret: Box::new(second.result_ty.clone()),
+            param: Box::new(first.result_ty().clone()),
+            ret: Box::new(second.result_ty().clone()),
             meta: Meta::new(Span::new(20, 21)),
             abi_arity,
             caps: (),
@@ -17699,6 +18385,131 @@ fn generic_last() -> . {
             "got: {}",
             diagnostic.message
         );
+    }
+
+    #[test]
+    fn type_only_construction_uses_structural_application() {
+        ok("module pkg/main; \
+            import __intrinsics__; \
+            type Identity[A] = A -> A; \
+            fn empty[A] -> . | A { __left__(., A, ()) } \
+            fn ordinary[A](value: A) -> A { value } \
+            fn direct[A] -> A -> A { .(value: A) { value } } \
+            fn aliased[A] -> Identity(A) { .(value: A) { value } } \
+            fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } \
+            fn retain() -> [A] . | A { empty } \
+            fn infer() -> . | . { empty(_) } \
+            fn apply(function: [A] A -> A) -> . { function(()) } \
+            fn main() { \
+              ordinary(()); direct(()); aliased(()); returned()(()); \
+              apply(ordinary); apply(direct); apply(aliased); \
+              apply(.[A] { .(value: A) { value } }); \
+              let saved = empty; \
+              let .(result: . | .) = saved(_); \
+              let _ = result; \
+              () \
+            }");
+    }
+
+    #[test]
+    fn type_only_construction_infers_polymorphic_value_slots() {
+        for value in [
+            "ordinary",
+            "direct",
+            "aliased",
+            ".[A] { .(value: A) { value } }",
+            "returned()",
+        ] {
+            for (passing, use_saved) in [
+                (format!("keep({value})"), "saved(., ())"),
+                (format!(".(value) {{ value }}({value})"), "saved(., ())"),
+                (
+                    format!(".(function) {{ function(., ()) }}({value})"),
+                    "saved",
+                ),
+                (format!(".[X](value: X) {{ () }}({value})"), "saved"),
+            ] {
+                let source = format!(
+                    "module pkg/main; \
+                     type Identity[A] = A -> A; \
+                     fn ordinary[A](value: A) -> A {{ value }} \
+                     fn direct[A] -> A -> A {{ .(value: A) {{ value }} }} \
+                     fn aliased[A] -> Identity(A) {{ .(value: A) {{ value }} }} \
+                     fn returned() -> [A] A -> A {{ .[A] {{ .(value: A) {{ value }} }} }} \
+                     fn keep[X](value: X) -> X {{ value }} \
+                     fn run() {{ let saved = {passing}; {use_saved} }}"
+                );
+                check_module(&module(&source)).unwrap_or_else(|error| {
+                    panic!("{passing} must infer its polymorphic slot: {error:?}")
+                });
+            }
+            let source = format!(
+                "module pkg/main; \
+                 type Identity[A] = A -> A; \
+                 fn ordinary[A](value: A) -> A {{ value }} \
+                 fn direct[A] -> A -> A {{ .(value: A) {{ value }} }} \
+                 fn aliased[A] -> Identity(A) {{ .(value: A) {{ value }} }} \
+                 fn returned() -> [A] A -> A {{ .[A] {{ .(value: A) {{ value }} }} }} \
+                 fn consume(value: .) {{ value }} \
+                 fn run() {{ consume({value}) }}"
+            );
+            let _ = type_diag(&source);
+        }
+    }
+
+    #[test]
+    fn type_only_construction_checks_complete_scheme_kinds() {
+        ok("module pkg/main; \
+            fn direct[*F] -> F(.) -> F(.) { .(value: F(.)) { value } } \
+            fn anonymous() -> [*F] F(.) -> F(.) { \
+              .[*F] { .(value: F(.)) { value } } \
+            }");
+        for source in [
+            "module pkg/main; fn bad[*F] -> . { () }",
+            "module pkg/main; fn bad() { let value = .[*F] { () }; () }",
+        ] {
+            let diagnostic = type_diag(source);
+            assert!(
+                diagnostic.message.contains("higher-kinded"),
+                "{diagnostic:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn type_only_partial_specialization_keeps_a_non_function_result() {
+        for declaration in [
+            "fn nested[A] -> [B] . { .[B] { () } }",
+            "fn nested[A][B] { () }",
+        ] {
+            ok(&format!(
+                "module pkg/main; {declaration} \
+                 fn run() {{ let inner = nested(.); inner(.) }}"
+            ));
+        }
+        ok("module pkg/main; \
+            fn producer()[A][B] { () } \
+            fn from_parameter(poly: [A][B] .) { let inner = poly(.); inner(.) } \
+            fn run() { let poly = producer(); let inner = poly(.); inner(.) }");
+        ok("module pkg/main; \
+            fn explicit[A][B]() { () } \
+            fn run() { let inner = explicit(.); let thunk = inner(.); thunk() }");
+    }
+
+    #[test]
+    fn type_only_construction_preserves_written_applications_and_purity() {
+        for source in [
+            "module pkg/main; fn marker[A] { () } fn bad() { marker }",
+            "module pkg/main; fn marker[A] { () } fn bad() { marker(.)() }",
+            "module pkg/main; fn marker[A] { () } fn bad() { marker(., ()) }",
+            "module pkg/main; host fn effect() -> .; pure fn bad[A] { effect() }",
+        ] {
+            let _ = type_diag(source);
+        }
+        ok("module pkg/main; host fn effect() -> .; \
+            fn marker[A] { effect() } \
+            fn old[A]() { effect() } \
+            fn run() { marker(.); old(.)(); old(., ()) }");
     }
 
     #[test]
@@ -19565,7 +20376,7 @@ fn generic_last() -> . {
         ok("module x; fn run() -> . { .(pair: (. & _)) { () }(((), ())) }");
         let concrete = err("module x; fn run() -> . { .(pair: (. & .)) { () }(()) }");
         assert!(
-            concrete.contains("type mismatch: expected `(. & .)`, found `.`"),
+            concrete.contains("type mismatch: expected `. & .`, found `.`"),
             "got: {concrete}"
         );
     }
@@ -19679,7 +20490,7 @@ fn generic_last() -> . {
         assert!(
             mismatch.contains("type mismatch")
                 && mismatch.contains("expected `I32`")
-                && mismatch.contains("found `(I32 & I32)`"),
+                && mismatch.contains("found `I32 & I32`"),
             "got: {mismatch}"
         );
     }
@@ -19736,7 +20547,7 @@ fn generic_last() -> . {
         assert!(
             mismatch.contains("type mismatch")
                 && mismatch.contains("expected `I32`")
-                && mismatch.contains("found `(I32 & String)`"),
+                && mismatch.contains("found `I32 & String`"),
             "got: {mismatch}"
         );
     }
@@ -19754,7 +20565,7 @@ fn generic_last() -> . {
         assert!(
             mismatch.contains("type mismatch")
                 && mismatch.contains("expected `I32`")
-                && mismatch.contains("found `(I32 & (String & N))`"),
+                && mismatch.contains("found `I32 & String & N`"),
             "the non-final `packet` source must occupy only the first lexical slot: {mismatch}"
         );
 
@@ -23841,7 +24652,6 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_partial_terminal_type_prefix_reuses_the_residual_eta_plan() {
-        crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let elaborator = "module elab; \
             import __comptime__; \
             pure fn phantom_impl( \
@@ -23850,23 +24660,47 @@ fn generic_last() -> . {
                 _a: __Type__, _b: __Type__ \
               ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
             pub elab phantom : [Source] Source -> [A] [B] A { impl(fills) phantom_impl; };";
-        let main = "module main; \
-            import elab(phantom); \
-            fn run() -> [B] . -> . { phantom!((), .) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "phantom!((), .)"));
-        let (checked, scope) = check_retained_success(&package);
+        for (call, residual_type, returns_function) in [
+            ("phantom!((), .)", "[B] .", false),
+            ("phantom!(.(_unit: .) { () }, . -> .)", "[B] . -> .", true),
+        ] {
+            crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
+            let main = format!(
+                "module main; import elab(phantom); \
+                 fn run() -> {residual_type} {{ {call} }}"
+            );
+            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let original = retained_call_at(&package, "main", source_span(&main, call));
+            let (checked, scope) = check_retained_success(&package);
 
-        assert!(
-            checked
+            let Some(Type::Forall { body, .. }) = checked
                 .elaborations()
-                .elaboration_for("main", &original)
-                .is_some()
-        );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
-        assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        validate_substituted_package(checked.substituted())
-            .expect("a partial terminal prefix keeps its exact residual binder in Prime");
+                .position_index()
+                .type_at("main", original.span())
+            else {
+                panic!("the partial terminal prefix must retain exactly one type binder")
+            };
+            if returns_function {
+                assert!(matches!(
+                    body.as_ref(),
+                    Type::Function { param, ret, .. }
+                        if matches!(param.as_ref(), Type::Unit { .. })
+                            && matches!(ret.as_ref(), Type::Unit { .. })
+                ));
+            } else {
+                assert!(matches!(body.as_ref(), Type::Unit { .. }));
+            }
+            assert!(
+                checked
+                    .elaborations()
+                    .elaboration_for("main", &original)
+                    .is_some()
+            );
+            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
+            validate_substituted_package(checked.substituted())
+                .expect("a partial terminal prefix keeps its exact residual binder in Prime");
+        }
     }
 
     #[test]

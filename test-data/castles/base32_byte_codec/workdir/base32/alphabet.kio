@@ -51,7 +51,7 @@ fn push(rest: list.List(Entry), value: I32, glyph: String) -> list.List(Entry) {
 /// 32-entry alphabet. Each `push` prepends, so the chain is written in
 /// value order and reversed once at the end.
 fn table() -> list.List(Entry) {
-  list.reverse(list.nil(Entry, ())
+  list.reverse(list.nil(Entry)
     .>push(0, "A")
     .>push(1, "B")
     .>push(2, "C")

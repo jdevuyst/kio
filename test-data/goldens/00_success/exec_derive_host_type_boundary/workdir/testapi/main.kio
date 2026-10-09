@@ -53,4 +53,4 @@ fn run() -> String {
   Render.render(inst)(value)
 }
 
-pub fn main() -> . { print(run()) }
+pub fn main() { print(run()) }

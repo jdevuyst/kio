@@ -1,5 +1,5 @@
 module main;
 
-fn first() -> . { second() }
+fn first() { second() }
 
-fn second() -> . { () }
+fn second() { () }

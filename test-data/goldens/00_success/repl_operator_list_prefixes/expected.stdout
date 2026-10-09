@@ -1,0 +1,28 @@
+kio repl — the module inspector
+loaded: demo
+type `:help` for commands, `:quit` to leave
+demo:
+  pub fn choose
+  pub fn empty
+  pub op _ + _
+  pub varop [* *]
+  pub(demo) op _ .. _
+  pub(demo) varop [! !]
+  op _ - _
+  varop [% %]
+(… :ls -v for full signatures)
+scope of demo:
+  declared:
+    pub fn choose
+    pub fn empty
+    pub op _ + _
+    pub varop [* *]
+    pub(demo) op _ .. _
+    pub(demo) varop [! !]
+    op _ - _
+    varop [% %]
+  operators: op _ + _, varop [* *], op _ .. _, varop [! !], op _ - _, varop [% %]
+  intrinsics: not in scope
+  comptime: not in scope
+(… :ls -v for full signatures)
+bye

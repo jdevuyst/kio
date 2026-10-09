@@ -59,4 +59,4 @@ fn run() -> String {
   Box.un_box(pipeline(monad, pur, lifted))
 }
 
-pub fn main() -> . { print(run()) }
+pub fn main() { print(run()) }

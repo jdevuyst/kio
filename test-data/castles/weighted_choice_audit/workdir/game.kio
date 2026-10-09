@@ -1,0 +1,47 @@
+module game;
+
+import choice as choice;
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub labels Loot = { blade: I32 } | { bow: I32 } | { coins: I32 };
+
+pub labels Loadout = { attack: I32, treasure: I32 };
+
+fn blade_drop() -> Loot { {blade = 2}.>widen_sum! }
+
+fn bow_drop() -> Loot { {bow = 3}.>widen_sum! }
+
+fn coin_drop() -> Loot { {coins = 5}.>widen_sum! }
+
+pub fn loot() -> choice.Choice(Loot) {
+  choice.weighted(blade_drop(), 2)
+    .>choice.alternative(choice.certain(bow_drop()))
+    .>choice.alternative(choice.certain(coin_drop()))
+}
+
+pub fn charms() -> choice.Choice(I32) {
+  choice.weighted(0, 2).>choice.alternative(choice.certain(1))
+}
+
+pub fn equip(item: Loot, bonus: I32) -> Loadout {
+  match! item {
+    .(blade: Blade) { {attack = arith.add_i32(blade.?{blade}, bonus), treasure = 0} };
+    .(bow: Bow) { {attack = arith.add_i32(bow.?{bow}, bonus), treasure = 0} };
+    .(coins: Coins) { {attack = bonus, treasure = coins.?{coins}} }
+  }
+}
+
+pub fn loadouts() -> choice.Choice(Loadout) { choice.independent(loot(), charms(), equip) }
+
+pub fn attack_score(loadout: Loadout) -> I32 { loadout.?{attack} }
+
+pub fn treasure_value(loadout: Loadout) -> I32 { loadout.?{treasure} }
+
+pub fn ready(loadout: Loadout) -> Bool { arith.leq_i32(3, loadout.?{attack}) }
+
+pub fn guaranteed() -> choice.Choice(Loadout) {
+  choice.independent(choice.certain(blade_drop()), choice.certain(1), equip)
+}

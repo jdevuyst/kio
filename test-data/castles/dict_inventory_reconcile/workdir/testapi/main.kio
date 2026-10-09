@@ -3,4 +3,4 @@ module testapi/main;
 import testapi/reconcile(build_report);
 import testapi/render(render_report);
 
-pub fn main() -> . { render_report(build_report()) }
+pub fn main() { render_report(build_report()) }

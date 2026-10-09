@@ -75,4 +75,4 @@ rec(loop) fn consume(remaining: I32, count: I32) -> I32 {
   }
 }
 
-pub fn main() -> . { print(int_to_string(consume(8, sub_i32(0, 1)))) }
+pub fn main() { print(int_to_string(consume(8, sub_i32(0, 1)))) }

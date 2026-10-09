@@ -38,7 +38,7 @@ fn call9(
   , p: String & String & String & String & String & String & String & String & String
   ) -> String { f(p) }
 
-pub fn main() -> . {
+pub fn main() {
   print(call9(
     , join9
     , (

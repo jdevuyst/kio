@@ -53,7 +53,7 @@ rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(Lis
           if! string_eq(s, sentinel()) {
             reverse(close_phrase(words, acc))
           } else if! is_blank(s) {
-            rec read_onto(nil(String, ()), close_phrase(words, acc))
+            rec read_onto(nil(String), close_phrase(words, acc))
           } else {
             rec read_onto(cons(s, words), acc)
           }
@@ -65,4 +65,4 @@ rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(Lis
 
 /// The training corpus: one phrase per blank-line-delimited group, each a
 /// list of words in reading order.
-pub fn read_phrases() -> List(List(String)) { read_onto(nil(String, ()), nil(List(String), ())) }
+pub fn read_phrases() -> List(List(String)) { read_onto(nil(String), nil(List(String))) }

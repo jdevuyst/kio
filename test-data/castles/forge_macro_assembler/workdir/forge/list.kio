@@ -18,7 +18,7 @@ import testapi/iter(loop);
 pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
 
 /// The empty list.
-pub fn nil[A]() -> List(A) { List.mk_list(A, widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.mk_list(A, widen_sum!((), . | (A & List(A)))) }
 
 /// Prepend `x`.
 pub fn cons[A](x: A, xs: List(A)) -> List(A) {
@@ -38,7 +38,7 @@ rec(loop) fn rev_append[A](xs: List(A), acc: List(A)) -> List(A) {
 }
 
 /// `xs` in reverse order.
-pub fn reverse[A](xs: List(A)) -> List(A) { rev_append(xs, nil(A, ())) }
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_append(xs, nil(A)) }
 
 rec(loop) {
   /// How many elements `xs` holds.

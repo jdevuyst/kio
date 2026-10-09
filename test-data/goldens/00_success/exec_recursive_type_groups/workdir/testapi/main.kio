@@ -69,7 +69,7 @@ fn force_mutual(value: Even) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(leaf_text(first(branch(leaf("labels\n"), leaf("unused\n")))));
   print(chain_head(chain_cons("alias\n", chain_nil())));
   print(force_mutual(two()))

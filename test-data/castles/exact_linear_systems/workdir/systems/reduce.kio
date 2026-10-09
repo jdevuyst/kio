@@ -67,7 +67,7 @@ rec(loop) fn columns(matrix: m.Matrix, variables: I32, column: I32, pivots: c.Li
 }
 
 pub fn rref(matrix: m.Matrix, variables: I32) -> Reduction {
-  columns(matrix, variables, 0, c.nil(), 0)
+  columns(matrix, variables, 0, c.nil(_), 0)
 }
 
 pub fn contradictory(row: m.Row, variables: I32) -> Bool {

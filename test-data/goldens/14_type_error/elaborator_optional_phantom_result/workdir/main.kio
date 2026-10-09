@@ -2,4 +2,4 @@ module main;
 
 import elaborators(infer_result);
 
-fn run() -> . { let _inferred = infer_result!(); () }
+fn run() { let _inferred = infer_result!(); () }

@@ -60,4 +60,4 @@ fn use_swap() -> String {
     )
 }
 
-pub fn main() -> . { print(use_swap()) }
+pub fn main() { print(use_swap()) }

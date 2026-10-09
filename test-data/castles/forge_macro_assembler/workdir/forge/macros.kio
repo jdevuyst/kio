@@ -18,7 +18,7 @@ import forge/program as p;
 import forge/program(Macro, Macros, Srcs);
 import testapi(String);
 
-fn no_ops() -> Srcs { l.nil(Src, ()) }
+fn no_ops() -> Srcs { l.nil(Src) }
 
 fn op_cons(x: Src, xs: Srcs) -> Srcs { l.cons(x, xs) }
 
@@ -40,7 +40,7 @@ pub fn table() -> Macros {
     , p.macro_def("square_b", square_b())
     , l.cons(
         , p.macro_def("dec_a", dec_a())
-        , l.cons(p.macro_def("drain_tail", drain_tail()), l.nil(Macro, ()))
+        , l.cons(p.macro_def("drain_tail", drain_tail()), l.nil(Macro))
         )
     )
 }

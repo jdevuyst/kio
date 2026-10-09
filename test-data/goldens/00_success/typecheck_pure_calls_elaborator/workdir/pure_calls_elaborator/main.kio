@@ -2,4 +2,4 @@ module pure_calls_elaborator/main;
 
 import pure_calls_elaborator/elaborators(checked);
 
-pure fn keep(value: .) -> . { checked!(value, .) }
+pure fn keep(value: .) { checked!(value, .) }

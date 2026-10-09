@@ -34,4 +34,4 @@ fn run() -> Box(String) {
 // Outside any do-block, `<-` is purely the user-defined operator.
 fn outside_do() -> String { "left" <- "arrow-op outside do\n" }
 
-pub fn main() -> . { print(outside_do()); print(Box.un_box(run())) }
+pub fn main() { print(outside_do()); print(Box.un_box(run())) }

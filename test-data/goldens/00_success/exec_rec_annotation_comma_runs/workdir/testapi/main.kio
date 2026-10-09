@@ -18,4 +18,4 @@ rec(iter.loop) fn answer(n: host.I32) -> host.I32 {
   }
 }
 
-pub fn main() -> . { io.print(fmt.i32_to_string(answer(1))); io.print("\n") }
+pub fn main() { io.print(fmt.i32_to_string(answer(1))); io.print("\n") }

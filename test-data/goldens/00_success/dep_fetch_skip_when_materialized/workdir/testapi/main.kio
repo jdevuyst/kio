@@ -12,4 +12,4 @@ import testapi/io(print);
 // `first` is a re-rooted generic export, exercised across the git edge.
 pub fn greeting() -> String { first("git dependency fetched\n"(String), "discarded\n"(String)) }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

@@ -4,6 +4,6 @@ host type Local role(i32);
 
 host type Witness;
 
-fn consume[T](_value: T & Witness) -> . { () }
+fn consume[T](_value: T & Witness) { () }
 
-fn reject() -> . { consume(42) }
+fn reject() { consume(42) }

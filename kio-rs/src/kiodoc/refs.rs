@@ -170,7 +170,7 @@ pub fn scan_refs(text: &str) -> Vec<IntraRef> {
     let mut i = 0usize;
 
     while i < len {
-        if let Some(end) = super::parse::inline_literal_end(text, i) {
+        if let Some(end) = crate::doc_markup::lexical::inline_literal_end(text, i) {
             i = end;
             continue;
         }
@@ -243,29 +243,8 @@ pub fn collect_ref_overrides(text: &str) -> std::collections::HashSet<String> {
     let mut set = std::collections::HashSet::new();
     let prose = super::parse::blank_fences(text);
     for line in prose.lines() {
-        let trimmed = line.trim();
-        // Reference-link definition: `[key]: <target>` at the
-        // beginning of a (optionally indented) line, with at most
-        // 3 spaces of indent.
-        if !trimmed.starts_with('[') {
-            continue;
-        }
-        // The key must not start with a backtick (that would be a
-        // misparse of a `` [`name`] `` inline ref at the start of
-        // a line — those are not definitions).
-        let rest = &trimmed[1..];
-        if rest.starts_with('`') {
-            continue;
-        }
-        // Find the closing `]` followed by `:`.
-        if let Some(close_bracket) = rest.find(']') {
-            let after = rest[close_bracket + 1..].trim_start();
-            if after.starts_with(':') {
-                let key = rest[..close_bracket].trim().to_owned();
-                if !key.is_empty() {
-                    set.insert(key);
-                }
-            }
+        if let Some(key) = crate::doc_markup::lexical::reference_definition_key(line) {
+            set.insert(key.text.to_owned());
         }
     }
     set
@@ -442,8 +421,12 @@ pub fn check_refs_in_package(
 
 // ---- Scope builders ---------------------------------------------------------
 
-fn operator_token_name(op: &crate::ast::Op) -> Option<String> {
+pub(crate) fn operator_token_name(op: &crate::ast::Op) -> Option<String> {
     let crate::ast::OpBody::Normal { pattern, .. } = &op.body;
+    operator_pattern_token_name(pattern)
+}
+
+fn operator_pattern_token_name(pattern: &[crate::ast::OpPart]) -> Option<String> {
     let tokens = pattern
         .iter()
         .filter_map(|part| match part {
@@ -561,6 +544,13 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
                     } else if let Some((name, _)) = item.as_label() {
                         scope.imported.push(name.to_owned());
                         scope.imported.push(format!("{{{name}}}"));
+                    } else if let crate::ast::ImportItem::OperatorPattern { grammar, .. } = item {
+                        scope.imported.push(grammar.render());
+                        if let crate::ast::OperatorGrammar::Fixed(pattern) = grammar
+                            && let Some(name) = operator_pattern_token_name(pattern)
+                        {
+                            scope.imported.push(name);
+                        }
                     }
                 }
             }
@@ -880,6 +870,42 @@ pub fn ref_span(base_offset: u32, ref_offset: u32) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selective_operator_references_keep_grammar_and_token_aliases_only() {
+        let module =
+            crate::pass::parser::parse("module app; import provider(op _ + _, op ! _);").unwrap();
+        let scope = module_scope_from_surface(&module);
+        assert!(
+            check_refs_in_module(
+                "[`+`], [`op _ + _`], [`!`], [`op ! _`]",
+                &scope,
+                &Default::default()
+            )
+            .is_empty()
+        );
+        let errors = check_refs_in_module(
+            "[`pair`], [`identity`], [`-`], [`op _ - _`]",
+            &scope,
+            &Default::default(),
+        );
+        assert_eq!(
+            errors
+                .iter()
+                .map(|error| error.name.as_str())
+                .collect::<Vec<_>>(),
+            ["pair", "identity", "-", "op _ - _"]
+        );
+    }
+
+    #[test]
+    fn compatibility_override_definition_keys() {
+        let source = "  [ é ] : docs/[`add`]\n[`code`]: ignored\n[empty] nope\n\t[other]: url\n```text\n[fenced]: url\n```\n";
+        assert_eq!(
+            collect_ref_overrides(source),
+            std::collections::HashSet::from(["é".to_owned(), "other".to_owned()])
+        );
+    }
 
     #[test]
     fn scan_simple_ref() {

@@ -52,7 +52,7 @@ fn apply_entry(items: cells.List(Item), entry: history.Entry) -> cells.List(Item
 
 // Replay oldest to newest into a flat map, independently of first-hit journal lookup.
 fn materialize(snapshot: history.Snapshot) -> cells.List(Item) {
-  lists.foldl(apply_entry, cells.nil(), lists.reverse(snapshot.?{history.journal}))
+  lists.foldl(apply_entry, cells.nil(_), lists.reverse(snapshot.?{history.journal}))
 }
 
 fn expected_value(items: cells.List(Item), key: String) -> String {
@@ -184,7 +184,7 @@ fn item_text(item: Item) -> String {
   text.string_concat(item.?{item_key}, text.string_concat("=", fmt.int_to_string(item.?{amount})))
 }
 
-pub fn print_frozen(frozen: Frozen) -> . {
+pub fn print_frozen(frozen: Frozen) {
   io.print(text.string_concat(
     , text.string_concat("retained ", frozen.?{label})
     , text.string_concat(

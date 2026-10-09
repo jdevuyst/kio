@@ -22,7 +22,7 @@ pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
 
 pub fn num(n: I32) -> String { int_to_string(n) }
 
-pub fn line(text: String) -> . { print(cat(text, "\n")) }
+pub fn line(text: String) { print(cat(text, "\n")) }
 
 /// A right-aligned two-digit index, so the transcript's left edge stays
 /// straight.
@@ -59,7 +59,7 @@ pub fn yes_no(b: Bool) -> String {
 fn field(name: String, value: I32) -> String { cat3(name, "=", num(value)) }
 
 /// `name: value` -- the summary block's one line shape.
-pub fn stat(name: String, value: I32) -> . { line(cat3("  ", name, cat(": ", num(value)))) }
+pub fn stat(name: String, value: I32) { line(cat3("  ", name, cat(": ", num(value)))) }
 
 pub fn cost(visits: I32, pushes: I32, touched: I32) -> String {
   cat3(
@@ -77,7 +77,7 @@ rec(loop) fn row_text(cells: Array(I32), i: I32, stop: I32, acc: String) -> Stri
   }
 }
 
-rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) -> . {
+rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) {
   if! leq_i32(n, i) {
     ()
   } else {
@@ -93,7 +93,4 @@ rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) -> . {
 }
 
 /// Print `cells[0 .. n)` under a heading, sixteen values to a line.
-pub fn dump(heading: String, cells: Array(I32), n: I32) -> . {
-  line(heading);
-  dump_from(cells, 0, n)
-}
+pub fn dump(heading: String, cells: Array(I32), n: I32) { line(heading); dump_from(cells, 0, n) }

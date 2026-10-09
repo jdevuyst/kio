@@ -17,4 +17,4 @@ import numlib/store(relay);
 import testapi(I32);
 import testapi/fmt(print_i32);
 
-pub fn main() -> . { let .(v: I32) = relay(7(I32)); print_i32(v) }
+pub fn main() { let .(v: I32) = relay(7(I32)); print_i32(v) }

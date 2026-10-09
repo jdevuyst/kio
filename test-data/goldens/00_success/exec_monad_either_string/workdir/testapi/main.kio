@@ -71,4 +71,4 @@ fn use_dictionary() -> String {
   }
 }
 
-pub fn main() -> . { print(use_dictionary()) }
+pub fn main() { print(use_dictionary()) }

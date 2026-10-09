@@ -1182,6 +1182,10 @@ impl<'a> GoFacadeSite<'a> {
         self.prepared.site()
     }
 
+    pub(crate) fn prepared(&self) -> PreparedBoundaryCallableSite<'a> {
+        self.prepared
+    }
+
     pub(crate) fn removed_at_version(&self) -> Option<u32> {
         self.prepared
             .retained()
@@ -3998,16 +4002,31 @@ impl<'a> GoFacadeCatalog<'a> {
 
     /// Render declarations after the package compositor has merged and
     /// validated the complete package claim inventory.
+    #[cfg(all(test, feature = "surface"))]
     pub(crate) fn render_declarations(&self) -> Result<String, GoFacadeError> {
+        self.render_declarations_with_docs(|_| String::new(), |_| String::new())
+    }
+
+    pub(crate) fn render_declarations_with_docs(
+        &self,
+        host_doc: impl Fn(&BoundaryHostBinding) -> String,
+        newtype_doc: impl Fn(&BoundaryPublicNewtypeInventoryEntry) -> String,
+    ) -> Result<String, GoFacadeError> {
         let mut out = String::new();
         render_sum_support(&mut out);
         for retained in self.retained_host_types() {
             retained.render_declaration(&mut out);
         }
         for carrier in self.parametric_host_carriers() {
+            if let Some(binding) = self.prepared.host_binding(carrier.name()) {
+                out.push_str(&host_doc(binding));
+            }
             carrier.render_declaration(&mut out);
         }
         for carrier in self.carriers.values() {
+            if let Some(entry) = self.prepared.public_newtype(carrier.name()) {
+                out.push_str(&newtype_doc(entry));
+            }
             carrier.render_declaration_with_provenance(
                 &mut out,
                 self.carrier_provenance

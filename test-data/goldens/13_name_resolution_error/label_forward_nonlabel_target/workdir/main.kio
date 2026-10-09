@@ -1,5 +1,5 @@
 module main;
 
-fn original() -> . { () }
+fn original() { () }
 
 type {view} = {original};

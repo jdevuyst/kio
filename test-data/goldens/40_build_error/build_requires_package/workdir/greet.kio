@@ -4,4 +4,4 @@ host type S role(str);
 
 host fn print(s: S) -> .;
 
-pub fn announce(s: S) -> . { print(s) }
+pub fn announce(s: S) { print(s) }

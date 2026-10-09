@@ -6,7 +6,7 @@ import testapi/io(print);
 
 pub labels { a: I32, b: String };
 
-pub fn say(p: A & B) -> . {
+pub fn say(p: A & B) {
   print(B.get(match! p {
     .(_a: A, b_slot: B) { b_slot }
   }))

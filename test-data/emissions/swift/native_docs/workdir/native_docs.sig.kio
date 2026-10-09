@@ -1,0 +1,19 @@
+signature native_docs v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module testapi/native {
+        host fn archived() -> .
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      testapi/native.archived
+    }
+  }
+}

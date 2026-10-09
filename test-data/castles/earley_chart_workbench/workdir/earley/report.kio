@@ -35,7 +35,7 @@ rec(loop) fn examples(
   , grammar: model.Grammar
   , inputs: Array(fixtures.Example)
   , index: I32
-  ) -> . {
+  ) {
   if! arith.leq_i32(arrays.array_len(inputs), index) {
     ()
   } else {
@@ -69,6 +69,6 @@ rec(loop) fn examples(
   }
 }
 
-pub fn suite(name: String, grammar: model.Grammar, inputs: Array(fixtures.Example)) -> . {
+pub fn suite(name: String, grammar: model.Grammar, inputs: Array(fixtures.Example)) {
   examples(name, grammar, inputs, 0)
 }

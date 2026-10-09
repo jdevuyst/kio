@@ -2,7 +2,7 @@ module main;
 
 import __comptime__;
 
-fn hidden_capture() -> . { () }
+fn hidden_capture() { () }
 
 pub pure fn public_impl(
   , _ct: __Comptime__

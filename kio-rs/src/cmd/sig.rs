@@ -3117,6 +3117,72 @@ v(2) {
     }
 
     #[test]
+    fn type_only_export_lifecycle_preserves_sealed_explicit_unit_history() {
+        let tmp = tempfile::tempdir().expect("create package directory");
+        fs::write(
+            tmp.path().join("app.pkg.kio"),
+            "package app; bridge { api; }",
+        )
+        .expect("write package file");
+        let module_path = tmp.path().join("api.kio");
+        let initial = "module api;
+            pub pure fn direct[A] { () }
+            pub fn delayed[A]() { () }
+            pub fn adjacent[A][B] { () }
+            pub fn mixed[A](value: .)[B] { value }
+        ";
+        fs::write(&module_path, initial).expect("write module");
+        let run = |command: SigCommand, expected: ExitCode| {
+            let mut output = CapturedOutput::new();
+            let code = run_one(
+                tmp.path(),
+                &command,
+                false,
+                None,
+                None,
+                &LogFilter::default(),
+                &mut output,
+            );
+            assert_eq!(code, expected, "{}\n{}", output.stdout, output.stderr);
+            output
+        };
+
+        run(SigCommand::Status, ExitCode::SigStale);
+        run(SigCommand::Record { force: false }, ExitCode::Success);
+        run(SigCommand::Status, ExitCode::Success);
+        run(SigCommand::Commit, ExitCode::Success);
+        run(SigCommand::Status, ExitCode::Success);
+        let history_path = tmp.path().join("app.sig.kio");
+        let sealed = fs::read_to_string(&history_path).expect("read sealed history");
+        assert!(sealed.starts_with("signature app v(2);"), "{sealed}");
+        for expected in [
+            "pub pure fn direct[A] -> .",
+            "pub fn delayed[A]() -> .",
+            "pub fn adjacent[A][B] -> .",
+            "pub fn mixed[A](value: .)[B] -> .",
+        ] {
+            assert!(sealed.contains(expected), "missing {expected:?}:\n{sealed}");
+        }
+
+        fs::write(&module_path, initial.replace("delayed[A]()", "delayed[A]"))
+            .expect("remove the explicit Unit stage");
+        run(SigCommand::Status, ExitCode::SigIncompatible);
+        run(SigCommand::Record { force: false }, ExitCode::Build);
+        assert_eq!(fs::read_to_string(&history_path).unwrap(), sealed);
+        run(SigCommand::Record { force: true }, ExitCode::Success);
+        run(SigCommand::Status, ExitCode::SigUnsealedBreak);
+        run(SigCommand::Commit, ExitCode::Success);
+        run(SigCommand::Status, ExitCode::Success);
+        let updated = fs::read_to_string(&history_path).expect("read updated history");
+        assert!(updated.starts_with("signature app v(3);"), "{updated}");
+        let sealed_version = sealed.split_once('\n').unwrap().1.trim();
+        assert!(updated.contains(sealed_version), "{updated}");
+        assert!(updated.contains("pub fn delayed[A] -> ."), "{updated}");
+        assert_eq!(parse(&updated).versions.len(), 2);
+        assert_eq!(run(SigCommand::Log, ExitCode::Success).stdout, updated);
+    }
+
+    #[test]
     fn status_rejects_malformed_sealed_history_before_compatibility() {
         let tmp = std::env::temp_dir().join(format!(
             "kio-sig-invalid-history-{}-{}",

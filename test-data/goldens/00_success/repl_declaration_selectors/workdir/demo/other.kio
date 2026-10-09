@@ -1,0 +1,11 @@
+module demo/other;
+
+pub fn choose(left: ., right: .) -> . { right }
+
+pub op _ + _ { impl choose }
+
+pub fn unrelated() -> . { () + () }
+
+pub fn fn() -> . { () }
+
+pub fn pub() -> . { () }

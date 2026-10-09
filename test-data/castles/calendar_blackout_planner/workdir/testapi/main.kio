@@ -6,7 +6,7 @@ import calendar_blackout_planner/scoring as scoring;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let alpha = model.alpha();
   let beta = model.beta();
   let gamma = model.gamma();

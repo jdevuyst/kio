@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/opt(Opt, show, some);
 
-pub fn main() -> . { show(some("hi").>Opt.un_opt) }
+pub fn main() { show(some("hi").>Opt.un_opt) }

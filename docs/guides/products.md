@@ -155,9 +155,9 @@ module; it cannot use a forwarded label as its origin.
 A function that needs at least a `name` field writes `Name & R`:
 
 ```kio {@row}
-fn greet[R](x: Name & R) -> . { print(x.?{name}) }
+fn greet[R](x: Name & R) { print(x.?{name}) }
 
-fn call_greet_full() -> . { let full = {name = "ada\n", note = "first\n", ready=}; greet(full) }
+fn call_greet_full() { let full = {name = "ada\n", note = "first\n", ready=}; greet(full) }
 ```
 
 The type variable `R` means "the rest of the product." At the call site above, `R` is inferred as `Note & Ready`.
@@ -210,9 +210,9 @@ An empty update is valid and returns the row unchanged. If a caller needs a diff
 `Name & Note` and `Note & Name` are distinct product types. When a caller has one order and a callee wants the other, use `reorder_prod!`:
 
 ```kio {@row}
-fn wants_note_first(_x: Note & Name) -> . { () }
+fn wants_note_first(_x: Note & Name) { () }
 
-fn call_it(x: Name & Note) -> . { wants_note_first(x.>reorder_prod!(Note & Name)) }
+fn call_it(x: Name & Note) { wants_note_first(x.>reorder_prod!(Note & Name)) }
 ```
 
 ## Where this leads

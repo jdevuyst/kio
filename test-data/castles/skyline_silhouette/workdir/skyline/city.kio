@@ -41,7 +41,7 @@ pub fn height_of(b: Building) -> I32 { b.?{height} }
 /// The skyline the whole program is about. Built back to front and reversed so
 /// the source reads in the same order the report prints.
 pub fn buildings() -> lst.List(Building) {
-  let none = lst.nil(Building, ());
+  let none = lst.nil(Building);
   let with_spire = lst.cons(building("spire", 1, 5, 11), none);
   let with_annex = lst.cons(building("annex", 2, 7, 6), with_spire);
   let with_kiosk = lst.cons(building("kiosk", 3, 4, 4), with_annex);

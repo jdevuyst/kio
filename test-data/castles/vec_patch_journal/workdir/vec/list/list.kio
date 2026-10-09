@@ -94,7 +94,7 @@ pub fn null[A](xs: List(A)) -> Bool {
 
 /// Reverses a list with one host loop.
 pub fn reverse[A](xs: List(A)) -> List(A) {
-  fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) })
+  fold_list(xs, nil(A), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) })
 }
 
 /// Returns the final element, or `()` for an empty list.
@@ -128,7 +128,7 @@ pub fn replicate[A](n: I32, x: A) -> List(A) {
           }
         }
       }
-    , (n, nil(A, ()))
+    , (n, nil(A))
     )
 }
 
@@ -156,7 +156,7 @@ pub fn iterate[A](n: I32, f: A -> A, seed: A) -> List(A) {
             }
           }
         }
-      , (n, (seed, nil(A, ())))
+      , (n, (seed, nil(A)))
       );
   reverse(built)
 }
@@ -166,14 +166,14 @@ pub fn iterate[A](n: I32, f: A -> A, seed: A) -> List(A) {
 // =====================================================================
 /// Maps a function over the list while preserving element order.
 pub fn map[A][B](f: A -> B, xs: List(A)) -> List(B) {
-  reverse(fold_list(xs, nil(B, ()), .(carry: List(B), x: A) -> List(B) { map_step(carry, f, x) }))
+  reverse(fold_list(xs, nil(B), .(carry: List(B), x: A) -> List(B) { map_step(carry, f, x) }))
 }
 
 /// Keeps elements accepted by `keep`.
 pub fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
   reverse(fold_list(
     , xs
-    , nil(A, ())
+    , nil(A)
     , .(carry: List(A), x: A) -> List(A) {
         if! keep(x) {
           cons(x, carry)
@@ -186,8 +186,7 @@ pub fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
 
 /// Appends two lists, sharing the right-hand tail.
 pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
-  let rev_xs =
-    fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) });
+  let rev_xs = fold_list(xs, nil(A), .(carry: List(A), x: A) -> List(A) { reverse_step(carry, x) });
   fold_list(rev_xs, ys, .(carry: List(A), x: A) -> List(A) { append_step(carry, x) })
 }
 
@@ -228,7 +227,7 @@ pub fn take[A](n: I32, xs: List(A)) -> List(A) {
             }
           }
         }
-      , ((n, nil(A, ())), xs)
+      , ((n, nil(A)), xs)
       );
   reverse(built)
 }
@@ -241,7 +240,7 @@ fn drop_advance[A](k: I32, rest: List(A)) -> (I32 & List(A)) | List(A) {
             .(_h: A, tl: List(A)) { widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A)) }
           }
         }
-      , .(_empty: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+      , .(_empty: .) { widen_sum!(nil(A), (I32 & List(A)) | List(A)) }
       )
   }
 }
@@ -384,7 +383,7 @@ pub fn to_string[A](show: A -> String, xs: List(A)) -> String {
 // Operator DSL
 // =====================================================================
 /// Returns an empty list.
-pub fn empty[A]() -> List(A) { nil(A, ()) }
+pub fn empty[A]() -> List(A) { nil(A) }
 
 /// Prepends an element to a list.
 pub fn prepend[A](head: A, tail: List(A)) -> List(A) { cons(head, tail) }

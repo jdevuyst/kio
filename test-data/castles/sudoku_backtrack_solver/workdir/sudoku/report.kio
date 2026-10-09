@@ -33,11 +33,11 @@ fn cat(left: String, right: String) -> String { string_concat(left, right) }
 
 fn cat3(left: String, middle: String, right: String) -> String { cat(left, cat(middle, right)) }
 
-fn field(label: String, value: String) -> . { print(cat3(label, value, "\n")) }
+fn field(label: String, value: String) { print(cat3(label, value, "\n")) }
 
-fn field_i32(label: String, value: I32) -> . { field(label, int_to_string(value)) }
+fn field_i32(label: String, value: I32) { field(label, int_to_string(value)) }
 
-fn field_bool(label: String, value: Bool) -> . { field(label, bool_to_string(value)) }
+fn field_bool(label: String, value: Bool) { field(label, bool_to_string(value)) }
 
 fn digit_text(digit: I32) -> String {
   if! num.is_zero(digit) {
@@ -68,7 +68,7 @@ rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> St
   }
 }
 
-rec(loop) fn print_rows(cells: Array(I32), row: I32) -> . {
+rec(loop) fn print_rows(cells: Array(I32), row: I32) {
   if! leq_i32(row, sub_i32(geo.size(), 1)) {
     print(cat(row_text(cells, row, 0, "    "), "\n"));
     rec print_rows(cells, add_i32(row, 1))
@@ -77,7 +77,7 @@ rec(loop) fn print_rows(cells: Array(I32), row: I32) -> . {
   }
 }
 
-fn print_grid(cells: Array(I32)) -> . { print_rows(cells, 0) }
+fn print_grid(cells: Array(I32)) { print_rows(cells, 0) }
 
 fn verdict_text(outcome: Outcome) -> String {
   match! outcome {
@@ -89,19 +89,19 @@ fn verdict_text(outcome: Outcome) -> String {
   }
 }
 
-fn print_solved(givens: Array(I32), work: Work) -> . {
+fn print_solved(givens: Array(I32), work: Work) {
   print("  solved grid:\n");
   print_grid(work.?{board});
   field_bool("  every row, column, and box holds 1-9 once: ", verify.is_solved(work.?{board}));
   field_bool("  keeps every given: ", verify.keeps_givens(givens, work.?{board}))
 }
 
-fn print_refuted(givens: Array(I32), work: Work) -> . {
+fn print_refuted(givens: Array(I32), work: Work) {
   print("  no completion exists\n");
   field_bool("  board restored to the givens: ", verify.same_board(givens, work.?{board}))
 }
 
-fn print_result(givens: Array(I32), work: Work, summary: Report) -> . {
+fn print_result(givens: Array(I32), work: Work, summary: Report) {
   field("  outcome: ", verdict_text(summary.?{verdict}));
   let verdict = summary.?{verdict};
   match! verdict {
@@ -113,14 +113,14 @@ fn print_result(givens: Array(I32), work: Work, summary: Report) -> . {
   }
 }
 
-fn print_stats(summary: Report) -> . {
+fn print_stats(summary: Report) {
   field_i32("  placements: ", summary.?{placements});
   field_i32("  backtracks: ", summary.?{backtracks});
   field_i32("  max depth: ", summary.?{max_depth});
   field_i32("  steps: ", summary.?{steps})
 }
 
-pub fn print_puzzle(index: I32, name: String, givens: Array(I32), work: Work, summary: Report) -> . {
+pub fn print_puzzle(index: I32, name: String, givens: Array(I32), work: Work, summary: Report) {
   field(cat3("puzzle ", int_to_string(index), ": "), name);
   field_i32("  givens: ", verify.count_givens(givens));
   field_bool("  givens legal: ", verify.is_consistent(givens));

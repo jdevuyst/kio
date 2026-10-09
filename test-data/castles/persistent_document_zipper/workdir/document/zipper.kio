@@ -16,7 +16,7 @@ newtype Crumb : String & lists.List(tree.Node) & lists.List(tree.Node) {
 
 pub newtype Cursor : tree.Node & lists.List(Crumb) { constructor make; projector open }
 
-pub fn start(root: tree.Node) -> Cursor { Cursor.make((root, lists.nil())) }
+pub fn start(root: tree.Node) -> Cursor { Cursor.make((root, lists.nil(_))) }
 
 pub fn focus(cursor: Cursor) -> tree.Node { let .(node, _crumbs) = Cursor.open(cursor); node }
 
@@ -47,7 +47,7 @@ pub fn child(cursor: Cursor) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match! lists.uncons(tree.children(node)) {
     .(first: tree.Node, rest: lists.List(tree.Node)) {
-      let crumb = Crumb.make((tree.name(node), lists.nil(), rest));
+      let crumb = Crumb.make((tree.name(node), lists.nil(_), rest));
       Cursor.make((first, lists.cons(crumb, crumbs))).>widen_sum!
     };
     .() { "focus has no children".>widen_sum! }

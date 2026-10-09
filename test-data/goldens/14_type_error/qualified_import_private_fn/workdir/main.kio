@@ -2,4 +2,4 @@ module main;
 
 import provider as p;
 
-pub fn main() -> . { p.hidden(()) }
+pub fn main() { p.hidden(()) }

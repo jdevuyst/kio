@@ -32,7 +32,7 @@ fn handle_sum(s: I32 | String | Bool) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(handle_product(((100(I32), "product-slot\n"), .t)));
   print(handle_sum(widen_sum!("string-arm\n")));
   print(handle_sum(widen_sum!(.t)));

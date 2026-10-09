@@ -90,21 +90,19 @@ fn gate_mode(state: Gate_state) -> String {
   }
 }
 
-fn print_plain_event(line_no_value: I32, message: String) -> . {
+fn print_plain_event(line_no_value: I32, message: String) {
   io.print(cat4("line ", fmt.i32_to_string(line_no_value), ": ", message))
 }
 
-fn print_badge_event(line_no_value: I32, badge_text: String, message: String) -> . {
+fn print_badge_event(line_no_value: I32, badge_text: String, message: String) {
   io.print(cat6("line ", fmt.i32_to_string(line_no_value), ": badge ", badge_text, " ", message))
 }
 
-fn show_i32(label: String, value: I32) -> . {
+fn show_i32(label: String, value: I32) {
   io.print(cat4(label, ": ", fmt.i32_to_string(value), "\n"))
 }
 
-fn show_bool(label: String, value: Bool) -> . {
-  io.print(cat4(label, ": ", bool_word(value), "\n"))
-}
+fn show_bool(label: String, value: Bool) { io.print(cat4(label, ": ", bool_word(value), "\n")) }
 
 fn is_authorized_badge(badge_id: I32) -> Bool {
   if! arith.lt_i32(1000, badge_id) {
@@ -334,7 +332,7 @@ rec(loop) fn replay(state: Gate_state) -> Gate_state {
   }
 }
 
-fn print_summary(state: Gate_state) -> . {
+fn print_summary(state: Gate_state) {
   io.print("\nfinal counters\n");
   show_i32("lines", state.?{line_no});
   show_i32("entries", state.?{entries});
@@ -349,7 +347,7 @@ fn print_summary(state: Gate_state) -> . {
   show_bool("credit_pending", state.?{credit})
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("turnstile event replay\n");
   let final_state = replay(initial_state());
   print_summary(final_state)

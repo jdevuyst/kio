@@ -1,6 +1,6 @@
 module b;
 
-pub fn idb(x: .) -> . { x }
+pub fn idb(x: .) { x }
 
 equiv eb() {
   idb(());

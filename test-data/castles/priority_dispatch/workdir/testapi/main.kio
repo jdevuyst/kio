@@ -2,4 +2,4 @@ module testapi/main;
 
 import priority_dispatch/planner(run);
 
-pub fn main() -> . { run() }
+pub fn main() { run() }

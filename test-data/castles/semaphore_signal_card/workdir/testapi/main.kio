@@ -4,7 +4,7 @@ import alphabet(Card);
 import message as msg;
 import render as card;
 
-pub fn main() -> . {
+pub fn main() {
   let spelled = msg.spelled();
   let .(c1: Card, c2: Card, c3: Card, c4: Card, c5: Card, c6: Card, c7: Card, c8: Card, c9: Card) =
     spelled;

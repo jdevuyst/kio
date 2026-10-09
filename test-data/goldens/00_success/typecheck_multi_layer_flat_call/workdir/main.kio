@@ -26,8 +26,8 @@ newtype B : . { pub constructor mk_b; pub projector un_b }
 // semantically per § 4c (the call-site dual of § 5's no-interleaving
 // rule on declarations), so SKIP_KIO_PRIME_RUN keeps the Kio'-only
 // compiler off this case under --prime-only.
-fn foo[A](v1: A)[B](v2: B) -> . { () }
+fn foo[A](v1: A)[B](v2: B) { () }
 
-fn flat() -> . { foo(A, A.mk_a(()), B, B.mk_b(())) }
+fn flat() { foo(A, A.mk_a(()), B, B.mk_b(())) }
 
-fn curried() -> . { foo(A, A.mk_a(()))(B, B.mk_b(())) }
+fn curried() { foo(A, A.mk_a(()))(B, B.mk_b(())) }

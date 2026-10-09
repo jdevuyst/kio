@@ -11,7 +11,7 @@ import testapi/text(string_concat);
 // `(I32 & String)`, so the permutation is the cross-type swap.
 fn swap(p: String & I32) -> I32 & String { reorder_prod!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let swapped = swap(("reorder_prod\n", 42));
   // After swap, slot 0 is I32 and slot 1 is String. Pick each via
   // `one_prod!` (the spine palette's product-slot picker), then

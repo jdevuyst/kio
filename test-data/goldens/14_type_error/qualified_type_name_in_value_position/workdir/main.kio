@@ -2,4 +2,4 @@ module main;
 
 import provider as p;
 
-fn value() -> . { p.Value }
+fn value() { p.Value }

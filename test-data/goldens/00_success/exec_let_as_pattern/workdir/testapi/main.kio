@@ -65,7 +65,7 @@ fn do_demo() -> Box(String) {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(sum_and_describe((1, 2, 3)));
   print("\n");
   print(nested_demo(((4, 5), 6)));

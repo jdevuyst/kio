@@ -36,9 +36,9 @@ fn bool_text(v: Bool) -> String { fmt.bool_to_string(v) }
 
 fn int_text(v: I32) -> String { fmt.int_to_string(v) }
 
-fn print_bool_line(prefix: String, v: Bool) -> . { io.print(cat3(prefix, bool_text(v), "\n")) }
+fn print_bool_line(prefix: String, v: Bool) { io.print(cat3(prefix, bool_text(v), "\n")) }
 
-pub fn render_report(s: State) -> . {
+pub fn render_report(s: State) {
   io.print("circuit_netlist_eval\n");
   io.print(cat5(
     , "pins: A="

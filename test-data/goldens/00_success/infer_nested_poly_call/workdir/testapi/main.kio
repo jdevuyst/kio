@@ -25,7 +25,7 @@ fn fst_lens[A][B]() -> Lens(A & B, A) {
 // `Lens(String & I32, a)` slot, which also pins `view.a = String`.
 // This let-RHS is synthesized in pure synth mode (no expected type),
 // the case the nested-poly-call inference must handle.
-pub fn main() -> . {
+pub fn main() {
   let viewed = view(fst_lens(), ("one", 2));
   print(string_concat("view(fst_lens(), (\"one\", 2)) == ", string_concat(viewed, "\n")))
 }

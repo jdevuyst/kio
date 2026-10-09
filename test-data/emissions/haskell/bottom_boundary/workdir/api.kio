@@ -16,12 +16,12 @@ pub newtype Unit_never : . & ! { pub constructor mk_unit_never; pub projector un
 
 pub fn stop_public(value: .) -> ! { stop(value) }
 
-pub fn discard_public(value: !) -> . { discard(value) }
+pub fn discard_public(value: !) { discard(value) }
 
-pub fn inspect_public(value: . & !) -> . { inspect(value) }
+pub fn inspect_public(value: . & !) { inspect(value) }
 
 pub fn branch_public(value: .) -> . | ! { branch(value) }
 
-pub fn absurd_public(value: !) -> . { __absurd__(., value) }
+pub fn absurd_public(value: !) { __absurd__(., value) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -114,7 +114,7 @@ fn length[A](xs: List(A)) -> I32 {
 
 fn demo() -> List(I32) { cons(1, cons(2, cons(3, cons(4, cons(5, nil(I32, ())))))) }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = demo();
   print(int_to_string(length(xs)));
   print("\n");

@@ -290,7 +290,7 @@ rec(loop) fn run(s: State) -> State {
   }
 }
 
-fn print_final(s: State) -> . {
+fn print_final(s: State) {
   print(cat7(
     , "final pc="
     , int_to_string(s.?{pc})
@@ -304,7 +304,7 @@ fn print_final(s: State) -> . {
   print(cat3("checksum=", int_to_string(s.?{checksum}), "\n"))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("tape macro interpreter\n");
   print("program: add3 checkpoint move-right sub2 macro sweep move-left add5 "
         "checkpoint\n");

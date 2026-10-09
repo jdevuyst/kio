@@ -15,8 +15,8 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
-fn line(prefix: String, value: String) -> . {
-  io.print(text.string_concat(prefix, text.string_concat(value, "\n")))
+fn line(prefix: String, value: String) {
+  io.print(value.>text.string_concat("\n").>>text.string_concat(prefix))
 }
 
 fn yes_no(value: Bool) -> String {
@@ -45,7 +45,7 @@ fn matches_message(message: p.Polynomial, word: s.Word) -> Bool {
     )
 }
 
-fn altered_erasure(message: p.Polynomial, erased: s.Word) -> . {
+fn altered_erasure(message: p.Polynomial, erased: s.Word) {
   match! c.head(erased) {
     .(sample: s.Sample) {
       let changed = {s.coordinate = sample.?{s.coordinate}, s.value = f.add(sample.?{s.value}, 1)};

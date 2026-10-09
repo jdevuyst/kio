@@ -146,7 +146,7 @@ export RUSTC_WRAPPER=sccache
 export KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache
 ```
 
-> **⚠ Before any build or `ci/all.sh`, export `SCCACHE_IDLE_TIMEOUT=0` and contact or start the daemon with `sccache --dist-status >/dev/null`.** With the repository's pinned sccache, `--dist-status` contacts an existing daemon or starts one; `--show-stats` reports statistics and can succeed without a live daemon. If the first `rustc` instead spawns the daemon lazily inside admitted compiler work, the long-lived daemon can inherit and pin that compiler lease and **deadlock later work**. The fingerprint is a near-idle machine with the build/agent stalled and **no `rustc`/`cargo` running**.
+> **⚠ When sccache is configured as a compiler wrapper, before any build or `ci/all.sh` export `SCCACHE_IDLE_TIMEOUT=0` and contact or start the daemon with `sccache --dist-status >/dev/null`.** Check the Cargo wrapper environment variables below, `KIO_TEST_RUNNER_COMPILER_WRAPPER`, and effective Cargo configuration; a build with no sccache wrapper needs no daemon. With the repository's pinned sccache, `--dist-status` contacts an existing daemon or starts one; `--show-stats` reports statistics and can succeed without a live daemon. If the first `rustc` instead spawns the daemon lazily inside admitted compiler work, the long-lived daemon can inherit and pin that compiler lease and **deadlock later work**. The fingerprint is a near-idle machine with the build/agent stalled and **no `rustc`/`cargo` running**.
 >
 > `SCCACHE_IDLE_TIMEOUT=0` is load-bearing: the default ~600s idle shutdown lets the daemon exit during any non-build gap, so the *next* build re-opens the lazy-spawn window the pre-start was meant to close. With the timeout disabled the daemon stays up for the whole session.
 >
@@ -175,22 +175,29 @@ Set the chosen setup once, not as a per-command prefix, so every `cargo`, `ci/ca
 - `SCCACHE_DIR` relocates the cache; `SCCACHE_CACHE_SIZE` bounds it. Both are read by the sccache **server** when it starts — it runs as a per-machine daemon, so a value exported *after* the server is already running takes effect only after a restart. Restart the daemon only with **no build in flight** (§ sccache compiler wrapper warning) — never to pick up a knob mid-build. `sccache --show-stats` (read-only) reports available cache statistics; it is not a daemon-liveness probe.
 - Default cache location is `~/.cache/sccache` (or `$XDG_CACHE_HOME/sccache`), ~10G.
 - `SCCACHE_IDLE_TIMEOUT=0` keeps the daemon alive for the whole session. The default ~600s idle shutdown lets it exit during a non-build gap, re-opening the lazy-spawn deadlock window the explicit start was meant to close; set it whenever you pre-start the server.
-- Export `SCCACHE_IDLE_TIMEOUT=0`, then contact or start the server with `sccache --dist-status >/dev/null` before `ci/all.sh`, rather than letting the first `rustc` spawn it lazily. Local CI entry points perform an early fail-fast check for wrappers configured explicitly through their environment and recheck at the last safe point after each newly acquired compiler admission. A nested compiler command carrying that same canonical inherited compiler lease reuses its already-established readiness; no result is persisted across independent leases. The session-level check remains required because those scripts cannot discover a wrapper hidden in Cargo configuration.
+- With sccache configured, export `SCCACHE_IDLE_TIMEOUT=0`, then contact or start the server with `sccache --dist-status >/dev/null` before `ci/all.sh`, rather than letting the first `rustc` spawn it lazily. Local CI entry points perform an early fail-fast check for wrappers configured explicitly through their environment and recheck at the last safe point after each newly acquired compiler admission. A nested compiler command carrying that same canonical inherited compiler lease reuses its already-established readiness; no result is persisted across independent leases. The session-level check remains required because those scripts cannot discover a wrapper hidden in Cargo configuration.
 
 Inspect the effective local setup with:
 
 ```sh
 printf 'RUSTC_WRAPPER=%s\n' "${RUSTC_WRAPPER-}"
+printf 'RUSTC_WORKSPACE_WRAPPER=%s\n' "${RUSTC_WORKSPACE_WRAPPER-}"
+printf 'CARGO_BUILD_RUSTC_WRAPPER=%s\n' "${CARGO_BUILD_RUSTC_WRAPPER-}"
+printf 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=%s\n' "${CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER-}"
 printf 'CARGO_INCREMENTAL=%s\n' "${CARGO_INCREMENTAL-}"
 printf 'KIO_TEST_RUNNER_COMPILER_WRAPPER=%s\n' "${KIO_TEST_RUNNER_COMPILER_WRAPPER-}"
 printf 'KIO_CI_SERIALIZE_CARGO=%s\n' "${KIO_CI_SERIALIZE_CARGO-}"
 command -v sccache >/dev/null && sccache --show-stats
-for f in .cargo/config.toml .cargo/config "${CARGO_HOME:-$HOME/.cargo}/config.toml" "${CARGO_HOME:-$HOME/.cargo}/config"; do
-  [ -f "$f" ] && printf 'Cargo config present: %s\n' "$f"
-done
 ```
 
-If a Cargo config file is present, inspect it before drawing conclusions about cache behavior: it can set `build.rustc-wrapper`, `build.incremental`, or `[env]` values such as `CARGO_INCREMENTAL` and `SCCACHE_DIR` even when the shell environment is empty. Prefer changing the shell environment for a session; edit or add Cargo config only as a deliberate local policy.
+For each Cargo invocation, inspect `.cargo/config.toml` and `.cargo/config` in
+its actual working directory and every ancestor, plus `config.toml` and
+`config` in `CARGO_HOME` (`~/.cargo` by default), and any explicit `--config`
+override. These files may set `build.rustc-wrapper`,
+`build.rustc-workspace-wrapper`, `build.incremental`, or `[env]` values even
+when the shell variables above are empty. The printout alone cannot establish
+that no wrapper is configured. Prefer changing the shell environment for a
+session; edit or add Cargo config only as a deliberate local policy.
 
 Rust runtime cases compile generated host code through the fixed Rust test runner outside Cargo's normal `rustc-wrapper` path. For those, set `KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache` alongside the Cargo wrapper when running the test runner locally; it wraps compatible direct compiler invocations from that runner. Emission `run.sh` files instead invoke their host toolchain by bare command name through the harness's compiler-admission proxy; the test-runner wrapper does not apply to them. GitHub CI still relies on `Swatinem/rust-cache` for Cargo artifacts, and Linux test-runner jobs additionally set `KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache` when the mise-provisioned binary is present.
 

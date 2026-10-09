@@ -25,7 +25,7 @@ fn run_curried(f: String -> String -> String) -> String {
   f("arg-applied\n"(String))("dropped"(String))
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Full per-group application of a multi-group module-fn value.
   let first = get_first();
   print(first("first-direct\n"(String))("dropped"(String)));

@@ -18,4 +18,4 @@ fn present() -> . | dep.Box(String) { widen_sum!(dep.make("present\n")) }
 
 fn empty() -> . | dep.Box(String) { widen_sum!(()) }
 
-pub fn main() -> . { print(select(present())); print(select(empty())) }
+pub fn main() { print(select(present())); print(select(empty())) }

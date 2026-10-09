@@ -12,13 +12,13 @@ fn prefix_identity(x: String) -> String { x }
 
 op ! _ { impl prefix_identity; };
 
-fn type_only[A]() -> . { () }
+fn type_only[A]() { () }
 
 fn product_call_arg(p: String & String) -> String & String { id(String & String, p) }
 
 fn paren_product_call_arg(p: String & String) -> String & String { id(String & String, p) }
 
-fn bottom_call_arg() -> . { type_only(!, ()) }
+fn bottom_call_arg() { type_only(!, ()) }
 
 fn prefix_bang_call_arg(value: String) -> String { id(String, ! value) }
 

@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print("a\u0007b\bc\fd\n"(String)) }
+pub fn main() { print("a\u0007b\bc\fd\n"(String)) }

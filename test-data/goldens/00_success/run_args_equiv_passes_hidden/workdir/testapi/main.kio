@@ -10,4 +10,4 @@ equiv standard_path_pretest() {
   "runner output\n"(String)
 }
 
-pub fn main() -> . { print(message(())) }
+pub fn main() { print(message(())) }

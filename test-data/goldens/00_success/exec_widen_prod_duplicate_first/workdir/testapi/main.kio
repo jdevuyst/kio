@@ -28,7 +28,7 @@ fn render(w: String & String & String & String) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let source = __pair__(String, String, "left", "right");
   print(render(widen_pair(source)))
 }

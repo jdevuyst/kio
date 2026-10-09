@@ -233,3 +233,174 @@ fn skip_unsupported_does_not_apply_to_explicit_target() {
         assert!(!package.path().join("out").exists());
     }
 }
+
+fn assert_build_rejected(label: &str, output: &Output, cause: &str) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(40), "{label}: {stderr}");
+    assert!(stderr.contains(cause), "{label}: {stderr}");
+}
+
+#[test]
+fn every_backend_rejects_output_containing_source_before_writes() {
+    for (label, binary) in binaries() {
+        for target in [
+            "js",
+            "ts",
+            "go",
+            "python",
+            "java",
+            "swift",
+            "haskell",
+            "rust",
+            "kio-prime",
+        ] {
+            let package = TempDir::new().unwrap();
+            write_skip_package(
+                package.path(),
+                "app",
+                &format!("target {target} {{ out \"src\"; }}"),
+            );
+            let source = "module src/extra;\n";
+            write(&package.path().join("src/extra.kio"), source);
+            write(&package.path().join("src/sentinel.txt"), "keep me");
+            let output = run(&binary, package.path(), &["build"]);
+            assert_build_rejected(label, &output, "contains input");
+            assert_eq!(
+                fs::read_to_string(package.path().join("src/extra.kio")).unwrap(),
+                source
+            );
+            assert_eq!(
+                fs::read_to_string(package.path().join("src/sentinel.txt")).unwrap(),
+                "keep me"
+            );
+        }
+    }
+}
+
+#[test]
+fn selected_output_overlap_is_global_but_unselected_targets_are_ignored() {
+    for (label, binary) in binaries() {
+        for second in ["out", "out/nested", "out/unused/../nested/.."] {
+            let package = TempDir::new().unwrap();
+            write_skip_package(
+                package.path(),
+                "app",
+                &format!("target js {{ out \"out\"; }}; target rust {{ out \"{second}\"; }}"),
+            );
+            write(&package.path().join("out/sentinel.txt"), "keep me");
+            assert_build_rejected(
+                label,
+                &run(&binary, package.path(), &["build"]),
+                "conflicting output directories",
+            );
+            assert_eq!(
+                fs::read_to_string(package.path().join("out/sentinel.txt")).unwrap(),
+                "keep me"
+            );
+            assert_success(label, &run(&binary, package.path(), &["build", "js", "js"]));
+            assert!(package.path().join("out/app.js").is_file());
+        }
+    }
+}
+
+#[test]
+fn cross_package_preflight_protects_outputs_and_other_package_inputs() {
+    for (label, binary) in binaries() {
+        let workspace = TempDir::new().unwrap();
+        let a = workspace.path().join("a");
+        let b = workspace.path().join("b");
+        let safe = workspace.path().join("safe");
+        write_skip_package(&a, "a", "target js { out \"../shared\"; }");
+        write_skip_package(&b, "b", "target js { out \"../shared/child\"; }");
+        write_skip_package(&safe, "safe", "target js { out \"out\"; }");
+        write(&safe.join("out/sentinel.txt"), "keep safe output");
+        write(&workspace.path().join("shared/sentinel.txt"), "keep me");
+        assert_build_rejected(
+            label,
+            &run(&binary, workspace.path(), &["build"]),
+            "conflicting output directories",
+        );
+        assert_eq!(
+            fs::read_to_string(workspace.path().join("shared/sentinel.txt")).unwrap(),
+            "keep me"
+        );
+        assert_eq!(
+            fs::read_to_string(safe.join("out/sentinel.txt")).unwrap(),
+            "keep safe output"
+        );
+        assert_success(label, &run(&binary, workspace.path(), &["build", "./a"]));
+        assert!(workspace.path().join("shared/a.js").is_file());
+        assert_eq!(
+            fs::read_to_string(safe.join("out/sentinel.txt")).unwrap(),
+            "keep safe output"
+        );
+        write_skip_package(&a, "a", "target js { out \"../b\"; }");
+        let manifest = fs::read(b.join("b.pkg.kio")).unwrap();
+        assert_build_rejected(
+            label,
+            &run(&binary, workspace.path(), &["build"]),
+            "contains input",
+        );
+        assert_eq!(fs::read(b.join("b.pkg.kio")).unwrap(), manifest);
+        assert!(!b.join("out").exists());
+    }
+}
+
+#[test]
+fn independent_package_error_keeps_safe_sibling_builds_and_external_output() {
+    for (label, binary) in binaries() {
+        let workspace = TempDir::new().unwrap();
+        let a = workspace.path().join("a");
+        let b = workspace.path().join("b");
+        write_skip_package(&a, "a", "target js { out \"../external\"; }");
+        write(&b.join("b.pkg.kio"), "package b; build { invalid }");
+        let output = run(&binary, workspace.path(), &["build"]);
+        assert_eq!(
+            output.status.code(),
+            Some(11),
+            "{label}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(workspace.path().join("external/a.js").is_file());
+    }
+}
+
+#[test]
+fn warm_artifact_restore_cannot_erase_newly_collected_input() {
+    for (label, binary) in binaries() {
+        let package = TempDir::new().unwrap();
+        write_skip_package(package.path(), "app", "target js { out \"out/js\"; }");
+        let manifest = package.path().join("app.pkg.kio");
+        write(
+            &manifest,
+            &fs::read_to_string(&manifest)
+                .unwrap()
+                .replace("cache ();", "cache \"cache\";"),
+        );
+        let timed_build = || {
+            Command::new(&binary)
+                .arg("build")
+                .env("KIO_DEBUG_TIMING", "build")
+                .current_dir(package.path())
+                .output()
+                .unwrap()
+        };
+        assert_success(label, &timed_build());
+        let warm = timed_build();
+        assert_success(label, &warm);
+        let stderr = String::from_utf8_lossy(&warm.stderr);
+        assert!(
+            stderr.contains("artifact_hit=1"),
+            "{label}: expected a real artifact hit: {stderr}"
+        );
+        let source = "module out/js/preserved;\n";
+        write(&package.path().join("out/js/preserved.kio"), source);
+        let output = timed_build();
+        assert_build_rejected(label, &output, "contains input");
+        assert_eq!(
+            fs::read_to_string(package.path().join("out/js/preserved.kio")).unwrap(),
+            source
+        );
+        assert!(package.path().join("out/js/app.js").is_file());
+    }
+}

@@ -1,0 +1,14 @@
+package native_docs;
+
+build {
+  cache "out/cache";
+
+  target haskell {
+    out "out/haskell"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

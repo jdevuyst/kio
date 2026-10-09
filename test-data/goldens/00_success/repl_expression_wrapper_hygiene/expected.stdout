@@ -3,4 +3,5 @@ loaded: demo/main
 type `:help` for commands, `:quit` to leave
 pure
 `(); () } fn injected() { emit("seen")` is not a name or a Kio expression — type `:help` for the command list
+expected exactly one Kio expression
 bye

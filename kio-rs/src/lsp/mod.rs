@@ -70,6 +70,8 @@ pub mod signature_help;
 pub mod snapshot;
 pub mod state;
 pub mod symbols;
+mod ufcs_refactor;
+pub(crate) mod unused_warnings;
 pub mod util;
 pub mod worker;
 
@@ -288,7 +290,7 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 ///   `textDocument/inlayHint` with inferred `let` binder types and
 ///   inferred type-argument hints recorded in the latest typed
 ///   snapshot.
-/// - `codeActionProvider = { codeActionKinds: ["quickfix", "source.fixAll"], resolveProvider: true }`
+/// - `codeActionProvider = { codeActionKinds: ["quickfix", "source.fixAll", "refactor.rewrite"], resolveProvider: true }`
 ///   — respond to `textDocument/codeAction` by turning compiler
 ///   fixes carried in diagnostic data into quick fixes and lazily
 ///   resolving workspace-derived quick fixes.
@@ -327,6 +329,9 @@ fn server_capabilities() -> ServerCapabilities {
                 "[".to_owned(),
                 "(".to_owned(),
                 ",".to_owned(),
+                "`".to_owned(),
+                "@".to_owned(),
+                ".".to_owned(),
             ]),
             all_commit_characters: None,
             work_done_progress_options: Default::default(),
@@ -348,6 +353,7 @@ fn server_capabilities() -> ServerCapabilities {
             code_action_kinds: Some(vec![
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::SOURCE_FIX_ALL,
+                CodeActionKind::REFACTOR_REWRITE,
             ]),
             resolve_provider: Some(true),
             work_done_progress_options: Default::default(),
@@ -418,11 +424,7 @@ fn main_loop(
                 }
             }
             recv(result_rx) -> r => {
-                let result = match r {
-                    Ok(r) => r,
-                    // Worker shut down; nothing more to publish.
-                    Err(_) => continue,
-                };
+                let result = r.expect("LSP analysis worker stopped before server shutdown");
                 publish_worker_result(connection, state, result)?;
             }
         }
@@ -942,7 +944,17 @@ fn dispatch_request_inner(
                 }
             };
             let uri = params.text_document.uri.clone();
-            schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, &uri, false);
+            let wants_refactoring = code_actions::code_action_kind_requested(
+                &params.context,
+                &CodeActionKind::REFACTOR_REWRITE,
+            );
+            schedule_foreground_analysis_if_stale(
+                state,
+                scheduler,
+                workspace_root,
+                &uri,
+                wants_refactoring,
+            );
             let syntax = request_syntax_module(state, &uri);
             let (source, module) = match syntax {
                 RequestSyntaxModule::Contextual { module, source }
@@ -979,6 +991,10 @@ fn dispatch_request_inner(
             let analysis = focus_file
                 .as_deref()
                 .and_then(|path| state.analysis_for_file(path));
+            let refactoring_analysis = focus_file
+                .as_deref()
+                .filter(|_| wants_refactoring)
+                .and_then(|path| state.completion_analysis_for_file(path, &uri));
             // Eager fixes are self-contained in Diagnostic.data and remain safe
             // even when a concrete file URI cannot authenticate a syntax
             // context. Contextual auto-import and add-stub actions receive no
@@ -988,6 +1004,7 @@ fn dispatch_request_inner(
                 source.as_deref(),
                 module.as_ref(),
                 analysis,
+                refactoring_analysis,
                 document_version,
                 fix_validation,
             );
@@ -1793,6 +1810,69 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
+    #[test]
+    fn disconnected_analysis_worker_surfaces_internal_failure() {
+        let (server, client) = Connection::memory();
+        let (worker_tx, worker_rx) = crossbeam_channel::unbounded::<WorkerResult>();
+        let worker = std::thread::spawn(move || {
+            let _sender = worker_tx;
+            panic!("injected analysis worker failure");
+        });
+        assert!(worker.join().is_err());
+        let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+        let server_thread = std::thread::spawn(move || {
+            let (mut scheduler, _results) = Scheduler::spawn();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                main_loop(
+                    &server,
+                    &mut ServerState::new(),
+                    &mut scheduler,
+                    &worker_rx,
+                    None,
+                )
+            }));
+            let result = result.map(|result| result.unwrap()).map_err(|panic| {
+                panic
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| {
+                        panic
+                            .downcast_ref::<&str>()
+                            .map(|message| (*message).to_owned())
+                    })
+                    .unwrap_or_default()
+            });
+            done_tx.send(result).unwrap();
+        });
+        let result = done_rx.recv_timeout(Duration::from_secs(1));
+        if result.is_err() {
+            client
+                .sender
+                .send(Message::Request(lsp_server::Request {
+                    id: 1.into(),
+                    method: "shutdown".into(),
+                    params: serde_json::Value::Null,
+                }))
+                .unwrap();
+            client
+                .sender
+                .send(Message::Notification(lsp_server::Notification {
+                    method: "exit".into(),
+                    params: serde_json::Value::Null,
+                }))
+                .unwrap();
+            done_rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+        }
+        server_thread.join().unwrap();
+        let error = result
+            .expect("worker loss must stop the server without waiting for a client request")
+            .expect_err("worker loss is an internal failure");
+        assert!(error.contains("analysis worker"), "{error}");
+    }
+
     fn workspace_path(relative: &str) -> PathBuf {
         crate::lsp::util::test_file_path("/workspace").join(relative)
     }
@@ -2568,7 +2648,10 @@ mod tests {
                 ":".to_owned(),
                 "[".to_owned(),
                 "(".to_owned(),
-                ",".to_owned()
+                ",".to_owned(),
+                "`".to_owned(),
+                "@".to_owned(),
+                ".".to_owned()
             ])
         );
     }
@@ -2814,7 +2897,7 @@ mod tests {
     }
 
     #[test]
-    fn server_caps_advertise_quickfix_and_fix_all_code_actions() {
+    fn server_caps_advertise_quickfix_fix_all_and_refactoring_code_actions() {
         let caps = server_capabilities();
         let provider = caps
             .code_action_provider
@@ -2828,8 +2911,9 @@ mod tests {
             Some(vec![
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::SOURCE_FIX_ALL,
+                CodeActionKind::REFACTOR_REWRITE,
             ]),
-            "codeActionProvider must advertise quickfix and fix-all actions"
+            "codeActionProvider must advertise quickfix, fix-all and refactoring actions"
         );
     }
 

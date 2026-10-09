@@ -15,6 +15,8 @@ use crate::error::Error;
 use crate::pass::resolve::{LocatedError, Package, PackageFileEntry};
 use crate::path_display::DisplayPath;
 use crate::span::Span;
+#[cfg(all(feature = "cli", feature = "parallel"))]
+use rayon::prelude::*;
 #[cfg(feature = "cli")]
 use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashMap};
@@ -27,6 +29,22 @@ use std::path::{Path, PathBuf};
 
 #[cfg(all(feature = "cli", feature = "surface"))]
 mod retype_labels;
+
+#[cfg(all(test, feature = "cli"))]
+mod build_input_tests;
+
+#[cfg(all(test, feature = "cli"))]
+#[derive(Default)]
+struct BuildInputWork {
+    inventories: usize,
+    manifest_parses: usize,
+    reads: Vec<PathBuf>,
+}
+
+#[cfg(all(test, feature = "cli"))]
+thread_local! {
+    static BUILD_INPUT_WORK: std::cell::RefCell<Option<BuildInputWork>> = const { std::cell::RefCell::new(None) };
+}
 
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -108,6 +126,12 @@ impl SourceOverlay {
     }
 
     pub fn read(&self, path: &Path) -> io::Result<String> {
+        #[cfg(all(test, feature = "cli"))]
+        BUILD_INPUT_WORK.with_borrow_mut(|work| {
+            if let Some(work) = work {
+                work.reads.push(path.to_path_buf());
+            }
+        });
         #[cfg(all(test, feature = "cli"))]
         import_grammar_observe_source_read(path)?;
         if let Some(s) = self.files.get(path) {
@@ -430,6 +454,65 @@ pub struct ParsedPackageCollection {
     pub packages: BTreeMap<PackageKey, ParsedPackage>,
 }
 
+/// Build preflight retains paths and the manifest, never ordinary source bodies.
+#[cfg(feature = "cli")]
+#[derive(Debug)]
+pub(crate) struct PreparedBuildInputs {
+    pub(crate) root: PathBuf,
+    pub(crate) files: Vec<PathBuf>,
+    pub(crate) manifest: PackageFileEntry<Surface>,
+    manifest_source: String,
+}
+
+#[cfg(feature = "cli")]
+pub(crate) fn prepare_build_inputs(
+    cwd: &Path,
+    manifest_path: &Path,
+    known_paths: &mut Vec<PathBuf>,
+) -> Result<PreparedBuildInputs, WalkError> {
+    let root = canonicalize(cwd).map_err(|source| WalkError::CanonicalizeRoot {
+        path: cwd.to_path_buf(),
+        source,
+    })?;
+    let manifest_path = root.join(
+        manifest_path
+            .file_name()
+            .expect("package marker has a filename"),
+    );
+    known_paths.clear();
+    known_paths.push(manifest_path.clone());
+    collect_kio_files(&root, &root, known_paths)?;
+    known_paths.sort();
+    known_paths.dedup();
+    let source = SourceOverlay::empty()
+        .read(&manifest_path)
+        .map_err(|source| WalkError::ReadFile {
+            path: manifest_path.clone(),
+            source,
+        })?;
+    let manifest = parse_package_manifest(&manifest_path, &source)?;
+    Ok(PreparedBuildInputs {
+        root,
+        files: std::mem::take(known_paths),
+        manifest,
+        manifest_source: source,
+    })
+}
+
+#[cfg(feature = "cli")]
+pub(crate) fn walk_prepared_build(
+    inputs: &PreparedBuildInputs,
+) -> Result<ParsedPackageCollection, (WalkError, BTreeMap<PathBuf, String>)> {
+    parse_package_file_list(
+        &inputs.root,
+        &SourceOverlay::empty(),
+        &inputs.files,
+        Some((&inputs.manifest, &inputs.manifest_source)),
+    )
+    .map(|parsed| parsed_collection(inputs.root.clone(), parsed))
+    .map_err(|error| (error, BTreeMap::new()))
+}
+
 #[cfg(feature = "cli")]
 pub fn walk(cwd: &Path) -> Result<ParsedPackageCollection, (WalkError, BTreeMap<PathBuf, String>)> {
     walk_with_overlay(cwd, &SourceOverlay::empty())
@@ -453,34 +536,38 @@ pub fn walk_with_overlay(
         })?,
     };
     match parse_package_files(&root, overlay) {
-        Ok(parsed) => {
-            let package_name = parsed
-                .package_file
-                .as_ref()
-                .map(|entry| entry.package_name.clone())
-                .or_else(|| {
-                    parsed.modules.first().and_then(|(_, module)| {
-                        module.path.segments.first().map(|s| s.name.clone())
-                    })
-                })
-                .unwrap_or_else(|| {
-                    root.file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("pkg")
-                        .to_owned()
-                });
-            let key = PackageKey {
-                canonical_dir: root,
-                package_name,
-            };
-            let mut packages = BTreeMap::new();
-            packages.insert(key.clone(), parsed);
-            Ok(ParsedPackageCollection {
-                root: key,
-                packages,
-            })
-        }
+        Ok(parsed) => Ok(parsed_collection(root, parsed)),
         Err(error) => Err((error, BTreeMap::new())),
+    }
+}
+
+#[cfg(feature = "cli")]
+fn parsed_collection(root: PathBuf, parsed: ParsedPackage) -> ParsedPackageCollection {
+    let package_name = parsed
+        .package_file
+        .as_ref()
+        .map(|entry| entry.package_name.clone())
+        .or_else(|| {
+            parsed
+                .modules
+                .first()
+                .and_then(|(_, module)| module.path.segments.first().map(|s| s.name.clone()))
+        })
+        .unwrap_or_else(|| {
+            root.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("pkg")
+                .to_owned()
+        });
+    let key = PackageKey {
+        canonical_dir: root,
+        package_name,
+    };
+    let mut packages = BTreeMap::new();
+    packages.insert(key.clone(), parsed);
+    ParsedPackageCollection {
+        root: key,
+        packages,
     }
 }
 
@@ -517,17 +604,101 @@ fn parse_package_files(root: &Path, overlay: &SourceOverlay) -> Result<ParsedPac
         files
     };
 
+    parse_package_file_list(root, overlay, &files, None)
+}
+
+#[cfg(feature = "cli")]
+fn parse_package_manifest(
+    path: &Path,
+    source: &str,
+) -> Result<PackageFileEntry<Surface>, WalkError> {
+    #[cfg(test)]
+    BUILD_INPUT_WORK.with_borrow_mut(|work| {
+        if let Some(work) = work {
+            work.manifest_parses += 1;
+        }
+    });
+    let filename = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let package_name = crate::file_kind::package_stem(filename)
+        .unwrap_or(filename)
+        .to_owned();
+    let package_file = crate::pass::parser::parse_package_file(source, Some(&package_name))
+        .map_err(|error| WalkError::Parse {
+            path: path.to_path_buf(),
+            source_text: source.to_owned(),
+            error,
+        })?;
+    Ok(PackageFileEntry {
+        file_path: path.to_path_buf(),
+        package_name,
+        package_file,
+    })
+}
+
+#[cfg(feature = "cli")]
+fn parse_package_file_list(
+    root: &Path,
+    overlay: &SourceOverlay,
+    files: &[PathBuf],
+    manifest: Option<(&PackageFileEntry<Surface>, &str)>,
+) -> Result<ParsedPackage, WalkError> {
+    parse_package_file_list_with_parser(root, overlay, files, manifest, |_, source| {
+        crate::pass::parser::parse_module_file_lazy(source)
+    })
+}
+
+#[cfg(feature = "cli")]
+fn parse_package_file_list_with_parser(
+    root: &Path,
+    overlay: &SourceOverlay,
+    files: &[PathBuf],
+    manifest: Option<(&PackageFileEntry<Surface>, &str)>,
+    parse_module: impl Fn(&Path, &str) -> Result<crate::pass::parser::ModuleFile, Error> + Sync,
+) -> Result<ParsedPackage, WalkError> {
+    let source_files: Vec<_> = files
+        .iter()
+        .map(|path| {
+            let source = match manifest.filter(|(entry, _)| path == &entry.file_path) {
+                Some((_, source)) => Ok(source.to_owned()),
+                None => overlay.read(path).map_err(|source| WalkError::ReadFile {
+                    path: path.clone(),
+                    source,
+                }),
+            };
+            (path, source)
+        })
+        .collect();
+    // Keep read failures beside their file: an earlier parse error must still
+    // win when the ordered results are consumed.
+    let parsed_files: Vec<_> = crate::maybe_into_par_iter!(source_files)
+        .map(|(path, source)| {
+            let module = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| crate::file_kind::is_module_file(name))
+                .and_then(|_| source.as_ref().ok())
+                .map(|source| parse_module(path, source));
+            (path, source, module)
+        })
+        .collect();
     let mut package_files = Vec::new();
     let mut modules = Vec::new();
     let mut lazy_modules = BTreeMap::new();
     let mut dep_files = Vec::new();
     let mut sources = BTreeMap::new();
 
-    for path in files {
-        let source = overlay.read(&path).map_err(|source| WalkError::ReadFile {
-            path: path.clone(),
-            source,
-        })?;
+    for (path, source, parsed_module) in parsed_files {
+        let source = source?;
+        if let Some((entry, _)) = manifest
+            && path == &entry.file_path
+        {
+            sources.insert(path.clone(), source);
+            package_files.push(entry.clone());
+            continue;
+        }
         let filename = path
             .file_name()
             .and_then(|s| s.to_str())
@@ -536,22 +707,7 @@ fn parse_package_files(root: &Path, overlay: &SourceOverlay) -> Result<ParsedPac
 
         if crate::file_kind::is_package_file(filename) {
             if path.parent() == Some(root) {
-                let package_name = crate::file_kind::package_stem(filename)
-                    .unwrap_or(filename)
-                    .to_owned();
-                let package_file =
-                    crate::pass::parser::parse_package_file(&source, Some(&package_name)).map_err(
-                        |error| WalkError::Parse {
-                            path: path.clone(),
-                            source_text: source,
-                            error,
-                        },
-                    )?;
-                package_files.push(PackageFileEntry {
-                    file_path: path,
-                    package_name,
-                    package_file,
-                });
+                package_files.push(parse_package_manifest(path, &source)?);
             }
             continue;
         }
@@ -567,19 +723,19 @@ fn parse_package_files(root: &Path, overlay: &SourceOverlay) -> Result<ParsedPac
                             error,
                         },
                     )?;
-                dep_files.push((path, dependency_file));
+                dep_files.push((path.clone(), dependency_file));
             }
             continue;
         }
 
         if crate::file_kind::is_module_file(filename) {
-            let parsed = crate::pass::parser::parse_module_file_lazy(&source).map_err(|error| {
-                WalkError::Parse {
+            let parsed = parsed_module
+                .expect("a successfully read module file was parsed")
+                .map_err(|error| WalkError::Parse {
                     path: path.clone(),
                     source_text: source,
                     error,
-                }
-            })?;
+                })?;
             if let Some(lazy) = parsed.lazy {
                 lazy_modules.insert(path.clone(), lazy);
             }
@@ -1728,6 +1884,7 @@ fn host_fn_to_wrapper(h: &crate::ast::HostFn, provider_alias: &str) -> crate::as
     };
     let body = Expr::Call {
         occurrence: Default::default(),
+        diagnostic: Default::default(),
         callee: Box::new(callee),
         args: call_args,
         meta: Meta::new(span),
@@ -4124,6 +4281,14 @@ fn write_materialized_file(path: &Path, contents: &str) -> io::Result<()> {
 
 #[cfg(feature = "cli")]
 fn collect_kio_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), WalkError> {
+    #[cfg(test)]
+    if dir == root {
+        BUILD_INPUT_WORK.with_borrow_mut(|work| {
+            if let Some(work) = work {
+                work.inventories += 1;
+            }
+        });
+    }
     let mut entries = fs::read_dir(dir)
         .map_err(|source| WalkError::Io {
             path: dir.to_path_buf(),

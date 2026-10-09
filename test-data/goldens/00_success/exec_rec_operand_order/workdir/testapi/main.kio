@@ -188,7 +188,7 @@ rec(loop) {
   fn direct_member_leaf(n: I32) -> I32 { mark("0", 26) }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let _ = call_order(1);
   let _ = tuple_order(1);
   let _ = label_order(1);

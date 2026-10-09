@@ -12,4 +12,4 @@ import testapi/io(print);
 // fires `R-Project-Prod` to drop the unit side-payload.
 fn provider() -> String & . { ("ease! return narrowed ok\n", ()) }
 
-pub fn main() -> . { let narrow_ret = ease!(provider, . -> String); print(narrow_ret()) }
+pub fn main() { let narrow_ret = ease!(provider, . -> String); print(narrow_ret()) }

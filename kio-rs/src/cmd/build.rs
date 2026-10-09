@@ -1,30 +1,11 @@
 //! Implementation of `kio build`.
 //!
-//! Pipeline:
-//!
-//! 1. Confirm a package marker — exactly one `<name>.pkg.kio` at
-//!    the package root — **before** the source walk, so invoking
-//!    `kio build` outside a package fails loud rather than recursing
-//!    into stray nested `*.kio` files.
-//! 2. Run the same checks `kio check` runs (parse → use → name-res →
-//!    type). If any fail, return their category exit code without
-//!    writing output. The package file (with its `build { ... }`
-//!    block) is parsed as part of this walk.
-//! 3. Read the `build { ... }` block off the already-parsed root
-//!    package file. A package whose package file has no build
-//!    block is a build error (exit 40), per `specs/exit-codes.md`.
-//! 4. Resolve the user-supplied target ids (or all of them if none were
-//!    given) against the block's `target <id> { ... }` blocks. Unknown
-//!    ids are a build error.
-//! 5. Dispatch each selected target to its backend. Backends are
-//!    recognized by bare target ids such as `js`, `python`, `java`,
-//!    `rust`, and `kio-prime`; other ids are rejected.
-//!
-//! The "target id selects backend" convention is a placeholder for what
-//! the spec leaves open ("hand the target block's key/value map to the
-//! corresponding backend" — without saying how the backend is
-//! identified). It will tighten once a `backend` key (or equivalent) is
-//! settled in the spec.
+//! Output preflight spans all selected packages so no target can erase another
+//! target's output or a known compiler input before a later package is checked.
+//! It retains the ordinary source inventory and parsed root manifest, while
+//! module parsing and checking stay inside the scheduled package fan-out.
+//! Backend dispatch reuses that manifest and selection for fresh and cached
+//! output, keeping the checked paths tied to the actual output configuration.
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the
 // trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
@@ -50,6 +31,8 @@ use crate::cmd::build_timing;
 use crate::cmd::check;
 use crate::exit_code::ExitCode;
 use crate::pass::resolve::Package;
+
+mod output_guard;
 
 #[cfg(test)]
 mod cache_work_counters {
@@ -201,6 +184,16 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
         Err(code) => return code,
     };
 
+    // Every output must be checked before any package starts emission. Only
+    // paths and manifests cross this barrier; scheduled source parsing stays lazy.
+    let plans: std::collections::BTreeMap<_, _> = crate::maybe_par_iter!(&package_dirs)
+        .map(|dir| (dir.clone(), output_guard::prepare(dir, &target_ids)))
+        .collect();
+    if let Err(message) = output_guard::validate(&plans) {
+        eprintln!("error: {message}");
+        return ExitCode::Build;
+    }
+
     // Build each discovered package, rooted at its own directory.
     // Packages are independent — own workspace, own typecheck, own
     // codegen, disjoint `out/` — so the fan-out runs them in parallel
@@ -214,9 +207,20 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
         &package_dirs,
         "kio build",
         |pkg_dir, cap| {
+            let plan = plans
+                .get(pkg_dir)
+                .expect("every selected package has a plan");
+            let output_guard::PackagePlan::Ready { inputs, selected } = plan else {
+                let output_guard::PackagePlan::Failed { code, stderr, .. } = plan else {
+                    unreachable!()
+                };
+                cap.stderr.push_str(stderr);
+                return *code;
+            };
             build_one_package(
-                pkg_dir,
-                &target_ids,
+                inputs,
+                selected,
+                !target_ids.is_empty(),
                 skip_unsupported,
                 prime_only,
                 build_total_start,
@@ -335,44 +339,44 @@ fn resolve_package_dirs(cwd: &Path, selectors: &[String]) -> Result<Vec<PathBuf>
     Ok(deduped)
 }
 
-/// Build one package rooted at `pkg_dir`. Runs the same pipeline the
-/// single-package path used to run inline, but rooted at an explicit
-/// directory so the multi-package fan-out can build each discovered
-/// package independently.
-fn build_one_package(
-    pkg_dir: &Path,
-    target_ids: &[String],
-    skip_unsupported: bool,
-    prime_only: bool,
-    build_total_start: Instant,
-    cap: &mut CapturedOutput,
-) -> ExitCode {
-    // Phase 0: confirm the package marker **before** any source walk.
+fn package_marker(pkg_dir: &Path, cap: &mut CapturedOutput) -> Result<PathBuf, ExitCode> {
     match find_package_file(pkg_dir) {
-        Ok(_) => {}
+        Ok(path) => Ok(path),
         Err(PackageFileError::Missing) => {
             cap_errln!(
                 cap,
                 "error: no `<name>.pkg.kio` in {} — `kio build` requires a package file at the package root; run `kio init` to scaffold one (see specs/package.md § Package File)",
                 DisplayPath(pkg_dir)
             );
-            return ExitCode::Build;
+            Err(ExitCode::Build)
         }
         Err(PackageFileError::Multiple(paths)) => {
             cap_errln!(
                 cap,
                 "error: multiple `*.pkg.kio` files at the package root; expected exactly one"
             );
-            for p in paths {
-                cap_errln!(cap, "  {}", DisplayPath(&p));
+            for path in paths {
+                cap_errln!(cap, "  {}", DisplayPath(&path));
             }
-            return ExitCode::Build;
+            Err(ExitCode::Build)
         }
-        Err(PackageFileError::Io(e)) => {
-            cap_errln!(cap, "error: walking source tree: {e}");
-            return ExitCode::Internal;
+        Err(PackageFileError::Io(error)) => {
+            cap_errln!(cap, "error: walking source tree: {error}");
+            Err(ExitCode::Internal)
         }
-    };
+    }
+}
+
+fn build_one_package(
+    inputs: &crate::package_collection::PreparedBuildInputs,
+    selected_indices: &[usize],
+    explicit: bool,
+    skip_unsupported: bool,
+    prime_only: bool,
+    build_total_start: Instant,
+    cap: &mut CapturedOutput,
+) -> ExitCode {
+    let pkg_dir = &inputs.root;
 
     // Dependencies are materialized at `kio dep fetch`/`update` and committed,
     // so the build consumes their re-rooted `.kio` modules as ordinary source
@@ -390,7 +394,7 @@ fn build_one_package(
     // package-check cache.
     let typecheck_start = Instant::now();
     let mut workspace =
-        match check::compile_workspace_at_buffered(pkg_dir, prime_only, false, &mut cap.stderr) {
+        match check::compile_prepared_build_buffered(inputs, prime_only, &mut cap.stderr) {
             Ok(w) => w,
             Err(code) => return code,
         };
@@ -410,12 +414,6 @@ fn build_one_package(
         root.prune_to_bridge_reachable();
     }
 
-    // Phase 3: read the `build { ... }` block off the already-parsed
-    // root package file. The block was parsed (and its grammar
-    // validated) as part of the Phase-1 source walk, so there is no
-    // separate filesystem lookup or parse here. A package whose
-    // package file declares no build block has no build outputs —
-    // a build error (exit 40), per spec.
     let root_pkg = workspace
         .root_package
         .as_ref()
@@ -428,47 +426,17 @@ fn build_one_package(
     #[cfg(feature = "surface")]
     crate::cmd::sig::warn_if_unrecorded_breaking_buffered(root_pkg, pkg_dir, &mut cap.stderr);
 
-    let build_block = match root_pkg
-        .package_file()
-        .and_then(|d| d.package_file.build.as_ref())
-    {
-        Some(b) => b,
-        None => {
-            cap_errln!(
-                cap,
-                "error: the package's package file has no `build {{ … }}` block — \
-                 `kio build` requires one to name the compilation targets (see \
-                 specs/package.md § Build target files)"
-            );
-            return ExitCode::Build;
-        }
-    };
-
-    // Phase 3b: enforce target-id uniqueness (spec: "unique within the block").
-    if let Err(msg) = check_unique_ids(build_block) {
-        cap_errln!(cap, "error: {msg}");
-        return ExitCode::Build;
-    }
-
-    // Phase 4: resolve target ids. `explicit` records whether the user
-    // named ids on the CLI — `--skip-unsupported-targets` only applies
-    // to implicit selection.
-    let explicit = !target_ids.is_empty();
-    let selected: Vec<&TargetBlock> = if target_ids.is_empty() {
-        build_block.targets.iter().collect()
-    } else {
-        let mut out = Vec::with_capacity(target_ids.len());
-        for id in target_ids {
-            match build_block.targets.iter().find(|t| t.id == *id) {
-                Some(t) => out.push(t),
-                None => {
-                    cap_errln!(cap, "error: unknown target id `{id}` in the build block");
-                    return ExitCode::Build;
-                }
-            }
-        }
-        out
-    };
+    // Reuse the manifest and target indices whose outputs passed preflight.
+    let build_block = inputs
+        .manifest
+        .package_file
+        .build
+        .as_ref()
+        .expect("preflight selected a build block");
+    let selected: Vec<&TargetBlock> = selected_indices
+        .iter()
+        .map(|&index| &build_block.targets[index])
+        .collect();
 
     // Phase 4b: resolve the enriched-IR cache from the build block's
     // `cache` field. `cache "<path>";` activates every on-disk

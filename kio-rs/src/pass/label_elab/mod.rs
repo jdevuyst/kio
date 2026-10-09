@@ -2148,7 +2148,8 @@ impl LabelElabVisitor<'_> {
     /// imported labels — so a typo on any earns the nearest-match
     /// suggestion (the phase-10 rubric for name-resolution diagnostics).
     fn label_not_in_scope(&self, label: &str, label_span: Span) -> Error {
-        let err = Error::name_res(label_span, format!("label `{label}` is not in scope"));
+        let mut error = Error::name_res(label_span, format!("label `{label}` is not in scope"))
+            .requiring_current_fixes();
         let mut candidates: Vec<&str> = self
             .table
             .iter()
@@ -2156,14 +2157,22 @@ impl LabelElabVisitor<'_> {
             .map(|(name, _)| name.as_str())
             .collect();
         candidates.sort_unstable();
-        match crate::error::closest_name(label, candidates.iter().copied()) {
-            Some(near) => err
-                .with_help(format!(
-                    "a label `{near}` is in scope — did you mean `{near}`?"
-                ))
-                .with_suggestion(label_span, near.to_owned()),
-            None => err,
+        if let Some((near, unique)) =
+            crate::error::closest_name_with_uniqueness(label, candidates.iter().copied())
+        {
+            error = error.with_help(format!(
+                "a label `{near}` is in scope — did you mean `{near}`?"
+            ));
+            // A parsed qualified label's full span can contain trivia, while
+            // its retained spelling contains only identifiers and dots.
+            if unique
+                && !label.is_empty()
+                && label_span.end.checked_sub(label_span.start) == u32::try_from(label.len()).ok()
+            {
+                error = error.with_suggestion(label_span, near);
+            }
         }
+        error
     }
 
     fn resolve_field_access_label(
@@ -2529,6 +2538,65 @@ mod tests {
         match elaborate_package(parsed, None) {
             Ok(_) => panic!("expected elab error"),
             Err(e) => e.error,
+        }
+    }
+
+    #[test]
+    fn label_typo_fix_requires_one_nearest_compact_spelling() {
+        for (source, replacement) in [
+            (
+                "module x; labels { helper: . }; fn main() { let _ = {heper = ()}; () }",
+                Some("helper"),
+            ),
+            (
+                "module x; labels { helper: ., heaper: . }; fn main() { let _ = {heper = ()}; () }",
+                None,
+            ),
+        ] {
+            let error = elab_error(source);
+            assert!(error.diagnostic().help().unwrap().contains("did you mean"));
+            match replacement {
+                Some(replacement) => {
+                    let [fix] = error.diagnostic().fixes() else {
+                        panic!("one label edit")
+                    };
+                    assert_eq!(fix.edits[0].replacement, replacement);
+                    let span = fix.edits[0].span;
+                    assert_eq!(&source[span.start as usize..span.end as usize], "heper");
+                }
+                None => assert!(error.diagnostic().fixes().is_empty()),
+            }
+        }
+    }
+
+    #[test]
+    fn field_access_and_update_typo_fixes_preserve_the_receiver_and_payload() {
+        for expression in ["row.?{heper}", "row.!{heper = ()}"] {
+            for (declarations, unique) in [("helper: .", true), ("helper: ., heaper: .", false)] {
+                let source = format!(
+                    "module x; labels {{ {declarations} }}; \
+                     fn main(row: Helper) {{ let _ = {expression}; () }}"
+                );
+                let error = elab_error(&source);
+                assert!(error.diagnostic().help().unwrap().contains("did you mean"));
+                assert_eq!(error.diagnostic().fixes().len(), usize::from(unique));
+                if unique {
+                    let [edit] = error.diagnostic().fixes()[0].edits.as_slice() else {
+                        panic!("one label-token replacement")
+                    };
+                    assert_eq!(
+                        &source[edit.span.start as usize..edit.span.end as usize],
+                        "heper"
+                    );
+                    let mut repaired = source.clone();
+                    repaired.replace_range(
+                        edit.span.start as usize..edit.span.end as usize,
+                        &edit.replacement,
+                    );
+                    assert_eq!(repaired, source.replace("heper", "helper"));
+                    elab(&repaired);
+                }
+            }
         }
     }
 

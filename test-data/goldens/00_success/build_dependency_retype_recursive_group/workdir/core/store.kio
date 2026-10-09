@@ -5,4 +5,4 @@ rec {
   pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
 }
 
-pub fn accept_even(_value: Even) -> . { () }
+pub fn accept_even(_value: Even) { () }

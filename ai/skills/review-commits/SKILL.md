@@ -45,6 +45,11 @@ For every normative behavior delta in the window, record:
 - its authority under the effective authorized contract: the relevant specification at the start of the user-requested unit of work plus any specific user-authored instruction or approval given before implementation that deliberately superseded or settled it; and
 - which nearby artifacts are supporting evidence rather than authority.
 
+For a breaking change, verify that concrete before/after impact on programs,
+behavior and public host/tool consumers, plus alternatives, was presented for
+explicit user approval before implementation. A cleanup label or green migrated
+corpus does not establish that approval.
+
 Inspect the baseline contract with `git show <authority-base>:specs/<file>`; do not judge authority from the final tree alone. Start from the diff base, then use `git log` and `git blame` on changed normative lines to find precursor spec edits belonging to the same user-requested work; extend the authority review behind the selected window and move `<authority-base>` to the parent of the earliest such edit. A commit, branch, session, delegation, or spec-only precursor does not reset the baseline. A delegated task must cite authority traceable to the user or baseline contract; its own wording is not authority. If the review has no access to that authority record, mark the delta **unverified** and blocking until the user confirms it, rather than inferring authority from the diff.
 
 Flag a normative spec change without prior authority and a workaround that introduces a new cross-phase capability, metadata channel, cache contract, or accepted program. A specific user instruction given before implementation may supersede the baseline specification; absent that instruction, selecting between multiple contract-compatible normative behaviors is a finding. If a later user decision approves the behavior, record the original delta as unauthorized and treat the retained implementation as a proposal requiring a fresh review against the new effective contract; the later approval does not retroactively clear the process violation or waive any pairing, test, or review gate. Editorial spec clarifications and implementation details the contract leaves incidental, unspecified, or evolving do not need separate authority.
@@ -154,6 +159,19 @@ AGENTS.md ties many implementation changes to specific spec / docs / tooling upd
 - **Repository automation** ↔ applicable-platform classification and evidence per `local-tools.md` § Script portability; a changed shared path must not deepen a known OS-specific dependency.
 
 For each commit cluster, list the *expected* pairings and the *observed* ones. Mismatches are the primary finding.
+
+### Corpus and expected-output changes
+
+Apply [`TESTING.md` § Corpus and expected-output maintenance](../../../TESTING.md#corpus-and-expected-output-maintenance)
+to changed case source, annotations, assertions and expectations. Check what the
+old case exercised before accepting the replacement: a migration must not hide
+an unapproved break or remove focused coverage of a still-supported form.
+For an approved break, verify that its migration stays within the approved scope.
+For incidental human-readable `stderr` edits, compare category, meaning and
+useful information rather than requiring approval for changed words or layout;
+an unchanged exit code alone is insufficient. Explicitly contracted output and
+machine-readable formats remain protected. Apply this check to small edits too,
+not only bulk rewrites.
 
 ### Bulk corpus migration evidence
 

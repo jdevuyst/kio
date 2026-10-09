@@ -2,4 +2,4 @@ module noise;
 
 pub newtype Present : . { constructor mk_present; projector un_present }
 
-pub fn touch() -> . { () }
+pub fn touch() { () }

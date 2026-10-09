@@ -3,4 +3,4 @@ module logger;
 import testapi(String);
 import testapi/io(print);
 
-pub fn log(s: String) -> . { print(s) }
+pub fn log(s: String) { print(s) }

@@ -1,0 +1,27 @@
+module documentation;
+
+/// Prose é [`entry`] and [`@signature entry`].
+/// Literal ``[`not_a_reference`]``, escaped \[`escaped`], [link](url/[`destination`]).
+/// [override]: path/[`definition`]
+/// ```text
+/// [`literal_body`]
+/// ````
+/// <!--text
+/// [`hidden_body`]
+/// -->
+/// # Heading
+/// **strong** and *emphasis* with [`entry`].
+/// - item
+/// > quoted text
+/// [ordinary](https://example.invalid)
+/// ```kio {@}
+/// let value = 1(Int);
+/// value
+/// ```
+fn entry() {
+  ()
+}
+
+/// <!--kio
+/// [`unfinished_hidden_is_prose`].
+/// [`@ty

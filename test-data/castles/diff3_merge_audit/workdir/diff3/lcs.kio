@@ -95,7 +95,7 @@ pub fn align(left: list.List(String), right: list.List(String)) -> Dp {
 }
 
 fn cell(dp: Dp, row: I32, col: I32) -> I32 {
-  list.nth_or(list.nth_or(dp.?{table}, row, list.nil(I32, ())), col, 0)
+  list.nth_or(list.nth_or(dp.?{table}, row, list.nil(I32)), col, 0)
 }
 
 pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
@@ -116,4 +116,4 @@ rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List(Match)) -> list.Li
   }
 }
 
-pub fn matches(dp: Dp) -> list.List(Match) { trace(dp, 0, 0, list.nil(Match, ())) }
+pub fn matches(dp: Dp) -> list.List(Match) { trace(dp, 0, 0, list.nil(Match)) }

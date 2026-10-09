@@ -1,6 +1,6 @@
 module pkg;
 
-fn identity(x: .) -> . { x }
+fn identity(x: .) { x }
 
 /// Validated ordinary newtype docs.
 ///

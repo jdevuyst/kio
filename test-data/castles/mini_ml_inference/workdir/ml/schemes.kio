@@ -15,7 +15,7 @@ pub type Scheme = lists.List(I32) & types.Ty;
 
 pub type Environment = lists.List(String & Scheme);
 
-pub fn monomorphic(ty: types.Ty) -> Scheme { (lists.nil(), ty) }
+pub fn monomorphic(ty: types.Ty) -> Scheme { (lists.nil(_), ty) }
 
 pub fn extend(name: String, scheme: Scheme, environment: Environment) -> Environment {
   let visible =
@@ -68,7 +68,7 @@ pub fn generalize(ty: types.Ty, environment: Environment, substitutions: types.S
           let .(_name: String, scheme: Scheme) = entry;
           walk.append(acc, free_variables(scheme, substitutions))
         }
-      , lists.nil()
+      , lists.nil(_)
       , environment
       );
   let quantified =
@@ -102,6 +102,6 @@ rec(loop) fn replacements(ids: lists.List(I32), next: I32, mapping: types.Substi
 
 pub fn instantiate(scheme: Scheme, substitutions: types.Substitution, next: I32) -> types.Ty & I32 {
   let .(quantified: lists.List(I32), body: types.Ty) = scheme;
-  let .(mapping: types.Substitution, after: I32) = replacements(quantified, next, lists.nil());
+  let .(mapping: types.Substitution, after: I32) = replacements(quantified, next, lists.nil(_));
   (types.apply(mapping, types.apply(substitutions, body)), after)
 }

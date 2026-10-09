@@ -15,7 +15,7 @@ fn cat(left: String, right: String) -> String { text.string_concat(left, right) 
 
 fn append_i32(prefix: String, value: I32) -> String { cat(prefix, fmt.i32_to_string(value)) }
 
-fn println(value: String) -> . { io.print(cat(value, "\n")) }
+fn println(value: String) { io.print(cat(value, "\n")) }
 
 fn ledger_fields(state: State) -> String {
   cat(
@@ -126,4 +126,4 @@ pub rec(loop) fn process(state: State) -> State {
   }
 }
 
-pub fn run() -> . { println("csv reconcile"); let _state = process(model.init()); () }
+pub fn run() { println("csv reconcile"); let _state = process(model.init()); () }

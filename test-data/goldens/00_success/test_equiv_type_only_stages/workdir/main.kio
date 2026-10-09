@@ -1,0 +1,77 @@
+module main;
+
+fn empty[A] { () }
+
+fn identity[A] -> A -> A { .(value: A) { value } }
+
+type Id[A] = A -> A;
+
+fn aliased[A] -> Id(A) { .(value: A) { value } }
+
+fn ordinary[A](value: A) -> A { value }
+
+fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } }
+
+fn invoke(value: [A] A -> A) { value(., ()) }
+
+fn local() { let saved = identity; saved(., ()) }
+
+fn mixed[A](value: A)[B] -> A { value }
+
+fn capture[A](value: A) -> [B] A { .[B] { value } }
+
+fn forward(value: [A] .) { value(.) }
+
+fn delayed[A]() { () }
+
+equiv named() {
+  identity(., ());
+  aliased(., ());
+  ordinary(., ());
+  ()
+}
+
+equiv anonymous() {
+  .[A] { .(value: A) { value } }(., ());
+  ()
+}
+
+equiv combined_and_split() {
+  identity(.)(());
+  identity(., ());
+  ()
+}
+
+equiv adjacent_and_nested() {
+  .[A][B] { () }(., .);
+  .[A] { .[B] { () } }(., .);
+  forward(empty);
+  ()
+}
+
+equiv captured() {
+  capture(., ())(.);
+  ()
+}
+
+equiv first_class() {
+  local();
+  returned()(., ());
+  invoke(identity);
+  invoke(aliased);
+  invoke(ordinary);
+  invoke(returned());
+  invoke(.[A] { .(value: A) { value } });
+  ()
+}
+
+equiv interleaved() {
+  mixed(., (), .);
+  mixed(.)(())(.);
+  ()
+}
+
+equiv explicit_unit() {
+  delayed(.);
+  .() { () }
+}

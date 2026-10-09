@@ -79,8 +79,13 @@ module.exports = grammar({
     $._varop_head_open, $._malformed_varop_head_open,
     $._placeholder_open,
     $._editor_eof,
+    $.comment_doc, $.doc_fence, $.doc_code, $.doc_reference, $.doc_directive,
+    $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
+    $.doc_literal_fallback, $._doc_line_end,
   ],
-  extras: ($) => [/[ \t\r\n]+/, $.comment_doc, $.comment_line],
+  extras: ($) => [/[ \t\r\n]+/, $.comment_doc, $.doc_fence, $.doc_code,
+    $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
+    $.doc_reference, $.doc_directive, $.doc_literal_fallback, $._doc_line_end, $.comment_line],
 
   inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body],
   conflicts: ($) => [
@@ -1297,9 +1302,6 @@ module.exports = grammar({
           '"',
         ),
       ),
-    comment_doc: ($) =>
-      token(seq("///", optional(seq(/[ \t\r]/, /[^\n]*/)))),
-
     comment_line: ($) =>
       token(seq("//", optional(seq(/[ \t\r]/, /[^\n]*/)))),
     bracket_lparen: ($) => "(",

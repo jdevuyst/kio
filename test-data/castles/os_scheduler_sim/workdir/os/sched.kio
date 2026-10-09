@@ -31,7 +31,7 @@ fn program_len(programs: Array(Array(Phase)), pid: I32) -> I32 {
   array_len(array_get(programs, pid))
 }
 
-rec(loop) fn admit(pcb: proc.Pcb, q: queue.Queues, tick: I32, pid: I32) -> . {
+rec(loop) fn admit(pcb: proc.Pcb, q: queue.Queues, tick: I32, pid: I32) {
   if! leq_i32(config.proc_count(), pid) {
     ()
   } else {
@@ -45,7 +45,7 @@ rec(loop) fn admit(pcb: proc.Pcb, q: queue.Queues, tick: I32, pid: I32) -> . {
 }
 
 /// Every process left on the ready queue spent this tick waiting for the CPU.
-rec(loop) fn charge_queued(pcb: proc.Pcb, q: queue.Queues, i: I32) -> . {
+rec(loop) fn charge_queued(pcb: proc.Pcb, q: queue.Queues, i: I32) {
   if! leq_i32(queue.ready_len(q), i) {
     ()
   } else {
@@ -57,7 +57,7 @@ rec(loop) fn charge_queued(pcb: proc.Pcb, q: queue.Queues, i: I32) -> . {
 /// Every process still on the blocked list spent this tick waiting for a page.
 /// It runs before the process on the CPU can join that list, so the tick a
 /// process traps on is charged as a trap and not as blocked time.
-rec(loop) fn charge_blocked(pcb: proc.Pcb, q: queue.Queues, i: I32) -> . {
+rec(loop) fn charge_blocked(pcb: proc.Pcb, q: queue.Queues, i: I32) {
   if! leq_i32(queue.blocked_len(q), i) {
     ()
   } else {

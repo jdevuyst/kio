@@ -2,6 +2,6 @@ module main;
 
 fn apply[A](next: A -> A) -> A -> A { next }
 
-fn same[T](_left: T, _right: T) -> . { () }
+fn same[T](_left: T, _right: T) { () }
 
-fn run() -> . { same(apply(.(value) { value }), .(value: .) { value }) }
+fn run() { same(apply(.(value) { value }), .(value: .) { value }) }

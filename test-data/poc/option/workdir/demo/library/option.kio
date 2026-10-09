@@ -159,8 +159,8 @@ equiv functor_id_present[A](x: A) {
 
 // Identity on the absent spine: `map(id, none) ≡ none`.
 equiv functor_id_none[A]() {
-  map(.(y: A) -> A { y }, none(A, ()));
-  none(A, ())
+  map(.(y: A) -> A { y }, none(A));
+  none(A)
 }
 
 // Composition on the present spine:
@@ -172,8 +172,8 @@ equiv functor_compose_present[A][B][C](g: A -> B, f: B -> C, x: A) {
 
 // Composition on the absent spine.
 equiv functor_compose_none[A][B][C](g: A -> B, f: B -> C) {
-  map(.(y: A) -> C { f(g(y)) }, none(A, ()));
-  map(f, map(g, none(A, ())))
+  map(.(y: A) -> C { f(g(y)) }, none(A));
+  map(f, map(g, none(A)))
 }
 
 // ---- Monad laws ----
@@ -187,8 +187,8 @@ equiv monad_left_id_some[A][B](x: A, h: A -> B) {
 
 // Left identity, concrete continuation into `none`.
 equiv monad_left_id_none[A][B](x: A) {
-  bind(some(x), .(_y: A) -> Option(B) { none() });
-  none(B, ())
+  bind(some(x), .(_y: A) -> Option(B) { none(_) });
+  none(B)
 }
 
 // Right identity on the present spine: `bind(some(x), some) ≡ some(x)`.
@@ -199,8 +199,8 @@ equiv monad_right_id_present[A](x: A) {
 
 // Right identity on the absent spine: `bind(none, some) ≡ none`.
 equiv monad_right_id_none[A]() {
-  bind(none(A, ()), .(y: A) -> Option(A) { some(y) });
-  none(A, ())
+  bind(none(A), .(y: A) -> Option(A) { some(y) });
+  none(A)
 }
 
 // Associativity, present spine through concrete continuations:
@@ -212,8 +212,8 @@ equiv monad_assoc_present[A][B][C](x: A, f: A -> B, g: B -> C) {
 
 // Associativity on the absent spine.
 equiv monad_assoc_none[A][B][C](f: A -> B, g: B -> C) {
-  bind(bind(none(A, ()), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
-  bind(none(A, ()), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
+  bind(bind(none(A), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
+  bind(none(A), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
 }
 
 // ---- Eliminator laws ----
@@ -226,7 +226,7 @@ equiv from_option_present[A](d: A, x: A) {
 
 // `from_option(d, none) ≡ d`.
 equiv from_option_absent[A](d: A) {
-  from_option(d, none(A, ()));
+  from_option(d, none(A));
   d
 }
 
@@ -238,7 +238,7 @@ equiv option_present[A][B](d: B, f: A -> B, x: A) {
 
 // `option(d, f, none) ≡ d`.
 equiv option_absent[A][B](d: B, f: A -> B) {
-  option(d, f, none(A, ()));
+  option(d, f, none(A));
   d
 }
 
@@ -253,13 +253,13 @@ equiv or_else_present[A](x: A, alt: Option(A)) {
 // `or_else(none, alt) ≡ alt` — for a concrete `alt` (the codiagonal
 // collapse needs a concrete arm).
 equiv or_else_absent_some[A](y: A) {
-  or_else(none(A, ()), some(y));
+  or_else(none(A), some(y));
   some(y)
 }
 
 equiv or_else_absent_none[A]() {
-  or_else(none(A, ()), none(A, ()));
-  none(A, ())
+  or_else(none(A), none(A));
+  none(A)
 }
 
 // `and_then` is `bind`: same left-identity on a concrete continuation.
@@ -275,8 +275,8 @@ equiv then_present[A][B](x: A, w: B) {
 }
 
 equiv then_absent[A][B](n: Option(B)) {
-  then(none(A, ()), n);
-  none(B, ())
+  then(none(A), n);
+  none(B)
 }
 
 // ---- Bridge round-trips ----
@@ -299,6 +299,6 @@ equiv from_to_present[A](x: A) {
 }
 
 equiv from_to_absent[A]() {
-  from_sum(to_sum(none(A, ())));
-  none(A, ())
+  from_sum(to_sum(none(A)));
+  none(A)
 }

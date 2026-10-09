@@ -17,4 +17,4 @@ fn build(s: String) -> String | String | String { widen_sum!(s) }
 // requires the target's sum-spine length to be 1.
 fn collapse(s: String | String | String) -> String { one_sum!(s) }
 
-pub fn main() -> . { let triple = build("one_sum: forwarded\n"); print(collapse(triple)) }
+pub fn main() { let triple = build("one_sum: forwarded\n"); print(collapse(triple)) }

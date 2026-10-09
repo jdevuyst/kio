@@ -12,7 +12,7 @@ labels Option = { some: ., none: . };
 /// Adds two units together.
 ///
 /// Used by the [`+`] operator below.
-pub fn add(x: ., y: .) -> . { () }
+pub fn add(x: ., y: .) { () }
 
 /// The plus operator. Spell the operator token as [`+`] in doc refs.
 /// Its underlying function [`add`] is also directly reachable.

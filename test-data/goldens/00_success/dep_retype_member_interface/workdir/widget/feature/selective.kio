@@ -2,6 +2,6 @@ module widget/feature/selective;
 
 import widget/feature/target(Box, Public);
 
-fn boxed() -> . { Box.unpack(., Box.pack(., ())) }
+fn boxed() { Box.unpack(., Box.pack(., ())) }
 
-fn wrapped() -> . { Public.value(., Public.wrap(., ())) }
+fn wrapped() { Public.value(., Public.wrap(., ())) }

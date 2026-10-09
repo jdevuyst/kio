@@ -81,7 +81,7 @@ fn summary_line() -> String {
   cat3("summary: ok=5 reject=1 checksum=", checksum("O", "A", "P", "X", "L", "B"), "\n")
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("gate_text_scanner\n");
   print(cat3("len: ", script_len_tag(), "\n"));
   print(open_line());

@@ -18,8 +18,8 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn line(prefix: String, value: String) -> . {
-  io.print(text.string_concat(prefix, text.string_concat(value, "\n")))
+fn line(prefix: String, value: String) {
+  io.print(value.>text.string_concat("\n").>>text.string_concat(prefix))
 }
 
 fn yes_no(value: Bool) -> String {
@@ -30,14 +30,14 @@ fn yes_no(value: Bool) -> String {
   }
 }
 
-rec(loop) fn matrix_rows(prefix: String, rows: m.Matrix) -> . {
+rec(loop) fn matrix_rows(prefix: String, rows: m.Matrix) {
   match! c.uncons(rows) {
     .(row: m.Row, rest: m.Matrix) { line(prefix, m.show(row)); rec matrix_rows(prefix, rest) };
     .() { () }
   }
 }
 
-rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, index: I32) -> . {
+rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, index: I32) {
   match! c.uncons(vectors) {
     .(vector: m.Row, rest: m.Matrix) {
       line(
@@ -51,7 +51,7 @@ rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, i
   }
 }
 
-fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List(I32)) -> . {
+fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List(I32)) {
   match! c.head(pivots) {
     .(column: I32) {
       let changed = m.replace(particular, column, q.add(m.at(particular, column), q.integer(1)));
@@ -70,7 +70,7 @@ fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots
   }
 }
 
-fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solution.Family) -> . {
+fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solution.Family) {
   let particular = values.?{solution.particular};
   let nullspace = values.?{solution.directions};
   let free = values.?{solution.free_columns};
@@ -95,7 +95,7 @@ fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solut
   perturbed_check(original, variables, particular, pivots)
 }
 
-pub fn run(system: input.System) -> . {
+pub fn run(system: input.System) {
   let name = system.?{input.name};
   let variables = system.?{input.variables};
   let original = system.?{input.original};

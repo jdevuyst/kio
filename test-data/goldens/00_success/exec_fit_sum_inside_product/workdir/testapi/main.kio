@@ -18,7 +18,7 @@ fn build_inner(n: I32) -> I32 | I32 { widen_sum!(n) }
 // narrow / widen fires, but the inner shapes differ.
 fn project(p: String & (I32 | I32)) -> String & I32 { fit!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let r = project(("fit inner-sum: inside ", build_inner(42)));
   let s = one_prod!(r, String);
   let n = one_prod!(r, I32);

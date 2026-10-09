@@ -28,7 +28,7 @@ fn inline(input: Box(String) | Other(String)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(named(Box.make("named-box\n")));
   io.print(inline(widen_sum!(Box.make("inline-box\n"), Box(String) | Other(String))));
   io.print(inline(widen_sum!(Other.make("inline-other\n"), Box(String) | Other(String))))

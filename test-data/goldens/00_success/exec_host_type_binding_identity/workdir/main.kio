@@ -2,4 +2,4 @@ module main;
 
 host type Box[A];
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -14,5 +14,5 @@ module kiodoc;
 host type S role(str);
 host fn print(p0: S) -> .;
 
-pub fn greet() -> . { print("hi\n") }
+pub fn greet() { print("hi\n") }
 ```

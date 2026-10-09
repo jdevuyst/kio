@@ -2,7 +2,7 @@ module a;
 
 import elab/control(scope);
 
-pub fn unrelated() -> . {
+pub fn unrelated() {
   scope! {
     ()
   }

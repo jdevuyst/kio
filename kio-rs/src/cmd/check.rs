@@ -459,6 +459,27 @@ pub fn compile_workspace_at_buffered(
     }
 }
 
+pub(crate) fn compile_prepared_build_buffered(
+    inputs: &package_collection::PreparedBuildInputs,
+    prime_only: bool,
+    buf: &mut String,
+) -> Result<TypedPackageCollection, ExitCode> {
+    let start = Instant::now();
+    let parsed = package_collection::walk_prepared_build(inputs)
+        .map_err(|(error, sources)| AnalysisFailure::from_walk_error(error, sources))
+        .map_err(|failure| render_analysis_failure(&failure, buf))?;
+    let elapsed = start.elapsed();
+    let result = match prime_only {
+        #[cfg(feature = "prime")]
+        true => analyze_parsed_workspace_with::<PrimePipeline>(&parsed, false, elapsed),
+        #[cfg(feature = "surface")]
+        false => analyze_parsed_workspace_with::<FullPipeline>(&parsed, false, elapsed),
+        #[cfg(not(all(feature = "surface", feature = "prime")))]
+        _ => unreachable!("build selected a pipeline absent from this compiler"),
+    };
+    result.map_err(|failure| render_analysis_failure(&failure, buf))
+}
+
 /// In-process variant of [`compile_workspace_at`]: same pipeline,
 /// but failures return the structured [`AnalysisFailure`] instead of
 /// printing to stderr. Used by [`crate::lsp`] to publish diagnostics
@@ -2096,8 +2117,17 @@ fn lsp_record_callable_declaration_positions(
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LspWarningKind {
+    LocalBinding,
+    UnusedImport,
+    UnusedPrivateDeclaration,
+}
+
+#[cfg(all(feature = "surface", feature = "lsp"))]
 #[derive(Debug, Clone)]
 pub struct LspWarning {
+    pub kind: LspWarningKind,
     pub file_path: PathBuf,
     pub span: crate::span::Span,
     pub message: String,
@@ -2112,10 +2142,26 @@ pub(crate) struct LspUserElaboratorMemos {
         SourceHash,
         crate::ast::Lowered,
     >,
+    collect_refactoring_facts: bool,
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
 impl LspUserElaboratorMemos {
+    pub(crate) fn for_editor() -> Self {
+        Self {
+            collect_refactoring_facts: true,
+            ..Self::default()
+        }
+    }
+
+    fn position_index(&self) -> crate::pass::typecheck_full::PositionIndex {
+        if self.collect_refactoring_facts {
+            crate::pass::typecheck_full::PositionIndex::for_refactoring()
+        } else {
+            crate::pass::typecheck_full::PositionIndex::new()
+        }
+    }
+
     fn scope_for(
         &self,
         package_key: &PackageKey,
@@ -2123,8 +2169,14 @@ impl LspUserElaboratorMemos {
         package: &crate::pass::alpha_normalize::AlphaNormalizedPackage<crate::ast::Lowered>,
     ) -> std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<crate::ast::Lowered>>
     {
-        self.revisions
-            .scope_for_normalized(package_key, package_fingerprint, package)
+        let scope = self
+            .revisions
+            .scope_for_normalized(package_key, package_fingerprint, package);
+        if self.collect_refactoring_facts {
+            scope.with_refactoring_facts()
+        } else {
+            scope
+        }
     }
 }
 
@@ -2170,9 +2222,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     user_elaborator_memos: &LspUserElaboratorMemos,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     use crate::ast::Lowered;
-    use crate::pass::typecheck_full::{
-        PositionIndex, check_normalized_package_collect_errors_with_scope,
-    };
+    use crate::pass::typecheck_full::check_normalized_package_collect_errors_with_scope;
 
     if cancel_token.is_cancelled() {
         return None;
@@ -2271,9 +2321,10 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     // its `Lowered` AST and its elaborations whole (the REPL `:normalize`
     // path partial-evaluates against both); any additional packages
     // contribute only their position index to the merged map.
-    let mut merged_index = PositionIndex::new();
+    let mut merged_index = user_elaborator_memos.position_index();
     let root_key = lowered_workspace.root.clone();
     let mut root_package_lowered = None;
+    let mut root_source_role_uses = Vec::new();
     for (key, entry) in &lowered_workspace.packages {
         if cancel_token.is_cancelled() {
             return None;
@@ -2298,6 +2349,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
         }
         if *key == root_key {
             merged_index.merge(checked.elaborations().position_index().clone());
+            root_source_role_uses.extend_from_slice(checked.elaborations().source_role_uses());
             root_package_lowered = Some(entry.package.clone());
         } else {
             merged_index.merge(checked.into_elaborations().into_position_index());
@@ -2357,12 +2409,25 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     if cancel_token.is_cancelled() {
         return None;
     }
-    let warnings = lsp_unused_binding_warnings(
+    let mut warnings = lsp_unused_binding_warnings(
         &root_package_lowered,
         &file_to_module,
         &sources,
         &merged_index,
     );
+    warnings.extend(crate::lsp::unused_warnings::source_warnings(
+        surface_modules
+            .get(&root_key)
+            .expect("root source modules were retained"),
+        &sources,
+        &file_to_module,
+        &merged_index,
+        callable_declarations
+            .get(&root_key)
+            .expect("root source decisions were retained"),
+        &root_source_role_uses,
+        cancel_token,
+    )?);
 
     Some(Ok(LspAnalysis {
         position_index: merged_index,
@@ -2453,7 +2518,6 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
     user_elaborator_memos: &LspUserElaboratorMemos,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     use crate::ast::Lowered;
-    use crate::pass::typecheck_full::PositionIndex;
 
     if cancel_token.is_cancelled() {
         return None;
@@ -2651,7 +2715,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         return None;
     }
 
-    let mut position_index = PositionIndex::new();
+    let mut position_index = user_elaborator_memos.position_index();
     position_index.merge(typed.elaborations.position_index().clone());
 
     let file_to_module = lsp_file_to_module(&lowered_workspace);
@@ -2892,6 +2956,7 @@ fn lsp_unused_binding_warnings(
                 ));
             }
             warnings.push(LspWarning {
+                kind: LspWarningKind::LocalBinding,
                 file_path: decl.file_path,
                 span: decl.name_span,
                 message: format!("unused binding `{}`", decl.name),
@@ -3315,6 +3380,20 @@ pub struct AnalysisFailure {
 }
 
 impl AnalysisFailure {
+    pub(crate) fn from_walk_error(
+        error: package_collection::WalkError,
+        partial_sources: std::collections::BTreeMap<PathBuf, String>,
+    ) -> Self {
+        let mut sources: HashMap<_, _> = partial_sources.into_iter().collect();
+        if let package_collection::WalkError::Parse {
+            path, source_text, ..
+        } = &error
+        {
+            sources.insert(path.clone(), source_text.clone());
+        }
+        Self::from_error(error.into_located(), sources)
+    }
+
     pub fn from_error(error: LocatedError, sources: HashMap<PathBuf, String>) -> Self {
         Self {
             errors: vec![error],
@@ -3363,6 +3442,7 @@ struct FrontendTiming {
     lower_resolve: Duration,
     pipeline_typecheck: Duration,
     prime_validation: Duration,
+    prime_stages: crate::prime::typer::PrimeValidationTiming,
     package_check_skipped: bool,
     import_body_type: Duration,
     summary_levels: usize,
@@ -3407,6 +3487,7 @@ fn frontend_timing_line(package_key: &PackageKey, timing: &FrontendTiming) -> St
          typed_misses={} package_check_lookup_ms={:.3} typed_cache_lookup_ms={:.3} \
          typed_cache_store_ms={:.3} lower_resolve_ms={:.3} typecheck_ms={:.3} \
          pipeline_typecheck_ms={:.3} prime_validation_ms={:.3} \
+         prime_check_ms={:.3} prime_bake_ms={:.3} prime_finalize_ms={:.3} \
          package_check_skipped={} import_body_type_ms={:.3} summary_levels={} summary_max_width={} \
          user_elaborator_prepared_eval_ms={:.3} user_elaborator_prepared_hits={} \
          user_elaborator_prepared_misses={} user_elaborator_prepared_first_writes={} \
@@ -3431,6 +3512,9 @@ fn frontend_timing_line(package_key: &PackageKey, timing: &FrontendTiming) -> St
         duration_ms(timing.typecheck_total()),
         duration_ms(timing.pipeline_typecheck),
         duration_ms(timing.prime_validation),
+        duration_ms(timing.prime_stages.check),
+        duration_ms(timing.prime_stages.bake),
+        duration_ms(timing.prime_stages.finalize),
         usize::from(timing.package_check_skipped),
         duration_ms(timing.import_body_type),
         timing.summary_levels,
@@ -3679,6 +3763,10 @@ fn package_stage_errors<T>(results: &[PackageStageResult<T>]) -> Vec<LocatedErro
 }
 
 #[cfg(test)]
+#[cfg(all(feature = "surface", feature = "lsp"))]
+mod ufcs_authentication_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -3702,6 +3790,11 @@ mod tests {
             lower_resolve: Duration::ZERO,
             pipeline_typecheck: Duration::from_micros(1_250),
             prime_validation: Duration::from_micros(2_500),
+            prime_stages: crate::prime::typer::PrimeValidationTiming {
+                check: Duration::from_micros(2_000),
+                bake: Duration::from_micros(300),
+                finalize: Duration::from_micros(100),
+            },
             package_check_skipped: false,
             import_body_type: Duration::ZERO,
             summary_levels: 0,
@@ -3712,7 +3805,8 @@ mod tests {
         let line = frontend_timing_line(&key("pkg"), &timing);
         assert!(
             line.contains(
-                "typecheck_ms=3.750 pipeline_typecheck_ms=1.250 prime_validation_ms=2.500"
+                "typecheck_ms=3.750 pipeline_typecheck_ms=1.250 prime_validation_ms=2.500 \
+                 prime_check_ms=2.000 prime_bake_ms=0.300 prime_finalize_ms=0.100"
             ),
             "the aggregate and exact stage split should remain adjacent and comparable: {line}"
         );
@@ -3989,7 +4083,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
-    fn analyze_lsp_fixture(source: &str) -> (tempfile::TempDir, LspAnalysis, PathBuf) {
+    pub(super) fn analyze_lsp_fixture(source: &str) -> (tempfile::TempDir, LspAnalysis, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create package dir");
         std::fs::write(dir.path().join("pkg.kio"), "module pkg;\n").expect("write root module");
@@ -7225,25 +7319,7 @@ where
     let parsed_ws = match package_collection::walk_with_overlay(root, overlay) {
         Ok(w) => w,
         Err((walk_err, partial_sources)) => {
-            let mut sources: HashMap<PathBuf, String> = HashMap::new();
-            for (k, v) in partial_sources {
-                sources.insert(k, v);
-            }
-            // For parse failures the walker hadn't yet recorded the
-            // failing file's source into `partial_sources` (the
-            // insert happens *after* a successful parse), but the
-            // error variant carries the source text on hand. Pull
-            // it into the diagnostic source map so the LSP layer
-            // (and the printing path) can build a `LineIndex`
-            // against the real source rather than an empty string.
-            if let package_collection::WalkError::Parse {
-                path, source_text, ..
-            } = &walk_err
-            {
-                sources.insert(path.clone(), source_text.clone());
-            }
-            let diag = walk_err.into_located();
-            return Err(AnalysisFailure::from_error(diag, sources));
+            return Err(AnalysisFailure::from_walk_error(walk_err, partial_sources));
         }
     };
     let workspace_walk_elapsed = workspace_walk_start
@@ -7364,6 +7440,7 @@ where
                                         lower_resolve: Duration::ZERO,
                                         pipeline_typecheck: Duration::ZERO,
                                         prime_validation: Duration::ZERO,
+                                        prime_stages: Default::default(),
                                         package_check_skipped: true,
                                         import_body_type: Duration::ZERO,
                                         summary_levels: 0,
@@ -7392,6 +7469,7 @@ where
                                         lower_resolve: Duration::ZERO,
                                         pipeline_typecheck: Duration::ZERO,
                                         prime_validation: Duration::ZERO,
+                                        prime_stages: Default::default(),
                                         package_check_skipped: true,
                                         import_body_type: Duration::ZERO,
                                         summary_levels: 0,
@@ -7452,9 +7530,14 @@ where
                         let pipeline_typecheck = pipeline_typecheck_start.elapsed();
                         let import_elapsed = Duration::ZERO;
                         let mut prime_validation = Duration::ZERO;
+                        let mut prime_stages = Default::default();
                         let typechecked = if let Some(package) = pending_typechecked {
                             let validate_start = Instant::now();
-                            let validated = crate::prime::typer::check_normalized_package(package)
+                            let validated =
+                                crate::prime::typer::check_normalized_package_with_timing(
+                                    package,
+                                    log_frontend_timing.then_some(&mut prime_stages),
+                                )
                                 .map_err(one_stage_error)?;
                             prime_validation = validate_start.elapsed();
                             PackageTypecheckOutcome::Checked(Box::new(validated))
@@ -7475,6 +7558,7 @@ where
                                     lower_resolve: lower_elapsed,
                                     pipeline_typecheck,
                                     prime_validation,
+                                    prime_stages,
                                     package_check_skipped,
                                     import_body_type: import_elapsed,
                                     summary_levels,

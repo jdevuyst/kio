@@ -60,10 +60,9 @@ pub fn next() -> . | Command {
       } else if! text.string_eq(command, "end") {
         {end=}.>widen_sum!
       } else {
-        io.print(text.string_concat(
-          , "input error: unknown command "
-          , text.string_concat(command, "\n")
-          ));
+        io.print(command
+          .>text.string_concat("\n")
+          .>>text.string_concat("input error: unknown command "));
         ().>widen_sum!
       }
     };

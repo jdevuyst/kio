@@ -45,7 +45,7 @@ fn put_op(k: I32, v: String) -> Op { Op.mk_op({put = (k, v)}.>widen_sum!(Op_kind
 
 fn remove_op(k: I32) -> Op { Op.mk_op({remove = k}.>widen_sum!(Op_kind)) }
 
-fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+fn nil[A] -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
 
 fn cons[A](x: A, rest: List(A)) -> List(A) {
   List.mk_list(widen_sum!((x, rest), . | (A & List(A))))
@@ -57,13 +57,13 @@ rec(loop) fn snoc[A](xs: List(A), x: A) -> List(A) {
   match! xs.>List.un_list {
     (
       , .(head: A, rest: List(A)) { let tail = rec(cont) snoc(rest, x); cons(head, tail) }
-      , .(_e: .) { cons(x, nil(A, ())) }
+      , .(_e: .) { cons(x, nil(A)) }
       )
   }
 }
 
 fn script() -> Ops {
-  let s = nil(Op, ());
+  let s = nil(Op);
   let s = snoc(s, put_op(50, "curlew"));
   let s = snoc(s, put_op(30, "osprey"));
   let s = snoc(s, put_op(70, "falcon"));
@@ -107,7 +107,7 @@ fn events(t: Tally) -> String {
   event_part(after_grows, "root-shrink", root_shrinks(t))
 }
 
-fn emit(step: I32, op: String, k: I32, t: Tree, note: String, ev: Tally) -> . {
+fn emit(step: I32, op: String, k: I32, t: Tree, note: String, ev: Tally) {
   let head = cat4(pad_num(step, 2), " ", op, cat(" ", pad_num(k, 3)));
   let shape = cat4("  h=", num(height(root_of(t))), " n=", pad_num(size_of(t), 2));
   let tail = cat4("  ", verdict_word(audit(t)), "  ", cat(note, events(ev)));

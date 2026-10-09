@@ -151,10 +151,10 @@ fn sufficient(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Resu
 pub fn decode(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Result {
   if! a.lt_i32(l.length(coordinates), dimension) {
     {rejected = "codeword shorter than message dimension"}.>widen_sum!
-  } else match! valid_coordinates(coordinates, c.nil()) {
+  } else match! valid_coordinates(coordinates, c.nil(_)) {
     .(error: String) { {rejected = error}.>widen_sum! };
     .() {
-      match! valid_samples(samples, coordinates, c.nil()) {
+      match! valid_samples(samples, coordinates, c.nil(_)) {
         .(error: String) { {rejected = error}.>widen_sum! };
         .() { sufficient(dimension, coordinates, samples) }
       }

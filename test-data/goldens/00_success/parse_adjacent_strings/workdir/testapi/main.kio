@@ -10,7 +10,7 @@ import testapi/io(print);
 // formatter re-chunks deterministically on emission. Lets the
 // formatter break long literals across source lines without
 // runtime cost.
-pub fn main() -> . {
+pub fn main() {
   print("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
         "tempor incididunt\n"(Str))
 }

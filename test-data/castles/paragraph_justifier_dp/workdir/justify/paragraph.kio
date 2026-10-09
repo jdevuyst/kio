@@ -23,7 +23,7 @@ pub fn gap() -> I32 { 1 }
 fn word(xs: Words, text: String, width: I32) -> Words { append(xs, one(make_word(text, width))) }
 
 pub fn paragraph() -> Words {
-  nil(Word, ())
+  nil(Word)
     .>word("typesetting", 11)
     .>word("is", 2)
     .>word("the", 3)

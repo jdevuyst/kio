@@ -69,6 +69,8 @@
 //! 6. The postcard-encoded typed `Module<Prime>` bytes. The encoding
 //!    is deterministic for a fixed AST, so a module body change moves
 //!    the key without first rendering a large transient Kio' string.
+//! 7. The current module's exact visible declared-pure function facts,
+//!    including imported declarations used by recovery and optimization.
 //!
 //! ## Atomicity and concurrency
 //!
@@ -416,6 +418,8 @@ impl NewtypeMemberKeyInput {
 /// and reused across the per-module fan-out.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PackageKeyInputs {
+    pub(crate) pure_functions:
+        std::collections::BTreeMap<String, crate::pass::purity::PureFunctions>,
     /// Newtype field inputs indexed by (consumer module, visible head):
     /// exact nominal identity, FFI key, and constructor member name.
     /// Recovery joins these with `newtype_members` for the projector name.
@@ -479,6 +483,15 @@ impl PackageKeyInputs {
             );
         }
         PackageKeyInputs {
+            pure_functions: package
+                .modules()
+                .map(|(path, entry)| {
+                    (
+                        path.to_owned(),
+                        crate::pass::purity::PureFunctions::for_module(package, &entry.module),
+                    )
+                })
+                .collect(),
             newtype_fields,
             newtype_members,
         }
@@ -492,6 +505,15 @@ impl PackageKeyInputs {
         let start = ScopedNewtypeName(module_path.to_owned(), Vec::new());
         let end = ScopedNewtypeName(format!("{module_path}\0"), Vec::new());
         Self {
+            pure_functions: self
+                .pure_functions
+                .get(module_path)
+                .map(|facts| {
+                    [(module_path.to_owned(), facts.clone())]
+                        .into_iter()
+                        .collect()
+                })
+                .unwrap_or_default(),
             newtype_fields: self
                 .newtype_fields
                 .range(start.clone()..end.clone())
@@ -558,6 +580,9 @@ impl EnrichedCacheKey {
         let opt_bytes = postcard::to_allocvec(&package_inputs.newtype_members)
             .expect("enriched-cache newtype-member key input postcard-encodes infallibly");
         write_framed(&mut h, &opt_bytes);
+        let pure_bytes = postcard::to_allocvec(&package_inputs.pure_functions)
+            .expect("enriched-cache purity inputs postcard-encode infallibly");
+        write_framed(&mut h, &pure_bytes);
         write_framed(&mut h, module.as_bytes());
         EnrichedCacheKey {
             hex: h.finalize().to_hex().to_string(),
@@ -1064,6 +1089,7 @@ mod tests {
 
     fn empty_inputs() -> PackageKeyInputs {
         PackageKeyInputs {
+            pure_functions: Default::default(),
             newtype_fields: std::collections::BTreeMap::new(),
             newtype_members: std::collections::BTreeMap::new(),
         }
@@ -1327,6 +1353,66 @@ mod tests {
             &package.module("main").expect("main module").module,
             &inputs,
         );
+    }
+
+    #[test]
+    #[cfg(all(feature = "surface", feature = "prime"))]
+    fn imported_purity_is_keyed_and_survives_every_enrichment_path() {
+        let sources = [
+            (
+                "provider.kio",
+                "module provider; pub pure fn factory() -> . -> . { .() { () } }",
+            ),
+            (
+                "consumer.kio",
+                "module consumer; import __intrinsics__; import provider as p; import provider(factory); \
+                host type Bool role(bool); \
+                fn conditional(c: Bool) { __if_then_else__(., c, p.factory(), factory()) } \
+                fn either(s: . | .) { __either__(., ., ., s, p.factory(), factory()) }",
+            ),
+        ];
+        let package = prime_package_many(&sources);
+        let inputs = PackageKeyInputs::from_package(&package);
+        let consumer = &package.module("consumer").unwrap().module;
+        let original_key = EnrichedCacheKey::from_module(consumer, &inputs);
+        let unrestricted = prime_package_many(&[
+            (
+                sources[0].0,
+                "module provider; pub fn factory() -> . -> . { .() { () } }",
+            ),
+            sources[1],
+        ]);
+        assert_ne!(
+            original_key,
+            EnrichedCacheKey::from_module(consumer, &PackageKeyInputs::from_package(&unrestricted))
+        );
+
+        let direct = crate::pass::optimize::optimize_package(
+            crate::pass::structural_recovery::recover_package(&package),
+        );
+        let disabled = recover_and_optimize_package_cached(&package, &EnrichedCache::disabled());
+        let dir = tempdir();
+        let cache = EnrichedCache::open(dir.clone()).unwrap();
+        let miss = recover_and_optimize_package_cached(&package, &cache);
+        let hit = recover_and_optimize_package_cached(&package, &cache);
+        assert_eq!(cache.recovered_module_hits.load(Ordering::Relaxed), 2);
+        for (path, entry) in direct.modules() {
+            for candidate in [&disabled, &miss, &hit] {
+                assert_eq!(&entry.module, &candidate.module(path).unwrap().module);
+            }
+        }
+        let routed = crate::pass::recover_to_low::lower(&hit);
+        let crate::ast::Item::FnDef(factory) = &routed.module("provider").unwrap().module.items[0]
+        else {
+            panic!("factory declaration");
+        };
+        assert!(factory.purity.is_pure());
+        let changed = recover_and_optimize_package_cached(&unrestricted, &cache);
+        assert_ne!(
+            hit.module("consumer").unwrap().module,
+            changed.module("consumer").unwrap().module
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1672,6 +1758,7 @@ mod tests {
         // adding a newtype in one module shifts the key, but
         // permuting source modules does not.
         let mut a = PackageKeyInputs {
+            pure_functions: Default::default(),
             newtype_fields: std::collections::BTreeMap::new(),
             newtype_members: std::collections::BTreeMap::new(),
         };
@@ -1680,6 +1767,7 @@ mod tests {
         a.newtype_fields
             .insert(nt("main", "A"), field_input("A", "mk"));
         let mut b = PackageKeyInputs {
+            pure_functions: Default::default(),
             newtype_fields: std::collections::BTreeMap::new(),
             newtype_members: std::collections::BTreeMap::new(),
         };

@@ -203,7 +203,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n") }
+pub fn main() { print("hello from kio\n") }
 ```
 
 Java host (`Main.java`):

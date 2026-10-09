@@ -24,7 +24,7 @@ pub fn node(symbol: I32, arguments: lists.List(Term)) -> Term {
   Term.wrap((symbol, arguments).>widen_sum!)
 }
 
-pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil()) }
+pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil(_)) }
 
 rec(loop) {
   pub fn render(term: Term) -> String {

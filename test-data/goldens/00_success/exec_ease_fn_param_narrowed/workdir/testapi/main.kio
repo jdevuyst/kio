@@ -16,9 +16,9 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // The walk swaps source/target at the contravariant leaf
 // `(A & B, A)`; the leaf `ease!` engine fires `R-Project-Prod` to
 // drop the `B` factor.
-fn source(x: A) -> . { print(A.un_a(x)) }
+fn source(x: A) { print(A.un_a(x)) }
 
-pub fn main() -> . {
+pub fn main() {
   let wider_arg = ease!(source, (A & B) -> .);
   wider_arg((A.mk_a("ease! param narrowed ok\n"), B.mk_b("unused")))
 }

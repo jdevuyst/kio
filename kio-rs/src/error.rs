@@ -170,6 +170,50 @@ impl Fix {
     }
 }
 
+#[cfg(feature = "surface")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallFailureOperation {
+    Opening,
+    Selection,
+    Header,
+    Result,
+}
+
+#[cfg(feature = "surface")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeFailureOrigin {
+    Application {
+        call_site: crate::ast::ExpressionOccurrenceId,
+        operation: CallFailureOperation,
+    },
+    UnresolvedGoal(crate::ast::TypeGoalRef),
+}
+
+#[cfg(all(test, feature = "surface"))]
+#[test]
+fn rec_loop_diagnostic_error_carrier_preserves_operation_identity() {
+    let call_site = crate::ast::ExpressionOccurrence::fresh().key();
+    let goal = crate::ast::TypeGoalRef::for_test(0, 1, 2);
+    let operations = [
+        CallFailureOperation::Opening,
+        CallFailureOperation::Selection,
+        CallFailureOperation::Header,
+        CallFailureOperation::Result,
+    ];
+    for operation in operations {
+        let origin = TypeFailureOrigin::Application {
+            call_site,
+            operation,
+        };
+        let extra = DiagExtra {
+            type_failure_origin: Some(origin),
+            ..Default::default()
+        };
+        assert_eq!(extra.clone().type_failure_origin, Some(origin));
+        assert_ne!(origin, TypeFailureOrigin::UnresolvedGoal(goal));
+    }
+}
+
 /// The optional enrichments of a [`Diagnostic`], boxed off the hot
 /// path. The overwhelming majority of diagnostics are floor-level
 /// (`{span, message}` only); keeping these fields behind an
@@ -179,6 +223,8 @@ impl Fix {
 /// an enrichment is attached.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiagExtra {
+    #[cfg(feature = "surface")]
+    type_failure_origin: Option<TypeFailureOrigin>,
     /// An established primary file carried through nested, unlocated checking.
     /// Located-error collection consumes this field into its primary file.
     pub source_file: Option<PathBuf>,
@@ -194,6 +240,9 @@ pub struct DiagExtra {
     pub fixes: Vec<Fix>,
     /// The unresolved value/type name for lazy editor actions.
     pub unresolved_name: Option<String>,
+    /// Focused reanalysis reconstructs this producer's complete fix set, even
+    /// when provider growth leaves no unambiguous candidate.
+    require_current_fixes: bool,
 }
 
 /// The diagnostic payload shared by every [`Error`] variant.
@@ -253,6 +302,13 @@ impl Diagnostic {
         self.extra
             .as_ref()
             .and_then(|e| e.unresolved_name.as_deref())
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn requires_current_fixes(&self) -> bool {
+        self.extra
+            .as_ref()
+            .is_some_and(|extra| extra.require_current_fixes)
     }
 
     /// The enrichment block, allocating an empty one on first touch.
@@ -373,6 +429,45 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "surface")]
+    pub(crate) fn with_type_failure_origin(mut self, origin: TypeFailureOrigin) -> Self {
+        if !matches!(self, Self::Type(_)) {
+            return self;
+        }
+        self.diagnostic_mut()
+            .extra_mut()
+            .type_failure_origin
+            .get_or_insert(origin);
+        self
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn type_failure_origin(&self) -> Option<TypeFailureOrigin> {
+        self.diagnostic()
+            .extra
+            .as_ref()
+            .and_then(|extra| extra.type_failure_origin)
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn clear_type_failure_origin(&mut self) {
+        if let Some(extra) = &mut self.diagnostic_mut().extra {
+            extra.type_failure_origin = None;
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn with_rec_loop_context(mut self, selected_path: Span, actual_type: &str) -> Self {
+        let diagnostic = self.diagnostic_mut();
+        let original = std::mem::replace(
+            &mut diagnostic.message,
+            format!("the selected `rec` loop has incompatible type `{actual_type}`"),
+        );
+        diagnostic.span = selected_path;
+        diagnostic.extra_mut().notes.push(original);
+        self.with_note("`rec` requires a loop compatible with `[State][Result] (State -> State | Result, State) -> Result`")
+    }
+
     /// Primary span and message for diagnostic rendering.
     ///
     /// The floor-level pair every Kio diagnostic carries. Callers that
@@ -454,6 +549,11 @@ impl Error {
         self.diagnostic_mut().extra_mut().unresolved_name = Some(name.into());
         self
     }
+
+    pub(crate) fn requiring_current_fixes(mut self) -> Self {
+        self.diagnostic_mut().extra_mut().require_current_fixes = true;
+        self
+    }
 }
 
 /// Per-variant constructors from the floor-level `{span, message}` pair.
@@ -527,6 +627,19 @@ pub fn closest_name<'a>(
         }
     }
     best.map(|(s, _)| s)
+}
+
+/// Preserve the prose tie-break while distinguishing a uniquely nearest name
+/// from an equally close spelling that must not become an automatic edit.
+/// The iterator must contain distinct spellings; callers deduplicate candidates
+/// or iterate a name-keyed map.
+pub(crate) fn closest_name_with_uniqueness<'a>(
+    name: &str,
+    candidates: impl DoubleEndedIterator<Item = &'a str> + Clone,
+) -> Option<(&'a str, bool)> {
+    let near = closest_name(name, candidates.clone())?;
+    let unique = closest_name(name, candidates.rev()) == Some(near);
+    Some((near, unique))
 }
 
 /// Levenshtein edit distance between two strings, counted in Unicode
@@ -615,5 +728,30 @@ mod suggest_tests {
         // `abcf` is distance 1 from both; the first at the best
         // distance wins.
         assert_eq!(closest_name("abcf", cands), Some("abcd"));
+    }
+
+    #[test]
+    fn closest_name_uniqueness_retains_the_prose_candidate() {
+        for (candidates, expected) in [
+            (vec!["helper"], Some(("helper", true))),
+            (vec!["heaper", "helper"], Some(("heaper", false))),
+            (vec!["helper", "heaper"], Some(("helper", false))),
+            (vec!["heper", "unrelated"], None),
+        ] {
+            assert_eq!(
+                closest_name_with_uniqueness("heper", candidates.into_iter()),
+                expected
+            );
+        }
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn current_fix_authentication_remains_required_without_a_candidate() {
+        let error = Error::name_res(Span::new(4, 9), "unknown name");
+        assert!(!error.diagnostic().requires_current_fixes());
+        let error = error.requiring_current_fixes();
+        assert!(error.diagnostic().fixes().is_empty());
+        assert!(error.clone().diagnostic().requires_current_fixes());
     }
 }

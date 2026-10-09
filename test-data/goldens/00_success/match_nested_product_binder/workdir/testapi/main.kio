@@ -39,7 +39,7 @@ fn head_key[A](z: Z(A)) -> I32 {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = zcons(7, "seven", 2, zcons(3, "three", 9, znil()));
   let empty = znil(String, ());
   print(string_concat(int_to_string(head_key(xs)), "\n"));

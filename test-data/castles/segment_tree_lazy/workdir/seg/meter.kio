@@ -21,7 +21,7 @@ pub fn new_meter() -> Meter { Meter.of_cells(array_make_filled(2, 0)) }
 
 fn read_slot(m: Meter, slot: I32) -> I32 { array_get(Meter.cells(m), slot) }
 
-fn bump_slot(m: Meter, slot: I32) -> . {
+fn bump_slot(m: Meter, slot: I32) {
   let c = Meter.cells(m);
   array_set(c, slot, add_i32(array_get(c, slot), 1))
 }
@@ -30,6 +30,6 @@ pub fn work(m: Meter) -> I32 { read_slot(m, work_slot) }
 
 pub fn pushes(m: Meter) -> I32 { read_slot(m, push_slot) }
 
-pub fn bump_work(m: Meter) -> . { bump_slot(m, work_slot) }
+pub fn bump_work(m: Meter) { bump_slot(m, work_slot) }
 
-pub fn bump_push(m: Meter) -> . { bump_slot(m, push_slot) }
+pub fn bump_push(m: Meter) { bump_slot(m, push_slot) }

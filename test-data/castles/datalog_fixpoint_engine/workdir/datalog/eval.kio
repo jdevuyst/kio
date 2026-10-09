@@ -97,7 +97,7 @@ fn delta_heads(rules: program.Rules, db: Atoms, old: Atoms, delta: Atoms) -> Ato
 rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I32, trace: Trace) -> Run {
   let candidates = naive_heads(rules, db);
   let attempted = list.length(candidates);
-  let step = absorb(db, candidates, list.nil(Atom, ()));
+  let step = absorb(db, candidates, list.nil(Atom));
   let next_db = step.?{ab_db};
   let added = list.length(step.?{ab_added});
   let total = add_i32(derivs, attempted);
@@ -110,7 +110,7 @@ rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I
 }
 
 pub fn naive(rules: program.Rules, edb: Atoms) -> Run {
-  naive_rounds(rules, edb, 1, 0, list.nil(Round, ()))
+  naive_rounds(rules, edb, 1, 0, list.nil(Round))
 }
 
 /// The next round's `old` is simply this round's `db`, which is why the
@@ -126,7 +126,7 @@ rec(loop) fn semi_rounds(
   ) -> Run {
   let candidates = delta_heads(rules, db, old, delta);
   let attempted = list.length(candidates);
-  let step = absorb(db, candidates, list.nil(Atom, ()));
+  let step = absorb(db, candidates, list.nil(Atom));
   let next_db = step.?{ab_db};
   let next_delta = step.?{ab_added};
   let added = list.length(next_delta);
@@ -142,7 +142,7 @@ rec(loop) fn semi_rounds(
 /// Round one treats the whole extensional database as the delta - every
 /// given fact is new - so nothing is `old` yet.
 pub fn semi_naive(rules: program.Rules, edb: Atoms) -> Run {
-  semi_rounds(rules, list.nil(Atom, ()), edb, edb, 1, 0, list.nil(Round, ()))
+  semi_rounds(rules, list.nil(Atom), edb, edb, 1, 0, list.nil(Round))
 }
 
 fn subset(xs: Atoms, ys: Atoms) -> Bool { list.all(xs, .(x: Atom) { holds(ys, x) }) }

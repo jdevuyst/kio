@@ -17,7 +17,7 @@ fn sum_bound_record(offset: I32) -> I32 {
   add_i32(add_i32(offset, row.?{first}), add_i32(row.?{second}, add_i32(row.?{third}, later)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let total = sum_bound_record(0);
   print("=");
   print(int_to_string(total));

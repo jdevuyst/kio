@@ -13,9 +13,9 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-fn integer(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 
-rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32) -> . {
+rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32) {
   match! lists.uncons(rest) {
     .(run: codec.Run, tail: lists.List(codec.Run)) {
       let value = run.?{codec.sample};
@@ -42,7 +42,7 @@ rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32)
   }
 }
 
-pub fn encoding(state: codec.Encoder, runs: lists.List(codec.Run)) -> . {
+pub fn encoding(state: codec.Encoder, runs: lists.List(codec.Run)) {
   io.print("Run-length signal codec: cap=");
   integer(codec.cap());
   io.print("\nsamples=");
@@ -100,7 +100,7 @@ rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index:
   }
 }
 
-pub fn roundtrip(original: lists.List(I32), decoded: lists.List(I32)) -> . {
+pub fn roundtrip(original: lists.List(I32), decoded: lists.List(I32)) {
   let valid = compare(original, decoded, 1, .t);
   io.print(if! valid {
     "roundtrip=ok\n"

@@ -2,4 +2,4 @@ module main;
 
 import __internal__ provider as __provider__;
 
-pub fn main() -> . { __provider__.hidden() }
+pub fn main() { __provider__.hidden() }

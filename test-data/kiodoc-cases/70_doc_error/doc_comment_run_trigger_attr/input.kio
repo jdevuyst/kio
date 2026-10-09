@@ -15,4 +15,4 @@ module doctest/run_trigger;
 /// ```kio {@ run_exit_code=0}
 /// ()
 /// ```
-pub fn greet() -> . { () }
+pub fn greet() { () }

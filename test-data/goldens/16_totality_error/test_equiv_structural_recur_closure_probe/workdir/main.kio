@@ -2,7 +2,7 @@ module main;
 
 import __comptime__;
 
-pure fn run(ct: __Comptime__, k: . -> .) -> . {
+pure fn run(ct: __Comptime__, k: . -> .) {
   __structural_recur__(
     , ct
     , __Type__
@@ -14,7 +14,7 @@ pure fn run(ct: __Comptime__, k: . -> .) -> . {
     )
 }
 
-pure fn fault_when_called(ct: __Comptime__, _probe: .) -> . {
+pure fn fault_when_called(ct: __Comptime__, _probe: .) {
   run(ct, .(_outer: .) -> . { run(ct, .(_inner: .) -> . { () }) })
 }
 

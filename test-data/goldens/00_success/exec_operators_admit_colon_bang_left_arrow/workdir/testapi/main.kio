@@ -17,7 +17,7 @@ op _ ! _ { impl add }
 
 op _ <- _ { impl add }
 
-pub fn main() -> . {
+pub fn main() {
   let a = 1 : 2;
   let b = 3 ! 4;
   let c = 5 <- 6;

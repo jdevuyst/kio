@@ -11,4 +11,4 @@ labels Choice = { branch_value: String, left: . } | { branch_value: _, right: . 
 
 labels Generic[A] = { item[A]: _ };
 
-pub fn main() -> . { let a = {f = "agree\n"}; print(F.get(a)) }
+pub fn main() { let a = {f = "agree\n"}; print(F.get(a)) }

@@ -2,7 +2,7 @@ module app/elaborators;
 
 import __comptime__;
 
-fn private_capture() -> . { () }
+fn private_capture() { () }
 
 pure fn private_impl(
   , _ct: __Comptime__
@@ -13,7 +13,7 @@ pure fn private_impl(
 
 elab private_elab : [Source] Source -> Source { captures private_capture; impl private_impl }
 
-pub(app) fn package_capture() -> . { () }
+pub(app) fn package_capture() { () }
 
 pub(app) pure fn package_impl(
   , _ct: __Comptime__
@@ -24,7 +24,7 @@ pub(app) pure fn package_impl(
 
 pub(app) elab package_elab : [Source] Source -> Source { captures package_capture; impl package_impl }
 
-pub fn public_capture_for_scoped() -> . { () }
+pub fn public_capture_for_scoped() { () }
 
 pub pure fn public_impl_for_scoped(
   , _ct: __Comptime__
@@ -35,7 +35,7 @@ pub pure fn public_impl_for_scoped(
 
 pub(app/elaborators) elab scoped_elab : [Source] Source -> Source { captures public_capture_for_scoped; impl public_impl_for_scoped }
 
-pub fn public_capture() -> . { () }
+pub fn public_capture() { () }
 
 pub pure fn public_impl(
   , _ct: __Comptime__

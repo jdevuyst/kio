@@ -50,7 +50,7 @@ fn close(acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
 rec(loop) {
   /// Encode a payload into the glyphs that carry it.
   pub fn encode(payload: alphabet.Bytes) -> alphabet.Glyphs {
-    rec feed(payload, 0, 0, list.nil(String, ()))
+    rec feed(payload, 0, 0, list.nil(String))
   };
   /// Take the next byte into the accumulator, eight bits at a time.
   fn feed(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {

@@ -658,8 +658,13 @@ fn validate_label_imports(index: &RegistryIndex) -> Result<(), LocatedError> {
                             .values()
                             .filter(|candidate| is_visible(&candidate.vis, &module.path))
                             .map(|candidate| candidate.name.as_str());
-                        if let Some(near) = crate::error::closest_name(name, visible_labels) {
+                        if let Some((near, unique)) =
+                            crate::error::closest_name_with_uniqueness(name, visible_labels)
+                        {
                             error = error.with_help(format!("did you mean `{{{near}}}`?"));
+                            if unique {
+                                error = error.with_suggestion(span, near);
+                            }
                         }
                     }
                     return Err(LocatedError {

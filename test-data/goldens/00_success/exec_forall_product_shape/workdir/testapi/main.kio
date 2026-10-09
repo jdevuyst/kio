@@ -17,6 +17,6 @@ fn id[U](v: U) -> U { v }
 
 fn mk_pair() -> ([T] T -> T) & ([T] T -> T) { (id, id) }
 
-fn use_pair(p: ([T] T -> T) & ([T] T -> T)) -> . { let _ = p; () }
+fn use_pair(p: ([T] T -> T) & ([T] T -> T)) { let _ = p; () }
 
-pub fn main() -> . { use_pair(mk_pair()); print("forall-product ok\n"(String)) }
+pub fn main() { use_pair(mk_pair()); print("forall-product ok\n"(String)) }

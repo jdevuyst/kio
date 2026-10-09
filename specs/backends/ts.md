@@ -70,6 +70,18 @@ collide in one host program. There is no runtime-support file: the
 `typed-dynamic` skin adds declarations only
 ([`README.md` § Runtime-support library](README.md#runtime-support-library)).
 
+### Boundary documentation
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface) renders
+Markdown JSDoc on live host members, exported package members, host-type binding
+and type-catalog entries, and public newtype namespaces and nominal carriers.
+The runtime JavaScript retains [its own documentation presentation](js.md#boundary-documentation).
+
+JSDoc framing writes `*/` as `*\/` and every `@` as `\@`, including in code.
+These visible escapes prevent native tags or comment termination. Documentation
+does not add typing or link directives; retained-history deprecation annotations
+keep their separate specified meaning.
+
 ## Loading the package
 
 A TypeScript host brings the package online exactly as a JS host does
@@ -579,7 +591,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n"(String)) }
+pub fn main() { print("hello from kio\n"(String)) }
 ```
 
 `kio build ts` writes `out/ts/greeter.js` (byte-identical to `target=js`) and

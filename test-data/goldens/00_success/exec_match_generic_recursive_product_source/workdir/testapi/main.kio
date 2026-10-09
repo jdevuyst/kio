@@ -41,7 +41,7 @@ fn classify[A][B](tree: Tree(A, B)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(classify(empty(String, String, ())));
   print(classify(node("key", "value", empty(String, String, ()), empty(String, String, ()))))
 }

@@ -16,4 +16,4 @@ fn run(choice: . | ([T] T -> T)) -> String {
   }
 }
 
-pub fn main() -> . { print(run(widen_sum!(identity, . | ([T] T -> T)))) }
+pub fn main() { print(run(widen_sum!(identity, . | ([T] T -> T)))) }

@@ -2,4 +2,4 @@ module testapi/main;
 
 import loader(Export_info);
 
-pub fn main() -> . { let constructor = Export_info.mk; () }
+pub fn main() { let constructor = Export_info.mk; () }

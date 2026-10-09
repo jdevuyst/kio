@@ -13,6 +13,6 @@ newtype B : . { pub constructor mk_b; pub projector un_b }
 // subset doesn't admit (sum narrowing `A | B → A` is partial; that
 // case belongs to `match!`). The symmetric of the admitted param-
 // widened case (`exec_ease_fn_param_widened`).
-fn inner(x: A) -> . { () }
+fn inner(x: A) { () }
 
-pub fn use_it() -> . { let _wrapped = ease!(inner, (A | B) -> .); () }
+pub fn use_it() { let _wrapped = ease!(inner, (A | B) -> .); () }

@@ -11,7 +11,7 @@ newtype Wrapped : . { constructor make_wrapped; projector read_wrapped }
 
 newtype Unique : . { constructor make_unique; projector read_unique }
 
-fn unit_fact() -> . { print("unit\n") }
+fn unit_fact() { print("unit\n") }
 
 fn int_fact() -> Int { print("int\n"); 1 }
 
@@ -27,19 +27,19 @@ fn unique_base() -> Unique { print("unique base\n"); Unique.make_unique(()) }
 
 fn unreachable_rival(_precondition: Unit_sum) -> Unique { print("rival\n"); Unique.make_unique(()) }
 
-fn discard_int(_value: Int) -> . { () }
+fn discard_int(_value: Int) { () }
 
-fn discard_string(_value: String) -> . { () }
+fn discard_string(_value: String) { () }
 
-fn discard_product(_value: . & .) -> . { () }
+fn discard_product(_value: . & .) { () }
 
-fn discard_sum(_value: Unit_sum) -> . { () }
+fn discard_sum(_value: Unit_sum) { () }
 
-fn discard_wrapped(_value: Wrapped) -> . { () }
+fn discard_wrapped(_value: Wrapped) { () }
 
-fn discard_unique(_value: Unique) -> . { () }
+fn discard_unique(_value: Unique) { () }
 
-pub fn main() -> . {
+pub fn main() {
   derive!(unit_fact, .);
   discard_int(derive!(int_fact, Int));
   discard_string(derive!(string_from_unit, String));

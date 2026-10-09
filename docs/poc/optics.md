@@ -69,12 +69,12 @@ package or copy `optics.kio` and declare the `elab` dependency under the local
 name `elab`. If you want the worked tour too, copy `demo/testapi/main.kio` and
 point its host imports at your own host.
 
-All snippets in this case study compile inside a hidden harness that supplies
-the same host shape the POC's `testapi` modules declare — `Bool`, `I32`,
-`Int`, `String`, and the `add` / `int_to_string` / `print` host functions the
-tour uses — plus the spine elaborators and `match!`. The snippets thread
-together: each picks up where the previous one left off, and the harness
-validates them as one growing program.
+The library definitions and tour helpers compile together in a hidden harness.
+It supplies the same host shape the POC's `testapi` modules declare — `Bool`,
+`I32`, `Int`, `String`, and the `add` / `int_to_string` / `print` host functions
+— plus the spine elaborators and `match!`. The three worked tour expressions
+below compile separately against the real `optics` library with the host types
+they use.
 
 <!--kio {harness=optics placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -95,6 +95,41 @@ host fn int_to_string(p0: I32) -> String;
 host fn add(p0: I32, p1: I32) -> I32;
 
 __INSERT_CODE_HERE__
+-->
+
+<!--kio {harness=lens_use placeholder="__INSERT_CODE_HERE__"}
+module kiodoc;
+
+import optics(compose_lens, fst_lens, snd_lens, view);
+
+host type I32 role(i32);
+host type String role(str);
+host fn sample_outer() -> (I32 & String) & I32;
+host fn say_str(value: String) -> .;
+
+op _ ^ _ { impl view }
+op __ ** _ { impl compose_lens }
+
+fn check_lens() {
+  let outer = sample_outer();
+  __INSERT_CODE_HERE__
+  ()
+}
+-->
+
+<!--kio {harness=prism_use placeholder="__INSERT_CODE_HERE__"}
+module kiodoc;
+
+import optics(left_prism, review);
+import elab/spine_elaborators(widen_sum);
+
+host type I32 role(i32);
+host type String role(str);
+
+fn check_prism() {
+  __INSERT_CODE_HERE__
+  ()
+}
 -->
 
 ## The structural glue
@@ -198,13 +233,13 @@ The library ships three concrete lenses. The first two focus a positional
 component of a pair:
 
 ```kio {@optics}
-fn fst_lens[A][B]() -> Lens(A & B, A) {
+fn fst_lens[A][B] -> Lens(A & B, A) {
   let get = .((x: A, _y: B)) -> A { x };
   let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
   (get, put)
 }
 
-fn snd_lens[A][B]() -> Lens(A & B, B) {
+fn snd_lens[A][B] -> Lens(A & B, B) {
   let get = .((_x: A, y: B)) -> B { y };
   let put = .(new_b: B, (x: A, _y: B)) -> A & B { (x, new_b) };
   (get, put)
@@ -216,21 +251,21 @@ The getter and setter destructure the pair *positionally* — the lambda binds
 focus the *first* component) even when `A` and `B` are the same type. Each
 lambda is return-annotated, and the two go into a tuple literal whose type is
 `Lens(A & B, A)`. `snd_lens` is the mirror image, focusing the second
-component. Both have a Unit value layer: in `fst_lens()` the empty source call
-lets the surrounding context infer the type parameters and supplies Unit.
+component. These constructors have only type parameters: `fst_lens(_, _)`
+lets the surrounding context infer them without a Unit value argument.
 
 The third concrete lens is the identity lens, which focuses the whole
 container — it is the unit of lens composition:
 
 ```kio {@optics}
-fn id_lens[A]() -> Lens(A, A) {
+fn id_lens[A] -> Lens(A, A) {
   let get = .(x: A) -> A { x };
   let put = .(new_a: A, _old: A) -> A { new_a };
   (get, put)
 }
 ```
 
-`view(id_lens(), x)` returns `x` unchanged; `set(id_lens(), new, x)` replaces
+`view(id_lens(_), x)` returns `x` unchanged; `set(id_lens(_), new, x)` replaces
 it with `new`, discarding the old container. Both facts are pinned by laws
 below.
 
@@ -302,7 +337,7 @@ source's left arm to the target's `A` arm and the right arm to `()`; each
 `widen_sum!`. Its review is a single left-injection:
 
 ```kio {@optics}
-fn left_prism[A][B]() -> Prism(A | B, A) {
+fn left_prism[A][B] -> Prism(A | B, A) {
   let pre =
     .(x: A | B) -> A | . {
       match! x {
@@ -313,7 +348,7 @@ fn left_prism[A][B]() -> Prism(A | B, A) {
   (pre, rev)
 }
 
-fn right_prism[A][B]() -> Prism(A | B, B) {
+fn right_prism[A][B] -> Prism(A | B, B) {
   let pre =
     .(x: A | B) -> B | . {
       match! x {
@@ -428,13 +463,13 @@ The library ships two concrete isos. `swap_iso` swaps the components of a
 pair; `assoc_iso` re-associates a left-nested triple to the right:
 
 ```kio {@optics}
-fn swap_iso[A][B]() -> Iso(A & B, B & A) {
+fn swap_iso[A][B] -> Iso(A & B, B & A) {
   let to = .((x: A, y: B)) -> B & A { (y, x) };
   let from = .((y: B, x: A)) -> A & B { (x, y) };
   (to, from)
 }
 
-fn assoc_iso[A][B][C]() -> Iso((A & B) & C, A & B & C) {
+fn assoc_iso[A][B][C] -> Iso((A & B) & C, A & B & C) {
   let to = .(((av: A, bv: B), cv: C)) -> A & B & C { (av, (bv, cv)) };
   let from = .((av: A, (bv: B, cv: C))) -> (A & B) & C { ((av, bv), cv) };
   (to, from)
@@ -520,8 +555,8 @@ Now:
 
 A composed lens chain reads naturally:
 
-```kio {ignore}
-let l_chain = fst_lens(I32 & String, I32, ()) ** snd_lens(I32, String, ());
+```kio {@lens_use}
+let l_chain = fst_lens(I32 & String, I32) ** snd_lens(I32, String);
 say_str(l_chain ^ outer);
 ```
 
@@ -583,11 +618,11 @@ imports the host functions directly instead of wrapping them in a capability
 bundle:
 
 ```kio {@optics}
-fn say_i32(n: I32) -> . { print(int_to_string(n)); print("\n") }
+fn say_i32(n: I32) { print(int_to_string(n)); print("\n") }
 
-fn say_str(s: String) -> . { print(s); print("\n") }
+fn say_str(s: String) { print(s); print("\n") }
 
-fn say_opt_i32(x: I32 | .) -> . {
+fn say_opt_i32(x: I32 | .) {
   match! x {
     (.(n: I32) { print("Some("); print(int_to_string(n)); print(")") }, .(_u: .) { print("None") })
   };
@@ -609,7 +644,7 @@ projects each field with the generated `.get` (written UFCS-style as
 `h.>Hed.get`, i.e. `Hed.get(h)`):
 
 ```kio {@optics}
-fn show_hmt(x: Hed & Mid & Tal) -> . {
+fn show_hmt(x: Hed & Mid & Tal) {
   match! x {
     .(h: Hed, m: Mid, t: Tal) {
       print(int_to_string(h.>Hed.get));
@@ -632,7 +667,7 @@ specialized to `hed`, and `Hed.get` is the lens "view" for the same field.
 
 Composing prisms needs a deeply-nested sum value to preview against. The
 outer sum is `(I32 | String) | I32`, and the tour reaches the inner `I32`
-through `compose_prism(left_prism((I32 | String), I32, ()), left_prism())`.
+through `compose_prism(left_prism((I32 | String), I32), left_prism(_, _))`.
 
 The interesting case is building a value that lands in the *outer-left* arm —
 a whole `(I32 | String)` injected into the left of `(I32 | String) | I32`. A
@@ -642,12 +677,12 @@ right spine arm-by-arm against the target's right-spine slots
 target slot to land in. The adopter-natural construction is the *outer
 prism's own* `review`:
 
-```kio {ignore}
-let p_outer = left_prism(I32 | String, I32, ());
+```kio {@prism_use}
+let p_outer = left_prism(I32 | String, I32);
 let deep_hit = review(p_outer, widen_sum!(5, I32 | String));
 ```
 
-`left_prism(I32 | String, I32, ())`'s `rev` is `widen_sum!(av, A | B)` generated
+`left_prism(I32 | String, I32)`'s `rev` is `widen_sum!(av, A | B)` generated
 against the abstract `A` (a single opaque spine slot), so its left-injection
 glue stays valid when `A` is instantiated to the sum `I32 | String`. No
 intrinsic, no algebraic elaborator — the polymorphic prism *is* the tool that
@@ -655,7 +690,7 @@ reaches the nested arm. The outer-*right* arm, by contrast, is reachable with
 `widen_sum!` directly, because `100 : I32` finds a like-typed target arm at
 the outer-right slot:
 
-```kio {ignore}
+```kio {@prism_use}
 let deep_outer_miss = widen_sum!(100, (I32 | String) | I32);
 ```
 
@@ -731,33 +766,33 @@ positional lenses. For `fst_lens`:
 ```text
 // get-set: setting back what you got changes nothing.
 equiv fst_get_set[A][B](x: A & B) {
-  set(fst_lens(A, B, ()), view(fst_lens(A, B, ()), x), x);
+  set(fst_lens(A, B), view(fst_lens(A, B), x), x);
   x
 }
 
 // set-get: getting after a set returns what you set.
 equiv fst_set_get[A][B](x: A & B, new_a: A) {
-  view(fst_lens(A, B, ()), set(fst_lens(A, B, ()), new_a, x));
+  view(fst_lens(A, B), set(fst_lens(A, B), new_a, x));
   new_a
 }
 
 // set-set: the last set wins.
 equiv fst_set_set[A][B](x: A & B, a1: A, a2: A) {
-  set(fst_lens(A, B, ()), a2, set(fst_lens(A, B, ()), a1, x));
-  set(fst_lens(A, B, ()), a2, x)
+  set(fst_lens(A, B), a2, set(fst_lens(A, B), a1, x));
+  set(fst_lens(A, B), a2, x)
 }
 ```
 
 `snd_lens` carries the same three laws (`snd_get_set`, `snd_set_get`,
 `snd_set_set`), identical in shape with `snd_lens` in place of `fst_lens`.
-`id_lens` is a unit for `view` and `set` — `view(id_lens(A, ()), x) ≡ x`
-(`id_view`) and `set(id_lens(A, ()), new, x) ≡ new` (`id_set`). And `over`'s
+`id_lens` is a unit for `view` and `set` — `view(id_lens(A), x) ≡ x`
+(`id_view`) and `set(id_lens(A), new, x) ≡ new` (`id_set`). And `over`'s
 defining equation is checked on `fst_lens`:
 
 ```text
 equiv fst_over_def[A][B](x: A & B, f: A -> A) {
-  over(fst_lens(A, B, ()), f, x);
-  set(fst_lens(A, B, ()), f(view(fst_lens(A, B, ()), x)), x)
+  over(fst_lens(A, B), f, x);
+  set(fst_lens(A, B), f(view(fst_lens(A, B), x)), x)
 }
 ```
 
@@ -769,7 +804,7 @@ left prism:
 
 ```text
 equiv left_review_preview[A][B](v: A) {
-  preview(left_prism(A, B, ()), review(left_prism(A, B, ()), v));
+  preview(left_prism(A, B), review(left_prism(A, B), v));
   widen_sum!(v, A | .)
 }
 ```
@@ -782,8 +817,8 @@ transformed:
 ```text
 equiv left_over_review[A][B](v: A, f: A -> A) {
   preview(
-    , left_prism(A, B, ())
-    , over_prism(left_prism(A, B, ()), f, review(left_prism(A, B, ()), v))
+    , left_prism(A, B)
+    , over_prism(left_prism(A, B), f, review(left_prism(A, B), v))
     );
   widen_sum!(f(v), A | .)
 }
@@ -797,12 +832,12 @@ is the identity iso (`swap_swap_view`):
 
 ```text
 equiv swap_view_review[A][B](y: B & A) {
-  view_iso(swap_iso(A, B, ()), review_iso(swap_iso(A, B, ()), y));
+  view_iso(swap_iso(A, B), review_iso(swap_iso(A, B), y));
   y
 }
 
 equiv swap_swap_view[A][B](x: A & B) {
-  view_iso(compose_iso(swap_iso(A, B, ()), swap_iso(B, A, ())), x);
+  view_iso(compose_iso(swap_iso(A, B), swap_iso(B, A)), x);
   x
 }
 ```
@@ -816,8 +851,8 @@ equation is checked on `swap_iso`:
 
 ```text
 equiv swap_over_def[A][B](x: A & B, f: (B & A) -> B & A) {
-  over_iso(swap_iso(A, B, ()), f, x);
-  review_iso(swap_iso(A, B, ()), f(view_iso(swap_iso(A, B, ()), x)))
+  over_iso(swap_iso(A, B), f, x);
+  review_iso(swap_iso(A, B), f(view_iso(swap_iso(A, B), x)))
 }
 ```
 
@@ -831,23 +866,23 @@ preview:
 
 ```text
 equiv iso_lens_view[A][B](x: A & B) {
-  view(iso_to_lens(swap_iso(A, B, ())), x);
-  view_iso(swap_iso(A, B, ()), x)
+  view(iso_to_lens(swap_iso(A, B)), x);
+  view_iso(swap_iso(A, B), x)
 }
 
 equiv iso_lens_set_view[A][B](x: A & B, new: B & A) {
-  view(iso_to_lens(swap_iso(A, B, ())), set(iso_to_lens(swap_iso(A, B, ())), new, x));
+  view(iso_to_lens(swap_iso(A, B)), set(iso_to_lens(swap_iso(A, B)), new, x));
   new
 }
 
 equiv iso_prism_review[A][B](y: B & A) {
-  review(iso_to_prism(swap_iso(A, B, ())), y);
-  review_iso(swap_iso(A, B, ()), y)
+  review(iso_to_prism(swap_iso(A, B)), y);
+  review_iso(swap_iso(A, B), y)
 }
 
 equiv iso_prism_preview[A][B](x: A & B) {
-  preview(iso_to_prism(swap_iso(A, B, ())), x);
-  widen_sum!(view_iso(swap_iso(A, B, ()), x), (B & A) | .)
+  preview(iso_to_prism(swap_iso(A, B)), x);
+  widen_sum!(view_iso(swap_iso(A, B), x), (B & A) | .)
 }
 ```
 

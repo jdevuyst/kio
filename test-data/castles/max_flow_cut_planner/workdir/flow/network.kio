@@ -13,7 +13,7 @@ pub labels Network = { vertices: I32, edges: Array(Edge) };
 
 pub fn empty(vertices: I32) -> Network { {vertices, edges = ar.array_make_empty(Edge, ())} }
 
-pub fn connect(network: Network, from: I32, to: I32, capacity: I32) -> . {
+pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
   let edges = network.?{edges};
   let index = ar.array_len(edges);
   ar.array_push(edges, {from, to, capacity, reverse = a.add_i32(index, 1), backward = .f});

@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/helper as h;
 
-pub fn main() -> . { h.greet("via h alias"(String)) }
+pub fn main() { h.greet("via h alias"(String)) }

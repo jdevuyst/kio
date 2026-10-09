@@ -55,4 +55,4 @@ fn bad() -> Monad(Box) {
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

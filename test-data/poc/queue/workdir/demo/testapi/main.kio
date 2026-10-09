@@ -45,7 +45,7 @@ fn show_queue(q: Queue(I32)) -> String {
           match! carry {
             .(first: Bool, text: String) {
               let sep = bool_to("", ", ", first);
-              (no(), cat(text, cat(sep, int_to_string(x))))
+              (no(), int_to_string(x).>>cat(sep).>>cat(text))
             }
           }
         }
@@ -71,10 +71,10 @@ fn render_sum(value: I32 | .) -> String {
 
 fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
-fn line(label: String, value: String) -> . { print(cat(label, cat(" = ", cat(value, "\n")))) }
+fn line(label: String, value: String) { print(value.>cat("\n").>>cat(" = ").>>cat(label)) }
 
-pub fn main() -> . {
-  let e = empty(I32, ());
+pub fn main() {
+  let e = empty(I32);
   let s = singleton(7);
   let q3 = from_list([* 1, 2, 3 *]);
   line("empty", show_queue(e));
@@ -136,7 +136,7 @@ pub fn main() -> . {
   let .(no_items: List(I32)) = [* *];
   line("canonical empty list length", int_to_string(length(from_list(no_items))));
   let .(unit_queue: Queue(.)) = from_list([* () *]);
-  let .(no_units: Queue(.)) = empty();
+  let .(no_units: Queue(.)) = empty(_);
   line("peek(unit)", show_result(peek(unit_queue), .(_unit: .) { "unit" }));
   line("peek(empty Unit)", show_result(peek(no_units), .(_unit: .) { "unit" }));
   let show_unit_pair =
@@ -151,7 +151,7 @@ pub fn main() -> . {
   line("peek(nested number)", show_result(peek(sum_queue), render_sum));
   let sum_tail =
     fold_result(
-      , empty(I32 | ., ())
+      , empty(I32 | .)
       , .(pair: (I32 | .) & Queue(I32 | .)) {
           let .(_value: I32 | ., rest: Queue(I32 | .)) = pair;
           rest
@@ -159,5 +159,5 @@ pub fn main() -> . {
       , dequeue(sum_queue)
       );
   line("peek(nested Unit)", show_result(peek(sum_tail), render_sum));
-  line("peek(empty nested)", show_result(peek(empty(I32 | ., ())), render_sum))
+  line("peek(empty nested)", show_result(peek(empty(I32 | .)), render_sum))
 }

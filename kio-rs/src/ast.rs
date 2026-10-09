@@ -227,6 +227,32 @@ impl ExpressionOccurrenceCarrier for () {
     fn fresh() -> Self {}
 }
 
+/// Presentation-only lowering roles. Structural equality and artifacts erase
+/// them so they cannot authorize a call or become persistent phase evidence.
+#[derive(Clone, Copy, Default)]
+pub enum RecLoopDiagnostic {
+    #[default]
+    None,
+    Loop {
+        selected_path: Span,
+    },
+    InitialStateResult,
+}
+
+impl std::fmt::Debug for RecLoopDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RecLoopDiagnostic")
+    }
+}
+
+impl PartialEq for RecLoopDiagnostic {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for RecLoopDiagnostic {}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ExpressionSite {
     pub id: ExpressionOccurrenceId,
@@ -751,6 +777,7 @@ pub trait Phase: Sized {
         + serde::Serialize
         + serde::de::DeserializeOwned;
     type ExpressionOccurrence: ExpressionOccurrenceCarrier;
+    type CallDiagnostic: Clone + Copy + Default + std::fmt::Debug + Eq;
     type ExprTuple: Clone
         + std::fmt::Debug
         + PartialEq
@@ -1076,8 +1103,8 @@ pub trait Phase: Sized {
 
     /// Ordinary-function purity. `Surface` through [`Prime`] retain the
     /// modifier so source typing and final Kio' validation enforce the same
-    /// body contract, including after elaborator substitution. Post-Prime
-    /// runtime phases narrow it to `()` after that validation has completed.
+    /// body contract, including after elaborator substitution. [`Enriched`] and
+    /// [`Routed`] retain the validated marker for conservative effect analysis.
     type FnPurity: Clone
         + std::fmt::Debug
         + PartialEq
@@ -1168,9 +1195,7 @@ impl PhaseBridge<Purity> for Purity {
     }
 }
 
-// Narrowing bridges. `bool` / `usize` are discarded at the [`Prime`]
-// boundary; `Purity` is discarded only after validated Prime enters a
-// runtime-codegen phase.
+// Narrowing bridges. `bool` / `usize` are discarded at the [`Prime`] boundary.
 impl PhaseBridge<bool> for () {
     fn bridge(_: bool) -> Self {}
 }
@@ -1351,6 +1376,7 @@ pub struct Surface;
 impl Phase for Surface {
     type ExprBlockSyntax = ();
     type ExpressionOccurrence = ();
+    type CallDiagnostic = ();
     type LitAnnotation = Option<Type<Surface>>;
     type ExprTuple = ();
     type ExprFnPlaceholder = ();
@@ -1361,7 +1387,7 @@ impl Phase for Surface {
     // typer's `Elaborations` table has a clone-stable key (see
     // [`NodeId`] for why pointer-keying didn't work).
     type ExprElab = NodeId;
-    type ExprRecCall = ();
+    type ExprRecCall = RecCallSyntax;
     type ExprRecOrder = Never;
     type ExprUfcs = NodeId;
     // Enriched variants are introduced by the post-`Prime`
@@ -1401,6 +1427,7 @@ pub struct Desugared;
 impl Phase for Desugared {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
+    type CallDiagnostic = RecLoopDiagnostic;
     type LitAnnotation = Option<Type<Desugared>>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1445,6 +1472,7 @@ pub struct Lowered;
 impl Phase for Lowered {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ExpressionOccurrence;
+    type CallDiagnostic = RecLoopDiagnostic;
     type LitAnnotation = Option<Type<Lowered>>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1490,6 +1518,7 @@ pub struct UncheckedPrime;
 impl Phase for UncheckedPrime {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
+    type CallDiagnostic = ();
     type LitAnnotation = Option<Type<UncheckedPrime>>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1546,6 +1575,7 @@ pub struct Prime;
 impl Phase for Prime {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ExpressionOccurrence;
+    type CallDiagnostic = ();
     type LitAnnotation = Type<Prime>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1598,6 +1628,7 @@ pub struct Enriched;
 impl Phase for Enriched {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
+    type CallDiagnostic = ();
     type LitAnnotation = Type<Enriched>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1625,7 +1656,7 @@ impl Phase for Enriched {
     type ItemLiteralAlias = Never;
     type ParamPatternExt = ();
     type FnDefRetElided = ();
-    type FnPurity = ();
+    type FnPurity = Purity;
     type LeadingTrivia = ();
     // Capability annotations land at the Routed phase, not here.
     type FnExprCapabilities = ();
@@ -1661,6 +1692,7 @@ pub struct Routed;
 impl Phase for Routed {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
+    type CallDiagnostic = ();
     type LitAnnotation = Type<Routed>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -1693,7 +1725,7 @@ impl Phase for Routed {
     type ItemLiteralAlias = Never;
     type ParamPatternExt = ();
     type FnDefRetElided = ();
-    type FnPurity = ();
+    type FnPurity = Purity;
     type LeadingTrivia = ();
     // The Routed phase is the one phase that holds annotation data
     // on an `Expr::FnExpr`. The per-module
@@ -1883,6 +1915,29 @@ pub enum RecCallMode {
     Poly,
     Cont,
     Escape,
+}
+
+/// Surface token locations for diagnostic edits. Trivia between these tokens
+/// belongs to the source and must survive annotation repairs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RecCallSyntax {
+    pub keyword: Span,
+    /// Parentheses and commas, interleaved with the written modes.
+    pub annotations: Vec<RecCallAnnotation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum RecCallAnnotation {
+    Punctuation(Span),
+    Mode { mode: RecCallMode, span: Span },
+}
+
+impl RecCallAnnotation {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Punctuation(span) | Self::Mode { span, .. } => *span,
+        }
+    }
 }
 
 impl RecCallMode {
@@ -4485,6 +4540,8 @@ pub enum Expr<P: Phase = Surface> {
     Call {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
+        #[serde(skip)]
+        diagnostic: P::CallDiagnostic,
         callee: Box<Expr<P>>,
         args: Vec<CallArg<P>>,
         meta: Meta<P>,
@@ -6228,7 +6285,7 @@ impl<P: Phase> Type<P> {
         record_signature_group_cursor_params_route();
         Type::synth_scheme_from_signature_group_refs(
             SignatureGroupRefs::inferred(params),
-            params
+            !params
                 .iter()
                 .any(|param| matches!(param, SignatureParam::Value(_))),
             ret,
@@ -6243,7 +6300,7 @@ impl<P: Phase> Type<P> {
         record_signature_group_cursor_signature_route();
         Type::synth_scheme_from_signature_group_refs(
             sig.canonical_group_refs(),
-            sig.has_value_group(),
+            sig.canonical_group_refs().next().is_none(),
             ret,
             span,
         )
@@ -6251,7 +6308,7 @@ impl<P: Phase> Type<P> {
 
     fn synth_scheme_from_signature_group_refs<'a>(
         groups: impl DoubleEndedIterator<Item = SignatureGroupRef<'a, P>>,
-        has_value_group: bool,
+        implicit_unit_group: bool,
         ret: Type<P>,
         span: Span,
     ) -> Type<P>
@@ -6260,7 +6317,7 @@ impl<P: Phase> Type<P> {
         Type<P>: Clone,
     {
         let mut acc = ret;
-        if !has_value_group {
+        if implicit_unit_group {
             acc = Type::synth_function(Vec::new(), acc, span);
         }
         for group in groups.rev() {
@@ -7111,11 +7168,24 @@ impl<P: Phase> Expr<P> {
     {
         Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(callee),
             args,
             meta: Meta::new(span),
             ext: (),
         }
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn with_call_diagnostic(mut self, diagnostic: P::CallDiagnostic) -> Self {
+        let Self::Call {
+            diagnostic: slot, ..
+        } = &mut self
+        else {
+            unreachable!("call diagnostic requires an ordinary application")
+        };
+        *slot = diagnostic;
+        self
     }
 }
 
@@ -7165,6 +7235,48 @@ impl<P: Phase> Item<P> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rec_loop_diagnostic_is_transient_and_structurally_neutral() {
+        let span = Span::new(3, 5);
+        let plain = Expr::<Lowered>::synth_call(
+            Expr::Unit {
+                occurrence: Default::default(),
+                meta: Meta::new(span),
+            },
+            Vec::new(),
+            span,
+        );
+        for role in [
+            RecLoopDiagnostic::Loop {
+                selected_path: span,
+            },
+            RecLoopDiagnostic::InitialStateResult,
+        ] {
+            let mut marked = plain.clone();
+            let Expr::Call { diagnostic, .. } = &mut marked else {
+                unreachable!()
+            };
+            *diagnostic = role;
+            assert_eq!(plain, marked);
+            assert_eq!(format!("{plain:?}"), format!("{marked:?}"));
+            let serialized = serde_json::to_string(&marked).unwrap();
+            assert_eq!(serialized, serde_json::to_string(&plain).unwrap());
+            let reparsed: Expr<Lowered> = serde_json::from_str(&serialized).unwrap();
+            assert!(matches!(
+                reparsed,
+                Expr::Call {
+                    diagnostic: RecLoopDiagnostic::None,
+                    ..
+                }
+            ));
+        }
+        let _: <Surface as Phase>::CallDiagnostic = ();
+        let _: <UncheckedPrime as Phase>::CallDiagnostic = ();
+        let _: <Prime as Phase>::CallDiagnostic = ();
+        let _: <Enriched as Phase>::CallDiagnostic = ();
+        let _: <Routed as Phase>::CallDiagnostic = ();
+    }
+
     #[test]
     fn expression_occurrences_are_transient_and_structurally_neutral() {
         use super::{Expr, ExpressionOccurrence, Lowered, Meta};
@@ -7585,9 +7697,7 @@ mod tests {
         }
     }
 
-    /// Leading binders with no values produce
-    /// `Forall(A, Function(Unit, R))` because every declaration
-    /// is callable.
+    /// The parameter-vector helper retains its nullary value stage.
     #[test]
     fn synth_scheme_only_binders_still_wraps_function() {
         let t = <Type<Surface>>::synth_scheme_from_signature_params(&[tp_sp("A")], path("R"), sp());
@@ -7598,6 +7708,27 @@ mod tests {
             }
             _ => panic!("expected Forall(A, Function(Unit, R))"),
         }
+    }
+
+    #[test]
+    fn synth_scheme_type_only_signature_has_no_value_stage() {
+        let signature = Signature::new(vec![tp_sp("A")]);
+        let Type::Forall { body, .. } = signature.signature_ty(path("R"), sp()) else {
+            panic!("expected a type abstraction")
+        };
+        assert_eq!(*body, path("R"));
+
+        let signature = Signature::from_parts(
+            vec![tp_sp("A")],
+            vec![
+                SignatureGroupKind::Type { len: 1 },
+                SignatureGroupKind::Value { len: 0 },
+            ],
+        );
+        let Type::Forall { body, .. } = signature.signature_ty(path("R"), sp()) else {
+            panic!("expected a type abstraction")
+        };
+        assert!(matches!(*body, Type::Function { .. }));
     }
 
     /// Leading binders + values: `[A][B](x: A, y: B) -> R`

@@ -102,7 +102,7 @@ fn rollout_lens() -> Lens(Feature_config, I32) {
 }
 
 fn normalized_limits_lens() -> Lens(Limit_bundle, Warn_limit & Block_limit & Audit_limit) {
-  iso_to_lens(assoc_iso(Warn_limit, Block_limit, Audit_limit, ()))
+  iso_to_lens(assoc_iso(Warn_limit, Block_limit, Audit_limit))
 }
 
 fn normalized_audit_lens() -> Lens(Warn_limit & Block_limit & Audit_limit, I32) {
@@ -114,12 +114,10 @@ fn normalized_audit_lens() -> Lens(Warn_limit & Block_limit & Audit_limit, I32) 
   (get, put)
 }
 
-fn stable_mode_prism() -> Prism(Mode_state, Stable_mode) {
-  left_prism(Stable_mode, Degraded_mode, ())
-}
+fn stable_mode_prism() -> Prism(Mode_state, Stable_mode) { left_prism(Stable_mode, Degraded_mode) }
 
 fn degraded_mode_prism() -> Prism(Mode_state, Degraded_mode) {
-  right_prism(Stable_mode, Degraded_mode, ())
+  right_prism(Stable_mode, Degraded_mode)
 }
 
 fn config_service_lens() -> Lens(Root_config, Service_config) {

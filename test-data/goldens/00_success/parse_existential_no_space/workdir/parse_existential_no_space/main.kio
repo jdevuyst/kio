@@ -18,4 +18,4 @@ newtype Pair[A] <U> <V> : A & U & V { pub constructor mk_pair; pub projector un_
 // `labels` entries: same lex-fusion site, same peel.
 labels { tag_single[A] <U> : A & U, tag_pair[A] <U> <V> : A & U & V };
 
-pub fn main() -> . { () }
+pub fn main() { () }

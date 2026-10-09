@@ -31,7 +31,7 @@ module hello;
 host type String role(str);
 host fn print(str: String) -> .;
 
-pub fn main() -> . { print("hello from Kio\n") }
+pub fn main() { print("hello from Kio\n") }
 ```
 
 The `host` declarations name the capabilities the package needs from its host — here a `String` type and a `print` function — while `main` is the entry the host chooses to call.

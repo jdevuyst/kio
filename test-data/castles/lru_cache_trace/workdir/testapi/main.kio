@@ -5,7 +5,7 @@ import lru/report as report;
 import testapi(I32, String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let c = cache.new_cache();
   print(report.header());
   print(cache.put(c, 1, 1, 10));

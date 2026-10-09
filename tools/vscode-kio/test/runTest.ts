@@ -6,13 +6,10 @@
 // `ci/checks/orchestrators/vscode-e2e.sh`; locally,
 // `npm test` works under Xvfb on Linux.
 //
-// The extension resolves its language server exactly once, when it
-// activates, and the only seam that lands before that is a
-// `.vscode/settings.json` written into the launch workspace —
-// `getConfiguration().update()` happens too late, since the extension
-// has already activated and resolved by then. So one launch exercises
-// exactly one server, and the three servers worth exercising get a
-// launch each, selected by `VSCODE_KIO_E2E_MODE`:
+// Each launch begins with an isolated server configuration in
+// `.vscode/settings.json`, selected by `VSCODE_KIO_E2E_MODE`.
+// The availability suite additionally exercises configuration changes
+// and explicit restart commands within the same extension host:
 //
 //   mock  — `fixtures/mock-lsp.js`, a canned JSON-RPC responder. Pins
 //           the editor-side wiring (a published diagnostic reaches
@@ -96,7 +93,11 @@ async function main(): Promise<void> {
   fs.mkdirSync(path.join(workspaceDir, ".vscode"), { recursive: true });
   fs.writeFileSync(
     path.join(workspaceDir, ".vscode", "settings.json"),
-    JSON.stringify({ "kio.server.path": serverFor(m, fixturesDir) }, null, 2),
+    JSON.stringify({
+      "kio.server.path": serverFor(m, fixturesDir),
+      // Built-in AI actions are independent of --disable-extensions.
+      "chat.disableAIFeatures": true,
+    }, null, 2),
   );
 
   if (m === "mock") {

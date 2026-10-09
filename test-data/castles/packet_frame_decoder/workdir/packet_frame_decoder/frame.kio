@@ -7,10 +7,7 @@ import testapi/text as text;
 
 pub fn length_text(frame: String) -> String { fmt.i32_to_string(text.string_len(frame)) }
 
-fn probe_code_at(frame: String, index: I32) -> . {
-  let _code = text.string_code_at(frame, index);
-  ()
-}
+fn probe_code_at(frame: String, index: I32) { let _code = text.string_code_at(frame, index); () }
 
 pub fn magic(frame: String) -> String { text.string_slice(frame, 0, 2) }
 

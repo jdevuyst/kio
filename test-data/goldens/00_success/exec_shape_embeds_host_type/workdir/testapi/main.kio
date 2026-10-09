@@ -105,7 +105,7 @@ fn show_int_or_str(v: I32 | String) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = array_make_empty(I32, ());
   array_push(xs, 4);
   array_push(xs, 5);

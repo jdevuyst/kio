@@ -12,11 +12,11 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn number(label: String, value: I32) -> . {
-  io.print(text.string_concat(label, text.string_concat(fmt.int_to_string(value), "\n")))
+fn number(label: String, value: I32) {
+  io.print(fmt.int_to_string(value).>text.string_concat("\n").>>text.string_concat(label))
 }
 
-rec(loop) fn pairs(partners: Array(I32), person: I32) -> . {
+rec(loop) fn pairs(partners: Array(I32), person: I32) {
   if! market.less(person, array.array_len(partners)) {
     io.print(text.string_concat("  L", fmt.int_to_string(person)));
     number("-R", array.array_get(partners, person));
@@ -31,7 +31,7 @@ pub fn certificate_report(
   , right: market.Preferences
   , partner: Array(I32)
   , holder: Array(I32)
-  ) -> . {
+  ) {
   let valid = certificate.valid(partner, holder);
   io.print(if! valid {
     "valid matching: yes\n"
@@ -53,7 +53,7 @@ pub fn outcome(
   , right: market.Preferences
   , result: deferred.Outcome
   , right_proposes: Bool
-  ) -> . {
+  ) {
   io.print(text.string_concat(label, "\n"));
   number("proposals: ", result.?{deferred.proposals});
   number("recipient switches: ", result.?{deferred.switches});

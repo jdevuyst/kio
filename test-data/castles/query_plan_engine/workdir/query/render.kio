@@ -88,7 +88,7 @@ rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> Strin
   }
 }
 
-rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) -> . {
+rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) {
   match! rows.>list.List.un_list {
     (
       , .(r: rel.Row, rest: rel.Table) {
@@ -100,7 +100,7 @@ rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) -> . {
   }
 }
 
-pub fn render_relation(r: rel.Relation) -> . {
+pub fn render_relation(r: rel.Relation) {
   let cols = rel.rel_cols_of(r);
   let rows = rel.rel_rows_of(r);
   print(text.cat3(margin(), header_onto(cols, ""), "\n"));

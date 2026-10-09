@@ -55,7 +55,7 @@ rec(loop) fn choose(
   }
 }
 
-rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I32) -> . {
+rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I32) {
   let last = math.sub_i32(math.add_i32(first, width), 1);
   if! math.leq_i32(plan.?{size}, last) {
     ()

@@ -40,6 +40,8 @@
 /// Render the package-specific host-type class and private runtime support
 /// declarations that are appended to the generated facade module.
 pub(crate) fn runtime_declarations(
+    package: &crate::pass::resolve::Package<crate::ast::Routed>,
+    prepared: &crate::backends::boundary_facade::PreparedBoundaryCallableSites,
     host_types_class: &str,
     host_types: &super::skin::HaskellHostTypes,
     runtime_names: &super::naming::RuntimeNames,
@@ -71,6 +73,19 @@ pub(crate) fn runtime_declarations(
                             .unwrap_or("-"),
                         host_type_param_metadata(&declaration.type_params)
                     ));
+                    let name = crate::backends::boundary_facade::QualifiedTypeName::new(
+                        declaration
+                            .module_path
+                            .split('/')
+                            .map(str::to_owned)
+                            .collect(),
+                        declaration.source_name.clone(),
+                    )
+                    .expect("a selected Haskell host type has a qualified name");
+                    let doc = prepared.host_binding(&name).and_then(|binding| {
+                        crate::backends::boundary_docs::host_type(package, binding)
+                    });
+                    super::emit::push_doc(&mut class_members, doc, "  ");
                     class_members.push_str(&format!(
                         "  type {} (h :: {}.Type) :: {}\n",
                         declaration.assoc_name,

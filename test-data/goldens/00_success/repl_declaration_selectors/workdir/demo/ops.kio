@@ -1,0 +1,32 @@
+module demo/ops;
+
+pub fn choose(left: ., right: .) -> . { left }
+
+pub fn empty() -> . { () }
+
+pub fn op() -> . { () }
+
+pub fn varop() -> . { () }
+
+pub fn field() -> . { () }
+
+pub labels { original: . };
+
+/// A label view, distinct from the function.
+pub type {field} = {original};
+
+/// Select the left operand.
+pub op _ + _ { impl choose }
+
+pub op _ .. _ { impl choose }
+
+pub op _ (=) _ { impl choose }
+
+/// Fold a bracketed sequence.
+pub varop [* *] { foldr choose empty }
+
+pub fn local() -> . { () + () }
+
+pub fn fn() -> . { () }
+
+pub fn pub() -> . { () }

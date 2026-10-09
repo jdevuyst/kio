@@ -3,4 +3,4 @@ module testapi/main;
 import testapi/internal(message);
 import testapi/io(print);
 
-pub fn main() -> . { print(message()) }
+pub fn main() { print(message()) }

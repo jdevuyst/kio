@@ -24,4 +24,4 @@ rec(loop) fn read(state: codec.Encoder, originals_rev: lists.List(I32)) -> Read_
   }
 }
 
-pub fn consume() -> Read_result { read(codec.empty(), lists.nil()) }
+pub fn consume() -> Read_result { read(codec.empty(), lists.nil(_)) }

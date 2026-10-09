@@ -13,4 +13,4 @@ fn unused[Unused]() -> Int { zero_int() }
 
 fn bad() -> Box(Int) { derive!((root, unused), Box(Int)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

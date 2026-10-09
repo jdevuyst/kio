@@ -3350,6 +3350,11 @@ fn stage_direct_callee_position_type<'m>(
         None => store.scoped_type(owner, callee.ty.clone(), span)?,
     };
     let binders = tcx.in_scope_type_param_presentation();
+    #[cfg(feature = "lsp")]
+    if tcx.env.typecheck_scope.collects_refactoring_facts() {
+        publication.record_public_callee_type(span, ty, binders, callee.is_scheme);
+        return Ok(());
+    }
     if callee.is_scheme {
         publication.record_scoped_function_scheme_position_type(span, ty, binders);
     } else {
@@ -3390,7 +3395,19 @@ struct PreparedDirectCallee {
     span: Span,
     synth: Synth<crate::ast::Lowered>,
     binders: Vec<(Span, crate::pass::typecheck_full::ResolvedBinder)>,
+    #[cfg(feature = "lsp")]
+    selected_role: Option<(Span, String)>,
     retained_type: Option<std::sync::Arc<super::env::RetainedLocalType>>,
+}
+
+#[cfg(all(test, feature = "surface", feature = "lsp"))]
+#[test]
+fn source_role_layout_prepared_values() {
+    eprintln!(
+        "source role layout: prepared_callee={} prepared_value={}",
+        std::mem::size_of::<PreparedDirectCallee>(),
+        std::mem::size_of::<PreparedOrdinaryValue<'_>>(),
+    );
 }
 
 #[cfg(feature = "surface")]
@@ -3404,6 +3421,8 @@ impl PreparedDirectCallee {
         };
         let mut binders = Vec::new();
         let mut retained_type = None;
+        #[cfg(feature = "lsp")]
+        let mut selected_role = None;
         let synth = super::synth::synth_path_with_binder_recorder(
             segments,
             meta.span,
@@ -3419,11 +3438,15 @@ impl PreparedDirectCallee {
                     ),
                 ));
             },
+            #[cfg(feature = "lsp")]
+            |span, binding, _| selected_role = Some((span, binding.to_owned())),
         )?;
         Ok(Some(Self {
             span: source.span(),
             synth,
             binders,
+            #[cfg(feature = "lsp")]
+            selected_role,
             retained_type,
         }))
     }
@@ -3435,6 +3458,8 @@ impl PreparedDirectCallee {
     ) -> Result<Self, Error> {
         let mut binders = Vec::new();
         let mut retained_type = None;
+        #[cfg(feature = "lsp")]
+        let mut selected_role = None;
         let synth = super::synth::synth_path_with_binder_recorder(
             segments,
             span,
@@ -3450,11 +3475,15 @@ impl PreparedDirectCallee {
                     ),
                 ));
             },
+            #[cfg(feature = "lsp")]
+            |span, binding, _| selected_role = Some((span, binding.to_owned())),
         )?;
         Ok(Self {
             span,
             synth,
             binders,
+            #[cfg(feature = "lsp")]
+            selected_role,
             retained_type,
         })
     }
@@ -3468,6 +3497,10 @@ impl PreparedDirectCallee {
     ) -> Result<(), Error> {
         for (span, binder) in &self.binders {
             publication.record_position_binder(*span, binder.clone());
+        }
+        #[cfg(feature = "lsp")]
+        if let Some((span, binding)) = &self.selected_role {
+            publication.record_selected_role(*span, binding.clone());
         }
         stage_direct_callee_position_type(
             &self.synth,
@@ -3769,6 +3802,8 @@ struct PreparedOrdinaryValue<'m> {
     source: &'m crate::ast::Expr<crate::ast::Lowered>,
     synth: Synth<crate::ast::Lowered>,
     binders: Vec<(Span, crate::pass::typecheck_full::ResolvedBinder)>,
+    #[cfg(feature = "lsp")]
+    selected_role: Option<(Span, String)>,
     retained_type: Option<std::sync::Arc<super::env::RetainedLocalType>>,
 }
 
@@ -3782,6 +3817,8 @@ impl<'m> PreparedOrdinaryValue<'m> {
         record_prepared_ordinary_value();
         let mut binders = Vec::new();
         let mut retained_type = None;
+        #[cfg(feature = "lsp")]
+        let mut selected_role = None;
         let synth = match source {
             crate::ast::Expr::Path { segments, meta, .. } => {
                 super::synth::synth_path_with_binder_recorder(
@@ -3799,6 +3836,8 @@ impl<'m> PreparedOrdinaryValue<'m> {
                             ),
                         ));
                     },
+                    #[cfg(feature = "lsp")]
+                    |span, binding, _| selected_role = Some((span, binding.to_owned())),
                 )?
             }
             crate::ast::Expr::Unit {
@@ -3813,6 +3852,8 @@ impl<'m> PreparedOrdinaryValue<'m> {
             source,
             synth,
             binders,
+            #[cfg(feature = "lsp")]
+            selected_role,
             retained_type,
         }))
     }
@@ -3879,6 +3920,10 @@ impl<'m> PreparedOrdinaryValue<'m> {
         let scoped = self.scoped_type(owner, store, tcx)?;
         for (span, binder) in self.binders {
             publication.record_position_binder(span, binder);
+        }
+        #[cfg(feature = "lsp")]
+        if let Some((span, binding)) = self.selected_role {
+            publication.record_selected_role(span, binding);
         }
         let is_scheme = self.synth.is_scheme;
         let inferred_type_arg_suffix = self.synth.inferred_type_arg_suffix;
@@ -4211,7 +4256,11 @@ fn preflight_general_goal_call_layer<'m>(
         let remaining = binders.split_off(explicit_prefix);
         result_inferred_type_arg_suffix = callee.inferred_type_arg_suffix.min(remaining.len());
         let residual_span = ret.span();
-        let residual_body = function_from_parts(param, ret, abi_arity, residual_span);
+        let residual_body = if has_value_layer {
+            function_from_parts(param, ret, abi_arity, residual_span)
+        } else {
+            ret
+        };
         param = crate::ast::Type::Unit {
             meta: crate::ast::Meta::new(
                 type_args
@@ -4288,23 +4337,32 @@ fn open_selecting_goal_call<'m>(
     owner: crate::ast::TypeGoalOwner,
     tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<SelectingOrdinaryCall<'m>, Error> {
-    let Some(preflight) = preflight_general_goal_call_layer(callee, &args, empty_call_mode, tcx)?
-    else {
-        return Err(non_function_call_error(&callee.ty, callee_span, tcx));
-    };
-    open_preflighted_selecting_goal_call(
-        preflight,
-        direct,
-        regular_ufcs,
-        slot_offset,
-        callee_span,
-        call_site,
-        user_elaborator_transcript,
-        None,
-        store,
-        owner,
-        tcx,
-    )
+    let result = (|| {
+        let Some(preflight) =
+            preflight_general_goal_call_layer(callee, &args, empty_call_mode, tcx)?
+        else {
+            return Err(non_function_call_error(&callee.ty, callee_span, tcx));
+        };
+        open_preflighted_selecting_goal_call(
+            preflight,
+            direct,
+            regular_ufcs,
+            slot_offset,
+            callee_span,
+            call_site,
+            user_elaborator_transcript,
+            None,
+            store,
+            owner,
+            tcx,
+        )
+    })();
+    result.map_err(|error| {
+        error.with_type_failure_origin(crate::error::TypeFailureOrigin::Application {
+            call_site: call_site.id,
+            operation: crate::error::CallFailureOperation::Opening,
+        })
+    })
 }
 
 #[cfg(feature = "surface")]
@@ -7568,6 +7626,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                         OrdinaryRecursiveFamily::ComputedCall,
                     ));
                 };
+                tcx.elaborations
+                    .record_rec_loop_diagnostic(source, &direct.synth.ty);
                 let args = call_arg_refs(args);
                 OrdinaryValueSeed::DirectSelecting {
                     direct,
@@ -10665,6 +10725,20 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<SelectingOrdinaryCallAdvance<'m>, Error> {
+        tcx.elaborations.record_rec_loop_binder_goals(
+            selecting.call.call_site.id,
+            selecting
+                .call
+                .goal_occurrences
+                .iter()
+                .flatten()
+                .map(|occurrence| {
+                    let crate::ast::Type::Goal { goal, .. } = occurrence.ty().as_type() else {
+                        unreachable!("activated callee binder retains its exact goal occurrence")
+                    };
+                    *goal
+                }),
+        );
         let needs_immediate_reservation =
             selecting
                 .call
@@ -10727,9 +10801,14 @@ impl<'m> OrdinaryValueCursor<'m> {
 
         if selecting.value_slots == 0 && !selecting.candidates.is_empty() {
             return Err(
-                Error::type_(source.span(), "too many arguments in this call").with_help(
-                    "spell the zero-argument application before applying the returned function",
-                ),
+                Error::type_(source.span(), "too many arguments in this call")
+                    .with_help(
+                        "spell the zero-argument application before applying the returned function",
+                    )
+                    .with_type_failure_origin(crate::error::TypeFailureOrigin::Application {
+                        call_site: selecting.call.call_site.id,
+                        operation: crate::error::CallFailureOperation::Selection,
+                    }),
             );
         }
 
@@ -10746,6 +10825,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                         return Err(Error::type_(
                             candidate.span(),
                             "expected a value argument here, got a type argument",
+                        )
+                        .with_type_failure_origin(
+                            crate::error::TypeFailureOrigin::Application {
+                                call_site: selecting.call.call_site.id,
+                                operation: crate::error::CallFailureOperation::Selection,
+                            },
                         ));
                     };
                     let packet_final =
@@ -10798,13 +10883,16 @@ impl<'m> OrdinaryValueCursor<'m> {
                             store,
                             candidate.span(),
                         )?;
-                        store.constrain_equation(
-                            delta,
-                            written,
-                            expected,
-                            candidate.span(),
-                            tcx,
-                        )?;
+                        store
+                            .constrain_equation(delta, written, expected, candidate.span(), tcx)
+                            .map_err(|error| {
+                                error.with_type_failure_origin(
+                                    crate::error::TypeFailureOrigin::Application {
+                                        call_site: selecting.call.call_site.id,
+                                        operation: crate::error::CallFailureOperation::Header,
+                                    },
+                                )
+                            })?;
                     }
                     (
                         SelectingOrdinaryValue { child, preselected },
@@ -13439,12 +13527,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                             ),
                         },
                     };
-                    let value_param_types =
+                    let value_param_types: Vec<_> =
                         value_param_types.iter().map(|ty| ty.ty().clone()).collect();
                     let actual = super::synth::build_fn_type_from_body_type(
                         sig,
                         body_type,
-                        value_param_types,
+                        &value_param_types,
                         source.span(),
                         tcx,
                     );
@@ -15427,12 +15515,17 @@ impl<'m> OrdinaryValueCursor<'m> {
             }
             None => super::synth::synth_literal_unrecorded(shape, annotation, span, tcx)?,
         };
-        let actual = store.scoped_type(owner, resolved, span)?;
+        let actual = store.scoped_type(owner, resolved.ty, span)?;
         if let Some(expected) = self.expected {
             let expected = expected.into_expected_equation_operand(owner, store, span)?;
             store.constrain_equation(delta, actual.clone(), expected, span, tcx)?;
         }
-        publication.record_literal_resolution(self.source.site(), actual.clone());
+        publication.record_literal_resolution(
+            self.source.site(),
+            actual.clone(),
+            #[cfg(feature = "lsp")]
+            resolved.lexical_role,
+        );
         publication.record_position_type(
             span,
             actual.clone(),
@@ -15587,7 +15680,7 @@ fn prepare_signature_for_close<'m>(
         .collect::<Result<Vec<_>, Error>>()?;
 
     let mut binder_end = retained_binders.len();
-    if !sig.has_value_group() {
+    if sig.canonical_group_refs().next().is_none() {
         result = store.value_group_function_for_close(Vec::new(), result, span)?;
     }
     for group in sig.canonical_group_refs().rev() {
@@ -17223,13 +17316,20 @@ fn try_apply_pending_expected_result<'m>(
         store,
         advancing.call.call_site.span,
     )?;
-    let outcome = store.try_constrain_gather_equation(
-        gather.delta_mut(),
-        result.clone(),
-        expected_equation,
-        advancing.call.call_site.span,
-        tcx,
-    )?;
+    let outcome = store
+        .try_constrain_gather_equation(
+            gather.delta_mut(),
+            result.clone(),
+            expected_equation,
+            advancing.call.call_site.span,
+            tcx,
+        )
+        .map_err(|error| {
+            error.with_type_failure_origin(crate::error::TypeFailureOrigin::Application {
+                call_site: advancing.call.call_site.id,
+                operation: crate::error::CallFailureOperation::Result,
+            })
+        })?;
     frontier.close_gather(gather, tcx)?;
     if outcome == CloseReadyEquationConstraint::Deferred {
         pending.progress = EquationProgress::AwaitingProgress(snapshot);
@@ -18302,6 +18402,18 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn run_root_from_mode(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<&InternedType<crate::ast::Lowered>>,
+        initial_mode: frontier::FrontierMode,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<Synth<crate::ast::Lowered>, Error> {
+        let checkpoint = tcx.elaborations.rec_loop_diagnostic_checkpoint();
+        let result = Self::run_root_from_mode_inner(source, expected, initial_mode, tcx);
+        tcx.elaborations
+            .finish_rec_loop_diagnostics(checkpoint, result)
+    }
+
+    fn run_root_from_mode_inner(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<&InternedType<crate::ast::Lowered>>,
         initial_mode: frontier::FrontierMode,
@@ -20974,7 +21086,7 @@ where
                                         "only concrete-parameter lambdas synthesize without a slot",
                                     ),
                                     tcx,
-                                );
+                                )?;
                                 Ok(complete_synth(source, synth, tcx))
                             }
                             LambdaSelection::Check {
@@ -21343,7 +21455,7 @@ where
                 body_ty,
                 value_param_types,
                 tcx,
-            );
+            )?;
             Ok(complete_synth(source, synth, tcx))
         }
         DispatchState::NeedsExpected(body_plan) => Ok(DispatchState::NeedsExpected(Box::new(
@@ -21671,6 +21783,156 @@ mod tests {
 
     #[cfg(all(feature = "surface", target_pointer_width = "64"))]
     #[test]
+    fn rec_loop_diagnostic_layout_probe() {
+        use std::mem::size_of;
+        eprintln!(
+            "rec diagnostic layout: surface={}, desugared={}, lowered={}, unchecked_prime={}, prime={}, enriched={}, routed={}",
+            size_of::<crate::ast::Expr<crate::ast::Surface>>(),
+            size_of::<crate::ast::Expr<crate::ast::Desugared>>(),
+            size_of::<Expr>(),
+            size_of::<crate::ast::Expr<crate::ast::UncheckedPrime>>(),
+            size_of::<crate::ast::Expr<crate::ast::Prime>>(),
+            size_of::<crate::ast::Expr<crate::ast::Enriched>>(),
+            size_of::<crate::ast::Expr<crate::ast::Routed>>(),
+        );
+        eprintln!(
+            "rec diagnostic hot layout: call={}, expected={}, owner_bound={}, cursor={}, frame={}, type={}, interned_type={}, error={}, diagnostic={}",
+            size_of::<OpenGoalCall<'_>>(),
+            size_of::<ExpectedEquationOperand>(),
+            size_of::<OwnerBoundType>(),
+            size_of::<OrdinaryValueCursor<'_>>(),
+            size_of::<OrdinaryDriverFrame<'_>>(),
+            size_of::<Type>(),
+            size_of::<InternedType<Lowered>>(),
+            size_of::<crate::error::Error>(),
+            size_of::<crate::error::Diagnostic>(),
+        );
+        eprintln!(
+            "rec diagnostic cold layout: elaborations={}, diagnostic_extra={}",
+            size_of::<Elaborations>(),
+            size_of::<crate::error::DiagExtra>(),
+        );
+    }
+
+    #[cfg(all(feature = "surface", target_pointer_width = "64"))]
+    #[test]
+    fn rec_loop_diagnostic_new_carrier_layout_probe() {
+        use std::mem::size_of;
+        eprintln!(
+            "rec diagnostic added carriers: marker={}, record={}, failure_origin={}",
+            size_of::<crate::ast::RecLoopDiagnostic>(),
+            size_of::<crate::pass::typecheck_full::RecLoopDiagnosticRecord>(),
+            size_of::<crate::error::TypeFailureOrigin>(),
+        );
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn rec_loop_diagnostic_does_not_add_ordinary_planning_work() {
+        let package = resolved_lowered_test_package(
+            "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+             rec(drive) fn again(x: .) { rec again(x) }",
+        );
+        let module = &package.module("main").unwrap().module;
+        let function = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::FnDef(definition) if definition.name == "again" => Some(definition),
+                _ => None,
+            })
+            .unwrap();
+        let env = super::super::ModuleEnv::build(module, None, None, Some(&package)).unwrap();
+        let mut plain = function.body.clone();
+        let Expr::Call { diagnostic, .. } = &mut plain else {
+            unreachable!()
+        };
+        *diagnostic = crate::ast::RecLoopDiagnostic::None;
+        let mut results = Vec::new();
+        for source in [&function.body, &plain] {
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations);
+            for parameter in function.sig.value_params() {
+                tcx.push_value(parameter.name.clone(), parameter.ty.clone().unwrap());
+            }
+            let expected = InternedType::fresh(function.ret.clone());
+            reset_ordinary_planning_work();
+            let result = run_general_ordinary_value(source, Some(&expected), &mut tcx).unwrap();
+            results.push((result.ty, ORDINARY_PLANNING_WORK.with(|work| work.get())));
+            assert_eq!(elaborations.rec_loop_diagnostic_checkpoint(), 0);
+        }
+        assert!(results[0].1.open_goal_calls > 0);
+        assert_eq!(results[0].1, results[1].1);
+        assert_eq!(results[0].0.as_type(), results[1].0.as_type());
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn rec_loop_diagnostic_nested_roots_retry_and_drain_without_body_blame() {
+        let package = resolved_lowered_test_package(
+            "module main; host fn drive[S][R](step: S -> S | R, state: S) -> R; \
+             host fn phantom[T](value: .) -> .; \
+             rec(drive) fn again(value: .) { rec again(value) } \
+             fn good(value: .) { value } fn bad(value: .) { phantom(value) }",
+        );
+        let module = &package.module("main").unwrap().module;
+        let body = |name: &str| {
+            &module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(definition) if definition.name == name => Some(definition),
+                    _ => None,
+                })
+                .unwrap()
+                .body
+        };
+        let env = super::super::ModuleEnv::build(module, None, None, Some(&package)).unwrap();
+        let mut elaborations = Elaborations::new();
+        let unit = Type::Unit {
+            meta: Meta::new(sp()),
+        };
+        let expected = InternedType::fresh(unit.clone());
+        let mut tcx = TypeCtx::new(&env, &mut elaborations);
+        tcx.push_value("value".into(), unit);
+        for _ in 0..2 {
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 0);
+            assert!(matches!(
+                OrdinaryValueCursor::seed(body("again"), &mut tcx).unwrap(),
+                OrdinaryValueSeed::DirectSelecting { .. }
+            ));
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 1);
+            run_general_ordinary_value(body("good"), Some(&expected), &mut tcx).unwrap();
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 1);
+            let first = run_general_ordinary_value(body("bad"), Some(&expected), &mut tcx)
+                .err()
+                .expect("the body leaves its own type argument unresolved");
+            assert!(matches!(
+                first.type_failure_origin(),
+                Some(crate::error::TypeFailureOrigin::UnresolvedGoal(_))
+            ));
+            assert!(!first.diag().1.contains("the selected `rec` loop"));
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 1);
+            let second = run_general_ordinary_value(body("bad"), Some(&expected), &mut tcx)
+                .err()
+                .expect("retrying the body retains its independent failure");
+            assert_ne!(first.type_failure_origin(), second.type_failure_origin());
+            assert!(!second.diag().1.contains("the selected `rec` loop"));
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 1);
+            let error = tcx
+                .elaborations
+                .finish_rec_loop_diagnostics::<()>(0, Err(second))
+                .unwrap_err();
+            assert!(error.type_failure_origin().is_none());
+            assert!(!error.diag().1.contains("the selected `rec` loop"));
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 0);
+            run_general_ordinary_value(body("again"), Some(&expected), &mut tcx).unwrap();
+            assert_eq!(tcx.elaborations.rec_loop_diagnostic_checkpoint(), 0);
+        }
+    }
+
+    #[cfg(all(feature = "surface", target_pointer_width = "64"))]
+    #[test]
     fn marked_ancestor_and_terminal_roundtrip_layouts_stay_bounded() {
         struct LayerOnlyTemplateSource {
             _source: Expr,
@@ -21809,8 +22071,21 @@ mod tests {
     fn retained_local_proof_storage_is_one_optional_pointer_per_prepared_use() {
         assert_eq!(std::mem::size_of::<super::super::Local<'_, Lowered>>(), 104);
         assert_eq!(std::mem::size_of::<TypeCtx<'_, '_, Lowered>>(), 112);
-        assert_eq!(std::mem::size_of::<PreparedDirectCallee>(), 88);
-        assert_eq!(std::mem::size_of::<PreparedOrdinaryValue<'_>>(), 88);
+        let source_role_bytes = if cfg!(feature = "lsp") {
+            std::mem::size_of::<Option<(Span, String)>>()
+        } else {
+            0
+        };
+        #[cfg(feature = "lsp")]
+        assert_eq!(source_role_bytes, 32);
+        assert_eq!(
+            std::mem::size_of::<PreparedDirectCallee>(),
+            88 + source_role_bytes
+        );
+        assert_eq!(
+            std::mem::size_of::<PreparedOrdinaryValue<'_>>(),
+            88 + source_role_bytes
+        );
         assert_eq!(
             std::mem::size_of::<Option<std::sync::Arc<super::super::env::RetainedLocalType>>>(),
             8
@@ -23114,6 +23389,7 @@ mod tests {
             };
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 meta: _,
                 ..
             } = callee.as_ref()
@@ -23797,17 +24073,14 @@ mod tests {
         );
         assert_eq!(
             display_type(call.remaining_param.solver.as_type()),
-            "(main.Local & (source.Actual & (Outer & .)))"
+            "main.Local & source.Actual & Outer & ."
         );
         let result = call.result_type(owner);
         assert!(
             result.identity_is_canonical(),
             "the canonical caller argument must retain exact identity in the result"
         );
-        assert_eq!(
-            display_type(result.as_type()),
-            "(source.Actual & (Outer & .))"
-        );
+        assert_eq!(display_type(result.as_type()), "source.Actual & Outer & .");
     }
 
     #[cfg(feature = "surface")]
@@ -24125,6 +24398,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{function_name}` witness"));
             let Expr::Call {
                 occurrence: meta_occurrence,
+                diagnostic: _,
                 args,
                 meta: _,
                 ..
@@ -24220,6 +24494,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` witness function"));
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee,
                 meta: _,
                 ..
@@ -25671,6 +25946,8 @@ mod tests {
             source: &source,
             synth: Synth::value_interned(InternedType::fresh_canonical(goal_type(ancestor))),
             binders: Vec::new(),
+            #[cfg(feature = "lsp")]
+            selected_role: None,
             retained_type: None,
         };
 
@@ -26925,6 +27202,7 @@ mod tests {
         let (item_index, def) = find("rejected");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             meta,
             ..
@@ -27224,6 +27502,7 @@ mod tests {
             let [
                 CallArg::Value(Expr::Call {
                     occurrence: meta_occurrence,
+                    diagnostic: _,
                     callee,
                     meta,
                     ..
@@ -27407,6 +27686,7 @@ mod tests {
         let direct_site = |expr: &Expr| {
             let Expr::Call {
                 occurrence: call_meta_occurrence,
+                diagnostic: _,
                 callee,
                 args,
                 meta: call_meta,
@@ -27711,6 +27991,7 @@ mod tests {
         let site = |def: &crate::ast::FnDef<Lowered>| {
             let Expr::Call {
                 occurrence: call_meta_occurrence,
+                diagnostic: _,
                 callee,
                 args,
                 meta: call_meta,
@@ -28009,6 +28290,7 @@ mod tests {
         let call_spans = |body: &Expr| {
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee,
                 args,
                 meta: _,
@@ -28339,6 +28621,7 @@ mod tests {
             };
             let Expr::Call {
                 occurrence: meta_occurrence,
+                diagnostic: _,
                 callee: computed_callee,
                 meta,
                 ..
@@ -28355,6 +28638,7 @@ mod tests {
             };
             let Some(CallArg::Value(Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee: nested_callee,
                 meta: nested_meta,
                 ..
@@ -28604,6 +28888,7 @@ mod tests {
             .expect("partial-prefix witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             meta: _,
             ..
@@ -28613,6 +28898,7 @@ mod tests {
         };
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee: direct,
             args: prefix,
             meta: prefix_meta,
@@ -28740,6 +29026,7 @@ mod tests {
             let (item_index, def) = def(name);
             let Expr::Call {
                 occurrence: meta_occurrence,
+                diagnostic: _,
                 callee,
                 args,
                 meta,
@@ -28824,6 +29111,7 @@ mod tests {
         ) -> (Span, crate::ast::ExpressionSite, Span) {
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee,
                 args,
                 meta: _,
@@ -28986,6 +29274,7 @@ mod tests {
             };
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee: inner_call,
                 meta: middle_meta,
                 ..
@@ -28995,6 +29284,7 @@ mod tests {
             };
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee: inner_callee,
                 meta: inner_meta,
                 ..
@@ -31273,6 +31563,7 @@ mod tests {
 
         let Some(crate::pass::typecheck_full::RecordedElaboration::Lowered(Expr::Call {
             occurrence: normalized_occurrence,
+            diagnostic: _,
             callee,
             args,
             ..
@@ -31484,6 +31775,7 @@ mod tests {
             .expect("bad witness");
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: call_meta,
@@ -31636,6 +31928,7 @@ mod tests {
             .expect("bad multi-parameter witness");
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: call_meta,
@@ -31885,6 +32178,7 @@ mod tests {
             .expect("bad all-concrete witness");
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: call_meta,
@@ -32004,6 +32298,7 @@ mod tests {
             .expect("bad product-packed witness");
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: call_meta,
@@ -32151,6 +32446,7 @@ mod tests {
             .expect("bad direct-pair witness");
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: call_meta,
@@ -32184,6 +32480,7 @@ mod tests {
         let [
             CallArg::Value(Expr::Call {
                 occurrence: pair_meta_occurrence,
+                diagnostic: _,
                 callee: pair_callee,
                 args: pair_args,
                 meta: pair_meta,
@@ -34018,6 +34315,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` rollback witness"));
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 args,
                 meta: call_meta,
                 ..
@@ -35181,7 +35479,7 @@ mod tests {
         }
         .take_arg(true, &aliases)
         .expect("the whole packet is one admitted source value");
-        assert_eq!(display_type(whole.solver.as_type()), "(I32 & String)");
+        assert_eq!(display_type(whole.solver.as_type()), "I32 & String");
         assert_eq!(
             display_type(
                 whole
@@ -36220,6 +36518,7 @@ mod tests {
             .expect("empty-inner-call witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -36381,6 +36680,7 @@ mod tests {
             }
             let Expr::Call {
                 occurrence: meta_occurrence,
+                diagnostic: _,
                 callee,
                 args,
                 meta,
@@ -36521,6 +36821,7 @@ mod tests {
             .expect("rank-N rollback witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -36641,6 +36942,7 @@ mod tests {
             .expect("retained-abstraction rollback witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -36789,6 +37091,7 @@ mod tests {
             .expect("deep retained-abstraction witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -36964,6 +37267,7 @@ mod tests {
             .expect("higher-kinded retained-abstraction witness function");
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -37080,6 +37384,7 @@ mod tests {
             .unwrap_or_else(|| panic!("missing {case} unresolved witness function"));
         let Expr::Call {
             occurrence: meta_occurrence,
+            diagnostic: _,
             callee,
             args,
             meta,

@@ -154,7 +154,7 @@ rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table 
             (tail, st2)
           }
         }
-      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      , .(_empty: .) { (list.nil(rel.Row), st) }
       )
   }
 }
@@ -166,7 +166,7 @@ rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> 
           let .(tail: rel.Table, st1: Stats) = rec(cont) project_rows(cols, rest, st);
           (list.cons(rel.project_row(cols, r), tail), st1)
         }
-      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      , .(_empty: .) { (list.nil(rel.Row), st) }
       )
   }
 }
@@ -204,7 +204,7 @@ rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schem
             (tail, st1)
           }
         }
-      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      , .(_empty: .) { (list.nil(rel.Row), st) }
       )
   }
 }
@@ -223,7 +223,7 @@ rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: sch
           let .(tail: rel.Table, st2: Stats) = rec(cont) join_rows(rest, rs, lkey, rkey, st1);
           (list.append(hits, tail), st2)
         }
-      , .(_empty: .) { (list.nil(rel.Row, ()), st) }
+      , .(_empty: .) { (list.nil(rel.Row), st) }
       )
   }
 }
@@ -367,7 +367,7 @@ rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List
             , rec(cont) groups_to_table(key, agg, rest)
             )
         }
-      , .(_empty: .) { list.nil(rel.Row, ()) }
+      , .(_empty: .) { list.nil(rel.Row) }
       )
   }
 }
@@ -416,7 +416,7 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
               , rel.rel_rows_of(child)
               , key
               , summing(plan.sum_val_of(v))
-              , list.nil(Group, ())
+              , list.nil(Group)
               , st1
               );
           (
@@ -431,7 +431,7 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
           let .(child: rel.Relation, st1: Stats) = rec(cont) eval(plan.count_src_of(src), st);
           let key = plan.count_key_of(k);
           let .(groups: list.List(Group), st2: Stats) =
-            group_rows(rel.rel_rows_of(child), key, counting(), list.nil(Group, ()), st1);
+            group_rows(rel.rel_rows_of(child), key, counting(), list.nil(Group), st1);
           (
             , rel.relation(
                 , list.of2(key, schema.count())
@@ -447,7 +447,7 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
               , rel.rel_rows_of(child)
               , plan.order_key_of(k)
               , plan.order_dir_of(d)
-              , list.nil(rel.Row, ())
+              , list.nil(rel.Row)
               , st1
               );
           (rel.relation(rel.rel_cols_of(child), rows), st2)

@@ -10,7 +10,7 @@ import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
-pub fn main() -> . {
+pub fn main() {
   match! input.read() {
     .(parsed: input.Stimulus) {
       let events = parsed.?{input.stimulus};
@@ -18,7 +18,9 @@ pub fn main() -> . {
       report.summary(simulate.run(model.initial_state(events), model.circuit()))
     };
     .(error: input.Problem) {
-      io.print(text.string_concat("input error: ", text.string_concat(error.?{input.problem}, "\n")))
+      io.print(error.?{input.problem}
+        .>text.string_concat("\n")
+        .>>text.string_concat("input error: "))
     }
   }
 }

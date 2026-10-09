@@ -662,11 +662,8 @@ pub struct ItemEntry {
     pub vis_pub: bool,
 }
 
-/// One operator binding — its token spelling, the function it binds, and
-/// the declaring module. Offered under operator-aware shapes
-/// (`:signature` / `:source` / `:doc`), but **not** under name-only
-/// shapes (`:t` / `:pure` / `:which` / `:refs`, which key on a value
-/// binding or the bound-function name).
+/// One operator declaration, identified by its complete tagged grammar and
+/// provider. Declaration-query shapes offer it; value-query shapes do not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperatorEntry {
     /// The complete tagged grammar inserted by an operator query completion.
@@ -699,6 +696,11 @@ pub struct NameSet {
     pub items: Vec<ItemEntry>,
     /// Every loaded module's operator bindings.
     pub operators: Vec<OperatorEntry>,
+    /// Explicit module aliases in the current module, used only for query spelling.
+    pub(crate) aliases: std::collections::BTreeMap<String, String>,
+    /// Exact provider/selector pairs admitted by the current module's declarations
+    /// and selective imports. `None` is an unscoped standalone catalogue.
+    pub(crate) selector_scope: Option<std::collections::BTreeSet<(String, String)>>,
     /// Compiler-provided names brought in by builtin module imports.
     pub builtins: Vec<BuiltinEntry>,
     /// The current module's source text, when the session has one — the
@@ -879,10 +881,42 @@ impl NameSet {
             )
             .map(Arc::new)
         });
+        let mut aliases = std::collections::BTreeMap::new();
+        let mut selector_scope = std::collections::BTreeSet::new();
+        if let Some(current) = session.current().and_then(|path| session.module(path)) {
+            for op in &operators {
+                if op.source_module == current.path {
+                    selector_scope.insert((op.source_module.clone(), op.grammar.clone()));
+                }
+            }
+            for item in &items {
+                if item.source_module == current.path {
+                    selector_scope.insert((item.source_module.clone(), item.short_name.clone()));
+                }
+            }
+            for import in &current.module.imports {
+                match &import.kind {
+                    crate::ast::ImportKind::Qualified { path, alias, .. } => {
+                        aliases.insert(alias.clone(), path.segments.join("/"));
+                    }
+                    crate::ast::ImportKind::Selective { from, items } => {
+                        for item in items {
+                            selector_scope.insert((
+                                from.segments.join("/"),
+                                super::commands::selector_name(item),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         NameSet {
             modules,
             items,
             operators,
+            aliases,
+            selector_scope: Some(selector_scope),
             builtins,
             current_module_src,
             expression_parse_context,
@@ -924,21 +958,27 @@ impl NameSet {
     }
 
     /// Name / FQN candidates fuzzy-matching `query`, sorted best match
-    /// first — the `:t` / `:pure` / `:refs` pool. Operators are **not**
+    /// first — the `:t` / `:pure` pool. Operators are **not**
     /// included.
     fn name_candidates(&self, query: &str) -> Vec<Candidate> {
-        rank(self.name_scored(query))
+        rank(self.name_scored(query, false))
     }
 
     /// The scored (unsorted) name / FQN candidates — shared with the
     /// operator- and builtin-aware pools, which append their extra
     /// candidates before the single final sort so the kinds interleave
     /// by score rather than trailing as separate blocks.
-    fn name_scored(&self, query: &str) -> Vec<ScoredCandidate> {
+    fn name_scored(&self, query: &str, global: bool) -> Vec<ScoredCandidate> {
         let mut scored: Vec<ScoredCandidate> = Vec::new();
         for it in &self.items {
             let desc = format!("{} — {}", kind_label(it.kind, it.vis_pub), it.source_module);
-            if let Some(fm) = fuzzy_match(query, &it.short_name) {
+            if (!it.short_name.starts_with('{')
+                || global
+                || self.selector_scope.as_ref().is_none_or(|scope| {
+                    scope.contains(&(it.source_module.clone(), it.short_name.clone()))
+                }))
+                && let Some(fm) = fuzzy_match(query, &it.short_name)
+            {
                 scored.push(ScoredCandidate {
                     score: fm.score,
                     candidate: Candidate {
@@ -949,16 +989,23 @@ impl NameSet {
                     },
                 });
             }
-            if let Some(fm) = fuzzy_match(query, &it.fqn) {
-                scored.push(ScoredCandidate {
-                    score: fm.score,
-                    candidate: Candidate {
-                        label: it.fqn.clone(),
-                        kind: CandidateKind::Item(it.kind),
-                        description: Some(desc),
-                        match_indices: fm.indices,
-                    },
-                });
+            for label in std::iter::once(it.fqn.clone()).chain(
+                self.aliases
+                    .iter()
+                    .filter(|(_, provider)| *provider == &it.source_module)
+                    .map(|(alias, _)| format!("{alias}.{}", it.short_name)),
+            ) {
+                if let Some(fm) = fuzzy_match(query, &label) {
+                    scored.push(ScoredCandidate {
+                        score: fm.score,
+                        candidate: Candidate {
+                            label,
+                            kind: CandidateKind::Item(it.kind),
+                            description: Some(desc.clone()),
+                            match_indices: fm.indices,
+                        },
+                    });
+                }
             }
         }
         scored
@@ -967,40 +1014,52 @@ impl NameSet {
     /// Name / FQN / operator candidates for `:signature` / `:source`,
     /// sorted best match first.
     fn name_fqn_op_candidates(&self, query: &str) -> Vec<Candidate> {
-        let mut scored = self.name_scored(query);
-        scored.extend(self.operator_scored(query));
-        rank(scored)
-    }
-
-    /// Name / FQN / builtin candidates for `:which`.
-    fn name_builtin_candidates(&self, query: &str) -> Vec<Candidate> {
-        let mut scored = self.name_scored(query);
-        scored.extend(self.builtin_scored(query));
+        let mut scored = self.name_scored(query, false);
+        scored.extend(self.operator_scored(query, false));
         rank(scored)
     }
 
     /// Name / FQN / operator / builtin candidates for `:doc`.
-    fn name_fqn_op_builtin_candidates(&self, query: &str) -> Vec<Candidate> {
-        let mut scored = self.name_scored(query);
-        scored.extend(self.operator_scored(query));
+    fn name_fqn_op_builtin_candidates(&self, query: &str, global: bool) -> Vec<Candidate> {
+        let mut scored = self.name_scored(query, global);
+        scored.extend(self.operator_scored(query, global));
         scored.extend(self.builtin_scored(query));
         rank(scored)
     }
 
-    fn operator_scored(&self, query: &str) -> Vec<ScoredCandidate> {
+    fn operator_scored(&self, query: &str, global: bool) -> Vec<ScoredCandidate> {
         let mut scored = Vec::new();
         for op in &self.operators {
-            if let Some(fm) = fuzzy_match(query, &op.grammar) {
-                let desc = op.signature.clone();
-                scored.push(ScoredCandidate {
-                    score: fm.score,
-                    candidate: Candidate {
-                        label: op.grammar.clone(),
-                        kind: CandidateKind::Operator,
-                        description: Some(desc),
-                        match_indices: fm.indices,
-                    },
-                });
+            let mut labels = vec![super::commands::qualified_selector(
+                &op.source_module,
+                &op.grammar,
+            )];
+            labels.extend(
+                self.aliases
+                    .iter()
+                    .filter(|(_, provider)| *provider == &op.source_module)
+                    .map(|(alias, _)| super::commands::qualified_selector(alias, &op.grammar)),
+            );
+            if global
+                || self.selector_scope.as_ref().is_none_or(|scope| {
+                    scope.contains(&(op.source_module.clone(), op.grammar.clone()))
+                })
+            {
+                labels.push(op.grammar.clone());
+            }
+            for label in labels {
+                if let Some(fm) = fuzzy_match(query, &label) {
+                    let desc = op.signature.clone();
+                    scored.push(ScoredCandidate {
+                        score: fm.score,
+                        candidate: Candidate {
+                            label,
+                            kind: CandidateKind::Operator,
+                            description: Some(desc),
+                            match_indices: fm.indices,
+                        },
+                    });
+                }
             }
         }
         scored
@@ -1088,6 +1147,7 @@ fn collect_item(
                         newtype.vis.is_pub(),
                     ),
                     crate::ast::TypeRecMember::Labels(labels, _) => {
+                        collect_label_selectors(module_path, labels, items);
                         let Some(name) = labels.type_alias_name.as_deref() else {
                             continue;
                         };
@@ -1111,10 +1171,13 @@ fn collect_item(
         Item::Elaborator(s, _) => (s.name.as_str(), ItemKind::Fn, s.vis.is_pub()),
         Item::HostType(h) => (h.name.as_str(), ItemKind::Newtype, true),
         Item::HostFn(h) => (h.name.as_str(), ItemKind::Fn, true),
-        Item::Labels(t, _) => match &t.type_alias_name {
-            Some(n) => (n.as_str(), ItemKind::Labels, t.vis.is_pub()),
-            None => return,
-        },
+        Item::Labels(t, _) => {
+            collect_label_selectors(module_path, t, items);
+            match &t.type_alias_name {
+                Some(n) => (n.as_str(), ItemKind::Labels, t.vis.is_pub()),
+                None => return,
+            }
+        }
         Item::LabelForward(forward, _) => {
             let name = format!("{{{}}}", forward.name);
             items.push(ItemEntry {
@@ -1136,6 +1199,23 @@ fn collect_item(
         source_module: module_path.to_owned(),
         vis_pub,
     });
+}
+
+fn collect_label_selectors(module: &str, labels: &crate::ast::Labels, items: &mut Vec<ItemEntry>) {
+    for entry in labels
+        .entries
+        .iter()
+        .filter(|entry| !entry.is_reuse_marker())
+    {
+        let name = format!("{{{}}}", entry.name);
+        items.push(ItemEntry {
+            fqn: format!("{module}.{name}"),
+            short_name: name,
+            kind: ItemKind::LabelForward,
+            source_module: module.to_owned(),
+            vis_pub: labels.vis.is_pub(),
+        });
+    }
 }
 
 /// A [`Candidate`] paired with its fuzzy-match score, the intermediate
@@ -1373,18 +1453,33 @@ pub fn complete(names: &NameSet, scope: &dyn ScopeProvider, line: &str, pos: usi
     if !trimmed.starts_with(':') {
         return identifier_completion(scope, line, pos);
     }
-
-    let word_start = word_start(line, pos);
-    let word = &line[word_start..pos];
-    let replace = word_start..pos;
-
-    // At line start the candidate set is the `:command` table.
-    if word_start == 0 {
+    let command_start = line.len() - trimmed.len();
+    let command_end = command_start + trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    if pos <= command_end {
+        let start = command_start.min(pos);
         return Completion {
-            replace,
-            candidates: command_candidates_ranked(word),
+            replace: start..pos,
+            candidates: command_candidates_ranked(&line[start..pos]),
         };
     }
+
+    let mut word_start = word_start(line, pos);
+    let shape = shape_for_position(line);
+    let declaration = matches!(
+        shape,
+        CompletionShape::NameFqnOrOp | CompletionShape::NameFqnOpOrBuiltin
+    );
+    if declaration && pos > command_end {
+        word_start =
+            command_end + line[command_end..].len() - line[command_end..].trim_start().len();
+        word_start = word_start.min(pos);
+    }
+    let word = &line[word_start..pos];
+    let replace = word_start..if declaration && word_start > 0 {
+        line.trim_end().len().max(pos)
+    } else {
+        pos
+    };
 
     // The `-v` flag of `:ls` / `:scope`.
     if word.starts_with('-') && command_takes_verbose_flag(canonical_name(first_token(line))) {
@@ -1394,7 +1489,6 @@ pub fn complete(names: &NameSet, scope: &dyn ScopeProvider, line: &str, pos: usi
         };
     }
 
-    let shape = shape_for_position(line);
     let mut candidates = match shape {
         // `:normalize <expr>` completes its argument to in-scope
         // identifiers, exactly as a bare expression line does.
@@ -1402,9 +1496,10 @@ pub fn complete(names: &NameSet, scope: &dyn ScopeProvider, line: &str, pos: usi
         CompletionShape::None => Vec::new(),
         CompletionShape::ModulePath => names.module_candidates(word),
         CompletionShape::NameOrFqn => names.name_candidates(word),
-        CompletionShape::NameOrFqnOrBuiltin => names.name_builtin_candidates(word),
         CompletionShape::NameFqnOrOp => names.name_fqn_op_candidates(word),
-        CompletionShape::NameFqnOpOrBuiltin => names.name_fqn_op_builtin_candidates(word),
+        CompletionShape::NameFqnOpOrBuiltin => {
+            names.name_fqn_op_builtin_candidates(word, canonical_name(first_token(line)) == "which")
+        }
     };
     candidates.retain(|candidate| match candidate.kind {
         CandidateKind::Item(kind) => item_allowed_for_command(kind, first_token(line)),

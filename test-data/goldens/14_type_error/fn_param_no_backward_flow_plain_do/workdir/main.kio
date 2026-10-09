@@ -2,7 +2,7 @@ module main;
 
 import elab/control(scope);
 
-fn caller() -> . {
+fn caller() {
   scope! {
     let identity = .(value) { value };
     identity(())

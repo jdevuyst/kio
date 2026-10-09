@@ -12,6 +12,7 @@
 #    the case exercises) with a `run.sh` that invokes `$KIO_BIN doc
 #    check`, `fmt`, or `build` from the case root, with `expected.exit`,
 #    `expected.stdout`, and one stderr policy file.
+#    Committed dependencies pass the shared case-binary canonicality check.
 # 2. Smoke-test: `cd docs/ && kio doc check`, then
 #    `kio doc fmt --check`, against the repo's full documentation
 #    tree. `docs/` carries its own `docs.pkg.kio`
@@ -77,7 +78,7 @@ while [ $# -gt 0 ]; do
 Usage: sh $0 [--jobs=<N>] [--compiler-jobs=<N>]
 
 Run the kiodoc goldens (test-data/kiodoc-cases/) through
-ci/run-tests.sh, then run \`kio doc check\` and
+ci/run-tests.sh with dependency-tree canonicality checks, then run \`kio doc check\` and
 \`kio doc fmt --check\` inside docs/ as smoke tests against the
 repo's documentation tree.
 
@@ -118,6 +119,7 @@ KIO_BIN="$ORCHESTRATOR_TMP/kio"
 # `TESTING.md` § Harness impl-list parity for the rule.
 set -- "--cases-dir=$REPO_ROOT/test-data/kiodoc-cases" \
        "--cache-base=$(shared_cache_base kiodoc)" \
+       "--check=$REPO_ROOT/ci/checks/per-case/dep-canonical.sh" \
        "--impl-def=name=kio@js,kio=${KIO_BIN},runner=${KIO_BIN},target=js"
 if [ -n "$JOBS" ]; then
   set -- "$@" "--jobs=$JOBS"

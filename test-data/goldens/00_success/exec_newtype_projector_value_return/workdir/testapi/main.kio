@@ -8,7 +8,7 @@ newtype Count : I32 { constructor mk_count; projector get_count }
 
 fn projector() -> Count -> I32 { Count.get_count }
 
-pub fn main() -> . {
+pub fn main() {
   let get = projector();
   print(int_to_string(get(Count.mk_count(42))));
   print("\n"(String))

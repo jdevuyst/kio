@@ -18,4 +18,4 @@ fn choose_second[A](first: A, second: Right) -> Box(Right) {
   }
 }
 
-pub fn main() -> . { choose_second(Left.left(), Right.right()).>Box.unbox.>Right.unright }
+pub fn main() { choose_second(Left.left(), Right.right()).>Box.unbox.>Right.unright }

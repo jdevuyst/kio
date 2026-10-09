@@ -5,7 +5,7 @@ import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-pub fn main() -> . {
+pub fn main() {
   // `print` / `string_concat` take the host `testapi.String` (role(str)).
   // The host call keeps the exact `testapi.String`, even though
   // `app/rehost` declares `type String = testapi.String` in its own scope —

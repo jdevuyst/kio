@@ -27,4 +27,4 @@ fn pick(s: String | String, x: String) -> String {
     )
 }
 
-pub fn main() -> . { print(pick(__left__(String, String, "from_s\n"(String)), "from_x\n"(String))) }
+pub fn main() { print(pick(__left__(String, String, "from_s\n"(String)), "from_x\n"(String))) }

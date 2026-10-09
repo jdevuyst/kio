@@ -1,0 +1,43 @@
+module main;
+
+host fn first() -> .;
+
+host fn second() -> .;
+
+type Unit_alias = .;
+
+fn producer[A] -> . -> . { first(); .(_unit: .) { () } }
+
+fn aliased[A] -> Unit_alias -> Unit_alias { first(); .(_unit: Unit_alias) { () } }
+
+fn delayed[A]() -> . -> . { first(); .(_unit: .) { () } }
+
+fn argument() { second(); () }
+
+fn saved() { let value = producer(.); value(argument()) }
+
+fn local() { let value = producer; value(., argument()) }
+
+fn saved_alias() { let value = aliased(.); value(argument()) }
+
+fn saved_delayed() { let value = delayed(., ()); value(argument()) }
+
+equiv direct_and_saved() {
+  producer(., argument());
+  saved()
+}
+
+equiv local_and_saved() {
+  local();
+  saved()
+}
+
+equiv aliased_unit() {
+  aliased(., argument());
+  saved_alias()
+}
+
+equiv explicit_unit() {
+  delayed(., (), argument());
+  saved_delayed()
+}

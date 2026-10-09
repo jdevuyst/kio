@@ -16,7 +16,7 @@ fn after_resolution(
   , third: replica.Replica
   , delayed: core.List(replica.Message)
   , change: replica.Change
-  ) -> . {
+  ) {
   let .(resolved, resolution) = change;
   let second = replica.deliver(second, resolution);
   let third = replica.deliver(third, resolution);
@@ -38,7 +38,7 @@ fn after_resolution(
   report.read("read key 20: ", third, 20)
 }
 
-pub fn run() -> . {
+pub fn run() {
   let alpha = {clock.alpha=}.>widen_sum!(clock.Node);
   let beta = {clock.beta=}.>widen_sum!(clock.Node);
   let gamma = {clock.gamma=}.>widen_sum!(clock.Node);

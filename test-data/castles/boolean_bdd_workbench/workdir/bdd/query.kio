@@ -54,7 +54,7 @@ rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment)
 }
 
 pub fn satisfying_assignment(store: table.Store, root: table.Node_id) -> Assignment | . {
-  choose(store, root, lists.nil())
+  choose(store, root, lists.nil(_))
 }
 
 rec(loop) fn collect(
@@ -82,7 +82,7 @@ rec(loop) fn collect(
 }
 
 pub fn node_count(store: table.Store, root: table.Node_id) -> I32 {
-  walk.length(collect(store, lists.singleton(root), lists.nil()))
+  walk.length(collect(store, lists.singleton(root), lists.nil(_)))
 }
 
 fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {

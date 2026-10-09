@@ -83,6 +83,17 @@ directory under `out` (compiled as one module — the host `import`s it):
   package** — a Swift source carries no module declaration, so nothing
   here binds the namespace (contrast Go's per-file `package <ns>` line).
 
+### Native documentation
+
+[Retained boundary documentation](README.md#doc-comments-on-the-emitted-surface) is emitted as
+Swift `///` comments on exported methods, live host-protocol methods and nullary
+associated types, parameterized host-type carriers, and public newtype carriers.
+Authored prose precedes any synthesized declaration notes in the same doc block.
+Native DocC directive and symbol-link syntax in authored prose remains literal
+documentation rather than selecting host documentation metadata or resolving
+Swift symbols. Line endings are framed so authored text remains inside the
+comment.
+
 ### The package namespace
 
 Every top-level name the module contributes — the handle type, the factory,
@@ -600,7 +611,7 @@ host fn print(s: Str) -> .;
 module app/main;
 import app(Str);
 import app(print);
-pub fn main() -> . { print("hello\n"(Str)) }
+pub fn main() { print("hello\n"(Str)) }
 ```
 
 `kio build swift` writes `out/swift/{pkg.swift, host.swift,

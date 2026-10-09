@@ -1,0 +1,20 @@
+/// MODULE-DOC is not part of the boundary documentation.
+module testapi;
+
+/// HOST-TYPE-DOC String.
+host type String role(str);
+
+/// HOST-GENERIC-DOC Box.
+host type Box[A];
+
+/// NEWTYPE-DOC Token.
+pub newtype Token : . { pub constructor make_token; pub projector read_token }
+
+/// OPAQUE-DOC Opaque.
+pub newtype Opaque : . { pub constructor make_opaque; projector read_opaque }
+
+/// GENERIC-DOC Wrapper.
+pub newtype Wrapper[A] : A { pub constructor wrap; pub projector unwrap }
+
+/// EXISTENTIAL-DOC Packed.
+pub newtype Packed <T> : T { pub constructor pack; pub projector unpack }

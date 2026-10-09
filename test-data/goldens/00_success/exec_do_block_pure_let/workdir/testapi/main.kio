@@ -35,4 +35,4 @@ fn run() -> Box(String) {
   }
 }
 
-pub fn main() -> . { print(Box.un_box(run())) }
+pub fn main() { print(Box.un_box(run())) }

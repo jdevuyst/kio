@@ -2,17 +2,17 @@ module elab_fold;
 
 import __comptime__;
 
-pub pure fn implementation_base() -> . { () }
+pub pure fn implementation_base() { () }
 
-pub pure fn right_step[A](_value: A, _acc: .) -> . { () }
+pub pure fn right_step[A](_value: A, _acc: .) { () }
 
 pub varop [* *] { foldr right_step implementation_base }
 
-pub pure fn left_step[A](_acc: ., _value: A) -> . { () }
+pub pure fn left_step[A](_acc: ., _value: A) { () }
 
 pub varop [! !] { foldl left_step implementation_base }
 
-pub pure fn multislot_step[A][B]((_left: A, _right: B), _acc: .) -> . { () }
+pub pure fn multislot_step[A][B]((_left: A, _right: B), _acc: .) { () }
 
 pub pure fn entry[A][B](left: A, right: B) -> A & B { (left, right) }
 
@@ -20,7 +20,7 @@ pub op _ => _ { impl entry }
 
 pub varop [% %] { foldr multislot_step implementation_base }
 
-pub pure fn finalize(_acc: .) -> . { () }
+pub pure fn finalize(_acc: .) { () }
 
 pub varop [+ +] { foldr right_step implementation_base; finalize finalize }
 

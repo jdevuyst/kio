@@ -144,7 +144,7 @@ pub fn mk_diag_at(message: String, pos: . | I32) -> Diag { {diag = (message, pos
 pub labels { pnames: List(String) };
 
 /// The empty parameter-name list.
-pub fn pnames_nil() -> Pnames { {pnames = nil(String, ())} }
+pub fn pnames_nil() -> Pnames { {pnames = nil(String)} }
 
 /// Prepends one parameter name.
 pub fn pnames_cons(name: String, rest: Pnames) -> Pnames { {pnames = cons(name, Pnames.get(rest))} }
@@ -337,7 +337,7 @@ fn pnames_render(ps: Pnames) -> String {
 pub labels { pgroups: List(Pnames) };
 
 /// The empty group sequence.
-pub fn pgroups_nil() -> Pgroups { {pgroups = nil(Pnames, ())} }
+pub fn pgroups_nil() -> Pgroups { {pgroups = nil(Pnames)} }
 
 /// Prepends one erased runtime stage.
 pub fn pgroups_cons(head: Pnames, tail: Pgroups) -> Pgroups {
@@ -431,7 +431,7 @@ pub fn decl_pos(d: Decl) -> I32 {
 pub labels { decls: List(Decl) };
 
 /// The empty declaration list.
-pub fn decls_nil() -> Decls { {decls = nil(Decl, ())} }
+pub fn decls_nil() -> Decls { {decls = nil(Decl)} }
 
 /// Prepends one declaration.
 pub fn decls_cons(head: Decl, tail: Decls) -> Decls { {decls = cons(head, Decls.get(tail))} }
@@ -501,7 +501,7 @@ pub fn un_import(i: Import) -> String & String { Import.get(i) }
 pub labels { imports: List(Import) };
 
 /// The empty import map.
-pub fn imports_nil() -> Imports { {imports = nil(Import, ())} }
+pub fn imports_nil() -> Imports { {imports = nil(Import)} }
 
 /// Prepends one import entry.
 pub fn imports_cons(head: Import, tail: Imports) -> Imports {
@@ -545,7 +545,7 @@ pub fn alias_target(a: Mod_alias) -> String {
 pub labels { aliases: List(Mod_alias) };
 
 /// The empty alias list.
-pub fn aliases_nil() -> Aliases { {aliases = nil(Mod_alias, ())} }
+pub fn aliases_nil() -> Aliases { {aliases = nil(Mod_alias)} }
 
 /// Prepends one alias entry.
 pub fn aliases_cons(head: Mod_alias, tail: Aliases) -> Aliases {
@@ -772,7 +772,7 @@ pub fn member_recursive_scope(m: Member_decl) -> . | Recursive_type_scope {
 pub labels { members: List(Member_decl) };
 
 /// The empty member list.
-pub fn members_nil() -> Members { {members = nil(Member_decl, ())} }
+pub fn members_nil() -> Members { {members = nil(Member_decl)} }
 
 /// Prepends one member record.
 pub fn members_cons(head: Member_decl, tail: Members) -> Members {
@@ -824,7 +824,7 @@ pub labels { binder_info: String & I32 };
 pub labels { binders: List(Binder_info) };
 
 /// The empty binder list.
-pub fn binders_nil() -> Binders { {binders = nil(Binder_info, ())} }
+pub fn binders_nil() -> Binders { {binders = nil(Binder_info)} }
 
 /// Prepends one binder.
 pub fn binders_cons(head: Binder_info, tail: Binders) -> Binders {
@@ -955,7 +955,7 @@ pub fn tyalias_recursive_scope(a: Alias_decl) -> . | Recursive_type_scope {
 pub labels { tyaliases: List(Alias_decl) };
 
 /// The empty alias list.
-pub fn tyaliases_nil() -> Tyaliases { {tyaliases = nil(Alias_decl, ())} }
+pub fn tyaliases_nil() -> Tyaliases { {tyaliases = nil(Alias_decl)} }
 
 /// Prepends one alias record.
 pub fn tyaliases_cons(head: Alias_decl, tail: Tyaliases) -> Tyaliases {
@@ -1060,7 +1060,7 @@ pub fn host_header_decl_pos(header: Host_header) -> I32 {
 pub labels { host_headers: List(Host_header) };
 
 /// The empty retained host-declaration list.
-pub fn host_headers_nil() -> Host_headers { {host_headers = nil(Host_header, ())} }
+pub fn host_headers_nil() -> Host_headers { {host_headers = nil(Host_header)} }
 
 /// Prepends one retained host declaration.
 pub fn host_headers_cons(head: Host_header, tail: Host_headers) -> Host_headers {
@@ -1335,7 +1335,7 @@ fn module_declares_host_type(module: Module, name: String) -> Bool {
 pub labels { modules: List(Module) };
 
 /// The empty module list.
-pub fn modules_nil() -> Modules { {modules = nil(Module, ())} }
+pub fn modules_nil() -> Modules { {modules = nil(Module)} }
 
 /// Prepends one module.
 pub fn modules_cons(head: Module, tail: Modules) -> Modules {
@@ -1413,7 +1413,7 @@ pub fn hostfn_groups(h: Hostfn) -> Group_slots {
 pub labels { hostfns: List(Hostfn) };
 
 /// The empty host-fn list.
-pub fn hostfns_nil() -> Hostfns { {hostfns = nil(Hostfn, ())} }
+pub fn hostfns_nil() -> Hostfns { {hostfns = nil(Hostfn)} }
 
 /// Prepends one host-fn entry.
 pub fn hostfns_cons(head: Hostfn, tail: Hostfns) -> Hostfns {
@@ -1443,7 +1443,7 @@ fn mk_runtime_hostfn(hostfn: Hostfn, runtime_groups: Group_slots) -> Runtime_hos
   {runtime_hostfn = (hostfn, runtime_groups)}
 }
 
-fn runtime_hostfns_nil() -> Runtime_hostfns { {runtime_hostfns = nil(Runtime_hostfn, ())} }
+fn runtime_hostfns_nil() -> Runtime_hostfns { {runtime_hostfns = nil(Runtime_hostfn)} }
 
 fn runtime_hostfns_cons(head: Runtime_hostfn, rest: Runtime_hostfns) -> Runtime_hostfns {
   {runtime_hostfns = cons(Runtime_hostfn, head, Runtime_hostfns.get(rest))}
@@ -1567,7 +1567,7 @@ pub fn host_fn_binding_groups(binding: Host_fn_binding) -> Group_slots {
 pub labels { host_fn_bindings: List(Host_fn_binding) };
 
 /// No advertised host functions.
-pub fn host_fn_bindings_nil() -> Host_fn_bindings { {host_fn_bindings = nil(Host_fn_binding, ())} }
+pub fn host_fn_bindings_nil() -> Host_fn_bindings { {host_fn_bindings = nil(Host_fn_binding)} }
 
 /// Prepends one advertised host-function binding.
 pub fn host_fn_bindings_cons(head: Host_fn_binding, tail: Host_fn_bindings) -> Host_fn_bindings {
@@ -2505,7 +2505,7 @@ fn resolve_decl(
 /// A cons-list of resolved fn terms.
 pub labels { terms_acc: List(Term) };
 
-fn terms_acc_nil() -> Terms_acc { {terms_acc = nil(Term, ())} }
+fn terms_acc_nil() -> Terms_acc { {terms_acc = nil(Term)} }
 
 fn terms_acc_cons(head: Term, tail: Terms_acc) -> Terms_acc {
   {terms_acc = cons(head, Terms_acc.get(tail))}
@@ -2748,7 +2748,7 @@ fn imports_has(imports: Imports, name: String, from_module: String) -> Bool {
 /// A cons-list of module names.
 pub labels { names: List(String) };
 
-fn names_nil() -> Names { {names = nil(String, ())} }
+fn names_nil() -> Names { {names = nil(String)} }
 
 fn names_cons(head: String, tail: Names) -> Names { {names = cons(head, Names.get(tail))} }
 
@@ -3089,7 +3089,7 @@ fn gdecl_ntab(g: Gdecl) -> Ntab {
 /// A cons-list of global declarations.
 pub labels { gdecls: List(Gdecl) };
 
-fn gdecls_nil() -> Gdecls { {gdecls = nil(Gdecl, ())} }
+fn gdecls_nil() -> Gdecls { {gdecls = nil(Gdecl)} }
 
 fn gdecls_cons(head: Gdecl, tail: Gdecls) -> Gdecls { {gdecls = cons(head, Gdecls.get(tail))} }
 
@@ -4133,7 +4133,7 @@ pub fn omember_decl(o: Omember) -> Member_decl {
 pub labels { omembers: List(Omember) };
 
 /// The empty entry list.
-pub fn omembers_nil() -> Omembers { {omembers = nil(Omember, ())} }
+pub fn omembers_nil() -> Omembers { {omembers = nil(Omember)} }
 
 /// Prepends one entry.
 pub fn omembers_cons(head: Omember, tail: Omembers) -> Omembers {
@@ -5676,7 +5676,7 @@ labels { terminal_host_type: . | Host_type };
 
 labels { nominal_ids: List(Host_id) };
 
-fn nominal_ids_nil() -> Nominal_ids { {nominal_ids = nil(Host_id, ())} }
+fn nominal_ids_nil() -> Nominal_ids { {nominal_ids = nil(Host_id)} }
 
 fn nominal_ids_cons(head: Host_id, tail: Nominal_ids) -> Nominal_ids {
   {nominal_ids = cons(Host_id, head, Nominal_ids.get(tail))}
@@ -5820,7 +5820,7 @@ labels { canonical_binder: I32 & I32 };
 
 labels { canonical_binders: List(Canonical_binder) };
 
-fn canonical_binders_nil() -> Canonical_binders { {canonical_binders = nil(Canonical_binder, ())} }
+fn canonical_binders_nil() -> Canonical_binders { {canonical_binders = nil(Canonical_binder)} }
 
 fn canonical_binders_cons(key: I32, stars: I32, rest: Canonical_binders) -> Canonical_binders {
   {canonical_binders = cons(
@@ -5847,6 +5847,30 @@ fn canonical_binders_reverse(bs: Canonical_binders) -> Canonical_binders {
 
 fn canonical_binders_len(bs: Canonical_binders) -> I32 {
   length(Canonical_binder, Canonical_binders.get(bs))
+}
+
+fn canonical_binders_have_base_kind(bs: Canonical_binders) -> Bool {
+  loop(
+    , .(remaining: Canonical_binders) {
+        match! un_canonical_binders(remaining) {
+          (
+            , .(binder: Canonical_binder, rest: Canonical_binders) {
+                match! Canonical_binder.get(binder) {
+                  .(_key: I32, stars: I32) {
+                    if! eq_i32(stars, 0(I32)) {
+                      widen_sum!(rest, Canonical_binders | Bool)
+                    } else {
+                      widen_sum!(.f(Bool), Canonical_binders | Bool)
+                    }
+                  }
+                }
+              }
+            , .(_empty: .) { widen_sum!(.t(Bool), Canonical_binders | Bool) }
+            )
+        }
+      }
+    , bs
+    )
 }
 
 labels { cr_text: String };
@@ -5899,7 +5923,8 @@ labels { canonical_type: & Canonical_render
 & Bool
 & Type_dependencies
 & Terminal_host_type
-& Param_kinds };
+& Param_kinds
+& Bool };
 
 fn mk_canonical_type(
   , rendered: Canonical_render
@@ -5909,10 +5934,14 @@ fn mk_canonical_type(
   , dependencies: Type_dependencies
   , terminal: Terminal_host_type
   , remaining_params: Param_kinds
+  , function_scheme: Bool
   ) -> Canonical_type {
   {canonical_type = (
     , rendered
-    , (is_unit, (tail_slots, (compound, (dependencies, (terminal, remaining_params)))))
+    , (
+        , is_unit
+        , (tail_slots, (compound, (dependencies, (terminal, (remaining_params, function_scheme)))))
+        )
     )}
 }
 
@@ -5926,6 +5955,7 @@ fn canonical_type_render(t: Canonical_type) -> Canonical_render {
       , _dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { rendered }
   }
 }
@@ -5940,6 +5970,7 @@ fn canonical_type_is_unit(t: Canonical_type) -> Bool {
       , _dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { is_unit }
   }
 }
@@ -5954,6 +5985,7 @@ fn canonical_type_tail_slots(t: Canonical_type) -> I32 {
       , _dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { slots }
   }
 }
@@ -5968,6 +6000,7 @@ fn canonical_type_is_compound(t: Canonical_type) -> Bool {
       , _dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { compound }
   }
 }
@@ -5982,6 +6015,7 @@ fn canonical_type_dependencies(t: Canonical_type) -> Type_dependencies {
       , dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { dependencies }
   }
 }
@@ -5996,6 +6030,7 @@ fn canonical_type_terminal(t: Canonical_type) -> Terminal_host_type {
       , _dependencies: Type_dependencies
       , terminal: Terminal_host_type
       , _remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { terminal }
   }
 }
@@ -6010,7 +6045,34 @@ fn canonical_type_remaining_params(t: Canonical_type) -> Param_kinds {
       , _dependencies: Type_dependencies
       , _terminal: Terminal_host_type
       , remaining_params: Param_kinds
+      , _function_scheme: Bool
       ) { remaining_params }
+  }
+}
+
+// A complete function scheme is a leading forall spine ending in an arrow.
+// Alias expansion and substitution retain this structural summary; nominal
+// heads remain atoms even when their private payload is a function.
+fn canonical_type_is_function_scheme(t: Canonical_type) -> Bool {
+  match! Canonical_type.get(t) {
+    .(
+      , _rendered: Canonical_render
+      , _unit: Bool
+      , _slots: I32
+      , _compound: Bool
+      , _dependencies: Type_dependencies
+      , _terminal: Terminal_host_type
+      , _remaining_params: Param_kinds
+      , function_scheme: Bool
+      ) { function_scheme }
+  }
+}
+
+fn canonical_binders_admit_body(bs: Canonical_binders, body: Canonical_type) -> Bool {
+  if! canonical_binders_have_base_kind(bs) {
+    .t(Bool)
+  } else {
+    canonical_type_is_function_scheme(body)
   }
 }
 
@@ -6089,6 +6151,7 @@ fn canonical_type_with_extra_dependencies(t: Canonical_type, extra: Type_depende
       , dependencies: Type_dependencies
       , terminal: Terminal_host_type
       , remaining_params: Param_kinds
+      , function_scheme: Bool
       ) {
       mk_canonical_type(
         , rendered
@@ -6098,6 +6161,7 @@ fn canonical_type_with_extra_dependencies(t: Canonical_type, extra: Type_depende
         , type_dependencies_union(dependencies, extra)
         , terminal
         , remaining_params
+        , function_scheme
         )
     }
   }
@@ -6136,6 +6200,7 @@ fn canonical_unit() -> Canonical_type {
     , type_dependencies_nil()
     , no_terminal_host_type()
     , param_kinds_nil()
+    , .f(Bool)
     )
 }
 
@@ -6148,6 +6213,7 @@ fn canonical_bottom() -> Canonical_type {
     , type_dependencies_nil()
     , no_terminal_host_type()
     , param_kinds_nil()
+    , .f(Bool)
     )
 }
 
@@ -6160,6 +6226,7 @@ fn canonical_atom_params(rendered: Canonical_render, remaining_params: Param_kin
     , type_dependencies_nil()
     , no_terminal_host_type()
     , remaining_params
+    , .f(Bool)
     )
 }
 
@@ -6188,6 +6255,7 @@ fn canonical_host_atom(descriptor: Host_type) -> Canonical_type {
         )
     , {terminal_host_type = widen_sum!(descriptor, . | Host_type)}
     , host_type_params(descriptor)
+    , .f(Bool)
     )
 }
 
@@ -6207,6 +6275,7 @@ fn canonical_nominal_atom(id: Host_id, params: Param_kinds) -> Canonical_type {
         )
     , no_terminal_host_type()
     , params
+    , .f(Bool)
     )
 }
 
@@ -6227,6 +6296,7 @@ fn canonical_product(left: Canonical_type, right: Canonical_type) -> Canonical_t
     , type_dependencies_union(canonical_type_dependencies(left), canonical_type_dependencies(right))
     , no_terminal_host_type()
     , param_kinds_nil()
+    , .f(Bool)
     )
 }
 
@@ -6247,6 +6317,7 @@ fn canonical_sum(left: Canonical_type, right: Canonical_type) -> Canonical_type 
     , type_dependencies_union(canonical_type_dependencies(left), canonical_type_dependencies(right))
     , no_terminal_host_type()
     , param_kinds_nil()
+    , .f(Bool)
     )
 }
 
@@ -6267,12 +6338,13 @@ fn canonical_arrow(left: Canonical_type, right: Canonical_type) -> Canonical_typ
     , type_dependencies_union(canonical_type_dependencies(left), canonical_type_dependencies(right))
     , no_terminal_host_type()
     , param_kinds_nil()
+    , .t(Bool)
     )
 }
 
 labels { canonical_types: List(Canonical_type) };
 
-fn canonical_types_nil() -> Canonical_types { {canonical_types = nil(Canonical_type, ())} }
+fn canonical_types_nil() -> Canonical_types { {canonical_types = nil(Canonical_type)} }
 
 fn canonical_types_cons(head: Canonical_type, tail: Canonical_types) -> Canonical_types {
   {canonical_types = cons(Canonical_type, head, Canonical_types.get(tail))}
@@ -6582,6 +6654,7 @@ fn canonical_application(head: Canonical_type, args: Canonical_types) -> Canonic
                     )
                 , canonical_type_terminal(head)
                 , remaining
+                , .f(Bool)
                 )}
             , Canonical_application_result
             )
@@ -6655,6 +6728,7 @@ fn canonical_forall(bs: Canonical_binders, body: Canonical_type) -> Canonical_ty
       , canonical_type_dependencies(body)
       , no_terminal_host_type()
       , param_kinds_nil()
+      , canonical_type_is_function_scheme(body)
       )
   }
 }
@@ -6678,7 +6752,7 @@ labels { canonical_render_binding: I32 & I32 };
 labels { canonical_render_bindings: List(Canonical_render_binding) };
 
 fn canonical_render_bindings_nil() -> Canonical_render_bindings {
-  {canonical_render_bindings = nil(Canonical_render_binding, ())}
+  {canonical_render_bindings = nil(Canonical_render_binding)}
 }
 
 fn canonical_render_bindings_cons(key: I32, alpha: I32, rest: Canonical_render_bindings) -> Canonical_render_bindings {
@@ -6837,7 +6911,7 @@ type Canonical_render_task = Cr_visit | Cr_restore;
 labels { canonical_render_tasks: List(Canonical_render_task) };
 
 fn canonical_render_tasks_nil() -> Canonical_render_tasks {
-  {canonical_render_tasks = nil(Canonical_render_task, ())}
+  {canonical_render_tasks = nil(Canonical_render_task)}
 }
 
 fn canonical_render_tasks_cons(head: Canonical_render_task, rest: Canonical_render_tasks) -> Canonical_render_tasks {
@@ -7088,7 +7162,7 @@ rec labels { exact_key_trie[A]: I32 & (. | A) & List(Exact_key_trie(A)) };
 
 type Exact_key_catalog[A] = List(Exact_key_trie(A));
 
-fn exact_key_catalog_nil[A]() -> Exact_key_catalog(A) { nil(Exact_key_trie(A), ()) }
+fn exact_key_catalog_nil[A] -> Exact_key_catalog(A) { nil(Exact_key_trie(A)) }
 
 fn exact_key_trie_code[A](node: Exact_key_trie(A)) -> I32 {
   match! Exact_key_trie.get(node) {
@@ -7170,7 +7244,7 @@ fn exact_key_catalog_without_code[A](catalog: Exact_key_catalog(A), code: I32) -
           }
         }
       }
-    , (catalog, exact_key_catalog_nil(A, ()))
+    , (catalog, exact_key_catalog_nil(A))
     )
 }
 
@@ -7229,7 +7303,7 @@ fn exact_key_catalog_insert[A](catalog: Exact_key_catalog(A), owner: String, nam
                 match! prior {
                   (
                     , .(node: Exact_key_trie(A)) { exact_key_trie_children(node) }
-                    , .(_missing: .) { exact_key_catalog_nil(A, ()) }
+                    , .(_missing: .) { exact_key_catalog_nil(A) }
                     )
                 };
               let old_value =
@@ -7262,7 +7336,7 @@ fn exact_key_catalog_insert[A](catalog: Exact_key_catalog(A), owner: String, nam
             }
           }
         }
-      , (catalog, (0(I32), nil(Exact_key_trie_frame(A), ())))
+      , (catalog, (0(I32), nil(Exact_key_trie_frame(A))))
       );
   match! reached {
     .(frames: Exact_key_trie_frames(A), leaf: Exact_key_catalog(A)) {
@@ -7364,12 +7438,12 @@ type Exact_type_facts = List(Exact_type_fact);
 
 type Exact_type_index = Exact_key_catalog(Exact_type_facts);
 
-fn exact_type_index_nil() -> Exact_type_index { exact_key_catalog_nil(Exact_type_facts, ()) }
+fn exact_type_index_nil() -> Exact_type_index { exact_key_catalog_nil(Exact_type_facts) }
 
 fn exact_type_index_facts(index: Exact_type_index, owner: String, name: String) -> Exact_type_facts {
   let .(found: . | Exact_type_facts) = exact_key_catalog_find(index, owner, name);
   match! found {
-    (.(facts: Exact_type_facts) { facts }, .(_missing: .) { nil(Exact_type_fact, ()) })
+    (.(facts: Exact_type_facts) { facts }, .(_missing: .) { nil(Exact_type_fact) })
   }
 }
 
@@ -7613,7 +7687,7 @@ fn exact_type_facts_collect[A](facts: Exact_type_facts, select: Exact_type_fact 
           }
         }
       }
-    , (facts, nil(A, ()))
+    , (facts, nil(A))
     )
 }
 
@@ -7961,7 +8035,7 @@ labels { type_bound: String & I32 & Param_kind };
 
 labels { type_bounds: List(Type_bound) };
 
-fn type_bounds_nil() -> Type_bounds { {type_bounds = nil(Type_bound, ())} }
+fn type_bounds_nil() -> Type_bounds { {type_bounds = nil(Type_bound)} }
 
 fn type_bounds_cons(name: String, index: I32, kind: Param_kind, rest: Type_bounds) -> Type_bounds {
   {type_bounds = cons(Type_bound, {type_bound = (name, (index, kind))}, Type_bounds.get(rest))}
@@ -8023,7 +8097,7 @@ labels { type_subst: String & Canonical_type };
 
 labels { type_substs: List(Type_subst) };
 
-fn type_substs_nil() -> Type_substs { {type_substs = nil(Type_subst, ())} }
+fn type_substs_nil() -> Type_substs { {type_substs = nil(Type_subst)} }
 
 fn type_substs_cons(name: String, value: Canonical_type, rest: Type_substs) -> Type_substs {
   {type_substs = cons(Type_subst, {type_subst = (name, value)}, Type_substs.get(rest))}
@@ -8083,7 +8157,7 @@ fn alias_refs_with_list(refs: Alias_refs, entries: List(Alias_ref)) -> Alias_ref
 }
 
 fn alias_refs_nil() -> Alias_refs {
-  {alias_refs = (nil(Alias_ref, ()), exact_key_catalog_nil(Alias_ref_present, ()))}
+  {alias_refs = (nil(Alias_ref), exact_key_catalog_nil(Alias_ref_present))}
 }
 
 fn alias_refs_cons(owner: String, name: String, rest: Alias_refs) -> Alias_refs {
@@ -8723,7 +8797,7 @@ fn type_origin_eq(left: Type_origin, right: Type_origin) -> Bool {
   }
 }
 
-fn type_origins_nil() -> Type_origins { {type_origins = nil(Type_origin, ())} }
+fn type_origins_nil() -> Type_origins { {type_origins = nil(Type_origin)} }
 
 fn type_origins_cons(head: Type_origin, tail: Type_origins) -> Type_origins {
   {type_origins = cons(Type_origin, head, Type_origins.get(tail))}
@@ -9697,7 +9771,7 @@ labels { origin_work: Type_origin & Type_context & Alias_refs };
 
 labels { origin_works: List(Origin_work) };
 
-fn origin_works_nil() -> Origin_works { {origin_works = nil(Origin_work, ())} }
+fn origin_works_nil() -> Origin_works { {origin_works = nil(Origin_work)} }
 
 fn origin_works_cons(head: Origin_work, tail: Origin_works) -> Origin_works {
   {origin_works = cons(Origin_work, head, Origin_works.get(tail))}
@@ -10613,21 +10687,17 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                               , {ctp_cont = widen_sum!({ctc_expr_chain = cont}, Ctp_cont_shape)}
                               , env
                               )
-                          } else if! binders_have_base_kind(bs) {
-                            match! Canonical_binders_result.get(canonicalize_binders(bs, env)) {
-                              .(renamed: Canonical_binders, extended: Type_env) {
-                                ctp_parse_expr(
-                                  , after
-                                  , {ctp_cont = widen_sum!(
-                                      , {ctc_prefix = (renamed, (env, cont))}
-                                      , Ctp_cont_shape
-                                      )}
-                                  , extended
-                                  )
-                              }
+                          } else match! Canonical_binders_result.get(canonicalize_binders(bs, env)) {
+                            .(renamed: Canonical_binders, extended: Type_env) {
+                              ctp_parse_expr(
+                                , after
+                                , {ctp_cont = widen_sum!(
+                                    , {ctc_prefix = (renamed, (env, cont))}
+                                    , Ctp_cont_shape
+                                    )}
+                                , extended
+                                )
                             }
-                          } else {
-                            canonical_parse_failure("embedded forall binders must have base kind"(String))
                           }
                         }
                       }
@@ -10792,12 +10862,16 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                           match! Ctc_prefix.get(prefix) {
                             .(bs: Canonical_binders, saved: Type_env, parent: Ctp_cont) {
                               if! canonical_type_has_base_kind(value) {
-                                ctp_return_type(
-                                  , canonical_forall(bs, value)
-                                  , rest
-                                  , parent
-                                  , restore_type_env(saved, env)
-                                  )
+                                if! canonical_binders_admit_body(bs, value) {
+                                  ctp_return_type(
+                                    , canonical_forall(bs, value)
+                                    , rest
+                                    , parent
+                                    , restore_type_env(saved, env)
+                                    )
+                                } else {
+                                  canonical_parse_failure("higher-kinded forall binders require a complete function scheme"(String))
+                                }
                               } else {
                                 canonical_parse_failure("a forall body must have base kind"(String))
                               }
@@ -11257,7 +11331,7 @@ labels { canonical_stage: Canonical_binders & Canonical_type & I32 };
 
 labels { canonical_stages: List(Canonical_stage) };
 
-fn canonical_stages_nil() -> Canonical_stages { {canonical_stages = nil(Canonical_stage, ())} }
+fn canonical_stages_nil() -> Canonical_stages { {canonical_stages = nil(Canonical_stage)} }
 
 fn canonical_stages_cons(
   , binders: Canonical_binders
@@ -11287,7 +11361,7 @@ fn un_canonical_stages(stages: Canonical_stages) -> . | (Canonical_stage & Canon
 // application plan. `reversed_stages` is latest-first, so prepending each
 // value group and its preceding unary `forall` Unit stages reconstructs source
 // order directly. This plan never crosses the host-adapter boundary.
-fn runtime_groups_from_reversed_stages(reversed_stages: Canonical_stages) -> Group_slots {
+fn runtime_groups_from_reversed_stages(reversed_stages: Canonical_stages, tail: Group_slots) -> Group_slots {
   loop(
     , .(state: Canonical_stages & Group_slots) {
         match! state {
@@ -11316,7 +11390,7 @@ fn runtime_groups_from_reversed_stages(reversed_stages: Canonical_stages) -> Gro
           }
         }
       }
-    , (reversed_stages, group_slots_nil())
+    , (reversed_stages, tail)
     )
 }
 
@@ -11374,14 +11448,18 @@ type Derived_hostfn_result = Derived_hostfn | Diag;
 
 labels { host_signature_state: Toks & Type_env & Canonical_stages & Group_slots & Type_dependencies };
 
-fn finish_host_signature(
+fn finish_signature(
   , id: Host_id
   , reversed_stages: Canonical_stages
   , reversed_groups: Group_slots
   , dependencies: Type_dependencies
+  , trailing_binders: Canonical_binders
   , result: Canonical_type
   ) -> Derived_hostfn_result {
-  match! render_canonical_type(canonical_signature_render(reversed_stages, result)) {
+  match! render_canonical_type(canonical_signature_render(
+    , reversed_stages
+    , canonical_forall(trailing_binders, result)
+    )) {
     (
       , .(rendered: String) {
           let descriptor = mk_host_fn(id, rendered);
@@ -11389,7 +11467,13 @@ fn finish_host_signature(
             , {derived_hostfn = (
                 , mk_runtime_hostfn(
                     , mk_hostfn(descriptor, group_slots_reverse(reversed_groups))
-                    , runtime_groups_from_reversed_stages(reversed_stages)
+                    , runtime_groups_from_reversed_stages(
+                        , reversed_stages
+                        , group_slots_prepend_type_stages(
+                            , canonical_binders_len(trailing_binders)
+                            , group_slots_nil()
+                            )
+                        )
                     )
                 , type_dependencies_union(dependencies, canonical_type_dependencies(result))
                 )}
@@ -11397,6 +11481,80 @@ fn finish_host_signature(
             )
         }
       , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
+      )
+  }
+}
+
+fn finish_host_signature(
+  , id: Host_id
+  , reversed_stages: Canonical_stages
+  , reversed_groups: Group_slots
+  , dependencies: Type_dependencies
+  , result: Canonical_type
+  ) -> Derived_hostfn_result {
+  finish_signature(
+    , id
+    , reversed_stages
+    , reversed_groups
+    , dependencies
+    , canonical_binders_nil()
+    , result
+    )
+}
+
+fn finish_type_only_signature(
+  , id: Host_id
+  , subject: String
+  , reversed_stages: Canonical_stages
+  , reversed_groups: Group_slots
+  , dependencies: Type_dependencies
+  , binders: Canonical_binders
+  , return_tokens: Toks
+  , env: Type_env
+  ) -> Derived_hostfn_result {
+  match! parse_canonical_type(return_tokens, env) {
+    (
+      , .(ok: Ctp_ok) {
+          match! Ctp_ok.get(ok) {
+            .(result: Canonical_type, after: Toks, _final_env: Type_env) {
+              if! toks_empty(after) {
+                if! canonical_type_has_base_kind(result) {
+                  if! canonical_binders_admit_body(binders, result) {
+                    finish_signature(
+                      , id
+                      , reversed_stages
+                      , reversed_groups
+                      , dependencies
+                      , binders
+                      , result
+                      )
+                  } else {
+                    widen_sum!(
+                      , signature_diag(
+                          , subject
+                          , "higher-kinded forall binders require a complete function scheme"(String)
+                          )
+                      , Derived_hostfn_result
+                      )
+                  }
+                } else {
+                  widen_sum!(
+                    , signature_diag(subject, "the return type must have base kind"(String))
+                    , Derived_hostfn_result
+                    )
+                }
+              } else {
+                widen_sum!(
+                  , signature_diag(subject, "unexpected tokens after the return type"(String))
+                  , Derived_hostfn_result
+                  )
+              }
+            }
+          }
+        }
+      , .(bad: Ctp_bad) {
+          widen_sum!(signature_diag(subject, diag_message(Ctp_bad.get(bad))), Derived_hostfn_result)
+        }
       )
   }
 }
@@ -11409,6 +11567,7 @@ fn derive_hostfn_header_with_type_scope(
   , subject: String
   , recursive_scope: . | Recursive_type_scope
   , initial_substs: Type_substs
+  , require_value_group: Bool
   ) -> Derived_hostfn_result {
   let id = mk_host_id(module_name(module), host_header_name(header));
   let context =
@@ -11435,151 +11594,200 @@ fn derive_hostfn_header_with_type_scope(
                           , env
                           )) {
                           .(canonical_bs: Canonical_binders, group_env: Type_env) {
-                            match! parse_host_value_group(subject, at_group, group_env) {
-                              (
-                                , .(group: Parsed_host_group) {
-                                    match! Parsed_host_group.get(group) {
-                                      .(
-                                        , domain: Canonical_type
-                                        , group_slots: I32
-                                        , after_group: Toks
-                                        , next_env: Type_env
-                                        ) {
-                                        let stages =
-                                          canonical_stages_cons(
-                                            , canonical_bs
-                                            , domain
-                                            , group_slots
-                                            , reversed_stages
-                                            );
-                                        let groups = group_slots_cons(group_slots, reversed_groups);
-                                        let deps =
-                                          type_dependencies_union(
-                                            , dependencies
-                                            , canonical_type_dependencies(domain)
-                                            );
-                                        match! punct_after_arrow(after_group) {
-                                          (
-                                            , .(return_tokens: Toks) {
-                                                match! parse_canonical_type(return_tokens, next_env) {
-                                                  (
-                                                    , .(ok: Ctp_ok) {
-                                                        match! Ctp_ok.get(ok) {
-                                                          .(
-                                                            , result: Canonical_type
-                                                            , after_result: Toks
-                                                            , _final_env: Type_env
-                                                            ) {
-                                                            if! toks_empty(after_result) {
-                                                              match! canonical_type_kind(result) {
-                                                                (
-                                                                  , .(kind: Param_kind) {
-                                                                      if! param_kind_eq(
-                                                                        , kind
-                                                                        , base_kind()
-                                                                        ) {
-                                                                        widen_sum!(
-                                                                          , finish_host_signature(
-                                                                              , id
-                                                                              , stages
-                                                                              , groups
-                                                                              , deps
-                                                                              , result
-                                                                              )
-                                                                          , (| Host_signature_state
-                                                                            | Derived_hostfn_result)
-                                                                          )
-                                                                      } else {
+                            if! sig_head_is(at_group, 40(I32)) {
+                              match! parse_host_value_group(subject, at_group, group_env) {
+                                (
+                                  , .(group: Parsed_host_group) {
+                                      match! Parsed_host_group.get(group) {
+                                        .(
+                                          , domain: Canonical_type
+                                          , group_slots: I32
+                                          , after_group: Toks
+                                          , next_env: Type_env
+                                          ) {
+                                          let stages =
+                                            canonical_stages_cons(
+                                              , canonical_bs
+                                              , domain
+                                              , group_slots
+                                              , reversed_stages
+                                              );
+                                          let groups =
+                                            group_slots_cons(group_slots, reversed_groups);
+                                          let deps =
+                                            type_dependencies_union(
+                                              , dependencies
+                                              , canonical_type_dependencies(domain)
+                                              );
+                                          match! punct_after_arrow(after_group) {
+                                            (
+                                              , .(return_tokens: Toks) {
+                                                  match! parse_canonical_type(
+                                                    , return_tokens
+                                                    , next_env
+                                                    ) {
+                                                    (
+                                                      , .(ok: Ctp_ok) {
+                                                          match! Ctp_ok.get(ok) {
+                                                            .(
+                                                              , result: Canonical_type
+                                                              , after_result: Toks
+                                                              , _final_env: Type_env
+                                                              ) {
+                                                              if! toks_empty(after_result) {
+                                                                match! canonical_type_kind(result) {
+                                                                  (
+                                                                    , .(kind: Param_kind) {
+                                                                        if! param_kind_eq(
+                                                                          , kind
+                                                                          , base_kind()
+                                                                          ) {
+                                                                          widen_sum!(
+                                                                            , finish_host_signature(
+                                                                                , id
+                                                                                , stages
+                                                                                , groups
+                                                                                , deps
+                                                                                , result
+                                                                                )
+                                                                            , (| Host_signature_state
+                                                                              | Derived_hostfn_result)
+                                                                            )
+                                                                        } else {
+                                                                          widen_sum!(
+                                                                            , signature_diag(
+                                                                                , subject
+                                                                                , "the return type must have base kind"(String)
+                                                                                )
+                                                                            , (| Host_signature_state
+                                                                              | Derived_hostfn_result)
+                                                                            )
+                                                                        }
+                                                                      }
+                                                                    , .(_unknown: .) {
                                                                         widen_sum!(
                                                                           , signature_diag(
                                                                               , subject
-                                                                              , "the return type must have base kind"(String)
+                                                                              , "the return type must be fully saturated"(String)
                                                                               )
                                                                           , (| Host_signature_state
                                                                             | Derived_hostfn_result)
                                                                           )
                                                                       }
-                                                                    }
-                                                                  , .(_unknown: .) {
-                                                                      widen_sum!(
-                                                                        , signature_diag(
-                                                                            , subject
-                                                                            , "the return type must be fully saturated"(String)
-                                                                            )
-                                                                        , (| Host_signature_state
-                                                                          | Derived_hostfn_result)
-                                                                        )
-                                                                    }
+                                                                    )
+                                                                }
+                                                              } else {
+                                                                widen_sum!(
+                                                                  , signature_diag(
+                                                                      , subject
+                                                                      , "unexpected tokens after the return type"(String)
+                                                                      )
+                                                                  , (| Host_signature_state
+                                                                    | Derived_hostfn_result)
                                                                   )
                                                               }
-                                                            } else {
-                                                              widen_sum!(
-                                                                , signature_diag(
-                                                                    , subject
-                                                                    , "unexpected tokens after the return type"(String)
-                                                                    )
-                                                                , (| Host_signature_state
-                                                                  | Derived_hostfn_result)
-                                                                )
                                                             }
                                                           }
                                                         }
-                                                      }
-                                                    , .(bad: Ctp_bad) {
-                                                        widen_sum!(
-                                                          , signature_diag(
-                                                              , subject
-                                                              , diag_message(Ctp_bad.get(bad))
-                                                              )
-                                                          , (| Host_signature_state
-                                                            | Derived_hostfn_result)
+                                                      , .(bad: Ctp_bad) {
+                                                          widen_sum!(
+                                                            , signature_diag(
+                                                                , subject
+                                                                , diag_message(Ctp_bad.get(bad))
+                                                                )
+                                                            , (| Host_signature_state
+                                                              | Derived_hostfn_result)
+                                                            )
+                                                        }
+                                                      )
+                                                  }
+                                                }
+                                              , .(_no_arrow: .) {
+                                                  if! toks_empty(after_group) {
+                                                    widen_sum!(
+                                                      , signature_diag(
+                                                          , subject
+                                                          , "expected `->` and a return type after the final value group"(String)
                                                           )
-                                                      }
-                                                    )
+                                                      , Host_signature_state | Derived_hostfn_result
+                                                      )
+                                                  } else if! sig_head_is(after_group, 91(I32)) {
+                                                    widen_sum!(
+                                                      , {host_signature_state = (
+                                                          , after_group
+                                                          , (next_env, (stages, (groups, deps)))
+                                                          )}
+                                                      , Host_signature_state | Derived_hostfn_result
+                                                      )
+                                                  } else if! sig_head_is(after_group, 40(I32)) {
+                                                    widen_sum!(
+                                                      , {host_signature_state = (
+                                                          , after_group
+                                                          , (next_env, (stages, (groups, deps)))
+                                                          )}
+                                                      , Host_signature_state | Derived_hostfn_result
+                                                      )
+                                                  } else {
+                                                    widen_sum!(
+                                                      , signature_diag(
+                                                          , subject
+                                                          , "expected another value group or `->`"(String)
+                                                          )
+                                                      , Host_signature_state | Derived_hostfn_result
+                                                      )
+                                                  }
                                                 }
-                                              }
-                                            , .(_no_arrow: .) {
-                                                if! toks_empty(after_group) {
-                                                  widen_sum!(
-                                                    , signature_diag(
-                                                        , subject
-                                                        , "expected `->` and a return type after the final value group"(String)
-                                                        )
-                                                    , Host_signature_state | Derived_hostfn_result
-                                                    )
-                                                } else if! sig_head_is(after_group, 91(I32)) {
-                                                  widen_sum!(
-                                                    , {host_signature_state = (
-                                                        , after_group
-                                                        , (next_env, (stages, (groups, deps)))
-                                                        )}
-                                                    , Host_signature_state | Derived_hostfn_result
-                                                    )
-                                                } else if! sig_head_is(after_group, 40(I32)) {
-                                                  widen_sum!(
-                                                    , {host_signature_state = (
-                                                        , after_group
-                                                        , (next_env, (stages, (groups, deps)))
-                                                        )}
-                                                    , Host_signature_state | Derived_hostfn_result
-                                                    )
-                                                } else {
-                                                  widen_sum!(
-                                                    , signature_diag(
-                                                        , subject
-                                                        , "expected another value group or `->`"(String)
-                                                        )
-                                                    , Host_signature_state | Derived_hostfn_result
-                                                    )
-                                                }
-                                              }
-                                            )
+                                              )
+                                          }
                                         }
                                       }
                                     }
+                                  , .(diag: Diag) {
+                                      widen_sum!(diag, Host_signature_state | Derived_hostfn_result)
+                                    }
+                                  )
+                              }
+                            } else if! require_value_group {
+                              widen_sum!(
+                                , signature_diag(
+                                    , subject
+                                    , "expected a value-parameter group"(String)
+                                    )
+                                , Host_signature_state | Derived_hostfn_result
+                                )
+                            } else if! eq_i32(canonical_binders_len(canonical_bs), 0(I32)) {
+                              widen_sum!(
+                                , signature_diag(
+                                    , subject
+                                    , "expected a function parameter group"(String)
+                                    )
+                                , Host_signature_state | Derived_hostfn_result
+                                )
+                            } else match! punct_after_arrow(at_group) {
+                              (
+                                , .(return_tokens: Toks) {
+                                    widen_sum!(
+                                      , finish_type_only_signature(
+                                          , id
+                                          , subject
+                                          , reversed_stages
+                                          , reversed_groups
+                                          , dependencies
+                                          , canonical_bs
+                                          , return_tokens
+                                          , group_env
+                                          )
+                                      , Host_signature_state | Derived_hostfn_result
+                                      )
                                   }
-                                , .(diag: Diag) {
-                                    widen_sum!(diag, Host_signature_state | Derived_hostfn_result)
+                                , .(_no_arrow: .) {
+                                    widen_sum!(
+                                      , signature_diag(
+                                          , subject
+                                          , "expected a value group or `->` after type parameters"(String)
+                                          )
+                                      , Host_signature_state | Derived_hostfn_result
+                                      )
                                   }
                                 )
                             }
@@ -11615,6 +11823,7 @@ fn derive_hostfn_header(modules: Modules, types: Host_types, module: Module, hea
     , host_signature_subject(mk_host_id(module_name(module), host_header_name(header)))
     , no_recursive_type_scope()
     , type_substs_nil()
+    , .t(Bool)
     )
 }
 
@@ -12637,7 +12846,7 @@ fn value_binding_index_for_modules(modules: Modules) -> Value_binding_validation
           }
         }
       }
-    , (modules, exact_key_catalog_nil(Bool, ()))
+    , (modules, exact_key_catalog_nil(Bool))
     )
 }
 
@@ -12746,7 +12955,7 @@ fn add_module_alias_origins(consumer: String, aliases: Aliases, initial: Value_b
 
 fn validate_module_value_binding_origins(module: Module, index: Value_binding_origins) -> Imports_validation {
   let consumer = module_name(module);
-  let empty = exact_key_catalog_nil(Bool, ());
+  let empty = exact_key_catalog_nil(Bool);
   match! add_ordinary_value_origins(consumer, module_decls(module), empty) {
     (
       , .(with_ordinary: Value_binding_origins) {
@@ -14161,7 +14370,7 @@ pub fn export_info_sig(e: Export_info) -> String {
   }
 }
 
-fn export_infos_nil() -> Export_infos { Export_infos.seal_export_infos(nil(Export_info, ())) }
+fn export_infos_nil() -> Export_infos { Export_infos.seal_export_infos(nil(Export_info)) }
 
 fn export_infos_cons(head: Export_info, tail: Export_infos) -> Export_infos {
   Export_infos.seal_export_infos(cons(head, Export_infos.open_export_infos(tail)))
@@ -14222,6 +14431,7 @@ fn derive_validated_signature(
     , subject
     , recursive_scope
     , initial_substs
+    , .f(Bool)
     ) {
     (
       , .(derived: Derived_hostfn) {
@@ -14840,7 +15050,7 @@ labels { identity_alias_resolution: Identity_alias_member & Alias_refs };
 type Identity_alias_catalog = Exact_key_catalog(Identity_alias_member);
 
 fn identity_alias_catalog_nil() -> Identity_alias_catalog {
-  exact_key_catalog_nil(Identity_alias_member, ())
+  exact_key_catalog_nil(Identity_alias_member)
 }
 
 fn identity_alias_catalog_insert(
@@ -15693,7 +15903,7 @@ fn validate_type_spelling_imports(
 
 fn validate_visible_type_binding_origins(module: Module, index: Exact_type_index) -> Imports_validation {
   let owner = module_name(module);
-  let empty = exact_key_catalog_nil(Bool, ());
+  let empty = exact_key_catalog_nil(Bool);
   match! validate_type_spelling_names(module_typenames(module), owner, empty) {
     (
       , .(with_names: Validated_type_spellings) {
@@ -16491,7 +16701,7 @@ pub fn un_expect(e: Expect) -> String & String { Expect.get(e) }
 pub labels { contract: List(Expect) };
 
 /// The empty contract.
-pub fn contract_nil() -> Contract { {contract = nil(Expect, ())} }
+pub fn contract_nil() -> Contract { {contract = nil(Expect)} }
 
 /// Prepends one expected entry to a contract.
 pub fn contract_cons(head: Expect, tail: Contract) -> Contract {

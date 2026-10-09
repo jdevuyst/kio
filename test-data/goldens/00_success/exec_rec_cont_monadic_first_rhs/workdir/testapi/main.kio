@@ -19,4 +19,4 @@ rec(loop) fn go(n: I32) -> I32 {
   }
 }
 
-pub fn main() -> . { print(i32_to_string(go(1))); print("\n") }
+pub fn main() { print(i32_to_string(go(1))); print("\n") }

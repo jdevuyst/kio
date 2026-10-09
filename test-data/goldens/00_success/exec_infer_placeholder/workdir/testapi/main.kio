@@ -16,7 +16,7 @@ fn const_fst[A][B](x: A, _y: B) -> A { x }
 // declared type to fill in the lambda's `_` slot.
 fn apply(f: String -> String, x: String) -> String { f(x) }
 
-pub fn main() -> . {
+pub fn main() {
   // Three call shapes for `id` exercising explicit, `_`-marked,
   // and fully-elided forms.
   print(id(String, "in"));

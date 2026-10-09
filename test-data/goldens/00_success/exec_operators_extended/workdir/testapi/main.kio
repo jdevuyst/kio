@@ -31,7 +31,7 @@ op _ <! __ !> { impl pick }
 // Whitespace makes `<` and `!` separate runs, so this is a distinct operator.
 op _ < ! __ ! > { impl pick_second }
 
-pub fn main() -> . {
+pub fn main() {
   print("a" ## "b");
   print("\n");
   print("x" $$ "y");

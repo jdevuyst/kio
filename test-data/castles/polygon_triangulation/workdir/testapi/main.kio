@@ -14,9 +14,9 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn number(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+fn number(value: I32) { io.print(fmt.int_to_string(value)) }
 
-rec(loop) fn print_triangles(triangles: Array(geo.Triangle), i: I32) -> . {
+rec(loop) fn print_triangles(triangles: Array(geo.Triangle), i: I32) {
   if! geo.equal(i, arr.array_len(triangles)) {
     io.print("\n")
   } else {
@@ -35,7 +35,7 @@ rec(loop) fn print_triangles(triangles: Array(geo.Triangle), i: I32) -> . {
   }
 }
 
-fn report(name: String, original: Array(geo.Point)) -> . {
+fn report(name: String, original: Array(geo.Point)) {
   io.print(name);
   let defect = geo.validate(original);
   if! text.string_eq(defect, "") {
@@ -79,7 +79,7 @@ fn report(name: String, original: Array(geo.Point)) -> . {
   }
 }
 
-fn damaged_certificate() -> . {
+fn damaged_certificate() {
   let points = fixtures.rectangle();
   match! clip.triangulate(points) {
     .(triangles: Array(geo.Triangle)) {
@@ -93,7 +93,7 @@ fn damaged_certificate() -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Ear clipping with integer-coordinate certificates\n");
   report("rectangle", fixtures.rectangle());
   report("arrow", fixtures.arrow());

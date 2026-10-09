@@ -72,7 +72,7 @@ pub fn adjacent() -> Array(String) {
   sequence
 }
 
-pub fn pair(partners: Array(I32), i: I32, j: I32) -> . {
+pub fn pair(partners: Array(I32), i: I32, j: I32) {
   array.array_set(partners, i, j);
   array.array_set(partners, j, i)
 }

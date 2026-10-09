@@ -34,7 +34,7 @@ pub labels Model = { rows: List(Row), starts: List(Tally), ends: List(Tally) };
 
 fn model(rows: List(Row), starts: List(Tally), ends: List(Tally)) -> Model { {rows, starts, ends} }
 
-pub fn empty_model() -> Model { model(nil(Row, ()), nil(Tally, ()), nil(Tally, ())) }
+pub fn empty_model() -> Model { model(nil(Row), nil(Tally), nil(Tally)) }
 
 pub fn rows_of(m: Model) -> List(Row) { m.?{rows} }
 
@@ -59,7 +59,7 @@ rec(loop) fn bump_onto(rest: List(Tally), w: String, seen: List(Tally)) -> List(
 
 /// Add one observation of `w` to a weighted word list: bump it in place when
 /// already present, otherwise append it at the end so first-seen order holds.
-fn bump(ts: List(Tally), w: String) -> List(Tally) { bump_onto(ts, w, nil(Tally, ())) }
+fn bump(ts: List(Tally), w: String) -> List(Tally) { bump_onto(ts, w, nil(Tally)) }
 
 rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List(Row)) -> List(Row) {
   match! rest.>List.un_list {
@@ -77,7 +77,7 @@ rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List
 }
 
 fn add_edge(rows: List(Row), from: String, to: String) -> List(Row) {
-  add_edge_onto(rows, from, to, nil(Row, ()))
+  add_edge_onto(rows, from, to, nil(Row))
 }
 
 rec(loop) fn learn_edges(rows: List(Row), prev: String, rest: List(String)) -> List(Row) {
@@ -150,7 +150,7 @@ rec(loop) fn find_succs(rows: List(Row), w: String) -> List(Tally) {
             rec find_succs(more, w)
           }
         }
-      , .(_empty: .) { nil(Tally, ()) }
+      , .(_empty: .) { nil(Tally) }
       )
   }
 }

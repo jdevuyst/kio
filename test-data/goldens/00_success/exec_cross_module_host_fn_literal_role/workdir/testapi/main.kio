@@ -23,4 +23,4 @@ import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-pub fn main() -> . { print(int_to_string(add_i32(40, 2))) }
+pub fn main() { print(int_to_string(add_i32(40, 2))) }

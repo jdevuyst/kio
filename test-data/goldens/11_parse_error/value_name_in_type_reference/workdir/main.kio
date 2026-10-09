@@ -1,4 +1,4 @@
 module main;
 
-fn value() -> . { () }
+fn value() { () }
 type Result = value;

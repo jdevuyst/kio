@@ -250,7 +250,7 @@ fn summary(state: Dispatch_state) -> String {
     )
 }
 
-pub fn run() -> . {
+pub fn run() {
   print("priority dispatch trace\n");
   let final_state = run_loop(initial_state());
   print(summary(final_state))

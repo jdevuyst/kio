@@ -1,0 +1,4 @@
+module detached;
+
+/// UNBRIDGED-DOC does not appear on the host boundary.
+pub fn hidden() { () }

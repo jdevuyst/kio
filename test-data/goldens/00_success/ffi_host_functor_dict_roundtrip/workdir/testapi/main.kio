@@ -34,7 +34,7 @@ fn box_functor() -> Functor(Box) {
 // dictionary the host hands back: brand a literal, lift an identity
 // step through `fmap`, peel the brand. Printing the recovered string
 // proves the round-tripped dictionary still functions as a dictionary.
-pub fn main() -> . {
+pub fn main() {
   let dict = round_functor(box_functor());
   let branded = Box.mk_box(String, __pair__(String, ., "functor dict roundtrip ok\n"(String), ()));
   let mapped = Functor.fmap(Box, dict)(String, String, .(s) { s }, branded);

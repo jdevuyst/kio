@@ -14,4 +14,4 @@ fn render(v: I32 | String) -> String {
   }
 }
 
-pub fn main() -> . { print(render(widen_sum!("match! derived: ok\n"))) }
+pub fn main() { print(render(widen_sum!("match! derived: ok\n"))) }

@@ -8,7 +8,7 @@ import testapi/io(print);
 // in-scope `role(bool)` type; both arms are blocks and constrain one
 // common result. Bind and discard that result so the fn's `()` return
 // type is satisfied.
-pub fn main() -> . {
+pub fn main() {
   let _r =
     if! .t {
       print("yes\n")

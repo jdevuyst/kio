@@ -41,7 +41,7 @@ fn render_array[A](show: A -> String, arr: Array(A)) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Array(String): Kio builds the array element-by-element and
   // hands each value to the host via `array_push` (Kio-produced,
   // host-consumed), then reads it back through `array_get`.

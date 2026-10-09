@@ -17,7 +17,7 @@ import ballad/weave(weave);
 import testapi(I32);
 import testapi/arith(mul_i32);
 
-pub fn main() -> . {
+pub fn main() {
   let seed = read_int(0);
   let verse_count = read_int(1);
   let lines_per_verse = read_int(1);

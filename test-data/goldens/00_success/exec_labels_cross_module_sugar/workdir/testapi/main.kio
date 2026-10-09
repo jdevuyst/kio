@@ -13,4 +13,4 @@ import testapi/labels({greeting});
 // name free for unrelated bindings.
 pub fn make() -> Greeting { {greeting = "via sugar\n"} }
 
-pub fn main() -> . { print(make().?{greeting}) }
+pub fn main() { print(make().?{greeting}) }

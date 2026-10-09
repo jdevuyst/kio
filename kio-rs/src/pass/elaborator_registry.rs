@@ -49,6 +49,7 @@ where
             callee, args, ext, ..
         } => crate::ast::Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(reanchor_elaborator_expr(callee, span)),
             args: args
                 .iter()

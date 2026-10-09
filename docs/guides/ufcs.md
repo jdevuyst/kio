@@ -199,9 +199,50 @@ match! value { <clauses> }
 
 Prefer the form that keeps the main value visible.
 
+An ordinary nested call can read more clearly as a chain while keeping its
+original argument grouping:
+
+```kio {@module}
+fn line_prefix(label: String, value: String) -> String {
+  string_concat(label, string_concat(value, "\n"))
+}
+
+fn line_ufcs(label: String, value: String) -> String {
+  value.>string_concat("\n").>>string_concat(label)
+}
+```
+
+Both forms call `string_concat(label, string_concat(value, "\n"))`.
+The inner result fills the last argument of the outer call. Choose a prefix
+call when it shows the roles more clearly; changing a right-nested tree into a
+left-associated chain can change evaluation order or host-visible behavior.
+
 - Use `.>` when the value is the subject and the function naturally follows it: `row.>narrow_prod!(Name)`.
 - Use `.>>` when a pipeline value belongs after already-written arguments: `msg.>>string_concat(prefix)`.
 - Use `.<` when you have written a function call and want to append one value: `pair(left).<right`.
 - Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`, or `narrow_prod!(Target).<<value`.
 
 All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and elaborator UFCS calls record the same elaboration the equivalent prefix bang-call would produce.
+
+## Converting a nested call in the editor
+
+Place the caret in a nested ordinary call and choose **Convert nested calls to
+UFCS** from the editor's refactor actions. The action converts the whole
+unambiguous chain of calls to the same function, using `.>` or `.>>` at each
+step to keep the original argument positions. Chains can mix the two
+directions and have any number of calls, starting at two. Selecting exactly
+one nested call expression limits the action to that expression.
+
+The action works with local functions and imported or qualified names, and
+does not require a warning. It keeps explicit type arguments, grouping, and
+comments belonging to retained expressions. It preserves the original call
+tree and evaluation stages rather than treating a function as associative.
+The formatter does not perform this rewrite automatically.
+
+If both boundary arguments continue the same chain, select one branch instead.
+The action is withheld when it cannot establish the same resolved function and
+argument placement, when a comment between call delimiters has no clear new
+attachment, or while the document or its providers lack current typechecking
+results. Computed callees, explicit staged calls such as `f(a)(b)`, elaborator
+calls, and existing UFCS calls are not chain links; they may remain unchanged
+inside a retained argument.

@@ -1,6 +1,6 @@
 module lib;
 
-pub fn unit() -> . { () }
+pub fn unit() { () }
 
 equiv lib_unit_law() {
   unit();

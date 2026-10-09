@@ -63,11 +63,11 @@ fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
   }
 }
 
-fn print_list(xs: List(I32)) -> . {
+fn print_list(xs: List(I32)) {
   loop(.(state: List(I32) & String) { print_list_step(state) }, (xs, ""))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = push(1, push(2, push(3, push(4, push(5, nil(I32, ()))))));
   print_list(reverse(xs))
 }

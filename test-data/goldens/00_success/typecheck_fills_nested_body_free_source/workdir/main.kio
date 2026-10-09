@@ -10,4 +10,4 @@ elab inspect : [T] T -> . { impl(fills) inspect_impl }
 
 fn identity[A](value: A) -> A { value }
 
-fn check[A](raw: A) -> . { inspect!(identity(identity(raw))) }
+fn check[A](raw: A) { inspect!(identity(identity(raw))) }

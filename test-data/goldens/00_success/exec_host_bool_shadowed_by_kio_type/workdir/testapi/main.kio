@@ -11,7 +11,7 @@ import testapi/text(string_concat, string_eq);
 // module's own `bool_to`, never naming the labels.
 fn show_flag_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
-pub fn main() -> . {
+pub fn main() {
   // Kio `Bool` (from `flag`): `yes()` / `no()` build the structural sum.
   print(string_concat("flag yes  = ", string_concat(show_flag_bool(yes()), "\n")));
   print(string_concat("flag no   = ", string_concat(show_flag_bool(no()), "\n")));

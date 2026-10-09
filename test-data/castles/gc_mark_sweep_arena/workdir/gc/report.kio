@@ -43,13 +43,13 @@ fn num(value: I32) -> String { int_to_string(value) }
 
 fn at(addr: I32) -> String { cat("@", num(addr)) }
 
-pub fn line(text: String) -> . { print(cat(text, "\n")) }
+pub fn line(text: String) { print(cat(text, "\n")) }
 
-pub fn blank() -> . { print("\n") }
+pub fn blank() { print("\n") }
 
-pub fn labeled(label: String, value: String) -> . { line(label.>cat(": ").>cat(value)) }
+pub fn labeled(label: String, value: String) { line(label.>cat(": ").>cat(value)) }
 
-fn counted(label: String, value: I32) -> . { labeled(label, num(value)) }
+fn counted(label: String, value: I32) { labeled(label, num(value)) }
 
 /// Append `item` to a list being built, separating it from whatever is
 /// already there. A filtered walk cannot key the separator off an
@@ -93,7 +93,7 @@ fn object_text(cells: Array(I32), addr: I32) -> String {
     .>cat("]")
 }
 
-pub fn print_heap(title: String, cells: Array(I32)) -> . {
+pub fn print_heap(title: String, cells: Array(I32)) {
   line(title
     .>cat(" (")
     .>cat(num(top(cells)))
@@ -134,11 +134,11 @@ fn marked_list(cells: Array(I32), marks: Array(Bool), wanted: Bool) -> String {
     ))
 }
 
-fn tally(label: String, count: I32, addrs: String) -> . {
+fn tally(label: String, count: I32, addrs: String) {
   labeled(label, num(count).>cat(" (").>cat(addrs).>cat(")"))
 }
 
-pub fn print_mark(trace: Trace) -> . {
+pub fn print_mark(trace: Trace) {
   line("-- mark --");
   counted("worklist pushes", trace.?{pushes});
   counted("worklist pops", trace.?{pops});
@@ -146,7 +146,7 @@ pub fn print_mark(trace: Trace) -> . {
   counted("marked objects", trace.?{marked})
 }
 
-pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) -> . {
+pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) {
   line("-- sweep --");
   tally("live objects", census.?{live_objects}, marked_list(cells, marks, .t));
   tally("dead objects", census.?{dead_objects}, marked_list(cells, marks, .f));
@@ -157,7 +157,7 @@ pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) -> . {
 /// Printed before the move, while the old object list is still there to
 /// walk: a dead object leaves no forwarding entry, so only survivors
 /// appear.
-pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) -> . {
+pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) {
   line("-- compact --");
   line("forwarding table (old -> new)");
   let forward = layout.?{forward_table};
@@ -174,7 +174,7 @@ pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) -> . {
     )
 }
 
-pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) -> . {
+pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) {
   labeled("roots after fixup", addr_list(roots));
   labeled("arena top", num(before_top).>cat(" -> ").>cat(num(after_top)));
   counted("cells reclaimed", sub_i32(before_top, after_top))
@@ -190,7 +190,7 @@ fn reached_text(report: Audit) -> String {
   }
 }
 
-fn print_audit(report: Audit) -> . {
+fn print_audit(report: Audit) {
   counted("objects in arena", report.?{arena_objects});
   counted("roots checked", report.?{checked_roots});
   counted("pointer fields checked", report.?{checked_pointers});
@@ -198,7 +198,7 @@ fn print_audit(report: Audit) -> . {
   labeled("reachable from roots", reached_text(report))
 }
 
-pub fn print_verify(verdict: Verdict) -> . {
+pub fn print_verify(verdict: Verdict) {
   line("-- verify --");
   match! verdict {
     (

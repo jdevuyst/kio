@@ -36,7 +36,7 @@ pub fn transition(states: Array(State), state: I32, symbol: I32) -> I32 {
   a.array_get(a.array_get(states, state).?{transitions}, symbol)
 }
 
-fn set_link(states: Array(State), state: I32, link: I32) -> . {
+fn set_link(states: Array(State), state: I32, link: I32) {
   let old = a.array_get(states, state);
   a.array_set(states, state, old.!{suffix = link})
 }
@@ -55,7 +55,7 @@ rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32)
   }
 }
 
-rec(loop) fn redirect(states: Array(State), p: I32, symbol: I32, old: I32, clone: I32) -> . {
+rec(loop) fn redirect(states: Array(State), p: I32, symbol: I32, old: I32, clone: I32) {
   if! num.less(p, 0) {
     ()
   } else {

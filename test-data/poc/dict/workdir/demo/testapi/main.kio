@@ -80,11 +80,11 @@ op _ -< _ { impl op_delete }
 
 op _ |+| _ { impl op_union }
 
-fn show(label: String, value: String) -> . {
-  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+fn show(label: String, value: String) {
+  print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))
 }
 
-fn show_lookup(label: String, result: I32 | .) -> . {
+fn show_lookup(label: String, result: I32 | .) {
   show(
     , label
     , match! result {
@@ -96,7 +96,7 @@ fn show_lookup(label: String, result: I32 | .) -> . {
     )
 }
 
-fn show_entries(label: String, d: Dict(I32, I32)) -> . {
+fn show_entries(label: String, d: Dict(I32, I32)) {
   let folded =
     fold_asc(
       , d
@@ -120,13 +120,13 @@ fn show_entries(label: String, d: Dict(I32, I32)) -> . {
   }
 }
 
-fn show_int(label: String, n: I32) -> . { show(label, int_to_string(n)) }
+fn show_int(label: String, n: I32) { show(label, int_to_string(n)) }
 
 fn empty_literal() -> Dict(I32, I32) { [% %](cmp_i32) }
 
 fn unit_dictionary() -> Dict(I32, .) { [% 1 => () %](cmp_i32) }
 
-fn show_lookup_value[A](label: String, result: A | ., format_present: A -> String) -> . {
+fn show_lookup_value[A](label: String, result: A | ., format_present: A -> String) {
   show(
     , label
     , match! result {
@@ -135,7 +135,7 @@ fn show_lookup_value[A](label: String, result: A | ., format_present: A -> Strin
     )
 }
 
-fn show_unit_lookup(label: String, result: . | .) -> . {
+fn show_unit_lookup(label: String, result: . | .) {
   show_lookup_value(label, result, .(_unit: .) { "present-unit" })
 }
 
@@ -143,7 +143,7 @@ fn sum_dictionary() -> Dict(I32, I32 | .) {
   [% 1 => widen_sum!(7, I32 | .), 2 => widen_sum!((), I32 | .) %](cmp_i32)
 }
 
-fn show_sum_lookup(label: String, result: (I32 | .) | .) -> . {
+fn show_sum_lookup(label: String, result: (I32 | .) | .) {
   show_lookup_value(
     , label
     , result
@@ -158,7 +158,7 @@ fn show_sum_lookup(label: String, result: (I32 | .) | .) -> . {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let d = [% 5 => 50, 2 => 20, 8 => 80, 1 => 10, 9 => 90 %](cmp_i32);
   show_entries("literal |> fold_asc", d);
   show_int("size", size(d));

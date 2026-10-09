@@ -69,7 +69,7 @@ use crate::host_descriptor::exact_host_type_role;
 type Type = crate::ast::Type<Routed>;
 #[derive(Default)]
 struct OpaqueTsTypes {
-    nominal: BTreeMap<String, Vec<Kind>>,
+    nominal: BTreeMap<String, (Vec<Kind>, QualifiedTypeName)>,
     nominal_retained_at: BTreeMap<String, u32>,
     recursive_structural: BTreeSet<QualifiedTypeName>,
     recursive_structural_pending: BTreeSet<QualifiedTypeName>,
@@ -91,7 +91,8 @@ struct TsNominalPresentation<'a> {
 
 impl OpaqueTsTypes {
     fn insert(&mut self, rendered: String, kinds: Vec<Kind>, semantic: &QualifiedTypeName) {
-        self.nominal.insert(rendered.clone(), kinds);
+        self.nominal
+            .insert(rendered.clone(), (kinds, semantic.clone()));
         if let Some(version) = self
             .active_retained_at
             .filter(|_| !self.live_semantic_nominals.contains(semantic))
@@ -232,10 +233,25 @@ pub fn lower_package_to_dts_with_signature(
     let nominal_presentations = index_nominal_presentations(&prepared);
 
     render_type_lambda_protocol(&brand, &names, &mut out);
-    render_host_types(&source_stable_host_types, &brand, &names, &mut out);
-    render_host_interface(&prepared, &brand, &names, &mut opaque_types, &mut out)?;
-    render_package_interface(&prepared, &brand, &names, &mut opaque_types, &mut out)?;
+    render_host_types(package, &source_stable_host_types, &brand, &names, &mut out);
+    render_host_interface(
+        package,
+        &prepared,
+        &brand,
+        &names,
+        &mut opaque_types,
+        &mut out,
+    )?;
+    render_package_interface(
+        package,
+        &prepared,
+        &brand,
+        &names,
+        &mut opaque_types,
+        &mut out,
+    )?;
     render_type_catalog(
+        package,
         &prepared,
         &source_stable_host_types,
         &nominal_presentations,
@@ -244,12 +260,14 @@ pub fn lower_package_to_dts_with_signature(
         &mut out,
     )?;
     render_recursive_structural_interfaces(
+        package,
+        &prepared,
         &nominal_presentations,
         &names,
         &mut opaque_types,
         &mut out,
     )?;
-    render_opaque_type_declarations(&opaque_types, &names, &mut out);
+    render_opaque_type_declarations(package, &prepared, &opaque_types, &names, &mut out);
     render_create_package(&prepared, &brand, &names, &mut out);
 
     Ok(out)
@@ -553,6 +571,20 @@ fn retained_host_binding_version(binding: &BoundaryHostBinding) -> Option<u32> {
     }
 }
 
+fn render_doc(out: &mut String, indent: &str, doc: Option<&crate::ast::DocComment>) {
+    if let Some(doc) = doc {
+        let framed = super::super::doc::jsdoc(&super::super::doc::render(
+            doc,
+            super::super::doc::Dialect::Markdown,
+        ));
+        for line in framed.lines() {
+            out.push_str(indent);
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+}
+
 fn render_deprecated_jsdoc(out: &mut String, indent: &str, message: &str) {
     out.push_str(indent);
     out.push_str("/** @deprecated ");
@@ -561,6 +593,7 @@ fn render_deprecated_jsdoc(out: &mut String, indent: &str, message: &str) {
 }
 
 fn render_host_types(
+    package: &Package<Routed>,
     source_stable: &[&BoundaryHostBinding],
     brand: &js::Brand,
     names: &TsNames,
@@ -604,6 +637,11 @@ fn render_host_types(
                 if module_is_retained { "?" } else { "" }
             ));
             for declaration in declarations {
+                render_doc(
+                    out,
+                    "    ",
+                    super::super::boundary_docs::host_type(package, declaration),
+                );
                 let retained_at = retained_host_binding_version(declaration);
                 let binding = if declaration.type_params().is_empty() {
                     "unknown".to_owned()
@@ -721,6 +759,7 @@ fn render_host_types(
 }
 
 fn render_type_catalog(
+    package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
     source_stable: &[&BoundaryHostBinding],
     nominal_presentations: &BTreeMap<QualifiedTypeName, TsNominalPresentation<'_>>,
@@ -729,7 +768,8 @@ fn render_type_catalog(
     out: &mut String,
 ) -> Result<(), EmitError> {
     let private = format!("__{}", names.handle);
-    let mut by_module: BTreeMap<String, BTreeMap<String, (String, Option<u32>)>> = BTreeMap::new();
+    type CatalogEntry<'a> = (String, Option<u32>, Option<&'a crate::ast::DocComment>);
+    let mut by_module: BTreeMap<String, BTreeMap<String, CatalogEntry<'_>>> = BTreeMap::new();
     for declaration in source_stable {
         let module = declaration.name().module_segments().join("/");
         let retained_at = retained_host_binding_version(declaration);
@@ -749,20 +789,34 @@ fn render_type_catalog(
         by_module
             .entry(ts_host_module_path(&module))
             .or_default()
-            .insert(host_name_core(declaration.name().name()), (ty, retained_at));
+            .insert(
+                host_name_core(declaration.name().name()),
+                (
+                    ty,
+                    retained_at,
+                    super::super::boundary_docs::host_type(package, declaration),
+                ),
+            );
     }
 
     let catalog_newtypes = prepared
         .public_newtypes()
-        .map(|declaration| (declaration, None))
+        .map(|declaration| {
+            (
+                declaration,
+                None,
+                super::super::boundary_docs::newtype(package, declaration),
+            )
+        })
         .chain(prepared.retained_public_newtypes().map(|declaration| {
             (
                 declaration,
                 prepared.retained_public_newtype_removed_at(declaration.name()),
+                None,
             )
         }))
         .collect::<Vec<_>>();
-    for (declaration, retained_at) in catalog_newtypes {
+    for (declaration, retained_at, doc) in catalog_newtypes {
         let module = declaration.name().module_segments().join("/");
         let ty = if declaration.type_params().is_empty() {
             render_catalog_newtype(
@@ -829,6 +883,7 @@ fn render_type_catalog(
                     ),
                 );
             }
+            render_doc(out, "", doc);
             out.push_str(&format!(
                 "{}type {alias}<B extends {}, {}> = {result};\n\n",
                 if retained_at.is_some() { "" } else { "\n" },
@@ -846,6 +901,7 @@ fn render_type_catalog(
                     ),
                 );
             }
+            render_doc(out, "", doc);
             out.push_str(&format!(
                 "interface {witness}<B extends {}> extends {}<readonly [{constraints}]> {{\n  readonly type: {alias}<B, {witness_arguments}>;\n}}\n",
                 names.host_types,
@@ -856,7 +912,10 @@ fn render_type_catalog(
         by_module
             .entry(ts_host_module_path(&module))
             .or_default()
-            .insert(host_name_core(declaration.name().name()), (ty, retained_at));
+            .insert(
+                host_name_core(declaration.name().name()),
+                (ty, retained_at, doc),
+            );
     }
 
     out.push_str(&format!(
@@ -870,7 +929,7 @@ fn render_type_catalog(
         for (module, declarations) in by_module {
             let module_is_retained = declarations
                 .values()
-                .all(|(_, retained_at)| retained_at.is_some());
+                .all(|(_, retained_at, _)| retained_at.is_some());
             if module_is_retained {
                 render_deprecated_jsdoc(
                     out,
@@ -879,7 +938,8 @@ fn render_type_catalog(
                 );
             }
             out.push_str(&format!("  readonly {}: {{\n", ts_property_key(&module)));
-            for (name, (ty, retained_at)) in declarations {
+            for (name, (ty, retained_at, doc)) in declarations {
+                render_doc(out, "    ", doc);
                 if let Some(version) = retained_at {
                     render_deprecated_jsdoc(
                         out,
@@ -1064,18 +1124,27 @@ struct SurfaceTree {
 }
 
 enum SurfaceEntry {
-    Leaf(SurfaceLeaf),
+    Leaf(SurfaceLeaf, Option<String>),
     Subtree(SurfaceTree),
 }
 
 impl SurfaceTree {
     /// Insert `leaf` at a role-framed facade `path`.
-    fn insert(&mut self, path: &[String], leaf: SurfaceLeaf) {
+    fn insert(&mut self, path: &[String], leaf: SurfaceLeaf, doc: Option<&crate::ast::DocComment>) {
         debug_assert!(!path.is_empty());
         if path.len() == 1 {
             assert!(
                 self.entries
-                    .insert(path[0].clone(), SurfaceEntry::Leaf(leaf))
+                    .insert(
+                        path[0].clone(),
+                        SurfaceEntry::Leaf(
+                            leaf,
+                            doc.map(|doc| super::super::doc::jsdoc(&super::super::doc::render(
+                                doc,
+                                super::super::doc::Dialect::Markdown
+                            )))
+                        )
+                    )
                     .is_none(),
                 "resolved facade path is unique"
             );
@@ -1088,7 +1157,7 @@ impl SurfaceTree {
         let SurfaceEntry::Subtree(sub) = entry else {
             unreachable!("role-framed facade path cannot cross a value leaf")
         };
-        sub.insert(&path[1..], leaf);
+        sub.insert(&path[1..], leaf, doc);
     }
 
     /// Render the tree as a TS object type literal at `depth`
@@ -1102,15 +1171,22 @@ impl SurfaceTree {
         let close_indent = "  ".repeat(depth);
         out.push_str("{\n");
         for (key, entry) in &self.entries {
+            if let SurfaceEntry::Leaf(_, Some(doc)) = entry {
+                for line in doc.lines() {
+                    out.push_str(&indent);
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
             out.push_str(&indent);
             out.push_str(&ts_property_key(key));
             out.push_str(": ");
             match entry {
-                SurfaceEntry::Leaf(SurfaceLeaf::Fn(arrow)) => {
+                SurfaceEntry::Leaf(SurfaceLeaf::Fn(arrow), _) => {
                     out.push_str(arrow);
                     out.push_str(";\n");
                 }
-                SurfaceEntry::Leaf(SurfaceLeaf::Namespace(members)) => {
+                SurfaceEntry::Leaf(SurfaceLeaf::Namespace(members), _) => {
                     out.push_str("{\n");
                     let member_indent = "  ".repeat(depth + 2);
                     for (name, arrow) in members {
@@ -2263,6 +2339,7 @@ v(2) {
 /// optional and deprecated. The exported conditional alias withholds all
 /// members when `B` fails validation.
 fn render_host_interface(
+    package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
     brand: &js::Brand,
     names: &TsNames,
@@ -2315,6 +2392,11 @@ fn render_host_interface(
                 if module_is_retained { "?" } else { "" }
             ));
             for site in fns {
+                render_doc(
+                    out,
+                    "    ",
+                    super::super::boundary_docs::callable(package, *site),
+                );
                 let BoundaryFacadeSiteOwner::HostFunction { name } = site.site().owner() else {
                     unreachable!("host namespace catalog contains only host functions")
                 };
@@ -2360,6 +2442,7 @@ fn render_host_interface(
 /// the internal handle is empty. The exported conditional alias withholds all
 /// members when `B` fails validation.
 fn render_package_interface(
+    package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
     brand: &js::Brand,
     names: &TsNames,
@@ -2367,7 +2450,7 @@ fn render_package_interface(
     out: &mut String,
 ) -> Result<(), EmitError> {
     let mut tree = SurfaceTree::default();
-    let mut newtype_members: BTreeMap<Vec<String>, BTreeMap<String, String>> = BTreeMap::new();
+    let mut newtype_members = BTreeMap::new();
 
     // Inventory owns even memberless public newtypes; callable sites own every
     // public member scheme. Neither branch scans Routed declarations again.
@@ -2375,7 +2458,13 @@ fn render_package_interface(
         let module_path = declaration.name().module_segments().join("/");
         let mut path = ts_facade_module_path(&module_path);
         path.push(FacadeSelector::Type(declaration.name().name().to_owned()).facade_name(false));
-        newtype_members.entry(path).or_default();
+        newtype_members.insert(
+            path,
+            (
+                BTreeMap::new(),
+                super::super::boundary_docs::newtype(package, declaration),
+            ),
+        );
     }
     for site in prepared.sites().filter(|site| site.execution().is_some()) {
         let module_path = site.site().module_segments().join("/");
@@ -2386,21 +2475,26 @@ fn render_package_interface(
                 tree.insert(
                     &path,
                     SurfaceLeaf::Fn(render_prepared_callable(site, names, opaque_types)?),
+                    super::super::boundary_docs::callable(package, site),
                 );
             }
             BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member }
             | BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
                 path.push(FacadeSelector::Type(newtype.clone()).facade_name(false));
-                newtype_members.entry(path).or_default().insert(
-                    ts_member_name(member),
-                    render_prepared_callable(site, names, opaque_types)?,
-                );
+                newtype_members
+                    .get_mut(&path)
+                    .expect("a public newtype member has a live inventory entry")
+                    .0
+                    .insert(
+                        ts_member_name(member),
+                        render_prepared_callable(site, names, opaque_types)?,
+                    );
             }
             BoundaryFacadeSiteOwner::HostFunction { .. } => {}
         }
     }
-    for (path, members) in newtype_members {
-        tree.insert(&path, SurfaceLeaf::Namespace(members));
+    for (path, (members, doc)) in newtype_members {
+        tree.insert(&path, SurfaceLeaf::Namespace(members), doc);
     }
 
     let private = format!("__{}", brand.handle);
@@ -2440,6 +2534,8 @@ fn recursive_structural_ts_type_name(name: &QualifiedTypeName) -> String {
 }
 
 fn render_recursive_structural_interfaces(
+    package: &Package<Routed>,
+    prepared: &PreparedBoundaryCallableSites,
     nominal_presentations: &BTreeMap<QualifiedTypeName, TsNominalPresentation<'_>>,
     names: &TsNames,
     types: &mut OpaqueTsTypes,
@@ -2506,6 +2602,13 @@ fn render_recursive_structural_interfaces(
             }
         }));
         out.push('\n');
+        render_doc(
+            out,
+            "",
+            prepared
+                .public_newtype(&name)
+                .and_then(|entry| super::super::boundary_docs::newtype(package, entry)),
+        );
         if let Some(version) = types.recursive_structural_retained_at.get(&name) {
             render_deprecated_jsdoc(
                 out,
@@ -2528,8 +2631,14 @@ fn render_recursive_structural_interfaces(
 /// consumer can infer and shuttle the type but cannot construct it or use a
 /// payload-shaped object in its place. A distinct private member origin per
 /// exact declaration makes same-shaped newtypes incompatible in TypeScript.
-fn render_opaque_type_declarations(types: &OpaqueTsTypes, names: &TsNames, out: &mut String) {
-    for (name, kinds) in &types.nominal {
+fn render_opaque_type_declarations(
+    package: &Package<Routed>,
+    prepared: &PreparedBoundaryCallableSites,
+    types: &OpaqueTsTypes,
+    names: &TsNames,
+    out: &mut String,
+) {
+    for (name, (kinds, semantic)) in &types.nominal {
         let params = kinds
             .iter()
             .enumerate()
@@ -2551,6 +2660,13 @@ fn render_opaque_type_declarations(types: &OpaqueTsTypes, names: &TsNames, out: 
         invariant.extend((0..kinds.len()).map(|index| format!("T{index}")));
         let invariant = format!("readonly [{}]", invariant.join(", "));
         out.push('\n');
+        render_doc(
+            out,
+            "",
+            prepared
+                .public_newtype(semantic)
+                .and_then(|entry| super::super::boundary_docs::newtype(package, entry)),
+        );
         if let Some(version) = types.nominal_retained_at.get(name) {
             render_deprecated_jsdoc(
                 out,

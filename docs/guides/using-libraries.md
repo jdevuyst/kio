@@ -72,7 +72,15 @@ import elab/spine_elaborators(widen_sum, one_prod);
 
 The bang belongs only at the call site:
 
-```kio {ignore}
+<!--kio {harness=inject placeholder="__INSERT_CODE_HERE__"}
+module kiodoc;
+
+import spine_elaborators(widen_sum);
+
+__INSERT_CODE_HERE__
+-->
+
+```kio {@inject}
 fn inject[A][B](value: A) -> A | B { widen_sum!(value, A | B) }
 ```
 
@@ -181,7 +189,7 @@ import list/core as lists;
 import list/list as traversal;
 
 pub fn subtotal(first: traversal.I32, second: traversal.I32) -> traversal.I32 {
-  let prices = lists.cons(first, lists.cons(second, lists.nil()));
+  let prices = lists.cons(first, lists.cons(second, lists.nil(_)));
   traversal.foldl(traversal.add_i32, 0, prices)
 }
 ```

@@ -34,4 +34,4 @@ fn extract_string(b: Boxed_string) -> String {
   Boxed_string.un_boxed_string(b)(_, .[U](pair) { __snd__(U, String, pair) })
 }
 
-pub fn main() -> . { let b = box_string("let-unpack-sugar-ok\n"); print(extract_string(b)) }
+pub fn main() { let b = box_string("let-unpack-sugar-ok\n"); print(extract_string(b)) }

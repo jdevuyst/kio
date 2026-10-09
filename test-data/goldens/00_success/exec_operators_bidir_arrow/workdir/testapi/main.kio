@@ -12,4 +12,4 @@ import testapi/io(print);
 // special-cased away.
 op _ <-> _ { impl add }
 
-pub fn main() -> . { print(int_to_string(4 <-> 5)); print("\n") }
+pub fn main() { print(int_to_string(4 <-> 5)); print("\n") }

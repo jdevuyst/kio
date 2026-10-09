@@ -470,6 +470,9 @@ impl Reclaim for EvalExpr {
                     shared(child, pending);
                 }
             }
+            Self::TypeApplication { callee } => {
+                shared(callee, pending);
+            }
             Self::CallAtom { args, .. } => {
                 for child in args {
                     shared(child, pending);
@@ -945,6 +948,23 @@ mod tests {
         assert!(weak.upgrade().is_some());
         drop(retained);
         assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn type_application_edges_release_deep_final_owner_iteratively() {
+        std::thread::spawn(|| {
+            let mut expression = EvalRef::new(EvalExpr::Unit);
+            let leaf = expression.downgrade();
+            for _ in 0..30_000 {
+                expression = EvalRef::new(EvalExpr::TypeApplication { callee: expression });
+            }
+            let root = expression.downgrade();
+            drop(expression);
+            assert!(root.upgrade().is_none());
+            assert!(leaf.upgrade().is_none());
+        })
+        .join()
+        .expect("type-application graph releases on the default stack");
     }
 
     #[test]

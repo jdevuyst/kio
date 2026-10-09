@@ -22,7 +22,7 @@ pub fn three_partial() -> Result {
   later(())
 }
 
-pub fn main() -> . {
+pub fn main() {
   let first = unit_partial();
   let second = value_partial();
   let third = three_partial();

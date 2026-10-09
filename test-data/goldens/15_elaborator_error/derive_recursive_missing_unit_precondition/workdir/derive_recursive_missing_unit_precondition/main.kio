@@ -14,4 +14,4 @@ fn through_precondition(_precondition: Precondition) -> Target { __left__(., Tok
 
 fn bad() -> Target { derive!(through_precondition, Target) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

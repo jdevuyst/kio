@@ -8,7 +8,7 @@ host type Right;
 
 fn identity[A](value: A) -> A { value }
 
-fn rejected(source: Left | Right) -> . {
+fn rejected(source: Left | Right) {
   let _result =
     match! source {
       (.(_left: Left) { identity(_) }, .(_right: Right) { identity(_) })

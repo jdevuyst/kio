@@ -15,4 +15,4 @@ pub labels Color = { red: ., green: . };
 pub newtype Wrapped : . { pub constructor mk_wrapped; pub projector un_wrapped; };
 
 /// A value binding — `@type` resolves against this fine.
-pub fn compute() -> . { () }
+pub fn compute() { () }

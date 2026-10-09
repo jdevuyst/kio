@@ -28,7 +28,7 @@ fn indirect_lambda() -> String {
   .(a: String, b: String, c: String) { join3(a, b, c) }(("i"(String), "l"(String), "m"(String)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(line(unit_text()));
   print(line(unit_text(())));
   print(line(unit_text(())));

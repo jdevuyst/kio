@@ -134,7 +134,7 @@ fn invariant(machine: Machine) -> Bool {
     )
 }
 
-fn print_summary(machine: Machine) -> . {
+fn print_summary(machine: Machine) {
   print("gate_state_machine\n");
   print(join3("transcript=", machine.?{log}, "\n"));
   print(join5(
@@ -151,4 +151,4 @@ fn print_summary(machine: Machine) -> . {
   print(join3("invariant=ok ", bool_to_string(invariant(machine)), "\n"))
 }
 
-pub fn run() -> . { print_summary(drive(initial())) }
+pub fn run() { print_summary(drive(initial())) }

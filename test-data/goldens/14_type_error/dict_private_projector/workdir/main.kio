@@ -2,4 +2,4 @@ module main;
 
 import dict/dict as d;
 
-fn probe() -> . { let read_node = d.Dict.unpack; () }
+fn probe() { let read_node = d.Dict.unpack; () }

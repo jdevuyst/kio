@@ -25,7 +25,7 @@ rec(loop) fn accumulate(state: (I32 & I32) & I32 & I32, offset: I32) -> I32 {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(fmt.int_to_string(accumulate(((3, 1), (2, 10)), 100)));
   io.print("\n");
   io.print(fmt.int_to_string(accumulate(((0, 1), (2, 10)), 100)));

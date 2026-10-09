@@ -25,7 +25,7 @@ op _ * _ { impl cat2 }
 // full chain.
 op $$ ___ { impl ann }
 
-pub fn main() -> . {
+pub fn main() {
   // `f $ a + b` — greedy slot accepts a `+`-chain on the right.
   print("f" $ "a" + "b");
   print("\n");

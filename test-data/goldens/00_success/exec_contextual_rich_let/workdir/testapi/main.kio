@@ -51,7 +51,7 @@ fn monadic() -> String {
   Box.unbox(result)
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(ordinary());
   io.print("\n");
   io.print(rows());

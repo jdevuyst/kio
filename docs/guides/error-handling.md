@@ -67,7 +67,7 @@ The result type `(Int | Div_by_zero)` is "an `Int`, or a division error." The `i
 A caller dispatches with `match!`:
 
 ```kio {@module}
-fn show_result(r: Int | Div_by_zero) -> . {
+fn show_result(r: Int | Div_by_zero) {
   match! r {
     .(n: Int) { print(int_to_string(n)) };
     .(_e: Div_by_zero) { print("division by zero\n") }

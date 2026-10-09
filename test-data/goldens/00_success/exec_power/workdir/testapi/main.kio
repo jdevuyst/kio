@@ -31,4 +31,4 @@ fn power(base: I32, exponent: I32) -> I32 {
   loop(.(state: I32 & I32) { power_step(base, state) }, (exponent, 1))
 }
 
-pub fn main() -> . { print(int_to_string(power(2, 10))); print("\n") }
+pub fn main() { print(int_to_string(power(2, 10))); print("\n") }

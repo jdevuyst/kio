@@ -210,7 +210,7 @@
 #               path and content are in the harness-owned reviewed cohort;
 #               that cohort receives its own run-scoped root.
 #   PATH        prefixed with harness-local proxies for kio, kio-prime, cargo,
-#               rustc, go, javac, swiftc, and ghc. Compiler-producing commands
+#               rustc, go, javac, javadoc, swiftc, ghc, and haddock. Compiler-producing commands
 #               enter shared compiler admission; cheap Kio management and
 #               non-compiling go commands pass through directly. Custom scripts
 #               must preserve this prefix, use KIO_BIN for Kio, and invoke host
@@ -466,7 +466,7 @@ Environment exported to each custom run.sh:
               path and content are in the harness-owned reviewed cohort;
               that cohort receives its own run-scoped root.
   PATH        prefixed with harness-local proxies for kio, kio-prime, cargo,
-              rustc, go, javac, swiftc, and ghc. Compiler-producing commands
+              rustc, go, javac, javadoc, swiftc, ghc, and haddock. Compiler-producing commands
               enter --compiler-jobs admission; cheap Kio management and
               non-compiling go commands pass through directly. Custom scripts
               must preserve this prefix, use KIO_BIN for Kio, and invoke host
@@ -980,7 +980,7 @@ setup_native_compiler_proxy() {
   mkdir -p "$sncp_dir/real" || return 1
   printf '%s\n' "$sncp_ci_dir/schedule.sh" \
     >"$sncp_dir/admission-path" || return 1
-  for sncp_tool in cargo rustc go javac swiftc ghc; do
+  for sncp_tool in cargo rustc go javac javadoc swiftc ghc haddock; do
     sncp_real=$(resolve_path_command "$sncp_tool") || continue
     ln -s "$sncp_real" "$sncp_dir/real/$sncp_tool" || return 1
     ln -s "$sncp_ci_dir/infra/native-compiler-proxy.sh" \

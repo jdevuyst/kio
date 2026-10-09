@@ -13,11 +13,11 @@ import testapi/io as io;
 import testapi/text as text;
 import tree as tree;
 
-fn line(value: String) -> . { io.print(text.string_concat(value, "\n")) }
+fn line(value: String) { io.print(text.string_concat(value, "\n")) }
 
 fn field(name: String, value: I32) -> String { text.string_concat(name, fmt.int_to_string(value)) }
 
-fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.Tree) -> . {
+fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.Tree) {
   match! tree.replay(solution, matrices) {
     .(result: Evaluation) {
       io.print(field("replay=", result.?{rows}));
@@ -38,14 +38,14 @@ fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.T
   }
 }
 
-fn baseline_cost(label: String, matrices: Array(Matrix), solution: tree.Tree) -> . {
+fn baseline_cost(label: String, matrices: Array(Matrix), solution: tree.Tree) {
   match! tree.replay(solution, matrices) {
     .(result: Evaluation) { io.print(field(label, result.?{cost})) };
     .(error: String) { io.print(text.string_concat(label, error)) }
   }
 }
 
-fn run(name: String, matrices: Array(Matrix)) -> . {
+fn run(name: String, matrices: Array(Matrix)) {
   let description =
     if! math.leq_i32(arrays.array_len(matrices), 0) {
       "(empty)"
@@ -78,7 +78,7 @@ fn run(name: String, matrices: Array(Matrix)) -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let interior = arrays.array_make_empty(Matrix, ());
   arrays.array_push(interior, chain.matrix(5, 10));
   arrays.array_push(interior, chain.matrix(10, 3));

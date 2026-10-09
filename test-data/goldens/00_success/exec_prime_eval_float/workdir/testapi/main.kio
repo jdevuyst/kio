@@ -14,9 +14,9 @@ import testapi/io(print);
 // through the supplied host record and constructs each `F64` literal through
 // the host's scalar capability, so the dyn-load-prime differential agrees with
 // compile-and-run byte for byte.
-fn line(label: String, x: F64) -> . { print(label); print(f64_to_string(x)); print("\n") }
+fn line(label: String, x: F64) { print(label); print(f64_to_string(x)); print("\n") }
 
-pub fn main() -> . {
+pub fn main() {
   line("literal = ", 562.406);
   line("add = ", add_f64(1.5, 2.25));
   line("sub = ", sub_f64(10.5, 0.25));

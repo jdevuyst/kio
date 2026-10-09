@@ -11,7 +11,7 @@ import testapi/io(print);
 // at the form's site to anchor the elaborator. The `let widened = ...`
 // does not annotate the binding, so without the explicit
 // `<String | I32>` the form would have no target.
-pub fn main() -> . {
+pub fn main() {
   let widened = widen_sum!("hello", String | I32);
   let s =
     match! widened {

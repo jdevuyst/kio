@@ -12,4 +12,4 @@ newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap; };
 
 fn wrapped() -> Wrap { Wrap.mk_wrap(42(I32)) }
 
-pub fn main() -> . { print(int_to_string(Wrap.un_wrap(wrapped()))) }
+pub fn main() { print(int_to_string(Wrap.un_wrap(wrapped()))) }

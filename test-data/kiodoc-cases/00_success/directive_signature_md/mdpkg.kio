@@ -4,4 +4,4 @@ host type S role(str);
 
 host fn print(p0: S) -> .;
 
-pub fn compute() -> . { () }
+pub fn compute() { () }

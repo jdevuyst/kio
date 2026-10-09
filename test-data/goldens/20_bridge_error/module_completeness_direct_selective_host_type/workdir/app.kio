@@ -2,4 +2,4 @@ module app;
 
 import cap(Raw);
 
-pub fn run(x: Raw) -> . { () }
+pub fn run(x: Raw) { () }

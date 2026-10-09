@@ -1016,4 +1016,4 @@ fn bad() -> Render(Box(Atom)) {
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

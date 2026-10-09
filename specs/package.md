@@ -699,6 +699,23 @@ it is the universally meaningful target key, and other keys are
 backend-specific. `out` must be a path **relative** to the package root —
 an absolute path is rejected as a build error.
 
+Before writing any selected target output, `kio build` checks output paths
+across all selected packages. Distinct selected targets cannot have equal or
+nested output directories, and an output cannot contain an input path found
+by the selected packages' ordinary source inventories (including package,
+dependency, lock, and signature files). These conflicts are build errors,
+including when an output would be restored from cache. Unselected targets and
+unsupported targets that are skipped contribute no output directory.
+
+Paths are compared by components after resolving existing filesystem prefixes
+and normalizing the remaining relative components. Existing symlink aliases
+are checked conservatively, including a terminal symlink whose replacement
+would remove only the link. Both the access path and resolved referent of an
+input symlink are protected. This is a configuration check, not a transactional
+filesystem or ownership guarantee. Other content placed under an output
+directory remains the programmer's responsibility. Relative paths outside the
+package root remain valid when they cause none of these conflicts.
+
 The build block is local to the package. A package file with no build block
 declares no compilation targets, and `kio build` exits at the build-error
 category.

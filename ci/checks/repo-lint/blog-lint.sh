@@ -8,10 +8,11 @@
 #   - carry a byline in the standard attribution style, linking to a GitHub
 #     profile:  _By [Name](https://github.com/<user>)_
 #   - pin every GitHub link to a file or directory in this repository to a
-#     full commit object ID rather than a moving branch or tag.
+#     full commit object ID rather than a moving branch or tag;
+#   - use straight ASCII quotation marks and apostrophes, not curly quotes.
 #
-# These are the authoring invariants website/scripts/prepare-docs.mjs relies
-# on to render a post's title, date, and author. Static check, no build.
+# The metadata checks protect website/scripts/prepare-docs.mjs extraction of
+# each post's title, date, and author. Static check, no build.
 #
 # POSIX sh only.
 
@@ -47,7 +48,9 @@ for post in "$BLOG_DIR"/*.md; do
   grep -qE '^_By \[[^]]+\]\(https?://(www\.)?github\.com/[^)]+\)_[[:space:]]*$' "$post" \
     || fail "docs/blog/$name has no standard byline: _By [Name](https://github.com/<user>)_"
 
-  link_errors=$(
+  # These literal UTF-8 strings are the punctuation being rejected.
+  # shellcheck disable=SC1112
+  content_errors=$(
     awk -v file="docs/blog/$name" '
       function scan(line, url_pattern, prefix_pattern,    rest, url, ref) {
         rest = line
@@ -63,6 +66,9 @@ for post in "$BLOG_DIR"/*.md; do
       }
 
       {
+        if (index($0, "‘") || index($0, "’") || index($0, "“") || index($0, "”")) {
+          printf "blog-lint: %s:%d use straight ASCII quotation marks and apostrophes instead of curly quotes\n", file, FNR
+        }
         scan($0,
           "https://github\\.com/jdevuyst/kio/(blob|tree)/[^/[:space:])]+",
           "^https://github\\.com/jdevuyst/kio/(blob|tree)/")
@@ -72,8 +78,8 @@ for post in "$BLOG_DIR"/*.md; do
       }
     ' "$post"
   )
-  if [ -n "$link_errors" ]; then
-    printf '%s\n' "$link_errors" >&2
+  if [ -n "$content_errors" ]; then
+    printf '%s\n' "$content_errors" >&2
     status=1
   fi
 done

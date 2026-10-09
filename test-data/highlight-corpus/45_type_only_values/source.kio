@@ -1,0 +1,19 @@
+module values;
+pure fn nil[A] -> List(A) { empty(A) }
+fn unit[A] { () }
+fn repeated[A][B] -> A -> B -> A { .(a: A)(b: B) { a } }
+fn explicit[A]() { () }
+fn run() {
+  let direct = .[A] { () };
+  let repeated = .[A][B] -> . { () };
+  let higher = .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } };
+  let mixed = .[A](a: A)[B] { a };
+  let explicit = .[A]() { () };
+  let spaced = . [A] { () };
+  let multiline = . // dot
+    [A] // stages
+    [B] { () };
+  let dots = ..[ .[A] { () } ]..;
+  let plus = +.[ .[A] { () } ].+;
+  direct(.)
+}

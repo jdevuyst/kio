@@ -2,4 +2,4 @@ module utilities/entry;
 
 import details/core(id);
 
-pub fn run() -> . { id(()) }
+pub fn run() { id(()) }

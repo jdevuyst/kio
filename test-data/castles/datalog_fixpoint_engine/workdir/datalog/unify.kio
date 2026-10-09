@@ -154,7 +154,7 @@ rec(loop) {
                 )
             }
           }
-        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        , .(_empty: .) { list.nil(subst.Subst) }
         )
     }
   }
@@ -178,7 +178,7 @@ rec(loop) {
               , rec(cont) scan_old(goal, rest, old, db, old, delta, s)
               )
           }
-        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        , .(_empty: .) { list.nil(subst.Subst) }
         )
     }
   };
@@ -200,7 +200,7 @@ rec(loop) {
                 )
             }
           }
-        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        , .(_empty: .) { list.nil(subst.Subst) }
         )
     }
   };
@@ -231,7 +231,7 @@ rec(loop) {
                 )
             }
           }
-        , .(_empty: .) { list.nil(subst.Subst, ()) }
+        , .(_empty: .) { list.nil(subst.Subst) }
         )
     }
   }

@@ -4,8 +4,8 @@ module main;
 // source identities, so neither may silently replace the other.
 import arith(op _ + _);
 
-fn local_add(x: ., y: .) -> . { x }
+fn local_add(x: ., y: .) { x }
 
 op _ + _ { impl local_add }
 
-pub fn main() -> . { () }
+pub fn main() { () }

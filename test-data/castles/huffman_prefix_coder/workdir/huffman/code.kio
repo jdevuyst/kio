@@ -73,7 +73,7 @@ rec(loop) fn sort_onto(rows: List(Entry), acc: List(Entry)) -> List(Entry) {
 
 /// The code table, in symbol order so it reads against the frequency table.
 pub fn code_table(root: Node) -> List(Entry) {
-  sort_onto(collect(root, nil(I32, ()), nil(Entry, ())), nil(Entry, ()))
+  sort_onto(collect(root, nil(I32), nil(Entry)), nil(Entry))
 }
 
 pub rec(loop) fn bits_for(rows: List(Entry), symbol: I32, fallback: Bits) -> Bits {

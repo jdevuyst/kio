@@ -37,7 +37,7 @@ fn via_inferred_hkt_zero_value_layer(x: Box(Token)) -> Box(Token) {
   apply_box_token_id(make_hkt_id(), x)
 }
 
-pub fn main() -> . {
+pub fn main() {
   let token = Token.mk_token(());
   let _same = via_partial_type_arg(token);
   let _placeholder = via_placeholder_type_arg(token);

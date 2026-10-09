@@ -16,7 +16,7 @@ newtype Cell : Thunk { pub constructor hold; pub projector contents }
 
 fn evaluate(c: Cell) -> I32 { let thunk = c.>Cell.contents; let run = thunk.>Thunk.force; run() }
 
-pub fn main() -> . {
+pub fn main() {
   let cell = Cell.hold(Thunk.delay(.() { 42(I32) }));
   print(int_to_string(evaluate(cell)))
 }

@@ -1,0 +1,14 @@
+package pkg;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js"
+  }
+}
+
+bridge {
+  pkg;
+  pkg/**
+}

@@ -7,4 +7,4 @@ fn shadow[A](value: A) -> A {
   inner(A, value)
 }
 
-pub fn main() -> . { shadow(., ()) }
+pub fn main() { shadow(., ()) }

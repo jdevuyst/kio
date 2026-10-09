@@ -19,4 +19,4 @@ fn looping(inner: Monad(Box)) -> Monad(Box) { inner }
 
 fn bad() -> Monad(Box) { derive!((looping, box_monad), Monad(Box)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

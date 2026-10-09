@@ -5,7 +5,7 @@ import terms as term;
 import testapi(I32, String);
 import workbench as bench;
 
-pub fn main() -> . {
+pub fn main() {
   let x = term.variable(1);
   let y = term.variable(2);
   let z = term.variable(3);

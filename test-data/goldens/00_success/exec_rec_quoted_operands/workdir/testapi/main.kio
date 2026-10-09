@@ -42,7 +42,7 @@ rec(loop) {
   fn marked_swapped() -> Bool { let pair = marked_swap!(rec(cont) left(), rec(cont) right()); .t }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("nested conditions\n");
   if! walk(2) {
     io.print("done\n")

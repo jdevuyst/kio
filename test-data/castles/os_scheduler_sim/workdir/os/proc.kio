@@ -79,35 +79,33 @@ pub fn new_pcb(arrive: Array(I32)) -> Pcb {
     }
 }
 
-fn bump(column: Array(I32), pid: I32) -> . {
-  array_set(column, pid, add_i32(array_get(column, pid), 1))
-}
+fn bump(column: Array(I32), pid: I32) { array_set(column, pid, add_i32(array_get(column, pid), 1)) }
 
 pub fn arrive_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{arrive}, pid) }
 
 pub fn pc_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{pc}, pid) }
 
-pub fn set_pc(p: Pcb, pid: I32, next: I32) -> . { array_set(p.?{pc}, pid, next) }
+pub fn set_pc(p: Pcb, pid: I32, next: I32) { array_set(p.?{pc}, pid, next) }
 
 pub fn rem_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{rem}, pid) }
 
-pub fn set_rem(p: Pcb, pid: I32, left: I32) -> . { array_set(p.?{rem}, pid, left) }
+pub fn set_rem(p: Pcb, pid: I32, left: I32) { array_set(p.?{rem}, pid, left) }
 
 pub fn finish_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{finish}, pid) }
 
-pub fn set_finish(p: Pcb, pid: I32, tick: I32) -> . { array_set(p.?{finish}, pid, tick) }
+pub fn set_finish(p: Pcb, pid: I32, tick: I32) { array_set(p.?{finish}, pid, tick) }
 
-pub fn add_cpu_tick(p: Pcb, pid: I32) -> . { bump(p.?{cpu_ticks}, pid) }
+pub fn add_cpu_tick(p: Pcb, pid: I32) { bump(p.?{cpu_ticks}, pid) }
 
-pub fn add_wait_tick(p: Pcb, pid: I32) -> . { bump(p.?{wait_ticks}, pid) }
+pub fn add_wait_tick(p: Pcb, pid: I32) { bump(p.?{wait_ticks}, pid) }
 
-pub fn add_block_tick(p: Pcb, pid: I32) -> . { bump(p.?{block_ticks}, pid) }
+pub fn add_block_tick(p: Pcb, pid: I32) { bump(p.?{block_ticks}, pid) }
 
-pub fn add_switch(p: Pcb, pid: I32) -> . { bump(p.?{switches}, pid) }
+pub fn add_switch(p: Pcb, pid: I32) { bump(p.?{switches}, pid) }
 
-pub fn add_fault(p: Pcb, pid: I32) -> . { bump(p.?{faults}, pid) }
+pub fn add_fault(p: Pcb, pid: I32) { bump(p.?{faults}, pid) }
 
-pub fn add_hit(p: Pcb, pid: I32) -> . { bump(p.?{hits}, pid) }
+pub fn add_hit(p: Pcb, pid: I32) { bump(p.?{hits}, pid) }
 
 pub fn cpu_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{cpu_ticks}, pid) }
 

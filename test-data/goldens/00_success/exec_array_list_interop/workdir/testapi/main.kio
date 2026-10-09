@@ -97,7 +97,7 @@ fn render_array(arr: Array(I32)) -> String {
 // the symmetry.
 fn render_list(xs: List(I32)) -> String { render_array(list_to_array(xs)) }
 
-pub fn main() -> . {
+pub fn main() {
   // Build [1, 2, 3, 4, 5] as a List(I32).
   let xs = push(1, push(2, push(3, push(4, push(5, nil(I32, ()))))));
   // Convert to Array(I32) and print as CSV.

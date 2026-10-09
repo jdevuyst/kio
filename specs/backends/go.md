@@ -224,6 +224,15 @@ as a concrete application of a generic Go `struct` shell; a sum crosses as a
 concrete `KioSum[Row]`. The stable boundary aliases name those applications
 and supply the sum's typed cases and constructors. See § FFI surface.
 
+### Doc comments
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface)
+uses Go doc comments on exported methods, host-interface methods, and minted
+host-type and newtype carriers. Nullary host types are generic parameters,
+and transparent newtypes without a carrier have no separate type declaration
+on which to attach documentation. Authored prose uses Go's documentation
+markup; unresolved references remain inert text.
+
 ## Host record contract
 
 Each `host fn` declared in a bridged module becomes one method on the
@@ -605,7 +614,7 @@ host fn print(s: Str) -> .;
 module app/main;
 import app(Str);
 import app(print);
-pub fn main() -> . { print("hello\n"(Str)) }
+pub fn main() { print("hello\n"(Str)) }
 ```
 
 `kio build go` writes `out/go/{pkg.go, host.go, shapes.go, ffi.go,

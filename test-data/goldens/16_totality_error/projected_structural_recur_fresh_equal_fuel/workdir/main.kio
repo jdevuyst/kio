@@ -2,4 +2,4 @@ module main;
 
 import elab(guarded);
 
-fn witness() -> . { guarded!(((), ()), .) }
+fn witness() { guarded!(((), ()), .) }

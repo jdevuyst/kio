@@ -1,5 +1,5 @@
 module main;
 
-fn greeting() -> . { () }
+fn greeting() { () }
 
-fn main() -> . { greetin() }
+fn main() { greetin() }

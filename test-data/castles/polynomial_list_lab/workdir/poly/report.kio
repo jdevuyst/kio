@@ -20,11 +20,11 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
 
-fn say(text: String) -> . { print(render.join([* text, "\n" *])) }
+fn say(text: String) { print(render.join([* text, "\n" *])) }
 
-fn blank() -> . { say("") }
+fn blank() { say("") }
 
-fn fixture(name: String, p: core.Poly) -> . {
+fn fixture(name: String, p: core.Poly) {
   say(render.join([*
     , "  "
     , name
@@ -38,11 +38,11 @@ fn fixture(name: String, p: core.Poly) -> . {
     *]))
 }
 
-fn operation(name: String, p: core.Poly) -> . {
+fn operation(name: String, p: core.Poly) {
   say(render.join([* "  ", name, " = ", render.show(p) *]))
 }
 
-fn evaluation(x: I32) -> . {
+fn evaluation(x: I32) {
   let p = fx.p();
   let q = fx.q();
   say(render.join([*
@@ -57,7 +57,7 @@ fn evaluation(x: I32) -> . {
     *]))
 }
 
-fn division_case(name: String, p: core.Poly, divisor: core.Poly) -> . {
+fn division_case(name: String, p: core.Poly, divisor: core.Poly) {
   match! division.divmod(p, divisor) {
     (
       , .(result: Divided) {
@@ -86,7 +86,7 @@ fn verdict(holds: Bool) -> String {
   }
 }
 
-fn law_line(c: Check) -> . {
+fn law_line(c: Check) {
   say(render.join([*
     , "  ["
     , verdict(c.?{holds})
@@ -101,11 +101,11 @@ fn law_line(c: Check) -> . {
 
 // A fold over a unit accumulator is the traversal this needs: every element is
 // visited for its printing, and nothing is carried between them.
-fn law_lines(checks: lc.List(Check)) -> . {
+fn law_lines(checks: lc.List(Check)) {
   ll.foldl(.(_carry: ., c: Check) -> . { law_line(c) }, (), checks)
 }
 
-fn tally(checks: lc.List(Check)) -> . {
+fn tally(checks: lc.List(Check)) {
   let total = ll.length(checks);
   let held = passes(checks);
   say(render.join([*
@@ -119,7 +119,7 @@ fn tally(checks: lc.List(Check)) -> . {
     *]))
 }
 
-pub fn run() -> . {
+pub fn run() {
   let p = fx.p();
   let q = fx.q();
   let d = fx.d();

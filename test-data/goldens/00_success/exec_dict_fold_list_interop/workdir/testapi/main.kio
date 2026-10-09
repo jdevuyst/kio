@@ -32,7 +32,7 @@ fn append_entry(carry: String, key: I32, value: I32) -> String {
     )
 }
 
-fn show(label: String, value: String) -> . {
+fn show(label: String, value: String) {
   io.print(text.string_concat(label, text.string_concat(value, "\n")))
 }
 
@@ -40,7 +40,7 @@ fn to_entries(dictionary: d.Dict(I32, I32)) -> lc.List(I32 & I32) {
   let reversed =
     d.fold_asc(
       , dictionary
-      , lc.nil()
+      , lc.nil(_)
       , .(carry: lc.List(I32 & I32), key: I32, value: I32) -> lc.List(I32 & I32) {
           lc.cons((key, value), carry)
         }
@@ -60,7 +60,7 @@ fn render_entries(entries: lc.List(I32 & I32)) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let entries = [* (3, 30), (1, 10), (2, 20) *];
   let dictionary =
     ls.foldl(
@@ -69,7 +69,7 @@ pub fn main() -> . {
             .(key: I32, value: I32) { d.insert(compare, carry, key, value) }
           }
         }
-      , d.empty()
+      , d.empty(_, _)
       , entries
       );
   let ordered = to_entries(dictionary);

@@ -614,6 +614,26 @@ for (const names of ["value", "F, value"]) {
 fixture("star binder lambda keeps its unambiguous owner", "module m;\nfn f() { .[* // kind\n F](x: .) { let item = x; item } }", [
   [".[*", "[", "punctuation.bracket.kio"], ["let item", "let", keyword],
 ]);
+fixture("pending dot preserves star varop runs", "module m;\nfn run() { . // dot\n [* value *] }\nfn after() { () }", [
+  ["[* value", "[*", "keyword.operator.user.kio"], ["*] }", "*]", "keyword.operator.user.kio"],
+  ["fn after", "fn", keyword],
+]);
+fixture("pending dot preserves double-star varop runs", "module m;\nfn run() { . // dot\n [** value **] }\nfn after() { () }", [
+  ["[** value", "[**", "keyword.operator.user.kio"], ["**] }", "**]", "keyword.operator.user.kio"],
+  ["fn after", "fn", keyword],
+]);
+fixture("pending dot star continuation later-line varop", "module m;\nfn run() { . // dot\n [* // shared\n F.make() *] }\nfn after() { () }", [
+  ["[* // shared", "[*", null], ["*] }", "*]", "keyword.operator.user.kio"],
+  ["fn after", "fn", keyword],
+]);
+fixture("pending dot star continuation later-line binder", "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let item = x; item } } }", [
+  ["[* // shared", "[*", null], [" F] ->", "]", "punctuation.bracket.kio"],
+  ["let item", "let", keyword],
+]);
+fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // dot\n [**F] -> F(., .) -> F(., .) { .(x: F(., .)) { let item = x; item } } }", [
+  ["[**F]", "[", "punctuation.bracket.kio"], ["[**F]", "]", "punctuation.bracket.kio"],
+  ["let item", "let", keyword],
+]);
 fixture("star literal with uppercase callable is not a binder", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() *], value) }", [
   ["consume([* F", "[*", "keyword.operator.user.kio"], ["*], value", "*]", "keyword.operator.user.kio"],
 ]);

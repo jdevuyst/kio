@@ -22,13 +22,13 @@ wants from one named provider:
 <!--kio {file}
 module cats;
 
-pub fn speak() -> . { () }
+pub fn speak() { () }
 -->
 
 <!--kio {file}
 module dogs;
 
-pub fn speak() -> . { () }
+pub fn speak() { () }
 -->
 
 <!--kio {harness=selective_import file placeholder="__SNIPPET__"}
@@ -40,7 +40,7 @@ __SNIPPET__
 ```kio {@selective_import}
 import cats(speak);
 
-fn announce() -> . { speak() }
+fn announce() { speak() }
 ```
 
 or keeps providers qualified:
@@ -55,7 +55,7 @@ __SNIPPET__
 import cats as cat;
 import dogs as dog;
 
-fn announce_both() -> . { cat.speak(); dog.speak() }
+fn announce_both() { cat.speak(); dog.speak() }
 ```
 
 For names from another module, Kio only considers the ones this module imports

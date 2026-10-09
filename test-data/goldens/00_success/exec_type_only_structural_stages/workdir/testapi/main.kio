@@ -1,0 +1,42 @@
+/// A polymorphic value remains staged inside an actively constructed record.
+module testapi/main;
+
+import __intrinsics__;
+
+host fn observe(_unit: .) -> .;
+
+host fn consume(_unit: .) -> .;
+
+labels { payload: [A] ., marker: . };
+
+fn named[A] { observe() }
+
+fn nested[A] -> [B] . { observe(); .[B] { consume() } }
+
+fn adjacent[A][B] { consume() }
+
+fn explicit[A]() { consume() }
+
+fn bundle() -> Payload & Marker { ({payload = named}, {marker=}) }
+
+pub fn main() {
+  consume();
+  let saved = named;
+  consume();
+  saved(.);
+  let inner = nested(.);
+  consume();
+  inner(.);
+  let later = adjacent(.);
+  observe();
+  later(.);
+  let thunk = explicit(.);
+  observe();
+  thunk();
+  let record = bundle();
+  consume();
+  let stored = Payload.get(__fst__(Payload, Marker, record));
+  consume();
+  stored(.);
+  .(_marker: .) { consume() }(Marker.get(__snd__(Payload, Marker, record)))
+}

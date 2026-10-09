@@ -86,7 +86,7 @@ pub rec newtype Dict[K][V] : . | (Colour & K & V & Dict(K, V) & Dict(K, V)) {
   }
 
 /// Builds an empty dictionary.
-pub fn empty[K][V]() -> Dict(K, V) {
+pub fn empty[K][V] -> Dict(K, V) {
   Dict.pack(widen_sum!((), . | (Colour & K & V & Dict(K, V) & Dict(K, V))))
 }
 
@@ -96,7 +96,9 @@ fn node[K][V](c: Colour, key: K, val: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K
 }
 
 /// `singleton(k, v)` is the one-entry map — a single black node.
-pub fn singleton[K][V](key: K, val: V) -> Dict(K, V) { node(c_black(), key, val, empty(), empty()) }
+pub fn singleton[K][V](key: K, val: V) -> Dict(K, V) {
+  node(c_black(), key, val, empty(_, _), empty(_, _))
+}
 
 /// One-step destructor: `()` for the empty tree, or the node 5-tuple.
 /// Every walk projects through this.
@@ -122,7 +124,7 @@ fn paint[K][V](c: Colour, d: Dict(K, V)) -> Dict(K, V) {
             }
           }
         }
-      , .(_e: .) { empty() }
+      , .(_e: .) { empty(_, _) }
       )
   }
 }
@@ -164,7 +166,7 @@ fn rotated[K][V](
 
 fn hit[K][V](d: Dict(K, V)) -> Dict(K, V) | . { widen_sum!(d, Dict(K, V) | .) }
 
-fn miss[K][V]() -> Dict(K, V) | . { widen_sum!((), Dict(K, V) | .) }
+fn miss[K][V] -> Dict(K, V) | . { widen_sum!((), Dict(K, V) | .) }
 
 fn with_red_node[K][V][R](
   , d: Dict(K, V)
@@ -188,7 +190,7 @@ fn with_red_node[K][V][R](
 fn try_balance_left[K][V](zk: K, zv: V, l: Dict(K, V), d: Dict(K, V)) -> Dict(K, V) | . {
   with_red_node(
     , l
-    , .() -> Dict(K, V) | . { miss() }
+    , .() -> Dict(K, V) | . { miss(_, _) }
     , .(yk: K, yv: V, ly: Dict(K, V), c: Dict(K, V)) -> Dict(K, V) | . {
         // left-left: ly is red.
         with_red_node(
@@ -197,7 +199,7 @@ fn try_balance_left[K][V](zk: K, zv: V, l: Dict(K, V), d: Dict(K, V)) -> Dict(K,
               // left-right: c (y's right child) is red.
               with_red_node(
                 , c
-                , .() -> Dict(K, V) | . { miss() }
+                , .() -> Dict(K, V) | . { miss(_, _) }
                 , .(xk2: K, xv2: V, b: Dict(K, V), cc: Dict(K, V)) -> Dict(K, V) | . {
                     hit(rotated(yk, yv, ly, b, xk2, xv2, zk, zv, cc, d))
                   }
@@ -214,7 +216,7 @@ fn try_balance_left[K][V](zk: K, zv: V, l: Dict(K, V), d: Dict(K, V)) -> Dict(K,
 fn try_balance_right[K][V](xk: K, xv: V, a: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) | . {
   with_red_node(
     , r
-    , .() -> Dict(K, V) | . { miss() }
+    , .() -> Dict(K, V) | . { miss(_, _) }
     , .(yk: K, yv: V, ry_l: Dict(K, V), d: Dict(K, V)) -> Dict(K, V) | . {
         // right-left: ry_l (y's left child) is red.
         with_red_node(
@@ -223,7 +225,7 @@ fn try_balance_right[K][V](xk: K, xv: V, a: Dict(K, V), r: Dict(K, V)) -> Dict(K
               // right-right: d (y's right child) is red.
               with_red_node(
                 , d
-                , .() -> Dict(K, V) | . { miss() }
+                , .() -> Dict(K, V) | . { miss(_, _) }
                 , .(zk2: K, zv2: V, c2: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V) | . {
                     hit(rotated(xk, xv, a, ry_l, yk, yv, zk2, zv2, c2, d2))
                   }
@@ -334,7 +336,9 @@ fn rebuild_step[K][V](crumb: Crumb(K, V), child: Dict(K, V)) -> Dict(K, V) {
 /// reaches when the key is absent. New nodes are red (Okasaki): a red
 /// leaf preserves black-height, and the rebuild's `balance` plus the
 /// final root-repaint restore the colour invariants.
-fn insert_at_leaf[K][V](key: K, val: V) -> Dict(K, V) { node(c_red(), key, val, empty(), empty()) }
+fn insert_at_leaf[K][V](key: K, val: V) -> Dict(K, V) {
+  node(c_red(), key, val, empty(_, _), empty(_, _))
+}
 
 /// `replace_value(key, val, c, l, r)` rebuilds an existing node with a new
 /// value, keeping colour and children — last-write-wins when the key is
@@ -386,9 +390,7 @@ pub fn get_or[K][V](cmp: Compare(K), d: Dict(K, V), target: K, default: V) -> V 
 // rebuild one search path, then restores the black root invariant.
 rec newtype Crumbs[K][V] : . | (Crumb(K, V) & Crumbs(K, V)) { constructor pack; projector unpack }
 
-fn no_crumbs[K][V]() -> Crumbs(K, V) {
-  Crumbs.pack(widen_sum!((), . | (Crumb(K, V) & Crumbs(K, V))))
-}
+fn no_crumbs[K][V] -> Crumbs(K, V) { Crumbs.pack(widen_sum!((), . | (Crumb(K, V) & Crumbs(K, V)))) }
 
 fn push_crumb[K][V](head: Crumb(K, V), tail: Crumbs(K, V)) -> Crumbs(K, V) {
   Crumbs.pack(widen_sum!((head, tail), . | (Crumb(K, V) & Crumbs(K, V))))
@@ -432,7 +434,7 @@ fn insert_descend[K][V](cmp: Compare(K), d: Dict(K, V), key: K, val: V) -> Zip(K
             }
           }
         }
-      , (d, no_crumbs())
+      , (d, no_crumbs(_, _))
       );
   stopped.>Done.get
 }
@@ -481,9 +483,7 @@ rec newtype Work[K][V] : . | (K & V & Dict(K, V) & Work(K, V)) {
   projector unpack
   }
 
-fn no_work[K][V]() -> Work(K, V) {
-  Work.pack(widen_sum!((), . | (K & V & Dict(K, V) & Work(K, V))))
-}
+fn no_work[K][V] -> Work(K, V) { Work.pack(widen_sum!((), . | (K & V & Dict(K, V) & Work(K, V)))) }
 
 fn push_work[K][V](key: K, val: V, right: Dict(K, V), rest: Work(K, V)) -> Work(K, V) {
   Work.pack(widen_sum!((key, val, right, rest), . | (K & V & Dict(K, V) & Work(K, V))))
@@ -533,7 +533,7 @@ pub fn fold_asc[K][V][Acc](d: Dict(K, V), initial: Acc, step: (Acc & K & V) -> A
           }
         }
       }
-    , (d, no_work(), initial)
+    , (d, no_work(_, _), initial)
     )
 }
 
@@ -547,7 +547,7 @@ pub fn size[K][V](d: Dict(K, V)) -> I32 {
 pub fn delete[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> Dict(K, V) {
   fold_asc(
     , d
-    , empty()
+    , empty(_, _)
     , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
         ord_select(insert(cmp, acc, key, val), acc, insert(cmp, acc, key, val), cmp(key, target))
       }
@@ -558,7 +558,7 @@ pub fn delete[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> Dict(K, V) {
 pub fn map_values[K][V][W](cmp: Compare(K), f: V -> W, d: Dict(K, V)) -> Dict(K, W) {
   fold_asc(
     , d
-    , empty()
+    , empty(_, _)
     , .(acc: Dict(K, W), key: K, val: V) -> Dict(K, W) { insert(cmp, acc, key, f(val)) }
     )
 }
@@ -567,7 +567,7 @@ pub fn map_values[K][V][W](cmp: Compare(K), f: V -> W, d: Dict(K, V)) -> Dict(K,
 pub fn filter[K][V](cmp: Compare(K), pred: V -> Flag, d: Dict(K, V)) -> Dict(K, V) {
   fold_asc(
     , d
-    , empty()
+    , empty(_, _)
     , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
         bool_select(insert(cmp, acc, key, val), acc, pred(val))
       }
@@ -591,7 +591,7 @@ pub fn union[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V
 pub fn intersection[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V) {
   fold_asc(
     , d1
-    , empty()
+    , empty(_, _)
     , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
         bool_select(insert(cmp, acc, key, val), acc, has_key(cmp, d2, key))
       }
@@ -600,7 +600,7 @@ pub fn intersection[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Di
 
 /// Produces an empty comparator-applied dictionary builder.
 pub fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V) {
-  .(_cmp: Compare(K)) -> Dict(K, V) { empty() }
+  .(_cmp: Compare(K)) -> Dict(K, V) { empty(_, _) }
 }
 
 /// Appends one source-order insertion to a dictionary builder.
@@ -648,7 +648,7 @@ equiv bool_select_no[A](t: A, f: A) {
 
 // ---- Structural ops on the empty / singleton spines ----
 equiv is_empty_of_empty[K][V]() {
-  is_empty(empty(K, V, ()));
+  is_empty(empty(K, V));
   yes()
 }
 
@@ -659,14 +659,14 @@ equiv is_empty_of_singleton[K][V](key: K, val: V) {
 
 // `un_node(empty)` is the empty arm.
 equiv un_node_empty[K][V]() {
-  un_node(empty(K, V, ()));
+  un_node(empty(K, V));
   widen_sum!((), . | (Colour & K & V & Dict(K, V) & Dict(K, V)))
 }
 
 // `paint(c, empty) ≡ empty` — recolouring the empty tree is a no-op.
 equiv paint_empty[K][V](c: Colour) {
-  paint(c, empty(K, V, ()));
-  empty(K, V, ())
+  paint(c, empty(K, V));
+  empty(K, V)
 }
 
 // `paint(black, singleton(k, v)) ≡ singleton(k, v)` — singletons are
@@ -690,21 +690,21 @@ equiv is_red_black() {
 // `balance` with no red-red violation rebuilds the node unchanged: a
 // black node over two empty children is already balanced.
 equiv balance_leaf[K][V](key: K, val: V) {
-  balance(c_black(), key, val, empty(), empty());
-  node(c_black(), key, val, empty(), empty())
+  balance(c_black(), key, val, empty(_, _), empty(_, _));
+  node(c_black(), key, val, empty(_, _), empty(_, _))
 }
 
 // `rebuild_step` over a left breadcrumb re-attaches the child on the
 // left and rebalances; with empty sibling and a black crumb it is just a
 // node rebuild.
 equiv rebuild_step_left[K][V](key: K, val: V, child: Dict(K, V)) {
-  rebuild_step(crumb_left(c_black(), key, val, empty()), child);
-  balance(c_black(), key, val, child, empty())
+  rebuild_step(crumb_left(c_black(), key, val, empty(_, _)), child);
+  balance(c_black(), key, val, child, empty(_, _))
 }
 
 equiv rebuild_step_right[K][V](key: K, val: V, child: Dict(K, V)) {
-  rebuild_step(crumb_right(c_black(), key, val, empty()), child);
-  balance(c_black(), key, val, empty(), child)
+  rebuild_step(crumb_right(c_black(), key, val, empty(_, _)), child);
+  balance(c_black(), key, val, empty(_, _), child)
 }
 
 // `lookup_step` at an empty node takes the `on_empty` continuation.
@@ -715,7 +715,7 @@ equiv lookup_step_empty[K][V][R](
   , go_right: Dict(K, V) -> R
   , on_empty: . -> R
   ) {
-  lookup_step(cmp_at, on_found, go_left, go_right, on_empty, empty());
+  lookup_step(cmp_at, on_found, go_left, go_right, on_empty, empty(_, _));
   on_empty()
 }
 
@@ -723,8 +723,8 @@ equiv lookup_step_empty[K][V][R](
 // its black ancestor. The bool_select true branch must therefore be the
 // unchanged node, not the black-parent rotation.
 equiv balance_red_leaf[K][V](key: K, val: V) {
-  balance(c_red(), key, val, empty(), empty());
-  node(c_red(), key, val, empty(), empty())
+  balance(c_red(), key, val, empty(_, _), empty(_, _));
+  node(c_red(), key, val, empty(_, _), empty(_, _))
 }
 
 equiv balance_black_left_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
@@ -732,15 +732,15 @@ equiv balance_black_left_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
     , c_black()
     , zk
     , zv
-    , node(c_red(), yk, yv, node(c_red(), xk, xv, empty(), empty()), empty())
-    , empty()
+    , node(c_red(), yk, yv, node(c_red(), xk, xv, empty(_, _), empty(_, _)), empty(_, _))
+    , empty(_, _)
     );
   node(
     , c_red()
     , yk
     , yv
-    , node(c_black(), xk, xv, empty(), empty())
-    , node(c_black(), zk, zv, empty(), empty())
+    , node(c_black(), xk, xv, empty(_, _), empty(_, _))
+    , node(c_black(), zk, zv, empty(_, _), empty(_, _))
     )
 }
 
@@ -749,15 +749,15 @@ equiv balance_black_left_right[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
     , c_black()
     , zk
     , zv
-    , node(c_red(), xk, xv, empty(), node(c_red(), yk, yv, empty(), empty()))
-    , empty()
+    , node(c_red(), xk, xv, empty(_, _), node(c_red(), yk, yv, empty(_, _), empty(_, _)))
+    , empty(_, _)
     );
   node(
     , c_red()
     , yk
     , yv
-    , node(c_black(), xk, xv, empty(), empty())
-    , node(c_black(), zk, zv, empty(), empty())
+    , node(c_black(), xk, xv, empty(_, _), empty(_, _))
+    , node(c_black(), zk, zv, empty(_, _), empty(_, _))
     )
 }
 
@@ -766,15 +766,15 @@ equiv balance_black_right_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
     , c_black()
     , xk
     , xv
-    , empty()
-    , node(c_red(), zk, zv, node(c_red(), yk, yv, empty(), empty()), empty())
+    , empty(_, _)
+    , node(c_red(), zk, zv, node(c_red(), yk, yv, empty(_, _), empty(_, _)), empty(_, _))
     );
   node(
     , c_red()
     , yk
     , yv
-    , node(c_black(), xk, xv, empty(), empty())
-    , node(c_black(), zk, zv, empty(), empty())
+    , node(c_black(), xk, xv, empty(_, _), empty(_, _))
+    , node(c_black(), zk, zv, empty(_, _), empty(_, _))
     )
 }
 
@@ -783,14 +783,14 @@ equiv balance_black_right_right[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) 
     , c_black()
     , xk
     , xv
-    , empty()
-    , node(c_red(), yk, yv, empty(), node(c_red(), zk, zv, empty(), empty()))
+    , empty(_, _)
+    , node(c_red(), yk, yv, empty(_, _), node(c_red(), zk, zv, empty(_, _), empty(_, _)))
     );
   node(
     , c_red()
     , yk
     , yv
-    , node(c_black(), xk, xv, empty(), empty())
-    , node(c_black(), zk, zv, empty(), empty())
+    , node(c_black(), xk, xv, empty(_, _), empty(_, _))
+    , node(c_black(), zk, zv, empty(_, _), empty(_, _))
     )
 }

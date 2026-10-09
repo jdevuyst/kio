@@ -1,0 +1,30 @@
+module api;
+
+pub newtype Alpha : . { pub constructor mk; pub projector get }
+
+pub newtype Bravo : . { pub constructor mk; pub projector get }
+
+pub newtype Charlie : . { pub constructor mk; pub projector get }
+
+pub newtype Delta : . { pub constructor mk; pub projector get }
+
+pub newtype Echo : . { pub constructor mk; pub projector get }
+
+pub newtype Foxtrot : . { pub constructor mk; pub projector get }
+
+host fn product(value: Alpha & Bravo & Charlie & Delta & Echo) -> & Alpha
+& Bravo
+& Charlie
+& Delta
+& Echo;
+
+host fn sum(value: Alpha | Bravo | Charlie | Delta | Echo | Foxtrot) -> | Alpha
+| Bravo
+| Charlie
+| Delta
+| Echo
+| Foxtrot;
+
+host fn short(value: [A] A -> A) -> .;
+
+host fn apply_polymorphic_identity_with_a_deliberately_long_public_name(value: [A] A -> A) -> .;

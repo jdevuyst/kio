@@ -45,7 +45,7 @@ rec(loop) fn contextual(go: Bool) -> Bool {
   }
 }
 
-fn report(value: Bool) -> . {
+fn report(value: Bool) {
   if! value {
     io.print("true\n")
   } else {
@@ -53,7 +53,7 @@ fn report(value: Bool) -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("prefix\n");
   report(prefix(.t));
   io.print("receiver\n");

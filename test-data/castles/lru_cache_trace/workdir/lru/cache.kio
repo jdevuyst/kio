@@ -60,7 +60,7 @@ fn lt_i32(a: I32, b: I32) -> Bool { leq_i32(next(a), b) }
 
 fn is_missing(slot: I32) -> Bool { eq_i32(slot, missing_key()) }
 
-fn inc_stat(stats: Array(I32), index: I32) -> . {
+fn inc_stat(stats: Array(I32), index: I32) {
   array_set(stats, index, next(array_get(stats, index)))
 }
 
@@ -101,7 +101,7 @@ pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array(I32)) 
   }
 }
 
-fn write_slot(c: Cache, slot: I32, key: I32, value: I32, clock: I32) -> . {
+fn write_slot(c: Cache, slot: I32, key: I32, value: I32, clock: I32) {
   array_set(keys_array(c), slot, key);
   array_set(values_array(c), slot, value);
   array_set(ages_array(c), slot, clock)

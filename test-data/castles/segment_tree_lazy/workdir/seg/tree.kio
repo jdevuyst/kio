@@ -59,26 +59,26 @@ pub fn visits(t: Tree) -> I32 { work(gauge(t)) }
 pub fn tag_pushes(t: Tree) -> I32 { pushes(gauge(t)) }
 
 /// One unit of measured work: the descent has entered a node.
-pub fn visit(t: Tree) -> . { bump_work(gauge(t)) }
+pub fn visit(t: Tree) { bump_work(gauge(t)) }
 
 pub fn node_agg(t: Tree, node: I32) -> Agg {
   agg(array_get(t.?{sums}, node), array_get(t.?{mins}, node))
 }
 
-pub fn set_agg(t: Tree, node: I32, a: Agg) -> . {
+pub fn set_agg(t: Tree, node: I32, a: Agg) {
   array_set(t.?{sums}, node, agg_sum(a));
   array_set(t.?{mins}, node, agg_min(a))
 }
 
 fn tag_at(t: Tree, node: I32) -> I32 { array_get(t.?{tags}, node) }
 
-fn set_tag(t: Tree, node: I32, value: I32) -> . { array_set(t.?{tags}, node, value) }
+fn set_tag(t: Tree, node: I32, value: I32) { array_set(t.?{tags}, node, value) }
 
 /// Record "add `x` to every cell of `[lo, hi]`" at `node` without descending:
 /// the node's own aggregate is fixed arithmetically and the add is left
 /// *pending* for the children. A leaf has no children, so it stores no tag --
 /// which is also what keeps `point_set` from having to clear one.
-pub fn apply_tag(t: Tree, node: I32, lo: I32, hi: I32, x: I32) -> . {
+pub fn apply_tag(t: Tree, node: I32, lo: I32, hi: I32, x: I32) {
   set_agg(t, node, shift(node_agg(t, node), span(lo, hi), x));
   if! is_leaf(lo, hi) {
     ()
@@ -90,7 +90,7 @@ pub fn apply_tag(t: Tree, node: I32, lo: I32, hi: I32, x: I32) -> . {
 /// Hand `node`'s pending add to both children and clear it. The *only* place
 /// a tag ever moves, called exactly when a descent is about to look below
 /// `node` and never otherwise. A zero tag is not a push: nothing to hand down.
-pub fn push_down(t: Tree, node: I32, lo: I32, hi: I32, mid: I32) -> . {
+pub fn push_down(t: Tree, node: I32, lo: I32, hi: I32, mid: I32) {
   let pending = tag_at(t, node);
   if! int_eq(pending, 0) {
     ()

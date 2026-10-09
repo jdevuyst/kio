@@ -6,7 +6,7 @@ import selected as chosen;
 import testapi(Bool, String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let card = chosen.make(.t);
   if! card.?{chosen.flag} {
     print("selected\n")

@@ -1,0 +1,3 @@
+module main;
+
+fn repeat(x: .) { rec repeat(x) }

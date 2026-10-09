@@ -4,4 +4,4 @@ import circuit_netlist_eval/evaluator as evaluator;
 import circuit_netlist_eval/fixture(initial_state);
 import circuit_netlist_eval/render(render_report);
 
-pub fn main() -> . { render_report(evaluator.settle(initial_state())) }
+pub fn main() { render_report(evaluator.settle(initial_state())) }

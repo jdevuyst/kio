@@ -1,1 +1,2 @@
-recursive call to `count` must be written as a tail-position `rec count\(\.\.\.\)` call
+recursive call to `count` must be written as an annotated `rec count\(\.\.\.\)` call
+mark the call with `rec`; add `poly` when type arguments change and `cont` when the call is not in tail position

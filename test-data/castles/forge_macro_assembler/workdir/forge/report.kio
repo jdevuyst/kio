@@ -75,7 +75,7 @@ fn stop_text(m: Vm, why: Stop) -> String {
 }
 
 /// Print the header of the whole run.
-pub fn header(macros: Macros, programs: I32) -> . {
+pub fn header(macros: Macros, programs: I32) {
   t.line("forge_macro_assembler: the FORGE-4 macro assembler and machine");
   t.line(t.cat3(
     , t.cat("macros: ", t.num(l.len(macros)))
@@ -134,7 +134,7 @@ pub fn program(name: String, items: Items, macros: Macros, tally: Tally) -> Tall
 }
 
 /// Print the closing tally.
-pub fn summary(tally: Tally) -> . {
+pub fn summary(tally: Tally) {
   let .(built: I32, turned_down: I32, spent: I32) = tally;
   t.line("");
   t.line(t.cat3(

@@ -1,0 +1,6 @@
+module main;
+
+import provider as p;
+
+// This caller is longer than the provider and cannot supply its source offsets.
+fn caller() -> . { p.tick(p.tick) }

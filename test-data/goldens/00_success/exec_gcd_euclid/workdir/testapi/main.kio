@@ -25,4 +25,4 @@ fn gcd_step((a: I32, b: I32)) -> (I32 & I32) | I32 {
 
 fn gcd(a: I32, b: I32) -> I32 { loop(.(state: I32 & I32) { gcd_step(state) }, (a, b)) }
 
-pub fn main() -> . { print(int_to_string(gcd(252, 105))); print("\n") }
+pub fn main() { print(int_to_string(gcd(252, 105))); print("\n") }

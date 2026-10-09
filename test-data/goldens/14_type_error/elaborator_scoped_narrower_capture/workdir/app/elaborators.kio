@@ -2,7 +2,7 @@ module app/elaborators;
 
 import __comptime__;
 
-pub(app/elaborators) fn narrow_capture() -> . { () }
+pub(app/elaborators) fn narrow_capture() { () }
 
 pub(app) pure fn package_impl(
   , _ct: __Comptime__

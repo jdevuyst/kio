@@ -12,4 +12,4 @@ fn string_to_string(value: String) -> String { value }
 // for the consumer's exact host identity.
 fn render() -> String { show!("show host: ok"(String))(string_concat, string_to_string) }
 
-pub fn main() -> . { print(string_concat(render(), "\n"(String))) }
+pub fn main() { print(string_concat(render(), "\n"(String))) }

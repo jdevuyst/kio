@@ -13,4 +13,4 @@ import testapi/io(print);
 // raw products. We use a raw product here for simplicity.
 fn project_string(p: String & I32 & I32) -> String { onto!(p) }
 
-pub fn main() -> . { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }
+pub fn main() { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }

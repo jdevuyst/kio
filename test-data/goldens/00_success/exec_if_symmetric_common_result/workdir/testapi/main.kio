@@ -31,6 +31,6 @@ fn concrete_first(condition: Bool) -> I32 {
   Const.un_const(selected)
 }
 
-fn print_line(value: I32) -> . { print(int_to_string(value)); print("\n") }
+fn print_line(value: I32) { print(int_to_string(value)); print("\n") }
 
-pub fn main() -> . { print_line(generic_first(.t)); print_line(concrete_first(.f)) }
+pub fn main() { print_line(generic_first(.t)); print_line(concrete_first(.f)) }

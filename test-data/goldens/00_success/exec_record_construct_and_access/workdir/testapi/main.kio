@@ -13,7 +13,7 @@ import testapi/io(print);
 // records / structs without re-deriving the pattern from types.
 labels { hed: Int, mid: String, tal: Int };
 
-fn show(r: Hed & Mid & Tal) -> . {
+fn show(r: Hed & Mid & Tal) {
   match! r {
     .(h: Hed, m: Mid, t: Tal) {
       print(int_to_string(h.?{hed}));
@@ -26,4 +26,4 @@ fn show(r: Hed & Mid & Tal) -> . {
   }
 }
 
-pub fn main() -> . { let r = ({hed = 7}, {mid = "kio"}, {tal = 11}); show(r) }
+pub fn main() { let r = ({hed = 7}, {mid = "kio"}, {tal = 11}); show(r) }

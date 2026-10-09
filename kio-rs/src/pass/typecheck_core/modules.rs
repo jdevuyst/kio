@@ -116,6 +116,9 @@ where
         })
         .collect();
     let check_fn = |(idx, d): &(usize, &crate::ast::FnDef<P>)| {
+        #[cfg(feature = "surface")]
+        let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
+        #[cfg(not(feature = "surface"))]
         let mut local_elaborations = P::Elaborations::default();
         (
             *idx,
@@ -206,6 +209,9 @@ where
             _ => None,
         })
         .map(|(idx, d)| {
+            #[cfg(feature = "surface")]
+            let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
+            #[cfg(not(feature = "surface"))]
             let mut local_elaborations = P::Elaborations::default();
             (
                 idx,
@@ -1328,7 +1334,7 @@ where
     ModuleEnv<'m, P>: Sync,
     P::Elaborations: Send,
 {
-    let mut local = P::Elaborations::default();
+    let mut local = P::new_elaborations(&typecheck_scope);
     let result = check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
         &entry.module,
         package_file,
@@ -1364,7 +1370,7 @@ where
             ItemOp = crate::ast::Never,
         > + Clone,
 {
-    let mut local = P::Elaborations::default();
+    let mut local = P::new_elaborations(&typecheck_scope);
     let result = check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
         &entry.module,
         package_file,
@@ -1546,6 +1552,10 @@ where
     )?;
     check_well_formed_type(&d.ret)?;
     super::types::check_kinds_in_type_with_provider(&d.ret, tcx, &provider)?;
+    if !d.sig.has_value_group() {
+        let scheme = d.sig.signature_ty(d.ret.clone(), d.meta.span);
+        super::types::compute_checked_kind(&scheme, d.meta.span, tcx)?;
+    }
     P::check_fn_capability_signature(d, tcx)
 }
 

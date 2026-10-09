@@ -36,7 +36,7 @@ import testapi/text(string_eq);
 /// one counter per arm.
 labels Tally = { seen: I32, ok_count: I32, faults: List(Fault_kind) };
 
-fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil(Fault_kind, ())} }
+fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil(Fault_kind)} }
 
 fn note_ok(t: Tally) -> Tally {
   {seen = add_i32(t.?{seen}, 1), ok_count = add_i32(t.?{ok_count}, 1), faults = t.?{faults}}
@@ -80,9 +80,9 @@ rec(loop) fn gather(acc: List(Placed), n: I32) -> List(Placed) | . {
   }
 }
 
-fn read_expr() -> List(Placed) | . { gather(nil(Placed, ()), 0) }
+fn read_expr() -> List(Placed) | . { gather(nil(Placed), 0) }
 
-fn say(text: String) -> . { print(cat(text, "\n")) }
+fn say(text: String) { print(cat(text, "\n")) }
 
 fn report_answer(a: Answer, t: Tally) -> Tally {
   match! a {
@@ -130,11 +130,11 @@ rec(loop) fn drive(index: I32, t: Tally) -> Tally {
   }
 }
 
-fn report_kind(log: List(Fault_kind), kind: Fault_kind) -> . {
+fn report_kind(log: List(Fault_kind), kind: Fault_kind) {
   say(cat("  ", cat(kind_name(kind), cat(": ", show_int(count_kind(log, kind))))))
 }
 
-fn summarize(t: Tally) -> . {
+fn summarize(t: Tally) {
   let seen = t.?{seen};
   let ok = t.?{ok_count};
   let log = t.?{faults};
@@ -143,8 +143,4 @@ fn summarize(t: Tally) -> . {
   for_each(all_kinds(), .(kind: Fault_kind) { report_kind(log, kind) })
 }
 
-pub fn main() -> . {
-  say("shunting_yard_desk");
-  let totals = drive(1, start_tally());
-  summarize(totals)
-}
+pub fn main() { say("shunting_yard_desk"); let totals = drive(1, start_tally()); summarize(totals) }

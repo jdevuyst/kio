@@ -8,7 +8,7 @@ import testapi(I32, String);
 import testapi/array as array;
 import testapi/io as io;
 
-fn audit_examples() -> . {
+fn audit_examples() {
   report.inspect("crossed-pairs", fixtures.crossing_choice(), fixtures.crossed_partners(), 1, 2);
   let incompatible = array.array_make_filled(4, -1);
   fixtures.pair(incompatible, 0, 3);
@@ -23,7 +23,7 @@ fn audit_examples() -> . {
   report.inspect("wrong-score", fixtures.hairpin(), valid, 2, 3)
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("RNA pairing combinatorial toy; not biological prediction\n");
   io.print("AU/UA/GC/CG pairs score one; min-loop counts enclosed positions\n");
   report.run("empty", fixtures.empty(), 2, 0);

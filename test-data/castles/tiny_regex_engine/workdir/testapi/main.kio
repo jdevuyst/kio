@@ -13,11 +13,11 @@ import testapi(String);
 import testapi/fmt(bool_to_string);
 import testapi/io(print);
 
-fn print_case(pattern: String, candidate: String, result: Verdict) -> . {
+fn print_case(pattern: String, candidate: String, result: Verdict) {
   print(render(pattern, candidate, result))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("tiny regex engine\n");
   print_case("cat", "concatenate", literal_cat("concatenate"));
   print_case("c.t", "cot", c_dot_t("cot"));

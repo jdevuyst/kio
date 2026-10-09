@@ -3,4 +3,4 @@ module main;
 import origin(op + _);
 import origin(op + _);
 
-fn apply(value: .) -> . { + value }
+fn apply(value: .) { + value }

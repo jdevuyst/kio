@@ -19,7 +19,7 @@ import testapi/text(string_concat, string_eq);
 // root module alias, not the same-named host type.
 fn show_flag_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
-pub fn main() -> . {
+pub fn main() {
   // Root_module Bool: yes() is true, no() is false.
   print(string_concat("root module yes  = ", string_concat(show_flag_bool(yes()), "\n")));
   print(string_concat("root module no   = ", string_concat(show_flag_bool(no()), "\n")));

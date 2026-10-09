@@ -57,7 +57,7 @@ structural.
 | Retained host declaration's type is not alpha-and-kind-equal to the baseline, **or its `role(...)` changed** | **breaking** |
 | Host declaration removed | compatible (an existing host already supplies a superset) |
 
-A `host type`'s `role(...)` is part of its identity: changing `role(str)` to
+A `host type`'s `role(...)` is part of its host contract: changing `role(str)` to
 `role(bool)` is a breaking env change. The changelog records each host type's
 role.
 
@@ -438,10 +438,12 @@ Declarations inside a module section are post-elaboration **Kio'**:
   (the elaborated forms; never surface `labels`). A mutual group is admitted
   only in `with`, not inline under an operation.
 - **Body-less `fn` signatures** for exports — a changelog-specific production
-  that reuses the host-fn signature shape:
+  with the ordinary function's ordered type/value groups, including type-only
+  signatures:
 
   ```text
   pub pure fn greet(p0: Str) -> Str ;
+  pub fn nil[A] -> List(A) ;
   ```
 
   This is distinct from a regular-module `fn`, which requires a body. A stray
@@ -450,6 +452,13 @@ Declarations inside a module section are post-elaboration **Kio'**:
   compile-time evaluation. No other signature-file declaration admits
   `pure`: host functions are runtime requirements, and `type` / `newtype`
   declarations have no purity.
+
+  An ordinary export need not have a value group; a `host fn` import still
+  does. The recorded `fn nil[A] -> List(A)` and
+  `fn nil[A]() -> List(A)` are distinct contracts: the latter retains a Unit
+  application before its result. Recording, replay, and comparison preserve
+  this distinction; a sealed historical signature is not rewritten to add or
+  remove `()`.
 
 No surface-only forms (`elab`, `op`, `match`, `do`, …) appear — they are not
 Kio'.

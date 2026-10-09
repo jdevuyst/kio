@@ -2,4 +2,4 @@ module main;
 
 op _ + _ { impl helpers/ops.combine; };
 
-fn keep() -> . { () }
+fn keep() { () }

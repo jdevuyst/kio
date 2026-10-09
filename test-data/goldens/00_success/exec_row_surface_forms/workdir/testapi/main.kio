@@ -21,11 +21,11 @@ fn access_written_order(row: Foo & Bar) -> I32 & String { row.?{foo, bar} }
 
 fn update_reordered(row: Foo & Bar, foo: I32, bar: String) -> Bar & Foo { row.!{foo, bar} }
 
-fn observe_access(_pair: I32 & String) -> . { () }
+fn observe_access(_pair: I32 & String) { () }
 
-fn empty_construct() -> . { () }
+fn empty_construct() { () }
 
-fn empty_access(row: Foo & Bar) -> . { row.?{} }
+fn empty_access(row: Foo & Bar) { row.?{} }
 
 fn empty_update(row: Foo & Bar) -> Bar & Foo { row.!{} }
 
@@ -36,7 +36,7 @@ fn row_let(row: Foo & Bar & Ready) -> String {
 
 fn qualified(tag: String) -> Tag { {ql.tag} }
 
-pub fn main() -> . {
+pub fn main() {
   let constructed = construct_reordered(7, "made");
   print(colon("construct", show(constructed)));
   print("\n");

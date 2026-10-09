@@ -72,7 +72,7 @@ fn fuel_diag() -> String {
 
 /// Feeds each malformed image class to the loader and prints the
 /// resulting diagnostic.
-pub fn main() -> . {
+pub fn main() {
   print(diag_of(
     , "truncated body: "(String)
     , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "

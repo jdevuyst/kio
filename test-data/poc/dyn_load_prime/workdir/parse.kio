@@ -50,8 +50,9 @@ import token(toks_cons, toks_nil, un_token, un_toks, {tk_num}, {tk_punct}, {tk_s
 //
 //   - literals carry their host type: `5(I32)`, `"hi"(String)`,
 //     `.t(Bool)` / `.f(Bool)`; the unit value is `()`.
-//   - a variable is a bare identifier; a lambda is `.(x: T) { body }`
-//     (one value param) or the zero-param thunk `.() { body }`.
+//   - a variable is a bare identifier; a lambda has value groups
+//     `.(x: T) { body }`, type groups `.[A] { body }`, or both.
+//     The zero-param thunk `.() { body }` retains its Unit stage.
 //   - application is postfix and repeatable: `f(a)(b)` is
 //     `app(app(f, a), b)`; a zero-arg call `t()` applies to the unit
 //     value.
@@ -88,7 +89,7 @@ import token(toks_cons, toks_nil, un_token, un_toks, {tk_num}, {tk_punct}, {tk_s
 pub labels { pnl: List(String) };
 
 /// The empty name list.
-pub fn pnl_nil() -> Pnl { {pnl = nil(String, ())} }
+pub fn pnl_nil() -> Pnl { {pnl = nil(String)} }
 
 /// Prepends one name.
 pub fn pnl_cons(name: String, rest: Pnl) -> Pnl { {pnl = cons(name, Pnl.get(rest))} }
@@ -453,7 +454,7 @@ fn lambda_group_scope(params: Pnl, base: Scope) -> Scope {
 /// A cons-list of dot-lambda parameter groups.
 pub labels { pnlg: List(Pnl) };
 
-fn pnlg_nil() -> Pnlg { {pnlg = nil(Pnl, ())} }
+fn pnlg_nil() -> Pnlg { {pnlg = nil(Pnl)} }
 
 fn pnlg_cons(g: Pnl, rest: Pnlg) -> Pnlg { {pnlg = cons(g, Pnlg.get(rest))} }
 
@@ -2185,7 +2186,7 @@ fn skip_ret_annot(ts: Toks) -> Toks {
 }
 
 /// Wraps the lambda-signature collection's
-/// `(groups, remaining-tokens, saw-value-group)`.
+/// `(groups, remaining-tokens, saw-group)`.
 labels { lgroups: Pnlg & Toks & Bool };
 
 fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
@@ -2208,8 +2209,7 @@ fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
     )
 }
 
-// Collect a dot-lambda signature's parameter groups — one or more `(…)`
-// groups, possibly interleaved with (erased) `[A]…` type-binder runs —
+// Collect a dot-lambda signature's one or more type or value groups,
 // returning the groups in signature order and the tokens after the last
 // group.
 fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
@@ -2217,7 +2217,7 @@ fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
     loop(
       , .(st: Toks & Pnlg & Bool) {
           match! st {
-            .(cur: Toks, acc: Pnlg, saw_value_group: Bool) {
+            .(cur: Toks, acc: Pnlg, saw_group: Bool) {
               if! head_is_punct(cur, c_lbrack()) {
                 match! scan_lambda_binder_group(cur) {
                   (
@@ -2225,7 +2225,7 @@ fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
                         match! Lambda_binder_scan.get(group) {
                           .(arity: I32, after: Toks) {
                             widen_sum!(
-                              , (after, pnlg_prepend_empty(arity, acc), saw_value_group)
+                              , (after, pnlg_prepend_empty(arity, acc), .t(Bool))
                               , (Toks & Pnlg & Bool) | Lgroups | Perr
                               )
                           }
@@ -2245,7 +2245,7 @@ fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
                 }
               } else {
                 widen_sum!(
-                  , {lgroups = (pnlg_reverse(acc), cur, saw_value_group)}
+                  , {lgroups = (pnlg_reverse(acc), cur, saw_group)}
                   , (Toks & Pnlg & Bool) | Lgroups | Perr
                   )
               }
@@ -2279,8 +2279,8 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
     (
       , .(done: Lgroups) {
           match! Lgroups.get(done) {
-            .(groups: Pnlg, after_groups: Toks, saw_value_group: Bool) {
-              if! saw_value_group {
+            .(groups: Pnlg, after_groups: Toks, saw_group: Bool) {
+              if! saw_group {
                 let at_brace = skip_ret_annot(after_groups);
                 if! head_is_punct(at_brace, c_lbrace()) {
                   pgo(mk_pstate(
@@ -2293,7 +2293,7 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
                   perr_halt("expected `{` opening a lambda body"(String), at_brace)
                 }
               } else {
-                perr_halt("expected `(` opening a lambda's parameter list"(String), after_groups)
+                perr_halt("expected a lambda parameter group"(String), after_groups)
               }
             }
           }
@@ -2969,7 +2969,7 @@ equiv un_pnl_cons_head(n: String, p: Pnl) {
 
 equiv un_pnl_cons_tail(n: String, p: Pnl) {
   match! un_pnl(pnl_cons(n, p)) {
-    (.(_h: String, t: Pnl) { Pnl.get(t) }, .(_e: .) { nil(String, ()) })
+    (.(_h: String, t: Pnl) { Pnl.get(t) }, .(_e: .) { nil(String) })
   };
   Pnl.get(p)
 }

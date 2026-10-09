@@ -30,7 +30,7 @@ fn tail_or[A](fallback: List(A), xs: List(A)) -> List(A) {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let empty = nil(Int, ());
   let l3 = push(3, empty);
   let l2 = push(2, l3);

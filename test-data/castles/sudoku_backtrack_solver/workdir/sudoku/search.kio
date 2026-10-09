@@ -58,12 +58,12 @@ fn top_cell(work: Work) -> I32 { array_get(work.?{stack_cell}, sub_i32(depth(wor
 
 fn top_digit(work: Work) -> I32 { array_get(work.?{stack_digit}, sub_i32(depth(work), 1)) }
 
-fn set_top_digit(work: Work, digit: I32) -> . {
+fn set_top_digit(work: Work, digit: I32) {
   array_set(work.?{stack_digit}, sub_i32(depth(work), 1), digit)
 }
 
 /// Open a frame on `cell` with no digit tried yet.
-fn push_frame(work: Work, cell: I32) -> . {
+fn push_frame(work: Work, cell: I32) {
   array_push(work.?{stack_cell}, cell);
   array_push(work.?{stack_digit}, 0)
 }
@@ -71,7 +71,7 @@ fn push_frame(work: Work, cell: I32) -> . {
 /// Drop the top frame. `array_pop_back` reports the empty stack as the `.`
 /// arm; the caller has already checked the depth, so that arm cannot fire
 /// and both arms simply discard the popped value.
-fn pop_frame(work: Work) -> . {
+fn pop_frame(work: Work) {
   let popped_cell = array_pop_back(work.?{stack_cell});
   let _cell =
     match! popped_cell {

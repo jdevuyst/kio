@@ -23,16 +23,16 @@ pub labels State = {
 
 pub fn empty() -> State {
   {
-    , slots = lists.nil()
-    , seen = lists.nil()
-    , events = lists.nil()
+    , slots = lists.nil(_)
+    , seen = lists.nil(_)
+    , events = lists.nil(_)
     , completed = 0
     , canceled = 0
     , work_ticks = 0
     }
 }
 
-pub fn begin(state: State) -> State { state.!{seen = lists.nil(), events = lists.nil()} }
+pub fn begin(state: State) -> State { state.!{seen = lists.nil(_), events = lists.nil(_)} }
 
 pub fn visit(id: I32, state: State) -> State { state.!{seen = lists.cons(id, state.?{seen})} }
 
@@ -102,5 +102,5 @@ fn sweep_slot(state: State, slot: Slot) -> State {
 }
 
 pub fn finish(state: State) -> State {
-  traversal.foldl(sweep_slot, state.!{slots = lists.nil()}, state.?{slots})
+  traversal.foldl(sweep_slot, state.!{slots = lists.nil(_)}, state.?{slots})
 }

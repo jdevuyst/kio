@@ -31,6 +31,30 @@ the same Markdown content for documented declarations. This works for
 functions, aliases, newtypes, labels, operators, and user-defined
 elaborators.
 
+Editor highlighting distinguishes headings, emphasis, list and quote markers,
+links, Kiodoc reference operands, directive words, and fenced examples from
+surrounding comment prose. Compiler-derived colors show ordinary Kio tokens
+inside `kio` examples, including incomplete module and expression fragments.
+A highlighted reference
+is a written Kiodoc form, not a promise that the name resolves; `kio doc check`
+performs that validation. Escaped delimiters and inline code stay literal.
+TextMate and standalone Tree-sitter use conservative coloring after an
+inline-code opener without a same-line closer: the rest of that comment run
+stays neutral, even after a closer on a later line. Compiler-derived semantic
+colors and Kiodoc completion use the whole comment.
+TextMate styles emphasis only when its closing marker is on the same line;
+references inside multiline emphasis still receive their Kiodoc colors.
+TextMate colors each physical Kio example line independently, so multiline
+Kio context does not carry across those lines or escape the example's fence.
+The VS Code Tree-sitter consumer instead classifies each complete fence body;
+standalone Tree-sitter queries retain a readable code-body style.
+
+Inside a Kiodoc reference, editor completion offers names from the surrounding
+module and its explicit imports. After `@`, it offers the directive words;
+`@type` narrows the name list to declarations with a bound value type. Choosing
+a name replaces the whole reference operand, including operator spellings.
+Ordinary prose, links and literal code do not offer these name suggestions.
+
 Module docs use the same syntax before the `module` line:
 
 ```text
@@ -139,6 +163,12 @@ inside the surrounding module:
 fn id(x: .) -> . { x }
 ````
 
+Editor completion inside this fence uses the surrounding module, just like
+the check. It does not borrow the documented function's local variables.
+Accepted plain-text edits preserve the physical `///` prefixes and line
+endings; snippet candidates insert a plain name rather than expanding
+placeholder scaffolds across comment lines.
+
 Use `{ignore}` only for true fragments or examples that are deliberately
 not Kio input.
 
@@ -175,6 +205,18 @@ harnesses take precedence over support files in their module namespace.
 Discovery stays within each directory's package: a nested package is a
 separate source boundary. Hidden directories, `out`, and `target` are skipped,
 and directory symlinks are not followed.
+
+## Documentation for host authors
+
+Package builds carry docs on exported functions, host requirements, and public
+newtypes into the generated host interface. Host tools display them in their
+usual documentation form. References show the Kio names you wrote; item
+directives show their operand without embedding another declaration's source.
+Code examples remain documentation, not host code to execute.
+
+Private implementation and module docs stay out of this interface. The
+[boundary documentation contract](../../specs/backends/README.md#doc-comments-on-the-emitted-surface)
+gives the exact selection rules and links to each target's presentation.
 
 ## Editor support
 

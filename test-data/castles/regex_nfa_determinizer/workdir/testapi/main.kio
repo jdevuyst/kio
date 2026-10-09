@@ -30,13 +30,13 @@ import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 
-fn stat(label: String, value: I32) -> . {
+fn stat(label: String, value: I32) {
   report.line(report.cat3("  ", label, report.cat(": ", report.num(value))))
 }
 
 /// The NFA state set behind each DFA state — the evidence for what
 /// determinization merged.
-rec(loop) fn emit_sets(sets: List(seq.Ints), at: I32) -> . {
+rec(loop) fn emit_sets(sets: List(seq.Ints), at: I32) {
   if! leq_i32(len(sets), at) {
     ()
   } else {
@@ -49,7 +49,7 @@ rec(loop) fn emit_sets(sets: List(seq.Ints), at: I32) -> . {
   }
 }
 
-rec(loop) fn emit_rows(d: dfa.Dfa, at: I32) -> . {
+rec(loop) fn emit_rows(d: dfa.Dfa, at: I32) {
   if! leq_i32(dfa.count(d), at) {
     ()
   } else {
@@ -58,7 +58,7 @@ rec(loop) fn emit_rows(d: dfa.Dfa, at: I32) -> . {
   }
 }
 
-fn emit_probes(d: dfa.Dfa, words: List(seq.Ints)) -> . {
+fn emit_probes(d: dfa.Dfa, words: List(seq.Ints)) {
   fold(
     , words
     , .(_u: ., word: seq.Ints) {
@@ -111,7 +111,7 @@ rec(loop) fn emit_all(ps: List(pattern.Pattern), index: I32, before: I32, after:
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   report.line("regex_nfa_determinizer");
   report.line("legend: > start state, * accepting state");
   report.line("");

@@ -23,7 +23,4 @@ fn box_value[A](v: A) -> Boxed(A) { Boxed.mk((v, v)) }
 
 fn extract_via_cps[T](b: Boxed(T)) -> T { Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) }) }
 
-pub fn main() -> . {
-  let b = box_value("cps-projector-polymorphic-ok\n");
-  print(extract_via_cps(b))
-}
+pub fn main() { let b = box_value("cps-projector-polymorphic-ok\n"); print(extract_via_cps(b)) }

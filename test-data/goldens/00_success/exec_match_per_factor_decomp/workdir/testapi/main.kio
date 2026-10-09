@@ -41,7 +41,7 @@ fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Build (B, C, F) — exercises the "bcf" clause.
   let p =
     (widen_sum!(B.mk_b(0), A | B), widen_sum!(C.mk_c(0), C | D), widen_sum!(F.mk_f(0), E | F));

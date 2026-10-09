@@ -12,7 +12,7 @@ import testapi/io(print);
 // uses `widen_sum!` directly; the call site names the operation.
 fn widen(s: String) -> String | I32 { widen_sum!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = widen("hello\n");
   let s =
     match! widened {

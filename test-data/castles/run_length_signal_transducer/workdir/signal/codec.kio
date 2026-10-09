@@ -24,7 +24,7 @@ pub fn cap() -> I32 { 4 }
 pub fn empty() -> Encoder {
   {
     , pending = ().>widen_sum!(Run | .)
-    , packets_rev = lists.nil(Run, ())
+    , packets_rev = lists.nil(Run)
     , samples = 0
     , transitions = 0
     , splits = 0

@@ -3,4 +3,4 @@ module testapi/main;
 import logger(log);
 import testapi(String);
 
-pub fn main() -> . { log("logger ready"(String)) }
+pub fn main() { log("logger ready"(String)) }

@@ -11147,39 +11147,6 @@
         ]
       }
     },
-    "comment_doc": {
-      "type": "TOKEN",
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "STRING",
-            "value": "///"
-          },
-          {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "SEQ",
-                "members": [
-                  {
-                    "type": "PATTERN",
-                    "value": "[ \\t\\r]"
-                  },
-                  {
-                    "type": "PATTERN",
-                    "value": "[^\\n]*"
-                  }
-                ]
-              },
-              {
-                "type": "BLANK"
-              }
-            ]
-          }
-        ]
-      }
-    },
     "comment_line": {
       "type": "TOKEN",
       "content": {
@@ -11400,6 +11367,62 @@
     },
     {
       "type": "SYMBOL",
+      "name": "doc_fence"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_heading"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_emphasis"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_strong"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_marker"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_link"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_attribute"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_kio_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_kio_self_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_reference"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_directive"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_literal_fallback"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_doc_line_end"
+    },
+    {
+      "type": "SYMBOL",
       "name": "comment_line"
     }
   ],
@@ -11602,6 +11625,66 @@
     {
       "type": "SYMBOL",
       "name": "_editor_eof"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "comment_doc"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_fence"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_reference"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_directive"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_heading"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_emphasis"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_strong"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_marker"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_link"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_attribute"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_kio_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_kio_self_code"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "doc_literal_fallback"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_doc_line_end"
     }
   ],
   "inline": [

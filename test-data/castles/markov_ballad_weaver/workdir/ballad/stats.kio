@@ -85,7 +85,7 @@ rec(loop) fn collect_lines(lines: List(Line), acc: List(String)) -> List(String)
 }
 
 /// How much of the vocabulary the run actually reached.
-pub fn distinct_words(lines: List(Line)) -> I32 { len(collect_lines(lines, nil(String, ()))) }
+pub fn distinct_words(lines: List(Line)) -> I32 { len(collect_lines(lines, nil(String))) }
 
 fn ended_on_word(l: Line) -> Bool {
   let stop = l.?{line_stop};

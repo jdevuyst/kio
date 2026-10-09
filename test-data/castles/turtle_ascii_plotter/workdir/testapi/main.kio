@@ -23,7 +23,7 @@ import turtle/parse as parse;
 import turtle/state as st;
 import turtle/text as text;
 
-fn line(label: String, value: String) -> . { print(text.cat4(label, ": ", value, "\n")) }
+fn line(label: String, value: String) { print(text.cat4(label, ": ", value, "\n")) }
 
 /// The header: the word `canvas`, then the width and the height, one per line.
 /// The keyword is a marker rather than a dispatch — the header is always the
@@ -42,7 +42,7 @@ fn turtle_text(s: st.State) -> String {
   text.cat3(at, facing, holding)
 }
 
-fn report(paper: canvas.Canvas, s: st.State) -> . {
+fn report(paper: canvas.Canvas, s: st.State) {
   print("stats:\n");
   line("commands", text.num(st.executed_of(s)));
   line("inked", text.num(canvas.inked_cells(paper)));
@@ -50,7 +50,7 @@ fn report(paper: canvas.Canvas, s: st.State) -> . {
   line("final", turtle_text(s))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let .(w: I32, h: I32) = read_header();
   let program = parse.parse_program();
   let finished = exec.run_block(program, st.start_state(w, h));

@@ -1,0 +1,9 @@
+package probe;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js"
+  }
+}

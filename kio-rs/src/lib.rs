@@ -131,6 +131,7 @@ pub mod package_collection;
 pub mod diagnostic;
 pub mod doc;
 pub mod doc_entry;
+mod doc_markup;
 pub mod error;
 pub mod exit_code;
 pub mod file_kind;

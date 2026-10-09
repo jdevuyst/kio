@@ -22,9 +22,9 @@ import testapi/io(print);
 // slots so the test prints them in the realigned order.
 fn realign(p: I32 & String & I32) -> I32 & I32 & String { into!(p) }
 
-fn print_line(s: String) -> . { print(s); print("\n") }
+fn print_line(s: String) { print(s); print("\n") }
 
-pub fn main() -> . {
+pub fn main() {
   let original = (1, "middle", 2);
   let .(q: (a: I32, b: I32, s: String)) = realign(original);
   print_line(int_to_string(a));

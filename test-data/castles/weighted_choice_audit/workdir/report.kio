@@ -1,0 +1,65 @@
+module report;
+
+import choice as choice;
+import elab/control(if);
+import list/core as lists;
+import list/list as traversal;
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/text as text;
+
+fn weighted_text[A](show: A -> String, outcome: A, weight: I32) -> String {
+  show(outcome).>text.string_concat(":").>text.string_concat(fmt.int_to_string(weight))
+}
+
+pub fn distribution[A](
+  , title: String
+  , choices: choice.Choice(A)
+  , support: lists.List(A)
+  , equal: (A & A) -> Bool
+  , show: A -> String
+  ) {
+  let counts =
+    traversal.map(
+      , .(outcome) { (outcome, choice.mass(choices, .(candidate) { equal(outcome, candidate) })) }
+      , support
+      );
+  let rendered =
+    traversal.to_string(.(outcome, weight) { weighted_text(show, outcome, weight) }, counts);
+  title
+    .>text.string_concat(" ")
+    .>text.string_concat(rendered)
+    .>text.string_concat(" total=")
+    .>text.string_concat(fmt.int_to_string(choice.total(choices)))
+    .>text.string_concat("\n")
+    .>io.print
+}
+
+pub fn integer_distribution(title: String, choices: choice.Choice(I32), support: lists.List(I32)) {
+  distribution(title, choices, support, arith.eq_i32, fmt.int_to_string)
+}
+
+pub fn bool_equal(left: Bool, right: Bool) -> Bool {
+  if! left {
+    right
+  } else if! right {
+    .f
+  } else {
+    .t
+  }
+}
+
+pub fn count(title: String, value: I32) {
+  title.>text.string_concat(fmt.int_to_string(value)).>text.string_concat("\n").>io.print
+}
+
+pub fn fraction(title: String, numerator: I32, denominator: I32) {
+  title
+    .>text.string_concat(fmt.int_to_string(numerator))
+    .>text.string_concat("/")
+    .>text.string_concat(fmt.int_to_string(denominator))
+    .>text.string_concat("\n")
+    .>io.print
+}

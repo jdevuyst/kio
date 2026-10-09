@@ -4,4 +4,4 @@ type Same[A] = A;
 
 fn id[A](x: Same(A)) -> A { x }
 
-fn user(y: Same(.)) -> . { id(., y) }
+fn user(y: Same(.)) { id(., y) }

@@ -72,12 +72,20 @@ __INSERT_CODE_HERE__
 -->
 
 ```kio {@identity_consumer}
-pure fn keep_unit(value: .) -> . { identity!(value, .) }
+pure fn keep_unit(value: .) { identity!(value, .) }
 ```
 
 For a generic consumer, the same import and trailing target slot look like:
 
-```kio {ignore}
+<!--kio {harness=generic_consumer file placeholder="__INSERT_CODE_HERE__"}
+module guide/generic;
+
+__INSERT_CODE_HERE__
+
+fn check_keep() { keep(()) }
+-->
+
+```kio {@generic_consumer}
 import library/identity(identity);
 
 fn keep[A](value: A) -> A { identity!(value, A) }
@@ -93,7 +101,7 @@ The second declaration, `identity_block`, uses the same implementation but
 accepts its value through a trailing block:
 
 ```kio {@identity_consumer}
-pure fn keep_block(value: .) -> . {
+pure fn keep_block(value: .) {
   identity_block! {
     value
   }

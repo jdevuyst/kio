@@ -36,7 +36,7 @@ fn all_layouts_ok() -> Bool {
     )
 }
 
-fn print_north_window(north_first: scanner.Reading, north_second: scanner.Reading) -> . {
+fn print_north_window(north_first: scanner.Reading, north_second: scanner.Reading) {
   io.print("N1 window=");
   io.print(window.interval(scanner.time(north_first), scanner.time(north_second)));
   io.print(" state=");
@@ -56,7 +56,7 @@ fn print_north_window(north_first: scanner.Reading, north_second: scanner.Readin
   io.print("\n")
 }
 
-fn print_south_window(south_first: scanner.Reading, south_next: scanner.Reading) -> . {
+fn print_south_window(south_first: scanner.Reading, south_next: scanner.Reading) {
   io.print("S2 window=");
   io.print(window.interval(scanner.time(south_first), scanner.time(south_first)));
   io.print(" state=");
@@ -72,7 +72,7 @@ fn print_south_window(south_first: scanner.Reading, south_next: scanner.Reading)
   io.print("\n")
 }
 
-pub fn main() -> . {
+pub fn main() {
   let base = scanner.scan(fixtures.line0800());
   let north_first = scanner.scan(fixtures.line0805());
   let north_second = scanner.scan(fixtures.line0810());

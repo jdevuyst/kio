@@ -9,20 +9,20 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub fn print_i32(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+pub fn print_i32(value: I32) { io.print(fmt.int_to_string(value)) }
 
-pub fn print_line(line: String) -> . { io.print(line); io.print("\n") }
+pub fn print_line(line: String) { io.print(line); io.print("\n") }
 
-pub fn print_string_metric(name: String, value: String) -> . {
+pub fn print_string_metric(name: String, value: String) {
   io.print(text.string_concat(name, value));
   io.print("\n")
 }
 
-pub fn print_i32_metric(name: String, value: I32) -> . {
+pub fn print_i32_metric(name: String, value: I32) {
   print_string_metric(name, fmt.int_to_string(value))
 }
 
-pub fn print_bool_metric(name: String, value: Bool) -> . {
+pub fn print_bool_metric(name: String, value: Bool) {
   print_string_metric(name, fmt.bool_to_string(value))
 }
 
@@ -39,7 +39,7 @@ pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I3
 
 pub fn row_checksum(row: Array(I32), last: I32) -> I32 { row_checksum_at(0, last, row, 0) }
 
-pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) -> . {
+pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) {
   if! arith.leq_i32(index, last) {
     print_i32(array.array_get(row, index));
     io.print(" ");
@@ -61,7 +61,7 @@ pub fn print_row(row_index: I32, row: Array(I32), last: I32) -> I32 {
   checksum
 }
 
-pub fn print_lengths(left_len: I32, right_len: I32) -> . {
+pub fn print_lengths(left_len: I32, right_len: I32) {
   print_i32_metric("left_len=", left_len);
   print_i32_metric("right_len=", right_len)
 }

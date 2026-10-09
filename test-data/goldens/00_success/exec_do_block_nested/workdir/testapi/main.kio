@@ -29,4 +29,4 @@ fn outer() -> Box(String) {
   }
 }
 
-pub fn main() -> . { print(Box.un_box(outer())) }
+pub fn main() { print(Box.un_box(outer())) }

@@ -7,4 +7,4 @@ rec(loop) {
   pub fn map_after[A][B](transform: A -> B, value: A) -> B { rec finish(transform, value) }
 }
 
-pub fn main() -> . { map_after(.(u: .) { u }, ()) }
+pub fn main() { map_after(.(u: .) { u }, ()) }

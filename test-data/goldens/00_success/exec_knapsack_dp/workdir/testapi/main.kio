@@ -75,7 +75,7 @@ fn item_step(dp: Array(I32), ws: Array(I32), vs: Array(I32), i: I32) -> I32 | . 
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // DP table indexed 0..=cap; dp[c] is the best value achievable
   // with capacity c using the items processed so far.
   let dp = array_make_filled(add_i32(cap(), 1), 0);

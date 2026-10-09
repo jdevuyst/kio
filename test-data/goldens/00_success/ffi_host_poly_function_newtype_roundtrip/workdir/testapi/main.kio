@@ -7,7 +7,7 @@ import testapi/types(Pick_first);
 
 fn first_picker() -> Pick_first { Pick_first.mk_pick_first(.[A](left: A, _right: A) { left }) }
 
-pub fn main() -> . {
+pub fn main() {
   let picker = round_picker(first_picker());
   print(Pick_first.pick_first(picker)(
     , String

@@ -10,7 +10,7 @@ import testapi(I32, String);
 
 fn book(name: String, copies: I32) -> Book { {title = name, copies_total = copies, copies_out = 0} }
 
-fn member(id: I32) -> Member { {member_id = id, fines = 0, held = lcore.nil(I32, ())} }
+fn member(id: I32) -> Member { {member_id = id, fines = 0, held = lcore.nil(I32)} }
 
 fn queued(pending: Op_list, next: Op) -> Op_list { lcore.cons(next, pending) }
 
@@ -32,7 +32,7 @@ pub fn members() -> Member_index {
 /// The day's circulation desk, in order. Six of these are expected to
 /// fail; the driver records each failure and carries on.
 pub fn ops() -> Op_list {
-  let pending = lcore.nil(Op, ());
+  let pending = lcore.nil(Op);
   let pending = queued(pending, dom.op_checkout(101, 201));
   let pending = queued(pending, dom.op_checkout(102, 201));
   let pending = queued(pending, dom.op_checkout(103, 202));

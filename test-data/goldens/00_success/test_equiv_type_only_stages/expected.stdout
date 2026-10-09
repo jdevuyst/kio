@@ -1,0 +1,10 @@
+  pass equiv `named` in main
+  pass equiv `anonymous` in main
+  pass equiv `combined_and_split` in main
+  pass equiv `adjacent_and_nested` in main
+  pass equiv `captured` in main
+  pass equiv `first_class` in main
+  pass equiv `interleaved` in main
+  pass equiv `explicit_unit` in main
+
+result: 8/8 equiv blocks passed

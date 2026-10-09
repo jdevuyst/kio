@@ -49,4 +49,4 @@ fn use_sid() -> String {
     )
 }
 
-pub fn main() -> . { print(use_sid()) }
+pub fn main() { print(use_sid()) }

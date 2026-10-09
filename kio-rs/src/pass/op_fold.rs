@@ -18,6 +18,8 @@
 // off the sequential arm needs no import and rayon is absent.
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "lsp")]
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
@@ -61,27 +63,62 @@ pub fn fold_package_named(
 /// same resolution decisions.
 #[allow(clippy::type_complexity)]
 pub(crate) fn fold_package_named_with_scope(
-    mut modules: Vec<(PathBuf, Module<Surface>)>,
+    modules: Vec<(PathBuf, Module<Surface>)>,
     package_name: Option<&str>,
 ) -> Result<(Vec<(PathBuf, Module<Surface>)>, PackageOpScope), (PathBuf, Error)> {
+    fold_package_named_observed(modules, package_name, fold_module)
+        .map(|(modules, package, _)| (modules, package))
+}
+
+#[cfg(feature = "lsp")]
+#[allow(clippy::type_complexity)]
+pub(crate) fn fold_package_named_for_lsp(
+    modules: Vec<(PathBuf, Module<Surface>)>,
+    package_name: Option<&str>,
+) -> Result<
+    (
+        Vec<(PathBuf, Module<Surface>)>,
+        PackageOpScope,
+        Vec<ResolvedOperatorUse>,
+    ),
+    (PathBuf, Error),
+> {
+    fold_package_named_observed(modules, package_name, |module, package| {
+        let mut uses = Vec::new();
+        fold_module_observed(module, package, Some(&mut uses))?;
+        Ok(uses)
+    })
+    .map(|(modules, package, uses)| (modules, package, uses.into_iter().flatten().collect()))
+}
+
+#[allow(clippy::type_complexity)]
+fn fold_package_named_observed<T: Send>(
+    mut modules: Vec<(PathBuf, Module<Surface>)>,
+    package_name: Option<&str>,
+    fold: impl Fn(&mut Module<Surface>, &PackageOpScope) -> Result<T, Error> + Sync,
+) -> Result<(Vec<(PathBuf, Module<Surface>)>, PackageOpScope, Vec<T>), (PathBuf, Error)> {
     let package = PackageOpScope::from_modules_named(&modules, package_name)?;
-    // Per-module fold via rayon. Each module's fold reads the
-    // package-wide map by reference; no shared mutation.
-    // Errors are collected into a per-module
-    // Vec<Option<...>>, then ordered by module path and span so the
-    // reported error is deterministic regardless of execution order.
-    let errors: Vec<Option<ModuleFoldError>> = crate::maybe_par_iter_mut!(modules)
+    // Each fold owns its AST and observations. Selecting the error after
+    // collection keeps failure independent of parallel execution order.
+    let results: Vec<Result<T, ModuleFoldError>> = crate::maybe_par_iter_mut!(modules)
         .map(|(file_path, module)| {
             let module_path = module_path_str(&module.path);
-            fold_module(module, &package)
-                .err()
-                .map(|error| ModuleFoldError::new(module_path, file_path.clone(), error))
+            fold(module, &package)
+                .map_err(|error| ModuleFoldError::new(module_path, file_path.clone(), error))
         })
         .collect();
+    let mut observations = Vec::with_capacity(results.len());
+    let mut errors = Vec::new();
+    for result in results {
+        match result {
+            Ok(observation) => observations.push(observation),
+            Err(error) => errors.push(Some(error)),
+        }
+    }
     if let Some(error) = first_module_fold_error(errors) {
         return Err((error.file_path, error.error));
     }
-    Ok((modules, package))
+    Ok((modules, package, observations))
 }
 
 struct ModuleFoldError {
@@ -134,12 +171,46 @@ pub fn fold_package_file_in_package(
 /// post-fold AST contains only regular identifier imports plus the
 /// synthetic qualified-alias clauses.
 fn fold_module(module: &mut Module<Surface>, package: &PackageOpScope) -> Result<(), Error> {
+    fold_module_observed(
+        module,
+        package,
+        #[cfg(feature = "lsp")]
+        None,
+    )
+}
+
+fn fold_module_observed(
+    module: &mut Module<Surface>,
+    package: &PackageOpScope,
+    #[cfg(feature = "lsp")] operator_uses: Option<&mut Vec<ResolvedOperatorUse>>,
+) -> Result<(), Error> {
     validate_callable_decls(module, package)?;
-    let (scope, synthetic_imports) = build_module_scope(module, package)?;
+    let (scope, synthetic_imports) = build_module_scope(
+        module,
+        package,
+        #[cfg(feature = "lsp")]
+        operator_uses.is_some(),
+    )?;
     strip_import_op_patterns(&mut module.imports);
     module.imports.extend(synthetic_imports);
     for item in module.items.iter_mut() {
         fold_item(item, &scope)?;
+    }
+    #[cfg(feature = "lsp")]
+    if let Some(operator_uses) = operator_uses {
+        let source_module = module_path_str(&module.path);
+        operator_uses.extend(
+            scope
+                .operator_uses
+                .expect("enabled operator-use capture")
+                .into_inner()
+                .into_iter()
+                .map(|(use_span, origin)| ResolvedOperatorUse {
+                    source_module: source_module.clone(),
+                    use_span,
+                    origin,
+                }),
+        );
     }
     Ok(())
 }
@@ -681,6 +752,23 @@ pub(crate) struct ResolvedCallableDeclaration {
     pub target: ResolvedCallableTarget,
 }
 
+/// The source binding selected by an actual operator expression, before
+/// callable routing and folding erase that lexical edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "lsp")]
+pub(crate) enum ResolvedOperatorOrigin {
+    Local { declaration_span: Span },
+    Import { import_span: Span },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(feature = "lsp")]
+pub(crate) struct ResolvedOperatorUse {
+    pub source_module: String,
+    pub use_span: Span,
+    pub origin: ResolvedOperatorOrigin,
+}
+
 #[derive(Clone)]
 struct ResolvedPubOpRecord {
     name: OperatorDispatchKey,
@@ -1167,6 +1255,8 @@ impl PackageOpScope {
 struct OpScope {
     normal: HashMap<(Vec<String>, bool), NormalBinding>,
     variadic: HashMap<Vec<String>, VariadicBinding>,
+    #[cfg(feature = "lsp")]
+    operator_uses: Option<RefCell<Vec<(Span, ResolvedOperatorOrigin)>>>,
 }
 
 #[derive(Clone)]
@@ -1174,18 +1264,24 @@ struct NormalBinding {
     /// Path naming the underlying function after imports have been routed.
     function: LexicalCallablePath,
     pattern: Vec<OpPart>,
+    #[cfg(feature = "lsp")]
+    origin: Option<ResolvedOperatorOrigin>,
 }
 
 #[derive(Clone)]
 struct VariadicBinding {
     spec: VariadicSpec,
+    #[cfg(feature = "lsp")]
+    origin: Option<ResolvedOperatorOrigin>,
 }
 
 impl OpScope {
-    fn new() -> Self {
+    fn new(#[cfg(feature = "lsp")] capture_operator_uses: bool) -> Self {
         Self {
             normal: HashMap::new(),
             variadic: HashMap::new(),
+            #[cfg(feature = "lsp")]
+            operator_uses: capture_operator_uses.then(|| RefCell::new(Vec::new())),
         }
     }
 
@@ -1199,6 +1295,12 @@ impl OpScope {
                     NormalBinding {
                         function,
                         pattern: pattern.clone(),
+                        #[cfg(feature = "lsp")]
+                        origin: self.operator_uses.as_ref().map(|_| {
+                            ResolvedOperatorOrigin::Local {
+                                declaration_span: d.meta.span,
+                            }
+                        }),
                     },
                 );
             }
@@ -1206,8 +1308,19 @@ impl OpScope {
     }
 
     fn insert_local_variadic(&mut self, d: &VariadicOperator<Surface>, spec: VariadicSpec) {
-        self.variadic
-            .insert(d.open.clone(), VariadicBinding { spec });
+        self.variadic.insert(
+            d.open.clone(),
+            VariadicBinding {
+                spec,
+                #[cfg(feature = "lsp")]
+                origin: self
+                    .operator_uses
+                    .as_ref()
+                    .map(|_| ResolvedOperatorOrigin::Local {
+                        declaration_span: d.meta.span,
+                    }),
+            },
+        );
     }
 
     fn insert_imported_normal(
@@ -1233,6 +1346,11 @@ impl OpScope {
         let binding = NormalBinding {
             function,
             pattern: source_pattern.to_vec(),
+            #[cfg(feature = "lsp")]
+            origin: self
+                .operator_uses
+                .as_ref()
+                .map(|_| ResolvedOperatorOrigin::Import { import_span }),
         };
         self.normal.insert(key, binding);
         Ok(())
@@ -1256,9 +1374,26 @@ impl OpScope {
             )
             .with_help("remove the repeated operator import"));
         }
-        self.variadic
-            .insert(open, VariadicBinding { spec: source_spec });
+        self.variadic.insert(
+            open,
+            VariadicBinding {
+                spec: source_spec,
+                #[cfg(feature = "lsp")]
+                origin: self
+                    .operator_uses
+                    .as_ref()
+                    .map(|_| ResolvedOperatorOrigin::Import { import_span: span }),
+            },
+        );
         Ok(())
+    }
+
+    #[cfg(feature = "lsp")]
+    fn record_use(&self, span: Span, origin: Option<ResolvedOperatorOrigin>) {
+        if let Some(uses) = &self.operator_uses {
+            uses.borrow_mut()
+                .push((span, origin.expect("captured bindings retain their origin")));
+        }
     }
 }
 
@@ -1302,8 +1437,12 @@ fn module_path_str(p: &ModulePath) -> String {
 fn build_module_scope(
     module: &Module<Surface>,
     package: &PackageOpScope,
+    #[cfg(feature = "lsp")] capture_operator_uses: bool,
 ) -> Result<(OpScope, Vec<Import>), Error> {
-    let mut scope = OpScope::new();
+    let mut scope = OpScope::new(
+        #[cfg(feature = "lsp")]
+        capture_operator_uses,
+    );
     let mut occupied = module_binding_names(module);
     let mut builtin_imports = RoutedBuiltinImports::from_module(module);
     // Keep one deterministic source-module path to synthetic-alias map for
@@ -2067,8 +2206,11 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
             }
             let callee = path_to_expr(&binding.function, meta.span);
             let args: Vec<CallArg<Surface>> = slots.into_iter().map(CallArg::Value).collect();
+            #[cfg(feature = "lsp")]
+            scope.record_use(meta.span, binding.origin);
             Ok(Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(callee),
                 args,
                 meta,
@@ -2094,7 +2236,10 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
                     ),
                 ));
             };
-            build_variadic_fold(&binding.spec, elements, meta.span)
+            let folded = build_variadic_fold(&binding.spec, elements, meta.span)?;
+            #[cfg(feature = "lsp")]
+            scope.record_use(meta.span, binding.origin);
+            Ok(folded)
         }
     }
 }
@@ -2104,12 +2249,6 @@ fn build_variadic_fold(
     mut elements: Vec<Expr<Surface>>,
     span: Span,
 ) -> Result<Expr<Surface>, Error> {
-    // Inferred call arguments are keyed by source span and slot. A fold's
-    // opening-token position is unique in the module, while the element
-    // ends within that fold are distinct, so prefix spans keep synthesized
-    // calls disjoint even when a recursively folded element has inherited
-    // an inner call's end. The identity depends only on use-site tokens, not
-    // declarations.
     let base_span = Span::new(span.start, span.start);
     let requires_element = spec.mode.requires_element();
     if elements.is_empty() {
@@ -2174,6 +2313,7 @@ fn callable_spec_to_call(
     let call_args: Vec<CallArg<Surface>> = args.into_iter().map(CallArg::Value).collect();
     Expr::Call {
         occurrence: Default::default(),
+        diagnostic: Default::default(),
         callee: Box::new(callee),
         args: call_args,
         meta: Meta::new(span),
@@ -2383,6 +2523,182 @@ mod tests {
         let mut m = module;
         fold_module(&mut m, &pkg).expect("fold_module");
         m
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn operator_use_capture_records_exact_bindings_without_changing_folding() {
+        let provider = p("module syntax;
+             pub fn combine(left: ., right: .) -> . { left }
+             pub fn empty() -> . { () }
+             pub op _ + _ { impl combine; };
+             pub op _ - _ { impl combine; };
+             pub varop [% %] { foldl combine empty; };");
+        let source = "module consumer;
+             import syntax(op _ + _, op _ - _, varop [% %]);
+             fn local(left: ., right: .) -> . { left }
+             fn empty() -> . { () }
+             op _ * _ { impl local; };
+             op _ / _ { impl local; };
+             varop [! !] { foldr local empty; };
+             fn imported_fixed(combine: ., right: .) -> . { combine + right }
+             fn local_fixed(local: ., right: .) -> . { local * right }
+             fn imported_fold() -> . { [% (), () %] }
+             fn local_fold() -> . { [! (), () !] }";
+        let consumer = p(source);
+        let span = |text: &str| {
+            let start = source.find(text).unwrap() as u32;
+            Span::new(start, start + text.len() as u32)
+        };
+        let modules = vec![
+            (PathBuf::from("syntax.kio"), provider),
+            (PathBuf::from("consumer.kio"), consumer.clone()),
+        ];
+        let (ordinary, package) = fold_package_named_with_scope(modules.clone(), None).unwrap();
+        let (observed, _, uses) = fold_package_named_for_lsp(modules, None).unwrap();
+        assert_eq!(ordinary, observed);
+        let expected = [
+            (
+                "combine + right",
+                ResolvedOperatorOrigin::Import {
+                    import_span: span("op _ + _"),
+                },
+            ),
+            (
+                "local * right",
+                ResolvedOperatorOrigin::Local {
+                    declaration_span: span("op _ * _ { impl local; }"),
+                },
+            ),
+            (
+                "[% (), () %]",
+                ResolvedOperatorOrigin::Import {
+                    import_span: span("varop [% %]"),
+                },
+            ),
+            (
+                "[! (), () !]",
+                ResolvedOperatorOrigin::Local {
+                    declaration_span: span("varop [! !] { foldr local empty; }"),
+                },
+            ),
+        ]
+        .into_iter()
+        .map(|(site, origin)| ResolvedOperatorUse {
+            source_module: "consumer".into(),
+            use_span: span(site),
+            origin,
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(uses, expected);
+
+        let (uncaptured, _) = build_module_scope(&consumer, &package, false).unwrap();
+        assert!(uncaptured.operator_uses.is_none());
+        assert!(
+            uncaptured
+                .normal
+                .values()
+                .all(|binding| binding.origin.is_none())
+        );
+        assert!(
+            uncaptured
+                .variadic
+                .values()
+                .all(|binding| binding.origin.is_none())
+        );
+        let (captured, _) = build_module_scope(&consumer, &package, true).unwrap();
+        assert_eq!(
+            captured.operator_uses.as_ref().unwrap().borrow().capacity(),
+            0
+        );
+        assert!(
+            captured
+                .normal
+                .values()
+                .all(|binding| binding.origin.is_some())
+        );
+        assert!(
+            captured
+                .variadic
+                .values()
+                .all(|binding| binding.origin.is_some())
+        );
+        assert_eq!(
+            std::mem::size_of::<Result<(), ModuleFoldError>>(),
+            std::mem::size_of::<Option<ModuleFoldError>>(),
+        );
+        eprintln!(
+            "operator capture layout: scope={} normal={} variadic={} origin={} use={}; ordinary capture=None, retained origins=0, capture capacity before uses=0",
+            std::mem::size_of::<OpScope>(),
+            std::mem::size_of::<NormalBinding>(),
+            std::mem::size_of::<VariadicBinding>(),
+            std::mem::size_of::<Option<ResolvedOperatorOrigin>>(),
+            std::mem::size_of::<ResolvedOperatorUse>(),
+        );
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn operator_use_capture_discards_failed_module_observations() {
+        let mut module = p("module main;
+             fn combine(left: ., right: .) -> . { left }
+             fn seed(value: .) -> . { value }
+             op _ + _ { impl combine; };
+             varop [% %] { foldl1 combine seed; };
+             fn first() -> . { () + () }
+             fn rejected() -> . { [% %] }");
+        let package = PackageOpScope::from_modules_named(
+            &[(PathBuf::from("main.kio"), module.clone())],
+            None,
+        )
+        .unwrap();
+        let mut uses = Vec::new();
+        let error = fold_module_observed(&mut module, &package, Some(&mut uses)).unwrap_err();
+        assert!(
+            error
+                .diag()
+                .1
+                .contains("requires at least one complete element")
+        );
+        assert!(uses.is_empty());
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn operator_use_capture_records_only_successful_resolution() {
+        let module = p("module main;
+             fn combine(left: ., right: .) -> . { left }
+             fn seed(value: .) -> . { value }
+             op _ + _ { impl combine; };
+             varop [% %] { foldl1 combine seed; };
+             fn fixed() -> . { () + () }
+             fn variadic() -> . { [% %] }");
+        let package = PackageOpScope::from_modules_named(
+            &[(PathBuf::from("main.kio"), module.clone())],
+            None,
+        )
+        .unwrap();
+        let (scope, _) = build_module_scope(&module, &package, true).unwrap();
+        let Item::FnDef(fixed) = &module.items[4] else {
+            panic!("fixed function")
+        };
+        let mut missing_slot = fixed.body.clone();
+        let Expr::OpChain {
+            kind: OpChainKind::Normal { slots, .. },
+            ..
+        } = &mut missing_slot
+        else {
+            panic!("normal chain")
+        };
+        slots.pop();
+        assert!(resolve_op_chain(missing_slot, &scope).is_err());
+        let Item::FnDef(variadic) = &module.items[5] else {
+            panic!("variadic function")
+        };
+        assert!(resolve_op_chain(variadic.body.clone(), &scope).is_err());
+        assert!(scope.operator_uses.as_ref().unwrap().borrow().is_empty());
+        resolve_op_chain(fixed.body.clone(), &scope).unwrap();
+        assert_eq!(scope.operator_uses.as_ref().unwrap().borrow().len(), 1);
     }
 
     #[test]

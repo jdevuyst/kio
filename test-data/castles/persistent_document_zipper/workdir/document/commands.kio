@@ -12,7 +12,7 @@ import testapi/text as text;
 fn with_argument(state: session.Session, operation: (session.Session & String) -> session.Session) -> session.Session {
   match! io.read_ascii_line() {
     .(value: String) {
-      io.print(text.string_concat("  value: [", text.string_concat(value, "]\n")));
+      io.print(value.>text.string_concat("]\n").>>text.string_concat("  value: ["));
       if! text.string_eq(value, "") {
         session.error(state, "name must not be empty")
       } else {
@@ -44,7 +44,7 @@ fn after(state: session.Session, title: String) -> session.Session {
 }
 
 pub fn execute(state: session.Session, command: String) -> session.Session {
-  io.print(text.string_concat("> ", text.string_concat(command, "\n")));
+  io.print(command.>text.string_concat("\n").>>text.string_concat("> "));
   if! text.string_eq(command, "show") {
     session.show(state)
   } else if! text.string_eq(command, "where") {

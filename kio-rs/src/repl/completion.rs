@@ -61,7 +61,7 @@ use crate::pass::parser::ExpressionParseContext;
 use crate::repl_core::commands::{CompletionShape, all_command_spellings};
 use crate::repl_core::completion::{
     AstScopeProvider, Candidate, ScopeProvider, complete, expression_input_start,
-    expression_target, first_token, item_allowed_for_command, shape_for_position, word_start,
+    expression_target, first_token, shape_for_position, word_start,
 };
 use crate::repl_core::highlight::{self, Palette};
 
@@ -172,54 +172,16 @@ fn candidates_for_shape(
     command: &str,
     prefix: &str,
 ) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    match shape {
-        CompletionShape::None | CompletionShape::Expression => {}
-        CompletionShape::ModulePath => {
-            for m in &names.modules {
-                if m.path.starts_with(prefix) {
-                    out.push(m.path.clone());
-                }
-            }
-        }
-        CompletionShape::NameOrFqn
-        | CompletionShape::NameOrFqnOrBuiltin
-        | CompletionShape::NameFqnOrOp
-        | CompletionShape::NameFqnOpOrBuiltin => {
-            for it in &names.items {
-                if !item_allowed_for_command(it.kind, command) {
-                    continue;
-                }
-                if it.short_name.starts_with(prefix) {
-                    out.push(it.short_name.clone());
-                }
-                if it.fqn.starts_with(prefix) {
-                    out.push(it.fqn.clone());
-                }
-            }
-            if matches!(
-                shape,
-                CompletionShape::NameFqnOrOp | CompletionShape::NameFqnOpOrBuiltin
-            ) {
-                for op in &names.operators {
-                    if op.grammar.starts_with(prefix) {
-                        out.push(op.grammar.clone());
-                    }
-                }
-            }
-            if matches!(
-                shape,
-                CompletionShape::NameOrFqnOrBuiltin | CompletionShape::NameFqnOpOrBuiltin
-            ) {
-                for builtin in &names.builtins {
-                    if builtin.name.starts_with(prefix) {
-                        out.push(builtin.name.clone());
-                    }
-                }
-            }
-        }
+    if matches!(shape, CompletionShape::None | CompletionShape::Expression) {
+        return Vec::new();
     }
-    out
+    let line = format!(":{command} {prefix}");
+    complete(names, &AstScopeProvider::new(names), &line, line.len())
+        .candidates
+        .into_iter()
+        .map(|candidate| candidate.label)
+        .filter(|label| label.starts_with(prefix))
+        .collect()
 }
 
 /// The ghost-text suffix to predict after `word`, given the
@@ -367,13 +329,18 @@ impl ReplHinter {
     /// identifiers at an expression position (a bare line or a
     /// `:normalize` argument).
     fn predict(&self, line: &str, pos: usize) -> String {
+        let shape = shape_for_position(line);
+        let declaration = matches!(
+            shape,
+            CompletionShape::NameFqnOrOp | CompletionShape::NameFqnOpOrBuiltin
+        );
         let context = self
             .names
             .lock()
             .expect("name-set mutex not poisoned")
             .expression_parse_context
             .clone();
-        if !input_is_complete_with_context(line, context.as_deref()) {
+        if !declaration && !input_is_complete_with_context(line, context.as_deref()) {
             return String::new();
         }
         let trimmed = line.trim_start();
@@ -384,6 +351,19 @@ impl ReplHinter {
         if !trimmed.starts_with(':') {
             return identifier_hint(&names, line, pos);
         }
+        if declaration && line[..pos].contains(char::is_whitespace) {
+            let completion = complete(&names, &AstScopeProvider::new(&names), line, pos);
+            let prefix = &line[completion.replace.start..pos];
+            return hint_from(
+                completion
+                    .candidates
+                    .into_iter()
+                    .map(|candidate| candidate.label)
+                    .filter(|label| label.starts_with(prefix))
+                    .collect(),
+                prefix,
+            );
+        }
         let word_start = word_start(line, pos);
         let word = &line[word_start..pos];
         if word.is_empty() {
@@ -392,7 +372,6 @@ impl ReplHinter {
         if word_start == 0 {
             return hint_from(command_candidates(word), word);
         }
-        let shape = shape_for_position(line);
         if shape == CompletionShape::Expression {
             return identifier_hint(&names, line, pos);
         }
@@ -511,6 +490,36 @@ mod tests {
 
     fn completer_with(set: NameSet) -> ReplCompleter {
         ReplCompleter::new(Arc::new(Mutex::new(set)))
+    }
+
+    #[test]
+    fn type_only_lambda_completion_and_validation_keep_written_binders() {
+        let mut completer = completer_with(NameSet {
+            current_module_src: Some("module app; type Existing = .;".to_owned()),
+            ..NameSet::default()
+        });
+        for prefix in ["", ":normalize "] {
+            for (expression, expected) in [
+                (".[", vec![]),
+                (".[B", vec![]),
+                (".[B] -> ", vec!["B", "Existing"]),
+                (".[B] { .(value: ", vec!["B", "Existing"]),
+            ] {
+                let input = format!("{prefix}{expression}");
+                let suggestions = completer.complete(&input, input.len());
+                let mut labels: Vec<_> =
+                    suggestions.iter().map(|item| item.value.as_str()).collect();
+                labels.sort_unstable();
+                assert_eq!(labels, expected, "{input}: {suggestions:?}");
+                for suggestion in suggestions {
+                    assert_eq!(suggestion.span, Span::new(input.len(), input.len()));
+                }
+            }
+        }
+        assert!(!validates_complete(":type .[B"));
+        assert!(!validates_complete(":type .[B] {"));
+        assert!(validates_complete(":type .[B] { () }"));
+        assert!(validates_complete(":normalize .[B] { () }(.)"));
     }
 
     #[test]
@@ -635,6 +644,26 @@ mod tests {
 
     fn hinter_with(set: NameSet) -> ReplHinter {
         ReplHinter::new(Arc::new(Mutex::new(set)))
+    }
+
+    #[test]
+    fn qualified_operator_completion_and_hint_insert_the_whole_selector() {
+        let names = imported_bracket_operator_names();
+        let shared = Arc::new(Mutex::new(names));
+        let completer = ReplCompleter::new(shared.clone());
+        let hinter = ReplHinter::new(shared);
+        let line = ":sig app/syntax.(varop [*";
+        let choices = completer.route(line, line.len());
+        let selected = choices
+            .iter()
+            .find(|choice| choice.value == "app/syntax.(varop [* *])")
+            .unwrap();
+        assert_eq!(selected.span, Span::new(5, line.len()));
+        assert_eq!(hint_for(&hinter, line), " *])");
+        assert_eq!(
+            format!("{line}{}", hint_for(&hinter, line)),
+            format!(":sig {}", selected.value)
+        );
     }
 
     fn hint_for(hinter: &ReplHinter, line: &str) -> String {

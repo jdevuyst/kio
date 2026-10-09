@@ -185,6 +185,58 @@ fn run_repl(package_dir: &Path, transcript: &[&str]) -> String {
 }
 
 #[test]
+fn repl_declaration_selectors_and_operator_listing() {
+    let package = TempPackage::new("declaration-selectors");
+    for (path, source) in [
+        (
+            "demo/main.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/main.kio"
+            ),
+        ),
+        (
+            "demo/ops.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/ops.kio"
+            ),
+        ),
+        (
+            "demo/other.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/other.kio"
+            ),
+        ),
+    ] {
+        package.write(path, source);
+    }
+    let output = run_repl(
+        package.path(),
+        &[
+            ":load demo/main",
+            ":ls demo/ops",
+            ":sig arithmetic.(op _ + _)",
+            ":sig arithmetic.(varop [* *])",
+            ":refs arithmetic.(op _ + _)",
+            ":quit",
+        ],
+    );
+    assert!(
+        output.contains("  pub op _ + _\n") && output.contains("  pub varop [* *]\n"),
+        "{output}"
+    );
+    assert!(
+        output.contains("pub op _ + _ { impl choose }")
+            && output.contains("pub varop [* *] { foldr choose empty }"),
+        "{output}"
+    );
+    assert!(
+        output.contains("in fn use") && !output.contains("in fn unrelated"),
+        "{output}"
+    );
+    assert!(!output.contains("did not resolve"), "{output}");
+}
+
+#[test]
 fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
     let package = TempPackage::new("trailing-blocks");
     package.write("app.pkg.kio", "package app; bridge { app; provider; }");
@@ -944,6 +996,55 @@ fn repl_unload_cascades_implicit_dep() {
 }
 
 #[test]
+fn repl_reference_ownership() {
+    let package = TempPackage::new("reference-ownership");
+    for (path, source) in [
+        (
+            "demo/a.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/a.kio"
+            ),
+        ),
+        (
+            "demo/b.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/b.kio"
+            ),
+        ),
+        (
+            "demo/main.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/main.kio"
+            ),
+        ),
+    ] {
+        package.write(path, source);
+    }
+    let out = run_repl_with_args(
+        package.path(),
+        &["demo/main"],
+        &[
+            ":refs truth",
+            ":refs second.truth",
+            ":refs first.proof",
+            ":refs build",
+            ":refs {field}",
+            ":refs second.{field}",
+            ":refs field",
+            ":refs proof",
+            ":refs first.field",
+            ":which proof",
+            ":quit",
+        ],
+    );
+    assert_eq!(
+        out.trim_end(),
+        include_str!("../../test-data/goldens/00_success/repl_reference_ownership/expected.stdout")
+            .trim_end()
+    );
+}
+
+#[test]
 fn repl_which_and_refs() {
     let pkg = TempPackage::new("whichrefs");
     pkg.write_demo_package();
@@ -1203,7 +1304,7 @@ fn repl_synonyms_accepted() {
 fn repl_rejects_garbage_expression_input() {
     // A non-`:` line is an expression query. Multi-token garbage that
     // matches no kind — not a name, not an expression, not a module
-    // path — prints the single honest invalid-input line.
+    // path — keeps the invalid-input guidance above its syntax explanation.
     let pkg = minimal_package("garbageexpr");
     let out = run_repl(pkg.path(), &[":load demo/main", "hello world", ":quit"]);
     assert!(
@@ -1245,7 +1346,7 @@ fn repl_bare_compound_prints_type_and_normal_form() {
 
 #[test]
 fn repl_bare_input_neither_prints_the_invalid_line() {
-    // Input that matches no kind prints one honest line pointing at
+    // Input that matches no kind keeps its category guidance pointing at
     // `:help` — not the retired fixed `:doc`/`:normalize` two-command dump.
     let pkg = minimal_package("bareneither");
     let out = run_repl(pkg.path(), &["hello world", ":quit"]);
@@ -1313,15 +1414,39 @@ fn repl_type_on_module_path_points_at_ls() {
 }
 
 #[test]
-fn repl_type_on_garbage_gives_invalid_line_not_parser_error() {
-    // `:t 1 +` — an incomplete expression — gives the kind-classified
-    // invalid-input line, never the wrapper-leaked "expected `;`".
+fn repl_type_on_garbage_reports_cause_without_wrapper_framing() {
     let pkg = minimal_package("typegarbage");
     let out = run_repl(pkg.path(), &[":load demo/main", ":t 1 +", ":quit"]);
     assert!(
         !out.contains("expected `;`"),
         "no synthetic wrapper `;` should leak, got:\n{out}"
     );
+    assert!(out.contains("not a name or a Kio expression"), "{out}");
+    assert!(out.contains("<repl>:1:"), "{out}");
+    assert!(out.contains('^'), "{out}");
+}
+
+#[test]
+fn repl_parse_cause_marks_the_actual_prompt_in_all_expression_views() {
+    let pkg = minimal_package("parsecause");
+    for prefix in ["", ":t ", ":pure ", ":normalize "] {
+        let input = format!("{prefix}index([1], 0)");
+        let out = run_repl(
+            pkg.path(),
+            &[":load demo/main", &input, ":normalize ()", ":quit"],
+        );
+        assert!(out.contains("not a name or a Kio expression"), "{out}");
+        assert!(
+            out.contains("<repl>:1:8: error: expected identifier"),
+            "{out}"
+        );
+        assert!(out.contains("1 | index([1], 0)\n  |        ^"), "{out}");
+        assert!(
+            !out.contains("_expr") && !out.contains("_repl_parse_check_"),
+            "{out}"
+        );
+        assert!(out.lines().any(|line| line == "()"), "{out}");
+    }
 }
 
 #[test]
@@ -1472,6 +1597,108 @@ fn repl_compound_expression_normalizes() {
 }
 
 #[test]
+fn repl_type_only_named_and_anonymous_types() {
+    let pkg = TempPackage::new("type-only-types");
+    pkg.write_demo_package();
+    pkg.write(
+        "demo/main.kio",
+        "module demo/main;\npub fn mark[A] { () }\n",
+    );
+    let out = run_repl(
+        pkg.path(),
+        &[
+            ":load demo/main",
+            ":type mark",
+            ":type mark(.)",
+            ":type .[B] { () }",
+            ":type .[B] { .(value: B) { value } }",
+            ":quit",
+        ],
+    );
+    for expected in [
+        "mark : [A] .",
+        "mark(.) : .",
+        ".[B] { () } : [B] .",
+        ".[B] { .(value: B) { value } } : [B] B -> B",
+    ] {
+        assert!(out.lines().any(|line| line == expected), "{out}");
+    }
+    assert!(!out.contains("does not type-check"), "{out}");
+}
+
+#[test]
+fn repl_type_only_normalization_preserves_written_applications() {
+    let pkg = TempPackage::new("type-only-normalization");
+    pkg.write_demo_package();
+    pkg.write(
+        "demo/main.kio",
+        "module demo/main;\n\
+         pub fn mark[A] { () }\n\
+         pub fn nested[A] -> [B] . { .[B] { () } }\n",
+    );
+    let out = run_repl(
+        pkg.path(),
+        &[
+            ":load demo/main",
+            ":normalize mark(.)",
+            ":normalize nested(.)",
+            ":normalize nested(.)(.)",
+            ":type .[A] { .(value: A) { value } }(., ())",
+            ":normalize .[A] { .(value: A) { value } }(., ())",
+            ":quit",
+        ],
+    );
+    assert!(
+        out.lines()
+            .any(|line| line == ".[A] { .(value: A) { value } }(., ()) : ."),
+        "{out}"
+    );
+    assert_eq!(out.lines().filter(|line| *line == "()").count(), 3, "{out}");
+    assert!(
+        out.lines()
+            .any(|line| line.starts_with("<closure demo/main.nested::<")),
+        "{out}"
+    );
+    assert!(!out.contains("does not type-check"), "{out}");
+}
+
+#[test]
+fn repl_type_only_explicit_unit_residual_query() {
+    let pkg = TempPackage::new("type-only-unit-residual");
+    pkg.write_demo_package();
+    pkg.write(
+        "demo/main.kio",
+        "module demo/main;\npub fn delayed[A]() { () }\n",
+    );
+    let out = run_repl(
+        pkg.path(),
+        &[
+            ":load demo/main",
+            ":type delayed",
+            ":type delayed(.)",
+            ":normalize delayed(.)",
+            ":type delayed(., ())",
+            ":normalize delayed(., ())",
+            ":quit",
+        ],
+    );
+    for expected in [
+        "delayed : [A] . -> .",
+        "delayed(.) : . -> .",
+        "delayed(., ()) : .",
+    ] {
+        assert!(out.lines().any(|line| line == expected), "{out}");
+    }
+    assert_eq!(out.lines().filter(|line| *line == "()").count(), 1, "{out}");
+    assert!(
+        out.lines()
+            .any(|line| line.starts_with("<closure demo/main.") && line.ends_with('>')),
+        "{out}"
+    );
+    assert!(!out.contains("does not type-check"), "{out}");
+}
+
+#[test]
 fn repl_normalize_and_t_expression_commands() {
     // `:normalize <expr>` prints the residual NF; `:t <expr>` prints the
     // synthesized type. Exercise both over a function call: the call
@@ -1494,7 +1721,7 @@ fn repl_normalize_and_t_expression_commands() {
     );
     // `:t` reports the call's synthesized type.
     assert!(
-        out.contains("greeting() : (. & .)"),
+        out.lines().any(|line| line == "greeting() : . & ."),
         "`:t <expr>` should print the type, got:\n{out}"
     );
     // `:normalize` reduces `greeting()` to its body's value.

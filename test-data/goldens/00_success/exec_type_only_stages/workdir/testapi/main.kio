@@ -1,0 +1,50 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+pub fn named[A] -> String { print("named\n"(String)); "named result\n"(String) }
+
+fn nested[A] -> [B] String {
+  print("outer\n"(String));
+  .[B] { print("inner\n"(String)); "nested result\n"(String) }
+}
+
+fn adjacent[A][B] -> String { print("adjacent\n"(String)); "adjacent result\n"(String) }
+
+fn returned() -> [A] String {
+  print("returning\n"(String));
+  .[A] { print("returned\n"(String)); "returned result\n"(String) }
+}
+
+fn explicit[A]() -> String { print("unit\n"(String)); "unit result\n"(String) }
+
+fn bundled() -> ([A] String) & . { __pair__([A] String, ., named, ()) }
+
+pub fn main() {
+  print("start\n"(String));
+  let saved = named;
+  print("saved\n"(String));
+  print(saved(.));
+  let inner = nested(.);
+  print("between nested\n"(String));
+  print(inner(.));
+  let second = adjacent(.);
+  print("between adjacent\n"(String));
+  print(second(.));
+  let capture = "captured result\n"(String);
+  let anonymous = .[A] { print("anonymous\n"(String)); capture };
+  print("captured\n"(String));
+  print(anonymous(.));
+  let produced = returned();
+  print("between returned\n"(String));
+  print(produced(.));
+  let thunk = explicit(.);
+  print("before unit\n"(String));
+  print(thunk());
+  let pair = bundled();
+  print("bundled\n"(String));
+  print(__fst__([A] String, ., pair)(.))
+}

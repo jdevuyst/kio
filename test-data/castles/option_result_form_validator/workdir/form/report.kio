@@ -36,15 +36,15 @@ fn invite102() -> Form {
     , age = some(29)
     , country = some("NL")
     , terms = some(.t)
-    , nickname = none(String, ())
+    , nickname = none(String)
     }
 }
 
 fn invite204() -> Form {
   {
-    , email = none(String, ())
+    , email = none(String)
     , age = some(15)
-    , country = none(String, ())
+    , country = none(String)
     , terms = some(.f)
     , nickname = some("q")
     }

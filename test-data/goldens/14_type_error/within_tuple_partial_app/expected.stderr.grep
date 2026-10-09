@@ -1,1 +1,1 @@
-expected `\(A & B\)`, found `A`
+expected `A & B`, found `A`

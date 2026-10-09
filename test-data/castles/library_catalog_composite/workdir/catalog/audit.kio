@@ -76,7 +76,7 @@ fn row(label: String, count: I32) -> String { label.>cat(istr(count)) }
 /// string-length capability in the host tier.
 pub fn tally_lines(reasons: Audit_list) -> Line_list {
   let .(counts: Tally) = tally(reasons);
-  let rows = lcore.nil(String, ());
+  let rows = lcore.nil(String);
   let rows = lcore.cons(row("copies still available  ", counts.?{e_hold}), rows);
   let rows = lcore.cons(row("member does not hold    ", counts.?{e_held}), rows);
   let rows = lcore.cons(row("no copies left          ", counts.?{e_copies}), rows);

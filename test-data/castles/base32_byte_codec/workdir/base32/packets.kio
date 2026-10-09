@@ -23,7 +23,7 @@ fn glyph(rest: alphabet.Glyphs, spelling: String) -> alphabet.Glyphs { list.cons
 /// The ASCII bytes of `Kio!` and a newline. Five bytes is exactly one
 /// forty-bit quantum, so this payload encodes with no padding at all.
 fn payload_a() -> alphabet.Bytes {
-  list.reverse(list.nil(I32, ()).>byte(75).>byte(105).>byte(111).>byte(33).>byte(10))
+  list.reverse(list.nil(I32).>byte(75).>byte(105).>byte(111).>byte(33).>byte(10))
 }
 
 /// Seven bytes chosen to sit at the edges of the byte range — an empty
@@ -31,21 +31,14 @@ fn payload_a() -> alphabet.Bytes {
 /// dropped or misplaced bit shows up in the transmission. Seven bytes
 /// leave four glyphs of the quantum unfilled.
 fn payload_b() -> alphabet.Bytes {
-  list.reverse(list.nil(I32, ())
-    .>byte(0)
-    .>byte(255)
-    .>byte(128)
-    .>byte(1)
-    .>byte(64)
-    .>byte(32)
-    .>byte(16))
+  list.reverse(list.nil(I32).>byte(0).>byte(255).>byte(128).>byte(1).>byte(64).>byte(32).>byte(16))
 }
 
 /// The ASCII bytes of `hello world`. Eleven bytes overrun two whole
 /// quanta by a single byte, which is the widest padding the scheme
 /// produces: six glyphs.
 fn payload_c() -> alphabet.Bytes {
-  list.reverse(list.nil(I32, ())
+  list.reverse(list.nil(I32)
     .>byte(104)
     .>byte(101)
     .>byte(108)
@@ -61,20 +54,18 @@ fn payload_c() -> alphabet.Bytes {
 
 /// The ASCII bytes of `foo`. Three bytes produce five data glyphs and
 /// therefore three padding glyphs.
-fn payload_d() -> alphabet.Bytes {
-  list.reverse(list.nil(I32, ()).>byte(102).>byte(111).>byte(111))
-}
+fn payload_d() -> alphabet.Bytes { list.reverse(list.nil(I32).>byte(102).>byte(111).>byte(111)) }
 
 /// The ASCII bytes of `foob`. Four bytes produce seven data glyphs and
 /// therefore one padding glyph.
 fn payload_e() -> alphabet.Bytes {
-  list.reverse(list.nil(I32, ()).>byte(102).>byte(111).>byte(111).>byte(98))
+  list.reverse(list.nil(I32).>byte(102).>byte(111).>byte(111).>byte(98))
 }
 
 /// The canonical base32 transmission for `foo`, received without its
 /// original payload.
 fn received_valid() -> alphabet.Glyphs {
-  list.reverse(list.nil(String, ())
+  list.reverse(list.nil(String)
     .>glyph("M")
     .>glyph("Z")
     .>glyph("X")
@@ -91,7 +82,7 @@ fn received_valid() -> alphabet.Glyphs {
 /// is what lets the decoder catch the slip instead of quietly recovering
 /// the wrong bytes.
 fn damaged() -> alphabet.Glyphs {
-  list.reverse(list.nil(String, ())
+  list.reverse(list.nil(String)
     .>glyph("J")
     .>glyph("N")
     .>glyph("U")
@@ -112,7 +103,7 @@ fn queue(rest: list.List(Fixture), fixture: Fixture) -> list.List(Fixture) {
 
 /// The fixtures in transmission order.
 pub fn fixtures() -> list.List(Fixture) {
-  list.reverse(list.nil(Fixture, ())
+  list.reverse(list.nil(Fixture)
     .>queue(to_encode(payload_a()))
     .>queue(to_encode(payload_b()))
     .>queue(to_encode(payload_c()))

@@ -14,7 +14,7 @@ import testapi/io(print);
 // with a large stack (`run_on_worker`; `KIO_STACK_SIZE_MB` overrides),
 // so depth is bounded by available stack, not a fixed limit. The body
 // is a single `print` at the bottom, so the program builds and runs.
-fn deep() -> . {
+fn deep() {
   match!() {
     .(_u: .) {
       match!() {
@@ -818,4 +818,4 @@ fn deep() -> . {
   }
 }
 
-pub fn main() -> . { deep() }
+pub fn main() { deep() }

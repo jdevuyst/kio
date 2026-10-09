@@ -50,6 +50,15 @@ private supporting shards; host code imports `greeter`, never a shard.
 
 The emitted module targets Python 3.10+ and uses only the standard library.
 
+### Generated documentation
+
+Documented package functions expose their Kio prose through `__doc__`, `help()`,
+and `pydoc`. Typed stubs also carry docstrings on host and package methods,
+public newtype classes, and parameterized host-type classes. Host types that
+are only generic parameters have no separate docstring. Your own host callable
+objects are not modified. See
+[boundary documentation](../../specs/backends/python.md#boundary-documentation).
+
 ## Loading the package
 
 A Python host brings the package online in three steps.
@@ -192,7 +201,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n") }
+pub fn main() { print("hello from kio\n") }
 ```
 
 Python host:

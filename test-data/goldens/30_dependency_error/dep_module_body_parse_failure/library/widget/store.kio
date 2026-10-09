@@ -1,5 +1,5 @@
 module store;
 
-pub fn wrap(x: .) -> . { x }
+pub fn wrap(x: .) { x }
 
-pub fn broken(x: .) -> . { ( }
+pub fn broken(x: .) { ( }

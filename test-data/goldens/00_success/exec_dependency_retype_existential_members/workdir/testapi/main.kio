@@ -10,4 +10,4 @@ import widget/store as widget;
 
 fn read_counterpart(boxed: core.Box(I32)) -> I32 { widget.extract(I32, boxed) }
 
-pub fn main() -> . { print_i32(read_counterpart(widget.boxed(I32, 37(I32)))); print("\n"(String)) }
+pub fn main() { print_i32(read_counterpart(widget.boxed(I32, 37(I32)))); print("\n"(String)) }

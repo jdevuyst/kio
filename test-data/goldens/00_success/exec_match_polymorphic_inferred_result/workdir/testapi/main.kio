@@ -15,7 +15,4 @@ fn handle(value: Box(I32) | Box(String)) -> String {
   }
 }
 
-pub fn main() -> . {
-  print(handle(widen_sum!(Box.box(42))));
-  print(handle(widen_sum!(Box.box("text"))))
-}
+pub fn main() { print(handle(widen_sum!(Box.box(42)))); print(handle(widen_sum!(Box.box("text")))) }

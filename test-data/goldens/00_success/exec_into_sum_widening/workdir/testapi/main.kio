@@ -12,7 +12,7 @@ import testapi/io(print);
 // left arm because that's where `String` lives.
 fn widen(s: String) -> String | I32 { into!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = widen("hello\n");
   // widened : String | I32. Discriminate via `match!` to print a
   // String. The right arm is unreachable in this caller's flow

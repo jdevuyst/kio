@@ -70,4 +70,4 @@ fn round_trip(label: String) -> String {
     )
 }
 
-pub fn main() -> . { print(round_trip("leading nested brand ok\n"(String))) }
+pub fn main() { print(round_trip("leading nested brand ok\n"(String))) }

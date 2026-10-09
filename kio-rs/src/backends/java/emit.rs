@@ -34,7 +34,7 @@ use crate::backends::namespace::pascal_case;
 use crate::backends::public_names::{
     FacadeSelector, encode_host_identity, encode_source_identity, host_module_key, host_name_core,
 };
-use crate::backends::skin::{READABLE_MINT_MAX_LEN, fnv1a_64_hex};
+use crate::backends::skin::{budgeted_mint_name, fnv1a_64_hex};
 use crate::pass::resolve::Package;
 
 use super::skin::{
@@ -89,10 +89,15 @@ fn insert_java_support_origin<K: Ord>(
 
 fn push_java_deprecation(out: &mut String, origin: BoundaryFacadeSupportOrigin, indent: &str) {
     if let Some(removed_at) = origin.removed_at_version() {
+        let note = java_deprecation_note(removed_at);
         out.push_str(&format!(
-            "{indent}/** @deprecated Retained only for source compatibility after removal at contract v{removed_at}. */\n{indent}@Deprecated\n"
+            "{indent}/** @deprecated {note} */\n{indent}@Deprecated\n"
         ));
     }
+}
+
+fn java_deprecation_note(removed_at: u32) -> String {
+    format!("Retained only for source compatibility after removal at contract v{removed_at}.")
 }
 
 fn java_deprecation_annotation(origin: BoundaryFacadeSupportOrigin) -> &'static str {
@@ -769,11 +774,9 @@ fn java_forall_interface_name(
     shapes: &JavaShapes<'_>,
 ) -> Result<String, EmitError> {
     let readable = java_forall_identity(site, plan, root, shapes, encode_host_identity)?;
-    Ok(if readable.len() <= READABLE_MINT_MAX_LEN {
-        readable
-    } else {
+    budgeted_mint_name(readable, |_| {
         let identity = java_forall_exact_identity(site, plan, root, shapes)?;
-        format!("KioForall_H{}", fnv1a_64_hex(&identity))
+        Ok(format!("KioForall_H{}", fnv1a_64_hex(&identity)))
     })
 }
 
@@ -1535,7 +1538,8 @@ fn convert_prepared_function(
     let flat_parameters =
         java_callable_flat_expressions(slots.len(), wide_shell.as_ref(), &parameter_prefix)?;
     let nominal_contexts = source_nominal_contexts(layout, slots.len())?;
-    match direction {
+    let captured = format!("__function_value_{}", id.index());
+    let adapter = match direction {
         JavaFfiDirection::Out => {
             let converted = slots
                 .iter()
@@ -1555,21 +1559,25 @@ fn convert_prepared_function(
             let raw_args =
                 pack_prepared_source_arguments_in_domain(layout, &converted, internal_body)?;
             let call = format!(
-                "((KioRuntime.KioFn) {expression}).call({})",
+                "((KioRuntime.KioFn) {captured}).call({})",
                 raw_args.join(", ")
             );
-            if matches!(plan.use_at(result), FacadeUse::Unit { .. }) {
-                return Ok(format!("({}) -> {{ {call}; }}", parameters.join(", ")));
-            }
-            let returned = convert_facade_use(
-                context,
-                result,
-                binders,
-                &call,
-                JavaFfiDirection::Out,
-                JavaNominalContext::Standalone,
-            )?;
-            Ok(format!("({}) -> {returned}", parameters.join(", ")))
+            let adapter = if matches!(plan.use_at(result), FacadeUse::Unit { .. }) {
+                format!("({}) -> {{ {call}; }}", parameters.join(", "))
+            } else {
+                let returned = convert_facade_use(
+                    context,
+                    result,
+                    binders,
+                    &call,
+                    JavaFfiDirection::Out,
+                    JavaNominalContext::Standalone,
+                )?;
+                format!("({}) -> {returned}", parameters.join(", "))
+            };
+            let function_type =
+                render_prepared_use(site, plan, site.nominals(), id, binders, shapes)?;
+            format!("({function_type}) ({adapter})")
         }
         JavaFfiDirection::In => {
             let raw_count = layout.map_or(slots.len(), CallableValueStageLayout::body_abi_arity);
@@ -1613,23 +1621,27 @@ fn convert_prepared_function(
             } else {
                 public_args
             };
-            let apply = format!("({expression}).apply({})", public_args.join(", "));
+            let apply = format!("({captured}).apply({})", public_args.join(", "));
             if matches!(plan.use_at(result), FacadeUse::Unit { .. }) {
-                return Ok(format!(
-                    "(KioRuntime.KioFn) {raw_parameter} -> {{ {apply}; return null; }}"
-                ));
+                format!("(KioRuntime.KioFn) {raw_parameter} -> {{ {apply}; return null; }}")
+            } else {
+                let returned = convert_facade_use(
+                    context,
+                    result,
+                    binders,
+                    &apply,
+                    JavaFfiDirection::In,
+                    JavaNominalContext::Standalone,
+                )?;
+                format!("(KioRuntime.KioFn) {raw_parameter} -> {returned}")
             }
-            let returned = convert_facade_use(
-                context,
-                result,
-                binders,
-                &apply,
-                JavaFfiDirection::In,
-                JavaNominalContext::Standalone,
-            )?;
-            Ok(format!("(KioRuntime.KioFn) {raw_parameter} -> {returned}"))
         }
-    }
+    };
+    let converted = format!("__convert({expression}, {captured} -> {adapter})");
+    Ok(match direction {
+        JavaFfiDirection::In => format!("(KioRuntime.KioFn) {converted}"),
+        JavaFfiDirection::Out => converted,
+    })
 }
 
 fn direct_polymorphic_payload_function(
@@ -2623,6 +2635,12 @@ fn render_ns_class(
         let args = pack_prepared_callable_arguments(site, &converted)?;
         let call = format!("__fn_{method}.call({})", args.join(", "));
         out.push('\n');
+        push_doc(
+            out,
+            crate::backends::boundary_docs::callable(shapes.package(), site),
+            None,
+            "    ",
+        );
         if f.ret_java == "void" {
             out.push_str(&format!(
                 "    public {method_prefix}void {method}({}) {{\n      {call};\n    }}\n",
@@ -3002,6 +3020,12 @@ fn render_host_interface(
             "p",
         )?;
         let member = host_member_name(&module_path, name);
+        push_doc(
+            &mut out,
+            crate::backends::boundary_docs::callable(shapes.package(), site),
+            None,
+            "  ",
+        );
         match site.origin() {
             PreparedBoundaryCallableOriginRef::Live(_) => out.push_str(&format!(
                 "  {method_prefix}{ret} {member}({});\n",
@@ -3152,7 +3176,7 @@ fn render_shapes_java(
     render_generic_callable_support(&mut out, prepared, shapes);
     render_prepared_forall_interfaces(&mut out, prepared, shapes)?;
     render_nominal_constructor_markers(&mut out, prepared, shapes)?;
-    render_parameterized_host_carriers(&mut out, shapes);
+    render_parameterized_host_carriers(&mut out, prepared, shapes);
     render_prepared_newtype_carriers(&mut out, prepared, shapes)?;
     if let Some(origin) = java_unit_origin(prepared, shapes) {
         out.push('\n');
@@ -3187,15 +3211,17 @@ fn java_facade_shell_name(shell: &FacadeShellId) -> String {
         );
     }
     let readable = shell.encode_public();
-    if readable.len() <= READABLE_MINT_MAX_LEN {
-        readable
-    } else {
+    budgeted_mint_name(readable, |identity| {
         let kind = match shell.kind() {
             FacadeKind::Product => "Product",
             FacadeKind::Sum => "Sum",
         };
-        format!("KioFacade_V1_{kind}_H{}", fnv1a_64_hex(&readable))
-    }
+        Ok::<_, std::convert::Infallible>(format!(
+            "KioFacade_V1_{kind}_H{}",
+            fnv1a_64_hex(identity)
+        ))
+    })
+    .unwrap_or_else(|never| match never {})
 }
 
 fn validate_facade_shell_names(shapes: &JavaShapes<'_>) -> Result<(), EmitError> {
@@ -3846,6 +3872,7 @@ fn render_nominal_constructor_marker(
     kind: JavaNominalConstructorKind,
     marker_parameters: &[String],
     origin: BoundaryFacadeSupportOrigin,
+    doc: Option<&crate::ast::DocComment>,
 ) {
     if parameters.is_empty() {
         return;
@@ -3861,10 +3888,13 @@ fn render_nominal_constructor_marker(
         .collect::<Vec<_>>()
         .join(", ");
     out.push('\n');
-    push_java_deprecation(out, origin, "  ");
+    let note = format!(
+        "Exact constructor marker for `{qualified}` (arity {}; kinds: {kind_list}).",
+        kinds.len()
+    );
+    push_nominal_doc(out, doc, &note, origin, "  ");
     out.push_str(&format!(
-        "  /** Exact constructor marker for `{qualified}` (arity {}; kinds: {kind_list}). */\n  public interface {}{} {{}}\n",
-        kinds.len(),
+        "  public interface {}{} {{}}\n",
         java_nominal_constructor_marker(name, kind),
         java_generic_declaration(marker_parameters)
     ));
@@ -3889,6 +3919,7 @@ fn render_nominal_constructor_markers(
             JavaNominalConstructorKind::HostType,
             &[],
             origin,
+            crate::backends::boundary_docs::host_type(shapes.package(), binding),
         );
     }
     let root_parameters = shapes.live_root_type_parameters().to_vec();
@@ -3900,6 +3931,7 @@ fn render_nominal_constructor_markers(
             JavaNominalConstructorKind::Newtype,
             &root_parameters,
             BoundaryFacadeSupportOrigin::Live,
+            crate::backends::boundary_docs::newtype(shapes.package(), entry),
         );
     }
     for entry in prepared.retained_public_newtypes() {
@@ -3915,12 +3947,17 @@ fn render_nominal_constructor_markers(
             JavaNominalConstructorKind::Newtype,
             &root_parameters,
             BoundaryFacadeSupportOrigin::Retained { removed_at_version },
+            None,
         );
     }
     Ok(())
 }
 
-fn render_parameterized_host_carriers(out: &mut String, shapes: &JavaShapes<'_>) {
+fn render_parameterized_host_carriers(
+    out: &mut String,
+    prepared: &PreparedBoundaryCallableSites,
+    shapes: &JavaShapes<'_>,
+) {
     for binding in shapes
         .host_bindings()
         .filter(|binding| binding.type_arity > 0 || binding.retained_at.is_some())
@@ -3934,11 +3971,17 @@ fn render_parameterized_host_carriers(out: &mut String, shapes: &JavaShapes<'_>)
             .map_or(BoundaryFacadeSupportOrigin::Live, |removed_at_version| {
                 BoundaryFacadeSupportOrigin::Retained { removed_at_version }
             });
-        push_java_deprecation(out, origin, "  ");
-        out.push_str(&format!(
-            "  /** Exact declaration-owned carrier for `{}.{}`. */\n  public interface {}{} {{}}\n",
+        let note = format!(
+            "Exact declaration-owned carrier for `{}.{}`.",
             binding.name.module_segments().join("."),
             binding.name.name(),
+        );
+        let doc = prepared.host_binding(&binding.name).and_then(|binding| {
+            crate::backends::boundary_docs::host_type(shapes.package(), binding)
+        });
+        push_nominal_doc(out, doc, &note, origin, "  ");
+        out.push_str(&format!(
+            "  public interface {}{} {{}}\n",
             binding.carrier(),
             java_generic_declaration(&parameters)
         ));
@@ -3976,6 +4019,11 @@ fn render_prepared_newtype_carriers(
         let declaration = java_generic_declaration(&parameters);
         let transparent = matches!(entry.surface(), BoundaryNewtypeSurface::Both { .. })
             && entry.existential_params().is_empty();
+        let doc = if matches!(origin, BoundaryFacadeSupportOrigin::Live) {
+            crate::backends::boundary_docs::newtype(shapes.package(), entry)
+        } else {
+            None
+        };
         if transparent {
             let (payload, site, _) = prepared_newtype_payload_owner(prepared, shapes, name)?
                 .ok_or_else(|| {
@@ -4000,6 +4048,7 @@ fn render_prepared_newtype_carriers(
                 shapes,
             )?;
             out.push('\n');
+            push_doc(out, doc, None, "  ");
             push_java_deprecation(out, origin, "  ");
             out.push_str(&format!(
                 "  public record {carrier}{declaration}({}{payload_ty} value) {{\n    {}public {carrier}({payload_ty} value) {{ this.value = value; }}\n  }}\n",
@@ -4008,6 +4057,7 @@ fn render_prepared_newtype_carriers(
             ));
         } else {
             out.push('\n');
+            push_doc(out, doc, None, "  ");
             push_java_deprecation(out, origin, "  ");
             out.push_str(&format!(
                 "  public static final class {carrier}{declaration} {{\n    final Object value;\n    {carrier}(Object value) {{ this.value = value; }}\n    Object value() {{ return value; }}\n  }}\n"
@@ -4015,6 +4065,48 @@ fn render_prepared_newtype_carriers(
         }
     }
     Ok(())
+}
+
+fn push_nominal_doc(
+    out: &mut String,
+    doc: Option<&crate::ast::DocComment>,
+    note: &str,
+    origin: BoundaryFacadeSupportOrigin,
+    indent: &str,
+) {
+    if let Some(removed_at) = origin.removed_at_version() {
+        let deprecation = java_deprecation_note(removed_at);
+        // Javadoc attaches only the nearest comment to the declaration.
+        out.push_str(&format!(
+            "{indent}/** {note}\n{indent} * @deprecated {deprecation}\n{indent} */\n{indent}@Deprecated\n"
+        ));
+    } else {
+        push_doc(out, doc, Some(note), indent);
+    }
+}
+
+fn push_doc(
+    out: &mut String,
+    doc: Option<&crate::ast::DocComment>,
+    note: Option<&str>,
+    indent: &str,
+) {
+    let Some(doc) = doc else {
+        if let Some(note) = note {
+            out.push_str(&format!("{indent}/** {note} */\n"));
+        }
+        return;
+    };
+    let mut body = crate::backends::doc::render(doc, crate::backends::doc::Dialect::JavadocHtml);
+    if let Some(note) = note {
+        body.push_str("\n\n");
+        body.push_str(note);
+    }
+    for line in crate::backends::doc::javadoc(&body).lines() {
+        out.push_str(indent);
+        out.push_str(line);
+        out.push('\n');
+    }
 }
 
 fn render_runtime(namespace: &str) -> String {
@@ -4064,6 +4156,7 @@ fn escape_java(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::ast::Type;
+    use crate::backends::skin::READABLE_MINT_MAX_LEN;
     use crate::pass::parser::{parse, parse_package_file, parse_signature_file};
     use crate::pass::resolve::PackageFileEntry;
     use crate::pass::structural_recovery;
@@ -4234,7 +4327,45 @@ mod tests {
         )
     }
 
+    #[test]
+    fn native_docs_follow_selected_public_declarations() {
+        let package = build_package(
+            &["module api;\n\
+            /// HOST-GENERIC-DOC\n\
+            host type Box[A];\n\
+            /// HOST-FN-DOC\n\
+            host fn effect() -> .;\n\
+            /// OPAQUE-DOC\n\
+            pub newtype Token : . { pub constructor make; projector read; };\n\
+            /// EXPORT-DOC\n\
+            pub fn call() -> . { effect() }\n\
+            /// PRIVATE-DOC\n\
+            fn hidden() -> . { () }"],
+            "bridge { api; }",
+        );
+        let emitted = lower_package(&package, "pkg", None).expect("emit documented Java");
+        assert!(emitted.host_java.contains("HOST-FN-DOC"));
+        assert!(emitted.handle_java.contains("EXPORT-DOC"));
+        assert!(emitted.shapes_java.contains("HOST-GENERIC-DOC"));
+        assert!(emitted.shapes_java.contains("OPAQUE-DOC"));
+        for source in [
+            &emitted.host_java,
+            &emitted.handle_java,
+            &emitted.shapes_java,
+        ] {
+            assert!(!source.contains("PRIVATE-DOC"));
+        }
+    }
+
     fn compound_input_conversion(return_type: &str, expression: &str) -> String {
+        prepared_return_conversion(return_type, expression, JavaFfiDirection::In)
+    }
+
+    fn prepared_return_conversion(
+        return_type: &str,
+        expression: &str,
+        direction: JavaFfiDirection,
+    ) -> String {
         let source = format!(
             "module api; host type Text role(str); \
              pub newtype Inner : Text & Text {{ \
@@ -4257,7 +4388,7 @@ mod tests {
             site.plan().entry().returned,
             &BTreeMap::new(),
             expression,
-            JavaFfiDirection::In,
+            direction,
             &shapes,
         )
         .expect("convert host-return facade")
@@ -4289,6 +4420,67 @@ mod tests {
         let rendered = compound_input_conversion("Text", source);
         assert_eq!(rendered.matches(source).count(), 1, "{rendered}");
         assert!(!rendered.contains("__convert("), "{rendered}");
+    }
+
+    #[test]
+    fn function_conversion_captures_producer_before_callback() {
+        for direction in [JavaFfiDirection::In, JavaFfiDirection::Out] {
+            for ty in [". -> Text", "Text -> .", "Text -> Text"] {
+                let rendered = prepared_return_conversion(ty, "produce()", direction);
+                let (capture, callback) = rendered
+                    .split_once(" -> ")
+                    .expect("eager conversion binding precedes the callback");
+                let prefix = match direction {
+                    JavaFfiDirection::In => "(KioRuntime.KioFn) ",
+                    JavaFfiDirection::Out => "",
+                };
+                assert!(
+                    capture.starts_with(&format!("{prefix}__convert(produce(), __function_value_")),
+                    "{rendered}"
+                );
+                assert!(!callback.contains("produce()"), "{rendered}");
+                assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
+                assert_eq!(rendered.matches("__convert(").count(), 1, "{rendered}");
+            }
+        }
+    }
+
+    #[test]
+    fn function_conversion_captures_each_result_at_its_own_stage() {
+        for direction in [JavaFfiDirection::In, JavaFfiDirection::Out] {
+            let rendered =
+                prepared_return_conversion("Text -> Text -> Text", "produce()", direction);
+            let (producer, outer) = rendered.split_once(" -> ").expect("producer capture");
+            let prefix = match direction {
+                JavaFfiDirection::In => "(KioRuntime.KioFn) ",
+                JavaFfiDirection::Out => "",
+            };
+            let outer_capture = producer
+                .strip_prefix(&format!("{prefix}__convert(produce(), "))
+                .expect("evaluate producer before constructing outer callable");
+            let (outer_parameters, outer_body) = outer.split_once(" -> ").expect("outer stage");
+            let (next_capture, inner) = outer_body.split_once(" -> ").expect("result capture");
+            let (inner_parameters, inner_body) = inner.split_once(" -> ").expect("inner stage");
+            let (_, inner_capture) = next_capture.rsplit_once(", ").expect("result capture name");
+            let invocation = match direction {
+                JavaFfiDirection::In => ".apply(",
+                JavaFfiDirection::Out => ".call(",
+            };
+            assert!(
+                next_capture.starts_with(&format!("{prefix}__convert(")),
+                "{rendered}"
+            );
+            assert!(next_capture.contains(outer_capture), "{rendered}");
+            assert_eq!(next_capture.matches(invocation).count(), 1, "{rendered}");
+            assert!(!outer_parameters.contains(invocation), "{rendered}");
+            assert!(!inner_parameters.contains(invocation), "{rendered}");
+            assert_ne!(outer_capture, inner_capture, "{rendered}");
+            assert!(inner_body.contains(inner_capture), "{rendered}");
+            assert!(!inner_body.contains(outer_capture), "{rendered}");
+            assert_eq!(inner_body.matches(invocation).count(), 1, "{rendered}");
+            assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
+            assert_eq!(rendered.matches("__convert(").count(), 2, "{rendered}");
+        }
     }
 
     fn polymorphic_payload_conversion(
@@ -4839,7 +5031,7 @@ mod tests {
         assert!(
             emitted
                 .shapes_java
-                .contains("@Deprecated\n  /** Exact declaration-owned carrier for `api.Gone`. */\n  public interface KioHostType_api__Gone {}"),
+                .contains("/** Exact declaration-owned carrier for `api.Gone`.\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioHostType_api__Gone {}"),
             "{}",
             emitted.shapes_java
         );
@@ -4886,6 +5078,13 @@ mod tests {
             emitted.shapes_java.contains(&format!(
                 "@Deprecated\n  public static final class {carrier}<T0>"
             )),
+            "{}",
+            emitted.shapes_java
+        );
+        assert!(
+            emitted.shapes_java.contains(
+                "/** Exact constructor marker for `api.Token` (arity 1; kinds: *).\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioNewtypeMk_api__Token {}"
+            ),
             "{}",
             emitted.shapes_java
         );
@@ -5379,13 +5578,30 @@ mod tests {
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
 
+        let input = emitted
+            .handle_java
+            .split_once("__convert(p0, ")
+            .expect("capture the supplied procedure")
+            .1;
+        let (input_capture, input_callback) = input.split_once(" -> ").expect("input capture");
+        let input_callback = input_callback.split_once('\n').expect("input method").0;
         assert!(
-            emitted.handle_java.contains("(p0).apply(")
-                && emitted
-                    .handle_java
-                    .contains("((KioRuntime.KioFn) __fn_supply.call()).call("),
-            "{}",
-            emitted.handle_java
+            input_callback.contains(&format!("({input_capture}).apply("))
+                && input_callback.contains("; return null; }"),
+            "{input_callback}"
+        );
+
+        let output = emitted
+            .handle_java
+            .split_once("__convert(__fn_supply.call(), ")
+            .expect("evaluate the producer before returning its procedure")
+            .1;
+        let (output_capture, output_callback) = output.split_once(" -> ").expect("output capture");
+        let output_callback = output_callback.split_once('\n').expect("output method").0;
+        assert!(
+            output_callback.contains(&format!("((KioRuntime.KioFn) {output_capture}).call("))
+                && !output_callback.contains("__fn_supply.call()"),
+            "{output_callback}"
         );
     }
 

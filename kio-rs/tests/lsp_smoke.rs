@@ -554,7 +554,10 @@ fn lsp_label_payload_context_clears_a_conflicting_factory_argument() {
         }),
     );
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
-    assert_eq!(cleared["diagnostics"], json!([]), "{cleared:?}");
+    assert_unused_private_diagnostics(
+        &cleared["diagnostics"],
+        &[("function", "empty"), ("function", "run")],
+    );
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -749,6 +752,16 @@ fn lsp_diagnostic_suggestion_produces_quickfix_code_action() {
     assert_eq!(
         changes[0].get("newText").and_then(Value::as_str),
         Some("helper")
+    );
+
+    let repaired = apply_lsp_text_edits(source, changes);
+    assert_eq!(repaired, source.replace("hepler", "helper"));
+    send_full_text_change(&mut lsp, &uri, 2, &repaired);
+    let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
+    assert_eq!(cleared["diagnostics"], json!([]), "{cleared}");
+    assert_eq!(
+        send_code_action(&mut lsp, &uri, diagnostic)["result"],
+        json!([])
     );
 
     assert_eq!(lsp.shutdown(), 0);
@@ -2200,6 +2213,27 @@ fn open_and_wait_for_analysis(lsp: &mut LspProcess, uri: &str, text: &str) {
     // For clean packages, no notification is sent; the try_recv_for
     // timeout gives the debounce + analysis time to complete.
     let _ = lsp.try_recv_for(Duration::from_millis(600));
+}
+
+fn assert_unused_private_diagnostics(diagnostics: &Value, expected: &[(&str, &str)]) {
+    let mut actual = diagnostics
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .map(|diagnostic| {
+            assert_eq!(diagnostic["severity"], 2, "{diagnostic}");
+            assert_eq!(diagnostic["tags"], json!([1]), "{diagnostic}");
+            assert!(diagnostic.get("code").is_none(), "{diagnostic}");
+            diagnostic["message"].as_str().unwrap().to_owned()
+        })
+        .collect::<Vec<_>>();
+    let mut expected = expected
+        .iter()
+        .map(|(kind, name)| format!("private {kind} `{name}` is transitively unused"))
+        .collect::<Vec<_>>();
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -3816,6 +3850,9 @@ fn completion_labels(result: &Value) -> Vec<&str> {
 #[path = "lsp_smoke/completion_context.rs"]
 mod completion_context;
 
+#[path = "lsp_smoke/doc_completion.rs"]
+mod doc_completion;
+
 #[path = "lsp_smoke/block_calls.rs"]
 mod block_calls;
 
@@ -3827,6 +3864,26 @@ mod completion_calls;
 
 #[path = "lsp_smoke/identifier_names.rs"]
 mod identifier_names;
+
+#[path = "lsp_smoke/import_fixes.rs"]
+mod import_fixes;
+#[path = "lsp_smoke/module_path_fixes.rs"]
+mod module_path_fixes;
+#[path = "lsp_smoke/name_fixes.rs"]
+mod name_fixes;
+
+#[path = "lsp_smoke/host_requirements.rs"]
+mod host_requirements;
+#[path = "lsp_smoke/type_display.rs"]
+mod type_display;
+
+#[path = "lsp_smoke/recursion_fixes.rs"]
+mod recursion_fixes;
+
+#[path = "lsp_smoke/ufcs_refactor.rs"]
+mod ufcs_refactor;
+#[path = "lsp_smoke/unused_source_warnings.rs"]
+mod unused_source_warnings;
 
 #[test]
 fn lsp_capabilities_advertise_completion_provider() {
@@ -5829,6 +5886,185 @@ fn send_semantic_tokens_full(lsp: &mut LspProcess, uri: &str) -> Value {
 }
 
 #[test]
+fn lsp_doc_roles_follow_current_utf16_source_and_hidden_fence_recovery() {
+    let dir = TempDir::new("doc-roles");
+    dir.write_pkg_root_package();
+    let source = "module pkg/main;\r\n/// é [`😀`]; [`@type value`].\r\n/// ``[`literal`]`` [url](x/[`destination`])\r\n/// <!--text\r\n/// [`hidden`]\r\n/// -->\r\n/// # Heading\r\n/// **strong** and *emphasis*\r\n/// ```kio {@}\r\n/// let nested = ();\r\n/// nested\r\n/// ```\r\nfn value() { () }\r\n/// [`eof`]";
+    let path = dir.write("pkg/main.kio", source);
+    let uri = path_to_file_uri(&path);
+    let mut lsp = LspProcess::spawn();
+    let id = lsp.send_request("initialize", json!({
+        "processId": std::process::id(), "rootUri": path_to_file_uri(dir.path()), "capabilities": {}
+    }));
+    let init = lsp.recv_matching(|message| message.get("id").and_then(Value::as_i64) == Some(id));
+    lsp.send_notification("initialized", json!({}));
+    let modifiers = init
+        .pointer("/result/capabilities/semanticTokensProvider/legend/tokenModifiers")
+        .unwrap();
+    assert_eq!(
+        modifiers,
+        &json!(["declaration", "defaultLibrary", "readonly", "documentation"])
+    );
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({ "textDocument": {
+            "uri": uri, "languageId": "kio", "version": 1, "text": source
+        }}),
+    );
+
+    let decode = |result: Value| {
+        let mut line = 0;
+        let mut column = 0;
+        result["data"]
+            .as_array()
+            .expect("semantic token data")
+            .chunks_exact(5)
+            .map(|cell| {
+                let values = cell
+                    .iter()
+                    .map(|value| value.as_u64().unwrap())
+                    .collect::<Vec<_>>();
+                if values[0] == 0 {
+                    column += values[1];
+                } else {
+                    line += values[0];
+                    column = values[1];
+                }
+                (line, column, values[2], values[3], values[4])
+            })
+            .collect::<Vec<_>>()
+    };
+    let tokens = decode(send_semantic_tokens_full(&mut lsp, &uri));
+    let expected = |text: &str, needle: &str, kind| {
+        let position = source_position(text, text.find(needle).unwrap());
+        (
+            position.0,
+            position.1,
+            needle.encode_utf16().count() as u64,
+            kind,
+            8,
+        )
+    };
+    for (needle, kind) in [
+        ("😀", 4),
+        ("@type", 7),
+        ("value`]", 4),
+        ("[`hidden`]", 9),
+        ("eof", 4),
+        ("let", 7),
+        ("# Heading", 7),
+    ] {
+        let mut wanted = expected(source, needle, kind);
+        if needle == "value`]" {
+            wanted.2 = 5;
+        }
+        assert!(tokens.contains(&wanted), "missing {needle:?}: {tokens:?}");
+    }
+    for needle in ["literal", "destination"] {
+        assert!(
+            !tokens.contains(&expected(source, needle, 4)),
+            "literal acquired a reference role"
+        );
+    }
+
+    // Removing the hidden closer changes the current whole-run classification;
+    // an unterminated hidden opener is prose under the batch lexical policy.
+    let changed = source.replace("/// -->\r\n", "");
+    lsp.send_notification(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": uri, "version": 2 }, "contentChanges": [{ "text": changed }]
+        }),
+    );
+    let tokens = decode(send_semantic_tokens_full(&mut lsp, &uri));
+    assert!(
+        tokens.contains(&expected(&changed, "hidden", 4)),
+        "stale hidden-fence roles: {tokens:?}"
+    );
+    assert!(!tokens.contains(&expected(&changed, "[`hidden`]", 9)));
+
+    let embedded = source.replace(
+        "/// let nested = ();",
+        "/// let nested = \"😀\"; let after = ();",
+    );
+    lsp.send_notification(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": uri, "version": 3 },
+            "contentChanges": [{ "text": embedded }]
+        }),
+    );
+    let embedded_tokens = decode(send_semantic_tokens_full(&mut lsp, &uri));
+    assert!(embedded_tokens.contains(&expected(&embedded, "\"😀\"", 9)));
+    let mut after = expected(&embedded, "let after", 7);
+    after.2 = 3;
+    assert!(
+        embedded_tokens.contains(&after),
+        "embedded UTF-16 origin: {embedded_tokens:?}"
+    );
+    let executable_line = source_position(&embedded, embedded.find("fn value").unwrap()).0;
+    let executable = |tokens: &[(u64, u64, u64, u64, u64)]| {
+        tokens
+            .iter()
+            .copied()
+            .filter(|token| token.0 == executable_line)
+            .collect::<Vec<_>>()
+    };
+    let ordinary_tokens = executable(&embedded_tokens);
+    assert!(!ordinary_tokens.is_empty());
+    assert!(ordinary_tokens.iter().all(|token| token.4 & 8 == 0));
+
+    let info = source_position(&embedded, embedded.find("```kio").unwrap() + 3);
+    let edit = json!({
+        "range": {
+            "start": { "line": info.0, "character": info.1 },
+            "end": { "line": info.0, "character": info.1 + 3 }
+        },
+        "newText": "text"
+    });
+    let opaque = apply_lsp_text_edits(&embedded, std::slice::from_ref(&edit));
+    lsp.send_notification(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": uri, "version": 4 },
+            "contentChanges": [{ "range": edit["range"], "text": edit["newText"] }]
+        }),
+    );
+    let opaque_tokens = decode(send_semantic_tokens_full(&mut lsp, &uri));
+    assert!(
+        !opaque_tokens.contains(&after),
+        "stale nested Kio after fence-info edit: {opaque_tokens:?}"
+    );
+    assert!(opaque_tokens.contains(&expected(
+        &opaque,
+        "let nested = \"😀\"; let after = ();",
+        9
+    )));
+    assert_eq!(executable(&opaque_tokens), ordinary_tokens);
+    let executable_spellings = |text: &str| {
+        kio_lang::pass::lexer::lex(text)
+            .unwrap()
+            .iter()
+            .map(|token| {
+                (
+                    format!("{:?}", token.kind),
+                    text[token.span.start as usize..token.span.end as usize].to_owned(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        executable_spellings(source),
+        executable_spellings(&embedded)
+    );
+    assert_eq!(
+        executable_spellings(&embedded),
+        executable_spellings(&opaque)
+    );
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
 fn lsp_capabilities_advertise_semantic_tokens_provider() {
     // The initialize response must advertise semanticTokensProvider with
     // full = true and range = false, and a non-empty legend.
@@ -6963,7 +7199,19 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     for (uri, source) in uris.iter().zip(sources) {
-        open_and_wait_for_analysis(&mut lsp, uri, source);
+        lsp.send_notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+        );
+        let published = wait_for_publish_version(&mut lsp, uri, 1);
+        assert!(
+            published["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|diagnostic| diagnostic["severity"] == 2),
+            "{published}"
+        );
     }
     for (index, positions) in positions.iter().enumerate() {
         for offset in positions {
@@ -8898,12 +9146,9 @@ fn lsp_acyclic_type_group_is_topologically_ordered_before_unwrap() {
 
     send_full_text_change(&mut lsp, &uri, 2, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
-    assert!(
-        cleared
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty),
-        "the validated reorder must retract the diagnostic: {cleared:?}\n{repaired}"
+    assert_unused_private_diagnostics(
+        &cleared["diagnostics"],
+        &[("type", "Base"), ("type", "Box")],
     );
 
     assert_eq!(lsp.shutdown(), 0);
@@ -8972,12 +9217,9 @@ fn lsp_later_type_move_is_versioned_applied_and_retracted() {
 
     send_full_text_change(&mut lsp, &uri, 8, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 8);
-    assert!(
-        cleared
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty),
-        "the validated move must retract the diagnostic: {cleared:?}\n{repaired}"
+    assert_unused_private_diagnostics(
+        &cleared["diagnostics"],
+        &[("type", "Dependency"), ("type", "User")],
     );
 
     assert_eq!(lsp.shutdown(), 0);
@@ -9071,13 +9313,7 @@ fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
 
     send_full_text_change(&mut lsp, &uri, 4, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 4);
-    assert!(
-        cleared
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty),
-        "the validated move must retract the diagnostic: {cleared:?}\n{repaired}"
-    );
+    assert_unused_private_diagnostics(&cleared["diagnostics"], &[("function", "before")]);
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -9178,12 +9414,9 @@ fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
 
     send_full_text_change(&mut lsp, &uri, 6, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 6);
-    assert!(
-        cleared
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty),
-        "the validated alias move must retract the diagnostic: {cleared:?}\n{repaired}"
+    assert_unused_private_diagnostics(
+        &cleared["diagnostics"],
+        &[("type", "Later"), ("function", "before")],
     );
 
     assert_eq!(lsp.shutdown(), 0);
@@ -9429,13 +9662,7 @@ fn lsp_overbroad_type_group_is_split_into_exact_components() {
 
     send_full_text_change(&mut lsp, &uri, 2, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
-    assert!(
-        cleared
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty),
-        "the exact component split must retract the diagnostic: {cleared:?}\n{repaired}"
-    );
+    assert_unused_private_diagnostics(&cleared["diagnostics"], &[("type", "Helper")]);
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -9786,6 +10013,91 @@ fn lsp_imported_parameter_diagnostics_retain_signature_owner_across_overlays() {
         let corrected = source.replace(&format!("{callee}(())"), "()");
         send_full_text_change(&mut lsp, &uri, 2, &corrected);
         let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
+        assert!(
+            cleared["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|diagnostic| diagnostic["severity"] != 1),
+            "{cleared:?}"
+        );
+        assert_eq!(lsp.shutdown(), 0);
+    }
+}
+
+#[test]
+fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
+    for signature in [
+        "host fn selected[S][R](step: S, state: S) -> R;",
+        "host fn selected[S][R](step: S -> S | R, state: S, extra: .) -> R;",
+        "host fn selected[S][R][T](step: S -> S | R, state: S) -> R;",
+    ] {
+        let dir = TempDir::new("rec-loop-diagnostic");
+        dir.write_pkg_root_package();
+        let provider = format!("module pkg/provider;\n\n{signature}\n");
+        let provider_path = dir.write("pkg/provider.kio", &provider);
+        let source = "module pkg/main;\nimport pkg/provider as p;\n\nrec(p.selected) fn again(value: .) { rec again(value) }\n";
+        let main_path = dir.write("pkg/main.kio", source);
+        let uri = path_to_file_uri(&main_path);
+        let provider_uri = path_to_file_uri(&provider_path);
+        let mut lsp = LspProcess::spawn();
+        lsp.initialize(&path_to_file_uri(dir.path()));
+        for (file_uri, text) in [(&provider_uri, provider.as_str()), (&uri, source)] {
+            lsp.send_notification(
+                "textDocument/didOpen",
+                json!({"textDocument": {
+                    "uri": file_uri, "languageId": "kio", "version": 1, "text": text,
+                }}),
+            );
+        }
+        let publish = wait_for_publish_version(&mut lsp, &uri, 1);
+        let errors: Vec<_> = publish["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|diagnostic| diagnostic["severity"] == 1)
+            .collect();
+        assert_eq!(errors.len(), 1, "{publish:?}");
+        let diagnostic = errors[0];
+        assert_eq!(diagnostic["code"], 14);
+        assert!(
+            diagnostic["message"]
+                .as_str()
+                .unwrap()
+                .contains("the selected `rec` loop has incompatible type"),
+            "{publish:?}"
+        );
+        assert_eq!(
+            json_range(&diagnostic["range"]),
+            source_range(
+                source,
+                source.find("p.selected").unwrap(),
+                "p.selected".len()
+            )
+        );
+        let related = diagnostic["relatedInformation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|related| related["message"] == "the selected loop's type is declared here")
+            .unwrap_or_else(|| panic!("missing selected declaration: {publish:?}"));
+        assert_eq!(related["location"]["uri"], provider_uri);
+        let start = provider.find("fn selected").unwrap();
+        assert_eq!(
+            json_range(&related["location"]["range"]),
+            source_range(&provider, start, provider.rfind(';').unwrap() - start)
+        );
+        let response = send_code_action(&mut lsp, &uri, diagnostic);
+        assert!(response.get("error").is_none(), "{response:?}");
+        let result = response.get("result").expect("code-action response result");
+        assert!(
+            result.is_null() || result.as_array().is_some_and(Vec::is_empty),
+            "choosing or repairing the loop needs author intent: {response:?}"
+        );
+        let repaired =
+            "module pkg/provider;\n\nhost fn selected[S][R](step: S -> S | R, state: S) -> R;\n";
+        send_full_text_change(&mut lsp, &provider_uri, 2, repaired);
+        let cleared = wait_for_publish_version(&mut lsp, &uri, 1);
         assert!(
             cleared["diagnostics"]
                 .as_array()

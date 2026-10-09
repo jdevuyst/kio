@@ -5,7 +5,7 @@ import emu(I32, String);
 // The `match!` elaborator is called without importing the root module
 // elaborator; an unimported call site is the standard unresolved-name error
 // (exit 13).
-fn bad(v: I32 | String) -> . {
+fn bad(v: I32 | String) {
   let .(_r: .) =
     match! v {
       (.(n: I32) { () }, .(s: String) { () })
@@ -13,4 +13,4 @@ fn bad(v: I32 | String) -> . {
   ()
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

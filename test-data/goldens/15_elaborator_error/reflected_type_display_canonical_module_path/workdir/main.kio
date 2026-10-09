@@ -3,4 +3,4 @@ module main;
 import deep/names as n;
 import inspect(inspect);
 
-fn witness() -> . { inspect!(n.Box.mk_box(())) }
+fn witness() { inspect!(n.Box.mk_box(())) }

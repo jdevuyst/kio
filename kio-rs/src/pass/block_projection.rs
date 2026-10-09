@@ -298,6 +298,7 @@ fn lambda(params: Vec<SignatureParam<Surface>>, body: Expr<Surface>, span: Span)
 fn call(callee: Expr<Surface>, args: Vec<CallArg<Surface>>, span: Span) -> Expr<Surface> {
     Expr::Call {
         occurrence: Default::default(),
+        diagnostic: Default::default(),
         callee: Box::new(callee),
         args,
         meta: Meta::new(span),

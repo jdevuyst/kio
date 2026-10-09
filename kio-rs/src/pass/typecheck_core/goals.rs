@@ -46,6 +46,7 @@ struct PublicationValidationWork {
 
 #[cfg(test)]
 thread_local! {
+    pub(super) static GOAL_FREE_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PUBLICATION_VALIDATION_WORK: std::cell::Cell<PublicationValidationWork> =
         const { std::cell::Cell::new(PublicationValidationWork {
             full: 0,
@@ -839,6 +840,13 @@ impl ScopedType {
         self.ty == other.ty && self.scope == other.scope
     }
 
+    #[cfg(test)]
+    pub(crate) fn representation_is_exact(&self, other: &Self) -> bool {
+        self.scope == other.scope
+            && self.ty.identity_is_canonical() == other.ty.identity_is_canonical()
+            && self.ty.representation_is_exact(&other.ty)
+    }
+
     pub(crate) fn projected_scope_compatible(&self, other: &Self) -> bool {
         self.projected_scope_with(other).is_some()
     }
@@ -1500,9 +1508,10 @@ impl GoalOrigin {
         }
     }
 
-    fn unresolved_error(&self) -> Error {
+    fn unresolved_error(&self, goal: TypeGoalRef) -> Error {
         if self.unresolved_diagnostic == UnresolvedGoalDiagnostic::SchemeInMonomorphicPosition {
-            return super::types::scheme_in_mono_position(self.span);
+            return super::types::scheme_in_mono_position(self.span)
+                .with_type_failure_origin(crate::error::TypeFailureOrigin::UnresolvedGoal(goal));
         }
         let position = match self.role {
             GoalRole::TypeArgument => "type argument",
@@ -1518,6 +1527,7 @@ impl GoalOrigin {
             self.span,
             format!("cannot infer {position}{name} from the available type information"),
         )
+        .with_type_failure_origin(crate::error::TypeFailureOrigin::UnresolvedGoal(goal))
     }
 }
 
@@ -4046,7 +4056,7 @@ impl GoalStore {
                 return Err(self
                     .goal_state(remaining, zonked.ty.span())?
                     .origin
-                    .unresolved_error());
+                    .unresolved_error(remaining));
             }
             assert!(
                 self.is_strict_ancestor(remaining.owner(), delta.owner, zonked.ty.span())?,
@@ -4126,7 +4136,7 @@ impl GoalStore {
         self.goal_state(wait.deepest, span)
             .expect("completion wait lost its retained inference domain")
             .origin
-            .unresolved_error()
+            .unresolved_error(wait.deepest)
     }
 
     /// Resolve an owner-scoped type through the currently committed ancestor
@@ -4176,7 +4186,7 @@ impl GoalStore {
             return Err(self
                 .goal_state(remaining, zonked.ty.span())?
                 .origin
-                .unresolved_error());
+                .unresolved_error(remaining));
         }
         Ok(zonked)
     }
@@ -4399,6 +4409,8 @@ impl GoalStore {
         value: ScopedType,
         ctx: &impl GoalTypeContext,
     ) -> Result<ScopedType, Error> {
+        #[cfg(test)]
+        GOAL_FREE_PROBES.with(|count| count.set(count.get() + 1));
         self.require_context(ctx);
         assert_eq!(
             value.scope.store_nonce, self.nonce,
@@ -5212,7 +5224,7 @@ impl GoalStore {
             return Err(self
                 .goal_state(remaining, output.ty.span())?
                 .origin
-                .unresolved_error());
+                .unresolved_error(remaining));
         }
         self.rebase_goal_free_type_to_owner(output, destination, span, ctx)
     }
@@ -5244,7 +5256,10 @@ impl GoalStore {
             "goal-free type rebase received an unresolved source placeholder"
         );
         if let Some(remaining) = goal_refs(value.ty.as_type()).into_iter().next() {
-            return Err(self.goal_state(remaining, span)?.origin.unresolved_error());
+            return Err(self
+                .goal_state(remaining, span)?
+                .origin
+                .unresolved_error(remaining));
         }
         self.require_escape(&value, GoalEscape::ToOwner(destination))?;
         value.scope = self.owner_state(destination, span)?.scope.clone();
@@ -5374,11 +5389,11 @@ impl GoalStore {
             let zonked = self.zonk_with_delta(&open, &replay)?;
             self.require_solution_policy(goal, &zonked, Some(&replay), origin.span)?;
             let refs = goal_refs(zonked.ty.as_type());
-            if refs
+            if let Some(remaining) = refs
                 .iter()
-                .any(|remaining| remaining.owner() == delta.owner)
+                .find(|remaining| remaining.owner() == delta.owner)
             {
-                return Err(origin.unresolved_error());
+                return Err(origin.unresolved_error(*remaining));
             }
             for remaining in refs {
                 assert!(
@@ -6458,15 +6473,17 @@ impl GoalStore {
                 return self.constrain_inner(delta, existing, candidate, equation, span, ctx);
             }
             let found = self.canonical_scoped(existing, ctx);
+            // The incoming binding owns the primary span; the previous
+            // binding establishes its requirement, independently of solver order.
             let equation = EquationProvenance {
-                found: ScopedTypeView::from_scoped(&found),
-                expected: ScopedTypeView::from_scoped(&candidate),
+                found: ScopedTypeView::from_scoped(&candidate),
+                expected: ScopedTypeView::from_scoped(&found),
             };
             delta.begin_equation();
             let result = self.constrain_views(
                 delta,
-                equation.found,
-                equation.expected,
+                ScopedTypeView::from_scoped(&found),
+                ScopedTypeView::from_scoped(&candidate),
                 equation,
                 span,
                 ctx,
@@ -8396,18 +8413,22 @@ mod tests {
     #[test]
     fn producer_views_validate_full_ancestor_obligations_atomically() {
         for reverse in [false, true] {
-            let context = ctx();
+            let context = ctx().with_display_mismatch_types();
             let mut store = GoalStore::new();
             assert_eq!(store.producer_views.capacity(), 0);
             let host = owner(&mut store, RigidScope::new());
             let shared = goal(&mut store, host, Kind::Star);
             let mut host_delta = store.begin_delta(host, sp()).unwrap();
             let mut producers = Vec::new();
-            for name in if reverse {
+            let names = if reverse {
                 ["String", "I32"]
             } else {
                 ["I32", "String"]
-            } {
+            };
+            for (name, binding_span) in names
+                .into_iter()
+                .zip([Span::new(10, 11), Span::new(20, 21)])
+            {
                 let producer = store
                     .begin_owner(
                         Some(host),
@@ -8433,7 +8454,7 @@ mod tests {
                         &mut delta,
                         scoped_canonical(&store, child, goal_type(shared)),
                         scoped_canonical(&store, child, path(&["m", name], Vec::new())),
-                        sp(),
+                        binding_span,
                         &context,
                     )
                     .unwrap();
@@ -8449,7 +8470,14 @@ mod tests {
             let error = store
                 .accept_producer_wave(&mut host_delta, Vec::new(), producers, Vec::new(), &context)
                 .expect_err("conflicting non-output obligations must reject the wave");
-            assert!(error.diagnostic().message.contains("type mismatch"));
+            assert_eq!(error.diag().0, Span::new(20, 21));
+            assert_eq!(
+                error.diagnostic().message,
+                format!(
+                    "type mismatch: expected `m.{}`, found `m.{}`",
+                    names[0], names[1]
+                )
+            );
             assert_eq!(store.revision, revision);
             assert!(host_delta.is_empty());
             assert!(store.binding(shared, Some(&host_delta)).is_none());
@@ -15619,7 +15647,7 @@ mod tests {
 
         assert_eq!(
             error.diag().1,
-            "type mismatch: expected `(. & (F(.) & ([B] B -> Result)))`, found `(. & (F(.) & ([T] T -> T)))`"
+            "type mismatch: expected `. & F(.) & ([B] B -> Result)`, found `. & F(.) & ([T] T -> T)`"
         );
     }
 

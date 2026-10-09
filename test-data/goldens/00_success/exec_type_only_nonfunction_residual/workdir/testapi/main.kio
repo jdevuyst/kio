@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn producer()[A][B] { print("reached\n"(String)) }
+
+pub fn main() {
+  let poly = producer();
+  print("produced\n"(String));
+  let inner = poly(.);
+  print("partial\n"(String));
+  inner(.)
+}

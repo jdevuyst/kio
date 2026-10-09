@@ -79,7 +79,7 @@ rec(loop) fn samples(count: I32, reversed: s.Word) -> s.Word | String {
 fn receive(name: String, dimension: I32, message: p.Polynomial, coordinates: c.List(I32)) -> Read_result {
   match! bounded(0, 8) {
     .(count: I32) {
-      match! samples(count, c.nil()) {
+      match! samples(count, c.nil(_)) {
         .(received: s.Word) {
           {loaded = {name, dimension, message, coordinates, received}}.>widen_sum!
         };
@@ -91,9 +91,9 @@ fn receive(name: String, dimension: I32, message: p.Polynomial, coordinates: c.L
 }
 
 fn contents(name: String, dimension: I32, length: I32) -> Read_result {
-  match! integers(dimension, c.nil()) {
+  match! integers(dimension, c.nil(_)) {
     .(message: p.Polynomial) {
-      match! integers(length, c.nil()) {
+      match! integers(length, c.nil(_)) {
         .(coordinates: c.List(I32)) { receive(name, dimension, message, coordinates) };
         .(message: String) { {error = message}.>widen_sum! }
       }

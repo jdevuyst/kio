@@ -12,7 +12,7 @@ fn index(left: host.I32, right: host.I32) -> host.I32 {
 
 op _ <| __ |> { impl index }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(fmt.i32_to_string(1 <| 2 |>));
   io.print("\n");
   io.print(fmt.i32_to_string(1 <| 2 <| 3 |> |>));

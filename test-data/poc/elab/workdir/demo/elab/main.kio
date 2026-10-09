@@ -771,7 +771,7 @@ equiv type_of_opaque_law() {
 }
 
 /// Runs every elaborator-demonstration case and prints its result.
-pub fn main() -> . {
+pub fn main() {
   print(keep_match(keep_algebraic(keep_spine(fit_case(flatten_sum_case(one_sum_default_case(one_sum_case(narrow_sum_case(reorder_sum_case(widen_sum_case(flatten_prod_case(one_prod_default_case(one_prod_case(widen_prod_case(narrow_prod_case(reorder_prod_case("elaborators: ok\n")))))))))))))))));
   print(match_right_case());
   print(match_infer_left_case());

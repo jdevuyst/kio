@@ -201,6 +201,13 @@ const EXPR_FORMS: &[ExprForm] = &[
         root_tag: "lambda",
     },
     ExprForm {
+        id: "type-only-lambda",
+        grammar: "FnExpr",
+        declarations: "",
+        source: ".[Formtype] { () }",
+        root_tag: "lambda",
+    },
+    ExprForm {
         id: "call",
         grammar: "ExprSuffix",
         declarations: "",
@@ -1739,7 +1746,7 @@ ElaboratorItem ::= Vis? 'elab' IDENT ':' Type ElaboratorBody
 ElaboratorBody ::= '{' SemiEntries<ElaboratorEntry> '}'
 ElaboratorEntry ::= ElaboratorCaptures | ElaboratorImpl | TrailingBlockDecl
 ElaboratorImpl ::= 'impl' ValuePath | 'impl' '(' 'fills' ')' ValuePath
-Equiv ::= 'equiv' IDENT Signature? '{' ';'* Expr (';'+ Expr)+ ';'* '}'
+Equiv ::= 'equiv' IDENT ValueSignature? '{' ';'* Expr (';'+ Expr)+ ';'* '}'
 FixedOpToken ::= OpToken
 VaropHead ::= VaropOpen VaropClose
 VaropOpen ::= OpToken

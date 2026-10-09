@@ -62,15 +62,15 @@ pub fn signature(state: m.State) -> String {
   let sorted =
     lists.foldl(
       , .(acc: core.List(m.Pair), pair: m.Pair) { insert(pair, acc) }
-      , core.nil()
+      , core.nil(_)
       , state.?{m.pairs}
       );
   lists.to_string(pair_text, sorted)
 }
 
-fn number(label: String, value: I32) -> . { io.print(label); io.print(fmt.int_to_string(value)) }
+fn number(label: String, value: I32) { io.print(label); io.print(fmt.int_to_string(value)) }
 
-pub fn checkpoint(label: String, state: m.State) -> . {
+pub fn checkpoint(label: String, state: m.State) {
   io.print(text.string_concat("checkpoint ", label));
   number(" wm=", state.?{m.left_watermark});
   number("/", state.?{m.right_watermark});
@@ -82,7 +82,7 @@ pub fn checkpoint(label: String, state: m.State) -> . {
   io.print("\n")
 }
 
-pub fn finish(state: m.State) -> . {
+pub fn finish(state: m.State) {
   let unique =
     lists.foldl(
       , .(acc: core.List(m.Pair), pair: m.Pair) {
@@ -92,7 +92,7 @@ pub fn finish(state: m.State) -> . {
             core.cons(pair, acc)
           }
         }
-      , core.nil()
+      , core.nil(_)
       , state.?{m.pairs}
       );
   number("accepted=", state.?{m.accepted_left});
@@ -102,10 +102,10 @@ pub fn finish(state: m.State) -> . {
   number(" emitted=", lists.length(state.?{m.pairs}));
   number(" distinct=", lists.length(unique));
   io.print("\n");
-  io.print(text.string_concat("pairs ", text.string_concat(signature(state), "\n")))
+  io.print(signature(state).>text.string_concat("\n").>>text.string_concat("pairs "))
 }
 
-pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) -> . {
+pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) {
   if! a.lt_i32(old.?{m.late}, next.?{m.late}) {
     io.print(text.string_concat("late rejected ", side));
     number(" id=", event.?{m.id});
@@ -116,7 +116,7 @@ pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) -> .
   }
 }
 
-pub fn watermark(side: String, value: I32, old: m.State, next: m.State) -> . {
+pub fn watermark(side: String, value: I32, old: m.State, next: m.State) {
   if! a.lt_i32(old.?{m.regressed}, next.?{m.regressed}) {
     io.print(text.string_concat("watermark rejected ", side));
     number(" value=", value);

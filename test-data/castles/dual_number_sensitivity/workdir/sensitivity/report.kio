@@ -5,11 +5,11 @@ import testapi(F64, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 
-fn number(value: F64) -> . { io.print(fmt.f64_to_string(value)) }
+fn number(value: F64) { io.print(fmt.f64_to_string(value)) }
 
-fn pair(x: F64, y: F64) -> . { io.print("("); number(x); io.print(", "); number(y); io.print(")") }
+fn pair(x: F64, y: F64) { io.print("("); number(x); io.print(", "); number(y); io.print(")") }
 
-pub fn model(name: String, run: (jet.Jet & jet.Jet) -> jet.Jet, x: F64, y: F64, vx: F64, vy: F64) -> . {
+pub fn model(name: String, run: (jet.Jet & jet.Jet) -> jet.Jet, x: F64, y: F64, vx: F64, vy: F64) {
   let result = jet.evaluate(run, x, y);
   let .(slope, curvature) = jet.directional(result, vx, vy);
   io.print(name);

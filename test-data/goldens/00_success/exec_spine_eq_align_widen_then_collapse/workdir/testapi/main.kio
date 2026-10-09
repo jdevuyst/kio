@@ -20,7 +20,7 @@ fn convert(b: Bool) -> String | I32 {
   })
 }
 
-pub fn main() -> . {
+pub fn main() {
   let s =
     match! convert(.t) {
       (.(s: String) { s }, .(_n: I32) { "unreachable\n" })

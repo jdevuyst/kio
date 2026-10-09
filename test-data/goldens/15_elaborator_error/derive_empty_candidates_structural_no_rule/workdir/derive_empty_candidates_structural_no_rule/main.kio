@@ -6,4 +6,4 @@ type Unit_structural = (. | !) & (! | .);
 
 fn bad() -> Unit_structural { derive!((), Unit_structural) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

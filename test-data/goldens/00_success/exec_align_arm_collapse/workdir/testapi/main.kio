@@ -17,4 +17,4 @@ fn pick(b: Bool) -> String {
   })
 }
 
-pub fn main() -> . { print(pick(.t)) }
+pub fn main() { print(pick(.t)) }

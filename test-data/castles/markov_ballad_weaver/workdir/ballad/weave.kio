@@ -135,7 +135,7 @@ fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
           let d = draw(state, start_label(), head, rest);
           extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
         }
-      , .(_empty: .) { finish(state, stopped_dry(), nil(String, ()), nil(Step, ())) }
+      , .(_empty: .) { finish(state, stopped_dry(), nil(String), nil(Step)) }
       )
   }
 }
@@ -152,5 +152,5 @@ rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: Lis
 /// Weave `count` lines, threading one generator state through all of them, so
 /// the whole run is a single deterministic function of the fixture's seed.
 pub fn weave(m: Model, cap: I32, count: I32, seed: I32) -> List(Line) {
-  weave_onto(m, cap, count, seed_state(seed), nil(Line, ()))
+  weave_onto(m, cap, count, seed_state(seed), nil(Line))
 }

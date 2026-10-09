@@ -6,7 +6,7 @@ import testapi(I32, String);
 import testapi/array as array;
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Ordered tree edits: unit insert, delete, rename\n");
   io.print("Node numbers in mappings are zero-based preorder positions.\n");
   let branch = fixtures.branching(1, 2);

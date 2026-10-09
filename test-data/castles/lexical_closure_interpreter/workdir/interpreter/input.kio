@@ -25,4 +25,4 @@ rec(loop) fn collect(reversed: Tokens) -> Tokens | String {
   }
 }
 
-pub fn read_tokens() -> Tokens | String { collect(lists.nil()) }
+pub fn read_tokens() -> Tokens | String { collect(lists.nil(_)) }

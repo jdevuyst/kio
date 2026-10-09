@@ -1,0 +1,6 @@
+module main;
+
+import provider as p;
+
+// Caller text does not impose the argument's type.
+fn caller() -> . { let apply = p.take; apply(()) }

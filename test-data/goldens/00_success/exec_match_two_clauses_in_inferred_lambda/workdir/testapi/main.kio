@@ -17,7 +17,7 @@ fn classify(source: String | .) -> String {
   inferred
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(classify(widen_sum!("text\n", String | .)));
   print(classify(widen_sum!((), String | .)))
 }

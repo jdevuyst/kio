@@ -16,8 +16,8 @@ pub fn use_higher(x: I32) -> I32 { higher(I32, id_local, x) }
 
 pub fn shadow[T](g2: [T] T -> T, y: T) -> T { g2(T, y) }
 
-pub fn accept_poly(_value: Poly_to(I32)) -> . { () }
+pub fn accept_poly(_value: Poly_to(I32)) { () }
 
-pub fn accept_duplicate(_value: Duplicate(Poly_to(I32))) -> . { () }
+pub fn accept_duplicate(_value: Duplicate(Poly_to(I32))) { () }
 
-pub fn accept_drop(_value: Drop(Poly_to(I32), Poly_to(I32))) -> . { () }
+pub fn accept_drop(_value: Drop(Poly_to(I32), Poly_to(I32))) { () }

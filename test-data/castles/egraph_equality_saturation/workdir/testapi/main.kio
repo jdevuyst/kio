@@ -7,7 +7,7 @@ import egraph/rewrite as rewrite;
 import testapi(Bool, I32, String);
 import testapi/io as io;
 
-fn congruence() -> . {
+fn congruence() {
   io.print("congruence\n");
   let g = graph.create();
   let x = graph.variable_node(g, 0);
@@ -36,7 +36,7 @@ fn congruence() -> . {
   report.result(g, long)
 }
 
-fn factoring() -> . {
+fn factoring() {
   io.print("factoring\n");
   let g = graph.create();
   let x = graph.variable_node(g, 0);
@@ -59,7 +59,7 @@ fn factoring() -> . {
   io.print("\n")
 }
 
-fn identities() -> . {
+fn identities() {
   io.print("identities\n");
   let g = graph.create();
   let x = graph.variable_node(g, 0);
@@ -74,7 +74,7 @@ fn identities() -> . {
   report.result(g, root)
 }
 
-fn constant_arithmetic() -> . {
+fn constant_arithmetic() {
   io.print("constant arithmetic\n");
   let g = graph.create();
   let two = graph.constant_node(g, 2);
@@ -87,7 +87,7 @@ fn constant_arithmetic() -> . {
   report.result(g, root)
 }
 
-fn already_saturated() -> . {
+fn already_saturated() {
   io.print("already saturated\n");
   let g = graph.create();
   let x = graph.variable_node(g, 0);
@@ -98,7 +98,7 @@ fn already_saturated() -> . {
   report.result(g, root)
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("E-graph equality saturation\n");
   congruence();
   factoring();

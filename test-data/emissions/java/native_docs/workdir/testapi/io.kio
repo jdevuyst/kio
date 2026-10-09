@@ -1,0 +1,8 @@
+module testapi/io;
+
+import testapi(String);
+
+/// HOST-FN-DOC print.
+/// Delimiter */; quotes """; backslash \; Unicode α.
+/// @deprecated stays authored prose.
+host fn print(value: String) -> .;

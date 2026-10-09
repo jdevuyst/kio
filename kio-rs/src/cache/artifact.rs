@@ -854,14 +854,43 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn copy_dir_contents_rejects_special_files() {
+        use std::os::unix::fs::FileTypeExt;
         use std::os::unix::net::UnixListener;
+
+        const CHILD: &str = "KIO_DEBUG_ARTIFACT_SOCKET_TEST_CHILD";
+        if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new("1")) {
+            let _listener = UnixListener::bind("socket").expect("create socket");
+            return;
+        }
 
         let dir = tempfile::tempdir().expect("tempdir");
         let from = dir.path().join("from");
         let to = dir.path().join("to");
         fs::create_dir_all(&from).expect("create source");
         fs::create_dir_all(&to).expect("create destination");
-        let _listener = UnixListener::bind(from.join("socket")).expect("create socket");
+        // A child-local cwd keeps the socket address short even under a long temp root.
+        let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "cache::artifact::tests::copy_dir_contents_rejects_special_files",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .current_dir(&from)
+            .output()
+            .expect("run socket fixture");
+        assert!(
+            output.status.success(),
+            "socket fixture failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            fs::symlink_metadata(from.join("socket"))
+                .expect("socket fixture must run")
+                .file_type()
+                .is_socket()
+        );
 
         let error = copy_dir_contents(&from, &to).expect_err("socket must be rejected");
         assert!(error.contains("unsupported artifact entry"), "{error}");

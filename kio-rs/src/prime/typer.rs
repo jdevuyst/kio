@@ -348,7 +348,7 @@ impl Typer<Prime> for PrimeTyper {
 
     fn record_literal_resolution<'m>(
         _literal_site: crate::ast::ExpressionSite,
-        _resolved: crate::pass::typecheck_core::InternedType<Prime>,
+        _resolved: crate::pass::typecheck_core::LiteralResolution<Prime>,
         _tcx: &mut TypeCtx<'m, '_, Prime>,
     ) {
         // Kio' mandates the `(Type)` annotation on every literal (see
@@ -726,12 +726,35 @@ pub fn check_package(package: &Package<Prime>) -> Result<Package<Prime>, Located
     check_normalized_package(normalize_package(package))
 }
 
+/// Non-overlapping wall regions inside receiving-Prime validation.
+#[cfg(feature = "cli")]
+#[derive(Default)]
+pub(crate) struct PrimeValidationTiming {
+    pub(crate) check: std::time::Duration,
+    pub(crate) bake: std::time::Duration,
+    pub(crate) finalize: std::time::Duration,
+}
+
 /// Validate a package whose lexical type binders have already been
 /// alpha-normalized.  The full pipeline uses this entry after Lowered →
 /// Prime substitution so it does not normalize the same tree a second time.
 pub(crate) fn check_normalized_package(
     normalized: AlphaNormalizedPackage<Prime>,
 ) -> Result<Package<Prime>, LocatedError> {
+    check_normalized_package_with_timing(
+        normalized,
+        #[cfg(feature = "cli")]
+        None,
+    )
+}
+
+/// Collect frontend wall timings only when the caller supplies a destination.
+pub(crate) fn check_normalized_package_with_timing(
+    normalized: AlphaNormalizedPackage<Prime>,
+    #[cfg(feature = "cli")] mut timing: Option<&mut PrimeValidationTiming>,
+) -> Result<Package<Prime>, LocatedError> {
+    #[cfg(feature = "cli")]
+    let check_start = timing.as_ref().map(|_| std::time::Instant::now());
     let mut elaborations = PrimeElaborations::default();
     let type_interner = std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default());
     let typecheck_scope =
@@ -751,11 +774,27 @@ pub(crate) fn check_normalized_package(
             .next()
             .expect("collected Prime package errors are non-empty")
     })?;
+    #[cfg(feature = "cli")]
+    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), check_start) {
+        timing.check = start.elapsed();
+    }
     let (package, _) = normalized.into_parts();
     let mut typed = package;
+    #[cfg(feature = "cli")]
+    let bake_start = timing.as_ref().map(|_| std::time::Instant::now());
     bake_prime_elaborations(&mut typed, &elaborations);
+    #[cfg(feature = "cli")]
+    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), bake_start) {
+        timing.bake = start.elapsed();
+    }
+    #[cfg(feature = "cli")]
+    let finalize_start = timing.as_ref().map(|_| std::time::Instant::now());
     crate::prime::canonical::canonicalize_package(&mut typed);
     crate::pass::alpha_normalize::erase_package_occurrences(&mut typed);
+    #[cfg(feature = "cli")]
+    if let (Some(timing), Some(start)) = (timing, finalize_start) {
+        timing.finalize = start.elapsed();
+    }
     Ok(typed)
 }
 
@@ -919,12 +958,16 @@ fn bake_expr(
             // the per-slot decision table. The walk is unconditional
             // because a call may have a recording at a non-leading
             // slot (e.g., `foo(Bool, x, y)` where `foo` has two
-            // type-params and `x` is value-shaped at slot 1); the
-            // function clones-and-passes-through when no slot has
-            // a recording.
+            // type-params and `x` is value-shaped at slot 1).
             let call_span = meta.span;
-            let new_args =
-                canonicalize_call_args(args, elabs, module_path, site, requalifier, type_binders);
+            let new_args = canonicalize_call_args(
+                std::mem::take(args),
+                elabs,
+                module_path,
+                site,
+                requalifier,
+                type_binders,
+            );
             *args = new_args;
             // Kio' shares Kio's empty-call meaning. Once standalone checking
             // accepts a monomorphic source-empty call, bake its Unit value
@@ -1060,6 +1103,7 @@ fn intrinsic_value_wrapper(
         meta: Meta::new(span),
         body: Box::new(Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(intrinsic),
             args,
             ext: (),
@@ -1103,33 +1147,11 @@ fn prime_recorded_type(
 }
 
 /// Rebuild a Prime `Expr::Call`'s args list in fully-explicit
-/// canonical form. Mirrors `substitute::visit_expr_call`'s call-arg
-/// canonicalization step — the only divergence is that
-/// `Type::Infer` is statically uninhabited at Prime (its `ext` is
-/// `Never`), so the "Type::Infer at user_idx" arms collapse.
-///
-/// At each canonical slot `s`:
-///   * If the typer recorded an implicit Unit at `s`, insert one
-///     `CallArg::Value(Expr::Unit)` and do not consume a user arg.
-///   * If `args[user_idx]` is `CallArg::Type` and there's a
-///     resolution at `s`: pass the user type through. Advance
-///     both.
-///   * If `args[user_idx]` is `CallArg::Value` AND there's a
-///     resolution at `s` AND the typer marked this user-index
-///     position as `value_at_type_slot=true`: the user wrote a
-///     value-shaped expression at a type-arg slot; replace with
-///     the recorded type and advance both.
-///   * If `args[user_idx]` is `CallArg::Value` AND there's a
-///     resolution at `s` (no value-at-type-slot marker): an omitted
-///     constructor existential witness; insert the resolution and
-///     do **not** advance `user_idx`.
-///   * If `args[user_idx]` is `CallArg::Type` or `CallArg::Value`
-///     and no resolution at `s`: pass through. Advance both.
-///   * If we've consumed every user arg and a resolution still
-///     exists at `s`: append it (trailing inferred constructor
-///     existential witness).
+/// canonical form with the shared checked-slot cursor. Written arguments are
+/// moved, while recorded types are materialized in this module's lexical
+/// environment. Prime has no inferred-type syntax or untyped evaluator fallback.
 fn canonicalize_call_args(
-    args: &[crate::ast::CallArg<Prime>],
+    args: Vec<crate::ast::CallArg<Prime>>,
     elabs: &PrimeElaborations,
     module_path: &str,
     call_site: crate::ast::ExpressionSite,
@@ -1139,67 +1161,43 @@ fn canonicalize_call_args(
     use crate::ast::CallArg;
     let call_span = call_site.span;
     let mut new_args: Vec<CallArg<Prime>> = Vec::with_capacity(args.len() + 2);
-    let mut user_idx = 0usize;
-    let mut canonical_slot = 0usize;
+    use crate::pass::typecheck_core::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
+    let mut args = args.into_iter();
+    let mut cursor = CanonicalCallCursor::default();
     loop {
-        if elabs.is_call_implicit_unit_slot(module_path, call_site.id, canonical_slot) {
-            new_args.push(CallArg::Value(crate::ast::Expr::Unit {
-                occurrence: Default::default(),
-                meta: crate::ast::Meta::new(call_span),
-            }));
-            canonical_slot += 1;
-            continue;
-        }
-        let resolution = elabs.type_resolution_for(module_path, call_site.id, canonical_slot);
-        if user_idx < args.len() {
-            match (&args[user_idx], resolution) {
-                (CallArg::Type(t), _) => {
-                    new_args.push(CallArg::Type(t.clone()));
-                    user_idx += 1;
-                    canonical_slot += 1;
-                }
-                (CallArg::Value(_), Some(t))
-                    if elabs.is_value_at_type_slot(module_path, call_site.id, canonical_slot) =>
-                {
-                    // User wrote a value-shaped expression at a
-                    // type-arg slot; the typer reclassified it
-                    // via `expr_to_type_arg`. Replace the slot
-                    // with the recorded type and consume the user
-                    // arg.
-                    new_args.push(CallArg::Type(prime_recorded_type(
-                        t,
-                        requalifier,
-                        type_binders,
-                    )));
-                    user_idx += 1;
-                    canonical_slot += 1;
-                }
-                (CallArg::Value(_), Some(t)) => {
-                    // Inferring-path leading or interleaved type-
-                    // arg: insert here, leave the user arg for
-                    // the next iteration.
-                    new_args.push(CallArg::Type(prime_recorded_type(
-                        t,
-                        requalifier,
-                        type_binders,
-                    )));
-                    canonical_slot += 1;
-                }
-                (CallArg::Value(v), None) => {
-                    new_args.push(CallArg::Value(v.clone()));
-                    user_idx += 1;
-                    canonical_slot += 1;
+        let written = args.as_slice().first().map(|arg| match arg {
+            CallArg::Type(_) => WrittenCallArg::Type,
+            CallArg::Value(_) => WrittenCallArg::Value,
+        });
+        let implicit =
+            elabs.is_call_implicit_unit_slot(module_path, call_site.id, cursor.canonical());
+        let resolution = (!implicit)
+            .then(|| elabs.type_resolution_for(module_path, call_site.id, cursor.canonical()))
+            .flatten();
+        let value_at_type_slot = resolution.is_some()
+            && matches!(written, Some(WrittenCallArg::Value))
+            && elabs.is_value_at_type_slot(module_path, call_site.id, cursor.canonical());
+        match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
+            Some(CanonicalCallSlot::ImplicitUnit) => {
+                new_args.push(CallArg::Value(crate::ast::Expr::Unit {
+                    occurrence: Default::default(),
+                    meta: crate::ast::Meta::new(call_span),
+                }))
+            }
+            Some(CanonicalCallSlot::Written) => {
+                new_args.push(args.next().expect("peeked call argument exists"));
+            }
+            Some(CanonicalCallSlot::ResolvedType { consume_written }) => {
+                new_args.push(CallArg::Type(prime_recorded_type(
+                    resolution.expect("resolved canonical slot has a recorded type"),
+                    requalifier,
+                    type_binders,
+                )));
+                if consume_written {
+                    let _ = args.next().expect("peeked call argument exists");
                 }
             }
-        } else if let Some(t) = resolution {
-            new_args.push(CallArg::Type(prime_recorded_type(
-                t,
-                requalifier,
-                type_binders,
-            )));
-            canonical_slot += 1;
-        } else {
-            break;
+            None => break,
         }
     }
     new_args
@@ -1294,6 +1292,188 @@ mod tests {
             );
             values.len()
         })
+    }
+
+    fn owned_argument_package() -> Package<Prime> {
+        let package = build_package(
+            "module x;
+             fn consume[A](_value: A) -> . { () }
+             fn exercise() -> . { consume(. -> ., .(value: .) -> . { value }) }",
+        );
+        check_package(&package).expect("fully explicit argument fixture checks");
+        normalize_package(&package).into_parts().0
+    }
+
+    fn owned_argument_call(package: &Package<Prime>) -> &[crate::ast::CallArg<Prime>] {
+        let module = &package.module("x").expect("module x").module;
+        module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(def) if def.name == "exercise" => match &def.body {
+                    crate::ast::Expr::Call { args, .. } => Some(args.as_slice()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .expect("exercise call arguments")
+    }
+
+    #[test]
+    fn bake_owned_args_preserve_value_allocation() {
+        use crate::ast::{CallArg, Expr};
+
+        let mut package = owned_argument_package();
+        let expected = owned_argument_call(&package).to_vec();
+        let CallArg::Value(value @ Expr::FnExpr { body, .. }) = &owned_argument_call(&package)[1]
+        else {
+            panic!("second argument is an annotated lambda")
+        };
+        let allocation = std::ptr::from_ref(body.as_ref());
+        let occurrences = (value.site().id, body.site().id);
+
+        bake_prime_elaborations(&mut package, &PrimeElaborations::default());
+
+        let CallArg::Value(value @ Expr::FnExpr { body, .. }) = &owned_argument_call(&package)[1]
+        else {
+            panic!("lambda argument survives baking")
+        };
+        assert_eq!(owned_argument_call(&package), expected);
+        assert_eq!((value.site().id, body.site().id), occurrences);
+        assert_eq!(std::ptr::from_ref(body.as_ref()), allocation);
+    }
+
+    #[test]
+    fn bake_owned_args_preserve_explicit_type_allocation() {
+        use crate::ast::{CallArg, Type};
+
+        let mut package = owned_argument_package();
+        let expected = owned_argument_call(&package).to_vec();
+        let CallArg::Type(Type::Function { param, ret, .. }) = &owned_argument_call(&package)[0]
+        else {
+            panic!("first argument is an explicit function type")
+        };
+        let allocations = (
+            std::ptr::from_ref(param.as_ref()),
+            std::ptr::from_ref(ret.as_ref()),
+        );
+
+        bake_prime_elaborations(&mut package, &PrimeElaborations::default());
+
+        let CallArg::Type(Type::Function { param, ret, .. }) = &owned_argument_call(&package)[0]
+        else {
+            panic!("explicit function type survives baking")
+        };
+        assert_eq!(owned_argument_call(&package), expected);
+        assert_eq!(
+            (
+                std::ptr::from_ref(param.as_ref()),
+                std::ptr::from_ref(ret.as_ref()),
+            ),
+            allocations
+        );
+    }
+
+    #[test]
+    fn bake_owned_args_preserve_canonical_slot_transitions() {
+        use crate::ast::{
+            CallArg, Expr, ExpressionOccurrence, ExpressionSite, Meta, PathSegment, Type,
+        };
+
+        let package = build_package("module x;");
+        let mut requalifier = crate::pass::typecheck_core::PrimeTypeRequalifier::new(
+            &package.module("x").expect("module x").module,
+        );
+        let site = ExpressionSite {
+            id: ExpressionOccurrence::fresh().key(),
+            span: Span::new(100, 200),
+        };
+        let ty = |name: &str, start| {
+            Type::<Prime>::synth_path(
+                vec![name.to_owned()],
+                Vec::new(),
+                Span::new(start, start + 1),
+            )
+        };
+        let value = |name: &str, start| {
+            CallArg::Value(Expr::Path {
+                occurrence: ExpressionOccurrence::fresh(),
+                segments: vec![PathSegment::new(
+                    name.to_owned(),
+                    Span::new(start, start + 1),
+                )],
+                ext: (),
+                meta: Meta::new(Span::new(start, start + 1)),
+            })
+        };
+        let explicit_first = CallArg::Type(ty("Written", 10));
+        let replaced = value("type_shaped", 20);
+        let retained = value("retained", 30);
+        let explicit_second = CallArg::Type(ty("Other", 40));
+        let sibling = value("sibling", 50);
+        let replacement = ty("Replacement", 60);
+        let inserted = ty("Inserted", 70);
+        let trailing = ty("Trailing", 80);
+        let mut elabs = PrimeElaborations::default();
+        elabs.record_call_implicit_unit("x", site.id, 0);
+        for (slot, resolved) in [
+            (1, ty("DoesNotReplaceWrittenType", 90)),
+            (2, replacement.clone()),
+            (3, inserted.clone()),
+            (7, trailing.clone()),
+        ] {
+            elabs.record_type_resolution("x", site.id, slot, InternedType::fresh(resolved));
+        }
+        elabs.mark_value_at_type_slot("x", site.id, 2);
+        let expected = vec![
+            CallArg::Value(Expr::Unit {
+                occurrence: Default::default(),
+                meta: Meta::new(site.span),
+            }),
+            explicit_first.clone(),
+            CallArg::Type(replacement),
+            CallArg::Type(inserted),
+            retained.clone(),
+            explicit_second.clone(),
+            sibling.clone(),
+            CallArg::Type(trailing),
+        ];
+        let args = vec![explicit_first, replaced, retained, explicit_second, sibling];
+        let baked = canonicalize_call_args(args, &elabs, "x", site, &mut requalifier, &[]);
+        assert_eq!(baked, expected);
+
+        let empty = canonicalize_call_args(
+            Vec::new(),
+            &PrimeElaborations::default(),
+            "x",
+            site,
+            &mut requalifier,
+            &[],
+        );
+        assert!(
+            empty.is_empty(),
+            "an empty unrecorded packet stays empty here"
+        );
+    }
+
+    #[test]
+    fn bake_owned_args_nested_value_calls_roundtrip() {
+        let package = build_package(
+            "module x;
+             fn id[A](value: A) -> A { value }
+             fn second(_first: ., value: .) -> . { value }
+             fn exercise() -> . { second(id(., id(., ())), id(., ())) }",
+        );
+        let checked = check_package(&package).expect("nested value calls check");
+        let emitted =
+            crate::backends::kio_prime::emit_module(&checked.module("x").expect("module x").module);
+        let rechecked = check_package(&build_package(&emitted)).expect("fresh Prime rechecks");
+        assert_eq!(
+            crate::backends::kio_prime::emit_module(
+                &rechecked.module("x").expect("module x").module,
+            ),
+            emitted
+        );
     }
 
     #[test]
@@ -1803,6 +1983,35 @@ mod tests {
             message.contains("Kio' requires an explicit type argument for `[A]`"),
             "got: {message}"
         );
+    }
+
+    #[test]
+    fn type_only_construction_is_valid_in_fresh_prime() {
+        let package = build_package(
+            "module x; import __intrinsics__; \
+             type Identity[A] = A -> A; \
+             fn empty[A] -> . | A { __left__(., A, ()) } \
+             fn direct[A] -> A -> A { .(value: A) { value } } \
+             fn aliased[A] -> Identity(A) { .(value: A) { value } } \
+             fn higher[*F] -> F(.) -> F(.) { .(value: F(.)) { value } } \
+             fn retain() -> [A] . | A { empty } \
+             fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } \
+             fn apply(function: [A] A -> A) -> . { function(., ()) } \
+             fn main() { \
+               direct(., ()); aliased(., ()); returned()(., ()); \
+               apply(direct); apply(aliased); \
+               apply(.[A] { .(value: A) { value } }); \
+               let saved = empty; let _ = saved(.); () \
+             }",
+        );
+        check_package(&package).expect("ordinary type abstractions are shared Kio/Kio' syntax");
+        for source in [
+            "module x; fn bad[*F] -> . { () }",
+            "module x; fn bad() { let value = .[*F] { () }; () }",
+        ] {
+            let message = prime_type_error(source);
+            assert!(message.contains("higher-kinded"), "{message}");
+        }
     }
 
     #[test]

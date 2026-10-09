@@ -68,6 +68,6 @@ fn row_line(row: list.List(I32)) -> String {
 }
 
 /// Print the canvas, one line per row, row 0 first.
-pub fn plot(cv: Canvas) -> . {
+pub fn plot(cv: Canvas) {
   foldl(.(_acc: ., row: list.List(I32)) { print(text.cat2(row_line(row), "\n")) }, (), cv)
 }

@@ -31,11 +31,11 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 fn cat4(a: String, b: String, c: String, d: String) -> String { cat2(a, cat3(b, c, d)) }
 
-fn line(s: String) -> . { print(cat2(s, "\n")) }
+fn line(s: String) { print(cat2(s, "\n")) }
 
-pub fn section(title: String) -> . { line(cat3("\n== ", title, " ==")) }
+pub fn section(title: String) { line(cat3("\n== ", title, " ==")) }
 
-fn tally(label: String, n: I32) -> . { line(cat3(label, ": ", int_to_string(n))) }
+fn tally(label: String, n: I32) { line(cat3(label, ": ", int_to_string(n))) }
 
 rec(loop) fn spaces(n: I32, acc: String) -> String {
   if! leq_i32(n, 0) {
@@ -102,7 +102,7 @@ rec(loop) fn body_onto(body: Atoms, acc: String, first: Bool) -> String {
   }
 }
 
-rec(loop) fn print_facts(facts: Atoms) -> . {
+rec(loop) fn print_facts(facts: Atoms) {
   match! facts.>list.List.un_list {
     (
       , .(f: Atom, rest: Atoms) { line(cat2(atom_text(f), ".")); rec print_facts(rest) }
@@ -111,9 +111,9 @@ rec(loop) fn print_facts(facts: Atoms) -> . {
   }
 }
 
-pub fn edb(facts: Atoms) -> . { print_facts(facts); tally("facts", list.length(facts)) }
+pub fn edb(facts: Atoms) { print_facts(facts); tally("facts", list.length(facts)) }
 
-rec(loop) fn print_rules(rules: program.Rules) -> . {
+rec(loop) fn print_rules(rules: program.Rules) {
   match! rules.>list.List.un_list {
     (
       , .(r: program.Rule, rest: program.Rules) {
@@ -130,9 +130,9 @@ rec(loop) fn print_rules(rules: program.Rules) -> . {
   }
 }
 
-pub fn rules(rs: program.Rules) -> . { print_rules(rs); tally("rules", list.length(rs)) }
+pub fn rules(rs: program.Rules) { print_rules(rs); tally("rules", list.length(rs)) }
 
-rec(loop) fn print_rounds(trace: eval.Trace) -> . {
+rec(loop) fn print_rounds(trace: eval.Trace) {
   match! trace.>list.List.un_list {
     (
       , .(r: eval.Round, rest: eval.Trace) {
@@ -150,7 +150,7 @@ rec(loop) fn print_rounds(trace: eval.Trace) -> . {
 
 /// The `new facts` column falling to zero is the termination witness: a
 /// round that adds nothing can never make a later round add something.
-pub fn run(r: eval.Run) -> . {
+pub fn run(r: eval.Run) {
   line("  round  derivations  new facts");
   print_rounds(eval.trace_of(r));
   tally("rounds", list.length(eval.trace_of(r)));
@@ -158,7 +158,7 @@ pub fn run(r: eval.Run) -> . {
   tally("facts", list.length(eval.db_of(r)))
 }
 
-pub fn agreement(semi: eval.Run, naive: eval.Run) -> . {
+pub fn agreement(semi: eval.Run, naive: eval.Run) {
   tally("semi-naive derivations", eval.derivs_of(semi));
   tally("naive derivations", eval.derivs_of(naive));
   tally("derivations saved", sub_i32(eval.derivs_of(naive), eval.derivs_of(semi)));
@@ -170,7 +170,7 @@ pub fn agreement(semi: eval.Run, naive: eval.Run) -> . {
     ))
 }
 
-rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) -> . {
+rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) {
   match! preds.>list.List.un_list {
     (
       , .(p: I32, rest: list.List(I32)) {
@@ -182,7 +182,7 @@ rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) -> . {
   }
 }
 
-pub fn derived(db: Atoms, preds: list.List(I32)) -> . {
+pub fn derived(db: Atoms, preds: list.List(I32)) {
   print_tallies(db, preds);
   tally(
     , "derived total"
@@ -215,7 +215,7 @@ rec(loop) fn answer_onto(vars: query.Codes, s: subst.Subst, acc: String, first: 
   }
 }
 
-rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) -> . {
+rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) {
   match! rows.>list.List.un_list {
     (
       , .(s: subst.Subst, rest: subst.Substs) {
@@ -227,7 +227,7 @@ rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) -> . {
   }
 }
 
-rec(loop) fn print_queries(qs: Atoms, db: Atoms) -> . {
+rec(loop) fn print_queries(qs: Atoms, db: Atoms) {
   match! qs.>list.List.un_list {
     (
       , .(q: Atom, rest: Atoms) {
@@ -242,4 +242,4 @@ rec(loop) fn print_queries(qs: Atoms, db: Atoms) -> . {
   }
 }
 
-pub fn queries(qs: Atoms, db: Atoms) -> . { print_queries(qs, db) }
+pub fn queries(qs: Atoms, db: Atoms) { print_queries(qs, db) }

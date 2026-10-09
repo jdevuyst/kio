@@ -2,4 +2,4 @@ module main;
 
 import api as api;
 
-pub fn main() -> . { api.Product.get(api.Product.mk(())) }
+pub fn main() { api.Product.get(api.Product.mk(())) }

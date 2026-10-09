@@ -92,7 +92,7 @@ rec(loop) fn traceback(
   , stop_a: I32
   , b: I32
   , stop_b: I32
-  ) -> . {
+  ) {
   if! forest.less(a, stop_a) {
     if! forest.less(b, stop_b) {
       let choice = array.array_get(problem.?{choice}, index(problem, a, stop_a, b, stop_b));

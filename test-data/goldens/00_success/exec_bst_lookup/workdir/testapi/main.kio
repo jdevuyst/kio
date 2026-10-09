@@ -94,7 +94,7 @@ fn make_tree() -> Tree {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let t = make_tree();
   print(string_concat(print_option(lookup(3, t)), "\n"));
   print(string_concat(print_option(lookup(8, t)), "\n"));

@@ -2,4 +2,4 @@ module u/main;
 
 import u(String);
 
-pub fn main() -> . { let s = "hello\n"; let result = s.>no_such_function; () }
+pub fn main() { let s = "hello\n"; let result = s.>no_such_function; () }

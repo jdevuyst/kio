@@ -145,7 +145,7 @@ fn priority_cargo() -> plan.Plan {
     )
 }
 
-fn run_query(tag: String, title: String, p: plan.Plan) -> . {
+fn run_query(tag: String, title: String, p: plan.Plan) {
   print("\n");
   print(text.cat5("== ", tag, ": ", title, " ==\n"));
   print("plan:\n");
@@ -165,7 +165,7 @@ fn run_query(tag: String, title: String, p: plan.Plan) -> . {
     ))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("harbor query plan engine\n");
   run_query("Q1", "deep-draft ships", deep_draft_ships());
   run_query("Q2", "berth assignments", berth_assignments());

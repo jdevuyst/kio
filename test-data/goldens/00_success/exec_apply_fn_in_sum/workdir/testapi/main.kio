@@ -43,11 +43,11 @@ fn incr(n: I32) -> I32 { add_i32(n, 1) }
 
 fn triple(n: I32) -> I32 { mul_i32(n, 3) }
 
-fn show(label: String, value: String) -> . {
+fn show(label: String, value: String) {
   print(string_concat(label, string_concat(" == ", string_concat(value, "\n"))))
 }
 
-pub fn main() -> . {
+pub fn main() {
   show("apply(ok(incr), 4)", render(apply(I32, I32, String, ok(I32 -> I32, String, incr), 4)));
   show("apply(ok(triple), 5)", render(apply(I32, I32, String, ok(I32 -> I32, String, triple), 5)));
   show(

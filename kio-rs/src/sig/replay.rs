@@ -1668,6 +1668,57 @@ mod tests {
     }
 
     #[test]
+    fn type_only_exports_replay_binder_order_and_sealed_unit_stage() {
+        let file = parse_signature_file(
+            "signature app v(2);
+            v(1) { nonbreaking { add { module api {
+                pub pure fn direct[A] -> A -> A;
+                pub fn delayed[A]() -> .;
+                pub fn adjacent[A][B] -> A -> B -> A;
+                pub fn mixed[A](value: A)[B] -> A;
+            } } } }
+            v(2) { breaking { modify { module api {
+                pub fn delayed[A] -> .;
+            } } } }",
+            None,
+        )
+        .unwrap();
+        let sealed = crate::sig::replay_through(&file, 1).unwrap();
+        let current = replay(&file).unwrap();
+        for (leaf, signature, pure) in [
+            ("direct", "forall<*>fn(#tv0)->#tv0", true),
+            ("delayed", "forall<*>fn(.)->.", false),
+            (
+                "adjacent",
+                "forall<*>forall<*>fn(#tv0)->fn(#tv1)->#tv0",
+                false,
+            ),
+            ("mixed", "forall<*>fn(#tv0)->forall<*>#tv0", false),
+        ] {
+            let entry = &sealed.current.items[&name("api", leaf)];
+            assert_eq!(entry.side, ContractSide::Export);
+            assert_eq!(
+                entry.kind,
+                ContractKind::Fn {
+                    signature: signature.to_owned(),
+                    pure,
+                },
+                "{leaf}"
+            );
+            if leaf != "delayed" {
+                assert_eq!(entry, &current.current.items[&name("api", leaf)]);
+            }
+        }
+        assert_eq!(
+            current.current.items[&name("api", "delayed")].kind,
+            ContractKind::Fn {
+                signature: "forall<*>.".to_owned(),
+                pure: false,
+            }
+        );
+    }
+
+    #[test]
     fn header_only_is_empty_interface() {
         let r = replay_src("signature app v(1);\n");
         assert!(r.current.items.is_empty());

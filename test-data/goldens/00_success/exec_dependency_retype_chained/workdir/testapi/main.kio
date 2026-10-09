@@ -13,4 +13,4 @@ import testapi(I32);
 import testapi/fmt(print_i32);
 import w1/store(make1);
 
-pub fn main() -> . { let t = make1(7(I32)); print_i32(tag_val(t)) }
+pub fn main() { let t = make1(7(I32)); print_i32(tag_val(t)) }

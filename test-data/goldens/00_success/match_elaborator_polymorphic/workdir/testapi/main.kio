@@ -21,4 +21,4 @@ fn handle(v: Box(I32) | Box(String)) -> String {
   }
 }
 
-pub fn main() -> . { print(handle(widen_sum!(Box.mk_box("match! polymorphic: ok\n")))) }
+pub fn main() { print(handle(widen_sum!(Box.mk_box("match! polymorphic: ok\n")))) }

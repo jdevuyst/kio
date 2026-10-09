@@ -27,7 +27,7 @@ fn count_text(c: model.Counts) -> String {
     )
 }
 
-fn failure_lines(path: String, failures: cells.List(model.Case)) -> . {
+fn failure_lines(path: String, failures: cells.List(model.Case)) {
   lists.foldl(
     , .(_unit: ., test: model.Case) {
         io.print(text.string_concat(
@@ -58,7 +58,7 @@ fn failure_lines(path: String, failures: cells.List(model.Case)) -> . {
     )
 }
 
-rec(loop) fn walk(pending: cells.List(model.Suite & String)) -> . {
+rec(loop) fn walk(pending: cells.List(model.Suite & String)) {
   match! cells.uncons(pending) {
     .(entry: model.Suite & String, rest: cells.List(model.Suite & String)) {
       let .(suite, prefix) = entry;
@@ -69,13 +69,11 @@ rec(loop) fn walk(pending: cells.List(model.Suite & String)) -> . {
         } else {
           text.string_concat(prefix, text.string_concat("/", name))
         };
-      io.print(text.string_concat(
-        , "SUITE "
-        , text.string_concat(
-            , path
-            , text.string_concat(" ", text.string_concat(count_text(counts), "\n"))
-            )
-        ));
+      io.print(count_text(counts)
+        .>text.string_concat("\n")
+        .>>text.string_concat(" ")
+        .>>text.string_concat(path)
+        .>>text.string_concat("SUITE "));
       failure_lines(path, failures);
       let next =
         lists.foldl(
@@ -91,7 +89,7 @@ rec(loop) fn walk(pending: cells.List(model.Suite & String)) -> . {
   }
 }
 
-pub fn document(state: model.State) -> . {
+pub fn document(state: model.State) {
   io.print("Hierarchical test report\n");
   let roots = lists.reverse(state.?{model.roots});
   walk(lists.map(.(suite: model.Suite) { (suite, "") }, roots));
@@ -101,15 +99,14 @@ pub fn document(state: model.State) -> . {
       , model.zero()
       , roots
       );
-  io.print(text.string_concat("TOTAL ", text.string_concat(count_text(totals), "\n")));
+  io.print(count_text(totals).>text.string_concat("\n").>>text.string_concat("TOTAL "));
   let errors = lists.reverse(state.?{model.errors});
-  io.print(text.string_concat(
-    , "DIAGNOSTICS "
-    , text.string_concat(fmt.int_to_string(lists.length(errors)), "\n")
-    ));
+  io.print(fmt.int_to_string(lists.length(errors))
+    .>text.string_concat("\n")
+    .>>text.string_concat("DIAGNOSTICS "));
   lists.foldl(
     , .(_unit: ., error: String) {
-        io.print(text.string_concat("ERROR ", text.string_concat(error, "\n")))
+        io.print(error.>text.string_concat("\n").>>text.string_concat("ERROR "))
       }
     , ()
     , errors

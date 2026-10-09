@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/io as io;
 
-pub fn main() -> . { io.print("hi from host\n"(String)) }
+pub fn main() { io.print("hi from host\n"(String)) }

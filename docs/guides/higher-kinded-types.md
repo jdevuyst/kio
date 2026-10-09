@@ -123,7 +123,7 @@ fn wrap[*F][A](pur: Pure(F), x: A) -> F(A) { Pure.lift(F, pur)(A, x) }
 
 fn box_pure() -> Pure(Box) { Pure.mk_pure(Box, .[A](x) { Box.mk_box(A, x) }) }
 
-pub fn main() -> . {
+pub fn main() {
   let v = wrap(Box, String, box_pure(), "hello\n"(String));
   print(Box.un_box(String, v))
 }

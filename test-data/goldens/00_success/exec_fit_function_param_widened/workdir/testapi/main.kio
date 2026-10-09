@@ -7,7 +7,7 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 
 // A source function that handles the wider `(String | I32)` input.
-fn handle_either(x: String | I32) -> . {
+fn handle_either(x: String | I32) {
   let s =
     match! x {
       (.(s: String) { s }, .(n: I32) { int_to_string(n) })
@@ -24,7 +24,4 @@ fn handle_either(x: String | I32) -> . {
 // handler.
 fn adapt(f: (String | I32) -> .) -> String -> . { fit!(f) }
 
-pub fn main() -> . {
-  let narrowed = adapt(handle_either);
-  narrowed("fit fn-param widened: handled\n")
-}
+pub fn main() { let narrowed = adapt(handle_either); narrowed("fit fn-param widened: handled\n") }

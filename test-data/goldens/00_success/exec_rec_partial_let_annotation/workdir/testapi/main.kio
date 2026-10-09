@@ -29,7 +29,7 @@ rec(loop) fn nested_partial(n: I32) -> Box(I32) {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(i32_to_string(Box.un_box(direct_partial(1))));
   print(",");
   print(i32_to_string(Box.un_box(nested_partial(1))));

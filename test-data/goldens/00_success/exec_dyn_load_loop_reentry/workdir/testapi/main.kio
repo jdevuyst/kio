@@ -118,7 +118,7 @@ fn assert_i32(label: String, expected: I32, actual: . | I32) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(assert_i32("sum_to(5) == 15: "(String), 15(I32), loaded_i32("sum_to"(String), 5(I32))));
   print(assert_i32("grid_sum(4) == 65: "(String), 65(I32), loaded_i32("grid_sum"(String), 4(I32))))
 }

@@ -843,7 +843,9 @@ run_execution_fixture() {
   : >"$scratch/execution-impls"
   : >"$scratch/execution-checks"
   set +e
+  # Intentional fixture failures belong to this captured log, not outer CI progress.
   TMPDIR=$scratch/direct-tmp KIO_CI_SCHEDULE=DISABLE \
+    KIO_CI_PROGRESS_FD='' KIO_CI_TASK_NAME='' \
     KIO_DEBUG_PROGRESS_INTERVAL=0 \
     KIO_TEST_EXECUTION_IMPLS=$scratch/execution-impls \
     KIO_TEST_EXECUTION_CHECKS=$scratch/execution-checks \
@@ -897,8 +899,17 @@ assert_eq 1 "$(wc -l <"$scratch/execution-impls" | tr -d ' ')" 'exact filter pre
 assert_eq "$execution_omitted" "$(cat "$scratch/execution-impls")" 'exact omitted case now executes'
 
 execution_fail_case=$execution_omitted
-run_execution_fixture invariant-red 1 -- "$@"
+KIO_CI_PROGRESS_FD=3 KIO_CI_TASK_NAME=outer-selftest \
+  run_execution_fixture invariant-red 1 -- "$@" \
+    3>"$scratch/invariant-red.progress"
 execution_fail_case=
+if [ -s "$scratch/invariant-red.progress" ] ||
+   ! grep -Fq 'ci/run-tests.sh: LIVE FAIL [invariants@kio]' \
+     "$scratch/execution-invariant-red.log"; then
+  cat "$scratch/invariant-red.progress" "$scratch/execution-invariant-red.log" >&2
+  printf 'coverage-policy-selftest: fixture failure escaped its captured log\n' >&2
+  exit 1
+fi
 : >"$execution_cases/00_success/$execution_omitted/KNOWN_FAILING"
 run_execution_fixture known-failure 0 -- "$@"
 assert_eq 51 "$(wc -l <"$scratch/execution-impls" | tr -d ' ')" 'known failure outside draw is pinned'

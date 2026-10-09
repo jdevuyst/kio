@@ -20,10 +20,19 @@ suite("Kio extension — extension host runtime", () => {
       const bundleRequire = createRequire(bundlePath);
       const subscriptions: vscode.Disposable[] = [];
       const lines: string[] = [];
+      const status = { dispose() {} } as vscode.LanguageStatusItem;
+      const commands: string[] = [];
+      const notifications: string[] = [];
       let provider: vscode.DocumentSemanticTokensProvider | undefined;
       const api = Object.create(vscode, {
+        commands: { value: Object.create(vscode.commands, {
+          registerCommand: { value: (name: string) => { commands.push(name); return { dispose() {} }; } },
+        }) },
         env: { value: Object.create(vscode.env, { uiKind: { value: uiKind } }) },
         window: { value: Object.create(vscode.window, {
+          ...Object.fromEntries(["Information", "Warning", "Error"].map((severity) => [
+            `show${severity}Message`, { value: async (message: string) => { notifications.push(message); } },
+          ])),
           createOutputChannel: { value: (channelName: string) => ({
             name: channelName,
             append: (line: string) => lines.push(line),
@@ -33,6 +42,7 @@ suite("Kio extension — extension host runtime", () => {
           }) },
         }) },
         languages: { value: Object.create(vscode.languages, {
+          createLanguageStatusItem: { value: () => status },
           registerDocumentSemanticTokensProvider: { value: (
             selector: vscode.DocumentSelector,
             registered: vscode.DocumentSemanticTokensProvider,
@@ -56,7 +66,7 @@ suite("Kio extension — extension host runtime", () => {
           return bundleRequire(id);
         },
         ...(nodeHost ? { process, Buffer } : {}),
-        console, URL, TextDecoder, TextEncoder, Uint8Array,
+        console, URL, TextDecoder, TextEncoder, Uint8Array, AbortController,
         setTimeout, clearTimeout, setInterval, clearInterval,
         setImmediate, clearImmediate, performance,
       }, {
@@ -85,10 +95,16 @@ suite("Kio extension — extension host runtime", () => {
             await new Promise((resolve) => setTimeout(resolve, 20));
           }
           assert.ok(lines.includes("lsp: language client started"), lines.join("\n"));
+          assert.strictEqual(status.text, "Kio: Running");
+          assert.ok(commands.includes("kio.restartLanguageServer"));
         } else {
           assert.ok(lines.some((line) => line.startsWith("lsp: skipped")), lines.join("\n"));
           assert.ok(!lines.some((line) => line.startsWith("lsp: starting")));
+          assert.strictEqual(status.text, "Kio: Highlighting only");
+          assert.strictEqual(status.severity, vscode.LanguageStatusSeverity.Information);
+          assert.strictEqual(commands.length, 0, "browser-only hosts expose no process-recovery commands");
         }
+        assert.deepStrictEqual(notifications, []);
       } finally {
         await module.exports.deactivate();
         for (const subscription of subscriptions.reverse()) subscription.dispose();

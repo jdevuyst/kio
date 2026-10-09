@@ -65,7 +65,7 @@ fn not(value: Bool) -> Bool {
   }
 }
 
-fn set_edge(graph: Array(I32), from_node: I32, to_node: I32, score: I32) -> . {
+fn set_edge(graph: Array(I32), from_node: I32, to_node: I32, score: I32) {
   array.array_set(graph, edge_index(from_node, to_node), score);
   array.array_set(graph, edge_index(to_node, from_node), score)
 }
@@ -79,7 +79,7 @@ rec(loop) fn set_diagonal(node: I32, graph: Array(I32)) -> Array(I32) {
   }
 }
 
-fn apply_blocked_crosslink(graph: Array(I32), blocked: Array(Bool)) -> . {
+fn apply_blocked_crosslink(graph: Array(I32), blocked: Array(Bool)) {
   set_edge(graph, 2, 3, blocked_distance());
   array.array_set(blocked, edge_index(2, 3), .t);
   array.array_set(blocked, edge_index(3, 2), .t)
@@ -341,7 +341,7 @@ rec(loop) fn pick_summary(
   }
 }
 
-fn print_line(value: String) -> . { io.print(text.string_concat(value, "\n")) }
+fn print_line(value: String) { io.print(text.string_concat(value, "\n")) }
 
 fn run_plan() -> Plan {
   let blocked = array.array_make_filled(graph_size(), .f);
@@ -355,7 +355,7 @@ fn run_plan() -> Plan {
   {score, route, blocked, picks, qty}
 }
 
-pub fn main() -> . {
+pub fn main() {
   let plan = run_plan();
   let route = array.array_clone(plan.?{route});
   print_line("warehouse pick route");

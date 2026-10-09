@@ -10,7 +10,7 @@ import testapi/iter(loop);
 
 labels Ring = { before: Array(I32), after: Array(I32), active: Array(Bool) };
 
-rec(loop) fn link_ring(ring: Ring, i: I32, n: I32) -> . {
+rec(loop) fn link_ring(ring: Ring, i: I32, n: I32) {
   if! geo.equal(i, n) {
     ()
   } else {

@@ -20,7 +20,7 @@ rec(loop) fn has_from(column: model.Column, state: model.Item, index: I32) -> Bo
 
 pub fn contains(column: model.Column, state: model.Item) -> Bool { has_from(column, state, 0) }
 
-pub fn insert(column: model.Column, state: model.Item) -> . {
+pub fn insert(column: model.Column, state: model.Item) {
   if! contains(column, state) {
     ()
   } else {
@@ -41,7 +41,7 @@ pub fn create(token_count: I32) -> model.Chart {
   allocate(arrays.array_make_empty(), arith.add_i32(token_count, 1))
 }
 
-rec(loop) fn seed_rules(grammar: model.Grammar, column: model.Column, category: I32, index: I32) -> . {
+rec(loop) fn seed_rules(grammar: model.Grammar, column: model.Column, category: I32, index: I32) {
   if! arith.leq_i32(arrays.array_len(grammar), index) {
     ()
   } else {
@@ -55,6 +55,6 @@ rec(loop) fn seed_rules(grammar: model.Grammar, column: model.Column, category: 
   }
 }
 
-pub fn seed(grammar: model.Grammar, column: model.Column, category: I32) -> . {
+pub fn seed(grammar: model.Grammar, column: model.Column, category: I32) {
   seed_rules(grammar, column, category, 0)
 }

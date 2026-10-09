@@ -1,0 +1,652 @@
+================================================================================
+type-only named declarations
+================================================================================
+module m;
+pure fn nil[A] -> List(A) { empty(A) }
+fn unit[A] { () }
+fn repeated[A][B] -> A -> B -> A { .(a: A)(b: B) { a } }
+fn explicit[A]() -> . { () }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_pure)
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (operator_arrow_type)
+      (type_path
+        (entity_name_type)
+        (type_arguments
+          (bracket_lparen)
+          (type_path
+            (entity_name_type))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (type_path
+            (entity_name_type))
+          (bracket_rparen)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (operator_arrow_type)
+      (type_arrow
+        (type_path
+          (entity_name_type))
+        (operator_arrow_type)
+        (type_arrow
+          (type_path
+            (entity_name_type))
+          (operator_arrow_type)
+          (type_path
+            (entity_name_type)))))
+    (expression_block
+      (bracket_lbrace)
+      (fn_lambda_expr
+        (separator_dot)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (value_param_binder
+              (binding_pattern
+                (variable_parameter)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type))))
+            (bracket_rparen))
+          (value_param_group
+            (bracket_lparen)
+            (value_param_binder
+              (binding_pattern
+                (variable_parameter)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type))))
+            (bracket_rparen)))
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+type-only anonymous values and mixed stages
+================================================================================
+module m;
+fn run() {
+  let direct = .[A] { () };
+  let repeated = .[A][B] -> . { () };
+  let mixed = .[A](a: A)[B] { a };
+  let explicit = .[A]() { () };
+  direct(.)
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (fn_lambda_expr
+          (separator_dot)
+          (fn_signature
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket)))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (fn_lambda_expr
+          (separator_dot)
+          (fn_signature
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket))
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket)))
+          (operator_arrow_type)
+          (separator_dot)
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (fn_lambda_expr
+          (separator_dot)
+          (fn_signature
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket))
+            (value_param_group
+              (bracket_lparen)
+              (value_param_binder
+                (binding_pattern
+                  (variable_parameter)
+                  (operator_builtin)
+                  (type_path
+                    (entity_name_type))))
+              (bracket_rparen))
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket)))
+          (expression_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (let_statement
+        (keyword_let)
+        (identifier)
+        (operator_builtin)
+        (fn_lambda_expr
+          (separator_dot)
+          (fn_signature
+            (type_param_group
+              (bracket_lbracket)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket))
+            (value_param_group
+              (bracket_lparen)
+              (bracket_rparen)))
+          (expression_block
+            (bracket_lbrace)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (separator_dot)
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+type-only groups and dot trivia
+================================================================================
+module m;
+fn named // header
+[,A,,] // stages
+[B] -> . { () }
+fn run() {
+  . // dot
+  [A] // stages
+  [B] // result
+  -> . { () }
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (comment_line)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (separator_comma)
+          (type_param_binder
+            (variable_parameter))
+          (separator_comma)
+          (separator_comma)
+          (bracket_rbracket))
+        (comment_line)
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (unit_expression
+        (bracket_lparen)
+        (bracket_rparen))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (fn_lambda_expr
+        (separator_dot)
+        (comment_line)
+        (fn_signature
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket))
+          (comment_line)
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (comment_line)
+        (operator_arrow_type)
+        (separator_dot)
+        (expression_block
+          (bracket_lbrace)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+type-only higher-kinded function value
+================================================================================
+module m;
+fn value[*F] -> F(.) -> F(.) { .(x: F(.)) { x } }
+fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (ambiguous_lbracket_star
+            (star_open_prefix)
+            (kind_annotation))
+          (variable_parameter)
+          (bracket_rbracket)))
+      (operator_arrow_type)
+      (type_arrow
+        (type_path
+          (entity_name_type)
+          (type_arguments
+            (bracket_lparen)
+            (separator_dot)
+            (bracket_rparen)))
+        (operator_arrow_type)
+        (type_path
+          (entity_name_type)
+          (type_arguments
+            (bracket_lparen)
+            (separator_dot)
+            (bracket_rparen)))))
+    (expression_block
+      (bracket_lbrace)
+      (fn_lambda_expr
+        (separator_dot)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (value_param_binder
+              (binding_pattern
+                (variable_parameter)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)
+                  (type_arguments
+                    (bracket_lparen)
+                    (separator_dot)
+                    (bracket_rparen)))))
+            (bracket_rparen)))
+        (expression_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (fn_lambda_expr
+        (separator_dot)
+        (fn_signature
+          (type_param_group
+            (ambiguous_lbracket_star
+              (star_open_prefix)
+              (kind_annotation))
+            (variable_parameter)
+            (bracket_rbracket)))
+        (operator_arrow_type)
+        (type_arrow
+          (type_path
+            (entity_name_type)
+            (type_arguments
+              (bracket_lparen)
+              (separator_dot)
+              (bracket_rparen)))
+          (operator_arrow_type)
+          (type_path
+            (entity_name_type)
+            (type_arguments
+              (bracket_lparen)
+              (separator_dot)
+              (bracket_rparen))))
+        (expression_block
+          (bracket_lbrace)
+          (fn_lambda_expr
+            (separator_dot)
+            (fn_signature
+              (value_param_group
+                (bracket_lparen)
+                (value_param_binder
+                  (binding_pattern
+                    (variable_parameter)
+                    (operator_builtin)
+                    (type_path
+                      (entity_name_type)
+                      (type_arguments
+                        (bracket_lparen)
+                        (separator_dot)
+                        (bracket_rparen)))))
+                (bracket_rparen)))
+            (expression_block
+              (bracket_lbrace)
+              (expression_path
+                (identifier))
+              (bracket_rbrace)))
+          (bracket_rbrace)))
+      (bracket_rbrace))))
+
+================================================================================
+type-only export signature
+================================================================================
+signature app v(1);
+v(1) { breaking { add { module api { fn nil[A] -> List(A); fn thunk[A]() -> List(A); } } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_add_block
+          (keyword_add)
+          (bracket_lbrace)
+          (signature_module_section
+            (keyword_module)
+            (module_path
+              (entity_name_module))
+            (variant_block
+              (bracket_lbrace)
+              (fn_decl_head
+                (keyword_fn)
+                (entity_name_function)
+                (fn_signature
+                  (type_param_group
+                    (bracket_lbracket)
+                    (type_param_binder
+                      (variable_parameter))
+                    (bracket_rbracket)))
+                (operator_arrow_type)
+                (type_path
+                  (entity_name_type)
+                  (type_arguments
+                    (bracket_lparen)
+                    (type_path
+                      (entity_name_type))
+                    (bracket_rparen))))
+              (separator_semicolon)
+              (fn_decl_head
+                (keyword_fn)
+                (entity_name_function)
+                (fn_signature
+                  (type_param_group
+                    (bracket_lbracket)
+                    (type_param_binder
+                      (variable_parameter))
+                    (bracket_rbracket))
+                  (value_param_group
+                    (bracket_lparen)
+                    (bracket_rparen)))
+                (operator_arrow_type)
+                (type_path
+                  (entity_name_type)
+                  (type_arguments
+                    (bracket_lparen)
+                    (type_path
+                      (entity_name_type))
+                    (bracket_rparen))))
+              (separator_semicolon)
+              (bracket_rbrace)))
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+type-only adjacent whole variadic runs
+================================================================================
+module m;
+import ops(varop ..[ ].., varop +.[ ].+);
+fn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (variadic_open)
+        (variadic_head_gap
+          (head_whitespace))
+        (variadic_close)))
+    (separator_comma)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (variadic_open)
+        (variadic_head_gap
+          (head_whitespace))
+        (variadic_close)))
+    (bracket_rparen)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (variadic_expression
+        (variadic_open)
+        (variadic_elements
+          (variadic_element
+            (fn_lambda_expr
+              (separator_dot)
+              (fn_signature
+                (type_param_group
+                  (bracket_lbracket)
+                  (type_param_binder
+                    (variable_parameter))
+                  (bracket_rbracket)))
+              (expression_block
+                (bracket_lbrace)
+                (unit_expression
+                  (bracket_lparen)
+                  (bracket_rparen))
+                (bracket_rbrace))))
+          (separator_comma)
+          (variadic_element
+            (variadic_expression
+              (variadic_open)
+              (variadic_elements
+                (variadic_element
+                  (fn_lambda_expr
+                    (separator_dot)
+                    (fn_signature
+                      (type_param_group
+                        (bracket_lbracket)
+                        (type_param_binder
+                          (variable_parameter))
+                        (bracket_rbracket)))
+                    (expression_block
+                      (bracket_lbrace)
+                      (unit_expression
+                        (bracket_lparen)
+                        (bracket_rparen))
+                      (bracket_rbrace)))))
+              (variadic_close))))
+        (variadic_close))
+      (bracket_rbrace))))

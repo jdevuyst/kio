@@ -23,7 +23,7 @@ fn opaque_string(s: String) -> String { s }
 
 fn make_string_show() -> Show(String) { {show = opaque_string} }
 
-pub fn main() -> . {
+pub fn main() {
   let int_dict = make_int_show();
   // `Show.get(I32, int_dict)` projects the polymorphic payload
   // out of the dictionary and instantiates it at I32; the result

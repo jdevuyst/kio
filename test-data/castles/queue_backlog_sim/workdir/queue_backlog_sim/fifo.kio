@@ -8,7 +8,7 @@ import testapi/iter(loop);
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum!((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match! result {
@@ -26,7 +26,7 @@ pub rec(loop) fn reverse_list[A](source: List(A), carry: List(A)) -> List(A) {
 }
 
 pub fn canonical[A](raw: Queue(A)) -> Queue(A) {
-  let rotated = Queue.mk_unchecked((reverse_list(back(raw), nil(A, ())), nil(A, ())));
+  let rotated = Queue.mk_unchecked((reverse_list(back(raw), nil(A)), nil(A)));
   match! uncons(front(raw)) {
     (.(_pair: A & List(A)) { raw }, .(_empty: .) { rotated })
   }
@@ -37,7 +37,7 @@ pub fn enqueue[A](x: A, q: Queue(A)) -> Queue(A) {
 }
 
 pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
-  let .(empty_result: (A & Queue(A)) | .) = absent();
+  let .(empty_result: (A & Queue(A)) | .) = absent(_);
   fold_result(
     , empty_result
     , .(pair: A & Queue(A)) { let .(x: A, rest: Queue(A)) = pair; present((x, canonical(rest))) }

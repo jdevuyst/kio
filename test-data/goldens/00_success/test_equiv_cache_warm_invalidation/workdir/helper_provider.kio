@@ -2,4 +2,4 @@ module helper_provider;
 
 fn hidden() -> . { () }
 
-pub fn exposed() -> . { hidden() }
+pub fn exposed() { hidden() }

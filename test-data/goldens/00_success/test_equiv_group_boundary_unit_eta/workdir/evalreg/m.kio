@@ -4,7 +4,7 @@ host type T;
 
 fn pick_second(a: T, b: T)(u: .) -> T { b }
 
-fn thunk() -> . { () }
+fn thunk() { () }
 
 equiv comma_prefix_suspends(a: T, b: T) {
   pick_second(a, b);

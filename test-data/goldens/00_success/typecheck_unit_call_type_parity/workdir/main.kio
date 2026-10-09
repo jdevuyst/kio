@@ -14,35 +14,35 @@ host fn host_nil[A]() -> A;
 
 fn identity[A](value: A) -> A { value }
 
-fn unit_nullary[A]() -> . { () }
+fn unit_nullary[A]() { () }
 
-fn unit_parameter[A](value: .) -> . { value }
+fn unit_parameter[A](value: .) { value }
 
 fn staged[A]()(value: A) -> A { value }
 
-fn unit_product[A](value: A, tail: .) -> . { tail }
+fn unit_product[A](value: A, tail: .) { tail }
 
-fn two_units(left: ., _right: .) -> . { left }
+fn two_units(left: ., _right: .) { left }
 
-fn consume_token(_value: Token) -> . { () }
+fn consume_token(_value: Token) { () }
 
-fn consume_token_function(_function: Token -> Token) -> . { () }
+fn consume_token_function(_function: Token -> Token) { () }
 
-fn consume_unit_to_token_function(_function: . -> Token) -> . { () }
+fn consume_unit_to_token_function(_function: . -> Token) { () }
 
-fn consume_unit_function(_function: . -> .) -> . { () }
+fn consume_unit_function(_function: . -> .) { () }
 
-fn consume_unit_alias_function(_function: Unit_alias -> Unit_alias) -> . { () }
+fn consume_unit_alias_function(_function: Unit_alias -> Unit_alias) { () }
 
-fn consume_unit_product_function(_function: (. & .) -> .) -> . { () }
+fn consume_unit_product_function(_function: (. & .) -> .) { () }
 
-fn consume_staged_unit_function(_function: . -> . -> .) -> . { () }
+fn consume_staged_unit_function(_function: . -> . -> .) { () }
 
-fn consume_box_constructor(_function: Token -> Box(Token)) -> . { () }
+fn consume_box_constructor(_function: Token -> Box(Token)) { () }
 
-fn consume_unit_box_constructor(_function: . -> Box(.)) -> . { () }
+fn consume_unit_box_constructor(_function: . -> Box(.)) { () }
 
-fn exercise_poly_value(function: [A] A -> A) -> . {
+fn exercise_poly_value(function: [A] A -> A) {
   consume_unit_function(function(.));
   function(., ());
   ().>function(.);
@@ -51,7 +51,7 @@ fn exercise_poly_value(function: [A] A -> A) -> . {
   function(.).<<()
 }
 
-fn exercise_nil_value(function: [A] . -> A) -> . {
+fn exercise_nil_value(function: [A] . -> A) {
   consume_unit_to_token_function(function(Token));
   consume_token(host_nil(Token)());
   consume_token(function(Token)());
@@ -59,13 +59,13 @@ fn exercise_nil_value(function: [A] . -> A) -> . {
   consume_token(().>function(Token))
 }
 
-fn exercise_unit_value(function: [A] . -> .) -> . {
+fn exercise_unit_value(function: [A] . -> .) {
   consume_unit_function(function(Token));
   function(Token, ());
   ().>function(Token)
 }
 
-pub fn check() -> . {
+pub fn check() {
   ().>identity;
   ().>>identity;
   identity.<();

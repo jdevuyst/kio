@@ -581,6 +581,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn type_only_exports_roundtrip_without_synthesizing_unit_stages() {
+        let source = "signature app v(1);
+            v(1) { nonbreaking { add { module api {
+                pub pure fn direct[A] -> .;
+                pub fn delayed[A]() -> .;
+                pub fn adjacent[A][B] -> .;
+                pub fn mixed[A](value: A)[B] -> A;
+                host fn required[A]() -> .;
+            } } } }";
+        let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
+        let rendered = emit_signature_file(&parsed);
+        let reparsed = crate::pass::parser::parse_signature_file(&rendered, None).unwrap();
+        assert_eq!(rendered, emit_signature_file(&reparsed));
+        for expected in [
+            "pub pure fn direct[A] -> .",
+            "pub fn delayed[A]() -> .",
+            "pub fn adjacent[A][B] -> .",
+            "pub fn mixed[A](value: A)[B] -> A",
+            "host fn required[A]() -> .",
+        ] {
+            assert!(
+                rendered.contains(expected),
+                "missing {expected:?}:\n{rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn type_only_exports_do_not_relax_signature_host_group_policy() {
+        let source = "signature app v(1);
+            v(1) { breaking { add { module api {
+                host fn required[A] -> .;
+            } } } }";
+        assert!(matches!(
+            crate::pass::parser::parse_signature_file(source, None),
+            Err(crate::error::Error::Parse(_))
+        ));
+    }
+
+    #[test]
     fn signature_semicolons_join_sorted_sections_imports_and_declarations() {
         let source = "signature demo v(1);
             v(1) { ;

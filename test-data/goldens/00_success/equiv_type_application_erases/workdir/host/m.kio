@@ -11,7 +11,7 @@ fn poly_id[T](v: T) -> T { v }
 
 // A `fn` with ONLY type parameters becomes a zero-arity closure;
 // applying it to a type-arg forces the body.
-fn type_only[T]() -> . { () }
+fn type_only[T]() { () }
 
 equiv type_app_is_value_id[T](v: T) {
   poly_id(T, v);

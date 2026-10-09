@@ -19,6 +19,9 @@ use crate::ast::Type;
 #[cfg(feature = "surface")]
 use crate::ast::UncheckedPrime;
 
+#[cfg(all(test, feature = "surface"))]
+mod template_result_tests;
+
 pub struct MemoCtx<P>
 where
     P: Phase,
@@ -410,8 +413,14 @@ impl UserElaboratorMemoKey {
 #[cfg(feature = "surface")]
 #[derive(Clone, Debug)]
 pub struct UserElaboratorTemplate {
-    pub result_ty: Type<UncheckedPrime>,
     pub checked: crate::normalization::CheckedTerm,
+}
+
+#[cfg(feature = "surface")]
+impl UserElaboratorTemplate {
+    pub fn result_ty(&self) -> &Type<UncheckedPrime> {
+        self.checked.ty()
+    }
 }
 
 #[cfg(feature = "surface")]

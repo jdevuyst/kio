@@ -2,4 +2,4 @@ module main;
 
 host fn polymorphic(_token: .) -> [Poly] Poly -> Poly;
 
-fn partial() -> . { let .((function: [Destructured] _)) = polymorphic(()); () }
+fn partial() { let .((function: [Destructured] _)) = polymorphic(()); () }

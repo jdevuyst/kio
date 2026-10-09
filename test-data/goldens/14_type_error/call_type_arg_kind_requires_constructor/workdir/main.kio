@@ -4,4 +4,4 @@ host type I32;
 
 host fn phantom[*F]() -> .;
 
-fn bad() -> . { phantom(I32) }
+fn bad() { phantom(I32) }

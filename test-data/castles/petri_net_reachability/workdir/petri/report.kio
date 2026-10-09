@@ -13,13 +13,13 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
-fn line(label: String, value: String) -> . {
-  io.print(text.string_concat(label, text.string_concat(value, "\n")))
+fn line(label: String, value: String) {
+  io.print(value.>text.string_concat("\n").>>text.string_concat(label))
 }
 
-fn number(label: String, value: I32) -> . { line(label, fmt.int_to_string(value)) }
+fn number(label: String, value: I32) { line(label, fmt.int_to_string(value)) }
 
-fn flag(label: String, value: Bool) -> . { line(label, fmt.bool_to_string(value)) }
+fn flag(label: String, value: Bool) { line(label, fmt.bool_to_string(value)) }
 
 fn rejected(net: model.Net, transition: model.Transition) -> Bool {
   if! model.enabled(net, transition, net.?{model.initial}) {
@@ -29,11 +29,11 @@ fn rejected(net: model.Net, transition: model.Transition) -> Bool {
   }
 }
 
-fn print_witness(net: model.Net, result: search.Search) -> . {
+fn print_witness(net: model.Net, result: search.Search) {
   match! result.?{search.first_deadlock} {
     .(node: search.Node) {
       number("shortest deadlock depth: ", node.?{search.depth});
-      match! witness.reconstruct(result.?{search.visited}, node, lists.nil()) {
+      match! witness.reconstruct(result.?{search.visited}, node, lists.nil(_)) {
         .(path: witness.Path) {
           number("witness transitions: ", traversal.length(path));
           line("  0: initial -> ", witness.show_marking(net.?{model.initial}));
@@ -50,7 +50,7 @@ fn print_witness(net: model.Net, result: search.Search) -> . {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   let net = fixture.locking();
   let result = search.run(net);
   io.print("Opposite-lock Petri net (capacity 1)\n");

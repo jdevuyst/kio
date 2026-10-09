@@ -9,4 +9,4 @@ newtype T : I32 { constructor wrap; projector unwrap }
 
 fn make_box(make: [A] A -> Box(A), value: I32) -> Box(I32) { make(value) }
 
-pub fn main() -> . { let boxed = make_box(box_make, 9); print(i32_to_string(box_get(boxed))) }
+pub fn main() { let boxed = make_box(box_make, 9); print(i32_to_string(box_get(boxed))) }

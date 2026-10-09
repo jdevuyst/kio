@@ -6,7 +6,7 @@
 module dtype/main;
 
 /// Computes a result.
-pub fn compute(n: .) -> . { n }
+pub fn compute(n: .) { n }
 
 /// A wrapper newtype — `Wrapped` is the type-level name (rejected by
 /// `@type`), but its constructor / projector are value-level fns.

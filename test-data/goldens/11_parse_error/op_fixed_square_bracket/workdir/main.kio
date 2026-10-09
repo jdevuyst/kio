@@ -1,10 +1,10 @@
 module main;
 
-fn wrap(a: .) -> . { a }
+fn wrap(a: .) { a }
 
-fn nil() -> . { () }
+fn nil() { () }
 
-fn cons(h: ., _t: .) -> . { h }
+fn cons(h: ., _t: .) { h }
 
 op [ _ ] { impl wrap; };
 

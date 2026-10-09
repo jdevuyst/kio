@@ -14,9 +14,9 @@ host fn id[T](value: T) -> T;
 
 host fn int_to_str(value: I32) -> Str;
 
-pub fn say_hello(value: Str) -> . { print(value) }
+pub fn say_hello(value: Str) { print(value) }
 
-pub fn enqueue_value(value: Owned_str) -> . { enqueue(value) }
+pub fn enqueue_value(value: Owned_str) { enqueue(value) }
 
 pub fn identity[T](value: T) -> T { id(value) }
 

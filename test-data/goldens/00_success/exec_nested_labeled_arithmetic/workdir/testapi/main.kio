@@ -15,4 +15,4 @@ fn pick_second(_first: I32, second: I32) -> I32 { second }
 
 fn decrement_second(row: Pair) -> I32 { pick_second(row.?{first}, sub_i32(row.?{second}, 1)) }
 
-pub fn main() -> . { print(int_to_string(decrement_second(pair(10, 4)))) }
+pub fn main() { print(int_to_string(decrement_second(pair(10, 4)))) }

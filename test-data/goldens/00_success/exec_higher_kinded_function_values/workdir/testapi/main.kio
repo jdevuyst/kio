@@ -26,6 +26,4 @@ fn through_anonymous_scheme(value: Box(String)) -> String {
   Box.un_box(String, applied)
 }
 
-pub fn main() -> . {
-  print(through_anonymous_scheme(Box.mk_box(String, "structural hkt\n"(String))))
-}
+pub fn main() { print(through_anonymous_scheme(Box.mk_box(String, "structural hkt\n"(String)))) }

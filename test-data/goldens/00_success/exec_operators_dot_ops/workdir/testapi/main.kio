@@ -12,7 +12,7 @@ op _ .. _ { impl add }
 
 op _ .+. _ { impl mul }
 
-pub fn main() -> . {
+pub fn main() {
   print(int_to_string(3 .. 4));
   // add(3, 4) = 7
   print("\n");

@@ -120,7 +120,7 @@ fn show_sum_of_prod(v: (I32 & String) | (Bool & String)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Array(I32 & String): build products in Kio, push across the
   // FFI, read back and render.
   let pairs = array_make_empty(I32 & String, ());

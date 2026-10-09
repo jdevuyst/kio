@@ -547,6 +547,38 @@ and export surface, file layout inside the namespace, the host-record
 construction idiom, atomic-type tables, and the encoding of sums,
 products, and newtype values.
 
+## Doc comments on the emitted surface
+
+Documentation retained on a selected live boundary declaration is rendered in
+the host's native documentation form: exported functions on the package facade,
+host-function requirements, public newtype declarations, and host types where
+the host presentation provides a declaration slot. A bare generic parameter
+without such a slot does not acquire an artificial declaration for documentation.
+
+Documentation is presentation-only. It does not change host obligations, public
+names or types, callable behavior, effect order, or runtime-helper selection.
+Private implementation and unbridged declarations do not publish their docs.
+Module docs, docs discarded by declaration expansion, and declarations retained
+only by signature history contribute no boundary docs. Newtype prose describes
+the nominal declaration, not its constructor or projector. Signature files
+continue to omit item documentation.
+
+The shared input dialect is [Kiodoc](../kiodoc.md). Authored line breaks are
+preserved without prose reflow. References render the written Kio name as code;
+code-embedding directives render their operand as code without resolution,
+source expansion, or host-language linking. Code and raw-HTML regions remain
+literal regions. Emission is deterministic and best-effort: malformed markup
+does not make a package build fail; validation remains `kio doc check`'s job.
+
+Host-specific rendering and escaping prevent authored documentation from
+closing its comment or string, introducing a native declaration annotation, or
+selecting executable machinery. Native framing normalizes carriage-return
+line endings or encodes control characters as string content; delimiters and
+native directive markers can appear with visible escapes. Preserving prose
+does not require copying unsafe source bytes into a host comment. Target pages
+specify their dialect and attachment sites. Existing synthesized explanatory notes follow user prose,
+separated by a blank documentation line.
+
 ## Structural FFI shape conventions
 
 Beyond the behavioral rules above, the FFI also shares structural

@@ -44,7 +44,7 @@ fn export_line(label: String, source: String) -> String {
   string_concat(label, string_concat(first_export(source), "\n"(String)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(result_line(
     , "dead glob: "(String)
     , "module present;\npub fn entry() -> . { () }\npackage guest;\nbridge { "

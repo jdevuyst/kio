@@ -85,11 +85,11 @@ fn safe_div_by(d: I32) -> I32 -> Option(I32) {
   }
 }
 
-fn show_eq(label: String, value: String) -> . {
+fn show_eq(label: String, value: String) {
   print(string_concat(label, string_concat(" == ", string_concat(value, "\n"))))
 }
 
-pub fn main() -> . {
+pub fn main() {
   show_eq("some(2) |> map(double)", print_option(map(double, some(2))));
   show_eq("none |> map(double)", print_option(map(double, none(I32, ()))));
   show_eq("some(2) |> and_then(safe_div_by(2))", print_option(and_then(safe_div_by(2), some(2))));

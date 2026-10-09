@@ -168,7 +168,7 @@ fn eval(e: Expr) -> I32 {
 
 // Build the test AST: `Mul(Add(Lit(2), Lit(3)), Lit(4))`,
 // which evaluates to `(2 + 3) * 4 == 20`.
-pub fn main() -> . {
+pub fn main() {
   let ast = mul(add(lit(2), lit(3)), lit(4));
   print(string_concat(int_to_string(eval(ast)), "\n"))
 }

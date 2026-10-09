@@ -52,12 +52,12 @@ pub fn triangle_area2(points: Array(geo.Point), triangles: Array(geo.Triangle)) 
   area_walk(points, triangles, 0, 0)
 }
 
-fn add_edge(edges: Array(I32), n: I32, a: I32, b: I32) -> . {
+fn add_edge(edges: Array(I32), n: I32, a: I32, b: I32) {
   let index = num.add_i32(num.mul_i32(a, n), b);
   arr.array_set(edges, index, num.add_i32(arr.array_get(edges, index), 1))
 }
 
-rec(loop) fn collect_edges(edges: Array(I32), n: I32, triangles: Array(geo.Triangle), i: I32) -> . {
+rec(loop) fn collect_edges(edges: Array(I32), n: I32, triangles: Array(geo.Triangle), i: I32) {
   if! geo.equal(i, arr.array_len(triangles)) {
     ()
   } else {

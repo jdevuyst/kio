@@ -130,4 +130,4 @@ host type T63;
 
 host type T64;
 
-pub fn unit() -> . { () }
+pub fn unit() { () }

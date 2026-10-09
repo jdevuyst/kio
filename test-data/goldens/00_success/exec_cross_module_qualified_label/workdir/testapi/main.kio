@@ -10,4 +10,4 @@ import testapi/labels(Greeting);
 // generated nominal type.
 fn make() -> Greeting { {t.greeting = "qualified\n"} }
 
-pub fn main() -> . { print(make().?{t.greeting}) }
+pub fn main() { print(make().?{t.greeting}) }

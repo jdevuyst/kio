@@ -7,7 +7,7 @@ import testapi/io(print);
 import widget/mutual as source_mutual;
 import widget/self as source_self;
 
-pub fn main() -> . {
+pub fn main() {
   let chain =
     {source_self.link = .(_next: source_self.Chain(String) -> String) { "self-recursive\n" }};
   print(target_self.read_chain(chain, .(_node: target_self.Chain(String)) { "unused" }));

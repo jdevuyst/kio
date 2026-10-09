@@ -60,4 +60,4 @@ rec(loop) fn walk(items: Items, macros: Macros, acc: Flats) -> Expansion {
 }
 
 /// Expand every macro call in `items`, or name the macro that is missing.
-pub fn expand(items: Items, macros: Macros) -> Expansion { walk(items, macros, l.nil(Flat, ())) }
+pub fn expand(items: Items, macros: Macros) -> Expansion { walk(items, macros, l.nil(Flat)) }

@@ -65,7 +65,7 @@ rec(loop) fn accumulate(
   , residual: Array(I32)
   , balances: Array(I32)
   , index: I32
-  ) -> . {
+  ) {
   if! math.less(index, ar.array_len(network.?{net.edges})) {
     let edge = ar.array_get(network.?{net.edges}, index);
     if! edge.?{net.backward} {

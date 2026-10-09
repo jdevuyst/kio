@@ -15,4 +15,4 @@ rec(loop) fn map_after[A][B](remaining: I32, transform: A -> B, value: A) -> B {
   }
 }
 
-pub fn main() -> . { print(map_after(3, i32_to_string, 42)); print("\n") }
+pub fn main() { print(map_after(3, i32_to_string, 42)); print("\n") }

@@ -20,7 +20,7 @@ fn cnf_to_dnf(x: Cnf) -> Dnf { iso!(x) }
 
 fn dnf_to_cnf(y: Dnf) -> Cnf { iso!(y) }
 
-pub fn main() -> . {
+pub fn main() {
   let cnf = (42, into!("hello\n", String | I32));
   // Round-trip through DNF and back to CNF.
   let dnf = cnf_to_dnf(cnf);

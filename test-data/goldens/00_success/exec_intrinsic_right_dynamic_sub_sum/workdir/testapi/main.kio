@@ -13,7 +13,7 @@ import testapi/io(print);
 // `[1, payload]` regardless of `R`'s spine.
 fn widen_right(x: Int | Int) -> Int | Int | Int { __right__(Int, Int | Int, x) }
 
-fn show(s: Int | Int | Int) -> . {
+fn show(s: Int | Int | Int) {
   __either__(
     , Int
     , Int | Int
@@ -34,7 +34,7 @@ fn show(s: Int | Int | Int) -> . {
   print("\n"(String))
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Build a *dynamic* `(Int | Int)` — runtime value, not a static
   // injection visible to recovery.
   let dyn_value = __right__(Int, Int, 42(Int));

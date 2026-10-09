@@ -33,7 +33,7 @@ fn drop_unit_left(p: String & .) -> String { narrow_prod!(String).<<p }
 // `String | String → String`.
 fn dedup_sum(s: String | String) -> String { s.>narrow_sum!(String) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = widen("hello\n");
   let s =
     match! widened {

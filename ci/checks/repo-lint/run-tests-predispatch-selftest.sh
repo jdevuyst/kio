@@ -636,8 +636,10 @@ run_harness() {
   shift 3
   : >"$rh_find_log"
   : >"$rh_runner_log"
+  # Intentional fixture failures belong to this captured log, not outer CI progress.
   PATH="$scratch/bin:$PATH" \
     KIO_CI_SCHEDULE=DISABLE \
+    KIO_CI_PROGRESS_FD='' KIO_CI_TASK_NAME='' \
     KIO_CI_SCHEDULER_BIN="$test_scheduler_bin" \
     KIO_DEBUG_PROGRESS_INTERVAL=0 \
     KIO_TEST_FIND_LOG="$rh_find_log" \
@@ -2168,7 +2170,11 @@ fi
 
 for repeat in one two; do
   run_harness "$scratch/seeded-$repeat.log" "$scratch/seeded-$repeat.find" \
-    "$scratch/seeded-$repeat.runner" --sample-cases=1 --case-seed=fixed
+    "$scratch/seeded-$repeat.runner" --sample-cases=1 --case-seed=fixed || {
+      seeded_status=$?
+      cat "$scratch/seeded-$repeat.log" >&2
+      exit "$seeded_status"
+    }
 done
 if ! cmp -s "$scratch/seeded-one.log" "$scratch/seeded-two.log" ||
    ! cmp -s "$scratch/seeded-one.runner" "$scratch/seeded-two.runner"; then
@@ -2243,15 +2249,24 @@ fi
 KIO_TEST_FAIL_CASE=
 KIO_TEST_NAMED_CHECK_LOG=$scratch/named-stale.checks
 named_stale_status=0
-run_harness "$scratch/named-stale.log" "$scratch/named-stale.find" \
-  "$scratch/named-stale.runner" "--check=$named_check" \
-  "--impl-case-set-file=$named_manifest" --dyn-load-prime-only -- \
-  '^bucket/(a_js|b_rust|h_known_failing)$' || named_stale_status=$?
+KIO_CI_PROGRESS_FD=3 KIO_CI_TASK_NAME=outer-selftest \
+  run_harness "$scratch/named-stale.log" "$scratch/named-stale.find" \
+    "$scratch/named-stale.runner" "--check=$named_check" \
+    "--impl-case-set-file=$named_manifest" --dyn-load-prime-only -- \
+    '^bucket/(a_js|b_rust|h_known_failing)$' \
+    3>"$scratch/named-stale.progress" || named_stale_status=$?
 KIO_TEST_NAMED_CHECK_LOG=
 if [ "$named_stale_status" -ne 1 ] ||
    ! grep -Fq 'KNOWN_FAILING but now passes' "$scratch/named-stale.log"; then
   cat "$scratch/named-stale.log" >&2
   printf 'run-tests-predispatch-selftest: stale KNOWN_FAILING named-set fixture did not fail\n' >&2
+  exit 1
+fi
+if [ -s "$scratch/named-stale.progress" ] ||
+   ! grep -Fq 'ci/run-tests.sh: LIVE FAIL [js-one] bucket/h_known_failing' \
+     "$scratch/named-stale.log"; then
+  cat "$scratch/named-stale.progress" "$scratch/named-stale.log" >&2
+  printf 'run-tests-predispatch-selftest: fixture failure escaped its captured log\n' >&2
   exit 1
 fi
 

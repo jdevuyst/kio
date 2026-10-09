@@ -1,1 +1,1 @@
-type mismatch: expected `\(T & Witness\)`, found `Local`
+type mismatch: expected `T & Witness`, found `Local`

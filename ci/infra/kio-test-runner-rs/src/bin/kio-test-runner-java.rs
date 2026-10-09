@@ -717,8 +717,7 @@ fn java_function_type(params: &[&str], ret: &str) -> String {
 }
 
 fn java_apply_poly_type(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> String {
-    const INTERFACE: &str =
-        "Shapes.KioForall_Site_M_testapi_sarith__H_apply_upoly_Binders_K1_B0_A0";
+    const INTERFACE: &str = "Shapes.KioForall_Site_M_testapi_sarith__H_applyPoly_Binders_K1_B0_A0";
     assert_eq!(
         (binding.module, binding.leaf),
         ("testapi/arith", "apply_poly"),
@@ -1561,6 +1560,34 @@ fn render_export_driver(
                      System.out.println(\"round export: \" + roundExport.apply(\"export-left\").apply(\"export-right\"));\n"
             )
         }
+        ExportDriver::TypeOnlyRoundtrip => format!(
+            r#"    System.out.println("ready");
+    var direct = {main_ns}.<String>direct();
+    System.out.println("specialized");
+    String directText = direct.apply("direct-string");
+    System.out.println(directText);
+    var integer = {main_ns}.<Integer>direct();
+    System.out.println("specialized-again");
+    Integer directInteger = integer.apply(42);
+    System.out.println(directInteger);
+    var delayed = {main_ns}.<String>delayed();
+    System.out.println("unit-called");
+    String delayedText = delayed.apply("unit-string");
+    System.out.println(delayedText);
+    String ordinaryText = {main_ns}.ordinary("ordinary-string");
+    System.out.println(ordinaryText);
+    {main_ns}.<String>phantom();
+    System.out.println("phantom-called");
+    {main_ns}.<String>phantomUnit();
+    System.out.println("phantom-unit-called");
+    var poly = {main_ns}.<String>poly();
+    System.out.println("poly-returned");
+    String polyText = poly.<String>apply("poly-string");
+    System.out.println(polyText);
+    Integer polyInteger = poly.<Integer>apply(73);
+    System.out.println(polyInteger);
+"#
+        ),
         ExportDriver::HostSubstitutedUnitCallback => {
             format!("    System.out.println({api_ns}.viaHost(_unit -> \"callback\"));\n")
         }
@@ -2422,7 +2449,7 @@ mod tests {
 
         assert_eq!(
             method.arg_types,
-            ["Shapes.KioForall_Site_M_testapi_sarith__H_apply_upoly_Binders_K1_B0_A0<String>"]
+            ["Shapes.KioForall_Site_M_testapi_sarith__H_applyPoly_Binders_K1_B0_A0<String>"]
         );
         assert_eq!(method.ret_type, "String");
         assert!(!method.arg_types[0].contains("Object"));

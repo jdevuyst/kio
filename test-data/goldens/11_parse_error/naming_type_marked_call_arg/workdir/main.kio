@@ -2,4 +2,4 @@ module main;
 
 fn id[A](x: A) -> A { x }
 
-fn bad(x: .) -> . { id(_FooBar, x) }
+fn bad(x: .) { id(_FooBar, x) }

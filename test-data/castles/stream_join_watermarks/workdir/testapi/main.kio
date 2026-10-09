@@ -12,10 +12,10 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-rec(loop) fn replay(state: m.State, previous: String | .) -> . {
+rec(loop) fn replay(state: m.State, previous: String | .) {
   match! input.next() {
     .(command: input.Begin) {
-      io.print(text.string_concat("session ", text.string_concat(command.?{input.begin}, "\n")));
+      io.print(command.?{input.begin}.>text.string_concat("\n").>>text.string_concat("session "));
       rec replay(engine.empty(), previous)
     };
     .(command: input.Left_event) {
@@ -65,7 +65,7 @@ rec(loop) fn replay(state: m.State, previous: String | .) -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Temporal join: equal keys, right time in [left-2,left+3]\n");
   replay(engine.empty(), ().>widen_sum!(String | .))
 }

@@ -1,0 +1,9 @@
+module docops/operators;
+
+pub fn pair(left: ., right: .) { left }
+
+pub fn identity(value: .) { value }
+
+pub op _ + _ { impl pair }
+
+pub op ! _ { impl identity }

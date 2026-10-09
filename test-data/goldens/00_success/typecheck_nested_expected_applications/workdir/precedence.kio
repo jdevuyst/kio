@@ -6,10 +6,10 @@ host type Local role(i32);
 
 host fn pair_same[A]() -> A & A;
 
-fn outer[T](_early: T, _late: r.Remote & T) -> . { () }
+fn outer[T](_early: T, _late: r.Remote & T) { () }
 
-fn retained_expected_source_precedes_literal_fallback() -> . { outer(42, pair_same()) }
+fn retained_expected_source_precedes_literal_fallback() { outer(42, pair_same()) }
 
-fn immediate_lambda_expected_source_precedes_literal_fallback() -> . {
+fn immediate_lambda_expected_source_precedes_literal_fallback() {
   .[T](_seed, _early: T, _late: r.Remote & T) { () }((), 42, pair_same())
 }

@@ -9,7 +9,7 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-rec(loop) fn cases(completed: I32) -> . {
+rec(loop) fn cases(completed: I32) {
   match! io.read_ascii_line() {
     .(title: String) {
       match! io.read_ascii_line() {
@@ -29,4 +29,4 @@ rec(loop) fn cases(completed: I32) -> . {
   }
 }
 
-pub fn main() -> . { io.print("Lexical closure interpreter\n"); cases(0) }
+pub fn main() { io.print("Lexical closure interpreter\n"); cases(0) }

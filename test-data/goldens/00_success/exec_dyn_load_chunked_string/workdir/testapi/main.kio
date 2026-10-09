@@ -162,7 +162,7 @@ fn show_f64(label: String, r: . | Value) -> String {
 
 /// Loads the piped-in image and prints each probed export's result; a
 /// load failure prints the diagnostic instead.
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
       , .(im0: Lr_image) {

@@ -59,11 +59,13 @@ grep -qF 'surface-forms.md' ai/topics/kio-authoring.md || echo "kio-authoring.md
 
 ## 3. The Kio'-inspection command is real (structural smoke)
 
-The navigator pins `kio build kio-prime` against a `target kio-prime { out "…"; }` block. The `kio-prime` target id must still be a recognised build backend (it's `js` / `rust` / `kio-prime`, not the cargo `prime` *feature*).
+The navigator pins `kio build kio-prime` against a `target kio-prime { out "…"; }` block. The `kio-prime` target id must still be a recognised build backend (it's `js` / `rust` / `kio-prime`, not the cargo `prime` *feature*). Target ids are mapped by `BuildTarget::id`, resolved by `BuildTarget::from_id`, and dispatched in `cmd/build.rs`.
 
 ```sh
-grep -qE '"kio-prime"\s*=>' kio-rs/src/cmd/build.rs \
-  || echo "kio-prime target id not found in dispatch_target — the pinned 'kio build kio-prime' is stale"
+grep -qF 'Self::KioPrime => "kio-prime"' kio-rs/src/build_target.rs \
+  && grep -qF 'BuildTarget::from_id(&target.id)' kio-rs/src/cmd/build.rs \
+  && grep -qF 'Some(BuildTarget::KioPrime) =>' kio-rs/src/cmd/build.rs \
+  || echo "kio-prime target id or dispatch not found — the pinned 'kio build kio-prime' may be stale"
 ```
 
 If the dump invocation, the `target kio-prime` block shape, or the reading-key form names have drifted, the inspection section is teaching a dead command — fix it against the current backend.

@@ -1,0 +1,31 @@
+module testapi/native;
+
+/// NATIVE-DOC examples stay presentation only.
+///
+/// ```
+/// export fn sample() { () }
+/// ```
+///
+/// ```rust,compile_fail
+/// let fine = 1;
+/// ```
+///
+///     export fn indented() { () }
+///     [`literal_indented`]
+///
+/// - nested source:
+///
+///       [`literal_nested`]
+///
+/// @Metadata { @TechnologyRoot }
+/// @Snippet(path: "missing")
+/// @param absent native-looking parameter prose.
+/// \param absent native-looking backslash prose.
+/// Native-looking ``missingSymbol`` stays literal code.
+/// Rust-looking `::std::rc::Rc`, `Arc<dyn Any>`, and `T: 'static` stay literal.
+/// Plain [UnknownKioType] prose does not request host symbol lookup.
+/// [**relative** `resource`](UnknownKioType) stays a resource link.
+pub fn example() { () }
+
+/// REPLACEMENT-DOC must not attach to removed history.
+fn archived() { () }

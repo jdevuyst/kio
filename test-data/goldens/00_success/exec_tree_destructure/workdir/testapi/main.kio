@@ -35,7 +35,7 @@ fn left_or[A](fallback: Tree(A), t: Tree(A)) -> Tree(A) {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Build:           branch
   //                  /    \
   //              branch   leaf(99)

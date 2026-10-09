@@ -201,11 +201,11 @@ fn step(bank: Bank) -> Step {
     }
 }
 
-fn emit_i32(label: String, value: I32) -> . { print(string_concat(label, int_to_string(value))) }
+fn emit_i32(label: String, value: I32) { print(string_concat(label, int_to_string(value))) }
 
-fn emit_bool(label: String, value: Bool) -> . { print(string_concat(label, bool_to_string(value))) }
+fn emit_bool(label: String, value: Bool) { print(string_concat(label, bool_to_string(value))) }
 
-fn emit_frame(bank: Bank, frame: Step) -> . {
+fn emit_frame(bank: Bank, frame: Step) {
   let next_bank = frame.?{next_bank};
   emit_i32("tick ", bank.?{tick});
   emit_i32(" arrivals L", frame.?{arrival_lobby_count});
@@ -241,7 +241,7 @@ fn score(bank: Bank) -> I32 {
   sub_i32(sub_i32(served_points, wait_penalty), pending_penalty)
 }
 
-fn emit_summary(bank: Bank) -> . {
+fn emit_summary(bank: Bank) {
   print("summary");
   emit_i32(" served=", bank.?{served_total});
   emit_i32(" wait=", bank.?{wait_total});
@@ -253,7 +253,7 @@ fn emit_summary(bank: Bank) -> . {
   print("\n")
 }
 
-pub fn run() -> . {
+pub fn run() {
   print("elevator_bank_sim\n");
   let final_bank = run_ticks(initial_bank());
   emit_summary(final_bank)

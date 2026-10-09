@@ -24,7 +24,7 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn print_amount_result(command: String, amount: I32, state: Ledger) -> . {
+fn print_amount_result(command: String, amount: I32, state: Ledger) {
   io.print(text.string_concat(command, " "));
   io.print(fmt.i32_to_string(amount));
   io.print(" -> balance=");
@@ -32,16 +32,16 @@ fn print_amount_result(command: String, amount: I32, state: Ledger) -> . {
   io.print("\n")
 }
 
-fn print_invalid_amount(command: String, amount_text: String) -> . {
+fn print_invalid_amount(command: String, amount_text: String) {
   io.print(command);
   io.print(" invalid amount '");
   io.print(amount_text);
   io.print("'\n")
 }
 
-fn print_missing_amount(command: String) -> . { io.print(command); io.print(" missing amount\n") }
+fn print_missing_amount(command: String) { io.print(command); io.print(" missing amount\n") }
 
-fn print_unknown(command: String) -> . {
+fn print_unknown(command: String) {
   io.print("unknown command '");
   io.print(command);
   io.print("'\n")
@@ -145,7 +145,7 @@ rec(loop) fn replay(state: Ledger) -> Ledger {
   }
 }
 
-fn print_summary(state: Ledger) -> . {
+fn print_summary(state: Ledger) {
   io.print("summary credits=");
   io.print(fmt.int_to_string(credit_count_value(state)));
   io.print(" debits=");
@@ -166,7 +166,7 @@ fn print_summary(state: Ledger) -> . {
   io.print("\n")
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("ledger rule audit\n");
   io.print("start balance=0\n");
   let final_state = replay(empty());

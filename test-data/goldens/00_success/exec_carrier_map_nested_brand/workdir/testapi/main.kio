@@ -78,4 +78,4 @@ fn head_key(b: Box(I32, I32)) -> I32 {
     )
 }
 
-pub fn main() -> . { print(int_to_string(head_key(boxed(cons_l(7, 70, nil_c(I32, I32, ())))))) }
+pub fn main() { print(int_to_string(head_key(boxed(cons_l(7, 70, nil_c(I32, I32, ())))))) }

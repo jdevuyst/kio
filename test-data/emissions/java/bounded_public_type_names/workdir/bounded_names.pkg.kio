@@ -1,0 +1,13 @@
+package bounded_names;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java"
+  }
+}
+
+bridge {
+  api
+}

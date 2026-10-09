@@ -12,11 +12,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use lsp_types::{
-    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString,
-    Position, Range, Uri,
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag, Location,
+    NumberOrString, Position, Range, Uri,
 };
 
-use crate::cmd::check::LspWarning;
+use crate::cmd::check::{LspWarning, LspWarningKind};
 use crate::diagnostic::group_secondary_labels;
 use crate::error::Applicability;
 use crate::error::{Error, Fix, FixReplacementPart, SecondaryLabel};
@@ -127,7 +127,12 @@ pub fn warning_to_diagnostic(warning: &LspWarning, line_index: &LineIndex) -> Di
         source: Some(DIAG_SOURCE.to_owned()),
         message: warning.message.clone(),
         related_information: None,
-        tags: None,
+        tags: match warning.kind {
+            LspWarningKind::LocalBinding => None,
+            LspWarningKind::UnusedImport | LspWarningKind::UnusedPrivateDeclaration => {
+                Some(vec![DiagnosticTag::UNNECESSARY])
+            }
+        },
         data,
     }
 }
@@ -231,7 +236,7 @@ fn diagnostic_data(error: &Error, line_index: &LineIndex) -> Option<serde_json::
     (!data.is_empty()).then_some(serde_json::Value::Object(data))
 }
 
-fn fixes_data(fixes: &[Fix], line_index: &LineIndex) -> Option<serde_json::Value> {
+pub(super) fn fixes_data(fixes: &[Fix], line_index: &LineIndex) -> Option<serde_json::Value> {
     let fixes: Vec<_> = fixes
         .iter()
         .filter(|fix| fix.edits.iter().all(|edit| edit.file.is_none()))
@@ -417,6 +422,31 @@ mod tests {
     use crate::lsp::util::test_file_uri;
     use crate::span::Span;
     use std::str::FromStr;
+
+    #[test]
+    fn only_import_and_private_declaration_warnings_are_unnecessary() {
+        let source = "fn dead() { () }";
+        for kind in [
+            LspWarningKind::LocalBinding,
+            LspWarningKind::UnusedImport,
+            LspWarningKind::UnusedPrivateDeclaration,
+        ] {
+            let warning = LspWarning {
+                kind,
+                file_path: PathBuf::from("main.kio"),
+                span: Span::new(3, 7),
+                message: "unused subject".to_owned(),
+                fixes: Vec::new(),
+            };
+            let diagnostic = warning_to_diagnostic(&warning, &LineIndex::new(source));
+            assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
+            assert_eq!(diagnostic.code, None);
+            assert_eq!(
+                diagnostic.tags,
+                (kind != LspWarningKind::LocalBinding).then(|| vec![DiagnosticTag::UNNECESSARY]),
+            );
+        }
+    }
 
     fn uri(s: &str) -> Uri {
         match s.strip_prefix("file:///") {

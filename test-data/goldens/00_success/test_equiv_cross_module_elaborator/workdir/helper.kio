@@ -8,7 +8,7 @@ host fn a() -> .;
 
 host fn b() -> .;
 
-pub fn pick() -> . {
+pub fn pick() {
   if! .t {
     a()
   } else {

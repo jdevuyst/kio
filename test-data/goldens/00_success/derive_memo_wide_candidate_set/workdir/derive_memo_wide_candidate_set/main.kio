@@ -105,4 +105,4 @@ fn derived3() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String),
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

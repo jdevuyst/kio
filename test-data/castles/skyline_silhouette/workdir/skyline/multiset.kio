@@ -22,7 +22,7 @@ import testapi/iter(loop);
 
 pub type Active = lst.List(I32);
 
-pub fn empty() -> Active { lst.nil(I32, ()) }
+pub fn empty() -> Active { lst.nil(I32) }
 
 /// Admit one roof. `h` lands in front of the first entry it stands at least as
 /// tall as, which keeps the list descending and puts a new tallest roof at the
@@ -37,7 +37,7 @@ pub rec(loop) fn add(h: I32, xs: Active) -> Active {
             lst.cons(head, rec(cont) add(h, rest))
           }
         }
-      , .(_empty: .) { lst.cons(h, lst.nil(I32, ())) }
+      , .(_empty: .) { lst.cons(h, lst.nil(I32)) }
       )
   }
 }
@@ -54,7 +54,7 @@ pub rec(loop) fn drop(h: I32, xs: Active) -> Active {
             lst.cons(head, rec(cont) drop(h, rest))
           }
         }
-      , .(_empty: .) { lst.nil(I32, ()) }
+      , .(_empty: .) { lst.nil(I32) }
       )
   }
 }

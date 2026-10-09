@@ -8,4 +8,4 @@ import docref/lib as lib;
 import docref/lib(helper);
 
 /// Calls [`helper`] and returns its result.
-pub fn run() -> . { helper() }
+pub fn run() { helper() }

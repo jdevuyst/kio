@@ -155,6 +155,16 @@ while `[A](x: P)[B](y: Q)` denotes
 hoisted across a value group, and value groups are not flattened across an
 intervening type binder.
 
+The sequence need not contain a value group: `[A][B]` denotes
+`ΛA. ΛB. e`, with type `∀A. ∀B. R` when the body has type `R`.
+A written `[A]()` instead denotes `ΛA. λ(u: .). e`, with type
+`∀A. . → R`; the empty value group is not omitted, nor synthesized for the
+type-only form. Both named declarations and dot-led lambdas use this fold,
+and their complete types must satisfy the same kind rules. The ordinary
+term rules for `Λ` and type application govern evaluation: constructing or
+referring to the abstraction does not evaluate its body. A declaration or
+dot-led lambda with no signature group is not a source form.
+
 The `(-> R)?` annotation on `fn` is the one optional type position; an absent annotation defaults to `R = .`. Every other position is mandatory or grammatically disallowed.
 
 The presentation puts `pub` before `pure`; concrete syntax accepts either order and formats as `pub pure fn`. `pure` is admitted only on the ordinary `fn` alternative. It is not a modifier on either type alternative, a host declaration, or a surface declaration that later elaborates to Kio'.

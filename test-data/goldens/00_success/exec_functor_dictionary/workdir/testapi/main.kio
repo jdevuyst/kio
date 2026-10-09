@@ -33,4 +33,4 @@ fn use_dictionary() -> String {
   Box.un_box(String, mapped)
 }
 
-pub fn main() -> . { print(use_dictionary()) }
+pub fn main() { print(use_dictionary()) }

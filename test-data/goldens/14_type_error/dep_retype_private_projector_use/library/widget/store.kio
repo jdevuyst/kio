@@ -2,4 +2,4 @@ module store;
 
 pub newtype Token : . { pub constructor make; projector get }
 
-fn inspect_token(value: Token) -> . { Token.get(value) }
+fn inspect_token(value: Token) { Token.get(value) }

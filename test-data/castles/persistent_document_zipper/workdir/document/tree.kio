@@ -13,7 +13,7 @@ pub rec newtype Node : String & lists.List(Node) { constructor make; projector o
 
 pub fn branch(name: String, children: lists.List(Node)) -> Node { Node.make((name, children)) }
 
-pub fn leaf(name: String) -> Node { branch(name, lists.nil()) }
+pub fn leaf(name: String) -> Node { branch(name, lists.nil(_)) }
 
 pub fn name(node: Node) -> String { let .(title, _children) = Node.open(node); title }
 
@@ -30,11 +30,11 @@ pub fn append(node: Node, child: Node) -> Node {
 
 type Visit = Node & String;
 
-rec(loop) fn render_pending(pending: lists.List(Visit)) -> . {
+rec(loop) fn render_pending(pending: lists.List(Visit)) {
   match! lists.uncons(pending) {
     .(visit: Visit, rest: lists.List(Visit)) {
       let .(node, indent) = visit;
-      io.print(text.string_concat(indent, text.string_concat(name(node), "\n")));
+      io.print(name(node).>text.string_concat("\n").>>text.string_concat(indent));
       let next_indent = text.string_concat(indent, "  ");
       let next = traversal.map(.(child: Node) { (child, next_indent) }, children(node));
       rec render_pending(traversal.append(next, rest))
@@ -43,7 +43,7 @@ rec(loop) fn render_pending(pending: lists.List(Visit)) -> . {
   }
 }
 
-pub fn render(node: Node) -> . { render_pending(lists.singleton((node, "  "))) }
+pub fn render(node: Node) { render_pending(lists.singleton((node, "  "))) }
 
 rec(loop) fn count_pending(pending: lists.List(Node), count: I32) -> I32 {
   match! lists.uncons(pending) {

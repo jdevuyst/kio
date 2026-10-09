@@ -11,7 +11,7 @@ import testapi/io(print);
 // (String & String))` distribution.
 fn distrib(p: String & (I32 | String)) -> (String & I32) | (String & String) { into!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   // Pick the right-arm branch (String) so the printed text confirms
   // the distribution carried the leading String through.
   let pair = ("label: ", into!("right-branch\n", I32 | String));

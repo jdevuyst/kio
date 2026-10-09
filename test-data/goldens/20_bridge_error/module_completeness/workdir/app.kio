@@ -2,4 +2,4 @@ module app;
 
 import helper(tick);
 
-pub fn run() -> . { tick() }
+pub fn run() { tick() }

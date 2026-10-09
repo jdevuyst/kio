@@ -2,7 +2,7 @@ module curp/m;
 
 import curp(mk);
 
-fn pass_second(u: .)(v: .) -> . { v }
+fn pass_second(u: .)(v: .) { v }
 
 equiv curried_unit_groups(x: .) {
   pass_second(x)(mk());

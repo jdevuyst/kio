@@ -61,7 +61,7 @@ fn shift_line(index: I32, s: Shift) -> String {
     )
 }
 
-rec(loop) fn print_shifts(index: I32) -> . {
+rec(loop) fn print_shifts(index: I32) {
   if! lt_i32(index, scenario.shift_count()) {
     print(shift_line(index, scenario.shift_at(index)));
     rec print_shifts(add_i32(index, 1))
@@ -80,7 +80,7 @@ fn worker_load_line(worker_id: I32) -> String {
     )
 }
 
-rec(loop) fn print_worker_loads(worker_id: I32) -> . {
+rec(loop) fn print_worker_loads(worker_id: I32) {
   if! lt_i32(worker_id, scenario.worker_count()) {
     print(worker_load_line(worker_id));
     rec print_worker_loads(add_i32(worker_id, 1))
@@ -93,7 +93,7 @@ fn summary_line(label: String, value: I32) -> String {
   cat5("  ", label, ": ", int_to_string(value), "\n")
 }
 
-fn print_scorecard(card: Scorecard) -> . {
+fn print_scorecard(card: Scorecard) {
   print(summary_line("skill shortfalls", card.?{skill_shortfalls}));
   print(summary_line("same-day conflicts", card.?{same_day_conflicts}));
   print(summary_line("rest conflicts", card.?{rest_conflicts}));
@@ -102,7 +102,7 @@ fn print_scorecard(card: Scorecard) -> . {
   print(summary_line("total score", card.?{total_score}))
 }
 
-pub fn print_report() -> . {
+pub fn print_report() {
   let card = scoring.scorecard();
   print("shift_roster_planner: v1\n");
   print(cat5(

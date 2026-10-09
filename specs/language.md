@@ -438,7 +438,7 @@ Values use ordinary label construction (`{red=}`) and widen into the named alias
 
 A type parameter is introduced by writing **`[name]`** — Kio's surface syntax for a `forall` binder. There is no separate `forall` keyword; `[…]` is the only spelling. Binders may appear in two positions:
 
-- **As a declaration-head group** (`fn`, `host fn`, `equiv`, parametric `type`, parametric `newtype` / `labels`), interleaved with ordinary value-parameter groups or as a leading run before any value parameters. The binder scope extends to the groups to its right and (where present) the return type:
+- **As a signature or declaration-head group** (ordinary `fn`, dot-led lambda, `host fn`, `equiv`, parametric `type`, parametric `newtype` / `labels`). In callable signatures, type groups appear in source order alongside value groups; an ordinary `fn` or lambda may have only type groups. The binder scope extends to the groups to its right and (where present) the return type and body:
 
     ```kio
     fn id[T](x: T) -> T { x }
@@ -470,6 +470,15 @@ A callee's type binders do not scope over its caller's arguments. Written type a
 - `(P0 & P1) -> [A] R` is `Function(Product(P0, P1), Forall([A], R))`.
 
 `Forall` binds one type parameter. A source binder run is represented by nesting one `Forall` per binder, in source order: `[A][B] P -> R` lowers to `Forall([A], Forall([B], Function(P, R)))`.
+
+A type-only ordinary signature constructs exactly those `Forall` layers:
+`fn nil[A] -> List(A) { body }` has type `[A] List(A)`, not
+`[A] . -> List(A)`. Its body is evaluated when the written type stage is
+applied by `nil(A)`. In contrast, `fn nil[A]() -> List(A) { body }` retains
+the Unit value stage, so `nil(A)` returns a function and `nil(A, ())` reaches
+its body. Neither merely referring to `nil` nor binding it to a local
+implicitly specializes or executes it. The same rules apply to `.[A] { body }`
+and `.[A]() { body }`.
 
 Each nested `Forall` is also one ordered term-application boundary. A type
 argument carries no runtime value, but applying it performs one β-TLam step and
@@ -968,7 +977,7 @@ A **module** is a namespace and typechecking unit. Modules are addressed by thei
 // hello/main.kio
 module main;
 
-pub fn run() -> . { print("hi") }
+pub fn run() { print("hi") }
 ```
 
 The package root is the directory containing `<name>.pkg.kio`. The file stem is the package name, and regular module paths are checked relative to that root. The declared segments must equal the file's path relative to the package root (`.kio` stripped); mismatch is a parse error (exit code `11`). A module belongs to exactly one package.
@@ -1011,11 +1020,13 @@ pub pure fn id[A](x: A) -> A { x }
 
 `pub` and `pure` may appear in either order in source; `kio fmt` emits `pub pure fn`. There is no `impure` keyword. `pure` is admitted only on ordinary `fn` declarations, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `elab`, `op`, `literal`, `equiv`, `host` declarations, or any `rec(loop)` group/member.
 
-A `host fn` is excluded by definition: `pure` promises that a function does not call host functions, so a host function cannot itself carry that promise. Its body is opaque to Kio, leaving no body the checker could validate as an exception. A `rec(loop)` member is excluded because its execution requires the group's declared `loop` function. Both exclusions are categorical rather than inferred from a particular implementation.
+A `host fn` cannot carry `pure`: its body is opaque to Kio, leaving no body whose executable references the checker could validate. A `rec(loop)` member is excluded because its execution requires the group's declared `loop` function. Both exclusions are categorical rather than inferred from a particular implementation.
 
 The restriction applies only to executable references in the function body. Type annotations inside that body use the ordinary well-formed-type rules and may mention host types, transparent aliases, newtypes, or any other in-scope type. A function signature also has no purity classification, but its named types obey the declaration-visibility floor above. Type declarations carry no purity classification.
 
 Purity is transitive and declaration-based. In a pure body, executable value paths may resolve to local binders, pure intrinsics and newtype members, or ordinary functions explicitly declared `pure`. While checking an elaborator implementation, compiler compile-time primitives are admitted as the pure primitive environment; they are consumed before persistent Kio' and are not runtime values. A host function or an ordinary function without `pure` is rejected even if a particular implementation happens not to perform an effect. An unrestricted function may refer to both pure and unrestricted functions. The marker is retained in Kio' and on the public function contract so a dumped, freshly reparsed, or validated cached Prime artifact can check the same promise without producer provenance. A loadable image retains the marker, but the runtime loader trusts precompiled function bodies and does not perform that typecheck (see [`prime.md`](prime.md)).
+
+This is a restriction on declaration references, not an effect qualifier on function types. A pure function may invoke a callback supplied through a local binder, including a host callback supplied by an unrestricted caller. A call to a pure function is effect-free when argument evaluation and all invoked callbacks are effect-free, including callbacks carried in data or captured by closures; the `pure` marker alone does not establish that condition.
 
 **`import` statements.** `import` statements appear only at the top of a module region, and each is terminated by a semicolon. Two forms are available:
 
@@ -1102,7 +1113,7 @@ module app/main;
 
 import app(String, print);
 
-pub fn main() -> . { print("hello\n"(String)) }
+pub fn main() { print("hello\n"(String)) }
 ```
 
 `host type` / `host fn` are signature-only — they have no right-hand side; the host fills them in at invocation. They are always public and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. There is no private host item; `pub host` / `host pub` are accepted but redundant.
@@ -1189,7 +1200,7 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
 
 - **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `elab`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions and the recursive-call position below, ordinary identifiers.
 - **Module-header words** (recognized at the start of a `*.kio` module file): `module` for a module declaration.
-- **Recursive-call introducer**: `rec` introduces a recursive callee, with optional call annotations before that callee: `rec step(x)` or `rec(cont) step(x)`. Without a following callee, a bare `rec` reference or an ordinary call such as `rec(x)` uses the ordinary identifier. In particular, `fn id(rec: .) -> . { rec }` is an ordinary function.
+- **Recursive-call introducer**: `rec` introduces a recursive callee, with optional call annotations before that callee: `rec step(x)` or `rec(cont) step(x)`. Without a following callee, a bare `rec` reference or an ordinary call such as `rec(x)` uses the ordinary identifier. In particular, `fn id(rec: .) { rec }` is an ordinary function.
 - **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Elaborator names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; adjacent `!` introduces a generic elaborator call. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
 - **Inside elaborator declarations**: `impl`, `captures`, and `trailing` introduce entries; `product`, `thunk`, and `sequence` select the descriptor after `trailing`.
 - **Import-leading and import-context words**: `import` begins a module's
@@ -1206,7 +1217,7 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
 - **Inside a host type declaration**: `role` opens the `role(...)` annotation.
 - **Declaration modifier position** (top-level declarations and `newtype` block items): `pub`; on an ordinary module-body `fn` only, `pure` as well. `host` is a declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub`); elsewhere it is an ordinary identifier.
 
-A user-declared identifier may freely have any of these names — `fn id[A](x: A) -> A { x }` declares a value named `id`, and `fn pub() -> .` would declare one named `pub`. The contextual recognition only fires at the positions above; in any other position the same word is an ordinary identifier reference.
+A user-declared identifier may freely have any of these names — `fn id[A](x: A) -> A { x }` declares a value named `id`, and `fn pub()` would declare one named `pub`. The contextual recognition only fires at the positions above; in any other position the same word is an ordinary identifier reference.
 
 - **Reserved intrinsic values** — provided by the compiler, not imported by default; brought in as a block by `import __intrinsics__;`: `__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__absurd__`.
 - **Reserved import targets** — `__intrinsics__`, recognized only inside `import __intrinsics__;`, and `__comptime__`, recognized only inside `import __comptime__;`. Neither is ever a regular module name.
@@ -1601,11 +1612,20 @@ pub fn compose[A][B][C](f: A -> B, g: B -> C) -> A -> C {
 }
 ```
 
-- Parameters are comma-separated inside `( )`. Parens are **always required**, even for zero-parameter functions: `fn constant() -> String { "hi" }`.
-- Each parameter is `name: T` for some type `T`; annotations are mandatory.
-- Return type follows `->`. The `-> Type` annotation may be **elided**, in which case the return type defaults to `.` — `fn say_hi() { print("hi") }` is equivalent to `fn say_hi() -> . { print("hi") }`. The body is then type-checked against the defaulted return type; a non-unit body is a type error. This is the **only** optional type position in the language; every other type position is either grammatically mandatory or grammatically disallowed (see [Type system](#type-system)).
+- A signature has one or more ordered type-binder or value-parameter groups. A type-only signature is valid: `fn nil[A] -> List(A) { body }`. A declaration with no group, such as `fn constant -> String { "hi" }`, is rejected.
+- Value parameters are comma-separated inside `( )`. A zero-parameter value stage is written `()`: `fn constant() -> String { "hi" }`. It is not implied by a type-only signature.
+- Each written value parameter is `name: T` for some type `T`; annotations are mandatory.
+- Return type follows `->`. The `-> Type` annotation may be **elided**, in which case the return type defaults to `.` — `fn say_hi() { print("hi") }` is equivalent to `fn say_hi() -> . { print("hi") }`. The body is then type-checked against the defaulted return type; a non-unit body is a type error. This default also applies to type-only named declarations. Anonymous functions instead infer an omitted result from their body or expected type (see [Anonymous functions](#anonymous-functions)).
 - Body is a block.
 - There is **no automatic currying**. A function of three parameters is not a function returning a function returning a function.
+
+Type-only signatures retain the ordinary kind and purity rules. The complete
+type `[A] List(A)` is a value type. With a higher-kinded binder, the existing
+complete-function-scheme rule still applies: `[*F] .` is rejected, while
+`[*F] F(.) -> F(.)` is admitted, whether its value arrow comes from a written
+value group or the result type. See [Higher-kinded types](#higher-kinded-types).
+Host imports, `rec(loop)` members, and parameterized `equiv` declarations
+require at least one written value group.
 
 ### Recursive functions
 
@@ -1720,15 +1740,20 @@ Backends therefore must not lower `rec(loop)` groups to host-native recursive fu
 
 ### Anonymous functions
 
-The dot-led expression form **`.(...)`** produces an anonymous function:
+The dot-led expression form produces an anonymous function with one or more
+type-binder or value-parameter groups:
 
 ```kio
 .(x, y) { add(x, y) }
 .[A](x, y) { pair(x, y) }                 // explicit type parameter
 .(x, y) -> I32 { add(x, y) }                 // explicit return type
+.[A] { body }                               // type-only abstraction
 ```
 
-Parens are always required, and there is no automatic currying — same as top-level `fn` definitions.
+Parentheses delimit each written value group, including an explicit `()`;
+they are absent from a type-only signature. `. { body }` is rejected because
+it has no group. There is no automatic currying within a value group — same
+as top-level `fn` definitions.
 
 **Value-parameter annotations are optional.** A lambda's parameter types may be
 written explicitly (`.(x: T) { … }`), spelled with the `_` placeholder
@@ -1777,13 +1802,20 @@ let id = identity([A] A -> A, .[A](x) { x });
 `identity`'s `x: T` slot pins the lambda's type once `T` is instantiated to `[A] A -> A`.
 
 **Type-parameter declarations are allowed.** A polymorphic lambda declares its
-`[A]`-style type-binder slots in the same parameter list as its value
-parameters. The user-written binders flow through unchanged; the typer never
+`[A]`-style type-binder groups in signature order, with or without value
+groups. The user-written binders flow through unchanged; the typer never
 invents a universal binder. In checking mode, the expected function type
 supplies any missing parameter slots. In synthesis mode, value-parameter
 annotations must be concrete unless the same direct application supplies a
 whole missing slot as described above. An application solves the lambda's
 written type arguments by the ordinary positional call rule.
+
+A type-only lambda has no value-parameter annotations to complete. It can
+synthesize its type from its written binders and body, as in
+`let make = .[A] { body };`, or check against an expected polymorphic type.
+Only the written groups are consumed from that expected type; a remaining
+polymorphic result is the body's expected type. Every completed scheme still
+obeys the kind rules in [Higher-kinded types](#higher-kinded-types).
 
 Each type-parameter declaration introduces its own lexical binding. A nested
 lambda may reuse an enclosing type-parameter name; references in its scope,
@@ -2793,7 +2825,7 @@ The implementation stores operators in a trie keyed by op-token sequence; insert
 `equiv` declares a **test**: a claim that several expressions reduce to the same normal form. The `kio test` tool discharges these claims by partial evaluation; outside that tool, `equiv` items are silently filtered before codegen and contribute nothing to the build artifact.
 
 ```kio
-fn id_unit() -> . { () }
+fn id_unit() { () }
 
 equiv id_unit_eq {
   id_unit();

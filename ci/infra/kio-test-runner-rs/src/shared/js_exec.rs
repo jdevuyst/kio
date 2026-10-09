@@ -403,6 +403,9 @@ fn run_js_protocol<'js>(
         ProtocolExecution::Invoke(ExportDriver::NestedCurriedRoundtrip) => {
             run_nested_curried_roundtrip_js(ctx, pkg_obj, protocol)
         }
+        ProtocolExecution::Invoke(ExportDriver::TypeOnlyRoundtrip) => {
+            run_export_type_only_roundtrip_js(ctx, pkg_obj, protocol)
+        }
         ProtocolExecution::Invoke(ExportDriver::HostSubstitutedUnitCallback) => {
             run_host_substituted_unit_callback_js(ctx, pkg_obj, protocol)
         }
@@ -438,6 +441,53 @@ fn run_default_main_js<'js>(
         .catch(ctx)
         .map_err(|e| format!("calling `{module}/main`: {}", format_caught(&e)))?;
     Ok(())
+}
+
+fn run_export_type_only_roundtrip_js<'js>(
+    ctx: &Ctx<'js>,
+    pkg_obj: &Object<'js>,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_protocol_pkg__", pkg_obj.clone())
+        .map_err(|e| format!("installing protocol package binding: {e}"))?;
+    let main = export_base_js_expr(protocol, "main");
+    let script = format!(
+        r#"
+(() => {{
+  const main = {main};
+  const print = value => __kio_host_print__(String(value) + "\n");
+  const printResult = (value, expected) => {{
+    if (typeof value !== typeof expected || value !== expected) {{
+      throw new Error("type-only identity changed its result type or value");
+    }}
+    print(value);
+  }};
+  print("ready");
+  const direct = main.direct();
+  print("specialized");
+  printResult(direct("direct-string"), "direct-string");
+  const integer = main.direct();
+  print("specialized-again");
+  printResult(integer(42), 42);
+  const delayed = main.delayed();
+  print("unit-called");
+  printResult(delayed("unit-string"), "unit-string");
+  printResult(main.ordinary("ordinary-string"), "ordinary-string");
+  main.phantom();
+  print("phantom-called");
+  main.phantomUnit();
+  print("phantom-unit-called");
+  const poly = main.poly();
+  print("poly-returned");
+  printResult(poly("poly-string"), "poly-string");
+  printResult(poly(73), 73);
+}})()
+"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running export-type-only-roundtrip: {}", format_caught(&e)))
 }
 
 fn run_returned_forall_call_by_value_js<'js>(

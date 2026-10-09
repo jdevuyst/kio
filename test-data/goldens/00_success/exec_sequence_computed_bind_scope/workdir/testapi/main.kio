@@ -12,7 +12,7 @@ fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(valu
 
 fn receiver() -> Bind(Box) { io.print("receiver\n"); bind }
 
-pub fn main() -> . {
+pub fn main() {
   let result =
     do! receiver() {
       let value <- pure("retained\n");

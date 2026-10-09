@@ -122,6 +122,7 @@ pub trait DesugaredToLowered {
     fn visit_expr_call(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Call {
             occurrence: _,
+            diagnostic,
             callee,
             args,
             meta: Meta { span, .. },
@@ -135,7 +136,7 @@ pub trait DesugaredToLowered {
             .into_iter()
             .map(|a| self.walk_call_arg(a))
             .collect::<Result<_, _>>()?;
-        Ok(Expr::synth_call(callee, args, span))
+        Ok(Expr::synth_call(callee, args, span).with_call_diagnostic(diagnostic))
     }
 
     fn visit_expr_fn(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {

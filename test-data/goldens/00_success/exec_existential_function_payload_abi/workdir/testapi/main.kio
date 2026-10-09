@@ -9,11 +9,11 @@ fn make_box() -> Box {
   Box.mk_box(.[A](text: String, _value: A) -> String { io.print(text); ""(String) })
 }
 
-fn invoke(box: Box) -> . {
+fn invoke(box: Box) {
   Box.open(box)(.[U](function: [A] (String & A) -> U) {
     let _hidden = function(., ("existential function payload ok\n"(String), ()));
     ()
   })
 }
 
-pub fn main() -> . { invoke(make_box()) }
+pub fn main() { invoke(make_box()) }

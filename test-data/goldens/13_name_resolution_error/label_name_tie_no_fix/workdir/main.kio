@@ -1,0 +1,5 @@
+module main;
+
+labels { helper: ., heaper: . };
+
+pub fn main() { let _ = {heper=}; () }

@@ -20,7 +20,7 @@ fn make_bundle[S](step: S -> S) -> Bundle(S) { (add, step) }
 // Project the binary op out of the bundle by its (distinct) type.
 fn plus[S](b: Bundle(S)) -> (I32 & I32) -> I32 { one_prod!(b, (I32 & I32) -> I32) }
 
-pub fn main() -> . {
+pub fn main() {
   // Instantiate at `S = I32` with an identity step, then apply the
   // projected op with one product argument `plus(b)(2, 3)`. The bundled
   // `add` must be carried at the slot's `(I32 & I32) -> I32` grouping for

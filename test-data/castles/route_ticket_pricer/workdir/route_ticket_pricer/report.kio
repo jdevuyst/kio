@@ -7,13 +7,13 @@ import testapi(I128, I64, String, U64);
 import testapi/fmt(i128_to_string, i64_to_string, u64_to_string);
 import testapi/io(print);
 
-fn print_i64_line(value: I64) -> . { print(i64_to_string(value)); print("\n") }
+fn print_i64_line(value: I64) { print(i64_to_string(value)); print("\n") }
 
-fn print_u64_line(value: U64) -> . { print(u64_to_string(value)); print("\n") }
+fn print_u64_line(value: U64) { print(u64_to_string(value)); print("\n") }
 
-fn print_i128_line(value: I128) -> . { print(i128_to_string(value)); print("\n") }
+fn print_i128_line(value: I128) { print(i128_to_string(value)); print("\n") }
 
-pub fn print_report() -> . {
+pub fn print_report() {
   print("route_ticket_pricer\n");
   print("fare.local_connector.i64=");
   print_i64_line(fares.local_connector_fare());

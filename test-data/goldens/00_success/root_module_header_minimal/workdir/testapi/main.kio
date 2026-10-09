@@ -4,4 +4,4 @@ import core(identity);
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print(identity("root module header: ok\n")) }
+pub fn main() { print(identity("root module header: ok\n")) }

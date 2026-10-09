@@ -93,6 +93,7 @@ pub enum ExportDriver {
     ModuleRoundtrip,
     MultilabelRoundtrip,
     PolyRoundtrip,
+    TypeOnlyRoundtrip,
     PolyCallbackRoundtrip,
     StructuralRoundtrip,
     ScalarRoundtrip,
@@ -849,7 +850,7 @@ impl HostFnBodyKind {
                 format!("((. -> {})) -> {}", role(text), role(text))
             }
             Self::ReturnedForallUnit => "(.) -> [#0] #0".to_owned(),
-            Self::TraceUnit { .. } => "(.) -> .".to_owned(),
+            Self::TraceUnit { .. } => "() -> .".to_owned(),
             Self::StagedUnitCall => "[#0] (#0) -> [#1] (.) -> .".to_owned(),
         }
     }
@@ -1044,6 +1045,8 @@ pub const HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-interleav
 pub const NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME: &str = "nested-curried-roundtrip";
 pub const HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME: &str = "host-substituted-unit-callback";
 pub const RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME: &str = "returned-forall-call-by-value";
+pub const TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME: &str = "type-only-stage-trace";
+pub const EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME: &str = "export-type-only-roundtrip";
 pub const HOST_STAGED_UNIT_CALL_PROTOCOL_NAME: &str = "host-staged-unit-call";
 pub const FACADE_SELECTOR_COLLISIONS_PROTOCOL_NAME: &str = "facade-selector-collisions";
 pub const PUBLIC_WORD_NAMES_PROTOCOL_NAME: &str = "public-word-names";
@@ -1147,6 +1150,7 @@ pub const TESTAPI_TEXT_CONCAT_PROTOCOL_NAME: &str = "testapi-text-concat";
 #[allow(dead_code)] // Consumed only by the dyn-load-prime runner and shell lint.
 pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
     EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
+    EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME,
@@ -1361,6 +1365,12 @@ pub enum RunnerProtocol {
     /// `[A](A)[B](Unit) -> Unit` retains its one public slot when `A = Unit`;
     /// the declaration's literal Unit group remains a zero-slot group.
     HostStagedUnitCall,
+    /// Type-only and structural-value staging uses two fixed Unit effects,
+    /// with no host-selected scalar type required at the public boundary.
+    TypeOnlyStageTrace,
+    /// Host-originated type-only specialization, returned identity values,
+    /// same-type ordinary calls, and explicit Unit controls.
+    ExportTypeOnlyRoundtrip,
     /// `00_success/ffi_facade_selector_collisions` — one module namespace
     /// contains a same-spelling exported function, nested module, and public
     /// newtype. The fixed drivers reach all three through each backend's
@@ -3427,6 +3437,18 @@ const FNS_HOST_STAGED_UNIT_CALL: &[HostFnBinding] = &[host_fn(
     "staged",
     HostFnBodyKind::StagedUnitCall,
 )];
+const FNS_TYPE_ONLY_STAGE_TRACE: &[HostFnBinding] = &[
+    host_fn(
+        "testapi/main",
+        "observe",
+        HostFnBodyKind::TraceUnit { text: "observe" },
+    ),
+    host_fn(
+        "testapi/main",
+        "consume",
+        HostFnBodyKind::TraceUnit { text: "consume" },
+    ),
+];
 const FNS_HOST_EXISTENTIAL: &[HostFnBinding] = &[host_fn(
     "testapi/arith",
     "observe",
@@ -3527,6 +3549,8 @@ impl RunnerProtocol {
         Self::HostSubstitutedUnitCallback,
         Self::ReturnedForallCallByValue,
         Self::HostStagedUnitCall,
+        Self::TypeOnlyStageTrace,
+        Self::ExportTypeOnlyRoundtrip,
         Self::FacadeSelectorCollisions,
         Self::PublicWordNames,
         Self::ModuleAliasScopeCollision,
@@ -3657,6 +3681,8 @@ impl RunnerProtocol {
             Self::HostSubstitutedUnitCallback => HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME,
             Self::ReturnedForallCallByValue => RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME,
             Self::HostStagedUnitCall => HOST_STAGED_UNIT_CALL_PROTOCOL_NAME,
+            Self::TypeOnlyStageTrace => TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME,
+            Self::ExportTypeOnlyRoundtrip => EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
             Self::FacadeSelectorCollisions => FACADE_SELECTOR_COLLISIONS_PROTOCOL_NAME,
             Self::PublicWordNames => PUBLIC_WORD_NAMES_PROTOCOL_NAME,
             Self::ModuleAliasScopeCollision => MODULE_ALIAS_SCOPE_COLLISION_PROTOCOL_NAME,
@@ -3815,6 +3841,8 @@ impl RunnerProtocol {
             HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME => Ok(Self::HostSubstitutedUnitCallback),
             RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME => Ok(Self::ReturnedForallCallByValue),
             HOST_STAGED_UNIT_CALL_PROTOCOL_NAME => Ok(Self::HostStagedUnitCall),
+            TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME => Ok(Self::TypeOnlyStageTrace),
+            EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportTypeOnlyRoundtrip),
             FACADE_SELECTOR_COLLISIONS_PROTOCOL_NAME => Ok(Self::FacadeSelectorCollisions),
             PUBLIC_WORD_NAMES_PROTOCOL_NAME => Ok(Self::PublicWordNames),
             MODULE_ALIAS_SCOPE_COLLISION_PROTOCOL_NAME => Ok(Self::ModuleAliasScopeCollision),
@@ -4143,6 +4171,13 @@ impl RunnerProtocol {
                 true,
             ),
             Self::HostStagedUnitCall => main_contract(NO_HOST_TYPES, FNS_HOST_STAGED_UNIT_CALL),
+            Self::TypeOnlyStageTrace => main_contract(NO_HOST_TYPES, FNS_TYPE_ONLY_STAGE_TRACE),
+            Self::ExportTypeOnlyRoundtrip => invoke_contract(
+                ExportDriver::TypeOnlyRoundtrip,
+                NO_HOST_TYPES,
+                FNS_TYPE_ONLY_STAGE_TRACE,
+                true,
+            ),
             Self::FacadeSelectorCollisions => invoke_contract(
                 ExportDriver::FacadeSelectorCollisions,
                 TYPES_FACADE_SELECTOR_COLLISIONS,
@@ -4883,6 +4918,28 @@ mod tests {
     }
 
     #[test]
+    fn trace_unit_protocols_use_the_canonical_unit_domain() {
+        for protocol in [
+            RunnerProtocol::ReturnedForallCallByValue,
+            RunnerProtocol::TypeOnlyStageTrace,
+        ] {
+            let traces = protocol
+                .contract()
+                .host_fns
+                .iter()
+                .filter(|binding| matches!(binding.body, HostFnBodyKind::TraceUnit { .. }))
+                .collect::<Vec<_>>();
+            assert_eq!(traces.len(), 2);
+            for binding in traces {
+                // Canonical Unit domains have zero slots, whether the source
+                // group is empty or contains one explicitly typed Unit binder.
+                assert_eq!(binding.body.canonical_prime_signature(), "() -> .");
+                assert_eq!(binding.body.canonical_prime_group_slots(), &[0]);
+            }
+        }
+    }
+
+    #[test]
     fn staged_unit_protocol_distinguishes_retained_and_zero_slot_groups() {
         let contract = RunnerProtocol::HostStagedUnitCall.contract();
         assert_eq!(contract.host_fns, FNS_HOST_STAGED_UNIT_CALL);
@@ -4894,6 +4951,41 @@ mod tests {
             contract.host_fns[0].body.canonical_prime_group_slots(),
             &[1, 0]
         );
+    }
+
+    #[test]
+    fn type_only_export_protocol_invokes_the_host_driver_with_fixed_unit_effects() {
+        let protocol = RunnerProtocol::ExportTypeOnlyRoundtrip;
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::TypeOnlyRoundtrip)
+        );
+        assert!(contract.host_types.is_empty());
+        assert_eq!(contract.host_fns, FNS_TYPE_ONLY_STAGE_TRACE);
+        assert!(protocol.is_testapi());
+        assert!(!protocol.supports_dyn_load_prime());
+        assert_eq!(RunnerProtocol::parse(protocol.name()), Ok(protocol));
+    }
+
+    #[test]
+    fn type_only_trace_protocol_uses_only_fixed_unit_effects() {
+        let contract = RunnerProtocol::TypeOnlyStageTrace.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::Main {
+                module: "testapi/main"
+            })
+        );
+        assert_eq!(contract.host_types, NO_HOST_TYPES);
+        assert_eq!(contract.host_fns, FNS_TYPE_ONLY_STAGE_TRACE);
+        assert!(RunnerProtocol::TypeOnlyStageTrace.supports_dyn_load_prime());
+        for binding in contract.host_fns {
+            assert_eq!(binding.module, "testapi/main");
+            assert_eq!(binding.body.canonical_prime_signature(), "() -> .");
+            assert_eq!(binding.body.canonical_prime_group_slots(), &[0]);
+            assert!(matches!(binding.body, HostFnBodyKind::TraceUnit { .. }));
+        }
     }
 
     #[test]
@@ -5731,6 +5823,7 @@ mod tests {
             RunnerProtocol::HostSubstitutedUnitCallback,
             RunnerProtocol::ReturnedForallCallByValue,
             RunnerProtocol::HostStagedUnitCall,
+            RunnerProtocol::TypeOnlyStageTrace,
             RunnerProtocol::ExportNewtypeIgnoredArgumentRoundtrip,
             RunnerProtocol::FacadeSelectorCollisions,
             RunnerProtocol::ModuleAliasScopeCollision,

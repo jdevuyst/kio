@@ -35,11 +35,11 @@ import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-fn show(label: String, value: String) -> . {
-  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+fn show(label: String, value: String) {
+  print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))
 }
 
-fn show_opt[A](label: String, m: Option(A), render: A -> String) -> . {
+fn show_opt[A](label: String, m: Option(A), render: A -> String) {
   show(
     , label
     , option(
@@ -50,7 +50,7 @@ fn show_opt[A](label: String, m: Option(A), render: A -> String) -> . {
     )
 }
 
-fn show_opt_i32(label: String, m: Option(I32)) -> . { show_opt(label, m, int_to_string) }
+fn show_opt_i32(label: String, m: Option(I32)) { show_opt(label, m, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
   match! value {
@@ -63,7 +63,7 @@ fn inc(n: I32) -> I32 { add(n, 1) }
 fn dbl(n: I32) -> I32 { mul(n, 2) }
 
 fn opt_list() -> List(Option(I32)) {
-  cons(some(1), cons(none(), cons(some(2), cons(none(), cons(some(3), nil())))))
+  cons(some(1), cons(none(_), cons(some(2), cons(none(_), cons(some(3), nil(_))))))
 }
 
 fn int_list() -> List(I32) { [* 1, 2, 3, 4 *] }
@@ -72,9 +72,9 @@ fn small_times_ten(n: I32) -> Option(I32) {
   filter(.(_m: I32) -> Bool { leq_i32(n, 3) }, some(mul(n, 10)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let m = some(7);
-  let z = none(I32, ());
+  let z = none(I32);
   show_opt_i32("some(7)", m);
   show_opt_i32("none", z);
   show("from_option(0, some(7))", int_to_string(from_option(0, m)));
@@ -114,17 +114,14 @@ pub fn main() -> . {
     );
   let render_unit = .(_unit: .) -> String { "unit" };
   show_opt("some(Unit)", some(()), render_unit);
-  show_opt("none(Unit)", none(., ()), render_unit);
+  show_opt("none(Unit)", none(.), render_unit);
   show_opt("some(nested number)", some(widen_sum!(7, I32 | .)), render_sum);
   show_opt("some(nested unit)", some(widen_sum!((), I32 | .)), render_sum);
-  show_opt("none(nested)", none(I32 | ., ()), render_sum);
-  let .(unit_options: List(Option(.))) = [* some(()), none(., ()) *];
+  show_opt("none(nested)", none(I32 | .), render_sum);
+  let .(unit_options: List(Option(.))) = [* some(()), none(.) *];
   show(
     , "cat_options(canonical Unit list)"
     , int_to_string(cat_options(unit_options, 0, .(count: I32, _unit: .) { add(count, 1) }))
     );
-  show(
-    , "cat_options(canonical empty list)"
-    , int_to_string(cat_options(nil(Option(I32), ()), 0, add))
-    )
+  show("cat_options(canonical empty list)", int_to_string(cat_options(nil(Option(I32)), 0, add)))
 }

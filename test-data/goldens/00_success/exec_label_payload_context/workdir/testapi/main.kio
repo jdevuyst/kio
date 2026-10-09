@@ -11,9 +11,9 @@ labels State = { first: Box(.), second: Box(. -> .) };
 
 fn initial() -> State { {first = empty(), second = empty()} }
 
-fn show(value: First) -> . { print(value.?{first}.>Box.unpack) }
+fn show(value: First) { print(value.?{first}.>Box.unpack) }
 
-pub fn main() -> . {
+pub fn main() {
   show({first = empty()});
   let single = {first = empty()};
   show(single);

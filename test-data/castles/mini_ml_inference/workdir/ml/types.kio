@@ -74,7 +74,7 @@ pub rec(loop) fn variables(ty: Ty) -> lists.List(I32) {
       let .(a: Ty, b: Ty) = p.?{pair};
       walk.append(rec(cont) variables(a), rec(cont) variables(b))
     };
-    .() { lists.nil() }
+    .() { lists.nil(_) }
   }
 }
 
@@ -89,7 +89,7 @@ pub fn unique(ids: lists.List(I32)) -> lists.List(I32) {
           lists.cons(id, seen)
         }
       }
-    , lists.nil()
+    , lists.nil(_)
     , ids
     ))
 }

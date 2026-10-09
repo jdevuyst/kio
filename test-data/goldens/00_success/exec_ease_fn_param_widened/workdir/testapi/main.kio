@@ -15,13 +15,13 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // The variance walk swaps source/target at the contravariant leaf
 // `(A, A | B)`; the leaf `ease!` engine fires `R-Widen-Sum` to lift
 // the call-site `A` value into the source's wider `A | B` parameter.
-fn foo(x: A | B) -> . {
+fn foo(x: A | B) {
   print(match! x {
     (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
   })
 }
 
-pub fn main() -> . {
+pub fn main() {
   let narrow_call = ease!(foo, A -> .);
   narrow_call(A.mk_a("ease! param widened ok\n"))
 }

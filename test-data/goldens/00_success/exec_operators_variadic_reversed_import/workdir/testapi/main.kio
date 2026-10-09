@@ -7,4 +7,4 @@ import testapi/io(print);
 // `cons_str("a", cons_str("b", cons_str("c", nil_str())))`.
 import testapi/lists(varop *[ ]*);
 
-pub fn main() -> . { print(*[ "a", "b", "c" ]*) }
+pub fn main() { print(*[ "a", "b", "c" ]*) }

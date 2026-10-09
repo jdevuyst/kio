@@ -4,4 +4,4 @@ import support/lib(emit);
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print(emit("bridge FQN adapter\n"(String))) }
+pub fn main() { print(emit("bridge FQN adapter\n"(String))) }

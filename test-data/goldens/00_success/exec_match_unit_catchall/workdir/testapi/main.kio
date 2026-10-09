@@ -98,7 +98,7 @@ fn produce_nested() -> Tag & Second {
   ({tag=}, {second = "nested-payload\n"})
 }
 
-pub fn main() -> . {
+pub fn main() {
   let left = widen_sum!({first = "left"}, First | Second);
   let right = widen_sum!({second = "right"}, First | Second);
   io.print(typed(left));

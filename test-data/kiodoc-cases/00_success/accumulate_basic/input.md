@@ -20,11 +20,11 @@ __INSERT_CODE_HERE__
 First member introduces a helper.
 
 ```kio {@running}
-fn greet(name: S) -> . { print(name) }
+fn greet(name: S) { print(name) }
 ```
 
 The second uses the helper from the first.
 
 ```kio {@running}
-pub fn main() -> . { greet("world\n") }
+pub fn main() { greet("world\n") }
 ```

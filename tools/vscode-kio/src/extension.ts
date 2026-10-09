@@ -31,6 +31,8 @@
 
 import * as vscode from "vscode";
 import { Parser, Language, Node, Tree, Edit } from "web-tree-sitter";
+import { docBodies, projectDocNode, docCodeGaps, DocBody, DocSpan } from "./doc-embedded.mjs";
+type DocPaint = DocBody & { covered: DocSpan[] };
 
 // Token-kind enum used by the semantic-tokens legend. The order
 // here is the wire-form integer the provider returns; entries
@@ -156,6 +158,19 @@ const NODE_KIND: Record<string, SemanticKind> = {
   bool_literal: "number",
   comment_line: "comment",
   comment_doc: "comment",
+  doc_reference: "variable",
+  doc_directive: "keyword",
+  doc_fence: "keyword",
+  doc_code: "string",
+  doc_kio_code: "string",
+  doc_kio_self_code: "string",
+  doc_heading: "keyword",
+  doc_emphasis: "string",
+  doc_strong: "string",
+  doc_marker: "punctuation",
+  doc_link: "string",
+  doc_attribute: "keyword",
+  doc_literal_fallback: "comment",
   bracket_lparen: "punctuation",
   bracket_rparen: "punctuation",
   bracket_lbrace: "punctuation",
@@ -179,11 +194,14 @@ class KioSemanticTokensProvider
   implements vscode.DocumentSemanticTokensProvider
 {
   private parser: Parser;
+  private embeddedParser: Parser;
   private trees = new Map<string, Tree>();
   private subscriptions: vscode.Disposable[];
 
   constructor(parser: Parser) {
     this.parser = parser;
+    this.embeddedParser = new Parser();
+    this.embeddedParser.setLanguage(parser.language);
     this.subscriptions = [
       vscode.workspace.onDidCloseTextDocument((document) => {
         const key = document.uri.toString();
@@ -218,6 +236,7 @@ class KioSemanticTokensProvider
     for (const tree of this.trees.values()) tree.delete();
     this.trees.clear();
     this.parser.delete();
+    this.embeddedParser.delete();
   }
 
   async provideDocumentSemanticTokens(
@@ -232,17 +251,36 @@ class KioSemanticTokensProvider
     old?.delete();
     this.trees.set(key, tree);
     walkTree(tree.rootNode, builder);
+    for (const body of docBodies(tree.rootNode)) {
+      const embedded = this.embeddedParser.parse(body.source);
+      if (embedded !== null) {
+        try {
+          const paint: DocPaint = { ...body, covered: [] };
+          walkTree(embedded.rootNode, builder, paint);
+          for (const gap of docCodeGaps(body, paint.covered)) builder.push(gap.row, gap.column, gap.end - gap.start, SEMANTIC_KINDS.indexOf("string"), 0);
+        }
+        finally { embedded.delete(); }
+      }
+    }
     return builder.build();
   }
 }
 
-function walkTree(node: Node, builder: vscode.SemanticTokensBuilder): void {
+function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocPaint): void {
+  if (node.type === "doc_kio_code" || node.type === "doc_kio_self_code") {
+    if (body !== undefined) emitToken(node, "comment", builder, body);
+    return;
+  }
+  if (body !== undefined && (node.type === "comment_doc" || node.type.startsWith("doc_"))) {
+    emitToken(node, "comment", builder, body);
+    return;
+  }
   if (["ERROR", "unowned_function_head"].includes(node.parent?.type ?? "") && /^(keyword_|entity_name_|variable_parameter$)/.test(node.type)) {
-    emitToken(node, "variable", builder);
+    emitToken(node, "variable", builder, body);
     return;
   }
   if (node.type === "ambiguous_lbracket_star" && node.parent?.type !== "type_param_group") {
-    emitToken(node, "operator", builder);
+    emitToken(node, "operator", builder, body);
     return;
   }
   if (node.type === "keyword_rec") {
@@ -257,7 +295,7 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder): void {
       (parent?.type === "type_rec_group" && parent.firstNamedChild?.id === node.id) ||
       (parent?.type === "newtype_decl_head" && next?.type === "keyword_newtype") ||
       (parent?.type === "labels_decl_head" && next?.type === "keyword_labels");
-    emitToken(node, declaration ? "keyword" : "variable", builder);
+    emitToken(node, declaration ? "keyword" : "variable", builder, body);
     return;
   }
   // Special case: a `call_callee` node's prefix identifiers are
@@ -276,14 +314,14 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder): void {
       if (child === null) continue;
       if (child.type === "identifier") {
         if (isExactTypeName(child.text)) {
-          emitToken(child, "type", builder);
+          emitToken(child, "type", builder, body);
         } else if (isExactValueName(child.text)) {
-          emitToken(child, "namespace", builder);
+          emitToken(child, "namespace", builder, body);
         } else {
-          walkTree(child, builder);
+          walkTree(child, builder, body);
         }
       } else {
-        walkTree(child, builder);
+        walkTree(child, builder, body);
       }
     }
     return;
@@ -310,12 +348,12 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder): void {
       : "variable";
   }
   if (kind !== undefined) {
-    emitToken(node, kind, builder);
+    emitToken(node, kind, builder, body);
     return;
   }
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
-    if (child !== null) walkTree(child, builder);
+    if (child !== null) walkTree(child, builder, body);
   }
 }
 
@@ -323,8 +361,16 @@ function emitToken(
   node: Node,
   kind: SemanticKind,
   builder: vscode.SemanticTokensBuilder,
+  body?: DocPaint,
 ): void {
   const typeIndex = SEMANTIC_KINDS.indexOf(kind);
+  if (body !== undefined) {
+    for (const span of projectDocNode(body, node)) {
+      body.covered.push(span);
+      builder.push(span.row, span.column, span.end - span.start, typeIndex, 0);
+    }
+    return;
+  }
   const start = node.startPosition;
   const end = node.endPosition;
   // VS Code's semantic-tokens API only supports single-line
@@ -356,10 +402,12 @@ function emitToken(
 let lspClientHandle:
   | { dispose: () => void; stop: () => Promise<void> }
   | undefined;
+let deactivating = false;
 
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  deactivating = false;
   const output = vscode.window.createOutputChannel("Kio");
   context.subscriptions.push(output);
   output.appendLine(`kio extension activating (uri=${context.extensionUri.toString()})`);
@@ -379,9 +427,15 @@ export async function activate(
   // Codespaces can display a web UI while running this extension in
   // remote Node. Child-process support follows the runtime, not uiKind.
   // Start after highlighting without delaying extension activation.
+  const status = vscode.languages.createLanguageStatusItem("kio.languageServer", "kio");
+  status.name = "Kio language services";
+  context.subscriptions.push(status);
   if (typeof process !== "undefined" && process.versions?.node !== undefined) {
-    void startLspClient(context, output);
+    void startLspClient(context, output, status);
   } else {
+    status.text = "Kio: Highlighting only";
+    status.detail = "This browser extension host cannot start a compiler. Language services run in desktop and remote workspace hosts.";
+    status.severity = vscode.LanguageStatusSeverity.Information;
     output.appendLine(
       "lsp: skipped (browser extension host has no child-process support)",
     );
@@ -391,18 +445,24 @@ export async function activate(
 async function startLspClient(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel,
+  status: vscode.LanguageStatusItem,
 ): Promise<void> {
   try {
     // esbuild includes the LSP module in the shared bundle, but its
     // Node dependencies are evaluated only when this import runs.
     const lsp = await import("./lsp");
-    const handle = await lsp.startLanguageClient(context, output);
-    if (handle !== undefined) {
-      lspClientHandle = handle;
-      context.subscriptions.push(handle);
-    }
+    if (deactivating) return;
+    const handle = lsp.startLanguageClient(context, status);
+    lspClientHandle = handle;
+    context.subscriptions.push(handle);
   } catch (err) {
+    if (deactivating) return;
     output.appendLine(`lsp: client wiring failed:\n${formatError(err)}`);
+    status.text = "Kio: Language services unavailable";
+    status.detail = 'Language-client initialization failed. See the "Kio" output channel.';
+    status.severity = vscode.LanguageStatusSeverity.Error;
+    void vscode.window.showErrorMessage("Kio language services could not initialize. Highlighting remains available.", "Show Output")
+      .then((choice) => { if (choice) output.show(true); });
     // Don't re-throw — the highlighting layer has already activated
     // successfully, and a failure here should not surface as an
     // extension activation failure in the editor UI.
@@ -489,6 +549,7 @@ function formatError(err: unknown): string {
 }
 
 export async function deactivate(): Promise<void> {
+  deactivating = true;
   // Stop the language client explicitly here (rather than relying
   // solely on `context.subscriptions` cleanup): `Disposable.dispose`
   // is synchronous, but `LanguageClient.stop()` returns a promise

@@ -40,6 +40,9 @@ pub struct FullLoweringContext {
 pub(crate) struct LspSourceDeclarations {
     pub callables: Vec<op_fold::ResolvedCallableDeclaration>,
     pub blocks: Vec<crate::pass::surface_registry::ResolvedBlockDeclaration>,
+    /// Complete only for full-package LSP lowering; focused summaries do not
+    /// fold every body and therefore cannot establish declaration liveness.
+    pub operator_uses: Vec<op_fold::ResolvedOperatorUse>,
 }
 
 #[cfg(feature = "lsp")]
@@ -56,6 +59,7 @@ impl FullLoweringContext {
             blocks: self
                 .block_scope
                 .try_resolved_declarations(only_source_module, is_cancelled)?,
+            operator_uses: Vec::new(),
         })
     }
 }
@@ -65,6 +69,7 @@ fn lower_projected_package_named_observed<T>(
     modules: Vec<(PathBuf, Module<Surface>)>,
     package_file: Option<PackageFile<Surface>>,
     package_name: Option<&str>,
+    #[cfg(feature = "lsp")] operator_uses: Option<&mut Vec<op_fold::ResolvedOperatorUse>>,
     observe: impl FnOnce(
         &op_fold::PackageOpScope,
         &crate::pass::surface_registry::PackageBlockScope,
@@ -82,9 +87,20 @@ fn lower_projected_package_named_observed<T>(
     // Operator folding and any observer projection share this one validated
     // package scope. Rebuilding it after folding would repeat declaration
     // validation and could let editor-only facts drift from lowering.
+    #[cfg(feature = "lsp")]
+    let folded_result = match operator_uses {
+        Some(operator_uses) => op_fold::fold_package_named_for_lsp(modules, package_name).map(
+            |(modules, scope, uses)| {
+                *operator_uses = uses;
+                (modules, scope)
+            },
+        ),
+        None => op_fold::fold_package_named_with_scope(modules, package_name),
+    };
+    #[cfg(not(feature = "lsp"))]
+    let folded_result = op_fold::fold_package_named_with_scope(modules, package_name);
     let (mut folded, package_ops) =
-        op_fold::fold_package_named_with_scope(modules, package_name)
-            .map_err(|(file_path, error)| LocatedError { file_path, error })?;
+        folded_result.map_err(|(file_path, error)| LocatedError { file_path, error })?;
     let Some(observation) = observe(&package_ops, &block_scope, &folded) else {
         return Ok(None);
     };
@@ -142,18 +158,25 @@ impl FullPipeline {
         )>,
         LocatedError,
     > {
-        lower_projected_package_named_observed(
+        let mut operator_uses = Vec::new();
+        let lowered = lower_projected_package_named_observed(
             modules,
             package_file,
             package_name,
+            Some(&mut operator_uses),
             |package_ops, block_scope, _| {
                 Some(LspSourceDeclarations {
                     callables: package_ops
                         .try_resolved_callable_declarations(None, &mut is_cancelled)?,
                     blocks: block_scope.try_resolved_declarations(None, is_cancelled)?,
+                    operator_uses: Vec::new(),
                 })
             },
-        )
+        )?;
+        Ok(lowered.map(|(modules, package_file, mut declarations)| {
+            declarations.operator_uses = operator_uses;
+            (modules, package_file, declarations)
+        }))
     }
 }
 
@@ -224,6 +247,8 @@ impl Pipeline for FullPipeline {
             modules,
             package_file,
             package_name,
+            #[cfg(feature = "lsp")]
+            None,
             |_, _, _| Some(()),
         )?
         .expect("the ordinary lowering observer cannot cancel");
@@ -475,7 +500,8 @@ pub(crate) fn typecheck_module_collect_elaborations_with_typecheck_scope(
     package: &Package<Lowered>,
     typecheck_scope: std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>,
 ) -> Result<FullModuleTypecheck, Vec<LocatedError>> {
-    let mut elaborations = typecheck_full::Elaborations::new();
+    let mut elaborations =
+        <Lowered as crate::pass::typecheck_core::TyperPhase>::new_elaborations(&typecheck_scope);
     if let Err(errors) =
         crate::pass::typecheck_core::check_module_in_package_with_typecheck_scope_collect_errors(
             &entry.module,
@@ -534,6 +560,53 @@ mod tests {
     use crate::ast::{CallArg, Expr, Item};
     use crate::pass::parser::parse;
     use std::path::{Path, PathBuf};
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn operator_use_capture_is_complete_only_for_full_lsp_lowering() {
+        let source = "module main;
+            fn combine(left: ., right: .) -> . { left }
+            fn empty() -> . { () }
+            op _ + _ { impl combine; };
+            varop [% %] { foldl combine empty; };
+            fn run() -> . { [% () + (), () %] }";
+        let modules = vec![(PathBuf::from("main.kio"), parse(source).unwrap())];
+        let context = FullPipeline::lowering_context_named(&modules, None, None).unwrap();
+        let focused = context
+            .try_lsp_source_declarations(Some("main"), || false)
+            .unwrap();
+        assert!(focused.operator_uses.is_empty());
+        assert_eq!(focused.callables.len(), 3);
+        let (ordinary, ordinary_package_file) =
+            FullPipeline::lower_projected_package_named(modules.clone(), None, None).unwrap();
+        let (observed, observed_package_file, facts) =
+            FullPipeline::lower_projected_package_named_for_lsp(
+                modules.clone(),
+                None,
+                None,
+                || false,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(observed, ordinary);
+        assert_eq!(observed_package_file, ordinary_package_file);
+        assert_eq!(facts.operator_uses.len(), 2);
+        assert_eq!(facts.callables.len(), 3);
+        let sites = facts
+            .operator_uses
+            .iter()
+            .map(|use_| {
+                assert_eq!(use_.source_module, "main");
+                &source[use_.use_span.start as usize..use_.use_span.end as usize]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(sites, ["() + ()", "[% () + (), () %]"]);
+        assert!(
+            FullPipeline::lower_projected_package_named_for_lsp(modules, None, None, || true)
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn forwarding_context_and_whole_package_lowering_emit_the_same_prime() {

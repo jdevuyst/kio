@@ -35,6 +35,8 @@
 //! - `rewrite_item_equiv`: drop the item (equiv declarations have
 //!   no execution semantics).
 
+#[cfg(test)]
+mod checked_call_tests;
 mod pre_prime;
 mod walk;
 
@@ -66,6 +68,7 @@ pub(crate) struct PrePrime;
 impl Phase for PrePrime {
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
+    type CallDiagnostic = ();
     type LitAnnotation = Type<PrePrime>;
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
@@ -165,7 +168,9 @@ fn first_eta_layer_from_residual_type(residual: &Type<PrePrime>) -> Option<EtaPl
         // already the residual value; never invent a Unit application.
         return None;
     };
-    let value_params = Type::right_spine_take(param.as_ref(), abi_arity)
+    // A zero-slot runtime domain still binds a semantic Unit argument. Its
+    // opaque residual must be forwarded rather than replaced with literal ().
+    let value_params = Type::right_spine_take(param.as_ref(), abi_arity.max(1))
         .into_iter()
         .enumerate()
         .map(|(slot, ty)| EtaValueParam {
@@ -215,9 +220,11 @@ pub(crate) fn eta_materialize_pre_prime(
             .iter()
             .map(|_| SignatureGroupKind::Type { len: 1 })
             .collect::<Vec<_>>();
-        groups.push(SignatureGroupKind::Value {
-            len: layer.value_params.len(),
-        });
+        if layer.has_value_layer {
+            groups.push(SignatureGroupKind::Value {
+                len: layer.value_params.len(),
+            });
+        }
         Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::from_parts(params, groups),
@@ -237,10 +244,7 @@ pub(crate) fn eta_materialize_pre_prime(
         let (params, groups) = match stage {
             CallStage::Type(param) => (
                 vec![SignatureParam::Type((*param).clone())],
-                vec![
-                    SignatureGroupKind::Value { len: 0 },
-                    SignatureGroupKind::Type { len: 1 },
-                ],
+                vec![SignatureGroupKind::Type { len: 1 }],
             ),
             CallStage::Value(layer) => (
                 layer
@@ -260,30 +264,13 @@ pub(crate) fn eta_materialize_pre_prime(
                 }],
             ),
         };
-        let abstraction = Expr::FnExpr {
+        Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::from_parts(params, groups),
             ret_ty: None,
             body: Box::new(body),
             meta: Meta::new(span),
             caps: (),
-        };
-        match stage {
-            // A signature with only type groups denotes a trailing empty Unit
-            // value stage. Seed the generated wrapper with an ordinary empty
-            // value group before its type binder, then consume that seed now.
-            // The residual value therefore exposes exactly the intended type
-            // stage, and entering it runs `body` without inventing a later Unit
-            // application.
-            CallStage::Type(_) => Expr::synth_call(
-                abstraction,
-                vec![CallArg::Value(Expr::Unit {
-                    occurrence: Default::default(),
-                    meta: Meta::new(span),
-                })],
-                span,
-            ),
-            CallStage::Value(_) => abstraction,
         }
     }
 
@@ -1259,14 +1246,17 @@ impl<'a> SubstituteVisitor<'a> {
         };
         let mut current = callee;
         let mut start = 0usize;
+        let arg_count = args.len();
+        let mut args = args.into_iter();
         for split in splits {
-            if *split <= start || *split >= args.len() {
+            if *split <= start || *split >= arg_count {
                 continue;
             }
-            current = Expr::synth_call(current, args[start..*split].to_vec(), span);
+            let layer = args.by_ref().take(*split - start).collect();
+            current = Expr::synth_call(current, layer, span);
             start = *split;
         }
-        Expr::synth_call(current, args[start..].to_vec(), span)
+        Expr::synth_call(current, args.collect(), span)
     }
 
     fn walk_ordered_signature_params(
@@ -2018,144 +2008,75 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             unreachable!()
         };
         let call_span = meta.span;
-        let residual_eta = occurrence
-            .and_then(|id| self.elabs.call_residual_eta_type_for(&self.module_path, id))
-            .cloned();
+        // The table is external to the visitor: recursive conversion can
+        // borrow its recorded types and call plan without copying their trees.
+        let elabs = self.elabs;
+        let residual_eta =
+            occurrence.and_then(|id| elabs.call_residual_eta_type_for(&self.module_path, id));
         let implicit_unit_slots = occurrence
-            .and_then(|id| {
-                self.elabs
-                    .call_implicit_unit_slots_for(&self.module_path, id)
-            })
-            .map(<[_]>::to_vec)
+            .and_then(|id| elabs.call_implicit_unit_slots_for(&self.module_path, id))
             .unwrap_or_default();
-        // Rebuild the args list in fully-explicit canonical form
-        // (every type-arg slot present, no `Type::Infer`
-        // placeholders). `apply_polymorphic_function` records one
-        // resolution per solved type-param at canonical positions
-        // in `Elaborations::type_resolutions`.
-        //
-        // Walk canonical slots in order. At each canonical slot
-        // `s`:
-        //   * If the typer recorded an implicit Unit at `s`, insert one
-        //     `CallArg::Value(Expr::Unit)` without consuming a user arg.
-        //   * If `args[user_idx]` is `Type::Infer`: replace with
-        //     `type_resolutions[(call_span, s)]`.  Advance both
-        //     indices.
-        //   * If `args[user_idx]` is `CallArg::Value` AND there's a
-        //     resolution at slot `s` AND the typer flagged this
-        //     specific value-arg as a type-arg (the resolution is
-        //     "type-bound", `is_value_at_type_slot=true`): the user
-        //     wrote a value-shaped expression at a type-arg slot
-        //     (e.g. `nil(B)` where `B` is a tparam). Replace with
-        //     the recorded type and advance both. Without this, the
-        //     emitter sees the value-shaped form (a `Call(List, [B])`
-        //     etc.) as a callee and fails to resolve it.
-        //   * If `args[user_idx]` is a concrete `Type` or `Value`
-        //     AND there's a resolution at slot `s` (but not the
-        //     value-at-type-slot case above): this is a fully-elided
-        //     type-arg the user omitted; insert the resolution and
-        //     DO NOT advance `user_idx` (the user arg belongs at a
-        //     later canonical slot).
-        //   * If `args[user_idx]` is `Type` or `Value` and no
-        //     resolution at slot `s`: pass through. Advance both.
-        //   * If we've consumed every user arg and a resolution
-        //     still exists at slot `s`: append it (trailing
-        //     inferred type-arg, e.g. the `<B>` in `align!`'s
-        //     `[A](A)[B] -> B` signature).
-        //
-        // The "no resolution after all user args consumed" case
-        // ends the loop.
+        use crate::pass::typecheck_core::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
         let mut new_args: Vec<CallArg<PrePrime>> = Vec::with_capacity(args.len() + 2);
-        let mut user_idx = 0usize;
-        let mut canonical_slot = 0usize;
+        let mut cursor = CanonicalCallCursor::default();
         let explicit_intrinsic_type_arity = explicit_intrinsic_type_arity(callee, args);
         loop {
-            if implicit_unit_slots.binary_search(&canonical_slot).is_ok() {
-                new_args.push(CallArg::Value(Expr::Unit {
-                    occurrence: Default::default(),
-                    meta: Meta::new(call_span),
-                }));
-                canonical_slot += 1;
-                continue;
-            }
-            let resolution = occurrence
-                .and_then(|id| {
-                    self.elabs
-                        .type_resolution_for(&self.module_path, id, canonical_slot)
+            let arg = args.get(cursor.written());
+            let written = arg.map(|arg| match arg {
+                CallArg::Type(Type::Infer { .. }) => WrittenCallArg::Infer,
+                CallArg::Type(_) => WrittenCallArg::Type,
+                CallArg::Value(_) => WrittenCallArg::Value,
+            });
+            let implicit = implicit_unit_slots
+                .binary_search(&cursor.canonical())
+                .is_ok();
+            let resolution = (!implicit)
+                .then(|| {
+                    occurrence.and_then(|id| {
+                        elabs.type_resolution_for(&self.module_path, id, cursor.canonical())
+                    })
                 })
-                .cloned();
-            if user_idx < args.len() {
-                match (&args[user_idx], resolution.as_ref()) {
-                    (CallArg::Type(Type::Infer { .. }), Some(t)) => {
-                        new_args.push(CallArg::Type(self.walk_recorded_type(t)?));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Type(Type::Infer { meta, .. }), None) => {
-                        new_args.push(CallArg::Type(self.missing_type_infer(
-                            meta.span,
-                            "every `Type::Infer` in a call's args list must have a \
+                .flatten();
+            let intrinsic_type =
+                explicit_intrinsic_type_arity.is_some_and(|arity| cursor.written() < arity);
+            let value_at_type_slot = resolution.is_some()
+                && matches!(written, Some(WrittenCallArg::Value))
+                && (intrinsic_type
+                    || occurrence.is_some_and(|id| {
+                        elabs.is_value_at_type_slot(&self.module_path, id, cursor.canonical())
+                    }));
+            match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
+                Some(CanonicalCallSlot::ImplicitUnit) => {
+                    new_args.push(CallArg::Value(Expr::Unit {
+                        occurrence: Default::default(),
+                        meta: Meta::new(call_span),
+                    }))
+                }
+                Some(CanonicalCallSlot::ResolvedType { .. }) => {
+                    new_args.push(CallArg::Type(self.walk_recorded_type(
+                        resolution.expect("resolved canonical slot has a recorded type"),
+                    )?));
+                }
+                Some(CanonicalCallSlot::Written) => {
+                    new_args.push(
+                        match arg.expect("written canonical slot has a source argument") {
+                            CallArg::Type(Type::Infer { meta, .. }) => {
+                                CallArg::Type(self.missing_type_infer(
+                                    meta.span,
+                                    "every `Type::Infer` in a call's args list must have a \
                              recorded resolution — `apply_polymorphic_function` \
                              records one per `_`",
-                        )));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Type(t), _) => {
-                        new_args.push(CallArg::Type(self.walk_type(t)?));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Value(v), resolved)
-                        if explicit_intrinsic_type_arity.is_some_and(|arity| user_idx < arity) =>
-                    {
-                        let ty = match resolved {
-                            Some(t) => self.walk_recorded_type(t)?,
-                            None => self.walk_value_shaped_type_arg(v)?,
-                        };
-                        new_args.push(CallArg::Type(ty));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Value(v), Some(t))
-                        if occurrence.is_some_and(|id| {
-                            self.elabs
-                                .is_value_at_type_slot(&self.module_path, id, canonical_slot)
-                        }) =>
-                    {
-                        // The user wrote a value-shaped expression
-                        // (`List(B)`, `Box(A)`, `Int`) at a type-arg
-                        // slot; the typer reclassified it via
-                        // `expr_to_type_arg` and recorded the
-                        // resolution with a `value_at_type_slot`
-                        // marker. Replace the slot with the
-                        // recorded type and consume the user arg.
-                        let _ = v;
-                        new_args.push(CallArg::Type(self.walk_recorded_type(t)?));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Value(_), Some(t)) => {
-                        // Inferring-path leading or interleaved
-                        // type-arg: insert here, leave the user
-                        // arg for the next iteration.
-                        new_args.push(CallArg::Type(self.walk_recorded_type(t)?));
-                        canonical_slot += 1;
-                    }
-                    (CallArg::Value(v), None) => {
-                        new_args.push(CallArg::Value(self.walk_expr(v)?));
-                        user_idx += 1;
-                        canonical_slot += 1;
-                    }
+                                ))
+                            }
+                            CallArg::Type(ty) => CallArg::Type(self.walk_type(ty)?),
+                            CallArg::Value(value) if intrinsic_type => {
+                                CallArg::Type(self.walk_value_shaped_type_arg(value)?)
+                            }
+                            CallArg::Value(value) => CallArg::Value(self.walk_expr(value)?),
+                        },
+                    );
                 }
-            } else if let Some(t) = resolution.as_ref() {
-                // Trailing inferred type-arg (e.g., the `<B>` slot
-                // in `align!: [A](A)[B] -> B` when the user
-                // wrote `align!(e)`).
-                new_args.push(CallArg::Type(self.walk_recorded_type(t)?));
-                canonical_slot += 1;
-            } else {
-                break;
+                None => break,
             }
         }
         if args.is_empty() && implicit_unit_slots.is_empty() {
@@ -2179,7 +2100,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         let Some(residual_eta) = residual_eta else {
             return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
         };
-        let residual_ty = self.walk_recorded_type(&residual_eta)?;
+        let residual_ty = self.walk_recorded_type(residual_eta)?;
         let Some(plan) = first_eta_layer_from_residual_type(&residual_ty) else {
             return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
         };
@@ -3636,6 +3557,7 @@ mod tests {
         let span = Span::new(0, 6);
         let call = |args: Vec<CallArg<Lowered>>| Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
                 occurrence: Default::default(),
                 segments: vec![PathSegment::new("callee", span)],
@@ -3702,6 +3624,7 @@ mod tests {
         };
         let call = Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
                 occurrence: Default::default(),
                 segments: vec![PathSegment::new("callee", span)],
@@ -3755,6 +3678,7 @@ mod tests {
         let span = Span::new(0, 0);
         let expr: Expr<Lowered> = Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
                 occurrence: Default::default(),
                 segments: vec![PathSegment::new("demo", span)],
@@ -4280,6 +4204,35 @@ mod tests {
                 "the residual wrapper must apply its bound staged prefix: {residual:?}"
             );
         }
+    }
+
+    #[test]
+    fn residual_unit_eta_forwards_its_semantic_argument() {
+        let module = substitute_one(
+            "main",
+            "module main; \
+             fn producer[A] -> . -> . { .(value: .) { value } } \
+             fn selected() -> . -> . { producer(.) }",
+        );
+        let Expr::Let { value, body, .. } = &prime_fn(&module, "selected").body else {
+            panic!("the consumed type stage must remain an outer binding")
+        };
+        assert!(matches!(value.as_ref(), Expr::Call { args, .. }
+            if matches!(args.as_slice(), [CallArg::Type(Type::Unit { .. })])));
+        let Expr::FnExpr { sig, body, .. } = body.as_ref() else {
+            panic!("the residual value stage must be an ordinary lambda")
+        };
+        let [SignatureParam::Value(param)] = sig.params.as_slice() else {
+            panic!("runtime-erased Unit must retain its semantic binder: {sig:?}")
+        };
+        assert!(matches!(param.ty, Some(Type::Unit { .. })));
+        let Expr::Call { args, .. } = body.as_ref() else {
+            panic!("the residual lambda must call its captured prefix")
+        };
+        assert!(
+            matches!(args.as_slice(), [CallArg::Value(Expr::Path { segments, .. })]
+            if segments.len() == 1 && segments[0].name == param.name)
+        );
     }
 
     #[test]

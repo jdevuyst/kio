@@ -8,13 +8,13 @@ module docref/main;
 ///
 /// See also [`helper`] and [`Identity`].
 /// Private items are also valid refs: [`private_helper`].
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }
 
 /// A helper function referenced by [`identity`].
-fn helper() -> . { () }
+fn helper() { () }
 
 // Private helper.
-fn private_helper() -> . { () }
+fn private_helper() { () }
 
 /// A type alias.
 pub type Identity = .;

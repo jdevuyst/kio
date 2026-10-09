@@ -29,7 +29,7 @@ import cpu/report(
   );
 import testapi(Bool, String);
 
-pub fn main() -> . {
+pub fn main() {
   let prog = build();
   line("cpu_pipeline_hazard_sim");
   line("a five-stage in-order pipeline: IF ID EX MEM WB, one instruction per "

@@ -7,7 +7,7 @@ import testapi(Bool, I32, String);
 import testapi/array as array;
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   let left = market.left();
   let right = market.right();
   let order = market.row(0, 1, 2, 3);

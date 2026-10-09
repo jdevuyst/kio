@@ -18,7 +18,7 @@ fn first_of(p: String & String) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(Cell.mk_cell("cell-ok\n").>Cell.un_cell);
   let typed = Pair.mk_pair(("pair-ok\n", "ignored"));
   print(first_of(typed.>Pair.un_pair))

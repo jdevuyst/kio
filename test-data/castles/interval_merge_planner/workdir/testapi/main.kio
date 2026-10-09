@@ -2,4 +2,4 @@ module testapi/main;
 
 import interval_merge_planner/planner as planner;
 
-pub fn main() -> . { planner.run() }
+pub fn main() { planner.run() }

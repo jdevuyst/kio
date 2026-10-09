@@ -52,7 +52,8 @@ re-litigates mechanical issues the pipeline already gates:
 
 - `sh ci/checks/repo-lint/blog-lint.sh` — the blog authoring contract (filename
   shape and valid date, a single H1, a standard byline linking to a GitHub
-  profile, commit-pinned links to repository files and directories).
+  profile, commit-pinned links to repository files and directories, straight
+  quotation marks and apostrophes in the Markdown source).
 - `markdownlint-cli2 <post>` for each reviewed post — Markdown mechanics, the
   same tool and `.markdownlint.json` config that
   `ci/checks/repo-lint/markdown-lint.sh` runs repo-wide.
@@ -89,6 +90,12 @@ first.
 - **Spelling** errors.
 - **Grammar** errors.
 - **Punctuation** errors.
+- **Quotation-mark convention** — blog source uses straight ASCII `"` and `'`,
+  not curly quotation marks or apostrophes. Report the exact characters and
+  suggest straight replacements; do not apply them. This does not prohibit
+  other Unicode text or punctuation. If faithful quoted material or code needs
+  those characters, present the conflict for the author instead of silently
+  changing it.
 
 Quote the exact text and give the correction. This is the skill's core value.
 
@@ -112,7 +119,8 @@ Quote the exact text and give the correction. This is the skill's core value.
 - A genuine **clarity or grammatical improvement**, but only where something is
   actually confusing or wrong — never a preference. Mark each clearly as optional
   ("take it or leave it") and keep them few. **Never** propose a reword that
-  changes the author's tone or voice, and never impose a house style.
+  changes the author's tone or voice, and never invent a house style beyond
+  the explicit blog authoring rules.
 
 ### Kio examples — compilation findings and suggested harnesses
 

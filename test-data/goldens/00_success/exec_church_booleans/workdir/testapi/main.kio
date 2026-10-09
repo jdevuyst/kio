@@ -27,7 +27,7 @@ fn not_c(p: Boolc) -> Boolc { .[A](x, y) { p(A, y, x) } }
 
 fn to_str(b: Boolc) -> String { if_c(String, b, "yes"(String), "no"(String)) }
 
-pub fn main() -> . {
+pub fn main() {
   print(string_concat(to_str(and_c(t(), t())), "\n"(String)));
   print(string_concat(to_str(and_c(t(), f())), "\n"(String)));
   print(string_concat(to_str(or_c(f(), t())), "\n"(String)));

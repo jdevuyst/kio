@@ -20,7 +20,7 @@ fn branching() -> Array(I32) {
   symbols
 }
 
-fn run_branching() -> . {
+fn run_branching() {
   let source = branching();
   let index = sam.build(source);
   analysis.finalize(index);
@@ -34,7 +34,7 @@ fn run_branching() -> . {
   report.query(source, index, a.array_make_empty(I32, ()))
 }
 
-fn run_overlapping() -> . {
+fn run_overlapping() {
   let source = a.array_make_filled(4, 0);
   let index = sam.build(source);
   analysis.finalize(index);
@@ -45,7 +45,7 @@ fn run_overlapping() -> . {
   report.query(source, index, a.array_make_empty(I32, ()))
 }
 
-fn run_empty() -> . {
+fn run_empty() {
   let source = a.array_make_empty(I32, ());
   let index = sam.build(source);
   analysis.finalize(index);
@@ -54,7 +54,7 @@ fn run_empty() -> . {
   report.query(source, index, a.array_make_empty(I32, ()))
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Suffix automaton index\n");
   run_branching();
   run_overlapping();

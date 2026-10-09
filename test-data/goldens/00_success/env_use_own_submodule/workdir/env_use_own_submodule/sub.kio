@@ -4,4 +4,4 @@ host type Int role(i32);
 
 pub newtype Wrap : Int { pub constructor mk_wrap; pub projector un_wrap }
 
-fn dummy() -> . { () }
+fn dummy() { () }

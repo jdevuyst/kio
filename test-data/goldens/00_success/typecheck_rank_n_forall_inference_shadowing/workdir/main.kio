@@ -4,4 +4,4 @@ fn id[T](value: T) -> T { value }
 
 fn choose[A](poly: [A] A -> A, value: A) -> A { poly(value) }
 
-pub fn main() -> . { choose(id, ()) }
+pub fn main() { choose(id, ()) }

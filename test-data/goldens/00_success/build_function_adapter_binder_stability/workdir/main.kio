@@ -14,4 +14,4 @@ fn id_lens[A]() -> Lens(A, A) {
   (view, set)
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

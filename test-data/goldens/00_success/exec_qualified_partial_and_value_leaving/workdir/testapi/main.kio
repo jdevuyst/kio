@@ -9,7 +9,7 @@ import testapi/io(print);
 // unqualified and qualified effectful values delay their effect until
 // application, while an empty first value group is applied before retaining
 // later groups.
-pub fn main() -> . {
+pub fn main() {
   let p = h.join("partial-"(String));
   print(p("ok\n"(String)));
   let f = h.id(String);

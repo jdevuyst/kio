@@ -2,9 +2,9 @@ module unitp/m;
 
 import unitp(mk);
 
-fn wrap(x: .) -> . { x }
+fn wrap(x: .) { x }
 
-fn thunk() -> . { () }
+fn thunk() { () }
 
 equiv fn_applied_to_unit_param(x: .) {
   wrap(x);

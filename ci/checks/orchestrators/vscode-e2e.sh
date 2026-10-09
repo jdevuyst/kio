@@ -170,8 +170,9 @@ start_xvfb
 # One launch per server the extension can meet: the mock (editor-side
 # wiring), the real `kio lsp` (that the two agree on how to start), and a
 # `kio` too old to serve it (that the extension notices before spawning).
-# The extension resolves its server once at activation, so these cannot
-# share a launch. `@vscode/test-electron` caches its VS Code download
+# Separate launches isolate their initial workspace configuration;
+# recovery tests also switch servers within a launch.
+# `@vscode/test-electron` caches its VS Code download
 # under `tools/vscode-kio/.vscode-test/`, so only the first pays for it.
 status=0
 for e2e_mode in mock real stale; do

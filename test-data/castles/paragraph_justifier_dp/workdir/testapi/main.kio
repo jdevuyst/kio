@@ -30,18 +30,18 @@ fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
 
 fn num(n: I32) -> String { int_to_string(n) }
 
-fn field(label: String, value: String) -> . { print(cat3(label, ": ", cat(value, "\n"))) }
+fn field(label: String, value: String) { print(cat3(label, ": ", cat(value, "\n"))) }
 
-fn heading(name: String) -> . { print(cat3("\n", name, ":\n")) }
+fn heading(name: String) { print(cat3("\n", name, ":\n")) }
 
-fn show(name: String, xs: Words, col: I32, bs: List(I32), ls: List(Line), total: I32) -> . {
+fn show(name: String, xs: Words, col: I32, bs: List(I32), ls: List(Line), total: I32) {
   heading(name);
   field("  breaks", render.breaks(bs));
   print(render.layout(xs, col, ls));
   field("  total badness", num(total))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = paragraph();
   let col = column();
   let n = len(xs);

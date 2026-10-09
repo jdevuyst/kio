@@ -14,4 +14,4 @@ rec(loop) fn stale_slot[A](maker: [X] String -> X & A, n: I32) -> I32 {
   consume_pair(maker("stale"), rec(cont) stale_slot(maker, n))
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

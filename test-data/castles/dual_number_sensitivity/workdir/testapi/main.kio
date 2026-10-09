@@ -4,7 +4,7 @@ import sensitivity/models as models;
 import sensitivity/report as report;
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Second-order forward sensitivity\n");
   report.model("elastic energy", models.elastic_energy, 1.0, 2.0, 1.0, -1.0);
   report.model("elastic energy", models.elastic_energy, -2.0, 0.5, 1.0, -1.0);

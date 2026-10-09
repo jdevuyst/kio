@@ -660,7 +660,7 @@ A POC package without any `equiv` block is skipped by this check — § POC 5 al
 
 `main` is the worked tour an adopter reads first. The audit checks:
 
-- `main` is not a no-op (`pub fn main() -> . { () }` and equivalents).
+- `main` is not a no-op (`pub fn main() { () }` and equivalents).
 - `main`'s output uses both the named-function API and the operator DSL — adopters see both call styles.
 - `main`'s output is captured in `expected.stdout` (the harness asserts byte-for-byte agreement).
 - The output threads concrete values through the API in a way that reads as a worked example — concrete pairs, lists, dicts, the operators applied to them, output separated for readability.

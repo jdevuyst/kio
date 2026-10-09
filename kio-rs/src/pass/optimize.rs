@@ -93,11 +93,8 @@
 //! sub-expressions of unknown purity, and every Enriched node whose
 //! sub-tree could harbor a host call are not.
 //!
-//! Refinements arrive with the per-fn pure-effect sub-pass that
-//! lands alongside DCE. Until then, conservatism is the right side
-//! to err on — a pass that
-//! refuses to fire on a syntactically-impure expression is correct;
-//! a pass that fires when it shouldn't is a behavior bug.
+//! The shared purity analysis keeps closure construction separate from
+//! invocation. Unknown callable values retain their effects.
 
 // `maybe_par_iter!` / `maybe_into_par_iter!` (`src/par.rs`) leave the
 // trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
@@ -131,11 +128,15 @@ struct NewtypeMemberInfo {
 #[derive(Debug, Clone, Default)]
 pub struct OptimizerCtx {
     newtype_members: crate::pass::resolve::ResolvedNewtypeHeadMap<NewtypeMemberInfo>,
+    pure_functions: crate::pass::purity::PureFunctions,
 }
 
 impl OptimizerCtx {
     fn for_module(package: &Package<Enriched>, module: &Module<Enriched>) -> Self {
-        let mut ctx = Self::default();
+        let mut ctx = Self {
+            pure_functions: crate::pass::purity::PureFunctions::for_module(package, module),
+            ..Default::default()
+        };
         crate::pass::resolve::for_each_resolved_newtype_member_head(
             package,
             module,
@@ -154,6 +155,25 @@ impl OptimizerCtx {
             },
         );
         ctx
+    }
+
+    fn shadowed<'a, 'n>(
+        &'a self,
+        names: impl Iterator<Item = &'n str>,
+    ) -> std::borrow::Cow<'a, Self> {
+        let mut context = std::borrow::Cow::Borrowed(self);
+        for name in names {
+            if context.pure_functions.contains_head(name) {
+                context.to_mut().pure_functions.remove_head(name);
+            }
+        }
+        context
+    }
+
+    fn evaluation_is_pure(&self, expression: &Expr<Enriched>) -> bool {
+        crate::pass::purity::evaluation_is_pure(expression, |path| {
+            self.pure_functions.contains(path)
+        })
     }
 
     fn collect_newtypes_from_export(&mut self, _e: &PackageFile<Enriched>) {
@@ -233,6 +253,11 @@ pub fn optimize_module_with_package_inputs(
 ) -> Module<Enriched> {
     let mut ctx = OptimizerCtx::default();
     let module_path = m.path.segments.join("/");
+    ctx.pure_functions = inputs
+        .pure_functions
+        .get(&module_path)
+        .cloned()
+        .unwrap_or_default();
     for (scoped_name, input) in &inputs.newtype_members {
         if scoped_name.module_path() != module_path {
             continue;
@@ -300,7 +325,7 @@ fn optimize_item(ctx: &OptimizerCtx, item: Item<Enriched>) -> Item<Enriched> {
 }
 
 fn optimize_fn_def(ctx: &OptimizerCtx, mut d: FnDef<Enriched>) -> FnDef<Enriched> {
-    d.body = optimize_expr(ctx, d.body);
+    d.body = optimize_expr(&ctx.shadowed(d.sig.value_param_names()), d.body);
     d
 }
 
@@ -334,9 +359,9 @@ fn optimize_expr_in_mode(
         if mode == CatalogMode::Full {
             e = match_fusion(e, &mut changed);
         }
-        e = let_fuse(e, &mut changed);
+        e = let_fuse(ctx, e, &mut changed);
         e = beta_reduce_unary_iife(e, &mut changed);
-        e = dead_code_elimination(e, &mut changed);
+        e = dead_code_elimination(ctx, e, &mut changed);
         e = newtype_identity_elision(ctx, e, &mut changed);
         e = constant_fold(e, &mut changed);
         if !changed {
@@ -361,12 +386,14 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
         // expressions get optimized.
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(optimize_expr_in_mode(ctx, *callee, mode)),
             args: args
                 .into_iter()
@@ -384,9 +411,13 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
             caps,
         } => Expr::FnExpr {
             occurrence: Default::default(),
+            body: Box::new(optimize_expr_in_mode(
+                &ctx.shadowed(sig.value_param_names()),
+                *body,
+                mode,
+            )),
             sig,
             ret_ty,
-            body: Box::new(optimize_expr_in_mode(ctx, *body, mode)),
             meta,
             caps,
         },
@@ -401,12 +432,16 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
             meta,
         } => Expr::Let {
             occurrence: Default::default(),
+            body: Box::new(optimize_expr_in_mode(
+                &ctx.shadowed(std::iter::once(name.as_str())),
+                *body,
+                mode,
+            )),
             name,
             name_span,
             ty,
             pattern,
             value: Box::new(optimize_expr_in_mode(ctx, *value, mode)),
-            body: Box::new(optimize_expr_in_mode(ctx, *body, mode)),
             meta,
         },
         Expr::Seq {
@@ -485,7 +520,11 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
             arms: arms
                 .into_iter()
                 .map(|mut a| {
-                    a.body = optimize_expr_in_mode(ctx, a.body, mode);
+                    a.body = optimize_expr_in_mode(
+                        &ctx.shadowed(std::iter::once(a.param.as_str())),
+                        a.body,
+                        mode,
+                    );
                     a
                 })
                 .collect(),
@@ -598,76 +637,8 @@ fn optimize_call_arg(
 /// matches / conditionals whose scrutinee / arms / branches are
 /// pure.
 ///
-/// **What's not pure (conservatively):** every `Call` (any host
-/// call, but also any package-boundary call whose body might do I/O — we
-/// don't yet track per-fn purity), every sub-expression containing
-/// a Call. This is the conservative cut; the DCE pass's per-fn
-/// pure-effect sub-pass will refine it later.
 fn is_pure(e: &Expr<Enriched>) -> bool {
-    match e {
-        crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::Path { .. }
-        | Expr::Unit { .. }
-        | Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. } => true,
-        // A `fn` *literal* is a closure-construction site; that's
-        // pure (no host call fires until the closure is invoked).
-        // The body may contain calls; those run only when the
-        // closure is invoked, which is the caller's purity, not the
-        // construction's.
-        Expr::FnExpr { .. } => true,
-        // Every Call is conservatively impure until per-fn analysis
-        // lands.
-        Expr::Call { .. } => false,
-        Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
-            is_pure(value) && is_pure(body)
-        }
-        Expr::EnrichedTuple { items, .. } => items.iter().all(is_pure),
-        Expr::EnrichedRecord { fields, .. } => fields.iter().all(|f| is_pure(&f.value)),
-        Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
-            is_pure(target)
-        }
-        Expr::EnrichedInject { payload, .. } => is_pure(payload),
-        Expr::EnrichedMatch {
-            scrutinee, arms, ..
-        } => is_pure(scrutinee) && arms.iter().all(|a| is_pure(&a.body)),
-        Expr::EnrichedConditional {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => is_pure(cond) && is_pure(then_branch) && is_pure(else_branch),
-        // Surface / pre-recovery variants are uninhabited at
-        // `Enriched`.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
-        | Expr::Ufcs { ext, .. } => match *ext {},
-        Expr::OpChain { ext, .. } => match *ext {},
-        Expr::RecCall { ext, .. } => match *ext {},
-        // Low-IR variants are uninhabited at `Enriched`.
-        Expr::LowHostCall { ext, .. }
-        | Expr::LowModuleCall { ext, .. }
-        | Expr::LowQualifiedModuleCall { ext, .. }
-        | Expr::LowQualifiedNewtypeMember { ext, .. }
-        | Expr::LowNewtypeCtor { ext, .. }
-        | Expr::LowNewtypeProj { ext, .. }
-        | Expr::LowClosureCall { ext, .. }
-        | Expr::LowIndirectCall { ext, .. }
-        | Expr::LowTypeApplication { ext, .. }
-        | Expr::LowAbsurdCall { ext, .. }
-        | Expr::LowCpsProjectorApply { ext, .. }
-        | Expr::LowBoundRef { ext, .. }
-        | Expr::LowHostFnValueRef { ext, .. }
-        | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
-    }
+    crate::pass::purity::evaluation_is_pure(e, |_| false)
 }
 
 /// Wrap `kept` in a chain of [`Expr::Seq`] nodes that evaluate every
@@ -935,6 +906,7 @@ fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enr
             };
             let Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee,
                 args,
                 meta,
@@ -959,6 +931,7 @@ fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enr
             *changed = true;
             return Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee,
                 args,
                 meta,
@@ -1575,12 +1548,14 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
         | Expr::BoolLit { .. }) => e,
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(subst_free(*callee, name, replacement)),
             args: args
                 .into_iter()
@@ -1842,7 +1817,7 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
 /// The conservative fallback when E is impure and the use follows an
 /// earlier effect or lies in a deferred branch: leave the let alone.
 /// The pass declines rather than risk reordering side-effects.
-fn let_fuse(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+fn let_fuse(ctx: &OptimizerCtx, e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     let Expr::Let {
         occurrence: _,
         name,
@@ -1860,7 +1835,7 @@ fn let_fuse(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     match n {
         0 => {
             *changed = true;
-            if is_pure(&value) {
+            if ctx.evaluation_is_pure(&value) {
                 // Pure — drop the let entirely.
                 *body
             } else {
@@ -1885,7 +1860,9 @@ fn let_fuse(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
             let v_free = free_vars(&value);
             let b_binders = body_binders(&body);
             let would_capture = v_free.iter().any(|n| b_binders.contains(n.as_str()));
-            if !would_capture && (is_pure(&value) || use_precedes_effects(&body, &name)) {
+            if !would_capture
+                && (ctx.evaluation_is_pure(&value) || use_precedes_effects(&body, &name))
+            {
                 *changed = true;
                 subst_free(*body, &name, &value)
             } else {
@@ -1931,6 +1908,7 @@ fn let_fuse(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
 fn beta_reduce_unary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     let Expr::Call {
         occurrence: _,
+        diagnostic: _,
         callee,
         args,
         meta,
@@ -1952,6 +1930,7 @@ fn beta_reduce_unary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriche
     if !safe_unary_fn || !safe_unary_arg {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2253,12 +2232,13 @@ fn collect_binders<'a>(e: &'a Expr<Enriched>, out: &mut std::collections::HashSe
 /// `body`.
 ///
 /// The let-zero-use case is already handled by [`let_fuse`]; this
-/// rule covers the [`Expr::Seq`] expression-statement form. Once
-/// per-fn purity analysis lands, more calls become provably pure
-/// and this rule (plus the let-fuse zero-use case) fires more
-/// often — the catalog stays the same, the purity verdict gets
-/// sharper.
-fn dead_code_elimination(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+/// rule covers the [`Expr::Seq`] expression-statement form using the
+/// same conservative expression and callable proof.
+fn dead_code_elimination(
+    ctx: &OptimizerCtx,
+    e: Expr<Enriched>,
+    changed: &mut bool,
+) -> Expr<Enriched> {
     match e {
         Expr::Seq {
             occurrence: _,
@@ -2266,7 +2246,7 @@ fn dead_code_elimination(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched
             body,
             meta,
         } => {
-            if is_pure(&value) {
+            if ctx.evaluation_is_pure(&value) {
                 *changed = true;
                 *body
             } else {
@@ -2319,6 +2299,7 @@ fn newtype_identity_elision(
 ) -> Expr<Enriched> {
     let Expr::Call {
         occurrence: _,
+        diagnostic: _,
         callee,
         args,
         meta,
@@ -2330,6 +2311,7 @@ fn newtype_identity_elision(
     let Some(outer) = match_newtype_member_call(&callee, &args) else {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2355,6 +2337,7 @@ fn newtype_identity_elision(
     else {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2364,6 +2347,7 @@ fn newtype_identity_elision(
     if matches!(outer_kind, NewtypeMemberKind::Neither) {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2382,6 +2366,7 @@ fn newtype_identity_elision(
     let Some(inner) = inner else {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2391,6 +2376,7 @@ fn newtype_identity_elision(
     let Some(inner_info) = ctx.newtype_members.get(inner.visible_head) else {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2400,6 +2386,7 @@ fn newtype_identity_elision(
     if &inner_info.identity != outer_identity {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2423,6 +2410,7 @@ fn newtype_identity_elision(
     if !is_inverse_pair {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2434,6 +2422,7 @@ fn newtype_identity_elision(
     if outer_type_args.len() != inner.type_args.len() {
         return Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee,
             args,
             meta,
@@ -2444,6 +2433,7 @@ fn newtype_identity_elision(
         if !types_equal(a, b) {
             return Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee,
                 args,
                 meta,
@@ -3044,6 +3034,7 @@ mod tests {
             }),
             body: Box::new(Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(test_path(callee)),
                 args: std::iter::once(CallArg::Type(test_unit_ty()))
                     .chain(
@@ -3267,6 +3258,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn declared_pure_calls_feed_dce_without_overriding_lexical_binders() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import __intrinsics__; \
+             pure fn factory() { () } \
+             host fn effect() -> .; \
+             fn direct() { factory(); () } \
+             fn parameter(factory: . -> .) { factory(); () } \
+             fn binding() { let factory = effect; factory(); () } \
+             fn closure(factory: . -> .) -> . -> . { .() { factory(); () } } \
+             fn branch(s: (. -> .) | .) { \
+               __either__(. -> ., ., ., s, .(factory: . -> .) { factory(); () }, .() { () }) \
+             }",
+        );
+        assert!(matches!(fn_body(&m, "direct"), Expr::Unit { .. }));
+        for name in ["parameter", "binding", "closure", "branch"] {
+            assert!(
+                contains(fn_body(&m, name), &|expr| matches!(expr, Expr::Call { .. })),
+                "a shadowed callable invocation was removed: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn shared_purity_distinguishes_closure_construction_from_invocation() {
+        let m = recover_one(
+            "x/main",
+            "module x/main; host fn effect() -> .; \
+             fn literal() -> . -> . { .() { effect() } } \
+             fn pure_call() { .() { () }() } \
+             fn effect_call() { .() { effect() }() }",
+        );
+        assert!(is_pure(fn_body(&m, "literal")));
+        assert!(is_pure(fn_body(&m, "pure_call")));
+        assert!(!is_pure(fn_body(&m, "effect_call")));
+    }
+
     /// `let x = E in F` with `x` unused and `E` pure → `F` (let
     /// drops entirely).
     #[test]
@@ -3289,7 +3318,11 @@ mod tests {
     fn fuse_recovered_top_let(src: &str) -> (Expr<Enriched>, bool) {
         let module = recover_one("x/main", src);
         let mut changed = false;
-        let body = let_fuse(fn_body(&module, "t").clone(), &mut changed);
+        let body = let_fuse(
+            &OptimizerCtx::default(),
+            fn_body(&module, "t").clone(),
+            &mut changed,
+        );
         (body, changed)
     }
 
@@ -3623,6 +3656,7 @@ mod tests {
     fn bound_tuple_call_projection_guard_rejects_unsafe_shapes() {
         let impure_item = Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(test_path("effect")),
             args: Vec::new(),
             meta: test_meta(),

@@ -22,7 +22,7 @@
 //!
 //! The default action runs, then a dim footer lists every command
 //! applicable to the matched kind(s). Input that matches **no** kind
-//! prints a single honest invalid-input line. The explicit
+//! prints invalid-input guidance and the retained syntax cause. The explicit
 //! `:normalize <expr>` forces reduction (useful on a name, which a
 //! bare line would route to `:doc`). `:t <name-or-expression>` and
 //! `:pure <name-or-expression>` accept either input category and print
@@ -48,11 +48,11 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::ast::{FnDef, ImportKind, Item, Module, Surface};
+use crate::ast::{FnDef, ImportItem, ImportKind, Item, Module, Surface};
 
 use super::expr_query::{
-    ExprQueryError, ExprQueryResult, InputKind, ReplExprQueryError, classify_input,
-    query_expr_for_repl, query_expr_purity_for_repl,
+    ExprQueryError, ExprQueryResult, InputKind, PromptSyntaxError, ReplExprQueryError,
+    classify_input, classify_input_for_repl, query_expr_for_repl, query_expr_purity_for_repl,
 };
 use super::highlight::{Palette, highlight, highlight_type};
 use super::session::{Session, StagedModule, import_clause_targets};
@@ -344,25 +344,11 @@ pub enum CompletionShape {
     None,
     /// A module path — `:load` / `:unload` / `:ls`.
     ModulePath,
-    /// A bare name or a fully-qualified name — `:t` / `:pure` /
-    /// `:which` / `:refs`. Operators are **not** offered: `:t` and
-    /// `:pure` inspect executable value bindings (an operator binding
-    /// is neither — `specs/cli.md` § `kio repl`), and `:refs` keys on
-    /// bound names, not operator tokens.
+    /// A bare name or fully-qualified name for the value views `:t` / `:pure`.
     NameOrFqn,
-    /// A bare name, fully-qualified name, or builtin name — `:which`.
-    /// Operators are not offered because `:which` keys on the bound
-    /// function name, not the operator token.
-    NameOrFqnOrBuiltin,
-    /// A bare name, a fully-qualified name, **or an operator token** —
-    /// `:signature` / `:source` / `:doc`. These are the named-item
-    /// views that resolve an operator binding (`specs/cli.md` §
-    /// `kio repl`: `:signature` "resolves any named declaration —
-    /// `fn`, `op`, …"; `:source` / `:doc` view the same item), so the
-    /// menu offers operator tokens here.
+    /// A single declaration selector, bare or qualified, including operators.
     NameFqnOrOp,
-    /// A bare name, fully-qualified name, operator token, or builtin
-    /// name — `:doc`.
+    /// A declaration selector or builtin name — `:doc` / `:which`.
     NameFqnOpOrBuiltin,
     /// An arbitrary expression — `:normalize`. There is no candidate
     /// set; the editor's own line-editing handles the bare expression.
@@ -378,11 +364,11 @@ pub fn completion_shape(canonical_command: &str) -> CompletionShape {
         // Module-path arguments.
         "load" | "unload" | "ls" => CompletionShape::ModulePath,
         // Named-item views that resolve an operator binding too.
-        "signature" | "source" => CompletionShape::NameFqnOrOp,
+        "signature" | "source" | "refs" => CompletionShape::NameFqnOrOp,
         "doc" => CompletionShape::NameFqnOpOrBuiltin,
         // Name / FQN arguments without operators.
-        "t" | "pure" | "refs" => CompletionShape::NameOrFqn,
-        "which" => CompletionShape::NameOrFqnOrBuiltin,
+        "t" | "pure" => CompletionShape::NameOrFqn,
+        "which" => CompletionShape::NameFqnOpOrBuiltin,
         // A bare expression — no candidate set.
         "normalize" => CompletionShape::Expression,
         // No-argument commands (and anything unrecognized) complete
@@ -507,6 +493,21 @@ fn mode_mismatch_hint(mode: CommandMode, arg: &str) -> Option<String> {
 /// mode, or an argument shaped for the command's own mode, yields the
 /// diagnostic unchanged — the hint is purely additive.
 fn hint_for(diagnostic: String, canonical_command: &str, arg: &str) -> String {
+    if matches!(
+        canonical_command,
+        "signature" | "source" | "doc" | "which" | "refs"
+    ) {
+        match crate::pass::parser::parse_declaration_query(arg) {
+            Ok(_) => return diagnostic,
+            Err(error) if arg.contains(".(") || arg.contains(".op ") || arg.contains(".varop ") => {
+                return format!(
+                    "invalid declaration selector `{arg}`: {}",
+                    error.diagnostic().message
+                );
+            }
+            Err(_) => {}
+        }
+    }
     match command_mode(canonical_command).and_then(|mode| mode_mismatch_hint(mode, arg)) {
         Some(hint) => format!("{diagnostic}\n  {hint}"),
         None => diagnostic,
@@ -889,7 +890,11 @@ fn plan_load(session: &Session, module_path: &str) -> Result<Vec<StagedModule>, 
 /// `alias.item`) or with the current module's `/` operator uses the expression
 /// branch.
 fn cmd_type(session: &mut Session, arg: &str, palette: Palette) -> String {
-    match classify_input(arg) {
+    let classification = match classify_input_for_repl(arg) {
+        Ok(kind) => kind,
+        Err(error) => return invalid_input_with_cause(arg, &error.render()),
+    };
+    match classification {
         // The lexer classifies alias-qualified value paths (`value.item`),
         // item FQNs (`left/value.item`), and slash-only operator expressions
         // (`left/right`) as bare names. An entity that actually resolves wins.
@@ -918,11 +923,10 @@ fn cmd_type(session: &mut Session, arg: &str, palette: Palette) -> String {
 fn cmd_type_expression(session: &mut Session, expr: &str, palette: Palette) -> String {
     match query_expr_for_repl(session, expr) {
         Ok(result) => render_expr_type(expr, &result, palette),
-        // An input committed to this branch that does not parse is neither a
-        // resolvable name nor a parseable expression — surface the same
-        // kind-classified guidance a bare line gives, never a raw (or
-        // wrapper-leaked) parser error.
-        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(_))) => invalid_bare_input(expr),
+        Err(ReplExprQueryError::Syntax(error)) => invalid_input_with_cause(expr, &error.render()),
+        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(message))) => {
+            invalid_input_with_cause(expr, &message)
+        }
         // A parseable expression that fails to type-check (or a
         // package / no-module failure) reports its own diagnostic.
         Err(e) => hint_for(render_expr_error(&e), "t", expr),
@@ -1050,7 +1054,11 @@ fn literal_alias_type_error(name: &str) -> String {
 /// an ordinary function distinguishes an impure expression from invalid input.
 /// Neither branch evaluates the queried value.
 fn cmd_pure(session: &mut Session, arg: &str) -> String {
-    match classify_input(arg) {
+    let classification = match classify_input_for_repl(arg) {
+        Ok(kind) => kind,
+        Err(error) => return invalid_input_with_cause(arg, &error.render()),
+    };
+    match classification {
         // Keep the same category boundary as `:t`: a declaration that resolves
         // wins, while a dotted value path or `/` operator expression that the
         // current parser accepts belongs to the expression branch.
@@ -1072,7 +1080,10 @@ fn cmd_pure(session: &mut Session, arg: &str) -> String {
 fn cmd_pure_expression(session: &mut Session, expr: &str) -> String {
     match query_expr_purity_for_repl(session, expr) {
         Ok(verdict) => verdict.as_str().to_owned(),
-        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(_))) => invalid_bare_input(expr),
+        Err(ReplExprQueryError::Syntax(error)) => invalid_input_with_cause(expr, &error.render()),
+        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(message))) => {
+            invalid_input_with_cause(expr, &message)
+        }
         Err(error) => hint_for(render_expr_error(&error), "pure", expr),
     }
 }
@@ -1154,9 +1165,14 @@ fn cmd_normalize(session: &mut Session, expr: &str, palette: Palette) -> String 
         // "not a name" would contradict the shared input classifier. The
         // expression attempt must still come first because `/` can be a
         // registered operator and its right operand can be dotted.
-        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(_))) => command_mode("normalize")
+        Err(ReplExprQueryError::Syntax(error)) => command_mode("normalize")
             .and_then(|mode| mode_mismatch_hint(mode, expr))
-            .unwrap_or_else(|| invalid_bare_input(expr)),
+            .unwrap_or_else(|| invalid_input_with_cause(expr, &error.render())),
+        Err(ReplExprQueryError::Query(ExprQueryError::Syntax(message))) => {
+            command_mode("normalize")
+                .and_then(|mode| mode_mismatch_hint(mode, expr))
+                .unwrap_or_else(|| invalid_input_with_cause(expr, &message))
+        }
         // On other failures, a qualified-name argument (which denotes a
         // declared entity, not a value to reduce) suggests the
         // declared-entity views.
@@ -1194,7 +1210,7 @@ impl BareInputKinds {
 /// Classify a bare input into the kinds it matches against the current
 /// session — the shared classifier behind the bare-input footer and the
 /// command-error redirects.
-fn bare_input_kinds(session: &Session, input: &str) -> BareInputKinds {
+fn bare_input_kinds(session: &Session, input: &str, expression: bool) -> BareInputKinds {
     let mut kinds = BareInputKinds::default();
     if let Some(InputKind::BareName(name)) = classify_input(input) {
         kinds.name = true;
@@ -1205,9 +1221,7 @@ fn bare_input_kinds(session: &Session, input: &str) -> BareInputKinds {
             kinds.module_path = true;
         }
     }
-    if expr_parse(session, input).is_some() {
-        kinds.expression = true;
-    }
+    kinds.expression = expression;
     kinds
 }
 
@@ -1266,15 +1280,19 @@ fn applicable_commands(kinds: BareInputKinds) -> Vec<&'static str> {
 /// applicable to the matched kind(s), so the user discovers the other
 /// views of the same input. When the input matches **no** kind — neither
 /// a name, an expression, nor a module path — the default action is
-/// dropped and only the invalid-input line prints.
+/// dropped and the invalid-input guidance includes the retained parser cause.
 fn cmd_expr(session: &mut Session, input: &str, palette: Palette) -> String {
-    let kinds = bare_input_kinds(session, input);
+    let expression = expr_parse_result(session, input);
+    let kinds = bare_input_kinds(session, input, expression.is_ok());
     if kinds.is_invalid() {
-        return invalid_bare_input(input);
+        return match expression {
+            Err(Some(error)) => invalid_input_with_cause(input, &error.render()),
+            _ => invalid_bare_input(input),
+        };
     }
     let default_output = if let Some(name) = doc_parse(input) {
         cmd_doc(session, &name, palette)
-    } else if let Some(expr_src) = expr_parse(session, input) {
+    } else if let Ok(expr_src) = expression {
         match query_expr_for_repl(session, &expr_src) {
             Ok(result) => format!(
                 "{}\n{}",
@@ -1310,12 +1328,14 @@ fn applicable_commands_footer(kinds: BareInputKinds, palette: Palette) -> String
 }
 
 /// The bare-input message for input that matches no kind — neither a
-/// name, an expression, nor a module path. Retires the old fixed
-/// `:doc`/`:normalize` two-command dump in favour of a single honest
-/// line.
+/// name, an expression, nor a module path.
 fn invalid_bare_input(input: &str) -> String {
     let trimmed = input.trim();
     format!("`{trimmed}` is not a name or a Kio expression — type `:help` for the command list")
+}
+
+fn invalid_input_with_cause(input: &str, cause: &str) -> String {
+    format!("{}\n{cause}", invalid_bare_input(input))
 }
 
 /// `:doc` parser. Returns `Some(name)` for input that lexes as a bare
@@ -1358,30 +1378,32 @@ fn doc_parse(input: &str) -> Option<String> {
 /// "syntactically not even an expression" (fall through to the
 /// invalid-input message).
 fn expr_parse(session: &Session, input: &str) -> Option<String> {
+    expr_parse_result(session, input).ok()
+}
+
+fn expr_parse_result(session: &Session, input: &str) -> Result<String, Option<PromptSyntaxError>> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return None;
+        return Err(None);
     }
-    let wrapped = match session.current().and_then(|p| session.module(p)) {
+    let prefix = match session.current().and_then(|p| session.module(p)) {
         Some(entry) => match session.source_of(&entry.file_path) {
             Some(src) => {
                 // Append the synthetic fn to the current module's source.
                 // Mirrors `super::expr_query::SyntheticWrap::build` shape.
-                format!("{src}\nfn _repl_parse_check_() {{\n  let _v_ = {trimmed};\n  ()\n}}\n")
+                format!("{src}\nfn _repl_parse_check_() {{\n  let _v_ = ")
             }
             // The current module is loaded but its source isn't in
             // the analysis cache — fall through to a vanilla wrap.
-            None => format!(
-                "module _repl_dispatch_;\nfn _repl_parse_check_() {{\n  let _v_ = {trimmed};\n  ()\n}}\n"
-            ),
+            None => "module _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
         },
-        None => format!(
-            "module _repl_dispatch_;\nfn _repl_parse_check_() {{\n  let _v_ = {trimmed};\n  ()\n}}\n"
-        ),
+        None => "module _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
     };
+    let wrapped = format!("{prefix}{trimmed};\n  ()\n}}\n");
     match crate::pass::parser::parse(&wrapped) {
-        Ok(_) => Some(trimmed.to_owned()),
-        Err(_) => None,
+        Ok(_) => Ok(trimmed.to_owned()),
+        Err(error) => Err(((error.diag().0.start as usize) >= prefix.len())
+            .then(|| PromptSyntaxError::new(trimmed, prefix.len(), &error))),
     }
 }
 
@@ -1402,14 +1424,9 @@ fn cmd_signature(session: &Session, name: &str, palette: Palette) -> String {
 /// both `:signature` and the bare-name shortcut. The header renderer
 /// ([`crate::pretty::pretty_item_signature`]) is the same one behind
 /// Kiodoc's `@signature` directive, so the three surfaces produce
-/// identical output by construction. An operator symbol resolves to
-/// its `op` binding (which has no declared *name*, so `resolve_name`
-/// would miss it).
+/// identical output for the same selected declaration.
 fn signature_of(session: &Session, name: &str, palette: Palette) -> String {
-    let Some(found) = resolve_name(session, name).or_else(|| resolve_operator(session, name))
-    else {
-        // It lexed as a name, so the problem is resolution, not syntax.
-        // A compound-expression argument suggests the value views.
+    let Some(found) = resolve_declaration(session, name) else {
         return hint_for(unresolved(session, name), "signature", name);
     };
     let header = found.doc_entry().map_or_else(
@@ -1446,6 +1463,7 @@ fn render_expr_type(expr_src: &str, result: &ExprQueryResult, palette: Palette) 
 /// Render a command-facing expression-query failure as a user-facing diagnostic.
 fn render_expr_error(err: &ReplExprQueryError) -> String {
     match err {
+        ReplExprQueryError::Syntax(error) => error.render(),
         ReplExprQueryError::Totality(message) => {
             format!("compile-time evaluation failed its Totality check: {message}")
         }
@@ -1490,8 +1508,7 @@ fn cmd_doc(session: &Session, name: &str, palette: Palette) -> String {
         return doc_for_module(session, &module_path, palette);
     }
 
-    let Some(found) = resolve_name(session, name).or_else(|| resolve_operator(session, name))
-    else {
+    let Some(found) = resolve_declaration(session, name) else {
         // Builtins imported through `import __intrinsics__;` or
         // `import __comptime__;` have no AST declaration, but they are
         // still real scoped bindings to query.
@@ -1754,8 +1771,7 @@ fn cmd_source(session: &Session, name: &str, palette: Palette) -> String {
     // operator token to its `op` declaration the same way `:signature`
     // does — `resolve_name` keys on declared item names and misses an
     // operator binding, which has no declared *name*.
-    let Some(found) = resolve_name(session, name).or_else(|| resolve_operator(session, name))
-    else {
+    let Some(found) = resolve_declaration(session, name) else {
         // A compound-expression argument suggests the value views.
         return hint_for(unresolved(session, name), "source", name);
     };
@@ -2501,21 +2517,17 @@ fn cmd_unload(session: &mut Session, arg: &str) -> String {
 /// an FQN. A bare name is searched across every loaded module's
 /// declared items, whether `pub`-exported or private.
 fn cmd_which(session: &Session, name: &str) -> String {
-    // An FQN argument: report it directly if it resolves.
-    if name.contains('.')
-        && let Some(found) = resolve_name(session, name)
-    {
-        return format!(
-            "{}.{}",
-            surface_module_path(&found.module_path),
-            found.short_name
-        );
-    }
     let mut hits: Vec<String> = Vec::new();
-    for m in session.modules_in_load_order() {
-        for item in &m.module.items {
-            if surface_item_declares(item, name) {
-                hits.push(format!("{}.{name}", surface_module_path(&m.path)));
+    if let Ok((provider, selector)) = crate::pass::parser::parse_declaration_query(name) {
+        if provider.is_some() {
+            if let Some(found) = resolve_declaration(session, name) {
+                hits.push(found.display_name);
+            }
+        } else {
+            for m in session.modules_in_load_order() {
+                if let Some(found) = declaration_in(session, &m.path, &selector) {
+                    hits.push(found.display_name);
+                }
             }
         }
     }
@@ -2547,28 +2559,54 @@ fn cmd_which(session: &Session, name: &str) -> String {
 /// The scan runs the [`crate::tokens`] classifier — the same
 /// token walk `:source` highlighting and the LSP semantic-tokens
 /// provider use — over each loaded module's source, and reports
-/// every identifier / type-name / module-segment token whose text
-/// equals `name`. That uniformly covers call sites, type-position
-/// uses, and the names inside `import` clauses, keyed on the token's
-/// classification so a same-spelled keyword or string is never
-/// mistaken for a reference. A braced selector restricts the scan to
-/// label tokens. References are reported as
+/// matching name-bearing tokens, filtered by their resolved declaration.
+/// Erased declarations and braced labels use parsed source occurrences and
+/// their written binding identity. Operators retain their pre-folding grammar and explicit
+/// provider, independently of the implementation callable. References are reported as
 /// `module-path:line:col  in <kind> <name>`, where the trailing
 /// label names the enclosing top-level item (or the module, for a
 /// reference outside every item — typically an `import`-clause name).
 fn cmd_refs(session: &Session, name: &str) -> String {
-    use crate::tokens::{TokenKind, dump};
+    use crate::tokens::{TokenKind, dump_with_module};
 
-    // `name` may be an FQN; the reference search keys on the short
-    // name (the spelling that appears at use sites).
-    let short = name.rsplit('.').next().unwrap_or(name);
+    let Ok((_, selector)) = crate::pass::parser::parse_declaration_query(name) else {
+        return hint_for(
+            format!("no references to `{name}` in loaded modules"),
+            "refs",
+            name,
+        );
+    };
+    let found = resolve_declaration(session, name);
+    if let ImportItem::OperatorPattern { grammar, .. } = &selector {
+        return cmd_operator_refs(session, name, found.as_ref(), grammar);
+    }
+    let short = selector_name(&selector);
+    let short = short.as_str();
+    let Some(found) = found else {
+        return format!("no references to `{name}` in loaded modules");
+    };
+    if matches!(selector, ImportItem::Label { .. }) || !found.has_typed_identity() {
+        return cmd_source_refs(session, name, &selector, &found);
+    }
+    let index = session.analysis().map(|analysis| &analysis.position_index);
+    let target = (|| {
+        let index = index?;
+        let binder = index.binder_at(&found.module_path, found.name_span(session)?)?;
+        index.semantic_declaration_site(&found.module_path, binder)
+    })();
+    if index.is_some() {
+        assert!(
+            target.is_some(),
+            "checked declaration `{name}` has a source binder identity"
+        );
+    }
     let label_name = short.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
     let mut hits: Vec<RefHit> = Vec::new();
     for m in session.modules_in_load_order() {
         let Some(source) = session.source_of(&m.file_path) else {
             continue;
         };
-        let Ok(tokens) = dump(source) else {
+        let Ok(tokens) = dump_with_module(source, &m.module) else {
             continue;
         };
         for tok in tokens {
@@ -2606,6 +2644,23 @@ fn cmd_refs(session: &Session, name: &str) -> String {
             if &source[start..end] != label_name.unwrap_or(short) {
                 continue;
             }
+            if let (Some(index), Some(target)) = (index, target) {
+                let same_identity = index.binders_iter().any(|((module, span), binder)| {
+                    module == &m.path
+                        && span.start <= tok.span.start
+                        && tok.span.end <= span.end
+                        && index.semantic_declaration_site(module, binder) == Some(target)
+                });
+                let selected_import = m.module.imports.iter().any(|import| {
+                    matches!(&import.kind, ImportKind::Selective { from, items }
+                        if module_path_key(from) == found.module_path
+                        && items.iter().any(|item| selector_name(item) == short
+                            && import_item_span(item).start <= tok.span.start && tok.span.end <= import_item_span(item).end))
+                });
+                if !same_identity && !selected_import {
+                    continue;
+                }
+            }
             let (line, col) = line_col(source, tok.span.start);
             let surface = surface_module_path(&m.path);
             hits.push(RefHit {
@@ -2616,6 +2671,143 @@ fn cmd_refs(session: &Session, name: &str) -> String {
             });
         }
     }
+    render_refs(hits, short, name)
+}
+
+fn cmd_source_refs(
+    session: &Session,
+    query: &str,
+    selector: &ImportItem,
+    found: &Resolved,
+) -> String {
+    use crate::tokens::{SourceNameKind, dump_with_module, source_references};
+    let short = selector_name(selector);
+    let (kind, leaf) = match selector {
+        ImportItem::Label { name, .. } => (SourceNameKind::Label, name.as_str()),
+        _ => (
+            match found.selected_item() {
+                Item::LiteralAlias(_, _) => SourceNameKind::Value,
+                Item::Elaborator(_, _) => SourceNameKind::Elaborator,
+                Item::Equiv(_, _) => SourceNameKind::Equiv,
+                _ => unreachable!("source references select an erased declaration or label"),
+            },
+            short.as_str(),
+        ),
+    };
+    let mut hits = Vec::new();
+    for module in session.modules_in_load_order() {
+        let Some(source) = session.source_of(&module.file_path) else {
+            continue;
+        };
+        let mut offsets = Vec::new();
+        for reference in source_references(source, &module.module).unwrap_or_default() {
+            if reference.kind == kind
+                && reference.path.rsplit('.').next() == Some(leaf)
+                && crate::scope_walk::source_binding(&module.module, &reference).is_some_and(
+                    |binding| binding.module == found.module_path && binding.name == leaf,
+                )
+            {
+                offsets.push(reference.span.start);
+            }
+        }
+        for import in &module.module.imports {
+            if let ImportKind::Selective { from, items } = &import.kind
+                && module_path_key(from) == found.module_path
+            {
+                for item in items.iter().filter(|item| selector_name(item) == short) {
+                    let span = import_item_span(item);
+                    if let Some(token) = dump_with_module(source, &module.module)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|token| {
+                            span.start <= token.span.start
+                                && token.span.end <= span.end
+                                && source.get(token.span.start as usize..token.span.end as usize)
+                                    == Some(leaf)
+                        })
+                    {
+                        offsets.push(token.span.start);
+                    }
+                }
+            }
+        }
+        offsets.sort_unstable();
+        offsets.dedup();
+        for offset in offsets {
+            let (line, col) = line_col(source, offset);
+            hits.push(RefHit {
+                module: module.path.clone(),
+                line,
+                col,
+                context: enclosing_item_label(&module.module, &module.path, offset),
+            });
+        }
+    }
+    render_refs(hits, &short, query)
+}
+
+fn import_item_span(item: &ImportItem) -> crate::span::Span {
+    match item {
+        ImportItem::Name { span, .. }
+        | ImportItem::Label { span, .. }
+        | ImportItem::OperatorPattern { span, .. } => *span,
+    }
+}
+
+fn cmd_operator_refs(
+    session: &Session,
+    query: &str,
+    found: Option<&Resolved>,
+    grammar: &crate::ast::OperatorGrammar,
+) -> String {
+    let mut hits = Vec::new();
+    if let Some(found) = found {
+        for m in session.modules_in_load_order() {
+            let Some(source) = session.source_of(&m.file_path) else {
+                continue;
+            };
+            let mut offsets = Vec::new();
+            let mut in_scope = m.path == found.module_path;
+            if in_scope {
+                offsets.push(found.item.span().start);
+            }
+            for import in &m.module.imports {
+                if let ImportKind::Selective { from, items } = &import.kind
+                    && module_path_key(from) == found.module_path
+                {
+                    for item in items {
+                        if matches!(item, ImportItem::OperatorPattern { grammar: imported, .. } if imported == grammar)
+                        {
+                            in_scope = true;
+                            offsets.push(import_item_span(item).start);
+                        }
+                    }
+                }
+            }
+            if in_scope {
+                offsets.extend(
+                    super::operator_refs::uses(&m.module, source, grammar)
+                        .into_iter()
+                        .map(|span| span.start),
+                );
+            }
+            offsets.sort_unstable();
+            offsets.dedup();
+            for offset in offsets {
+                let (line, col) = line_col(source, offset);
+                hits.push(RefHit {
+                    module: m.path.clone(),
+                    line,
+                    col,
+                    context: enclosing_item_label(&m.module, &m.path, offset),
+                });
+            }
+        }
+    }
+    render_refs(hits, &grammar.render(), query)
+}
+
+fn render_refs(mut hits: Vec<RefHit>, short: &str, name: &str) -> String {
     if hits.is_empty() {
         // A compound-expression argument suggests the value views.
         return hint_for(
@@ -2752,8 +2944,93 @@ struct Resolved {
 }
 
 impl Resolved {
+    fn has_typed_identity(&self) -> bool {
+        match self.selected_item() {
+            Item::FnDef(_)
+            | Item::HostFn(_)
+            | Item::HostType(_)
+            | Item::TypeAlias(_)
+            | Item::Newtype(_)
+            | Item::Labels(_, _) => true,
+            // These source declarations have no binder in the typed position index.
+            Item::LiteralAlias(_, _)
+            | Item::Equiv(_, _)
+            | Item::Elaborator(_, _)
+            | Item::LabelForward(_, _) => false,
+            Item::Op(_, _) | Item::VariadicOperator(_, _) => {
+                unreachable!("operator references select their Surface grammar")
+            }
+            Item::RecGroup(_, _) | Item::TypeRecGroup(_) => {
+                unreachable!("resolved declaration projects its selected group member")
+            }
+        }
+    }
+
+    fn name_span(&self, session: &Session) -> Option<crate::span::Span> {
+        use crate::doc_entry::DocEntry;
+        use crate::pass::typecheck_full::ResolvedBinder;
+        let entry = self.doc_entry()?;
+        let identity = match &entry {
+            DocEntry::Fn(_) => Some(ResolvedBinder::Fn {
+                module_path: self.module_path.clone(),
+                name: self.short_name.clone(),
+            }),
+            DocEntry::HostFn(_) => Some(ResolvedBinder::HostEnvFn {
+                module_path: self.module_path.clone(),
+                name: self.short_name.clone(),
+            }),
+            DocEntry::HostType(_) => Some(ResolvedBinder::HostType {
+                module_path: self.module_path.clone(),
+                name: self.short_name.clone(),
+            }),
+            _ => None,
+        };
+        if let Some(identity) = identity {
+            return session
+                .analysis()?
+                .position_index
+                .declaration_site(&identity)
+                .map(|(_, span)| span);
+        }
+        match entry {
+            DocEntry::Elaborator(def) => Some(def.name_span),
+            DocEntry::LabelForward(def, _) => Some(def.name_span),
+            _ => entry.type_name_span(),
+        }
+    }
+
     fn doc_entry(&self) -> Option<crate::doc_entry::DocEntry<'_>> {
-        crate::doc_entry::doc_entry_for_name(&self.item, &self.short_name)
+        crate::doc_entry::doc_entry_for_name(&self.item, &self.short_name).or_else(|| {
+            let label = self.short_name.strip_prefix('{')?.strip_suffix('}')?;
+            let (labels, group) = match &self.item {
+                Item::Labels(labels, _) => (labels, None),
+                Item::TypeRecGroup(group) => {
+                    let labels = group.members.iter().find_map(|member| match member {
+                        crate::ast::TypeRecMember::Labels(labels, _)
+                            if labels
+                                .entries
+                                .iter()
+                                .any(|entry| entry.name == label && !entry.is_reuse_marker()) =>
+                        {
+                            Some(labels)
+                        }
+                        _ => None,
+                    })?;
+                    (labels, Some(group))
+                }
+                _ => return None,
+            };
+            let entry = labels
+                .entries
+                .iter()
+                .find(|entry| entry.name == label && !entry.is_reuse_marker())?;
+            Some(crate::doc_entry::DocEntry::LabelNominal {
+                labels,
+                entry,
+                name: crate::ast::mint_label_newtype_name(label),
+                group,
+            })
+        })
     }
 
     fn selected_item(&self) -> Item<Surface> {
@@ -2776,8 +3053,9 @@ impl Resolved {
                         labels.type_alias_name.as_deref() == Some(self.short_name.as_str())
                             || labels.entries.iter().any(|entry| {
                                 !entry.is_reuse_marker()
-                                    && crate::ast::mint_label_newtype_name(&entry.name)
+                                    && (crate::ast::mint_label_newtype_name(&entry.name)
                                         == self.short_name
+                                        || format!("{{{}}}", entry.name) == self.short_name)
                             })
                     }
                 })
@@ -2791,6 +3069,86 @@ impl Resolved {
             item => item.clone(),
         }
     }
+}
+
+pub(super) fn selector_name(selector: &ImportItem) -> String {
+    match selector {
+        ImportItem::Name { name, .. } => name.clone(),
+        ImportItem::Label { name, .. } => format!("{{{name}}}"),
+        ImportItem::OperatorPattern { grammar, .. } => grammar.render(),
+    }
+}
+
+pub(crate) fn qualified_selector(module: &str, name: &str) -> String {
+    if name.starts_with("op ") || name.starts_with("varop ") {
+        format!("{module}.({name})")
+    } else {
+        format!("{module}.{name}")
+    }
+}
+
+fn selector_matches(item: &Item<Surface>, selector: &ImportItem) -> bool {
+    match selector {
+        ImportItem::Name { name, .. } => {
+            !matches!(item, Item::Op(_, _) | Item::VariadicOperator(_, _))
+                && surface_item_declares(item, name)
+        }
+        ImportItem::Label { name, .. } => match item {
+            Item::LabelForward(forward, _) => forward.name == *name,
+            Item::Labels(labels, _) => labels.entries.iter().any(|entry| {
+                entry.name == *name && !entry.is_reuse_marker()
+            }),
+            Item::TypeRecGroup(group) => group.members.iter().any(|member| {
+                matches!(member, crate::ast::TypeRecMember::Labels(labels, _)
+                    if labels.entries.iter().any(|entry| entry.name == *name && !entry.is_reuse_marker()))
+            }),
+            _ => false,
+        },
+        ImportItem::OperatorPattern { grammar, .. } => {
+            matches!(item, Item::Op(_, _) | Item::VariadicOperator(_, _))
+                && crate::doc_entry::doc_entry_for_name(item, &grammar.render()).is_some()
+        }
+    }
+}
+
+fn declaration_in(session: &Session, module: &str, selector: &ImportItem) -> Option<Resolved> {
+    let entry = session.module(module)?;
+    let item = entry
+        .module
+        .items
+        .iter()
+        .find(|item| selector_matches(item, selector))?;
+    let name = selector_name(selector);
+    Some(Resolved {
+        module_path: module.to_owned(),
+        display_name: qualified_selector(module, &name),
+        short_name: name,
+        module: entry.module.clone(),
+        item: item.clone(),
+        file_path: entry.file_path.clone(),
+    })
+}
+
+fn resolve_declaration(session: &Session, query: &str) -> Option<Resolved> {
+    let (provider, selector) = crate::pass::parser::parse_declaration_query(query).ok()?;
+    if let Some(provider) = provider {
+        let path = resolve_module_arg(session, &module_path_key(&provider))?;
+        return declaration_in(session, &path, &selector);
+    }
+    let current = session.current()?;
+    if let Some(mut found) = declaration_in(session, current, &selector) {
+        found.display_name = found.short_name.clone();
+        return Some(found);
+    }
+    let name = selector_name(&selector);
+    for import in &session.module(current)?.module.imports {
+        if let ImportKind::Selective { items, from } = &import.kind
+            && items.iter().any(|item| selector_name(item) == name)
+        {
+            return declaration_in(session, &module_path_key(from), &selector);
+        }
+    }
+    None
 }
 
 /// A resolved compiler-provided builtin, optionally with the loaded
@@ -3255,7 +3613,15 @@ command would have wanted. Use `:normalize foo` to force-reduce a
 name instead of viewing its doc.
 
 A name is resolved through the current scope, or by fully-qualified
-path (X/a/b.name). `:scope` lists everything in scope.",
+path (X/a/b.name). `:scope` lists everything in scope.
+
+Declaration selectors (:signature, :source, :doc, :which, :refs):
+  :sig name                 :sig X/a/b.name
+  :sig op _ + _             :sig X/a/b.(op _ + _)
+  :sig {field}              :sig X/a/b.(varop [* *])
+Qualified operators require the outer parentheses; inner pattern
+parentheses such as (=) keep their import meaning. Module aliases work too.
+These selectors are not expression syntax.",
     );
     out
 }
@@ -3395,6 +3761,225 @@ mod tests {
                 .to_owned(),
         );
         Session::new_in_memory(root, files)
+    }
+
+    fn declaration_selector_session() -> Session {
+        let root = PathBuf::from("/kio-repl-tests/selectors");
+        let files = [
+            ("demo/main.kio", include_str!("../../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/main.kio")),
+            ("demo/ops.kio", include_str!("../../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/ops.kio")),
+            ("demo/other.kio", include_str!("../../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/other.kio")),
+        ].into_iter().map(|(path, source)| (root.join(path), source.to_owned())).collect();
+        let mut session = Session::new_in_memory(root, files);
+        let result = Command::Load("demo/main".to_owned()).run(&mut session, Palette::plain());
+        assert!(
+            result.output.starts_with("loaded demo/main"),
+            "{}",
+            result.output
+        );
+        session
+    }
+
+    #[test]
+    fn declaration_selector_parser_accepts_one_import_item() {
+        use crate::pass::parser::parse_declaration_query;
+        for query in [
+            "op",
+            "varop",
+            "demo/ops.op",
+            "demo/ops.varop",
+            "{field}",
+            "demo/ops.{field}",
+            "op _ + _",
+            "op (_) ? __",
+            "demo/ops.(op _ (=) _)",
+            "demo/ops.(op (_) ? __)",
+            "demo/ops.(op _ .. _)",
+            "demo/ops.(varop [* *])",
+        ] {
+            assert!(parse_declaration_query(query).is_ok(), "{query}");
+        }
+        for query in [
+            "demo/ops.op _ + _",
+            "demo/ops.varop [* *]",
+            "demo/ops.(op)",
+            "demo/ops.(choose)",
+            "demo/ops.({field})",
+            "demo/ops.(op _ + _, choose)",
+            "demo/ops.(op _ + _",
+            "choose as other",
+            "import demo/ops(choose)",
+            "choose, empty",
+            "(op _ + _)",
+        ] {
+            assert!(parse_declaration_query(query).is_err(), "{query}");
+        }
+    }
+
+    #[test]
+    fn declaration_selectors_resolve_namespace_provider_and_references() {
+        let s = declaration_selector_session();
+        for (query, signature) in [
+            ("op _ + _", "pub op _ + _ { impl choose }"),
+            ("demo/ops.(op _ + _)", "pub op _ + _ { impl choose }"),
+            ("arithmetic.(op _ (=) _)", "pub op _ (=) _ { impl choose }"),
+            (
+                "arithmetic.(varop [* *])",
+                "pub varop [* *] { foldr choose empty }",
+            ),
+            ("arithmetic.{field}", "pub type {field} = {original};"),
+            ("arithmetic.field", "pub fn field() -> ."),
+            ("arithmetic.op", "pub fn op() -> ."),
+            ("arithmetic.varop", "pub fn varop() -> ."),
+        ] {
+            assert_eq!(
+                cmd_signature(&s, query, Palette::plain()),
+                signature,
+                "{query}"
+            );
+        }
+        assert_eq!(
+            cmd_which(&s, "arithmetic.(op _ + _)"),
+            "demo/ops.(op _ + _)"
+        );
+        assert_eq!(
+            cmd_which(&s, "choose"),
+            "`choose` is declared by several modules:\n  demo/ops.choose\n  demo/other.choose"
+        );
+        let refs = cmd_refs(&s, "arithmetic.(op _ + _)");
+        assert!(
+            refs.contains("in fn use")
+                && refs.contains("in fn local")
+                && refs.contains("in module demo/main"),
+            "{refs}"
+        );
+        assert!(
+            !refs.contains("demo/other") && !refs.contains("in fn choose"),
+            "{refs}"
+        );
+        let refs = cmd_refs(&s, "arithmetic.{field}");
+        assert!(
+            refs.contains("in fn label_use") && refs.contains("in type {field}"),
+            "{refs}"
+        );
+        assert!(
+            !refs.contains("in fn field") && !refs.contains("in fn function_use"),
+            "{refs}"
+        );
+        let refs = cmd_refs(&s, "arithmetic.field");
+        assert!(
+            refs.contains("in fn function_use") && !refs.contains("in fn label_use"),
+            "{refs}"
+        );
+        for name in ["fn", "pub"] {
+            let refs = cmd_refs(&s, &format!("demo/ops.{name}"));
+            assert_eq!(refs.lines().count(), 3, "{refs}");
+            assert!(
+                refs.contains("in fn keyword_use") && refs.contains(&format!("in fn {name}")),
+                "{refs}"
+            );
+            assert!(!refs.contains("demo/other"), "{refs}");
+        }
+    }
+
+    #[test]
+    fn declaration_selector_completion_replaces_the_whole_argument() {
+        use super::super::completion::{AstScopeProvider, NameSet, complete};
+        let s = declaration_selector_session();
+        let names = NameSet::from_session(&s);
+        for command in ["sig", "src", "doc", "which", "refs"] {
+            for (prefix, expected) in [
+                ("arithmetic.(op _", "arithmetic.(op _ + _)"),
+                ("demo/ops.(var", "demo/ops.(varop [* *])"),
+                ("op _", "op _ + _"),
+                ("arithmetic.{f", "arithmetic.{field}"),
+            ] {
+                let line = format!(":{command} {prefix}");
+                let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
+                assert_eq!(result.replace, command.len() + 2..line.len());
+                assert!(
+                    result.candidates.iter().any(|item| item.label == expected),
+                    "{line}: {result:?}"
+                );
+            }
+        }
+        let line = ":sig arithmetic.(op _ + _)";
+        let result = complete(&names, &AstScopeProvider::new(&names), line, line.len() - 3);
+        assert_eq!(result.replace, 5..line.len());
+        let label = &result
+            .candidates
+            .iter()
+            .find(|item| item.label == "arithmetic.(op _ + _)")
+            .unwrap()
+            .label;
+        assert_eq!(
+            format!(
+                "{}{}{}",
+                &line[..result.replace.start],
+                label,
+                &line[result.replace.end..]
+            ),
+            line
+        );
+        for command in ["sig", "src", "doc", "refs", "which"] {
+            let line = format!("  :{command} arithmetic.(op _ +");
+            let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
+            assert_eq!(result.replace, command.len() + 4..line.len());
+            let selected = result
+                .candidates
+                .iter()
+                .find(|item| item.label == "arithmetic.(op _ + _)")
+                .unwrap();
+            let inserted = format!("{}{}", &line[..result.replace.start], selected.label);
+            let mut session = declaration_selector_session();
+            let output = parse_command(&inserted)
+                .unwrap()
+                .run(&mut session, Palette::plain())
+                .output;
+            assert!(
+                !output.contains("did not resolve") && !output.contains("no references"),
+                "{inserted}: {output}"
+            );
+        }
+        for command in ["sig", "src", "doc", "refs"] {
+            let line = format!(":{command} {{");
+            let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
+            assert!(
+                !result
+                    .candidates
+                    .iter()
+                    .any(|item| item.label == "{original}"),
+                "{result:?}"
+            );
+            assert!(
+                result.candidates.iter().any(|item| item.label == "{field}"),
+                "{result:?}"
+            );
+            let line = format!(":{command} arithmetic.{{ori");
+            let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
+            let selected = result
+                .candidates
+                .iter()
+                .find(|item| item.label == "arithmetic.{original}")
+                .unwrap();
+            let inserted = format!("{}{}", &line[..result.replace.start], selected.label);
+            let mut session = declaration_selector_session();
+            let output = parse_command(&inserted)
+                .unwrap()
+                .run(&mut session, Palette::plain())
+                .output;
+            assert!(
+                !output.contains("did not resolve") && !output.contains("no references"),
+                "{inserted}: {output}"
+            );
+        }
+        let line = ":which {ori";
+        assert!(
+            complete(&names, &AstScopeProvider::new(&names), line, line.len())
+                .candidates
+                .iter()
+                .any(|item| item.label == "{original}")
+        );
     }
 
     fn slash_operator_session() -> Session {
@@ -3914,9 +4499,9 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         assert_eq!(completion_shape("pure"), CompletionShape::NameOrFqn);
         assert_eq!(
             completion_shape("which"),
-            CompletionShape::NameOrFqnOrBuiltin
+            CompletionShape::NameFqnOpOrBuiltin
         );
-        assert_eq!(completion_shape("refs"), CompletionShape::NameOrFqn);
+        assert_eq!(completion_shape("refs"), CompletionShape::NameFqnOrOp);
         // Expression argument.
         assert_eq!(completion_shape("normalize"), CompletionShape::Expression);
         // No-argument commands.
@@ -3966,7 +4551,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         );
         assert_eq!(
             completion_shape(canonical_name("references")),
-            CompletionShape::NameOrFqn
+            CompletionShape::NameFqnOrOp
         );
         assert_eq!(
             completion_shape(canonical_name("modules")),
@@ -4467,6 +5052,56 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         );
         assert!(!verbose.contains("rec(loop)"), "got:\n{verbose}");
         assert!(!verbose.contains("rec second(value)"), "got:\n{verbose}");
+    }
+
+    #[test]
+    fn operator_listing_separates_and_highlights_visibility() {
+        let source = include_str!(
+            "../../../test-data/goldens/00_success/repl_operator_list_prefixes/workdir/demo.kio"
+        );
+        let s = session_with(&[("demo", source)]);
+        for verbose in [false, true] {
+            for output in [
+                cmd_ls(&s, Some("demo"), verbose, Palette::plain()),
+                cmd_scope(&s, verbose, Palette::plain()),
+            ] {
+                for declaration in [
+                    "pub fn choose",
+                    "pub op _ + _",
+                    "pub varop [* *]",
+                    "pub(demo) op _ .. _",
+                    "pub(demo) varop [! !]",
+                    "op _ - _",
+                    "varop [% %]",
+                ] {
+                    assert!(output.contains(declaration), "{declaration}: {output}");
+                }
+            }
+            for output in [
+                cmd_ls(&s, Some("demo"), verbose, Palette::truecolor()),
+                cmd_scope(&s, verbose, Palette::truecolor()),
+            ] {
+                for (prefix, grammar, keyword) in [
+                    ("pub ", "op _ + _", "op"),
+                    ("pub ", "varop [* *]", "varop"),
+                    ("pub(demo) ", "op _ .. _", "op"),
+                    ("pub(demo) ", "varop [! !]", "varop"),
+                ] {
+                    let expected = highlight(&format!("{prefix}{grammar}"), Palette::truecolor());
+                    let line = output
+                        .lines()
+                        .find(|line| line.contains(&expected))
+                        .expect("highlighted public operator listing");
+                    for token in ["pub", keyword] {
+                        assert!(
+                            line.contains(&format!("\x1b[38;2;229;192;123m{token}\x1b[0m")),
+                            "{token}: {line:?}"
+                        );
+                    }
+                }
+                assert!(!output.contains("pubop") && !output.contains("pubvarop"));
+            }
+        }
     }
 
     #[test]
@@ -5008,6 +5643,142 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
     }
 
     #[test]
+    fn source_reference_block_calls_keep_their_selected_provider() {
+        let root = PathBuf::from("/kio-repl-tests/block-references");
+        let provider = include_str!("../../tests/fixtures/trailing-blocks/provider.kio");
+        let files = [
+            (root.join("provider.kio"), provider.to_owned()),
+            (
+                root.join("other.kio"),
+                provider.replace("module provider;", "module other;"),
+            ),
+            (
+                root.join("main.kio"),
+                concat!(
+                    "module main; import provider(packet); import other as second;\n",
+                    "fn nested() -> . { packet! { packet! { () } } }\n",
+                    "fn shadow(packet: .) -> . { packet }\n",
+                )
+                .to_owned(),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let mut session = Session::new_in_memory(root, files);
+        let loaded = Command::Load("main".to_owned()).run(&mut session, Palette::plain());
+        assert!(
+            loaded.output.starts_with("loaded main"),
+            "{}",
+            loaded.output
+        );
+        let refs = cmd_refs(&session, "packet");
+        assert_eq!(refs.lines().count(), 5, "{refs}");
+        assert_eq!(refs.matches("in fn nested").count(), 2, "{refs}");
+        assert!(
+            !refs.contains("other:") && !refs.contains("shadow"),
+            "{refs}"
+        );
+        assert_eq!(cmd_refs(&session, "second.packet").lines().count(), 2);
+    }
+
+    #[test]
+    fn forwarded_reference_identity_does_not_merge_terminal_labels() {
+        let (_root, session) = session_with_analysis(
+            "pkg/api",
+            concat!(
+                "module pkg/api;\n",
+                "labels { original: . };\n",
+                "type {first} = {original};\n",
+                "type {second} = {first};\n",
+                "fn first_use() -> Original { {first=} }\n",
+                "fn second_use() -> Original { {second=} }\n",
+                "fn original_use() -> Original { {original=} }\n",
+            ),
+        );
+        let first = cmd_refs(&session, "{first}");
+        assert_eq!(first.lines().count(), 4, "{first}");
+        assert!(
+            first.contains("in type {second}") && first.contains("in fn first_use"),
+            "{first}"
+        );
+        assert!(
+            !first.contains("in fn second_use") && !first.contains("in fn original_use"),
+            "{first}"
+        );
+        let original = cmd_refs(&session, "{original}");
+        assert_eq!(original.lines().count(), 4, "{original}");
+        assert!(
+            original.contains("in type {first}") && original.contains("in fn original_use"),
+            "{original}"
+        );
+        assert!(
+            !original.contains("in fn first_use") && !original.contains("in fn second_use"),
+            "{original}"
+        );
+    }
+
+    #[test]
+    fn source_reference_ownership_tracks_successful_snapshots() {
+        let root = tempfile::tempdir().unwrap();
+        let files = [
+            (
+                "demo/a.kio",
+                include_str!(
+                    "../../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/a.kio"
+                ),
+            ),
+            (
+                "demo/b.kio",
+                include_str!(
+                    "../../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/b.kio"
+                ),
+            ),
+            (
+                "demo/main.kio",
+                include_str!(
+                    "../../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/main.kio"
+                ),
+            ),
+        ];
+        std::fs::create_dir(root.path().join("demo")).unwrap();
+        for (path, source) in files {
+            std::fs::write(root.path().join(path), source).unwrap();
+        }
+        let mut session = Session::new(root.path().to_owned());
+        let loaded = Command::Load("demo/main".to_owned()).run(&mut session, Palette::plain());
+        assert!(
+            loaded.output.starts_with("loaded demo/main"),
+            "{}",
+            loaded.output
+        );
+        let original = cmd_refs(&session, "truth");
+        assert!(
+            original.contains("demo/a:") && original.contains("in fn literal_use"),
+            "{original}"
+        );
+        assert!(
+            !original.contains("shadow") && !original.contains("demo/b:"),
+            "{original}"
+        );
+        let main = root.path().join("demo/main.kio");
+        let edited = files[2].1.replace("import demo/a(", "import demo/b(");
+        std::fs::write(&main, &edited).unwrap();
+        session.refresh().unwrap();
+        for query in ["truth", "build", "{field}"] {
+            let refs = cmd_refs(&session, query);
+            assert!(refs.contains("demo/b:"), "{query}: {refs}");
+            assert!(!refs.contains("demo/a:"), "{query}: {refs}");
+        }
+        let retained = cmd_refs(&session, "truth");
+        std::fs::write(&main, "module demo/main; fn incomplete(").unwrap();
+        assert!(session.refresh().is_err());
+        assert_eq!(cmd_refs(&session, "truth"), retained);
+        std::fs::write(&main, files[2].1).unwrap();
+        session.refresh().unwrap();
+        assert_eq!(cmd_refs(&session, "truth"), original);
+    }
+
+    #[test]
     fn cmd_refs_finds_call_site() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
@@ -5024,7 +5795,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
             "pkg/a",
             "module pkg/a;\nlabels { field: . };\nlabels Row = { field: _ };\n",
         );
-        let out = cmd_refs(&s, "field");
+        let out = cmd_refs(&s, "{field}");
         assert_eq!(out.matches("pkg/a:").count(), 2, "got: {out}");
     }
 
@@ -5335,6 +6106,106 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         // Empty input.
         assert!(expr_parse(&s, "").is_none());
         assert!(expr_parse(&s, "   ").is_none());
+    }
+
+    #[test]
+    fn invalid_prompt_reports_parser_cause_in_every_expression_view() {
+        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        for input in ["index([1], 0)", "index(\r\n\t\"é\", [1])"] {
+            for prefix in ["", ":t ", ":pure ", ":normalize "] {
+                let command = parse_command(&format!("{prefix}{input}")).expect("command parses");
+                let output = command.run(&mut session, Palette::Plain).output;
+                let location = if input.contains('\n') { "2:8" } else { "1:8" };
+                assert!(
+                    output.contains("not a name or a Kio expression"),
+                    "{output}"
+                );
+                assert!(
+                    output.contains(&format!("<repl>:{location}: error: expected identifier")),
+                    "{output}"
+                );
+                assert!(output.contains('^'), "{output}");
+                assert!(
+                    !output.contains("_expr") && !output.contains("_repl_parse_check_"),
+                    "{output}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_prompt_retains_lexer_cause_and_end_of_input() {
+        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        for prefix in ["", ":t ", ":pure ", ":normalize "] {
+            let lexical = parse_command(&format!("{prefix}\"\\q\""))
+                .expect("command parses")
+                .run(&mut session, Palette::Plain)
+                .output;
+            assert!(lexical.contains("<repl>:1:"), "{lexical}");
+            assert!(lexical.contains("escape"), "{lexical}");
+            assert!(lexical.contains('^'), "{lexical}");
+            let unclosed = parse_command(&format!("{prefix}call("))
+                .expect("command parses")
+                .run(&mut session, Palette::Plain)
+                .output;
+            assert!(
+                unclosed.contains("<repl>:1:5: error: unterminated `(`"),
+                "{unclosed}"
+            );
+            let incomplete = parse_command(&format!("{prefix}call."))
+                .expect("command parses")
+                .run(&mut session, Palette::Plain)
+                .output;
+            assert!(
+                incomplete.contains("<repl>:1:6: error: the input is incomplete"),
+                "{incomplete}"
+            );
+            assert!(incomplete.contains("  |      ^"), "{incomplete}");
+            assert!(!incomplete.contains("expected `;`"), "{incomplete}");
+        }
+    }
+
+    #[test]
+    fn parse_probe_keeps_its_trailing_comment_boundary() {
+        let session = Session::new(std::path::PathBuf::new());
+        // The dispatch probe's terminator is on the same line; typed queries
+        // separately authenticate their newline-terminated expression wrapper.
+        assert!(expr_parse(&session, "() // trailing comment").is_none());
+        assert!(expr_parse(&session, "( // comment\n())").is_some());
+    }
+
+    #[test]
+    fn invalid_prompt_hides_wrapper_let_framing_without_guessing_operator_scope() {
+        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        for prefix in ["", ":t ", ":pure ", ":normalize "] {
+            let output = parse_command(&format!("{prefix}() + ()"))
+                .expect("command parses")
+                .run(&mut session, Palette::Plain)
+                .output;
+            assert!(
+                output.contains("<repl>:1:4: error: unexpected token after the expression"),
+                "{output}"
+            );
+            assert!(
+                !output.contains("let binding") && !output.contains("expected `;`"),
+                "{output}"
+            );
+        }
+        let (_root, mut session) = session_with_analysis(
+            "demo/main",
+            "module demo/main;\npure fn choose(a: ., b: .) -> . { a }\nop _ + _ { impl choose }\n",
+        );
+        for prefix in ["", ":t ", ":pure ", ":normalize "] {
+            let output = parse_command(&format!("{prefix}() + ()"))
+                .expect("command parses")
+                .run(&mut session, Palette::Plain)
+                .output;
+            assert!(
+                !output.contains("error") && !output.contains("not a name"),
+                "{output}"
+            );
+            assert!(output.contains("()") || output == "pure", "{output}");
+        }
     }
 
     #[test]

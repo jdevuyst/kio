@@ -2,4 +2,4 @@ module app;
 
 import widget/store(Token);
 
-pub fn main(_value: Token) -> . { () }
+pub fn main(_value: Token) { () }

@@ -2,4 +2,4 @@ module a;
 
 host fn _c() -> .;
 
-pub fn call() -> . { _c() }
+pub fn call() { _c() }

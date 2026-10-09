@@ -64,7 +64,7 @@ rec(loop) fn lines_onto(xs: Words, column: I32, n: I32, breaks: List(I32), acc: 
 /// The lines a break list describes. The final break is a boundary, not a line,
 /// so a list of `k + 1` break points yields `k` lines.
 pub fn lines_of(xs: Words, column: I32, breaks: List(I32), n: I32) -> List(Line) {
-  lines_onto(xs, column, n, breaks, list.nil(Line, ()))
+  lines_onto(xs, column, n, breaks, list.nil(Line))
 }
 
 rec(loop) fn total_onto(ls: List(Line), acc: I32) -> I32 {
@@ -90,4 +90,4 @@ rec(loop) fn walk_back(back: List(I32), j: I32, acc: List(I32)) -> List(I32) {
 /// Follow the back-pointers from the last break to the first. Consing each break
 /// point visited onto the front of the accumulator turns the backward walk into
 /// a forward break list for free.
-pub fn recover(t: Table, n: I32) -> List(I32) { walk_back(table_back(t), n, list.nil(I32, ())) }
+pub fn recover(t: Table, n: I32) -> List(I32) { walk_back(table_back(t), n, list.nil(I32)) }

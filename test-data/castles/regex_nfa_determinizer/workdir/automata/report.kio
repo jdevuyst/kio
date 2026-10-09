@@ -24,7 +24,7 @@ pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
 
 pub fn num(value: I32) -> String { int_to_string(value) }
 
-pub fn line(text: String) -> . { print(cat(text, "\n")) }
+pub fn line(text: String) { print(cat(text, "\n")) }
 
 rec(loop) fn blanks(n: I32, acc: String) -> String {
   if! leq_i32(n, 0) {

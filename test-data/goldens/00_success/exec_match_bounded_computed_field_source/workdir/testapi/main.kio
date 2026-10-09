@@ -20,4 +20,4 @@ fn render(value: Surface) -> String {
   }
 }
 
-pub fn main() -> . { print(render(surface())) }
+pub fn main() { print(render(surface())) }

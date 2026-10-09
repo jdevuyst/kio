@@ -1,0 +1,553 @@
+[
+  { "name": "doc_empty_eof", "source": "///", "targets": [] },
+  { "name": "doc_space_empty_eof", "source": "/// ", "targets": [] },
+  { "name": "doc_empty_lines", "source": "///\n/// \n///\r\nmodule app;\n", "targets": [] },
+  {
+    "name": "doc_literal_fallback_reset",
+    "source": "/// ``unmatched\n/// [`neutral1`]\n\n/// [`live1`].\n/// ``unmatched\n/// [`neutral2`]\n// ordinary\n/// [`live2`].\n/// ``unmatched\n/// [`neutral3`]\nmodule app;\n/// [`live3`].\n",
+    "lineLocalNeutral": ["neutral1", "neutral2", "neutral3"],
+    "targets": [
+      { "start": 22, "end": 30, "text": "neutral1", "kind": "comment.doc.reference", "owners": [] },
+      { "start": 40, "end": 45, "text": "live1", "kind": "comment.doc.reference", "owners": [] },
+      { "start": 71, "end": 79, "text": "neutral2", "kind": "comment.doc.reference", "owners": [] },
+      { "start": 100, "end": 105, "text": "live2", "kind": "comment.doc.reference", "owners": [] },
+      { "start": 131, "end": 139, "text": "neutral3", "kind": "comment.doc.reference", "owners": [] },
+      { "start": 160, "end": 165, "text": "live3", "kind": "comment.doc.reference", "owners": [] }
+    ]
+  },
+  {
+    "name": "doc_references",
+    "source": "/// é [`name`] and [`@signature pkg/name.item`] and [`@unknown other`] and [`@ty\nmodule app;\n",
+    "targets": [
+      {
+        "start": 8,
+        "end": 12,
+        "text": "name",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 21,
+        "end": 31,
+        "text": "@signature",
+        "kind": "comment.doc.directive",
+        "owners": []
+      },
+      {
+        "start": 32,
+        "end": 45,
+        "text": "pkg/name.item",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 54,
+        "end": 62,
+        "text": "@unknown",
+        "kind": "comment.doc.directive",
+        "owners": []
+      },
+      {
+        "start": 63,
+        "end": 68,
+        "text": "other",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 77,
+        "end": 80,
+        "text": "@ty",
+        "kind": "comment.doc.directive",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_literal_boundaries",
+    "source": "/// ``[`literal`]`` \\[`escaped`] [link](url/[`destination`]) [`linked`] (url) [`live`].\n/// [key]: url/[`definition`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 80,
+        "end": 84,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_multiline_literal",
+    "lineLocalNeutral": ["live"],
+    "source": "/// ``start\n/// [`literal`]`` [`live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 32,
+        "end": 36,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_unmatched_inline",
+    "lineLocalNeutral": ["live"],
+    "source": "/// ``unmatched [`live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 18,
+        "end": 22,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_paragraph_boundary",
+    "lineLocalNeutral": ["heading"],
+    "source": "/// ``unfinished\n/// # [`heading`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 25,
+        "end": 32,
+        "text": "heading",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_visible_fences",
+    "source": "/// ```text\n/// [`code`]\n/// ``\n/// ````\n/// [`live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 4,
+        "end": 11,
+        "text": "```text",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 16,
+        "end": 24,
+        "text": "[`code`]",
+        "kind": "comment.doc.code",
+        "owners": []
+      },
+      {
+        "start": 29,
+        "end": 31,
+        "text": "``",
+        "kind": "comment.doc.code",
+        "owners": []
+      },
+      {
+        "start": 36,
+        "end": 40,
+        "text": "````",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 47,
+        "end": 51,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_hidden_fences",
+    "source": "/// <!--kio\n/// [`code`]\n/// -->\n/// [`live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 4,
+        "end": 11,
+        "text": "<!--kio",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 16,
+        "end": 24,
+        "text": "[`code`]",
+        "kind": "comment.doc.code",
+        "vscodeTargets": [
+          { "start": 16, "end": 18, "kind": "operator.user" },
+          { "start": 18, "end": 22, "kind": "identifier" },
+          { "start": 22, "end": 24, "kind": "operator.user" }
+        ],
+        "owners": []
+      },
+      {
+        "start": 29,
+        "end": 32,
+        "text": "-->",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 39,
+        "end": 43,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_unfinished_hidden",
+    "lineLocalNeutral": ["still_live"],
+    "source": "/// <!--kio\n/// [`live`]\n/// ```text\n/// [`still_live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 18,
+        "end": 22,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 43,
+        "end": 53,
+        "text": "still_live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_physical_reset",
+    "source": "/// ```text\n\n/// [`blank_reset`]\n// ordinary\n/// [`comment_reset`]\nmodule app;\n/// [`token_reset`]\n",
+    "targets": [
+      {
+        "start": 4,
+        "end": 11,
+        "text": "```text",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 19,
+        "end": 30,
+        "text": "blank_reset",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 51,
+        "end": 64,
+        "text": "comment_reset",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 85,
+        "end": 96,
+        "text": "token_reset",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_unicode_crlf",
+    "source": "/// é [`😀`] end\r\n\t/// [`@source café`]  \r\nmodule app;\n",
+    "targets": [
+      {
+        "start": 8,
+        "end": 10,
+        "text": "😀",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 25,
+        "end": 32,
+        "text": "@source",
+        "kind": "comment.doc.directive",
+        "owners": []
+      },
+      {
+        "start": 33,
+        "end": 37,
+        "text": "café",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_non_fences",
+    "lineLocalNeutral": ["indented", "tabbed", "invalid_info"],
+    "source": "/// ~~~text\n/// [`tilde`]\n///     ```text\n/// [`indented`]\n/// \t```text\n/// [`tabbed`]\n/// ```invalid`info`\n/// [`invalid_info`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 18,
+        "end": 23,
+        "text": "tilde",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 48,
+        "end": 56,
+        "text": "indented",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 78,
+        "end": 84,
+        "text": "tabbed",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 114,
+        "end": 126,
+        "text": "invalid_info",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_ordinary_controls",
+    "source": "module app;\n// [`ordinary`] @signature\nfn text() { \"/// [`string`]\" }\n",
+    "targets": []
+  },
+  {
+    "name": "doc_nested_extras",
+    "source": "module /// [`module_doc`]\napp;\nfn keep(/// [`parameter_doc`]\nx: .) -> . { /// [`body_doc`]\nx }\n",
+    "targets": [
+      {
+        "start": 13,
+        "end": 23,
+        "text": "module_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 45,
+        "end": 58,
+        "text": "parameter_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 80,
+        "end": 88,
+        "text": "body_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_eof",
+    "source": "/// [`@type Item`]",
+    "targets": [
+      {
+        "start": 6,
+        "end": 11,
+        "text": "@type",
+        "kind": "comment.doc.directive",
+        "owners": []
+      },
+      {
+        "start": 12,
+        "end": 16,
+        "text": "Item",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_wide_fences",
+    "source": "/// `````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````text\n/// [`code`]\n/// ``````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````\n/// [`live`]\nmodule app;\n",
+    "targets": [
+      {
+        "start": 4,
+        "end": 265,
+        "text": "`````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````text",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 270,
+        "end": 278,
+        "text": "[`code`]",
+        "kind": "comment.doc.code",
+        "owners": []
+      },
+      {
+        "start": 283,
+        "end": 541,
+        "text": "``````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 548,
+        "end": 552,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_recovery",
+    "source": "module app;\nfn broken() { ) /// [`recovered`].\n}\n",
+    "targets": [
+      {
+        "start": 34,
+        "end": 43,
+        "text": "recovered",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "doc_package",
+    "source": "/// [`package_doc`].\npackage app;\n/// [`build_doc`].\nbuild {}\n",
+    "targets": [
+      {
+        "start": 6,
+        "end": 17,
+        "text": "package_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 40,
+        "end": 49,
+        "text": "build_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_signature",
+    "source": "/// [`signature_doc`].\nsignature app v(1);\nv(1) { with { module app {} }; breaking { remove { app.old } } }\n",
+    "targets": [
+      {
+        "start": 6,
+        "end": 19,
+        "text": "signature_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_negative_proof_reset",
+    "source": "/// [ unfinished\n/// [`partial\n/// ```text\n/// code\n/// ```\n/// [`after`].\nmodule app;\n",
+    "targets": [
+      {
+        "start": 23,
+        "end": 30,
+        "text": "partial",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 35,
+        "end": 42,
+        "text": "```text",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 47,
+        "end": 51,
+        "text": "code",
+        "kind": "comment.doc.code",
+        "owners": []
+      },
+      {
+        "start": 56,
+        "end": 59,
+        "text": "```",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 66,
+        "end": 71,
+        "text": "after",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_unterminated_string",
+    "source": "module app;\nfn broken() { \"unterminated /// [`not_doc`]\n}\n",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "doc_raw_brackets",
+    "source": "module app;\nfn broken() { [`outside`] }\n",
+    "targets": []
+  },
+  {
+    "name": "doc_recovery_reset",
+    "source": "module app;\nfn broken() { ) /// ```text\nvalue; [`outside`] }\n/// [`live`].\n",
+    "targets": [
+      {
+        "start": 32,
+        "end": 39,
+        "text": "```text",
+        "kind": "comment.doc.fence",
+        "owners": []
+      },
+      {
+        "start": 67,
+        "end": 71,
+        "text": "live",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "doc_dependency",
+    "source": "/// [`dependency_doc`].\ndependency helper; source { path \"../helper\"; }\n",
+    "targets": [
+      {
+        "start": 6,
+        "end": 20,
+        "text": "dependency_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "doc_lock",
+    "source": "/// [`lock_doc`].\nlock helper; resolved { path \"../helper\"; sig \"digest\"; }\n",
+    "targets": [
+      {
+        "start": 6,
+        "end": 14,
+        "text": "lock_doc",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
+    ]
+  }
+]

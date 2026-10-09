@@ -50,14 +50,14 @@ pub fn fold_value[R](v: Value, on_num: I32 -> R, on_void: R, on_cycle: R) -> R {
   }
 }
 
-pub fn empty_sheet() -> Sheet { empty(Content, ()) }
+pub fn empty_sheet() -> Sheet { empty(Content) }
 
 /// A cell nobody wrote to is empty, not missing.
 pub fn content_at(s: Sheet, a: Addr) -> Content { get_or(s, a, blank_content()) }
 
 pub fn set_content(s: Sheet, a: Addr, c: Content) -> Sheet { put(s, a, c) }
 
-pub fn empty_values() -> Values { empty(Value, ()) }
+pub fn empty_values() -> Values { empty(Value) }
 
 pub fn value_at(vals: Values, a: Addr) -> Value { get_or(vals, a, void_value()) }
 

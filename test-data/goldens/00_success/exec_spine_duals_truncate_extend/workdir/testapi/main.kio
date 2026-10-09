@@ -14,7 +14,7 @@ fn truncate(p: String & .) -> String { narrow_prod!(p) }
 // arm" rule (the new arm is uninhabited, unreachable).
 fn extend(s: String) -> String | ! { widen_sum!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   print(truncate(("truncate: dropped unit slot\n", ())));
   // The widened sum is `String | !`. R-Identity-Sum-elim collapses
   // it back to `String` — the `!` arm is uninhabited, so it drops

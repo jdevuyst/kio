@@ -433,7 +433,7 @@ module greeter/main;
 
 import greeter(Str, print, stdout);
 
-pub fn main() -> . { print(stdout(), "hello\n"(Str)) }
+pub fn main() { print(stdout(), "hello\n"(Str)) }
 ```
 
 `kio build haskell` writes `out/haskell/Greeter.hs`.

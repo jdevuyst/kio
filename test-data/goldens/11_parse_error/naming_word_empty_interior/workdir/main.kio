@@ -1,3 +1,3 @@
 module main;
 
-fn foo__bar() -> . { () }
+fn foo__bar() { () }

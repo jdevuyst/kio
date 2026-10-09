@@ -508,6 +508,7 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
                 args, meta, ext, ..
             } => Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(child()),
                 args: args
                     .iter()

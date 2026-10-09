@@ -6,4 +6,4 @@ newtype Token : . { constructor make_token; projector read_token }
 
 fn bad() -> Token { derive!((), Token) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

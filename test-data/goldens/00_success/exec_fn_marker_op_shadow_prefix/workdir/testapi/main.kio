@@ -12,7 +12,7 @@ op - __ { impl neg }
 
 fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
 
-pub fn main() -> . {
+pub fn main() {
   let .(f: I32 -> I32) = .x. { add_i32(x1, 1000) };
   print(i32_to_string(apply(f, 5)));
   print("\n");

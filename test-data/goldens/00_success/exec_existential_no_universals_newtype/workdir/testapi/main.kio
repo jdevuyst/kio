@@ -9,8 +9,8 @@ newtype Box <A> <B> : A & B { pub constructor mk_box; pub projector un_box }
 
 fn make_box[A][B](x: A, y: B) -> Box { Box.mk_box(A, B, (x, y)) }
 
-fn open_box(box: Box) -> . {
+fn open_box(box: Box) {
   Box.un_box(box)(.[A][B](_pair: A & B) -> . { print("existential-no-universals-ok\n") })
 }
 
-pub fn main() -> . { open_box(make_box(., ., (), ())) }
+pub fn main() { open_box(make_box(., ., (), ())) }

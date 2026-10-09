@@ -6350,19 +6350,17 @@ fn canonicalize_authoritative_scheme(
 
 fn signature_head_stage_kinds(signature: &Signature<Routed>) -> Vec<BoundaryCallableHeadStageKind> {
     let mut head_stage_kinds = Vec::new();
-    let mut has_value_group = false;
     for group in signature.canonical_groups() {
         match group {
             SignatureGroupRef::Type(params) => {
                 head_stage_kinds.extend(params.iter().map(|_| BoundaryCallableHeadStageKind::Type))
             }
             SignatureGroupRef::Value(_) => {
-                has_value_group = true;
                 head_stage_kinds.push(BoundaryCallableHeadStageKind::Value);
             }
         }
     }
-    if !has_value_group {
+    if head_stage_kinds.is_empty() {
         head_stage_kinds.push(BoundaryCallableHeadStageKind::Value);
     }
     head_stage_kinds
@@ -6372,7 +6370,6 @@ fn signature_source_head_stages(
     signature: &Signature<Routed>,
 ) -> Vec<AuthoritativeBoundaryHeadStage> {
     let mut stages = Vec::new();
-    let mut has_value_group = false;
     for group in signature.canonical_groups() {
         match group {
             SignatureGroupRef::Type(params) => {
@@ -6386,7 +6383,6 @@ fn signature_source_head_stages(
                 }
             }
             SignatureGroupRef::Value(params) => {
-                has_value_group = true;
                 stages.push(AuthoritativeBoundaryHeadStage::Value {
                     source_params: params
                         .iter()
@@ -6406,7 +6402,7 @@ fn signature_source_head_stages(
             }
         }
     }
-    if !has_value_group {
+    if stages.is_empty() {
         stages.push(AuthoritativeBoundaryHeadStage::Value {
             source_params: Vec::new(),
         });
@@ -7218,12 +7214,13 @@ mod tests {
 
     #[test]
     fn callable_cut_retains_canonical_zero_slot_value_group() {
+        let type_group = SignatureGroup::Type(vec![TypeParam {
+            name: "T".to_owned(),
+            span: span(),
+            kind: None,
+        }]);
         let signature: Signature<Routed> =
-            Signature::from_groups(vec![SignatureGroup::Type(vec![TypeParam {
-                name: "T".to_owned(),
-                span: span(),
-                kind: None,
-            }])]);
+            Signature::from_groups(vec![type_group.clone(), SignatureGroup::Value(vec![])]);
         let callable = BoundaryCallablePlan::from_prepared_signature(
             &signature,
             &nominal("api", "R"),
@@ -7236,6 +7233,17 @@ mod tests {
         assert!(matches!(
             entry.head_stages[1],
             BoundaryCallableHeadStage::Value { slots } if slots.is_empty()
+        ));
+
+        let type_only = BoundaryCallablePlan::from_prepared_signature(
+            &Signature::from_groups(vec![type_group]),
+            &nominal("api", "R"),
+            &BTreeSet::new(),
+        )
+        .expect("prepared type-only callable");
+        assert!(matches!(
+            type_only.entry().head_stages.as_slice(),
+            [BoundaryCallableHeadStage::Type { .. }]
         ));
     }
 
@@ -7515,7 +7523,7 @@ mod tests {
     ) -> Item<Routed> {
         Item::FnDef(FnDef {
             vis,
-            purity: (),
+            purity: Default::default(),
             name: name.to_owned(),
             sig: signature,
             ret,

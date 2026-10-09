@@ -15,4 +15,4 @@ fn unused[Unused]() -> Int { zero_int() }
 
 fn bad() -> I32 { derive!((base, later, unused), I32) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -9,4 +9,4 @@ import listpkg(varop [* *]);
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { [* (), (), () *]; print("ok") }
+pub fn main() { [* (), (), () *]; print("ok") }

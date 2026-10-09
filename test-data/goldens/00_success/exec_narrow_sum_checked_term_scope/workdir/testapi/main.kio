@@ -6,4 +6,4 @@ import testapi/io(print);
 
 fn collapse(x: String | String) -> String { narrow_sum!(x) }
 
-pub fn main() -> . { print(collapse(widen_sum!("ok\n"(String), String | String))) }
+pub fn main() { print(collapse(widen_sum!("ok\n"(String), String | String))) }

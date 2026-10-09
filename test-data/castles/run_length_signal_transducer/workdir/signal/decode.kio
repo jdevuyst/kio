@@ -10,5 +10,5 @@ fn expand(run: codec.Run, tail: lists.List(I32)) -> lists.List(I32) {
 }
 
 pub fn samples(runs: lists.List(codec.Run)) -> lists.List(I32) {
-  traversal.foldr(expand, lists.nil(), runs)
+  traversal.foldr(expand, lists.nil(_), runs)
 }

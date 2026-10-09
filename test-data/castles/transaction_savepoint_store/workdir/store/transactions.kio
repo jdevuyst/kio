@@ -30,7 +30,7 @@ pub fn initial() -> State {
     , committed = history.empty()
     , working = history.empty()
     , active = .f
-    , points = cells.nil()
+    , points = cells.nil(_)
     , clock = 0
     , commits = 0
     }
@@ -147,7 +147,7 @@ pub fn commit(s: State) -> Reply {
   if! s.?{active} {
     let count = arith.add_i32(s.?{commits}, 1);
     accepted(
-      , s.!{committed = s.?{working}, active = .f, points = cells.nil(), commits = count}
+      , s.!{committed = s.?{working}, active = .f, points = cells.nil(_), commits = count}
       , text.string_concat("commit ", fmt.int_to_string(count))
       )
   } else {
@@ -157,7 +157,7 @@ pub fn commit(s: State) -> Reply {
 
 pub fn abort(s: State) -> Reply {
   if! s.?{active} {
-    accepted(s.!{working = s.?{committed}, active = .f, points = cells.nil()}, "abort")
+    accepted(s.!{working = s.?{committed}, active = .f, points = cells.nil(_)}, "abort")
   } else {
     rejected(s, "abort requires a transaction")
   }

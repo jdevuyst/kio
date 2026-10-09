@@ -30,7 +30,7 @@ fn plus(m: Nat, n: Nat) -> Nat { .[A](f, x) { m(f, n(f, x)) } }
 
 fn to_int(n: Nat) -> I32 { n(.(x) { add_i32(x, 1(I32)) }, 0(I32)) }
 
-pub fn main() -> . {
+pub fn main() {
   let two = succ(succ(zero()));
   let three = succ(succ(succ(zero())));
   print(int_to_string(to_int(plus(two, three))));

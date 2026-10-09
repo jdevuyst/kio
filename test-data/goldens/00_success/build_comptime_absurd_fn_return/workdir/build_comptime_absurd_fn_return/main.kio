@@ -8,4 +8,4 @@ fn proof_mapper(ct: __Comptime__) -> Term_mapper {
   .(term: __Checked_term__) -> __Checked_term__ { term }
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

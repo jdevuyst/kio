@@ -38,21 +38,21 @@ fn shape_code(card: Card) -> String {
   }
 }
 
-fn rule() -> . { print("----------------------------------------------\n") }
+fn rule() { print("----------------------------------------------\n") }
 
 // print adds no newline, so every row is a run of calls ending in one "\n".
-fn shape_gap(card: Card) -> . { print(" "); print(shape_code(card)) }
+fn shape_gap(card: Card) { print(" "); print(shape_code(card)) }
 
-fn fact(label: String, flag: Bool) -> . { print(label); print(word(flag)); print("\n") }
+fn fact(label: String, flag: Bool) { print(label); print(word(flag)); print("\n") }
 
-pub fn header() -> . {
+pub fn header() {
   print("SEMAPHORE SIGNAL CARD\n");
   print("message: SEMAPHORE\n");
   print("row: letter | left / right | crossed | mnemonic\n");
   rule()
 }
 
-pub fn row(card: Card) -> . {
+pub fn row(card: Card) {
   print(card.?{glyph});
   print(" | ");
   print(card.?{left});
@@ -65,7 +65,7 @@ pub fn row(card: Card) -> . {
   print("\n")
 }
 
-pub fn footer(msg: Message, facts: Facts) -> . {
+pub fn footer(msg: Message, facts: Facts) {
   let .(c1: Card, c2: Card, c3: Card, c4: Card, c5: Card, c6: Card, c7: Card, c8: Card, c9: Card) =
     msg;
   rule();

@@ -12,7 +12,7 @@ fn swap_pair(p: I32 & String) -> String & I32 { into!(p) }
 
 fn first_string((s: String, _i: I32)) -> String { s }
 
-pub fn main() -> . {
+pub fn main() {
   let original = (42, "hello\n");
   let swapped = swap_pair(original);
   // After the swap, the String sits in the first slot.

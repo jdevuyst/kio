@@ -36,7 +36,7 @@ fn and_bool(left: Bool, right: Bool) -> Bool {
 
 fn eq_i32(left: I32, right: I32) -> Bool { and_bool(leq_i32(left, right), leq_i32(right, left)) }
 
-fn println(text: String) -> . { print(text); print("\n") }
+fn println(text: String) { print(text); print("\n") }
 
 fn concat3(left: String, middle: String, right: String) -> String {
   string_concat(left, string_concat(middle, right))
@@ -48,7 +48,7 @@ fn bool_line(prefix: String, value: Bool) -> String { string_concat(prefix, bool
 
 fn cell_count() -> I32 { mul_i32(3, 3) }
 
-fn mark_land(land: Array(Bool), index: I32) -> . { array_set(land, index, .t) }
+fn mark_land(land: Array(Bool), index: I32) { array_set(land, index, .t) }
 
 fn make_land() -> Array(Bool) {
   let land = array_make_filled(9, .f);
@@ -61,7 +61,7 @@ fn make_land() -> Array(Bool) {
   land
 }
 
-fn push_edge(froms: Array(I32), tos: Array(I32), from: I32, to: I32) -> . {
+fn push_edge(froms: Array(I32), tos: Array(I32), from: I32, to: I32) {
   array_push(froms, from);
   array_push(tos, to)
 }
@@ -155,7 +155,7 @@ fn edge_header(index: I32, left: I32, right: I32) -> String {
     )
 }
 
-fn print_edge_union(index: I32, left: I32, right: I32, changed: Bool) -> . {
+fn print_edge_union(index: I32, left: I32, right: I32, changed: Bool) {
   if! changed {
     println(string_concat(edge_header(index, left, right), " union"))
   } else {
@@ -163,7 +163,7 @@ fn print_edge_union(index: I32, left: I32, right: I32, changed: Bool) -> . {
   }
 }
 
-fn print_edge_skip(index: I32, left: I32, right: I32) -> . {
+fn print_edge_skip(index: I32, left: I32, right: I32) {
   println(string_concat(edge_header(index, left, right), " skip-water"))
 }
 
@@ -232,28 +232,28 @@ fn cell_kind(land: Array(Bool), index: I32) -> String {
   }
 }
 
-fn print_map(land: Array(Bool)) -> . {
+fn print_map(land: Array(Bool)) {
   println("map 3x3:");
   println(concat3(cell_kind(land, 0), cell_kind(land, 1), cell_kind(land, 2)));
   println(concat3(cell_kind(land, 3), cell_kind(land, 4), cell_kind(land, 5)));
   println(concat3(cell_kind(land, 6), cell_kind(land, 7), cell_kind(land, 8)))
 }
 
-fn print_cell_root(cell: I32, root: I32) -> . {
+fn print_cell_root(cell: I32, root: I32) {
   println(string_concat(
     , "cell "
     , string_concat(int_to_string(cell), string_concat(" -> root ", int_to_string(root)))
     ))
 }
 
-fn print_root_size(root: I32, size: I32) -> . {
+fn print_root_size(root: I32, size: I32) {
   println(string_concat(
     , "root "
     , string_concat(int_to_string(root), string_concat(" size ", int_to_string(size)))
     ))
 }
 
-rec(loop) fn report_cells(index: I32, land: Array(Bool), parents: Array(I32)) -> . {
+rec(loop) fn report_cells(index: I32, land: Array(Bool), parents: Array(I32)) {
   if! leq_i32(index, sub_i32(cell_count(), 1)) {
     if! array_get(land, index) {
       print_cell_root(index, root_of(parents, index));
@@ -285,7 +285,7 @@ rec(loop) fn report_roots(
   }
 }
 
-fn print_bool_diagnostics(land: Array(Bool)) -> . {
+fn print_bool_diagnostics(land: Array(Bool)) {
   println(bool_line("water center land? ", array_get(land, 4)));
   if! string_eq(bool_to_string(array_get(land, 4)), "false") {
     println("string check: center is water")
@@ -294,11 +294,11 @@ fn print_bool_diagnostics(land: Array(Bool)) -> . {
   }
 }
 
-fn print_initial_snapshot(snapshot: Array(I32)) -> . {
+fn print_initial_snapshot(snapshot: Array(I32)) {
   println(i32_line("initial parent[8] = ", array_get(snapshot, 8)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let land = make_land();
   let parents = make_parents();
   let sizes = make_sizes();

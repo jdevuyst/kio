@@ -1074,23 +1074,7 @@ impl<'m> MarkedProjection<'m> {
         for layer in transcript.layers {
             let mut type_slots = Vec::with_capacity(layer.type_slots.len());
             for slot in layer.type_slots {
-                let Some(slot) = slot else {
-                    type_slots.push(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
-                        resolved: None,
-                        occurrence: None,
-                    });
-                    continue;
-                };
-                let (resolved, occurrence) = {
-                    let (store, _owner, delta, _publication) = frontier.parts_mut();
-                    let occurrence = store.zonk_for_progress(delta, slot.clone(), tcx)?;
-                    let resolved = store.require_goal_free_after_delta(delta, slot, tcx)?;
-                    (resolved, occurrence)
-                };
-                type_slots.push(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
-                    resolved: Some(resolved.ty().clone()),
-                    occurrence: Some(occurrence.ty().clone()),
-                });
+                type_slots.push(materialize_projected_type_slot(slot, frontier, tcx)?);
             }
             let mut sources = Vec::with_capacity(layer.sources.len());
             for source in layer.sources {
@@ -2687,7 +2671,7 @@ fn prepare_lifted_callback_types<'m>(
                 crate::ast::SignatureGroupRef::Value(_) => vec![false],
             })
             .collect::<Vec<_>>();
-        if !sig.has_value_group() {
+        if sig.canonical_group_refs().next().is_none() {
             layers.push(false);
         }
         if let crate::ast::Expr::FnExpr {
@@ -3165,8 +3149,15 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                 false_body,
             } => {
                 let (condition, condition_closed) = self.close(condition)?;
+                #[cfg(feature = "lsp")]
+                let mut selected_role = None;
                 let bool_type = {
-                    let ty = crate::pass::typecheck_full::bool_role_type(span, self.tcx)?;
+                    let ty = crate::pass::typecheck_full::bool_role_type(
+                        span,
+                        self.tcx,
+                        #[cfg(feature = "lsp")]
+                        |binding| selected_role = Some(binding.to_owned()),
+                    )?;
                     let (store, owner, _delta, _publication) = self.frontier.parts_mut();
                     store.scoped_type(
                         owner,
@@ -3190,6 +3181,13 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &closed,
                     "__intrinsic_if_then_else__ branch had the wrong result type",
                 )?;
+                #[cfg(feature = "lsp")]
+                if let Some(binding) = selected_role {
+                    self.frontier
+                        .parts_mut()
+                        .3
+                        .record_selected_role(span, binding);
+                }
                 crate::normalization::ProjectedTermConstruction::IfThenElse {
                     condition,
                     true_body,
@@ -5570,7 +5568,7 @@ fn reserve_lambda_header<'m>(
             let ty = super::super::synth::build_fn_type_from_body_type(
                 sig,
                 body.into_interned_type(),
-                params,
+                &params,
                 source.span(),
                 tcx,
             );
@@ -6220,6 +6218,28 @@ fn snapshot_projected_recipe<'m>(
     Ok(())
 }
 
+fn materialize_projected_type_slot<'m>(
+    slot: Option<crate::pass::typecheck_core::ScopedType>,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+    tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<crate::pass::typecheck_full::TypedUserElaboratorTypeSlot, crate::error::Error> {
+    let resolved = match slot {
+        Some(slot) => {
+            let (store, _owner, delta, _publication) = frontier.parts_mut();
+            Some(
+                store
+                    .require_goal_free_after_delta(delta, slot, tcx)?
+                    .into_interned_type(),
+            )
+        }
+        None => None,
+    };
+    Ok(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+        occurrence: resolved.clone(),
+        resolved,
+    })
+}
+
 fn snapshot_projected_type<'m>(
     projected: &mut ProjectedType,
     specialization: &mut crate::pass::typecheck_core::IsolatedSpecializationContextBuilder,
@@ -6322,7 +6342,7 @@ fn lambda_header_leaves_only_open_result(
             }
         }
     }
-    if !sig.has_value_group() {
+    if sig.canonical_group_refs().next().is_none() {
         let crate::ast::Type::Function {
             param,
             ret,
@@ -10593,6 +10613,7 @@ impl FillContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod boundary_reuse_tests;
 
     use std::{
         path::{Path, PathBuf},
@@ -12389,31 +12410,25 @@ mod tests {
             crate::ast::Type::Forall { body, .. }
                 if matches!(body.as_ref(), crate::ast::Type::Unit { .. })
         ));
-        let crate::ast::Expr::Call { callee, args, .. } = checked_type_fn.clone_expr() else {
-            panic!("projected type function did not close through its Unit call")
-        };
-        assert!(args.is_empty());
-        let crate::ast::Expr::FnExpr { sig, .. } = callee.as_ref() else {
-            panic!("projected type-function call did not retain its inner function")
+        let crate::ast::Expr::FnExpr { sig, .. } = checked_type_fn.clone_expr() else {
+            panic!("projected type function did not close as a type-only function")
         };
         assert_eq!(
             sig.groups,
-            vec![
-                crate::ast::SignatureGroupKind::Value { len: 0 },
-                crate::ast::SignatureGroupKind::Type { len: 1 },
-            ]
+            vec![crate::ast::SignatureGroupKind::Type { len: 1 }]
         );
         let pre_prime = crate::ast::convert_expr::<
             crate::ast::UncheckedPrime,
             crate::pass::substitute::PrePrime,
         >(&checked_type_fn.clone_expr());
         let replayed = crate::pass::substitute::finish_replayed_elaboration_for_test(pre_prime);
-        let crate::ast::Expr::Call { callee, .. } = replayed else {
-            panic!("projected type function did not survive replay")
+        let crate::ast::Expr::FnExpr { sig, .. } = replayed else {
+            panic!("projected type function did not survive replay as a type-only function")
         };
-        let crate::ast::Expr::FnExpr { sig, .. } = callee.as_ref() else {
-            panic!("replayed projected type function lost its inner function")
-        };
+        assert_eq!(
+            sig.groups,
+            vec![crate::ast::SignatureGroupKind::Type { len: 1 }]
+        );
         let crate::ast::SignatureParam::Type(param) = &sig.params[0] else {
             panic!("replayed projected type function lost its binder")
         };
@@ -15168,6 +15183,7 @@ mod tests {
         };
         let call = |callee, args| Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(callee),
             args,
             meta: meta(),
@@ -15935,6 +15951,8 @@ mod tests {
                 crate::pass::typecheck_core::InternedType::fresh_canonical(goal_type(ancestor)),
             ),
             binders: Vec::new(),
+            #[cfg(feature = "lsp")]
+            selected_role: None,
             retained_type: None,
         };
         let mut frontier = root.retained_value_frontier(&mut parent_child);

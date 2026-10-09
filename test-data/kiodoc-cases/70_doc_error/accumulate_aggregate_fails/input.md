@@ -18,11 +18,11 @@ __INSERT_CODE_HERE__
 First definition:
 
 ```kio {@dup}
-fn helper() -> . { () }
+fn helper() { () }
 ```
 
 Second definition of the same name:
 
 ```kio {@dup}
-fn helper() -> . { () }
+fn helper() { () }
 ```

@@ -25,7 +25,7 @@ pure fn invoke_then_impl(
 
 elab invoke_then : [S] (S -> S) -> Later -> . { impl(fills) invoke_then_impl }
 
-rec(loop) fn repeat(state: .) -> . {
+rec(loop) fn repeat(state: .) {
   let residual = invoke_then!(.(_unit: .) { rec(cont) repeat(state) });
   residual(later())
 }

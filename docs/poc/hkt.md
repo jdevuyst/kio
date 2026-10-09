@@ -386,7 +386,7 @@ is Kio's multi-argument-call style.
 prints each result, matching the five output lines verbatim:
 
 ```kio {@hkt}
-pub fn main() -> . {
+pub fn main() {
   print(run_box("higher-kinded box ok\n"(String)));
   print(run_identity("higher-kinded identity ok\n"(String)));
   print(run_box_pipeline("brand-generic pipeline over box"(String)));

@@ -12,7 +12,7 @@ fn project_inner_left[A][B][C](((x: A, _: B), _: C)) -> A { x }
 fn pair_dup_as[A][B](p: (x: A, y: B)) -> (A & B) & A & B { (p, p) }
 
 // Wildcard slots at every level.
-fn ignore_all[A][B][C](((_: A, _: B), _: C)) -> . { () }
+fn ignore_all[A][B][C](((_: A, _: B), _: C)) { () }
 
 // Single-slot pattern (unary).
 fn unary[A](wrapper: (only: A)) -> A { let .(got: A) = wrapper; got }

@@ -5,4 +5,4 @@ import other(need_wrap);
 
 newtype Wrap : . -> . { pub constructor mk; pub projector un }
 
-pub fn smuggle(f: . -> .) -> . { need_wrap(Wrap.mk(f)) }
+pub fn smuggle(f: . -> .) { need_wrap(Wrap.mk(f)) }

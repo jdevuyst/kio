@@ -8,7 +8,7 @@ import testapi/arith as n;
 import testapi/array as a;
 import testapi/iter(loop);
 
-rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) -> . {
+rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) {
   if! num.less(state, a.array_len(states)) {
     let item = a.array_get(states, state);
     if! num.equal(item.?{sam.longest}, length) {
@@ -28,7 +28,7 @@ rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) -
 }
 
 // Suffix links strictly shorten the represented words, so this order settles each count once.
-rec(loop) fn descending_lengths(states: Array(sam.State), length: I32) -> . {
+rec(loop) fn descending_lengths(states: Array(sam.State), length: I32) {
   if! n.leq_i32(1, length) {
     collect_length(states, length, 1);
     rec descending_lengths(states, n.sub_i32(length, 1))
@@ -37,7 +37,7 @@ rec(loop) fn descending_lengths(states: Array(sam.State), length: I32) -> . {
   }
 }
 
-pub fn finalize(index: sam.Index) -> . {
+pub fn finalize(index: sam.Index) {
   let states = index.?{sam.states};
   descending_lengths(states, a.array_get(states, index.?{sam.last}).?{sam.longest})
 }

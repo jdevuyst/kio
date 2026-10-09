@@ -29,7 +29,9 @@ use std::fmt::Write as _;
 
 use crate::ast;
 use crate::error::Error;
-use crate::pass::lexer::{Token as LexToken, TokenKind as LexTokenKind, Trivia, lex};
+#[cfg(test)]
+use crate::pass::lexer::lex;
+use crate::pass::lexer::{Token as LexToken, TokenKind as LexTokenKind, Trivia, lex_with_trailing};
 use crate::span::Span;
 
 /// One classified token: a source span paired with its [`TokenKind`].
@@ -37,6 +39,61 @@ use crate::span::Span;
 pub struct ClassifiedToken {
     pub span: Span,
     pub kind: TokenKind,
+    pub(crate) in_documentation: bool,
+}
+
+/// Written source namespace, before surface declarations and calls are erased.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceNameKind {
+    Value,
+    Type,
+    Elaborator,
+    Label,
+    Equiv,
+}
+
+/// A parsed occurrence; the path retains its written qualifier, and the span
+/// selects only its leaf. Declaration occurrences retain their own identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceReference {
+    pub path: String,
+    pub span: Span,
+    pub kind: SourceNameKind,
+    pub declaration: bool,
+}
+
+pub fn source_references(
+    source: &str,
+    module: &ast::Module<ast::Surface>,
+) -> Result<Vec<SourceReference>, Error> {
+    let (raw, _) = lex_with_trailing(source)?;
+    let mut overrides = AstOverrides {
+        source_references: Some(Vec::new()),
+        ..AstOverrides::default()
+    };
+    walk_module(module, &raw, &mut overrides);
+    Ok(overrides
+        .source_references
+        .expect("requested source references"))
+}
+
+/// Source dependencies share token classification's parsed walk, including
+/// type and declaration-only paths erased before the typed position index.
+#[cfg(feature = "lsp")]
+pub(crate) fn source_dependencies(
+    source: &str,
+    module: &ast::Module<ast::Surface>,
+) -> Result<Vec<SourceReference>, Error> {
+    let (raw, _) = lex_with_trailing(source)?;
+    let mut overrides = AstOverrides {
+        source_references: Some(Vec::new()),
+        source_dependencies: true,
+        ..AstOverrides::default()
+    };
+    walk_module(module, &raw, &mut overrides);
+    Ok(overrides
+        .source_references
+        .expect("requested source dependencies"))
 }
 
 #[derive(Debug)]
@@ -76,6 +133,16 @@ pub enum TokenKind {
     LiteralBool,
     CommentLine,
     CommentDoc,
+    CommentDocReference,
+    CommentDocDirective,
+    CommentDocFence,
+    CommentDocCode,
+    CommentDocHeading,
+    CommentDocStrong,
+    CommentDocEmphasis,
+    CommentDocMarker,
+    CommentDocLink,
+    CommentDocAttribute,
     PunctuationBracket,
     PunctuationSeparator,
     Slot,
@@ -132,6 +199,16 @@ impl TokenKind {
             TokenKind::LiteralBool => "literal.bool",
             TokenKind::CommentLine => "comment.line",
             TokenKind::CommentDoc => "comment.doc",
+            TokenKind::CommentDocReference => "comment.doc.reference",
+            TokenKind::CommentDocDirective => "comment.doc.directive",
+            TokenKind::CommentDocFence => "comment.doc.fence",
+            TokenKind::CommentDocCode => "comment.doc.code",
+            TokenKind::CommentDocHeading => "comment.doc.heading",
+            TokenKind::CommentDocStrong => "comment.doc.strong",
+            TokenKind::CommentDocEmphasis => "comment.doc.emphasis",
+            TokenKind::CommentDocMarker => "comment.doc.marker",
+            TokenKind::CommentDocLink => "comment.doc.link",
+            TokenKind::CommentDocAttribute => "comment.doc.attribute",
             TokenKind::PunctuationBracket => "punctuation.bracket",
             TokenKind::PunctuationSeparator => "punctuation.separator",
             TokenKind::Slot => "slot",
@@ -170,6 +247,16 @@ impl TokenKind {
             TokenKind::LiteralBool => "kio-literal-bool",
             TokenKind::CommentLine => "kio-comment-line",
             TokenKind::CommentDoc => "kio-comment-doc",
+            TokenKind::CommentDocReference => "kio-comment-doc-reference",
+            TokenKind::CommentDocDirective => "kio-comment-doc-directive",
+            TokenKind::CommentDocFence => "kio-comment-doc-fence",
+            TokenKind::CommentDocCode => "kio-comment-doc-code",
+            TokenKind::CommentDocHeading => "kio-comment-doc-heading",
+            TokenKind::CommentDocStrong => "kio-comment-doc-strong",
+            TokenKind::CommentDocEmphasis => "kio-comment-doc-emphasis",
+            TokenKind::CommentDocMarker => "kio-comment-doc-marker",
+            TokenKind::CommentDocLink => "kio-comment-doc-link",
+            TokenKind::CommentDocAttribute => "kio-comment-doc-attribute",
             TokenKind::PunctuationBracket => "kio-punctuation-bracket",
             TokenKind::PunctuationSeparator => "kio-punctuation-separator",
             TokenKind::Slot => "kio-slot",
@@ -193,22 +280,23 @@ impl TokenKind {
 /// other identifiers stay neutral. Output remains in source order, including
 /// comments and tokens beyond a parse failure.
 pub fn dump(source: &str) -> Result<Vec<ClassifiedToken>, Error> {
-    let raw = lex(source)?;
+    let (raw, trailing) = lex_with_trailing(source)?;
     #[cfg(any(test, feature = "cli"))]
     {
         let probe = crate::pass::parser::probe_tooling_source(source, None);
-        Ok(dump_with_tooling(&raw, &probe))
+        Ok(dump_with_tooling(&raw, &trailing, &probe))
     }
     #[cfg(not(any(test, feature = "cli")))]
     {
         if let Ok((module, _errors)) = crate::pass::parser::parse_module(source, true) {
-            return Ok(dump_with_ast(&raw, &module, source));
+            return Ok(dump_with_ast(&raw, &trailing, &module, source));
         }
         if let Ok(module) = crate::pass::parser::parse_lazy(source) {
-            return Ok(dump_with_ast(&raw, module.module(), source));
+            return Ok(dump_with_ast(&raw, &trailing, module.module(), source));
         }
         Ok(dump_with_ast_overrides(
             &raw,
+            &trailing,
             source,
             &AstOverrides::default(),
         ))
@@ -218,7 +306,18 @@ pub fn dump(source: &str) -> Result<Vec<ClassifiedToken>, Error> {
 #[cfg(any(test, feature = "cli"))]
 fn dump_with_tooling(
     raw: &[LexToken],
+    trailing: &[Trivia],
     probe: &crate::pass::parser::ToolingProbe<'_>,
+) -> Vec<ClassifiedToken> {
+    dump_with_tooling_and_docs(raw, trailing, probe, true)
+}
+
+#[cfg(any(test, feature = "cli"))]
+fn dump_with_tooling_and_docs(
+    raw: &[LexToken],
+    trailing: &[Trivia],
+    probe: &crate::pass::parser::ToolingProbe<'_>,
+    refine_docs: bool,
 ) -> Vec<ClassifiedToken> {
     use crate::pass::parser::{KeywordRole, SourceNameRole, ToolingSyntax};
 
@@ -310,7 +409,7 @@ fn dump_with_tooling(
     overrides
         .structural_brackets
         .extend(&probe.facts.structural_forall.bracket_offsets);
-    dump_with_ast_overrides(raw, probe.source, &overrides)
+    dump_with_ast_overrides_and_docs(raw, trailing, probe.source, &overrides, refine_docs)
 }
 
 #[cfg(any(test, feature = "cli"))]
@@ -399,12 +498,17 @@ pub(crate) fn dump_item_signature(signature: &str) -> Result<Vec<ClassifiedToken
 #[cfg(test)]
 fn dump_if_module_parses(source: &str) -> Result<Option<Vec<ClassifiedToken>>, Error> {
     if let Ok(module) = crate::pass::parser::parse(source) {
-        let raw = lex(source)?;
-        return Ok(Some(dump_with_ast(&raw, &module, source)));
+        let (raw, trailing) = lex_with_trailing(source)?;
+        return Ok(Some(dump_with_ast(&raw, &trailing, &module, source)));
     }
     if let Ok(module) = crate::pass::parser::parse_lazy(source) {
-        let raw = lex(source)?;
-        return Ok(Some(dump_with_ast(&raw, module.module(), source)));
+        let (raw, trailing) = lex_with_trailing(source)?;
+        return Ok(Some(dump_with_ast(
+            &raw,
+            &trailing,
+            module.module(),
+            source,
+        )));
     }
     Ok(None)
 }
@@ -423,11 +527,12 @@ pub(crate) fn dump_repl_input(
         return dump(source);
     };
     let prefix = &source[..expression_start];
-    let mut out = dump_lexical(&lex(prefix)?, prefix);
-    let raw = lex(fragment)?;
+    let (prefix_raw, prefix_trailing) = lex_with_trailing(prefix)?;
+    let mut out = dump_lexical(&prefix_raw, &prefix_trailing, prefix);
+    let (raw, trailing) = lex_with_trailing(fragment)?;
     let probe = crate::pass::parser::probe_tooling(fragment, None, None, context);
     out.extend(
-        dump_with_tooling(&raw, &probe)
+        dump_with_tooling(&raw, &trailing, &probe)
             .into_iter()
             .map(|mut token| {
                 token.span.start += expression_start as u32;
@@ -442,11 +547,11 @@ pub(crate) fn dump_repl_input(
 /// binders. Type-producing REPL surfaces select this explicit root.
 #[cfg(feature = "repl-core")]
 pub(crate) fn dump_type_fragment(source: &str) -> Result<Vec<ClassifiedToken>, Error> {
-    let raw = lex(source)?;
+    let (raw, trailing) = lex_with_trailing(source)?;
     let ty = crate::pass::parser::parse_type_fragment(source)?;
     let mut overrides = AstOverrides::default();
     walk_type(&ty, &raw, &mut overrides);
-    let mut out = dump_lexical(&raw, source);
+    let mut out = dump_lexical(&raw, &trailing, source);
     for token in &mut out {
         if let Some(kind) = overrides.get(&token.span.start) {
             token.kind = *kind;
@@ -467,8 +572,8 @@ pub fn dump_with_module(
     source: &str,
     module: &ast::Module<ast::Surface>,
 ) -> Result<Vec<ClassifiedToken>, Error> {
-    let raw = lex(source)?;
-    Ok(dump_with_ast(&raw, module, source))
+    let (raw, trailing) = lex_with_trailing(source)?;
+    Ok(dump_with_ast(&raw, &trailing, module, source))
 }
 
 /// Classify a source buffer against an already-cached Surface parse. LSP
@@ -479,8 +584,8 @@ pub(crate) fn dump_module(
     source: &str,
     module: &ast::Module<ast::Surface>,
 ) -> Result<Vec<ClassifiedToken>, Error> {
-    let raw = lex(source)?;
-    Ok(dump_with_ast(&raw, module, source))
+    let (raw, trailing) = lex_with_trailing(source)?;
+    Ok(dump_with_ast(&raw, &trailing, module, source))
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -488,14 +593,14 @@ pub(crate) fn dump_module_with_rec_facts(
     source: &str,
     module: &ast::Module<ast::Surface>,
 ) -> Result<(Vec<ClassifiedToken>, Vec<RecMemberTokenFact>), Error> {
-    let raw = lex(source)?;
-    Ok(dump_with_ast_and_rec_facts(&raw, module, source))
+    let (raw, trailing) = lex_with_trailing(source)?;
+    Ok(dump_with_ast_and_rec_facts(&raw, &trailing, module, source))
 }
 
 /// Lex-only classification retains neutral identifiers without grammar claims.
 #[cfg(any(test, feature = "repl-core"))]
-fn dump_lexical(raw: &[LexToken], source: &str) -> Vec<ClassifiedToken> {
-    dump_with_ast_overrides(raw, source, &AstOverrides::default())
+fn dump_lexical(raw: &[LexToken], trailing: &[Trivia], source: &str) -> Vec<ClassifiedToken> {
+    dump_with_ast_overrides(raw, trailing, source, &AstOverrides::default())
 }
 
 fn is_ident_named(token: &LexToken, expected: &str) -> bool {
@@ -535,28 +640,78 @@ fn ident_text(token: &LexToken) -> Option<&str> {
 /// identifiers; keyword-shaped spellings alone confer no role.
 fn dump_with_ast(
     raw: &[LexToken],
+    trailing: &[Trivia],
     module: &ast::Module<ast::Surface>,
     source: &str,
 ) -> Vec<ClassifiedToken> {
     let overrides = ast_overrides(module, raw);
-    dump_with_ast_overrides(raw, source, &overrides)
+    dump_with_ast_overrides(raw, trailing, source, &overrides)
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
 fn dump_with_ast_and_rec_facts(
     raw: &[LexToken],
+    trailing: &[Trivia],
     module: &ast::Module<ast::Surface>,
     source: &str,
 ) -> (Vec<ClassifiedToken>, Vec<RecMemberTokenFact>) {
     let overrides = ast_overrides(module, raw);
-    let out = dump_with_ast_overrides(raw, source, &overrides);
+    let out = dump_with_ast_overrides(raw, trailing, source, &overrides);
     (out, overrides.rec_members)
 }
 
 fn dump_with_ast_overrides(
     raw: &[LexToken],
+    trailing: &[Trivia],
     source: &str,
     overrides: &AstOverrides,
+) -> Vec<ClassifiedToken> {
+    dump_with_ast_overrides_and_docs(raw, trailing, source, overrides, true)
+}
+
+pub(crate) fn dump_doc_code(source: &str, body_fragment: bool) -> Vec<ClassifiedToken> {
+    let wrapper;
+    let (input, start) = if body_fragment {
+        const PREFIX: &str = "fn _doc() {\n";
+        wrapper = format!("{PREFIX}{source}\n}}");
+        (wrapper.as_str(), PREFIX.len() as u32)
+    } else {
+        (source, 0)
+    };
+    let end = start + source.len() as u32;
+    let prefix = crate::pass::lexer::lex_prefix(input);
+    #[cfg(any(test, feature = "cli"))]
+    let tokens = dump_with_tooling_and_docs(
+        &prefix.tokens,
+        &prefix.trailing,
+        &crate::pass::parser::probe_tooling_source(input, None),
+        false,
+    );
+    #[cfg(not(any(test, feature = "cli")))]
+    let tokens = dump_with_ast_overrides_and_docs(
+        &prefix.tokens,
+        &prefix.trailing,
+        input,
+        &AstOverrides::default(),
+        false,
+    );
+    tokens
+        .into_iter()
+        .filter(|token| token.span.start >= start && token.span.end <= end)
+        .map(|mut token| {
+            token.span = Span::new(token.span.start - start, token.span.end - start);
+            token.in_documentation = true;
+            token
+        })
+        .collect()
+}
+
+fn dump_with_ast_overrides_and_docs(
+    raw: &[LexToken],
+    trailing: &[Trivia],
+    source: &str,
+    overrides: &AstOverrides,
+    refine_docs: bool,
 ) -> Vec<ClassifiedToken> {
     let mut out: Vec<ClassifiedToken> = Vec::with_capacity(raw.len());
     let mut i = 0;
@@ -567,12 +722,14 @@ fn dump_with_ast_overrides(
                     out.push(ClassifiedToken {
                         span: *span,
                         kind: TokenKind::CommentLine,
+                        in_documentation: false,
                     });
                 }
                 Trivia::DocCommentLine { span, .. } => {
                     out.push(ClassifiedToken {
                         span: *span,
                         kind: TokenKind::CommentDoc,
+                        in_documentation: false,
                     });
                 }
                 Trivia::Newline => {}
@@ -607,19 +764,57 @@ fn dump_with_ast_overrides(
         out.push(ClassifiedToken {
             span: raw[i].span,
             kind,
+            in_documentation: false,
         });
         i += 1;
     }
 
-    let tail_start = raw.last().map(|t| t.span.end as usize).unwrap_or(0);
-    collect_trailing_line_comments(source, tail_start, &mut out);
+    for trivia in trailing {
+        let (Trivia::LineComment { span, .. } | Trivia::DocCommentLine { span, .. }) = trivia
+        else {
+            continue;
+        };
+        out.push(ClassifiedToken {
+            span: *span,
+            kind: if matches!(trivia, Trivia::DocCommentLine { .. }) {
+                TokenKind::CommentDoc
+            } else {
+                TokenKind::CommentLine
+            },
+            in_documentation: false,
+        });
+    }
+    if !refine_docs {
+        return split_structural_brackets(out, &overrides.structural_brackets, source);
+    }
+    let docs = crate::doc_markup::source::DocSource::from_tokens(source, raw, trailing);
+    let mut structured = docs
+        .iter()
+        .flat_map(crate::doc_markup::editor::classify)
+        .peekable();
+    let mut refined = Vec::with_capacity(out.len());
+    for token in out {
+        if token.kind == TokenKind::CommentDoc {
+            while structured
+                .peek()
+                .is_some_and(|part| part.span.start < token.span.end)
+            {
+                refined.push(structured.next().unwrap());
+            }
+        } else {
+            refined.push(token);
+        }
+    }
 
-    split_structural_brackets(out, &overrides.structural_brackets, source)
+    split_structural_brackets(refined, &overrides.structural_brackets, source)
 }
 
 #[derive(Default)]
 struct AstOverrides {
     kinds: HashMap<u32, TokenKind>,
+    source_references: Option<Vec<SourceReference>>,
+    #[cfg(feature = "lsp")]
+    source_dependencies: bool,
     /// Starts of `!` bytes that the parser confirmed as elaborator suffixes.
     /// This lets the final stream split a greedy `!.>` / `!.<` lexer run
     /// without guessing that an arbitrary bang-led operator is an elaborator.
@@ -632,6 +827,59 @@ struct AstOverrides {
     rec_members: Vec<RecMemberTokenFact>,
     #[cfg(all(feature = "surface", feature = "lsp"))]
     rec_calls: Vec<(String, Span)>,
+}
+
+impl AstOverrides {
+    fn source_reference(
+        &mut self,
+        path: &str,
+        span: Span,
+        kind: SourceNameKind,
+        declaration: bool,
+    ) {
+        if let Some(references) = &mut self.source_references {
+            references.push(SourceReference {
+                path: path.to_owned(),
+                span,
+                kind,
+                declaration,
+            });
+        }
+    }
+
+    fn source_path(&mut self, segments: &[ast::PathSegment], kind: SourceNameKind) {
+        #[cfg(feature = "lsp")]
+        let (segments, kind) = if self.source_dependencies && kind == SourceNameKind::Value {
+            match segments
+                .iter()
+                .position(|segment| crate::naming::is_type_reference_name(&segment.name))
+            {
+                Some(index) => (&segments[..=index], SourceNameKind::Type),
+                None => (segments, kind),
+            }
+        } else {
+            (segments, kind)
+        };
+        if self.source_references.is_some()
+            && let Some(leaf) = segments.last()
+        {
+            let path = segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            self.source_reference(&path, leaf.span, kind, false);
+        }
+    }
+
+    fn source_label(&mut self, path: &str, range: Span, raw: &[LexToken]) {
+        if self.source_references.is_some()
+            && let Some(name) = path.rsplit('.').next()
+            && let Some(span) = find_last_ident_in_span(raw, range, name)
+        {
+            self.source_reference(path, span, SourceNameKind::Label, false);
+        }
+    }
 }
 
 impl std::ops::Deref for AstOverrides {
@@ -652,42 +900,6 @@ fn ast_overrides(module: &ast::Module<ast::Surface>, raw: &[LexToken]) -> AstOve
     let mut overrides = AstOverrides::default();
     walk_module(module, raw, &mut overrides);
     overrides
-}
-
-/// Scan the tail of `source` (from `from` to end-of-file) for `//`
-/// line comments the lexer dropped because they don't precede a
-/// meaningful token. Pushes one `comment.line` token per comment.
-///
-/// Only line comments matter here — every other byte after the last
-/// meaningful token is horizontal whitespace, newlines, or a
-/// trailing `//` comment run. Anything else would have produced a
-/// meaningful token, contradicting the assumption that we're past
-/// the last one.
-fn collect_trailing_line_comments(source: &str, from: usize, out: &mut Vec<ClassifiedToken>) {
-    let bytes = source.as_bytes();
-    let mut pos = from;
-    while pos < bytes.len() {
-        match bytes[pos] {
-            b' ' | b'\t' | b'\r' | b'\n' => pos += 1,
-            b'/' if pos + 1 < bytes.len() && bytes[pos + 1] == b'/' => {
-                let comment_start = pos;
-                while pos < bytes.len() && bytes[pos] != b'\n' {
-                    pos += 1;
-                }
-                out.push(ClassifiedToken {
-                    span: Span::new(comment_start as u32, pos as u32),
-                    kind: TokenKind::CommentLine,
-                });
-            }
-            _ => {
-                // Any other byte past the last meaningful token would
-                // have produced a token of its own — getting here
-                // means the lexer's invariant changed. Bail rather
-                // than guess what to emit.
-                break;
-            }
-        }
-    }
 }
 
 /// If `raw[i]` and `raw[i+1]` together form a bang-call elaborator
@@ -715,6 +927,7 @@ fn try_fuse_elaborator_bang(raw: &[LexToken], i: usize) -> Option<ClassifiedToke
     Some(ClassifiedToken {
         span: Span::new(head.span.start, next.span.end),
         kind: TokenKind::KeywordElaborator,
+        in_documentation: false,
     })
 }
 
@@ -755,10 +968,12 @@ fn try_split_confirmed_elaborator_bang(
         ClassifiedToken {
             span: Span::new(head.span.start, bang_end),
             kind: TokenKind::KeywordElaborator,
+            in_documentation: false,
         },
         ClassifiedToken {
             span: Span::new(bang_end, next.span.end),
             kind: classify_symbol_run(suffix),
+            in_documentation: false,
         },
     ))
 }
@@ -791,6 +1006,7 @@ fn try_fuse_dot_bool(raw: &[LexToken], i: usize) -> Option<ClassifiedToken> {
     Some(ClassifiedToken {
         span: Span::new(dot.span.start, name.span.end),
         kind: TokenKind::LiteralBool,
+        in_documentation: false,
     })
 }
 
@@ -945,6 +1161,13 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
         ast::Item::Newtype(n) => walk_newtype(n, raw, overrides),
         ast::Item::Labels(t, _) => walk_labels(t, raw, overrides),
         ast::Item::LabelForward(forward, _) => {
+            overrides.source_reference(
+                &forward.name,
+                forward.name_span,
+                SourceNameKind::Label,
+                true,
+            );
+            overrides.source_label(&forward.target, forward.target_span, raw);
             mark_declaration_keyword(raw, forward.meta.span, "type", overrides);
             overrides.insert(forward.name_span.start, TokenKind::EntityNameLabel);
             if let Some(name) = forward.target.rsplit('.').next()
@@ -955,6 +1178,7 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
         }
         ast::Item::Equiv(e, _) => walk_equiv(e, raw, overrides),
         ast::Item::Elaborator(s, _) => {
+            overrides.source_reference(&s.name, s.name_span, SourceNameKind::Elaborator, true);
             mark_declaration_keyword(raw, s.meta.span, "elab", overrides);
             overrides.insert(s.name_span.start, TokenKind::EntityNameFunction);
             walk_type(&s.call_ty, raw, overrides);
@@ -998,6 +1222,12 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
                     overrides,
                 );
             }
+            #[cfg(feature = "lsp")]
+            if overrides.source_dependencies {
+                for capture in &s.captures {
+                    overrides.source_path(&capture.segments, SourceNameKind::Value);
+                }
+            }
             if s.schedule == ast::ElaboratorSchedule::Fills {
                 let end = s.implementation.span().start;
                 if let Some(span) =
@@ -1010,6 +1240,10 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
         }
         ast::Item::RecGroup(g, _) => {
             mark_declaration_keyword(raw, g.meta.span, "rec", overrides);
+            #[cfg(feature = "lsp")]
+            if overrides.source_dependencies {
+                overrides.source_path(&g.loop_path, SourceNameKind::Value);
+            }
             for member in &g.members {
                 #[cfg(all(feature = "surface", feature = "lsp"))]
                 let first_call = overrides.rec_calls.len();
@@ -1131,6 +1365,7 @@ fn walk_literal_alias(
 ) {
     mark_declaration_keyword(raw, a.meta.span, "literal", overrides);
     if let Some(s) = find_name_after_kw(raw, a.meta.span, "literal", &a.name) {
+        overrides.source_reference(&a.name, s, SourceNameKind::Value, true);
         overrides.insert(s.start, TokenKind::Identifier);
     }
 }
@@ -1177,6 +1412,12 @@ fn walk_labels(t: &ast::Labels<ast::Surface>, raw: &[LexToken], overrides: &mut 
         mark_type_param(tp, raw, overrides);
     }
     for entry in &t.entries {
+        overrides.source_reference(
+            &entry.name,
+            entry.name_span,
+            SourceNameKind::Label,
+            !entry.is_reuse_marker(),
+        );
         let kind = if entry.is_reuse_marker() {
             TokenKind::EntityNameLabelReference
         } else {
@@ -1194,6 +1435,7 @@ fn walk_labels(t: &ast::Labels<ast::Surface>, raw: &[LexToken], overrides: &mut 
 }
 
 fn walk_equiv(e: &ast::Equiv<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
+    overrides.source_reference(&e.name, e.name_span, SourceNameKind::Equiv, true);
     mark_declaration_keyword(raw, e.meta.span, "equiv", overrides);
     // `equiv` declarations carry a function-shaped signature; treat
     // the name like a function definition.
@@ -1256,6 +1498,10 @@ fn mark_variadic_clause_head(
 }
 
 fn mark_callable_path(path: &ast::LexicalCallablePath, overrides: &mut AstOverrides) {
+    #[cfg(feature = "lsp")]
+    if overrides.source_dependencies {
+        overrides.source_path(path.segments(), SourceNameKind::Value);
+    }
     if let Some(last) = path.last() {
         overrides.insert(last.span.start, TokenKind::EntityNameFunctionReference);
     }
@@ -1329,6 +1575,10 @@ fn walk_type(ty: &ast::Type<ast::Surface>, raw: &[LexToken], overrides: &mut Ast
     use ast::Type::*;
     match ty {
         Path { segments, args, .. } => {
+            #[cfg(feature = "lsp")]
+            if overrides.source_dependencies {
+                overrides.source_path(segments, SourceNameKind::Type);
+            }
             for seg in segments {
                 if crate::naming::is_type_reference_name(&seg.name) {
                     overrides.insert(seg.span.start, TokenKind::EntityNameType);
@@ -1348,6 +1598,7 @@ fn walk_type(ty: &ast::Type<ast::Surface>, raw: &[LexToken], overrides: &mut Ast
         }
         LabelSugar { labels, .. } => {
             for label in labels {
+                overrides.source_label(&label.label, label.label_span, raw);
                 if let Some(payload) = &label.payload {
                     walk_type(payload, raw, overrides);
                 }
@@ -1453,11 +1704,13 @@ fn split_structural_brackets(
                 out.push(ClassifiedToken {
                     span: Span::new(start, offset),
                     kind: classify_symbol_run(spelling),
+                    in_documentation: token.in_documentation,
                 });
             }
             out.push(ClassifiedToken {
                 span: Span::new(offset, offset + 1),
                 kind: TokenKind::PunctuationBracket,
+                in_documentation: token.in_documentation,
             });
             start = offset + 1;
         }
@@ -1466,6 +1719,7 @@ fn split_structural_brackets(
             out.push(ClassifiedToken {
                 span: Span::new(start, token.span.end),
                 kind: classify_symbol_run(spelling),
+                in_documentation: token.in_documentation,
             });
         }
     }
@@ -1501,6 +1755,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             blocks,
             ..
         } => {
+            overrides.source_reference(&head.name, head.span, SourceNameKind::Elaborator, false);
             overrides.insert(head.span.start, TokenKind::EntityNameFunctionReference);
             overrides.elaborator_bangs.insert(head.span.end);
             for value in prefix {
@@ -1565,7 +1820,8 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                 }
             }
         }
-        Path { .. } => {
+        Path { segments, .. } => {
+            overrides.source_path(segments, SourceNameKind::Value);
             // A bare path in expression position. Its target may be
             // a function value, a binder, or a constructor — we
             // can't tell at parse time without name resolution.
@@ -1585,6 +1841,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             // identifier regex alternatives). For non-path callees
             // (lambdas, sub-expressions), recurse into the callee.
             if let Path { segments, .. } = callee.as_ref() {
+                overrides.source_path(segments, SourceNameKind::Value);
                 if let Some(last) = segments.last() {
                     overrides.insert(last.span.start, TokenKind::EntityNameFunctionReference);
                 }
@@ -1701,6 +1958,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             ast::ElaboratorCall::FieldAccess { receiver, labels } => {
                 walk_expr(receiver, raw, overrides);
                 for label in labels {
+                    overrides.source_label(&label.label, label.label_span, raw);
                     if let Some(name) = label.label.rsplit('.').next()
                         && let Some(s) = find_last_ident_in_span(raw, label.label_span, name)
                     {
@@ -1711,6 +1969,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             ast::ElaboratorCall::FieldUpdate { receiver, updates } => {
                 walk_expr(receiver, raw, overrides);
                 for update in updates {
+                    overrides.source_label(&update.label, update.label_span, raw);
                     if let Some(name) = update.label.rsplit('.').next()
                         && let Some(s) = find_last_ident_in_span(raw, update.label_span, name)
                     {
@@ -1723,6 +1982,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         RecOrder { ext, .. } | RecQuote { ext, .. } => match *ext {},
         UserElaborator { name, args, .. } => {
             if let Some(s) = find_ident_in_span(raw, e.meta().span, name) {
+                overrides.source_reference(name, s, SourceNameKind::Elaborator, false);
                 overrides.insert(s.start, TokenKind::EntityNameFunctionReference);
             }
             for arg in args {
@@ -1748,6 +2008,14 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             bang,
             ..
         } => {
+            overrides.source_path(
+                callee_segments,
+                if bang.is_some() {
+                    SourceNameKind::Elaborator
+                } else {
+                    SourceNameKind::Value
+                },
+            );
             walk_expr(receiver, raw, overrides);
             // The trailing callee segment is the dispatched method's
             // name — classify like a Call's callee tail.
@@ -1772,6 +2040,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         }
         LabelValue { labels, .. } => {
             for label in labels {
+                overrides.source_label(&label.label, label.label_span, raw);
                 if let Some(name) = label.label.rsplit('.').next()
                     && let Some(s) = find_last_ident_in_span(raw, label.label_span, name)
                 {
@@ -1826,6 +2095,7 @@ fn walk_row_let_entries(
     overrides: &mut AstOverrides,
 ) {
     for entry in entries {
+        overrides.source_label(&entry.label, entry.label_span, raw);
         if let Some(name) = entry.label.rsplit('.').next()
             && let Some(span) = find_last_ident_in_span(raw, entry.label_span, name)
         {
@@ -2045,6 +2315,87 @@ pub fn to_json(tokens: &[ClassifiedToken]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn source_dependency_capture_preserves_legacy_references_and_token_roles() {
+        let source = "module main;
+            import provider(Thing, helper); import provider as q;
+            type Alias[A] = A & Thing & q.Thing;
+            newtype Box : Thing { constructor make; projector get; };
+            fn run[Thing](x: Thing) -> Thing { helper(x) }
+            elab build : [Thing] Thing -> Thing {
+                captures (Thing, helper, Box.make); impl q.helper;
+            };
+            op _ + _ { impl q.helper; };
+            fn member() -> . { Box.make(()) }";
+        let module = crate::pass::parser::parse(source).unwrap();
+        let legacy = super::source_references(source, &module).unwrap();
+        fn names(
+            references: &[super::SourceReference],
+        ) -> Vec<(&str, super::SourceNameKind, bool)> {
+            references
+                .iter()
+                .map(|reference| {
+                    (
+                        reference.path.as_str(),
+                        reference.kind,
+                        reference.declaration,
+                    )
+                })
+                .collect()
+        }
+        use super::SourceNameKind::{Elaborator, Type, Value};
+        assert_eq!(
+            names(&legacy),
+            [
+                ("helper", Value, false),
+                ("x", Value, false),
+                ("build", Elaborator, true),
+                ("Box.make", Value, false),
+            ]
+        );
+        let dependencies = super::source_dependencies(source, &module).unwrap();
+        assert_eq!(
+            names(&dependencies),
+            [
+                ("A", Type, false),
+                ("Thing", Type, false),
+                ("q.Thing", Type, false),
+                ("Thing", Type, false),
+                ("Thing", Type, false),
+                ("Thing", Type, false),
+                ("helper", Value, false),
+                ("x", Value, false),
+                ("build", Elaborator, true),
+                ("Thing", Type, false),
+                ("Thing", Type, false),
+                ("Thing", Type, false),
+                ("helper", Value, false),
+                ("Box", Type, false),
+                ("q.helper", Value, false),
+                ("q.helper", Value, false),
+                ("Box", Type, false),
+            ]
+        );
+        let (raw, _) = super::lex_with_trailing(source).unwrap();
+        let ordinary = super::ast_overrides(&module, &raw);
+        assert!(ordinary.source_references.is_none());
+        assert!(!ordinary.source_dependencies);
+        let mut observed = super::AstOverrides {
+            source_references: Some(Vec::new()),
+            source_dependencies: true,
+            ..Default::default()
+        };
+        super::walk_module(&module, &raw, &mut observed);
+        assert_eq!(ordinary.kinds, observed.kinds);
+        assert_eq!(ordinary.elaborator_bangs, observed.elaborator_bangs);
+        assert_eq!(ordinary.structural_brackets, observed.structural_brackets);
+        assert_eq!(legacy, super::source_references(source, &module).unwrap());
+        assert_eq!(
+            super::dump(source).unwrap(),
+            super::dump_with_module(source, &module).unwrap()
+        );
+    }
     use super::*;
 
     #[test]
@@ -2754,7 +3105,7 @@ mod tests {
             );
         }
         let value_start = source.find("value").unwrap() as u32;
-        let lexical = dump_lexical(&lex(source).unwrap(), source);
+        let lexical = dump_lexical(&lex(source).unwrap(), &[], source);
         assert_ne!(
             lexical
                 .iter()
@@ -2962,7 +3313,7 @@ mod tests {
     #[test]
     fn lexical_keyword_spellings_are_neutral_without_parser_facts() {
         let source = "if else match fn newtype type literal labels alias op varop fold equiv module import use from pub pure package pkg bridge host upstream downstream source build dependency lock resolved signature with breaking nonbreaking add modify remove auto let";
-        let tokens = dump_lexical(&lex(source).unwrap(), source);
+        let tokens = dump_lexical(&lex(source).unwrap(), &[], source);
         assert!(
             tokens
                 .iter()
@@ -3226,7 +3577,7 @@ mod tests {
     fn lexical_fallback_keeps_rec_contextual() {
         let source = "rec value; rec(loop); rec { }; rec newtype Cell; rec labels Rows;";
         let raw = lex(source).expect("lexical fixture");
-        let got = dump_lexical(&raw, source)
+        let got = dump_lexical(&raw, &[], source)
             .into_iter()
             .filter(|token| &source[token.span.start as usize..token.span.end as usize] == "rec")
             .map(|token| token.kind)
@@ -3553,8 +3904,8 @@ mod tests {
         let raw = lex(source).expect("lex");
         let start = source.find("t1").expect("numbered reference") as u32;
         for tokens in [
-            dump_lexical(&raw, source),
-            dump_with_ast(&raw, &module, source),
+            dump_lexical(&raw, &[], source),
+            dump_with_ast(&raw, &[], &module, source),
         ] {
             let at_index = tokens
                 .iter()
@@ -3565,7 +3916,7 @@ mod tests {
             assert_eq!(at_index[0].kind, TokenKind::Identifier);
         }
         let intro = source.find(".t.").unwrap() as u32;
-        let tokens = dump_with_ast(&raw, &module, source);
+        let tokens = dump_with_ast(&raw, &[], &module, source);
         assert!(
             tokens
                 .iter()
@@ -3662,10 +4013,12 @@ mod tests {
             ClassifiedToken {
                 span: Span::new(0, 2),
                 kind: TokenKind::KeywordDeclaration,
+                in_documentation: false,
             },
             ClassifiedToken {
                 span: Span::new(3, 6),
                 kind: TokenKind::Identifier,
+                in_documentation: false,
             },
         ];
         let want = "[\n  \

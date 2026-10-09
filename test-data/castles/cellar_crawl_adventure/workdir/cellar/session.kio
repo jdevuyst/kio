@@ -54,7 +54,7 @@ rec(loop) fn play(g: state.Game) -> state.Game {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   print("The Cellar Crawl\n");
   print("Seven rooms under an old vineyard. Find the bottle; keep hold of the "
         "light.\n");

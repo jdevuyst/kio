@@ -21,4 +21,4 @@ fn banner() -> String {
   string_concat("base32 byte codec\n", "alphabet: A-Z 2-7, pad =, quantum 8 glyphs\n\n")
 }
 
-pub fn main() -> . { print(banner()); print(report.render(packets.fixtures())) }
+pub fn main() { print(banner()); print(report.render(packets.fixtures())) }

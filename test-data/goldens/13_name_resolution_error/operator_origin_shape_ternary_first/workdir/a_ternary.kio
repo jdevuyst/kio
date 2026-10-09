@@ -1,5 +1,5 @@
 module a_ternary;
 
-pub fn choose(a: ., b: ., c: .) -> . { a }
+pub fn choose(a: ., b: ., c: .) { a }
 
 pub op _ ? _ : _ { impl choose }

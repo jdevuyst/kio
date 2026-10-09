@@ -198,6 +198,15 @@ order. Same-leaf declarations in different modules therefore remain distinct,
 and adding an unrelated declaration cannot rename or rebind an existing
 carrier.
 
+### Doc comments
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface)
+uses Javadoc on exported methods, host-interface methods, and minted
+host-type and newtype carriers and constructor markers. Nullary host types
+represented only by generic parameters have no separate declaration slot.
+Kio documentation markup is rendered as escaped Javadoc HTML; authored tag
+syntax and unresolved references remain inert text.
+
 ## Host record contract
 
 `<Handle>Host` declares one method per `host fn`. A declaring module path
@@ -521,7 +530,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n") }
+pub fn main() { print("hello from kio\n") }
 ```
 
 Java host:

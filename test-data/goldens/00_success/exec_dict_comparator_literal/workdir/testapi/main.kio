@@ -29,7 +29,7 @@ fn append_entry(carry: String, key: I32, value: I32) -> String {
     )
 }
 
-fn show(label: String, value: String) -> . {
+fn show(label: String, value: String) {
   io.print(text.string_concat(label, text.string_concat(value, "\n")))
 }
 
@@ -37,7 +37,7 @@ fn compare_desc(a: I32, b: I32) -> d.Ordering { compare(b, a) }
 
 fn empty_literal() -> d.Dict(I32, I32) { [% %](compare) }
 
-pub fn main() -> . {
+pub fn main() {
   let empty = empty_literal();
   show("empty-size:", fmt.int_to_string(d.size(empty)));
   show(

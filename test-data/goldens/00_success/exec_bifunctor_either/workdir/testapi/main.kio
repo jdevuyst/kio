@@ -82,4 +82,4 @@ fn use_bifunctor() -> String {
   string_concat(run_bimap(bf, right_value), run_bimap(bf, left_value))
 }
 
-pub fn main() -> . { print(use_bifunctor()) }
+pub fn main() { print(use_bifunctor()) }

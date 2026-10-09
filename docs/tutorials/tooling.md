@@ -113,7 +113,7 @@ Finally, rewrite `main` to call `greeting`:
 ```kio {@loop}
 fn greeting(name: String) -> String { string_concat("hello, "(String), name) }
 
-pub fn main() -> . { print(greeting("Kio"(String))) }
+pub fn main() { print(greeting("Kio"(String))) }
 ```
 
 The module now reads, top to bottom: a `module main;` header, three `host` declarations (`String`, `print`, `string_concat`), then `greeting` and `main`.
@@ -162,6 +162,8 @@ including each tab as one character.
 For an imported function, the related annotation can be in another module.
 The diagnostic names that file even when you call through a local alias;
 the function's signature explains the requirement, not the type's definition.
+This also applies to `host fn` declarations. For an empty parameter list,
+the related context shows the function header that requires the unit argument.
 
 The module header is one path, such as `module main;`, not a package name
 followed by a module name. Package declarations belong in the separate
@@ -173,6 +175,40 @@ while `.` is its type; `(a, b)` is a tuple value, while `A & B` is a product
 type. In an editor using `kio lsp`, the corresponding type-position
 diagnostics offer quick fixes that preserve comments, nested type arguments,
 and component grouping. Applying a fix rechecks the edited document.
+
+Recursive-call diagnostics can add a missing `rec` marker or correct missing
+or unnecessary `poly` and `cont` annotations. These editor fixes preserve
+comments and are offered only when rechecking validates the repair without
+introducing new errors.
+The function's `rec(path)` declaration still needs your chosen loop capability;
+the editor does not pick one for you.
+
+For a misspelled name or braced label in a selective import, a suggested visible
+name can also appear as a native quick fix. It replaces only that name, preserves nearby
+comments, and rechecks the edited program. These fixes come from `kio lsp` and
+work without an AI extension.
+A uniquely suggested import-module path can also have a quick fix. It preserves
+comments between path segments; a correction that adds or removes a slash is
+offered only for a compact path with no intervening comments or whitespace.
+Equally near alternatives leave the choice to you.
+The same rule applies to misspelled value, type and label references. A repair
+to the head of a qualified name preserves the rest of the path. A qualified
+label containing internal comments or whitespace keeps its hint without an
+automatic replacement. Changes to an imported provider can withdraw an old
+suggestion, so only current repairs are offered.
+
+On a clean package, the editor also warns about unused imports and private
+functions or types that nothing live reaches. Public declarations and host
+requirements are kept, even when this workspace has no caller. Start a private
+name with `_`, such as `_helper` or `_Scratch`, to mark it intentionally unused.
+The removal quick fix preserves neighbouring comments and rechecks the package;
+it is withheld if a surviving declaration still needs the item. Removing one
+item can reveal another unused import or declaration.
+
+These import and private-declaration warnings are conservative around tested
+documentation: a module with an active `{@}` example or a validated reference
+to code in its documentation receives neither warning, even for unrelated
+items. Unused local-binding warnings still appear.
 
 Invalid-character diagnostics identify the complete source character.
 Unicode text is valid in strings and comments, while identifier spellings use ASCII.

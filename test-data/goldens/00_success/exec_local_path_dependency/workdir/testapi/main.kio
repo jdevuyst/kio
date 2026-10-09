@@ -16,4 +16,4 @@ pub fn greeting() -> String {
   const_first(first(dup("dependency works\n"(String))), "discarded\n"(String))
 }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

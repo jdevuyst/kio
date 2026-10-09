@@ -27,7 +27,7 @@ fn index(size: I32, recipient: I32, proposer: I32) -> I32 {
   arith.add_i32(arith.mul_i32(recipient, size), proposer)
 }
 
-rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: I32, position: I32) -> . {
+rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: I32, position: I32) {
   if! market.less(position, size) {
     array.array_set(ranks, index(size, recipient, array.array_get(row, position)), position);
     rec rank_row(row, ranks, size, recipient, arith.add_i32(position, 1))
@@ -45,7 +45,7 @@ rec(loop) fn rank_all(preferences: market.Preferences, ranks: Array(I32), size: 
   }
 }
 
-fn engage(outcome: Outcome, proposer: I32, recipient: I32) -> . {
+fn engage(outcome: Outcome, proposer: I32, recipient: I32) {
   array.array_set(outcome.?{partner}, proposer, recipient);
   array.array_set(outcome.?{holder}, recipient, proposer)
 }

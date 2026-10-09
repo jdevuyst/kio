@@ -385,7 +385,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("Hello from Kio!\n"(String)) }
+pub fn main() { print("Hello from Kio!\n"(String)) }
 ```
 
 Build it, then host it:

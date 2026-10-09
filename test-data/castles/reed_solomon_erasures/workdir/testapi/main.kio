@@ -11,7 +11,7 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-rec(loop) fn frames(recovered: I32, rejected: I32) -> . {
+rec(loop) fn frames(recovered: I32, rejected: I32) {
   match! input.next() {
     .(item: input.Loaded) {
       if! report.run(item.?{input.loaded}) {
@@ -21,21 +21,18 @@ rec(loop) fn frames(recovered: I32, rejected: I32) -> . {
       }
     };
     .(error: input.Error) {
-      io.print(text.string_concat("framing error: ", text.string_concat(error.?{input.error}, "\n")))
+      io.print(error.?{input.error}
+        .>text.string_concat("\n")
+        .>>text.string_concat("framing error: "))
     };
     .(done: input.Done) {
-      io.print(text.string_concat(
-        , "complete: recovered="
-        , text.string_concat(
-            , fmt.int_to_string(recovered)
-            , text.string_concat(
-                , " rejected="
-                , text.string_concat(fmt.int_to_string(rejected), "\n")
-                )
-            )
-        ))
+      io.print(fmt.int_to_string(rejected)
+        .>text.string_concat("\n")
+        .>>text.string_concat(" rejected=")
+        .>>text.string_concat(fmt.int_to_string(recovered))
+        .>>text.string_concat("complete: recovered="))
     }
   }
 }
 
-pub fn main() -> . { io.print("Reed-Solomon erasures over F17\n"); frames(0, 0) }
+pub fn main() { io.print("Reed-Solomon erasures over F17\n"); frames(0, 0) }

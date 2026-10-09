@@ -2,4 +2,4 @@ module app;
 
 import cap as cap;
 
-pub fn run() -> . { cap.tick() }
+pub fn run() { cap.tick() }

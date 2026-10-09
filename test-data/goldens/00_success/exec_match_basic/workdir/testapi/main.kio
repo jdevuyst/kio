@@ -15,7 +15,7 @@ import testapi/io(print);
 //     directly.
 // Both clause bodies have type `.`, so the match's overall type is
 // `.`. A later `let _r = ...;` binds and discards it.
-fn handle(v: I32 | String) -> . {
+fn handle(v: I32 | String) {
   let _r =
     match! v {
       (.(n: I32) { print(int_to_string(n)) }, .(s: String) { print(s) })
@@ -23,4 +23,4 @@ fn handle(v: I32 | String) -> . {
   ()
 }
 
-pub fn main() -> . { handle(widen_sum!("matched right\n")) }
+pub fn main() { handle(widen_sum!("matched right\n")) }

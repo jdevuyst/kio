@@ -95,7 +95,7 @@ rec(loop) fn scan_reachable(
   , queue: Array(I32)
   , node: I32
   , index: I32
-  ) -> . {
+  ) {
   if! math.less(index, ar.array_len(network.?{net.edges})) {
     let edge = ar.array_get(network.?{net.edges}, index);
     if! math.both(

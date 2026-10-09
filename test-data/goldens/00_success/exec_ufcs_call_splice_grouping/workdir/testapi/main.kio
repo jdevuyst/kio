@@ -10,9 +10,9 @@ fn pair(a: String, b: String) -> String {
 
 fn wrap(s: String) -> String { string_concat("[", string_concat(s, "]")) }
 
-fn line(s: String) -> . { print(string_concat(s, "\n")) }
+fn line(s: String) { print(string_concat(s, "\n")) }
 
-pub fn main() -> . {
+pub fn main() {
   line("z".>wrap);
   line("z".>>wrap);
   line(wrap.<"z");

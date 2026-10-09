@@ -3,7 +3,7 @@ module testapi/main;
 import flow/fixtures as fixtures;
 import flow/report as report;
 
-pub fn main() -> . {
+pub fn main() {
   let rerouting = fixtures.cancellation();
   let solved = report.run(rerouting);
   report.cancellation_witness(rerouting, solved);

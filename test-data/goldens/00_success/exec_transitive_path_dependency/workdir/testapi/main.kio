@@ -15,4 +15,4 @@ import testapi/io(print);
 // through `box` then `unbox` rides the transitive surface end to end.
 pub fn greeting() -> String { unbox(box("transitive dependency works\n"(String))) }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

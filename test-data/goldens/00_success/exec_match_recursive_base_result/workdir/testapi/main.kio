@@ -26,13 +26,13 @@ rec(loop) fn find(step: Step) -> Found {
   }
 }
 
-fn report_optional(value: I32 | .) -> . {
+fn report_optional(value: I32 | .) {
   match! value {
     (.(_number: I32) { print("unexpected optional\n") }, .(_empty: .) { print("widen base\n") })
   }
 }
 
-fn report_found(value: Found) -> . {
+fn report_found(value: Found) {
   match! value {
     (
       , .(_value: Value) { print("unexpected found\n") }
@@ -41,4 +41,4 @@ fn report_found(value: Found) -> . {
   }
 }
 
-pub fn main() -> . { report_optional(optional(done_step())); report_found(find(done_step())) }
+pub fn main() { report_optional(optional(done_step())); report_found(find(done_step())) }

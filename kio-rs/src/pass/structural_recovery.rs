@@ -48,12 +48,12 @@
 //!   becomes an n-arm [`Expr::EnrichedMatch`]. The chain follows the
 //!   right handler `fr = .(r) { __either__(r, …) }` while its
 //!   scrutinee is exactly the bound `r`; it stops otherwise. Computed
-//!   handler expressions are staged before dispatch, in source-call
-//!   order, while literal functions and paths remain direct values.
+//!   handlers with unknown effects are staged before dispatch in source-call
+//!   order; proved-pure factories may move into their selected arms.
 //! - **Conditional** — `__if_then_else__(c, then, else)` becomes an
 //!   [`Expr::EnrichedConditional`]. A literal `.() { body }` thunk
-//!   has its wrapper stripped; a thunk expression that is neither a
-//!   literal function nor a path is staged before branch selection
+//!   has its wrapper stripped; a thunk expression with unknown
+//!   evaluation effects is staged before branch selection
 //!   and applied via `Call(thunk, [])` only on the selected branch.
 //!   Staging keeps the intrinsic call's eager left-to-right argument
 //!   evaluation separate from its lazy thunk invocation.
@@ -154,6 +154,11 @@ pub fn recover_module_with_package_inputs(
 ) -> Module<Enriched> {
     let mut ctx = RecoveryCtx::default();
     let module_path = module.path.segments.join("/");
+    ctx.pure_functions = inputs
+        .pure_functions
+        .get(&module_path)
+        .cloned()
+        .unwrap_or_default();
     for (scoped_name, input) in &inputs.newtype_fields {
         if scoped_name.module_path() != module_path {
             continue;
@@ -220,11 +225,15 @@ struct NewtypeFieldInfo {
 #[derive(Default)]
 struct RecoveryCtx {
     newtype_fields: crate::pass::resolve::ResolvedNewtypeHeadMap<NewtypeFieldInfo>,
+    pure_functions: crate::pass::purity::PureFunctions,
 }
 
 impl RecoveryCtx {
     fn for_module(package: &Package<Prime>, module: &Module<Prime>) -> Self {
-        let mut ctx = RecoveryCtx::default();
+        let mut ctx = RecoveryCtx {
+            pure_functions: crate::pass::purity::PureFunctions::for_module(package, module),
+            ..Default::default()
+        };
         crate::pass::resolve::for_each_resolved_newtype_member_head(
             package,
             module,
@@ -254,6 +263,7 @@ impl RecoveryCtx {
 struct Recoverer<'a> {
     fresh: u32,
     ctx: &'a RecoveryCtx,
+    locals: Vec<String>,
 }
 
 impl<'a> Recoverer<'a> {
@@ -262,7 +272,11 @@ impl<'a> Recoverer<'a> {
     /// synthetic names produced inside this walker do not interfere
     /// with any other walker's counter.
     fn new(ctx: &'a RecoveryCtx) -> Self {
-        Recoverer { fresh: 0, ctx }
+        Recoverer {
+            fresh: 0,
+            ctx,
+            locals: Vec::new(),
+        }
     }
 
     /// A fresh compiler-reserved identifier. The `__` prefix is
@@ -314,9 +328,14 @@ impl<'a> Recoverer<'a> {
     }
 
     fn recover_fn_def(&mut self, d: &FnDef<Prime>) -> FnDef<Enriched> {
+        let saved = self.locals.len();
+        self.locals
+            .extend(d.sig.value_param_names().map(str::to_owned));
+        let body = self.recover_expr(&d.body);
+        self.locals.truncate(saved);
         FnDef {
             vis: d.vis.clone(),
-            purity: (),
+            purity: d.purity,
             name: d.name.clone(),
             sig: convert_signature::<Prime, Enriched>(&d.sig),
             ret: convert_type::<Prime, Enriched>(&d.ret),
@@ -324,7 +343,7 @@ impl<'a> Recoverer<'a> {
             // and Enriched narrow `ret_elided` to `()`, so there is no
             // surface-provenance to carry.
             ret_elided: (),
-            body: self.recover_expr(&d.body),
+            body,
             meta: convert_meta(&d.meta),
             doc: d.doc.clone(),
         }
@@ -369,6 +388,7 @@ impl<'a> Recoverer<'a> {
             },
             Expr::Call {
                 occurrence: _,
+                diagnostic: _,
                 callee,
                 args,
                 meta,
@@ -398,6 +418,7 @@ impl<'a> Recoverer<'a> {
                 // Not a recoverable chain root — recurse structurally.
                 Expr::Call {
                     occurrence: Default::default(),
+                    diagnostic: Default::default(),
                     callee: Box::new(self.recover_expr(callee)),
                     args: args.iter().map(|a| self.recover_call_arg(a)).collect(),
                     meta: convert_meta(meta),
@@ -411,14 +432,21 @@ impl<'a> Recoverer<'a> {
                 body,
                 meta,
                 caps: _,
-            } => Expr::FnExpr {
-                occurrence: Default::default(),
-                sig: convert_signature::<Prime, Enriched>(sig),
-                ret_ty: ret_ty.as_ref().map(convert_type::<Prime, Enriched>),
-                body: Box::new(self.recover_expr(body)),
-                meta: convert_meta(meta),
-                caps: (),
-            },
+            } => {
+                let saved = self.locals.len();
+                self.locals
+                    .extend(sig.value_param_names().map(str::to_owned));
+                let body = self.recover_expr(body);
+                self.locals.truncate(saved);
+                Expr::FnExpr {
+                    occurrence: Default::default(),
+                    sig: convert_signature::<Prime, Enriched>(sig),
+                    ret_ty: ret_ty.as_ref().map(convert_type::<Prime, Enriched>),
+                    body: Box::new(body),
+                    meta: convert_meta(meta),
+                    caps: (),
+                }
+            }
             Expr::Let {
                 occurrence: _,
                 name,
@@ -430,7 +458,9 @@ impl<'a> Recoverer<'a> {
                 meta,
             } => {
                 let value = Box::new(self.recover_expr(value));
+                self.locals.push(name.clone());
                 let body = Box::new(self.recover_expr(body));
+                self.locals.pop();
                 match flatten_bound_tuple_tail(name, value, body) {
                     Ok(flattened) => flattened,
                     Err((value, body)) => Expr::Let {
@@ -993,23 +1023,25 @@ impl<'a> Recoverer<'a> {
         // `__either__` is an ordinary strict call: both handler *values*
         // are evaluated before dispatch, even though only the selected
         // handler is invoked. `EnrichedMatch` makes invocation lazy, so
-        // any computed handler must be lifted out first. Once lifting is
+        // a handler with unknown effects must be lifted out first. Once lifting is
         // needed, a computed scrutinee is lifted ahead of the handlers to
         // retain the call's exact left-to-right order. Literal functions
-        // and paths are already immediate values and need no binding.
-        let stages_handlers = !handler_is_immediate_value(fl) || !handler_is_immediate_value(fr);
+        // and paths are immediate; proved-pure factories may run in the arm.
+        let left_is_pure = self.evaluation_is_pure(fl);
+        let right_is_pure = self.evaluation_is_pure(fr);
+        let stages_handlers = !left_is_pure || !right_is_pure;
         let mut staged = Vec::new();
         let recovered_scrutinee = if stages_handlers {
             self.recover_or_stage_call_value(scrutinee, &mut staged)
         } else {
             self.recover_expr(scrutinee)
         };
-        let fl_binding = if stages_handlers && !handler_is_immediate_value(fl) {
+        let fl_binding = if !left_is_pure {
             Some(self.stage_call_value(fl, &mut staged))
         } else {
             None
         };
-        let fr_binding = if stages_handlers && !handler_is_immediate_value(fr) {
+        let fr_binding = if !right_is_pure {
             Some(self.stage_call_value(fr, &mut staged))
         } else {
             None
@@ -1092,6 +1124,7 @@ impl<'a> Recoverer<'a> {
             EnrichedArm {
                 body: Expr::Call {
                     occurrence: Default::default(),
+                    diagnostic: Default::default(),
                     callee: Box::new(enriched_local_path(binding, span)),
                     args: vec![CallArg::Value(enriched_local_path(&param, span))],
                     meta: Meta::new(span),
@@ -1101,9 +1134,12 @@ impl<'a> Recoverer<'a> {
                 meta: Meta::new(span),
             }
         } else if let Some((param, body)) = as_unary_fn(handler) {
+            self.locals.push(param.to_owned());
+            let body = self.recover_expr(body);
+            self.locals.pop();
             EnrichedArm {
                 param: param.to_owned(),
-                body: self.recover_expr(body),
+                body,
                 meta: Meta::new(span),
             }
         } else if matches!(payload_ty, Type::Unit { .. })
@@ -1120,6 +1156,7 @@ impl<'a> Recoverer<'a> {
             EnrichedArm {
                 body: Expr::Call {
                     occurrence: Default::default(),
+                    diagnostic: Default::default(),
                     callee: Box::new(callee),
                     args: vec![CallArg::Value(enriched_local_path(&param, span))],
                     meta: Meta::new(span),
@@ -1136,8 +1173,8 @@ impl<'a> Recoverer<'a> {
     /// `__if_then_else__(c, then_thunk, else_thunk)` →
     /// [`Expr::EnrichedConditional`]. A literal `.() { body }` thunk
     /// has its wrapper stripped (`body` becomes the branch
-    /// expression); a thunk that is neither a literal function nor a
-    /// path is first staged eagerly and then applied via
+    /// expression); a thunk whose evaluation has unknown effects is
+    /// staged eagerly and then applied via
     /// `Call(bound_thunk, [])` only on the selected branch.
     fn recover_conditional(&mut self, e: &Expr<Prime>) -> Option<Expr<Enriched>> {
         let span = e.span();
@@ -1150,20 +1187,21 @@ impl<'a> Recoverer<'a> {
         let cond = value_arg(values, 0)?;
         let then_thunk = value_arg(values, 1)?;
         let else_thunk = value_arg(values, 2)?;
-        let stages_thunks =
-            !handler_is_immediate_value(then_thunk) || !handler_is_immediate_value(else_thunk);
+        let then_is_pure = self.evaluation_is_pure(then_thunk);
+        let else_is_pure = self.evaluation_is_pure(else_thunk);
+        let stages_thunks = !then_is_pure || !else_is_pure;
         let mut staged = Vec::new();
         let recovered_cond = if stages_thunks {
             self.recover_or_stage_call_value(cond, &mut staged)
         } else {
             self.recover_expr(cond)
         };
-        let then_binding = if stages_thunks && !handler_is_immediate_value(then_thunk) {
+        let then_binding = if !then_is_pure {
             Some(self.stage_call_value(then_thunk, &mut staged))
         } else {
             None
         };
-        let else_binding = if stages_thunks && !handler_is_immediate_value(else_thunk) {
+        let else_binding = if !else_is_pure {
             Some(self.stage_call_value(else_thunk, &mut staged))
         } else {
             None
@@ -1194,6 +1232,7 @@ impl<'a> Recoverer<'a> {
             let span = thunk.span();
             return Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(enriched_local_path(binding, span)),
                 args: Vec::new(),
                 meta: Meta::new(span),
@@ -1206,6 +1245,7 @@ impl<'a> Recoverer<'a> {
         let span = thunk.span();
         Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(self.recover_expr(thunk)),
             args: Vec::new(),
             meta: Meta::new(span),
@@ -1240,6 +1280,15 @@ impl<'a> Recoverer<'a> {
             value: self.recover_expr(value),
         });
         name
+    }
+
+    fn evaluation_is_pure(&self, expression: &Expr<Prime>) -> bool {
+        crate::pass::purity::evaluation_is_pure(expression, |path| {
+            !path
+                .first()
+                .is_some_and(|head| self.locals.iter().any(|name| name == head.as_str()))
+                && self.ctx.pure_functions.contains(path)
+        })
     }
 }
 
@@ -2058,6 +2107,7 @@ mod tests {
         let span = Span::new(0, 0);
         Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(local_path(name)),
             args: Vec::new(),
             meta: Meta::new(span),
@@ -2415,6 +2465,86 @@ mod tests {
             0,
             "no `__either__` call should survive recovery"
         );
+    }
+
+    #[test]
+    fn pure_handler_factories_delay_into_both_dispatch_kinds() {
+        let m = recover_one(
+            "x/main",
+            "module x/main; import __intrinsics__; \
+             host type Bool role(bool); \
+             pure fn factory() -> . -> . { .() { () } } \
+             fn conditional(c: Bool) -> . { \
+               __if_then_else__(., c, factory(), factory()) \
+             } \
+             fn either(s: . | .) -> . { \
+               __either__(., ., ., s, factory(), factory()) \
+             }",
+            None,
+        );
+        for name in ["conditional", "either"] {
+            let body = fn_body(&m, name);
+            assert!(
+                !matches!(body, Expr::Let { .. }),
+                "pure factories were staged: {body:?}"
+            );
+            assert_eq!(count(body, &|e| direct_call_name(e) == Some("factory")), 2);
+        }
+        let Item::FnDef(factory) = &m.items[1] else {
+            panic!("factory declaration")
+        };
+        assert!(factory.purity.is_pure());
+    }
+
+    #[test]
+    fn pure_declaration_cannot_hide_an_unknown_callback_effect() {
+        let m = recover_one(
+            "x/main",
+            "module x/main; import __intrinsics__; \
+             host type Bool role(bool); \
+             host fn callback() -> .; \
+             pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } \
+             fn conditional(c: Bool) -> . { \
+               __if_then_else__(., c, factory(callback), factory(callback)) \
+             } \
+             fn either(s: . | .) -> . { \
+               __either__(., ., ., s, factory(callback), factory(callback)) \
+             }",
+            None,
+        );
+        for name in ["conditional", "either"] {
+            let (bindings, _) = leading_let_spine(fn_body(&m, name));
+            assert_eq!(
+                bindings.len(),
+                2,
+                "unknown callback factories must remain eager"
+            );
+        }
+    }
+
+    #[test]
+    fn local_factory_shadow_keeps_both_dispatch_kinds_eager() {
+        let m = recover_one(
+            "x/main",
+            "module x/main; import __intrinsics__; \
+             host type Bool role(bool); \
+             pure fn factory() -> . -> . { .() { () } } \
+             fn conditional(c: Bool, factory: . -> (. -> .)) -> . { \
+               __if_then_else__(., c, factory(), factory()) \
+             } \
+             fn either(s: . | ., factory: . -> (. -> .)) -> . { \
+               __either__(., ., ., s, factory(), factory()) \
+             }",
+            None,
+        );
+        for name in ["conditional", "either"] {
+            let (bindings, _) = leading_let_spine(fn_body(&m, name));
+            assert_eq!(
+                bindings.len(),
+                2,
+                "the local callable shadows the pure declaration"
+            );
+        }
     }
 
     #[test]

@@ -236,7 +236,7 @@ pub fn un_term(t: Term) -> Term_node { Term.get(t) }
 pub labels { terms: List(Term) };
 
 /// The empty term vector.
-pub fn tnil() -> Terms { {terms = nil(Term, ())} }
+pub fn tnil() -> Terms { {terms = nil(Term)} }
 
 /// Prepends one term to a term vector.
 pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(tail))} }
@@ -425,7 +425,7 @@ equiv un_terms_cons_head(h: Term, t: Terms) {
 
 equiv un_terms_cons_tail(h: Term, t: Terms) {
   match! un_terms(tcons(h, t)) {
-    (.(_h2: Term, t2: Terms) { Terms.get(t2) }, .(_e: .) { nil(Term, ()) })
+    (.(_h2: Term, t2: Terms) { Terms.get(t2) }, .(_e: .) { nil(Term) })
   };
   Terms.get(t)
 }

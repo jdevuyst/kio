@@ -55,4 +55,4 @@ rec(loop) fn take_onto(state: I32, n: I32, acc: List(I32)) -> List(I32) {
 /// The first `n` states the recurrence produces from `state`. The report
 /// prints these so a reader can re-derive the generator by hand and check
 /// the first draws of the trace against them.
-pub fn first_states(state: I32, n: I32) -> List(I32) { take_onto(state, n, nil(I32, ())) }
+pub fn first_states(state: I32, n: I32) -> List(I32) { take_onto(state, n, nil(I32)) }

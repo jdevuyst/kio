@@ -11,7 +11,7 @@ varop [! !] { foldr cat nil }
 
 varop %[? ?]% { foldr cat nil }
 
-pub fn main() -> . {
+pub fn main() {
   print([! "a", "b", "c" !]);
   print("\n");
   print(%[? "x", "y" ?]%);

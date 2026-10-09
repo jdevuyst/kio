@@ -4,4 +4,4 @@ import origin as o;
 
 pub type W = o.W;
 
-pub fn take(value: W) -> . { () }
+pub fn take(value: W) { () }

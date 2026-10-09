@@ -9,7 +9,7 @@ labels Version = { value: String, stamp: String };
 
 labels { tail: String, other: String };
 
-fn handle(input: . | Other | (Version & Tail)) -> . {
+fn handle(input: . | Other | (Version & Tail)) {
   match! input {
     .(unrelated: Other) { io.print(unrelated.?{other}) };
     .(head: Version, rest: Tail) {
@@ -21,7 +21,7 @@ fn handle(input: . | Other | (Version & Tail)) -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   handle(widen_sum!((), . | Other | (Version & Tail)));
   handle(widen_sum!({other = "other\n"}, . | Other | (Version & Tail)));
   handle(widen_sum!(

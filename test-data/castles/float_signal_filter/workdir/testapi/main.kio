@@ -8,9 +8,9 @@ import testapi(F64, String);
 import testapi/fmt(f64_to_string);
 import testapi/io(print);
 
-fn print_value(value: F64) -> . { print(f64_to_string(value)) }
+fn print_value(value: F64) { print(f64_to_string(value)) }
 
-fn print_stream(label: String, stream: F64 & F64 & F64 & F64 & F64) -> . {
+fn print_stream(label: String, stream: F64 & F64 & F64 & F64 & F64) {
   let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = stream;
   print(label);
   print_value(s0);
@@ -25,7 +25,7 @@ fn print_stream(label: String, stream: F64 & F64 & F64 & F64 & F64) -> . {
   print("\n")
 }
 
-pub fn main() -> . {
+pub fn main() {
   let raw = raw_stream();
   let calibrated = calibrated_stream(raw);
   let smoothed = smoothed_stream(calibrated);

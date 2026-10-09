@@ -41,7 +41,7 @@ fn raw_log(deps: Raw_deps) -> String -> . { deps.>one_prod!(String -> .) }
 
 fn raw_config(deps: Raw_deps) -> . -> String { deps.>one_prod!(. -> String) }
 
-fn start_raw(deps: Raw_deps) -> . { raw_log(deps)(raw_config(deps)()) }
+fn start_raw(deps: Raw_deps) { raw_log(deps)(raw_config(deps)()) }
 ```
 
 This is enough for small private code. The bundle is a product, and
@@ -65,7 +65,7 @@ fn app_log(deps: App_deps) -> String -> . { deps.?{log} }
 
 fn app_config(deps: App_deps) -> . -> String { deps.?{config} }
 
-fn start(deps: App_deps) -> . { app_log(deps)(app_config(deps)()) }
+fn start(deps: App_deps) { app_log(deps)(app_config(deps)()) }
 ```
 
 `App_deps` is the product `Log & Config`. `deps.?{log}` finds the visible
@@ -88,14 +88,14 @@ fn default_config() -> String { "production\n" }
 
 fn production_deps() -> App_deps { {log = print, config = default_config} }
 
-pub fn main() -> . { start(production_deps()) }
+pub fn main() { start(production_deps()) }
 ```
 
 Tests, examples, or alternate hosts build a different `App_deps` value. The
 business code does not change; only the bundle construction changes.
 
 ```kio {@di}
-fn quiet_log(_s: String) -> . { () }
+fn quiet_log(_s: String) { () }
 
 fn test_config() -> String { "test\n" }
 
@@ -112,9 +112,9 @@ compose structurally, the helper can accept any bundle that contains the slot it
 uses:
 
 ```kio {@di}
-fn log_line[Rest](deps: Log & Rest, msg: String) -> . { deps.?{log}(string_concat(msg, "\n")) }
+fn log_line[Rest](deps: Log & Rest, msg: String) { deps.?{log}(string_concat(msg, "\n")) }
 
-fn call_log_line(deps: App_deps) -> . { log_line(deps, "ready") }
+fn call_log_line(deps: App_deps) { log_line(deps, "ready") }
 ```
 
 Read `(Log & rest)` as "a `log` dependency plus whatever else the caller is

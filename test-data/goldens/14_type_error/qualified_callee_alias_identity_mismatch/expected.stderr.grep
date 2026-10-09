@@ -1,2 +1,2 @@
-type mismatch: expected `d\.Flag`, found `\(types\.Value & types\.Value\)`
+type mismatch: expected `d\.Flag`, found `types\.Value & types\.Value`
 f\(value\)

@@ -23,7 +23,7 @@ pub fn at(row: Row, index: I32) -> q.Rational {
 pub fn row_at(matrix: Matrix, index: I32) -> Row {
   match! l.at(index, matrix) {
     .(row: Row) { row };
-    .() { c.nil() }
+    .() { c.nil(_) }
   }
 }
 
@@ -52,7 +52,7 @@ rec(loop) fn subtract_walk(row: Row, pivot: Row, factor: q.Rational, result: Row
 }
 
 pub fn subtract_multiple(row: Row, pivot: Row, factor: q.Rational) -> Row {
-  subtract_walk(row, pivot, factor, c.nil())
+  subtract_walk(row, pivot, factor, c.nil(_))
 }
 
 rec(loop) fn dot_walk(left: Row, right: Row, total: q.Rational) -> q.Rational {

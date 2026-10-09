@@ -11,4 +11,4 @@ newtype Lazy : . -> I32 { pub constructor mk_lazy; pub projector force }
 
 fn lazy42() -> Lazy { Lazy.mk_lazy(.() { 42(I32) }) }
 
-pub fn main() -> . { let l = lazy42(); print(int_to_string(Lazy.force(l)())) }
+pub fn main() { let l = lazy42(); print(int_to_string(Lazy.force(l)())) }

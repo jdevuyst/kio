@@ -83,7 +83,7 @@ fn trade_line(t: Trade) -> String {
 
 /// The trades one event generated: everything the event appended to the
 /// tape, from where the tape stood before it ran.
-pub rec(loop) fn print_trades(i: I32, b: Book) -> . {
+pub rec(loop) fn print_trades(i: I32, b: Book) {
   if! leq_i32(tape_len(b), i) {
     ()
   } else {
@@ -203,7 +203,7 @@ rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I3
   }
 }
 
-rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) -> . {
+rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
   if! leq_i32(end, i) {
     ()
   } else {
@@ -212,7 +212,7 @@ rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) -> . {
   }
 }
 
-rec(loop) fn print_levels(i: I32, orders: Array(Order)) -> . {
+rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
   if! leq_i32(depth(orders), i) {
     ()
   } else {
@@ -224,7 +224,7 @@ rec(loop) fn print_levels(i: I32, orders: Array(Order)) -> . {
   }
 }
 
-fn print_side(orders: Array(Order)) -> . {
+fn print_side(orders: Array(Order)) {
   if! is_empty(orders) {
     print("    (empty)\n")
   } else {
@@ -234,7 +234,7 @@ fn print_side(orders: Array(Order)) -> . {
 
 /// The queues print best price first, so the two sides read outwards from
 /// the spread: the top ask and the top bid are the lines nearest it.
-pub fn print_book(b: Book) -> . {
+pub fn print_book(b: Book) {
   print("== resting book ==\n");
   print("  asks (best first)\n");
   print_side(asks_of(b));
@@ -265,7 +265,7 @@ rec(loop) fn sum_notional(i: I32, total: I32, b: Book) -> I32 {
   }
 }
 
-pub fn print_summary(b: Book) -> . {
+pub fn print_summary(b: Book) {
   print("\n== summary ==\n");
   print(stat_line("trades:            ", tape_len(b)));
   print(stat_line("volume:            ", tape_volume(b)));
@@ -290,7 +290,7 @@ fn ledger_line(entered: I32, cancelled: I32, reduced: I32, resting: I32) -> Stri
 /// and is not still resting, left by trading -- so it must equal the
 /// volume on the tape. Two independent counts of the same quantity; if
 /// they disagree, one of them lost an order.
-pub fn print_invariant(b: Book) -> . {
+pub fn print_invariant(b: Book) {
   let entered = entered_qty(b);
   let cancelled = cancelled_qty(b);
   let reduced = reduced_qty(b);

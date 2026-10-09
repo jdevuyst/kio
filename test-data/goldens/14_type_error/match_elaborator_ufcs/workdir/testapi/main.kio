@@ -6,8 +6,8 @@ import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-fn handle(v: I32 | String) -> . {
+fn handle(v: I32 | String) {
   v.>match!((.(n: I32) { print(int_to_string(n)) }, .(s: String) { print(s) }))
 }
 
-pub fn main() -> . { handle(widen_sum!("match! ufcs: ok\n")) }
+pub fn main() { handle(widen_sum!("match! ufcs: ok\n")) }

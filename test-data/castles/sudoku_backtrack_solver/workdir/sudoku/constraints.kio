@@ -29,7 +29,7 @@ import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_make_empty, array_make_filled, array_set);
 import testapi/iter(loop);
 
-fn mark(work: Work, cell: I32, digit: I32, value: I32) -> . {
+fn mark(work: Work, cell: I32, digit: I32, value: I32) {
   let row = array_get(work.?{row_of}, cell);
   let col = array_get(work.?{col_of}, cell);
   let region = array_get(work.?{box_of}, cell);
@@ -38,14 +38,14 @@ fn mark(work: Work, cell: I32, digit: I32, value: I32) -> . {
   array_set(work.?{used_box}, geo.flag_at(region, digit), value)
 }
 
-pub fn place(work: Work, cell: I32, digit: I32) -> . {
+pub fn place(work: Work, cell: I32, digit: I32) {
   array_set(work.?{board}, cell, digit);
   mark(work, cell, digit, 1)
 }
 
 /// The undo half of the trail: clear the board slot and the three table
 /// slots `place` set, and nothing else.
-pub fn unplace(work: Work, cell: I32, digit: I32) -> . {
+pub fn unplace(work: Work, cell: I32, digit: I32) {
   array_set(work.?{board}, cell, 0);
   mark(work, cell, digit, 0)
 }

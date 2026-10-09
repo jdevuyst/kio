@@ -33,7 +33,7 @@ pub fn node(g: Graph, index: I32) -> Node { arr.array_get(nodes(g), index) }
 
 pub fn revision(g: Graph) -> I32 { arr.array_get(revisions(g), 0) }
 
-fn changed(g: Graph) -> . { arr.array_set(revisions(g), 0, n.increment(revision(g))) }
+fn changed(g: Graph) { arr.array_set(revisions(g), 0, n.increment(revision(g))) }
 
 pub rec(loop) fn find(g: Graph, id: I32) -> I32 {
   let parent = arr.array_get(parents(g), id);

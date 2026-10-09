@@ -184,23 +184,31 @@ impl Palette {
     fn ansi_reedline_style(kind: TokenKind) -> Option<nu_ansi_term::Style> {
         use nu_ansi_term::{Color, Style};
         let style = match kind {
+            TokenKind::CommentDocHeading | TokenKind::CommentDocStrong => Style::new().bold(),
+            TokenKind::CommentDocEmphasis => Style::new().italic(),
+            TokenKind::CommentDocLink => Style::new().fg(Color::Blue).underline(),
+            TokenKind::CommentDocMarker | TokenKind::CommentDocAttribute => {
+                Style::new().fg(Color::Magenta)
+            }
             // Keywords + boolean literals — magenta.
             TokenKind::KeywordControl
+            | TokenKind::CommentDocDirective
+            | TokenKind::CommentDocFence
             | TokenKind::KeywordDeclaration
             | TokenKind::KeywordElaborator
             | TokenKind::LiteralBool => Style::new().fg(Color::Magenta),
             // Comments — dim.
             TokenKind::CommentLine | TokenKind::CommentDoc => Style::new().dimmed(),
             // Strings — green.
-            TokenKind::LiteralString => Style::new().fg(Color::Green),
+            TokenKind::LiteralString | TokenKind::CommentDocCode => Style::new().fg(Color::Green),
             // Numbers — cyan.
             TokenKind::LiteralNumber => Style::new().fg(Color::Cyan),
             // Operators — yellow.
             TokenKind::OperatorBuiltin | TokenKind::OperatorUser => Style::new().fg(Color::Yellow),
             // Function definition / call names — blue.
-            TokenKind::EntityNameFunction | TokenKind::EntityNameFunctionReference => {
-                Style::new().fg(Color::Blue)
-            }
+            TokenKind::EntityNameFunction
+            | TokenKind::EntityNameFunctionReference
+            | TokenKind::CommentDocReference => Style::new().fg(Color::Blue),
             // Type definition names — cyan.
             TokenKind::EntityNameType => Style::new().fg(Color::Cyan),
             // Module path segments — cyan.
@@ -230,8 +238,16 @@ impl Palette {
     fn truecolor_reedline_style(kind: TokenKind) -> Option<nu_ansi_term::Style> {
         use nu_ansi_term::{Color, Style};
         let style = match kind {
+            TokenKind::CommentDocHeading | TokenKind::CommentDocStrong => Style::new().bold(),
+            TokenKind::CommentDocEmphasis => Style::new().italic(),
+            TokenKind::CommentDocLink => Style::new().fg(Color::Rgb(97, 175, 239)).underline(),
+            TokenKind::CommentDocMarker | TokenKind::CommentDocAttribute => {
+                Style::new().fg(Color::Rgb(198, 120, 221))
+            }
             // Control keywords — One-Dark purple.
-            TokenKind::KeywordControl => Style::new().fg(Color::Rgb(198, 120, 221)),
+            TokenKind::KeywordControl
+            | TokenKind::CommentDocDirective
+            | TokenKind::CommentDocFence => Style::new().fg(Color::Rgb(198, 120, 221)),
             // Declaration keywords — gold.
             TokenKind::KeywordDeclaration => Style::new().fg(Color::Rgb(229, 192, 123)),
             // Elaborator keywords — teal.
@@ -239,7 +255,9 @@ impl Palette {
             // Boolean literals — orange.
             TokenKind::LiteralBool => Style::new().fg(Color::Rgb(209, 154, 102)),
             // String literals — green.
-            TokenKind::LiteralString => Style::new().fg(Color::Rgb(152, 195, 121)),
+            TokenKind::LiteralString | TokenKind::CommentDocCode => {
+                Style::new().fg(Color::Rgb(152, 195, 121))
+            }
             // Number literals — orange.
             TokenKind::LiteralNumber => Style::new().fg(Color::Rgb(209, 154, 102)),
             // Comments — comment-grey, italic.
@@ -251,9 +269,9 @@ impl Palette {
                 Style::new().fg(Color::Rgb(224, 108, 117))
             }
             // Function definition / call names — blue.
-            TokenKind::EntityNameFunction | TokenKind::EntityNameFunctionReference => {
-                Style::new().fg(Color::Rgb(97, 175, 239))
-            }
+            TokenKind::EntityNameFunction
+            | TokenKind::EntityNameFunctionReference
+            | TokenKind::CommentDocReference => Style::new().fg(Color::Rgb(97, 175, 239)),
             // Type definition names — teal.
             TokenKind::EntityNameType => Style::new().fg(Color::Rgb(86, 182, 194)),
             // Module path segments — foreground-grey, underline.
@@ -282,21 +300,29 @@ impl Palette {
     /// codes). Kept as-is as the truecolor-unsupported fallback.
     fn ansi_style(kind: TokenKind) -> Option<&'static str> {
         let code = match kind {
+            TokenKind::CommentDocHeading | TokenKind::CommentDocStrong => "\x1b[1m",
+            TokenKind::CommentDocEmphasis => "\x1b[3m",
+            TokenKind::CommentDocLink => "\x1b[4m\x1b[34m",
+            TokenKind::CommentDocMarker | TokenKind::CommentDocAttribute => "\x1b[35m",
             // Keywords + boolean literals — magenta.
             TokenKind::KeywordControl
+            | TokenKind::CommentDocDirective
+            | TokenKind::CommentDocFence
             | TokenKind::KeywordDeclaration
             | TokenKind::KeywordElaborator
             | TokenKind::LiteralBool => "\x1b[35m",
             // Comments — dim.
             TokenKind::CommentLine | TokenKind::CommentDoc => "\x1b[2m",
             // Strings — green.
-            TokenKind::LiteralString => "\x1b[32m",
+            TokenKind::LiteralString | TokenKind::CommentDocCode => "\x1b[32m",
             // Numbers — cyan.
             TokenKind::LiteralNumber => "\x1b[36m",
             // Operators — yellow.
             TokenKind::OperatorBuiltin | TokenKind::OperatorUser => "\x1b[33m",
             // Function definition / call names — blue.
-            TokenKind::EntityNameFunction | TokenKind::EntityNameFunctionReference => "\x1b[34m",
+            TokenKind::EntityNameFunction
+            | TokenKind::EntityNameFunctionReference
+            | TokenKind::CommentDocReference => "\x1b[34m",
             // Type definition names — cyan.
             TokenKind::EntityNameType => "\x1b[36m",
             // Module path segments — cyan.
@@ -324,9 +350,17 @@ impl Palette {
     /// underline); the trailing [`RESET`] at the call site closes both.
     fn truecolor_style(kind: TokenKind) -> Option<&'static str> {
         let code = match kind {
+            TokenKind::CommentDocHeading | TokenKind::CommentDocStrong => "\x1b[1m",
+            TokenKind::CommentDocEmphasis => "\x1b[3m",
+            TokenKind::CommentDocLink => "\x1b[4m\x1b[38;2;97;175;239m",
+            TokenKind::CommentDocMarker | TokenKind::CommentDocAttribute => {
+                "\x1b[38;2;198;120;221m"
+            }
             // Control keywords (`if` / `else` / `do`) —
             // One-Dark purple.
-            TokenKind::KeywordControl => "\x1b[38;2;198;120;221m",
+            TokenKind::KeywordControl
+            | TokenKind::CommentDocDirective
+            | TokenKind::CommentDocFence => "\x1b[38;2;198;120;221m",
             // Declaration keywords (`fn` / `module` / `pub` / …) —
             // gold, distinct from control flow.
             TokenKind::KeywordDeclaration => "\x1b[38;2;229;192;123m",
@@ -336,7 +370,7 @@ impl Palette {
             // Boolean literals — orange.
             TokenKind::LiteralBool => "\x1b[38;2;209;154;102m",
             // String literals — green.
-            TokenKind::LiteralString => "\x1b[38;2;152;195;121m",
+            TokenKind::LiteralString | TokenKind::CommentDocCode => "\x1b[38;2;152;195;121m",
             // Number literals — orange.
             TokenKind::LiteralNumber => "\x1b[38;2;209;154;102m",
             // Comments — comment-grey, italic.
@@ -344,9 +378,9 @@ impl Palette {
             // Operators — coral.
             TokenKind::OperatorBuiltin | TokenKind::OperatorUser => "\x1b[38;2;224;108;117m",
             // Function definition / call names — blue.
-            TokenKind::EntityNameFunction | TokenKind::EntityNameFunctionReference => {
-                "\x1b[38;2;97;175;239m"
-            }
+            TokenKind::EntityNameFunction
+            | TokenKind::EntityNameFunctionReference
+            | TokenKind::CommentDocReference => "\x1b[38;2;97;175;239m",
             // Type definition names — teal (paired with elaborator kinds,
             // both type-flavoured).
             TokenKind::EntityNameType => "\x1b[38;2;86;182;194m",
@@ -1045,6 +1079,16 @@ mod tests {
             LiteralNumber,
             CommentLine,
             CommentDoc,
+            CommentDocReference,
+            CommentDocDirective,
+            CommentDocFence,
+            CommentDocCode,
+            CommentDocHeading,
+            CommentDocStrong,
+            CommentDocEmphasis,
+            CommentDocMarker,
+            CommentDocLink,
+            CommentDocAttribute,
             OperatorBuiltin,
             OperatorUser,
             EntityNameFunction,

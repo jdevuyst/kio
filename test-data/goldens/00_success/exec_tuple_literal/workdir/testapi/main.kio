@@ -12,4 +12,4 @@ import testapi/io(print);
 // context.
 fn snd((_x: String, y: String)) -> String { y }
 
-pub fn main() -> . { print(snd(("first\n", "second\n"))) }
+pub fn main() { print(snd(("first\n", "second\n"))) }

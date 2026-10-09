@@ -199,4 +199,4 @@ rec(loop) fn shunt(toks: List(Placed), out: List(Step), stack: List(Frame)) -> B
   }
 }
 
-pub fn to_rpn(toks: List(Placed)) -> Built { shunt(toks, nil(Step, ()), nil(Frame, ())) }
+pub fn to_rpn(toks: List(Placed)) -> Built { shunt(toks, nil(Step), nil(Frame)) }

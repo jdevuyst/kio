@@ -10,7 +10,7 @@ pub op _ ## _ { impl mul_i32 }
 
 fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
 
-pub fn main() -> . {
+pub fn main() {
   let .(f: I32 -> I32) = .x. { x1 ## 100 };
   print(i32_to_string(apply(f, 3)));
   print("\n");

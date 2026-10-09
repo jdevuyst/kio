@@ -20,7 +20,7 @@ fn keep_product(p: String & String) -> String {
   kept.>join
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(keep_first("first\n"));
   print(keep_last("last\n"));
   print(keep_left("left\n"));

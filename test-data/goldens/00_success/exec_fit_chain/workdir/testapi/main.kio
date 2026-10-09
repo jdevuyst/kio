@@ -13,7 +13,7 @@ import testapi/io(print);
 // fit!'s narrow-before-widen discipline.
 fn coerce(p: String & I32) -> String | I32 | Bool { fit!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = coerce(("fit chain: narrowed then widened\n", 0));
   let out =
     match! widened {

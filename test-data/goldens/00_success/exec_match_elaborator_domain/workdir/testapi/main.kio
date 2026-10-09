@@ -15,7 +15,7 @@ fn handle(p: (Box(I32) | Box(String)) & String) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let p = (widen_sum!(Box.mk_box("hi"), Box(I32) | Box(String)), "ignored");
   print(handle(p))
 }

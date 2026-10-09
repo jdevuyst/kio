@@ -46,9 +46,9 @@ pub fn refbit_of(m: Mem, frame: I32) -> Bool { array_get(m.?{refbit}, frame) }
 
 /// Record a reference. The bit is the page's second chance: the hand will pass
 /// over the frame once, spending the bit, before it will consider evicting it.
-pub fn set_ref(m: Mem, frame: I32) -> . { array_set(m.?{refbit}, frame, .t) }
+pub fn set_ref(m: Mem, frame: I32) { array_set(m.?{refbit}, frame, .t) }
 
-fn clear_ref(m: Mem, frame: I32) -> . { array_set(m.?{refbit}, frame, .f) }
+fn clear_ref(m: Mem, frame: I32) { array_set(m.?{refbit}, frame, .f) }
 
 /// The hand sweeps the frames in a circle. The tier has no remainder operator,
 /// so it wraps by comparison rather than by `mod`.

@@ -7,7 +7,9 @@ import { glob } from "glob";
 import Mocha from "mocha";
 
 export function run(): Promise<void> {
-  const mocha = new Mocha({ ui: "tdd", color: true, timeout: 30_000 });
+  const mocha = new Mocha({ ui: "tdd", color: true, timeout: 30_000,
+    grep: process.env.KIO_DEBUG_VSCODE_TEST_FILTER,
+  });
   const testsRoot = path.resolve(__dirname);
   return new Promise(async (resolve, reject) => {
     try {

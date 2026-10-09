@@ -12,11 +12,11 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-pub fn number(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+pub fn number(value: I32) { io.print(fmt.int_to_string(value)) }
 
-pub fn boolean(value: Bool) -> . { io.print(fmt.bool_to_string(value)) }
+pub fn boolean(value: Bool) { io.print(fmt.bool_to_string(value)) }
 
-pub fn outcome(value: rewrite.Outcome) -> . {
+pub fn outcome(value: rewrite.Outcome) {
   match! value {
     .(done: rewrite.Saturated) { io.print("saturated rounds="); number(done.?{rewrite.saturated}) };
     .(limited: rewrite.Exhausted) {
@@ -26,9 +26,9 @@ pub fn outcome(value: rewrite.Outcome) -> . {
   }
 }
 
-pub fn status(value: rewrite.Outcome) -> . { io.print("  status="); outcome(value); io.print("\n") }
+pub fn status(value: rewrite.Outcome) { io.print("  status="); outcome(value); io.print("\n") }
 
-pub fn original(g: graph.Graph, root: I32) -> . {
+pub fn original(g: graph.Graph, root: I32) {
   let selection = extract.select(g);
   io.print("  original=");
   io.print(extract.render(g, selection, root));
@@ -68,7 +68,7 @@ rec(loop) fn values(
   }
 }
 
-pub fn result(g: graph.Graph, root: I32) -> . {
+pub fn result(g: graph.Graph, root: I32) {
   let selection = extract.select(g);
   io.print("  extracted=");
   io.print(extract.render(g, selection, root));

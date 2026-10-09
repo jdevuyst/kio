@@ -5,4 +5,4 @@ module main;
 // only.
 import arith(op _ ??);
 
-pub fn main() -> . { () }
+pub fn main() { () }

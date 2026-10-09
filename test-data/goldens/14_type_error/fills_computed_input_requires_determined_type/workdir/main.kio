@@ -12,4 +12,4 @@ pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, target: __Type__, _valu
 
 elab fill : [A] Box(A) -> A { impl(fills) fill_impl }
 
-fn run() -> . { let result = fill!(boxed()); result }
+fn run() { let result = fill!(boxed()); result }

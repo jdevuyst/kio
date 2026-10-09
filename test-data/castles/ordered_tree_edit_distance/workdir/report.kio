@@ -12,15 +12,15 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-fn line(label: String, value: String) -> . {
-  io.print(text.string_concat(label, text.string_concat(value, "\n")))
+fn line(label: String, value: String) {
+  io.print(value.>text.string_concat("\n").>>text.string_concat(label))
 }
 
-fn number(label: String, value: I32) -> . {
+fn number(label: String, value: I32) {
   io.print(text.string_concat(label, fmt.int_to_string(value)))
 }
 
-rec(loop) fn mapping_pairs(mapping: Array(I32), position: I32) -> . {
+rec(loop) fn mapping_pairs(mapping: Array(I32), position: I32) {
   if! forest.less(position, array.array_len(mapping)) {
     let destination = array.array_get(mapping, position);
     if! arith.leq_i32(0, destination) {
@@ -35,7 +35,7 @@ rec(loop) fn mapping_pairs(mapping: Array(I32), position: I32) -> . {
   }
 }
 
-pub fn compare(title: String, source: forest.Tree, target: forest.Tree) -> . {
+pub fn compare(title: String, source: forest.Tree, target: forest.Tree) {
   line("case: ", title);
   line("source: ", forest.render(source));
   line("target: ", forest.render(target));
@@ -64,7 +64,7 @@ pub fn compare(title: String, source: forest.Tree, target: forest.Tree) -> . {
   }
 }
 
-pub fn control(title: String, source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> . {
+pub fn control(title: String, source: forest.Tree, target: forest.Tree, mapping: Array(I32)) {
   io.print(text.string_concat("control: ", title));
   line(
     , " -> "

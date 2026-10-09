@@ -14,4 +14,4 @@ fn id[A](x: A) -> A { x }
 // the round-trip through the kio-prime backend. The execution check
 // proves the emit composes behaviorally with the rest of the
 // toolchain.
-pub fn main() -> . { print(id(String, "kio prime emit\n"(String))) }
+pub fn main() { print(id(String, "kio prime emit\n"(String))) }

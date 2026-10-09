@@ -24,8 +24,8 @@ pub type Degs = Table(I32);
 pub fn cell_precedents(s: Sheet, a: Addr) -> List(Addr) {
   fold_content(
     , content_at(s, a)
-    , nil(Addr, ())
-    , .(_n: I32) { nil(Addr, ()) }
+    , nil(Addr)
+    , .(_n: I32) { nil(Addr) }
     , .(e: Expr) { filter(precedents(e), .(p: Addr) { in_grid(p) }) }
     )
 }
@@ -45,9 +45,9 @@ rec(loop) fn deps_onto(s: Sheet, todo: List(Addr), acc: Deps) -> Deps {
   }
 }
 
-pub fn build_deps(s: Sheet) -> Deps { deps_onto(s, all_addrs(), empty(List(Addr), ())) }
+pub fn build_deps(s: Sheet) -> Deps { deps_onto(s, all_addrs(), empty(List(Addr))) }
 
-pub fn deps_of(deps: Deps, a: Addr) -> List(Addr) { get_or(deps, a, nil(Addr, ())) }
+pub fn deps_of(deps: Deps, a: Addr) -> List(Addr) { get_or(deps, a, nil(Addr)) }
 
 fn deg_of(degs: Degs, a: Addr) -> I32 { get_or(degs, a, 0) }
 
@@ -75,9 +75,7 @@ rec(loop) fn degs_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), acc: Degs) -
 
 /// How many precedents each cell must wait for. A precedent on a cycle is
 /// settled before the ordering starts, so it is not counted.
-pub fn build_degs(s: Sheet, cyc: List(Addr)) -> Degs {
-  degs_onto(s, cyc, all_addrs(), empty(I32, ()))
-}
+pub fn build_degs(s: Sheet, cyc: List(Addr)) -> Degs { degs_onto(s, cyc, all_addrs(), empty(I32)) }
 
 rec(loop) fn walk(s: Sheet, frontier: List(Addr), seen: List(Addr), target: Addr) -> Bool {
   match! frontier.>List.unpack {
@@ -99,7 +97,7 @@ rec(loop) fn walk(s: Sheet, frontier: List(Addr), seen: List(Addr), target: Addr
 /// Can `from` reach `target` through precedents? A cell is expanded once,
 /// so the walk terminates even when the graph cycles — the point of asking.
 fn reaches(s: Sheet, from: Addr, target: Addr) -> Bool {
-  walk(s, cell_precedents(s, from), nil(Addr, ()), target)
+  walk(s, cell_precedents(s, from), nil(Addr), target)
 }
 
 /// The cells on a genuine cycle: exactly those that reach themselves. A cell
@@ -134,8 +132,7 @@ rec(loop) fn kahn(deps: Deps, degs: Degs, queue: List(Addr), cyc: List(Addr), ou
   match! queue.>List.unpack {
     (
       , .(a: Addr, rest: List(Addr)) {
-          let .(degs2: Degs, freed: List(Addr)) =
-            release(deps_of(deps, a), degs, cyc, nil(Addr, ()));
+          let .(degs2: Degs, freed: List(Addr)) = release(deps_of(deps, a), degs, cyc, nil(Addr));
           rec kahn(deps, degs2, append(rest, freed), cyc, cons(a, out))
         }
       , .(_empty: .) { reverse(out) }
@@ -161,5 +158,5 @@ pub fn topo_order(s: Sheet, deps: Deps, cyc: List(Addr)) -> List(Addr) {
         }
       );
   let seeds = filter(live, .(a: Addr) { eq_i32(deg_of(degs, a), 0) });
-  kahn(deps, degs, seeds, cyc, nil(Addr, ()))
+  kahn(deps, degs, seeds, cyc, nil(Addr))
 }

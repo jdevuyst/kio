@@ -19,7 +19,7 @@ fn codiagonal(s: String | String) -> String { narrow_sum!(s) }
 // same source String.
 fn diagonal(s: String) -> String & String { widen_prod!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   // Codiagonal side-by-side with diagonal — same program structure,
   // dual operations exercised.
   print(codiagonal(lift("codiagonal: collapsed\n")));

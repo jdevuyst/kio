@@ -1,0 +1,14 @@
+package docops;
+
+build {
+  cache ();
+
+  docs {
+    md "."
+  }
+}
+
+bridge {
+  docops;
+  docops/**
+}

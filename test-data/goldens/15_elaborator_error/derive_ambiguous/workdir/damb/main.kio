@@ -18,4 +18,4 @@ fn box_monad_b() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m))
 // `derive_ambiguous` coherence violation.
 fn bad() -> Monad(Box) { derive!((box_monad_a, box_monad_b), Monad(Box)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

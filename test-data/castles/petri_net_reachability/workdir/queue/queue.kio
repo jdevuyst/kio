@@ -30,7 +30,7 @@ pub fn loop[S][R](p0: S -> S | R, p1: S) -> R { _rehost_hbhfgfhfgffpgigphdhe.loo
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum!((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match! result {
@@ -68,7 +68,7 @@ fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
 }
 
 fn reverse_list[A](xs: List(A)) -> List(A) {
-  fold_list(xs, nil(A, ()), .(carry: List(A), x: A) -> List(A) { cons(x, carry) })
+  fold_list(xs, nil(A), .(carry: List(A), x: A) -> List(A) { cons(x, carry) })
 }
 
 // =====================================================================
@@ -81,8 +81,8 @@ fn mkq[A](f: List(A), b: List(A)) -> Queue(A) {
       , .(_empty: .) {
           match! uncons(b) {
             (
-              , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A, ()))) }
-              , .(_bempty: .) { empty(A, ()) }
+              , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A))) }
+              , .(_bempty: .) { empty(A) }
               )
           }
         }
@@ -102,7 +102,7 @@ pub fn enqueue[A](x: A, q: Queue(A)) -> Queue(A) {
 /// Remove the oldest element from a queue, returning it with the residual queue.
 pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
   fold_result(
-    , absent(A & Queue(A), ())
+    , absent(A & Queue(A))
     , .(pair: A & Queue(A)) {
         match! pair {
           .(h: A, rest: Queue(A)) { present((h, mkq(front(rest), back(rest)))) }
@@ -149,11 +149,11 @@ pub fn concat[A](q1: Queue(A), q2: Queue(A)) -> Queue(A) { enqueue_all(to_list(q
 
 /// Apply `f` to every element, preserving order.
 pub fn map[A][B](f: A -> B, q: Queue(A)) -> Queue(B) {
-  fold_list(to_list(q), empty(B, ()), .(acc: Queue(B), x: A) -> Queue(B) { enqueue(f(x), acc) })
+  fold_list(to_list(q), empty(B), .(acc: Queue(B), x: A) -> Queue(B) { enqueue(f(x), acc) })
 }
 
 /// Build a queue from a list, oldest element first.
-pub fn from_list[A](xs: List(A)) -> Queue(A) { enqueue_all(xs, empty(A, ())) }
+pub fn from_list[A](xs: List(A)) -> Queue(A) { enqueue_all(xs, empty(A)) }
 
 // =====================================================================
 // Operator DSL
@@ -197,11 +197,11 @@ equiv peek_after_enqueue[A](f0: A, x: A) {
 
 equiv dequeue_singleton[A](x: A) {
   dequeue(singleton(x));
-  present((x, empty(A, ())))
+  present((x, empty(A)))
 }
 
 equiv dequeue_empty_is_none[A]() {
-  has_value(dequeue(empty(A, ())));
+  has_value(dequeue(empty(A)));
   no()
 }
 
@@ -212,43 +212,43 @@ equiv fifo_first_out[A](a0: A, a1: A) {
 
 equiv fifo_second_out[A](a0: A, a1: A) {
   fold_result(
-    , absent(A, ())
+    , absent(A)
     , .(pair: A & Queue(A)) {
         match! pair {
           .(_h: A, rest: Queue(A)) { peek(rest) }
         }
       }
-    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A, ()))), nil(A, ()))))
+    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
     );
   present(a1)
 }
 
 equiv dequeue_head_is_oldest[A](a0: A, a1: A) {
   fold_result(
-    , absent(A, ())
+    , absent(A)
     , .(pair: A & Queue(A)) {
         match! pair {
           .(h: A, _rest: Queue(A)) { present(h) }
         }
       }
-    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A, ()))), nil(A, ()))))
+    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
     );
   present(a0)
 }
 
 equiv front_head_stable_under_enqueue[A](f0: A, f1: A, x: A) {
-  head(front(enqueue(x, Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), nil(A, ()))))));
+  head(front(enqueue(x, Queue.mk_unchecked((cons(f0, cons(f1, nil(A))), nil(A))))));
   present(f0)
 }
 
 equiv reverse_exposes_newest[A](a0: A, a1: A) {
-  peek(reverse(Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))));
+  peek(reverse(Queue.mk_unchecked((cons(a0, nil(A)), cons(a1, nil(A))))));
   present(a1)
 }
 
 equiv reverse_involution[A](a0: A, a1: A) {
-  reverse(reverse(Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))));
-  Queue.mk_unchecked((cons(a0, nil(A, ())), cons(a1, nil(A, ()))))
+  reverse(reverse(Queue.mk_unchecked((cons(a0, nil(A)), cons(a1, nil(A))))));
+  Queue.mk_unchecked((cons(a0, nil(A)), cons(a1, nil(A))))
 }
 
 equiv op_snoc_is_enqueue[A](f0: A, x: A) {

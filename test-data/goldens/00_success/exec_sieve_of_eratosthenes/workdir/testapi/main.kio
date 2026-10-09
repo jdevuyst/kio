@@ -63,7 +63,7 @@ fn print_step(is_composite: Array(Bool), i: I32) -> I32 | . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Composite-flag table indexed 0..=N; cells 0 and 1 are unused
   // (the print loop starts at 2). All false initially.
   let is_composite = array_make_filled(add_i32(n(), 1), .f);

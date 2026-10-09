@@ -14,4 +14,4 @@ pub newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
 // crossing is a runtime no-op at every target.
 fn roundtrip[A](x: A) -> A { Wrap.un_wrap(A, Wrap.mk_wrap(A, x)) }
 
-pub fn main() -> . { print(roundtrip("brand round-trip ok\n"(String))) }
+pub fn main() { print(roundtrip("brand round-trip ok\n"(String))) }

@@ -563,12 +563,14 @@ fn strip_prime_let_annotations(e: Expr<Surface>) -> Expr<Surface> {
         },
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(strip_prime_let_annotations(*callee)),
             args: args
                 .into_iter()
@@ -798,7 +800,7 @@ mod tests {
             "a written Unit value must remain explicit in canonical Kio': {out}"
         );
         assert!(
-            out.contains("let f = nil; let _kg0 = f(T); .() { _kg0(()) }"),
+            out.contains("let f = nil; let _kg0 = f(T); .(_kg1: .) { _kg0(_kg1) }"),
             "a locally bound type-only Unit-domain function must remain residual: {out}"
         );
         assert!(

@@ -9,7 +9,7 @@ later local host function: dyn_load_prime: malformed image — module `later_fun
 missing host return arrow: dyn_load_prime: malformed host function `malformed.missing`: expected `->` and a return type after the final value group
 unterminated declaration type binders: dyn_load_prime: malformed image — unterminated type-binder group at line 2, column 14
 unterminated lambda type binders: dyn_load_prime: malformed image — module `bad`, fn `broken`: unterminated type-binder group in a lambda at line 2, column 25
-lambda without value parameter group: dyn_load_prime: malformed image — module `bad`, fn `broken`: expected `(` opening a lambda's parameter list at line 2, column 29
+type-only lambda: accepted
 bare transparent alias: dyn_load_prime: malformed host function `alias_bare.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 0 were supplied
 local undersaturated transparent alias: dyn_load_prime: malformed host function `alias_partial.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied
 selective undersaturated transparent alias: dyn_load_prime: malformed host function `selective_consumer.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied

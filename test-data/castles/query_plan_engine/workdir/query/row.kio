@@ -90,7 +90,7 @@ pub rec(loop) fn project_row(cols: schema.Col_list, row: Row) -> Row {
       , .(c: schema.Col, rest: schema.Col_list) {
           list.cons(cell(c, row_cell(row, c)), rec(cont) project_row(rest, row))
         }
-      , .(_empty: .) { list.nil(Cell, ()) }
+      , .(_empty: .) { list.nil(Cell) }
       )
   }
 }

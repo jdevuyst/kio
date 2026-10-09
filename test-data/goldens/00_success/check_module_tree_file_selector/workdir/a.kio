@@ -1,6 +1,6 @@
 module a;
 
-pub fn ida(x: .) -> . { x }
+pub fn ida(x: .) { x }
 
 equiv ea() {
   ida(());

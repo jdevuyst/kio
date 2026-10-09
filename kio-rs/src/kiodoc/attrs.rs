@@ -166,10 +166,8 @@ pub fn parse(input: &str) -> Result<FenceAttrs, AttrError> {
                 // it goes to `parse_ident` — which reports a precise
                 // `BadIdent` for a name that doesn't start `[a-z_]`
                 // (`{@Main}`), rather than a vaguer separator error.
-                let ends_attr = match bytes.get(idx) {
-                    Some(c) => matches!(c, b'}' | b' ' | b'\t' | b'\r' | b'\n'),
-                    None => true,
-                };
+                let ends_attr =
+                    crate::doc_markup::generated::bare_self_ref_end(bytes.get(idx).copied());
                 // `None` is the bare `@`. Consuming the name here leaves
                 // `idx` just past the whole attribute either way: for the
                 // self-ref that is the byte after the `@`, which the
@@ -274,11 +272,11 @@ pub fn parse(input: &str) -> Result<FenceAttrs, AttrError> {
 /// an info string is split across lines (rare; CommonMark forbids
 /// this on visible fences, but the HTML-comment opener can wrap).
 fn skip_ws(bytes: &[u8], idx: &mut usize) {
-    while *idx < bytes.len() {
-        match bytes[*idx] {
-            b' ' | b'\t' | b'\r' | b'\n' => *idx += 1,
-            _ => return,
-        }
+    while bytes
+        .get(*idx)
+        .is_some_and(|&byte| crate::doc_markup::generated::attr_whitespace(byte))
+    {
+        *idx += 1;
     }
 }
 

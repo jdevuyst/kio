@@ -18,4 +18,4 @@ rec(loop) {
   fn nested_leaf(value: I32) -> I32 { value }
 }
 
-pub fn main() -> . { print(i32_to_string(nested_outer(1, 0))); print("\n") }
+pub fn main() { print(i32_to_string(nested_outer(1, 0))); print("\n") }

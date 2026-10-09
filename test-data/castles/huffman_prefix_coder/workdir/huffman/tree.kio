@@ -123,7 +123,7 @@ rec(loop) fn queue_onto(counts: List(Count), acc: List(Node)) -> List(Node) {
 }
 
 /// The starting queue: one leaf per present symbol, in the pinned order.
-pub fn initial_queue(counts: List(Count)) -> List(Node) { queue_onto(counts, nil(Node, ())) }
+pub fn initial_queue(counts: List(Count)) -> List(Node) { queue_onto(counts, nil(Node)) }
 
 pub labels Step = { step_left: Node, step_right: Node, step_merged: Node };
 

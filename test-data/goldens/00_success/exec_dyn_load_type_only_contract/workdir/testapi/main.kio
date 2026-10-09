@@ -1,0 +1,92 @@
+/// Validates ordinary exported headers from untrusted Prime text.
+module testapi/main;
+
+import elab/match(match);
+import loader as l;
+import loader/scan as scan;
+import testapi as t;
+import testapi/io as io;
+import testapi/text as text;
+
+fn describe(source: t.String) -> t.String {
+  match! l.un_load_outcome(scan.load_package(source)) {
+    (
+      , .(_loaded: l.Lr_image) { "accepted"(t.String) }
+      , .(rejected: l.Lr_diag) { l.diag_message(l.Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn signature(source: t.String) -> t.String {
+  match! l.un_load_outcome(scan.load_package(source)) {
+    (
+      , .(loaded: l.Lr_image) {
+          match! l.un_export_infos(l.image_exports(l.Lr_image.get(loaded))) {
+            (
+              , .(entry: l.Export_info, _rest: l.Export_infos) { l.export_info_sig(entry) }
+              , .(_empty: .) { "<no export>"(t.String) }
+              )
+          }
+        }
+      , .(rejected: l.Lr_diag) { l.diag_message(l.Lr_diag.get(rejected)) }
+      )
+  }
+}
+
+fn report(label: t.String, body: t.String) {
+  io.print(text.string_concat(
+    , label
+    , text.string_concat(
+        , describe(text.string_concat("module guest;\n"(t.String), body))
+        , "\n"(t.String)
+        )
+    ))
+}
+
+pub fn main() {
+  report("base: "(t.String), "pub fn base[A] -> . { () }\n"(t.String));
+  report(
+    , "direct higher kind: "(t.String)
+    , "pub fn direct[*F] -> F(.) -> F(.) { .(value: F(.)) { value } }\n"(t.String)
+    );
+  report(
+    , "alias higher kind: "(t.String)
+    , "pub type Arrow[A] = A -> A;\npub fn aliased[*F] -> Arrow(F(.)) { .(value: "
+      "F(.)) { value } }\n"(t.String)
+    );
+  report(
+    , "substituted arrow: "(t.String)
+    , "pub type Keep[A] = A;\npub fn substituted[*F] -> Keep(F(.) -> F(.)) { "
+      ".(value: F(.)) { value } }\n"(t.String)
+    );
+  report(
+    , "nested higher kind: "(t.String)
+    , "pub fn nested[A] -> [*F] F(.) -> F(.) { .[*F] { .(value: F(.)) { value } "
+      "} }\n"(t.String)
+    );
+  report("explicit Unit: "(t.String), "pub fn unit[A]() -> . { () }\n"(t.String));
+  io.print(text.string_concat(
+    , "base signature: "(t.String)
+    , text.string_concat(
+        , signature("module guest; pub fn base[A] -> . { () }"(t.String))
+        , "\n"(t.String)
+        )
+    ));
+  io.print(text.string_concat(
+    , "Unit signature: "(t.String)
+    , text.string_concat(
+        , signature("module guest; pub fn unit[A]() -> . { () }"(t.String))
+        , "\n"(t.String)
+        )
+    ));
+  report("higher-kind Unit: "(t.String), "pub fn bad[*F] -> . { () }\n"(t.String));
+  report("higher-kind application: "(t.String), "pub fn bad[*F] -> F(.) { () }\n"(t.String));
+  report("higher-kind product: "(t.String), "pub fn bad[*F] -> ((. -> .) & .) { () }\n"(t.String));
+  report(
+    , "higher-kind nominal: "(t.String)
+    , "pub newtype Arrow[A] : A -> A { pub constructor mk; pub projector get; "
+      "};\npub fn bad[*F] -> Arrow(F(.)) { Arrow.mk(F(.), .(value: F(.)) { value "
+      "}) }\n"(t.String)
+    );
+  report("type-only host import: "(t.String), "host fn imported[A] -> .;\n"(t.String))
+}

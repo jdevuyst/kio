@@ -5,7 +5,7 @@ import __intrinsics__;
 import elab/match(match);
 import testapi(String);
 
-pub fn main() -> . {
+pub fn main() {
   let _bad =
     match! __left__(String, ., "left") {
       (.(s: String) { s }, .(_empty: .) { () })

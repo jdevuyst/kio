@@ -22,7 +22,7 @@ import skyline/events as events;
 import skyline/report as report;
 import skyline/sweep as sweep;
 
-pub fn main() -> . {
+pub fn main() {
   let block = city.buildings();
   let plan = events.schedule(block);
   let trace = sweep.run(plan);

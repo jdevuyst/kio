@@ -144,12 +144,14 @@ fn expr_head<'a>(
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(child(callee)),
             args: args
                 .iter()

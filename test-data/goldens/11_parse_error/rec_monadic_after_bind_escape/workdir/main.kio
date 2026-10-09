@@ -8,7 +8,7 @@ fn chain[A][B](value: A, next: A -> B) -> B { next(value) }
 
 fn identity[A](value: A) -> A { value }
 
-rec(loop) fn step(value: .) -> . {
+rec(loop) fn step(value: .) {
   do! chain {
     let next <- value;
     identity(rec(cont) step(next))

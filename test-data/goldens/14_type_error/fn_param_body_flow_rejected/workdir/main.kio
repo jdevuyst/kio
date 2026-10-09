@@ -1,5 +1,5 @@
 module main;
 
-fn consume(value: .) -> . { value }
+fn consume(value: .) { value }
 
-fn caller() -> . { let callback = .(value) { consume(value) }; callback(()) }
+fn caller() { let callback = .(value) { consume(value) }; callback(()) }

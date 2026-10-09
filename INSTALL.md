@@ -72,8 +72,19 @@ brew install mise
 echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
-If you use Bash on macOS, append `eval "$(mise activate bash)"` to
-`~/.bashrc` instead.
+If Homebrew has no suitable binary for your macOS version and would build
+mise or its dependencies from source, use the
+[standalone mise installer](https://mise.jdx.dev/getting-started.html)
+instead:
+
+```sh
+curl https://mise.run | sh
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+```
+
+If you use Bash on macOS, append the matching `activate bash` line to
+`~/.bashrc` instead, using `mise` for the Homebrew install or
+`~/.local/bin/mise` for the standalone install.
 
 Windows PowerShell:
 

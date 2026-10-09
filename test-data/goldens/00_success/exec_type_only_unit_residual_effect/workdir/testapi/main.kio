@@ -7,7 +7,7 @@ newtype N : . { constructor n; projector un_n }
 
 fn delayed[A]() -> N { print("invoked\n"(String)); N.n(()) }
 
-pub fn main() -> . {
+pub fn main() {
   let pending = delayed(N);
   print("created\n"(String));
   let result = pending(());

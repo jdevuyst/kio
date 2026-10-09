@@ -22,11 +22,6 @@
 //! verbatim (only the Kiodoc directives and intra-doc links are
 //! rewritten). HTML is the format that needs a real renderer.
 
-use crate::kiodoc::parse::{
-    atx_heading, code_fence_marker, ends_paragraph, is_html_block_start, is_thematic_break,
-    list_item_marker,
-};
-
 /// Escape a string for safe inclusion in HTML text / attribute
 /// context. Public so the page builder can escape signatures and
 /// other interpolated text consistently.
@@ -97,281 +92,159 @@ fn highlight_classified(src: &str, tokens: &[crate::tokens::ClassifiedToken]) ->
 /// surrounding `<html>` / `<body>` — that is the page builder's
 /// job). The input is assumed already validated.
 pub fn render_html(markdown: &str) -> String {
+    use crate::doc_markup::blocks::{self, Kind};
     let mut out = String::new();
-    let lines: Vec<&str> = markdown.lines().collect();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        let trimmed = line.trim_start();
-
-        // Blank line — paragraph separator, no output.
-        if trimmed.is_empty() {
-            i += 1;
-            continue;
-        }
-
-        // Fenced code block.
-        if let Some(fence) = code_fence_marker(trimmed) {
-            let info = trimmed[fence.len()..].trim();
-            let lang = info.split_whitespace().next().unwrap_or("");
-            let mut body = String::new();
-            i += 1;
-            while i < lines.len() {
-                let l = lines[i];
-                if l.trim_start().starts_with(&fence)
-                    && l.trim_start()[fence.len()..].trim().is_empty()
-                {
-                    i += 1;
-                    break;
-                }
-                body.push_str(l);
-                body.push('\n');
-                i += 1;
-            }
-            let class = if lang.is_empty() {
-                String::new()
-            } else {
-                format!(" class=\"language-{}\"", escape_html(lang))
-            };
-            // A `kio` fence is highlighted into per-token spans; every
-            // other language (and the no-language case) stays a single
-            // escaped blob.
-            let rendered = if lang == "kio" {
-                highlight_kio(&body)
-            } else {
-                escape_html(&body)
-            };
-            out.push_str(&format!("<pre><code{}>{}</code></pre>\n", class, rendered));
-            continue;
-        }
-
-        // HTML comments pass through verbatim, including hidden Kiodoc
-        // fences, so the browser keeps them hidden.
-        if trimmed.starts_with("<!--") {
-            while i < lines.len() {
-                out.push_str(lines[i]);
-                out.push('\n');
-                let closed = lines[i].contains("-->");
-                i += 1;
-                if closed {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        // Raw HTML block — a line that begins with an HTML tag passes
-        // through verbatim (GFM HTML-block behavior). The block runs
-        // to the next blank line. The page builder relies on this to
-        // emit per-item `<h3 id=…>` / `<pre class="sig">` chrome
-        // through the same Markdown pipeline as prose.
-        if is_html_block_start(trimmed) {
-            while i < lines.len() && !lines[i].trim().is_empty() {
-                out.push_str(lines[i]);
-                out.push('\n');
-                i += 1;
-            }
-            continue;
-        }
-
-        // ATX heading.
-        if let Some((level, text)) = atx_heading(trimmed) {
-            out.push_str(&format!("<h{level}>{}</h{level}>\n", render_inline(text)));
-            i += 1;
-            continue;
-        }
-
-        // Thematic break.
-        if is_thematic_break(trimmed) {
-            out.push_str("<hr />\n");
-            i += 1;
-            continue;
-        }
-
-        // Blockquote — a run of `>`-prefixed lines.
-        if trimmed.starts_with('>') {
-            let mut quoted = String::new();
-            while i < lines.len() && lines[i].trim_start().starts_with('>') {
-                let l = lines[i].trim_start();
-                let rest = l.strip_prefix('>').unwrap_or(l);
-                let rest = rest.strip_prefix(' ').unwrap_or(rest);
-                quoted.push_str(rest);
-                quoted.push('\n');
-                i += 1;
-            }
-            out.push_str("<blockquote>\n");
-            out.push_str(&render_html(&quoted));
-            out.push_str("</blockquote>\n");
-            continue;
-        }
-
-        // List — a run of list-item lines (all same ordered/unordered
-        // kind). One level only; nested lists render flat.
-        if list_item_marker(trimmed).is_some() {
-            let ordered = is_ordered_marker(trimmed);
-            let tag = if ordered { "ol" } else { "ul" };
-            out.push_str(&format!("<{tag}>\n"));
-            while i < lines.len() {
-                let l = lines[i].trim_start();
-                let Some(content_start) = list_item_marker(l) else {
-                    break;
+    for block in blocks::parse(markdown) {
+        match block.kind {
+            Kind::Blank => {}
+            Kind::Code { language, lines } => {
+                let body = lines
+                    .iter()
+                    .map(|line| format!("{}\n", line.text))
+                    .collect::<String>();
+                let class = if language.is_empty() {
+                    String::new()
+                } else {
+                    format!(" class=\"language-{}\"", escape_html(language))
                 };
-                if is_ordered_marker(l) != ordered {
-                    break;
+                let rendered = if language == "kio" {
+                    highlight_kio(&body)
+                } else {
+                    escape_html(&body)
+                };
+                out.push_str(&format!("<pre><code{}>{}</code></pre>\n", class, rendered));
+            }
+            Kind::Html => {
+                for line in block.source.text.lines() {
+                    out.push_str(line);
+                    out.push('\n');
                 }
-                // Collect the item's text plus any continuation lines
-                // (indented, non-blank, not a new item).
-                let mut item_text = l[content_start..].to_string();
-                i += 1;
-                while i < lines.len() {
-                    let cont = lines[i];
-                    let ct = cont.trim_start();
-                    if ct.is_empty() || list_item_marker(ct).is_some() {
-                        break;
-                    }
-                    item_text.push(' ');
-                    item_text.push_str(ct);
-                    i += 1;
+            }
+            Kind::Heading { level, text } => {
+                out.push_str(&format!(
+                    "<h{level}>{}</h{level}>\n",
+                    render_inline(text.text)
+                ));
+            }
+            Kind::Break => out.push_str("<hr />\n"),
+            Kind::Quote(lines) => {
+                let quoted = lines
+                    .iter()
+                    .map(|line| format!("{}\n", line.text))
+                    .collect::<String>();
+                out.push_str("<blockquote>\n");
+                out.push_str(&render_html(&quoted));
+                out.push_str("</blockquote>\n");
+            }
+            Kind::List { ordered, items } => {
+                let tag = if ordered { "ol" } else { "ul" };
+                out.push_str(&format!("<{tag}>\n"));
+                for lines in items {
+                    let item = lines
+                        .iter()
+                        .map(|line| line.text)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    out.push_str(&format!("<li>{}</li>\n", render_inline(&item)));
                 }
-                out.push_str(&format!("<li>{}</li>\n", render_inline(&item_text)));
+                out.push_str(&format!("</{tag}>\n"));
             }
-            out.push_str(&format!("</{tag}>\n"));
-            continue;
-        }
-
-        // Paragraph — collect consecutive non-blank, non-block lines.
-        let mut para = String::new();
-        while i < lines.len() {
-            let l = lines[i];
-            let lt = l.trim_start();
-            if ends_paragraph(lt) {
-                break;
+            Kind::Paragraph(lines) => {
+                let paragraph = lines
+                    .iter()
+                    .map(|line| line.text)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !paragraph.is_empty() {
+                    out.push_str(&format!("<p>{}</p>\n", render_inline(&paragraph)));
+                }
             }
-            if !para.is_empty() {
-                para.push(' ');
-            }
-            para.push_str(lt);
-            i += 1;
-        }
-        if !para.is_empty() {
-            out.push_str(&format!("<p>{}</p>\n", render_inline(&para)));
         }
     }
     out
-}
-
-/// True iff `line`'s list marker is the ordered (`1.`) kind.
-fn is_ordered_marker(line: &str) -> bool {
-    let digits: usize = line.chars().take_while(|c| c.is_ascii_digit()).count();
-    digits > 0
 }
 
 /// Render inline markdown (`code`, **bold**, *italic*, links) inside
 /// already-block-split text. Emits HTML.
 pub fn render_inline(text: &str) -> String {
+    use crate::doc_markup::blocks::{InlineKind, inline_at};
     let mut out = String::new();
-    let bytes = text.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        // Inline code span — `code`. Backticks bind tightest, so this
-        // is checked before any emphasis / link handling.
-        if c == b'`' {
-            // Find the closing backtick.
-            if let Some(close) = text[i + 1..].find('`') {
-                let code = &text[i + 1..i + 1 + close];
-                out.push_str(&format!("<code>{}</code>", escape_html(code)));
-                i += 1 + close + 1;
-                continue;
-            }
-        }
-        // Link — [text](url). The text part may contain inline code.
-        if c == b'['
-            && let Some((label, url, consumed)) = parse_link(&text[i..])
-        {
-            out.push_str(&format!(
-                "<a href=\"{}\">{}</a>",
-                escape_html(&url),
-                render_inline(&label)
-            ));
-            i += consumed;
-            continue;
-        }
-        // Bold — **text** or __text__.
-        if (c == b'*' || c == b'_') && i + 1 < bytes.len() && bytes[i + 1] == c {
-            let marker = &text[i..i + 2];
-            if let Some(end) = text[i + 2..].find(marker) {
-                let inner = &text[i + 2..i + 2 + end];
-                out.push_str(&format!("<strong>{}</strong>", render_inline(inner)));
-                i += 2 + end + 2;
-                continue;
-            }
-        }
-        // Italic — *text* or _text_.
-        if c == b'*' || c == b'_' {
-            let marker = c as char;
-            if let Some(end) = text[i + 1..].find(marker) {
-                let inner = &text[i + 1..i + 1 + end];
-                if !inner.is_empty() && !inner.starts_with(' ') {
-                    out.push_str(&format!("<em>{}</em>", render_inline(inner)));
-                    i += 1 + end + 1;
-                    continue;
+    while i < text.len() {
+        if let Some(inline) = inline_at(text, i) {
+            match inline.kind {
+                InlineKind::Code(code) => {
+                    out.push_str(&format!("<code>{}</code>", escape_html(code.text)))
+                }
+                InlineKind::Link { label, destination } => out.push_str(&format!(
+                    "<a href=\"{}\">{}</a>",
+                    escape_html(destination.text),
+                    render_inline(label.text)
+                )),
+                InlineKind::Strong(inner) => {
+                    out.push_str(&format!("<strong>{}</strong>", render_inline(inner.text)))
+                }
+                InlineKind::Emphasis(inner) => {
+                    out.push_str(&format!("<em>{}</em>", render_inline(inner.text)))
                 }
             }
-        }
-        // Default — escape the single character.
-        match c {
-            b'&' => out.push_str("&amp;"),
-            b'<' => out.push_str("&lt;"),
-            b'>' => out.push_str("&gt;"),
-            b'"' => out.push_str("&quot;"),
-            _ => {
-                // Copy the full UTF-8 char.
-                let ch_len = utf8_char_len(c);
-                out.push_str(&text[i..i + ch_len]);
-                i += ch_len;
-                continue;
+            i = inline.source.span.end as usize;
+        } else {
+            let ch = text[i..].chars().next().unwrap();
+            match ch {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                '"' => out.push_str("&quot;"),
+                _ => out.push(ch),
             }
+            i += ch.len_utf8();
         }
-        i += 1;
     }
     out
-}
-
-/// Parse a `[label](url)` link at the start of `s`. Returns
-/// `(label, url, bytes_consumed)`.
-fn parse_link(s: &str) -> Option<(String, String, usize)> {
-    if !s.starts_with('[') {
-        return None;
-    }
-    let close_label = s.find(']')?;
-    let after = &s[close_label + 1..];
-    if !after.starts_with('(') {
-        return None;
-    }
-    let close_url = after.find(')')?;
-    let label = s[1..close_label].to_string();
-    let url = after[1..close_url].to_string();
-    let consumed = close_label + 1 + close_url + 1;
-    Some((label, url, consumed))
-}
-
-/// Byte length of a UTF-8 character given its leading byte.
-fn utf8_char_len(lead: u8) -> usize {
-    if lead < 0x80 {
-        1
-    } else if lead < 0xE0 {
-        2
-    } else if lead < 0xF0 {
-        3
-    } else {
-        4
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_headings_retain_html_rendering() {
+        assert_eq!(
+            render_html("λ\n#\n##  ##\n###"),
+            "<p>λ</p>\n<h1></h1>\n<h2></h2>\n<h3></h3>\n"
+        );
+    }
+
+    fn parse_link(s: &str) -> Option<(String, String, usize)> {
+        let link = crate::doc_markup::lexical::inline_link_at(s, 0)?;
+        Some((
+            link.label.text.to_owned(),
+            link.destination.text.to_owned(),
+            link.source.text.len(),
+        ))
+    }
+
+    #[test]
+    fn compatibility_link_parser_keeps_original_unicode_and_destination() {
+        let source = "[λ](docs/[`add`]) tail";
+        assert_eq!(
+            parse_link(source),
+            Some((
+                "λ".to_owned(),
+                "docs/[`add`]".to_owned(),
+                source.find(" tail").unwrap()
+            ))
+        );
+        assert_eq!(
+            render_html(&format!("é {source}")),
+            "<p>é <a href=\"docs/[`add`]\">λ</a> tail</p>\n"
+        );
+        assert_eq!(
+            parse_link("[x](a(b)c)"),
+            Some(("x".to_owned(), "a(b".to_owned(), 8))
+        );
+    }
 
     #[test]
     fn heading_renders() {

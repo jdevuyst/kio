@@ -20,15 +20,15 @@ pub rec newtype List[A] : . | (A & List(A)) { constructor pack; pub projector un
 
 pub type Ints = List(I32);
 
-pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, rest: List(A)) -> List(A) {
   List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
 }
 
-pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
 
-pub fn empty() -> Ints { nil(I32, ()) }
+pub fn empty() -> Ints { nil(I32) }
 
 fn is_empty[A](xs: List(A)) -> Bool {
   match! xs.>List.unpack {
@@ -52,7 +52,7 @@ pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
 }
 
 pub fn reverse[A](xs: List(A)) -> List(A) {
-  fold(xs, .(acc: List(A), x: A) { cons(x, acc) }, nil(A, ()))
+  fold(xs, .(acc: List(A), x: A) { cons(x, acc) }, nil(A))
 }
 
 pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {

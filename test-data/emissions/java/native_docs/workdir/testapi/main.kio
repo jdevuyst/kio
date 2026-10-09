@@ -1,0 +1,40 @@
+module testapi/main;
+
+import detached as detached;
+import testapi(String);
+import testapi/io as io;
+import testapi/other as other;
+
+/// FIRST-SAME-DOC identity.
+pub fn same() { io.print("left\n"(String)) }
+
+/// EXPORT-DOC main. Merely mentioning big.Int selects no runtime import.
+///
+/// # Notes
+/// Keep **bold**, *emphasis*, and `literal` readable.
+/// [guide](https://example.invalid/guide)
+/// [`missing`] and [`@source missing`] are inert.
+///
+/// - first item
+/// - second item
+///
+/// > quoted prose
+///
+/// ```kio
+/// [`literal_code`]
+/// ```
+/// ~~~text
+/// [`tilde_code`]
+/// ~~~
+pub fn main() {
+  detached.hidden();
+  io.print("first\n"(String));
+  same();
+  other.same();
+  io.print("last\n"(String))
+}
+
+/// PRIVATE-DOC does not appear on the host boundary.
+fn hidden() { () }
+
+pub fn undocumented() { () }

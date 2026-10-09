@@ -18,4 +18,4 @@ import testapi/io(print);
 // the program compiles and runs.
 fn default(class: String) -> String { let return = class; return }
 
-pub fn main() -> . { print(default("mangled\n"(String))) }
+pub fn main() { print(default("mangled\n"(String))) }

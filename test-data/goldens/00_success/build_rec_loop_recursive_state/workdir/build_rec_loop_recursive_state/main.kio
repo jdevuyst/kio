@@ -19,4 +19,4 @@ rec(loop) fn run_from(current: State) -> State {
   }
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -1,0 +1,26 @@
+module demo/b;
+
+import __comptime__;
+
+host type Num role(i32);
+
+pub literal truth = 2;
+
+equiv proof() {
+  ();
+  ()
+}
+
+pub labels { original: . };
+
+pub type {field} = {original};
+
+pure fn build_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
+
+pub elab build : . -> . { impl build_impl }
+
+fn local() -> Num { truth }
+
+fn bang() -> . { build!(()) }
+
+fn label() -> Original { {field=} }

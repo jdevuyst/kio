@@ -20,7 +20,7 @@ fn via_clause(s: String) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(via_let("via-let\n"));
   print(via_param("via-param\n"));
   print(via_clause("via-clause\n"))

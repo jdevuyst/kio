@@ -16,4 +16,4 @@ pub fn by_partial() -> Count { let part = p.staged(()); part(()) }
 
 pub fn by_closure() -> Count { apply(.(ignored: .) -> Count { p.literal() }) }
 
-pub fn safe() -> . { () }
+pub fn safe() { () }

@@ -6,7 +6,7 @@ newtype Box[A] : A { constructor box; projector unbox }
 
 host fn make_bind[*M]() -> [A][B] (M(A) & (A -> M(B))) -> M(B);
 
-pub fn run() -> . {
+pub fn run() {
   let result =
     do! make_bind() {
       let value <- Box.box(());

@@ -15,7 +15,7 @@ fn push_row(
   , c6: I32
   , c7: I32
   , c8: I32
-  ) -> . {
+  ) {
   array_push(cells, c0);
   array_push(cells, c1);
   array_push(cells, c2);

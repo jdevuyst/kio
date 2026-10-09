@@ -30,10 +30,14 @@ pub(crate) use blocks::{BlockHeader, selected_block_header};
 pub(crate) use qualified::{qualified_candidates, qualified_providers};
 #[cfg(feature = "lsp")]
 mod call_types;
+mod source_references;
 #[cfg(feature = "repl-core")]
 pub(crate) use call_types::expression_callee_shadowed;
 #[cfg(feature = "lsp")]
 pub(crate) use call_types::{CallHead, public_call_head};
+#[cfg(feature = "lsp")]
+pub(crate) use source_references::SourceBindingIndex;
+pub use source_references::{SourceBinding, source_binding};
 
 /// One lexically reachable name and its exact syntactic origin.
 #[derive(Debug, Clone)]
@@ -97,36 +101,107 @@ fn contains(span: Span, offset: u32) -> bool {
     span.start <= offset && offset <= span.end
 }
 
-fn push(out: &mut Vec<Candidate>, name: &str, kind: CandidateKind, origin: CandidateOrigin) {
-    out.push(Candidate {
-        label: name.to_owned(),
-        kind,
-        origin,
-    });
+trait CandidateSink {
+    fn push(&mut self, name: &str, kind: CandidateKind, origin: CandidateOrigin);
+    fn has_placeholder(&self) -> bool;
+
+    fn complete(&self) -> bool {
+        false
+    }
 }
 
-fn local(out: &mut Vec<Candidate>, name: &str, span: Span, kind: CandidateKind) {
+impl CandidateSink for Vec<Candidate> {
+    fn push(&mut self, name: &str, kind: CandidateKind, origin: CandidateOrigin) {
+        self.push(Candidate {
+            label: name.to_owned(),
+            kind,
+            origin,
+        });
+    }
+
+    fn has_placeholder(&self) -> bool {
+        self.iter()
+            .any(|candidate| matches!(candidate.origin, CandidateOrigin::Placeholder(_)))
+    }
+}
+
+struct NamedOrigin<'a> {
+    name: &'a str,
+    origin: Option<CandidateOrigin>,
+    has_placeholder: bool,
+}
+
+impl CandidateSink for NamedOrigin<'_> {
+    fn push(&mut self, name: &str, _kind: CandidateKind, origin: CandidateOrigin) {
+        self.has_placeholder |= matches!(&origin, CandidateOrigin::Placeholder(_));
+        if self.origin.is_none() && name == self.name {
+            self.origin = Some(origin);
+        }
+    }
+
+    fn has_placeholder(&self) -> bool {
+        self.has_placeholder
+    }
+
+    fn complete(&self) -> bool {
+        self.origin.is_some()
+    }
+}
+
+fn in_scope_origin(module: &Module<Surface>, offset: u32, name: &str) -> Option<CandidateOrigin> {
+    named_origin(module, offset, name, Namespace::Value)
+}
+
+fn named_origin(
+    module: &Module<Surface>,
+    offset: u32,
+    name: &str,
+    ns: Namespace,
+) -> Option<CandidateOrigin> {
+    let mut out = NamedOrigin {
+        name,
+        origin: None,
+        has_placeholder: false,
+    };
+    collect_candidates(module, offset, ns, &mut out);
+    out.origin
+}
+
+fn push(out: &mut impl CandidateSink, name: &str, kind: CandidateKind, origin: CandidateOrigin) {
+    out.push(name, kind, origin);
+}
+
+fn local(out: &mut impl CandidateSink, name: &str, span: Span, kind: CandidateKind) {
     if name != "_" && !crate::naming::is_compiler_reserved_name(name) {
         push(out, name, kind, CandidateOrigin::Local(span));
     }
 }
 
-fn declaration(out: &mut Vec<Candidate>, name: &str, span: Span, kind: CandidateKind) {
+fn declaration(out: &mut impl CandidateSink, name: &str, span: Span, kind: CandidateKind) {
     push(out, name, kind, CandidateOrigin::Declaration(span));
 }
 
 fn candidates(module: &Module<Surface>, offset: u32, ns: Namespace) -> Vec<Candidate> {
     let mut out = Vec::new();
+    collect_candidates(module, offset, ns, &mut out);
+    deduplicate(out)
+}
+
+fn collect_candidates(
+    module: &Module<Surface>,
+    offset: u32,
+    ns: Namespace,
+    out: &mut impl CandidateSink,
+) {
     let active = module
         .items
         .iter()
         .position(|item| contains(item.span(), offset));
     if let Some(index) = active {
-        item_scope(&module.items[index], offset, ns, &mut out);
+        item_scope(&module.items[index], offset, ns, out);
     }
-    preceding_items_scope(&module.items, offset, active, ns, &mut out);
-    imports_scope(&module.imports, offset, ns, &mut out);
-    deduplicate(out)
+    preceding_items_scope(&module.items, offset, active, ns, out);
+    imports_scope(&module.imports, offset, ns, out);
 }
 
 fn preceding_items_scope(
@@ -134,9 +209,12 @@ fn preceding_items_scope(
     offset: u32,
     active: Option<usize>,
     ns: Namespace,
-    out: &mut Vec<Candidate>,
+    out: &mut impl CandidateSink,
 ) {
     for (index, item) in items.iter().enumerate() {
+        if out.complete() {
+            return;
+        }
         if active.map_or(item.span().end <= offset, |active| index < active) {
             item_names(item, ns, out);
         }
@@ -154,9 +232,12 @@ fn imports_scope(
     imports: &[crate::ast::Import],
     offset: u32,
     ns: Namespace,
-    out: &mut Vec<Candidate>,
+    out: &mut impl CandidateSink,
 ) {
     for import in imports.iter().filter(|import| import.span.end <= offset) {
+        if out.complete() {
+            return;
+        }
         match &import.kind {
             ImportKind::Selective { items, from } => {
                 for item in items {
@@ -228,7 +309,7 @@ fn imports_scope(
     }
 }
 
-fn item_scope(item: &Item<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Candidate>) {
+fn item_scope(item: &Item<Surface>, offset: u32, ns: Namespace, out: &mut impl CandidateSink) {
     match item {
         Item::FnDef(f) => fn_scope(f, offset, ns, out),
         Item::RecGroup(group, _) => {
@@ -312,7 +393,7 @@ fn item_scope(item: &Item<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Ca
     }
 }
 
-fn item_names(item: &Item<Surface>, ns: Namespace, out: &mut Vec<Candidate>) {
+fn item_names(item: &Item<Surface>, ns: Namespace, out: &mut impl CandidateSink) {
     match item {
         Item::FnDef(f) if ns == Namespace::Value => {
             declaration(out, &f.name, f.meta.span, CandidateKind::Function)
@@ -353,7 +434,7 @@ fn item_names(item: &Item<Surface>, ns: Namespace, out: &mut Vec<Candidate>) {
     }
 }
 
-fn labels_names(labels: &Labels<Surface>, out: &mut Vec<Candidate>) {
+fn labels_names(labels: &Labels<Surface>, out: &mut impl CandidateSink) {
     if let Some(name) = &labels.type_alias_name {
         declaration(
             out,
@@ -374,7 +455,7 @@ fn labels_names(labels: &Labels<Surface>, out: &mut Vec<Candidate>) {
     }
 }
 
-fn labels_scope(labels: &Labels<Surface>, offset: u32, out: &mut Vec<Candidate>) {
+fn labels_scope(labels: &Labels<Surface>, offset: u32, out: &mut impl CandidateSink) {
     if let Some(entry) = labels
         .entries
         .iter()
@@ -387,7 +468,7 @@ fn labels_scope(labels: &Labels<Surface>, offset: u32, out: &mut Vec<Candidate>)
     type_params(&labels.type_alias_params, offset, out);
 }
 
-fn type_member_names(member: &TypeRecMember<Surface>, out: &mut Vec<Candidate>) {
+fn type_member_names(member: &TypeRecMember<Surface>, out: &mut impl CandidateSink) {
     match member {
         TypeRecMember::TypeAlias(alias) => {
             declaration(out, &alias.name, alias.name_span, CandidateKind::Type)
@@ -399,7 +480,7 @@ fn type_member_names(member: &TypeRecMember<Surface>, out: &mut Vec<Candidate>) 
     }
 }
 
-fn type_member_scope(member: &TypeRecMember<Surface>, offset: u32, out: &mut Vec<Candidate>) {
+fn type_member_scope(member: &TypeRecMember<Surface>, offset: u32, out: &mut impl CandidateSink) {
     match member {
         TypeRecMember::TypeAlias(alias) => {
             type_scope(&alias.body, offset, out);
@@ -414,13 +495,13 @@ fn type_member_scope(member: &TypeRecMember<Surface>, offset: u32, out: &mut Vec
     }
 }
 
-fn type_params(params: &[TypeParam], offset: u32, out: &mut Vec<Candidate>) {
+fn type_params(params: &[TypeParam], offset: u32, out: &mut impl CandidateSink) {
     for param in params.iter().rev().filter(|p| p.span.end <= offset) {
         local(out, &param.name, param.span, CandidateKind::TypeParameter);
     }
 }
 
-fn type_scope(ty: &Type<Surface>, offset: u32, out: &mut Vec<Candidate>) {
+fn type_scope(ty: &Type<Surface>, offset: u32, out: &mut impl CandidateSink) {
     if !contains(ty.span(), offset) {
         return;
     }
@@ -463,7 +544,7 @@ fn pattern_scope(
     offset: u32,
     ns: Namespace,
     bind: bool,
-    out: &mut Vec<Candidate>,
+    out: &mut impl CandidateSink,
 ) {
     for elem in pattern.elems.iter().rev() {
         match elem {
@@ -493,7 +574,12 @@ fn pattern_scope(
     }
 }
 
-fn binding_scope(name: &str, span: Span, pattern: Option<&ParamPattern>, out: &mut Vec<Candidate>) {
+fn binding_scope(
+    name: &str,
+    span: Span,
+    pattern: Option<&ParamPattern>,
+    out: &mut impl CandidateSink,
+) {
     if let Some(pattern) = pattern {
         pattern_scope(pattern, 0, Namespace::Value, true, out);
     }
@@ -505,7 +591,7 @@ fn signature_scope(
     in_body: bool,
     offset: u32,
     ns: Namespace,
-    out: &mut Vec<Candidate>,
+    out: &mut impl CandidateSink,
 ) {
     for param in sig.params.iter().rev() {
         match param {
@@ -529,7 +615,7 @@ fn signature_scope(
     }
 }
 
-fn fn_scope(f: &FnDef<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Candidate>) {
+fn fn_scope(f: &FnDef<Surface>, offset: u32, ns: Namespace, out: &mut impl CandidateSink) {
     expr_scope(&f.body, offset, ns, out);
     if ns == Namespace::Type {
         type_scope(&f.ret, offset, out);
@@ -537,7 +623,7 @@ fn fn_scope(f: &FnDef<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Candid
     signature_scope(&f.sig, contains(f.body.span(), offset), offset, ns, out);
 }
 
-fn args_scope(args: &[CallArg<Surface>], offset: u32, ns: Namespace, out: &mut Vec<Candidate>) {
+fn args_scope(args: &[CallArg<Surface>], offset: u32, ns: Namespace, out: &mut impl CandidateSink) {
     for arg in args {
         match arg {
             CallArg::Value(expr) => expr_scope(expr, offset, ns, out),
@@ -547,7 +633,11 @@ fn args_scope(args: &[CallArg<Surface>], offset: u32, ns: Namespace, out: &mut V
     }
 }
 
-fn placeholder_scope(stem: &crate::ast::PathSegment, slot_count: usize, out: &mut Vec<Candidate>) {
+fn placeholder_scope(
+    stem: &crate::ast::PathSegment,
+    slot_count: usize,
+    out: &mut impl CandidateSink,
+) {
     for slot in 1..=slot_count {
         push(
             out,
@@ -558,7 +648,14 @@ fn placeholder_scope(stem: &crate::ast::PathSegment, slot_count: usize, out: &mu
     }
 }
 
-fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Candidate>) {
+#[cfg(test)]
+thread_local! {
+    static EXPR_SCOPE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl CandidateSink) {
+    #[cfg(test)]
+    EXPR_SCOPE_VISITS.with(|count| count.set(count.get() + 1));
     if !contains(expr.span(), offset) {
         return;
     }
@@ -702,12 +799,7 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut Vec<Ca
             stem, state, body, ..
         } => {
             expr_scope(body, offset, ns, out);
-            if ns == Namespace::Value
-                && contains(body.span(), offset)
-                && !out
-                    .iter()
-                    .any(|candidate| matches!(candidate.origin, CandidateOrigin::Placeholder(_)))
-            {
+            if ns == Namespace::Value && contains(body.span(), offset) && !out.has_placeholder() {
                 let (crate::ast::PlaceholderState::Source { slot_count }
                 | crate::ast::PlaceholderState::Classified { slot_count }) = state;
                 placeholder_scope(stem, *slot_count, out);

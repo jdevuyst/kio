@@ -14,7 +14,4 @@ import testapi/io(print);
 // § Function-type FFI canonicalization.
 fn apply_slot(f: (I32 & I32) -> I32, p: I32 & I32) -> I32 { f(p) }
 
-pub fn main() -> . {
-  print(i32_to_string(apply_slot(add_i32, (2(I32), 3(I32)))));
-  print("\n"(String))
-}
+pub fn main() { print(i32_to_string(apply_slot(add_i32, (2(I32), 3(I32))))); print("\n"(String)) }

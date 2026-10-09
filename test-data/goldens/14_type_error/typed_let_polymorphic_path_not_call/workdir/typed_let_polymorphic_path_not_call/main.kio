@@ -4,4 +4,4 @@ import typed_let_polymorphic_path_not_call(I32);
 
 fn id[A](x: A) -> A { x }
 
-fn bad() -> . { let .(_f: I32 -> I32) = id; () }
+fn bad() { let .(_f: I32 -> I32) = id; () }

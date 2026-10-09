@@ -6,4 +6,4 @@ module main;
 // identifier" branch — distinct from the "unknown module" case.
 import helper(secret);
 
-fn main() -> . { secret() }
+fn main() { secret() }

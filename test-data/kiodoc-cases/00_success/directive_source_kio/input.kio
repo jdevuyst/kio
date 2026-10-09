@@ -10,7 +10,7 @@ module src/main;
 ///
 /// Embed its source with [`@source compute`].
 /// Its bound-value type is [`@type compute`].
-pub fn compute(n: .) -> . { n }
+pub fn compute(n: .) { n }
 
 /// Count type alias.
 pub type Count = .;
@@ -18,7 +18,7 @@ pub type Count = .;
 /// Color labels.
 pub labels Color = { red: ., green: ., blue: . };
 
-pub fn add(x: ., y: .) -> . { () }
+pub fn add(x: ., y: .) { () }
 
 /// Addition op.
 pub op _ + _ { impl add; };

@@ -73,4 +73,4 @@ rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List(model.Event
   }
 }
 
-pub fn read() -> Parsed { read_all(0, 0, lists.nil()) }
+pub fn read() -> Parsed { read_all(0, 0, lists.nil(_)) }

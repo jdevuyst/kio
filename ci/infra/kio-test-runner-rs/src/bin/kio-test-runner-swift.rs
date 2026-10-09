@@ -1126,11 +1126,11 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
         out.push_str(CLAMP_EXIT_DECL);
     }
 
-    if contract
+    let has_returned_forall_state = contract
         .host_fns
         .iter()
-        .any(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
-    {
+        .any(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit));
+    if has_returned_forall_state {
         out.push_str("var returnedForallProduced = false\nvar returnedForallFailed = false\n\n");
     }
 
@@ -1149,7 +1149,13 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
     }
     for (method, binding) in host.methods().zip(contract.host_fns) {
         let kind = canonical_kind(binding.body);
-        out.push_str(&render_method(method, binding, &kind, contract.host_types));
+        out.push_str(&render_method(
+            method,
+            binding,
+            &kind,
+            contract.host_types,
+            has_returned_forall_state,
+        ));
         out.push('\n');
     }
     out.push_str("}\n\n");
@@ -1596,6 +1602,28 @@ print({main_ns}.echoText("atomic"))
                  print(\"round export:\", roundExport(\"export-left\")(\"export-right\"))\n"
             )
         }
+        ExportDriver::TypeOnlyRoundtrip => format!(
+            r#"print("ready")
+let direct: (String) -> String = {main_ns}.direct()
+print("specialized")
+print(direct("direct-string"))
+let integer: (Int32) -> Int32 = {main_ns}.direct()
+print("specialized-again")
+print(integer(42))
+let delayed: (String) -> String = {main_ns}.delayed()
+print("unit-called")
+print(delayed("unit-string"))
+print({main_ns}.ordinary("ordinary-string"))
+{main_ns}.phantom()
+print("phantom-called")
+{main_ns}.phantomUnit()
+print("phantom-unit-called")
+let poly: Exp_testapi_main__poly_ret<StubHost, String> = {main_ns}.poly()
+print("poly-returned")
+print(poly.call("poly-string"))
+print(poly.call(Int32(73)))
+"#
+        ),
         ExportDriver::HostSubstitutedUnitCallback => {
             let api = module("api");
             format!("print({api}.viaHost({{ (_unit: KioUnit) -> String in \"callback\" }}))\n")
@@ -1691,9 +1719,13 @@ fn render_method(
     binding: &HostFnBinding,
     kind: &CanonicalKind,
     host_types: &[HostTypeBinding],
+    has_returned_forall_state: bool,
 ) -> String {
     let sig = render_method_sig(m);
-    let body = render_swift_body_for_binding(binding, kind, m, host_types);
+    let mut body = render_swift_body_for_binding(binding, kind, m, host_types);
+    if has_returned_forall_state && matches!(binding.body, HostFnBodyKind::TraceUnit { .. }) {
+        body = format!("if !returnedForallFailed {{ {body} }}");
+    }
     format!("func {sig} {{\n{body}\n}}\n")
 }
 
@@ -1850,7 +1882,7 @@ fn render_swift_body_for_binding(
             )
         }
         HostFnBodyKind::TraceUnit { text } => {
-            format!("if !returnedForallFailed {{ print({text:?}) }}")
+            format!("print({text:?})")
         }
         HostFnBodyKind::StagedUnitCall => {
             "print(\"staged Unit host call\")".to_owned()
@@ -2207,6 +2239,21 @@ const CLAMP_EXIT_DECL: &str = "func clampExit(_ n: Int64) -> Int64 {\n\tif n < 0
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trace_unit_uses_failure_guard_only_with_returned_forall_state() {
+        for (protocol, guarded) in [
+            (RunnerProtocol::TypeOnlyStageTrace, false),
+            (RunnerProtocol::ReturnedForallCallByValue, true),
+        ] {
+            let host = swift_host_api_for_protocol(protocol);
+            let driver = build_driver("TraceProbe", &host, protocol);
+            assert_eq!(driver.contains("var returnedForallFailed = false"), guarded);
+            assert_eq!(driver.contains("if !returnedForallFailed"), guarded);
+            assert!(driver.contains("print(\"observe\")"));
+            assert!(driver.contains("print(\"consume\")"));
+        }
+    }
 
     #[test]
     fn coexist_swiftc_uses_the_shared_outer_observer_shape() {

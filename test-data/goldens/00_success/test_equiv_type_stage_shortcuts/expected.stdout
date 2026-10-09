@@ -1,0 +1,6 @@
+  pass equiv `conditional_direct` in main
+  pass equiv `conditional_local` in main
+  pass equiv `either_direct` in main
+  pass equiv `either_local` in main
+
+result: 4/4 equiv blocks passed

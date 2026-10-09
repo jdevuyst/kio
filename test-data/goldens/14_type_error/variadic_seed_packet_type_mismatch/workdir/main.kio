@@ -1,8 +1,8 @@
 module main;
 
-fn seed(_key: ., _value: . -> .) -> . { () }
+fn seed(_key: ., _value: . -> .) { () }
 
-fn push((_key: ., _value: .), rest: .) -> . { rest }
+fn push((_key: ., _value: .), rest: .) { rest }
 
 fn entry[K][V](key: K, value: V) -> K & V { (key, value) }
 
@@ -10,4 +10,4 @@ op _ => _ { impl entry }
 
 varop [% %] { foldr1 push seed }
 
-fn rejected() -> . { [% () => () %] }
+fn rejected() { [% () => () %] }

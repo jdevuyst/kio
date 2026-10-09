@@ -1,0 +1,24 @@
+module list_host;
+
+import testapi as api;
+import testapi/arith as arith;
+import testapi/iter as iter;
+import testapi/text as text;
+
+pub type Bool = api.Bool;
+
+pub type I32 = api.I32;
+
+pub type String = api.String;
+
+pub fn add_i32(left: I32, right: I32) -> I32 { arith.add_i32(left, right) }
+
+pub fn sub_i32(left: I32, right: I32) -> I32 { arith.sub_i32(left, right) }
+
+pub fn eq_i32(left: I32, right: I32) -> Bool { arith.eq_i32(left, right) }
+
+pub fn lt_i32(left: I32, right: I32) -> Bool { arith.lt_i32(left, right) }
+
+pub fn loop[S][R](step: S -> S | R, state: S) -> R { iter.loop(step, state) }
+
+pub fn string_concat(left: String, right: String) -> String { text.string_concat(left, right) }

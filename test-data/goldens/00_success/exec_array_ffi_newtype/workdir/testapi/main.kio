@@ -61,7 +61,7 @@ fn render_points(arr: Array(Point)) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Kio builds Point newtypes wrapping a structural payload and
   // pushes them across the FFI into the host array.
   let pts = array_make_empty(Point, ());

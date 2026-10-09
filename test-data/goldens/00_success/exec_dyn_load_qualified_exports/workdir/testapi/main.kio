@@ -74,7 +74,7 @@ fn show_check(label: String, im: Image, c: Contract) -> String {
 
 /// Loads the piped-in image, calls both qualified exports, and reports
 /// the contract outcomes.
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
       , .(im0: Lr_image) {

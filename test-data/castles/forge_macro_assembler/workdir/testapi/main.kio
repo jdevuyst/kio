@@ -17,7 +17,7 @@ import forge/programs as prog;
 import forge/report as r;
 import testapi(I32, String);
 
-pub fn main() -> . {
+pub fn main() {
   let macros = mac.table();
   r.header(macros, 9);
   let t1 = r.program("gcd", prog.gcd(), macros, r.nothing_done());

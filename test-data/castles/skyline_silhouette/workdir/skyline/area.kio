@@ -48,7 +48,7 @@ rec(loop) {
 /// `[left, right)` stands on column `col` exactly when `left <= col` and
 /// `col < right`, so the walk stops at `right` rather than on it — which is why
 /// two buildings sharing an edge never fight over a column.
-rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array(I32)) -> . {
+rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array(I32)) {
   if! leq_i32(stop, col) {
     ()
   } else {
@@ -57,7 +57,7 @@ rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array(I32)) -> . {
   }
 }
 
-rec(loop) fn paint_all(bs: lst.List(city.Building), grid: Array(I32)) -> . {
+rec(loop) fn paint_all(bs: lst.List(city.Building), grid: Array(I32)) {
   match! bs.>lst.List.un_list {
     (
       , .(b: city.Building, rest: lst.List(city.Building)) {

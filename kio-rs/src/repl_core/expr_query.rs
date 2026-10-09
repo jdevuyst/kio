@@ -50,6 +50,7 @@
 //! [`classify_input`] draws the lexical line; command dispatch then applies
 //! those category rules explicitly.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use crate::ast::{Expr, Item, Lowered, Prime, Purity, Type};
@@ -100,19 +101,64 @@ pub enum InputKind {
 /// Returns `None` when the input does not lex at all (it cannot be a
 /// name *or* an expression — the caller reports a syntax error).
 pub fn classify_input(input: &str) -> Option<InputKind> {
+    classify_input_for_repl(input).ok().flatten()
+}
+
+/// Retain lexer evidence for commands that report invalid prompt syntax.
+pub(super) fn classify_input_for_repl(input: &str) -> Result<Option<InputKind>, PromptSyntaxError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return None;
+        return Ok(None);
     }
     // Strip trivia (comments) — only the significant tokens decide the
     // shape. A lexer failure means the input is not even tokenizable.
-    let tokens = lex(trimmed).ok()?;
+    let tokens = lex(trimmed).map_err(|error| PromptSyntaxError::new(trimmed, 0, &error))?;
     let kinds: Vec<&TokenKind> = tokens.iter().map(|t| &t.kind).collect();
 
     if let Some(name) = bare_name_of(&kinds) {
-        Some(InputKind::BareName(name))
+        Ok(Some(InputKind::BareName(name)))
     } else {
-        Some(InputKind::Compound(trimmed.to_owned()))
+        Ok(Some(InputKind::Compound(trimmed.to_owned())))
+    }
+}
+
+/// The primary parser cause, located in the exact submitted expression.
+/// Source-bound enrichments from the surrounding module are not prompt evidence.
+#[derive(Debug)]
+pub(super) struct PromptSyntaxError {
+    source: String,
+    error: crate::error::Error,
+}
+
+impl PromptSyntaxError {
+    pub(super) fn new(source: &str, start: usize, error: &crate::error::Error) -> Self {
+        let (span, message) = error.diag();
+        let relative =
+            |offset: u32| (offset as usize).saturating_sub(start).min(source.len()) as u32;
+        let at_end = (span.start as usize) >= start + source.len();
+        let message = if at_end {
+            "the input is incomplete — it ends before it is a whole Kio expression"
+        } else if message == "expected `;` after the let binding" {
+            "unexpected token after the expression"
+        } else {
+            message
+        };
+        Self {
+            source: source.to_owned(),
+            error: crate::error::Error::parse(
+                crate::span::Span::new(relative(span.start), relative(span.end)),
+                message,
+            ),
+        }
+    }
+
+    pub(super) fn render(&self) -> String {
+        crate::diagnostic::render(
+            "<repl>",
+            &self.source,
+            &self.error,
+            crate::diagnostic::ColorMode::Never,
+        )
     }
 }
 
@@ -277,6 +323,8 @@ pub enum ExprQueryError {
 pub(super) enum ReplExprQueryError {
     /// An ordinary failure represented by the source-compatible public API.
     Query(ExprQueryError),
+    /// A parser failure located in the prompt rather than its synthetic module.
+    Syntax(PromptSyntaxError),
     /// An executed structural-recursion edge failed its Totality check.
     Totality(String),
 }
@@ -307,6 +355,7 @@ impl ReplExprQueryError {
     fn into_public(self) -> ExprQueryError {
         match self {
             Self::Query(error) => error,
+            Self::Syntax(error) => ExprQueryError::Syntax(error.error.diag().1.to_owned()),
             Self::Totality(message) => ExprQueryError::PackageError(format!(
                 "compile-time evaluation failed its Totality check: {message}"
             )),
@@ -421,11 +470,11 @@ pub(super) fn query_expr_for_repl(
     // the host-independent partial evaluator: pure expressions collapse to
     // ground values, host items stay as opaque `Value::Atom`s,
     // applications that can't be reduced residualize as `Value::Stuck`.
-    let value = reduce_lowered(lowered_expr, &analysis.checked_lowered, &current)?;
+    let value = reduce_lowered(&lowered_expr, &analysis.checked_lowered, &current)?;
     let rendered_value = crate::normalization::value_to_repl_string(&value, &lowered_module.module);
 
     Ok(ExprQueryResult {
-        typed_expr: typed_expr.clone(),
+        typed_expr: typed_expr.into_owned(),
         ty,
         value,
         rendered_value,
@@ -683,27 +732,48 @@ impl SyntheticWrap {
     }
 
     /// Find the synthetic function among `items` and return its
-    /// wildcard-`let` RHS — the typed expression. Phase-polymorphic so
+    /// wildcard-`let` RHS, retaining any administrative prefix bindings.
+    /// Phase-polymorphic so
     /// the caller can extract from either the `Prime` (source-faithful
     /// render path) or the `Lowered` (residual-NF reduction path) AST
     /// produced by the same typecheck.
-    fn extract_let_rhs<'a, P: crate::ast::Phase>(
+    fn extract_let_rhs<'a, P: crate::ast::Phase + Clone>(
         &self,
         items: &'a [Item<P>],
-    ) -> Option<&'a Expr<P>> {
+    ) -> Option<Cow<'a, Expr<P>>> {
         let Item::FnDef(fndef) = items.last()? else {
             return None;
         };
         if fndef.name != self.fn_name {
             return None;
         }
-        // The body is `{ let _ = <expr>; () }` — an
-        // `Expr::Let` whose `value` is the queried expression.
-        match &fndef.body {
-            Expr::Let {
+        // The authenticated source wrapper ends in `let _ = <expr>; ()`.
+        // Substitution may move a staged application's prefix bindings out
+        // of the RHS. They remain part of the queried expression's scope.
+        if let Expr::Let {
+            name, value, body, ..
+        } = &fndef.body
+            && name == "_"
+            && matches!(body.as_ref(), Expr::Unit { .. })
+        {
+            return Some(Cow::Borrowed(value.as_ref()));
+        }
+        let mut expression = fndef.body.clone();
+        let mut cursor = &mut expression;
+        loop {
+            if let Expr::Let {
                 name, value, body, ..
-            } if name == "_" && matches!(body.as_ref(), Expr::Unit { .. }) => Some(value),
-            _ => None,
+            } = cursor
+                && name == "_"
+                && matches!(body.as_ref(), Expr::Unit { .. })
+            {
+                *cursor = value.as_ref().clone();
+                return Some(Cow::Owned(expression));
+            }
+            let Expr::Let { body, .. } = cursor else {
+                return None;
+            };
+            cursor = body;
         }
     }
 
@@ -770,7 +840,11 @@ impl SyntheticWrap {
 
         if in_appended_region {
             if is_parse {
-                ExprQueryError::Syntax(self.scrub_wrapper_framing(message, span.start)).into()
+                ReplExprQueryError::Syntax(PromptSyntaxError::new(
+                    &self.source[self.expr_start..self.expr_end],
+                    self.expr_start,
+                    &located.error,
+                ))
             } else {
                 ExprQueryError::TypeError(self.scrub_wrapper_framing(message, span.start)).into()
             }
@@ -907,6 +981,33 @@ fn line_col(source: &str, offset: u32) -> (usize, usize) {
 mod tests {
     use super::*;
     use crate::pipeline::Pipeline as _;
+
+    #[test]
+    fn prompt_syntax_diagnostic_excludes_wrapper_enrichments() {
+        let original = "module hidden;\n";
+        let source = "index([1], 0)";
+        let start = original.len() as u32;
+        let error = crate::error::Error::parse(
+            crate::span::Span::new(start + 7, start + 8),
+            "expected identifier",
+        )
+        .with_secondary(crate::span::Span::new(0, 6), "wrapper-only label")
+        .with_help("wrapper-only help");
+        let prompt = PromptSyntaxError::new(source, original.len(), &error);
+        let rendered = prompt.render();
+        assert!(
+            rendered.contains("<repl>:1:8: error: expected identifier"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("1 | index([1], 0)\n  |        ^"),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains("hidden") && !rendered.contains("wrapper-only"),
+            "{rendered}"
+        );
+    }
 
     fn checked_structural_fault_package() -> crate::pass::typecheck_full::CheckedLoweredPackage {
         let package_source = "\

@@ -2,4 +2,4 @@ module main;
 
 import dict/dict as d;
 
-fn probe() -> . { let make_node = d.Dict.pack; () }
+fn probe() { let make_node = d.Dict.pack; () }

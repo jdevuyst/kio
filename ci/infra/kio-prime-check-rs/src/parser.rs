@@ -1035,7 +1035,7 @@ impl Parser {
     fn fn_def_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `fn`")?;
         Self::validate_value_name(&name, span)?;
-        self.signature_groups(true)?;
+        self.signature_groups(true, false)?;
         if self.eat_arrow() {
             self.type_()?;
         }
@@ -1114,7 +1114,7 @@ impl Parser {
     fn host_fn_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `host fn`")?;
         Self::validate_value_name(&name, span)?;
-        self.signature_groups(true)?;
+        self.signature_groups(true, true)?;
         self.expect_arrow("`->` in `host fn`")?;
         self.type_()?;
         self.expect_kind(&TokenKind::Semicolon, "`;` ending `host fn`")?;
@@ -1207,19 +1207,29 @@ impl Parser {
         Ok(())
     }
 
-    fn signature_groups(&mut self, annotated: bool) -> Result<(), ParseError> {
+    fn signature_groups(
+        &mut self,
+        annotated: bool,
+        require_value_group: bool,
+    ) -> Result<(), ParseError> {
+        let mut saw_group = false;
         let mut saw_value_group = false;
         loop {
             if self.peek_starts_type_param() {
+                saw_group = true;
                 self.type_param_list()?;
             } else if matches!(self.peek_kind(), Some(TokenKind::LParen)) {
+                saw_group = true;
                 saw_value_group = true;
                 self.value_signature_group(annotated)?;
             } else {
                 break;
             }
         }
-        if !saw_value_group {
+        if !saw_group {
+            return self.err("expected a function parameter group");
+        }
+        if require_value_group && !saw_value_group {
             return self.err("callable signatures require an explicit value group `()`");
         }
         Ok(())
@@ -1906,7 +1916,7 @@ impl Parser {
 
     /// After consuming `.`: `SignatureGroups ('->' Type)? Block`
     fn fn_after_dot(&mut self) -> Result<(), ParseError> {
-        self.signature_groups(false)?;
+        self.signature_groups(false, false)?;
         if self.eat_arrow() {
             self.type_()?;
         }
@@ -1939,6 +1949,24 @@ mod tests {
     #[test]
     fn empty_module_decl_only() {
         ok("module foo;");
+    }
+
+    #[test]
+    fn type_only_ordinary_functions_and_lambdas() {
+        ok("module example; \
+            fn named[A][B] -> . { () } \
+            pure fn default[A] { () } \
+            fn returned() -> [A] . { .[A] { () } } \
+            fn annotated() -> [A] . { .[A] -> . { () } } \
+            fn explicit[A]() { () }");
+        for source in [
+            "module example; fn constant -> . { () }",
+            "module example; host fn imported[A] -> .;",
+            "module example; fn invalid() { . { () } }",
+        ] {
+            err(source);
+        }
+        ok("module example; host fn imported[A]() -> .;");
     }
 
     #[test]
@@ -2039,7 +2067,7 @@ mod tests {
                 || m.contains("[type-param]")
                 || m.contains("type-parameter")
                 || m.contains("parameter name")
-                || m.contains("explicit value group"),
+                || m.contains("parameter group"),
             "msg = {m}"
         );
     }

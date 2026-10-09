@@ -9,7 +9,7 @@ import testapi/labels({greeting});
 // from the declaring module, then project it back out through field
 // access. Confirms cross-module labels resolve without constructor or
 // projector value aliases.
-pub fn main() -> . {
+pub fn main() {
   let labeled = {greeting = "hello from cross-module label\n"};
   print(labeled.?{greeting})
 }

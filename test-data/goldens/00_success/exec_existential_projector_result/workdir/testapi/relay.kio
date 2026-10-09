@@ -6,7 +6,7 @@ import testapi/types(Pack);
 
 pub type Forwarded[A] = Pack(A);
 
-pub fn selected(value: Pack(String)) -> . {
+pub fn selected(value: Pack(String)) {
   let unpack = Pack.unpack(value);
   io.print(unpack(.[U](message: String, _payload: U) { message }));
   io.print(unpack(.[U](message: String, _payload: U) { message }))

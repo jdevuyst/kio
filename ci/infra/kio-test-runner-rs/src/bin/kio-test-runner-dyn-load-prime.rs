@@ -259,6 +259,7 @@ fn export_driver_execution_mode(driver: ExportDriver) -> Result<&'static str, &'
         | ExportDriver::NestedProductRoundtrip
         | ExportDriver::CompoundInputOnce => Ok("script"),
         ExportDriver::PolyCallbackRoundtrip
+        | ExportDriver::TypeOnlyRoundtrip
         | ExportDriver::StructuralRoundtrip
         | ExportDriver::ScalarRoundtrip
         | ExportDriver::HostOwnedRoundtrip
@@ -1113,6 +1114,7 @@ mod tests {
         }
         for driver in [
             ExportDriver::PolyCallbackRoundtrip,
+            ExportDriver::TypeOnlyRoundtrip,
             ExportDriver::StructuralRoundtrip,
             ExportDriver::ScalarRoundtrip,
             ExportDriver::HostOwnedRoundtrip,

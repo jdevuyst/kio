@@ -81,9 +81,7 @@ rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
   }
 }
 
-pub fn all_addrs() -> List(Addr) {
-  addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil(Addr, ()))
-}
+pub fn all_addrs() -> List(Addr) { addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil(Addr)) }
 
 pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
   match! xs.>List.unpack {

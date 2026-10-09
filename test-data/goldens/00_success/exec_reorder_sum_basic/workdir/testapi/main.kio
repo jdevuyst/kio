@@ -17,7 +17,7 @@ fn swap(s: String | I32) -> I32 | String { reorder_sum!(s) }
 // palette's injection.
 fn lift(s: String) -> String | I32 { widen_sum!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   // Construct a left-arm sum value, reorder so it lands as the
   // right arm of `(I32 | String)`, then discriminate via match.
   let r = swap(lift("reorder_sum: forwarded\n"));

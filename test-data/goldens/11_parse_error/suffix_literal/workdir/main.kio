@@ -5,4 +5,4 @@ module parse_err_suffix_literal/main;
 // `i32`, which the parser cannot place — a parse error. A literal's
 // type comes from its `(Type)` annotation or the surrounding
 // context, never a suffix.
-fn main() -> . { 42i32 }
+fn main() { 42i32 }

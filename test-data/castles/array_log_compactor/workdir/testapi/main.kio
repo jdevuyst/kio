@@ -45,28 +45,19 @@ fn is_deleted(item: Event) -> Bool { item.?{event_deleted} }
 fn score(item: Event) -> I32 { mul_i32(item.?{event_value}, item.?{event_seq}) }
 
 fn render(index: I32, item: Event) -> String {
-  string_concat(
-    , "slot "
-    , string_concat(
-        , int_to_string(index)
-        , string_concat(
-            , ": "
-            , string_concat(
-                , item.?{event_key}
-                , string_concat(
-                    , "="
-                    , string_concat(
-                        , int_to_string(item.?{event_value})
-                        , string_concat(
-                            , " seq "
-                            , string_concat(int_to_string(item.?{event_seq}), "\n")
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
+  let index_text = int_to_string(index);
+  let key_text = item.?{event_key};
+  let value_text = int_to_string(item.?{event_value});
+  let seq_text = int_to_string(item.?{event_seq});
+  seq_text
+    .>string_concat("\n")
+    .>>string_concat(" seq ")
+    .>>string_concat(value_text)
+    .>>string_concat("=")
+    .>>string_concat(key_text)
+    .>>string_concat(": ")
+    .>>string_concat(index_text)
+    .>>string_concat("slot ")
 }
 
 fn build_log() -> Array(Event) {
@@ -173,10 +164,10 @@ fn compact(log: Array(Event)) -> Compact {
 }
 
 fn line_count(label: String, value: I32) -> String {
-  string_concat(label, string_concat(int_to_string(value), "\n"))
+  int_to_string(value).>string_concat("\n").>>string_concat(label)
 }
 
-fn print_count(label: String, value: I32) -> . { print(line_count(label, value)) }
+fn print_count(label: String, value: I32) { print(line_count(label, value)) }
 
 rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32) -> I32 {
   if! leq_i32(index, last) {
@@ -189,7 +180,7 @@ rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32)
 
 fn checksum(log: Array(Event), kept: I32) -> I32 { checksum_loop(log, 0, sub_i32(kept, 1), 0) }
 
-rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) -> . {
+rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) {
   if! leq_i32(index, last) {
     print(render(index, array_get(log, index)));
     rec print_rows(log, add_i32(index, 1), last)
@@ -198,7 +189,7 @@ rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) -> . {
   }
 }
 
-fn print_summary(summary: Compact) -> . {
+fn print_summary(summary: Compact) {
   let log = summary.?{compacted_log};
   let kept = summary.?{kept_count};
   print("array_log_compactor\n");
@@ -212,4 +203,4 @@ fn print_summary(summary: Compact) -> . {
   print_rows(log, 0, sub_i32(kept, 1))
 }
 
-pub fn main() -> . { let log = build_log(); let compacted = compact(log); print_summary(compacted) }
+pub fn main() { let log = build_log(); let compacted = compact(log); print_summary(compacted) }

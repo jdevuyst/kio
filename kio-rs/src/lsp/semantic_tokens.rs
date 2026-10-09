@@ -32,6 +32,7 @@
 //!   1  `defaultLibrary`   — items supplied by the host
 //!   2  `readonly`         — every Kio binder is immutable (applied
 //!                           to parameters, let-bindings, and fn defs)
+//!   3  `documentation`    — documentation prose and its lexical contents
 //!
 //! ## Stage A — source-token classification
 //!
@@ -92,6 +93,7 @@ pub const TOKEN_MODIFIERS: &[SemanticTokenModifier] = &[
     SemanticTokenModifier::DECLARATION,     // bit 0
     SemanticTokenModifier::DEFAULT_LIBRARY, // bit 1
     SemanticTokenModifier::READONLY,        // bit 2
+    SemanticTokenModifier::DOCUMENTATION,   // bit 3
 ];
 
 // ── Type-index constants ─────────────────────────────────────────────────────
@@ -112,6 +114,7 @@ const TT_OPERATOR: u32 = 11;
 
 const MOD_DECLARATION: u32 = 1 << 0;
 const MOD_READONLY: u32 = 1 << 2;
+const MOD_DOCUMENTATION: u32 = 1 << 3;
 
 // ── Capability advertisement ─────────────────────────────────────────────────
 
@@ -150,7 +153,19 @@ fn classify_token_kind(kind: TokenKind) -> Option<(u32, u32)> {
         TokenKind::KeywordElaborator => Some((TT_KEYWORD, 0)),
 
         // Comments
-        TokenKind::CommentLine | TokenKind::CommentDoc => Some((TT_COMMENT, 0)),
+        TokenKind::CommentLine => Some((TT_COMMENT, 0)),
+        TokenKind::CommentDoc => Some((TT_COMMENT, MOD_DOCUMENTATION)),
+        TokenKind::CommentDocReference => Some((TT_VARIABLE, MOD_DOCUMENTATION)),
+        TokenKind::CommentDocDirective
+        | TokenKind::CommentDocFence
+        | TokenKind::CommentDocHeading
+        | TokenKind::CommentDocMarker
+        | TokenKind::CommentDocAttribute => Some((TT_KEYWORD, MOD_DOCUMENTATION)),
+        TokenKind::CommentDocCode => Some((TT_STRING, MOD_DOCUMENTATION)),
+        TokenKind::CommentDocStrong | TokenKind::CommentDocEmphasis => {
+            Some((TT_COMMENT, MOD_DOCUMENTATION))
+        }
+        TokenKind::CommentDocLink => Some((TT_VARIABLE, MOD_DOCUMENTATION)),
 
         // Literals
         TokenKind::LiteralString => Some((TT_STRING, 0)),
@@ -314,10 +329,16 @@ fn semantic_tokens_from_classified(
     let triples: Vec<(u32, u32, u32, u32)> = classified
         .iter()
         .filter_map(|t| {
-            if let Some(triple) = elaborator_head_token(source, t) {
+            if let Some(mut triple) = elaborator_head_token(source, t) {
+                if t.in_documentation {
+                    triple.3 |= MOD_DOCUMENTATION;
+                }
                 return Some(triple);
             }
-            let (type_idx, modifiers) = classify_token_kind(t.kind)?;
+            let (type_idx, mut modifiers) = classify_token_kind(t.kind)?;
+            if t.in_documentation {
+                modifiers |= MOD_DOCUMENTATION;
+            }
             Some((t.span.start, t.span.end, type_idx, modifiers))
         })
         .collect();

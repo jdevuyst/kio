@@ -8,15 +8,15 @@ import testapi/iter(loop);
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn finish_unit(value: .) -> . { print("same\n"); value }
+fn finish_unit(value: .) { print("same\n"); value }
 
-fn finish_box(value: Box(.)) -> . { let unit = Box.unbox(value); print("box\n") }
+fn finish_box(value: Box(.)) { let unit = Box.unbox(value); print("box\n") }
 
-rec(loop) fn same(n: I32) -> . {
+rec(loop) fn same(n: I32) {
   finish_unit(choose!(leq_i32(1, n), .() { let next = rec(cont) same(0); next }, ()))
 }
 
-rec(loop) fn boxed(n: I32) -> . {
+rec(loop) fn boxed(n: I32) {
   finish_box(choose!(
     , leq_i32(1, n)
     , .() { let next = rec(cont) boxed(0); Box.box(next) }
@@ -24,4 +24,4 @@ rec(loop) fn boxed(n: I32) -> . {
     ))
 }
 
-pub fn main() -> . { same(1); boxed(1) }
+pub fn main() { same(1); boxed(1) }

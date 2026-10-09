@@ -29,9 +29,9 @@ pub fn ready_len(q: Queues) -> I32 { array_len(q.?{ready}) }
 
 pub fn ready_at(q: Queues, i: I32) -> I32 { array_get(q.?{ready}, i) }
 
-pub fn enqueue(q: Queues, pid: I32) -> . { array_push(q.?{ready}, pid) }
+pub fn enqueue(q: Queues, pid: I32) { array_push(q.?{ready}, pid) }
 
-rec(loop) fn shift_down(r: Array(I32), i: I32, n: I32) -> . {
+rec(loop) fn shift_down(r: Array(I32), i: I32, n: I32) {
   if! leq_i32(n, i) {
     ()
   } else {
@@ -60,7 +60,7 @@ pub fn dequeue(q: Queues) -> I32 | . {
 }
 
 /// Park a process until its page has been fetched.
-pub fn block(q: Queues, pid: I32, wake_at: I32) -> . {
+pub fn block(q: Queues, pid: I32, wake_at: I32) {
   array_push(q.?{blocked}, pid);
   array_push(q.?{wake}, wake_at)
 }
@@ -86,7 +86,7 @@ rec(loop) fn wake_scan(q: Queues, tick: I32, read: I32, write: I32, n: I32) -> I
   }
 }
 
-rec(loop) fn truncate(a: Array(I32), keep: I32) -> . {
+rec(loop) fn truncate(a: Array(I32), keep: I32) {
   if! leq_i32(array_len(a), keep) {
     ()
   } else {
@@ -98,13 +98,13 @@ rec(loop) fn truncate(a: Array(I32), keep: I32) -> . {
 /// Move every process whose fetch has completed onto the tail of the ready
 /// queue, in the order the faults were taken, and close the blocked list up
 /// around the ones that stay.
-pub fn wake_serviced(q: Queues, tick: I32) -> . {
+pub fn wake_serviced(q: Queues, tick: I32) {
   let kept = wake_scan(q, tick, 0, 0, array_len(q.?{blocked}));
   truncate(q.?{blocked}, kept);
   truncate(q.?{wake}, kept)
 }
 
-pub fn retire(q: Queues, pid: I32) -> . { array_push(q.?{retired}, pid) }
+pub fn retire(q: Queues, pid: I32) { array_push(q.?{retired}, pid) }
 
 pub fn retired_len(q: Queues) -> I32 { array_len(q.?{retired}) }
 

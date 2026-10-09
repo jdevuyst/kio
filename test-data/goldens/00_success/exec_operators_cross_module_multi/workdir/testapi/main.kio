@@ -9,7 +9,7 @@ import testapi/io(print);
 // qualified alias for the source module.
 import testapi/numeric(op _ * _, op _ + _);
 
-pub fn main() -> . {
+pub fn main() {
   let sum = 1 + 2;
   let prod = 3 * 4;
   print(i32_to_string(sum));

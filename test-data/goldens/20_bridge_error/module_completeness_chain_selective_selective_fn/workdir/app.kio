@@ -2,4 +2,4 @@ module app;
 
 import mid(pass);
 
-pub fn run() -> . { pass() }
+pub fn run() { pass() }

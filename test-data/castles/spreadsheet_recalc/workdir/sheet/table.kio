@@ -13,7 +13,7 @@ import testapi/iter(loop);
 
 pub newtype Table[V] : List(Addr & V) { pub constructor pack; pub projector unpack }
 
-pub fn empty[V]() -> Table(V) { Table.pack(V, nil(Addr & V, ())) }
+pub fn empty[V] -> Table(V) { Table.pack(V, nil(Addr & V)) }
 
 rec(loop) fn find_or[V](entries: List(Addr & V), key: Addr, fallback: V) -> V {
   match! entries.>List.unpack {
@@ -56,5 +56,5 @@ rec(loop) fn without[V](entries: List(Addr & V), key: Addr, acc: List(Addr & V))
 /// Dropping the old entry rather than shadowing it keeps the table at one
 /// entry per cell, so a long edit script does not grow the lookup cost.
 pub fn put[V](t: Table(V), key: Addr, value: V) -> Table(V) {
-  Table.pack(V, cons((key, value), without(t.>Table.unpack, key, nil(Addr & V, ()))))
+  Table.pack(V, cons((key, value), without(t.>Table.unpack, key, nil(Addr & V))))
 }

@@ -80,7 +80,7 @@ fn outcome(label: String, loaded: Load_outcome) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(outcome("type conflict: "(String), load_package(type_conflict_image())));
   print(outcome("type same origin: "(String), load_package(type_same_origin_image())));
   print(outcome("value conflict: "(String), load_package(value_conflict_image())));

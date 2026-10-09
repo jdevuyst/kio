@@ -87,7 +87,7 @@ rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
 /// Pass one. A mark takes no address of its own; it names the address the
 /// next instruction will occupy, which is why a mark at the very end binds
 /// one past the last instruction.
-fn pass_one(fs: Flats) -> Placed { place(fs, 0, l.nil(Src, ()), l.nil(Symbol, ())) }
+fn pass_one(fs: Flats) -> Placed { place(fs, 0, l.nil(Src), l.nil(Symbol)) }
 
 /// Pass two's result: runnable code, or the label a jump named that pass
 /// one never placed.
@@ -156,7 +156,7 @@ rec(loop) fn resolve(code: Srcs, syms: Symbols, acc: Prog) -> Resolved {
 }
 
 /// Pass two.
-fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil(Ins, ())) }
+fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil(Ins)) }
 
 /// The whole build: expand the macros, place the labels, resolve the jumps.
 /// Each phase can only fail its own way, and every failure widens into the

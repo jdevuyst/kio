@@ -73,11 +73,13 @@ Grep every `Error::… {` / error-constructor call site
 - **Type / Elaborator errors** (`14_type_error`, `15_elaborator_error`) — the
   highest-value for secondary labels: does the message point at *both*
   the mismatch site *and* the expected-type / coercion source?
-  For imported callables, check direct and straight-alias calls against the
-  actual written signature, including when its nominal type is defined in a
-  third module. CLI related excerpts and LSP related locations must use the
-  source snapshot that supplied the requirement. Keep argument-internal
-  errors attached to their own constraints.
+  For imported ordinary and host functions, check direct and straight-alias
+  calls against the actual written signature, including when its nominal
+  type is defined in a third module. CLI related excerpts and LSP related
+  locations must use the source snapshot that supplied the requirement:
+  preserve written domain spans and use an honest declaration context for
+  synthetic empty domains, never caller offsets in a provider file. Keep
+  argument-internal errors attached to their own constraints.
 - **Name-resolution errors** (`13_name_resolution_error`) — the richest
   `did you mean` target: an unresolved name should suggest the nearest
   in-scope name when one is close.
@@ -89,6 +91,15 @@ Grep every `Error::… {` / error-constructor call site
 
 Report sites that *could* carry a secondary label / help / suggestion per
 the rubric but don't.
+
+For actionable diagnostics, follow
+[`language-surface-tooling.md` § Actionable diagnostics and native fixes](../../topics/language-surface-tooling.md#actionable-diagnostics-and-native-fixes).
+Trace the compiler's structured edit through LSP discovery and application;
+classify existing fixes, missing/broken fixes, author-choice cases, and unsafe
+automation. Report prose-only repair hints whose safe edit is missing, and
+fixes with no application/reanalysis evidence. Do not infer an action from a
+help string or require a fix for every error. A focused review states its
+diagnostic families and does not claim this skill's full CLI coverage.
 
 ### A3. Rendering shows source context
 

@@ -1,0 +1,15 @@
+package native_docs;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/";
+    namespace "NativeDocs"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

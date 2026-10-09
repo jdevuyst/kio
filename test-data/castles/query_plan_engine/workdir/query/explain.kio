@@ -15,9 +15,7 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
 
-fn line(depth: I32, body: String) -> . {
-  print(text.cat3(text.spaces(mul_i32(depth, 2)), body, "\n"))
-}
+fn line(depth: I32, body: String) { print(text.cat3(text.spaces(mul_i32(depth, 2)), body, "\n")) }
 
 rec(loop) fn cols_onto(cols: schema.Col_list, acc: String, first: Bool) -> String {
   match! cols.>list.List.un_list {
@@ -84,7 +82,7 @@ pub rec(loop) fn pred_text(p: plan.Pred) -> String {
   }
 }
 
-rec(loop) fn explain_at(p: plan.Plan, depth: I32) -> . {
+rec(loop) fn explain_at(p: plan.Plan, depth: I32) {
   match! p.>plan.Plan.un_plan {
     (
       , .(n: plan.Scan_table) {
@@ -151,4 +149,4 @@ rec(loop) fn explain_at(p: plan.Plan, depth: I32) -> . {
   }
 }
 
-pub fn explain(p: plan.Plan) -> . { explain_at(p, 1) }
+pub fn explain(p: plan.Plan) { explain_at(p, 1) }

@@ -12,7 +12,7 @@ import testapi/text(string_concat);
 // `{String, I32}` ⊆ source's `{String, Bool, I32}`.
 fn project(p: String & Bool & I32) -> String & I32 { narrow_prod!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let kept = project(("narrow_prod: kept ", .t, 7));
   // The kept pair is `(String & I32)` — pick each slot with
   // `one_prod!` and print.

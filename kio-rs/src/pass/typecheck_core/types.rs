@@ -2110,8 +2110,8 @@ where
 }
 
 /// Render a [`Type`] as a human-readable string for diagnostics.
-/// The format is the surface syntax: `()` / `!` / `(A & B)` /
-/// `(A | B)` / `(A & B) -> C` / `Foo[A][B]`. Used by the typer's
+/// The format is the surface syntax: `.` / `!` / `A & B` /
+/// `A | B` / `(A & B) -> C` / `Foo(A, B)`. Used by the typer's
 /// `expected … found …` error messages and any other diagnostic
 /// that wants a recognisable type name.
 ///
@@ -2183,23 +2183,27 @@ where
         crate::ast::Type::Unit { .. } => out.push('.'),
         crate::ast::Type::Bottom { .. } => out.push('!'),
         crate::ast::Type::Function { param, ret, .. } => {
-            write_function_domain_type(param, out, path_style);
+            write_type_atom(param, out, path_style);
             out.push_str(" -> ");
             write_type_with_path_style(ret, out, path_style);
         }
         crate::ast::Type::Product { left, right, .. } => {
-            out.push('(');
-            write_chain_child_type(left, out, path_style);
+            write_type_atom(left, out, path_style);
             out.push_str(" & ");
-            write_chain_child_type(right, out, path_style);
-            out.push(')');
+            if matches!(right.as_ref(), crate::ast::Type::Product { .. }) {
+                write_type_with_path_style(right, out, path_style);
+            } else {
+                write_type_atom(right, out, path_style);
+            }
         }
         crate::ast::Type::Sum { left, right, .. } => {
-            out.push('(');
-            write_chain_child_type(left, out, path_style);
+            write_type_atom(left, out, path_style);
             out.push_str(" | ");
-            write_chain_child_type(right, out, path_style);
-            out.push(')');
+            if matches!(right.as_ref(), crate::ast::Type::Sum { .. }) {
+                write_type_with_path_style(right, out, path_style);
+            } else {
+                write_type_atom(right, out, path_style);
+            }
         }
         crate::ast::Type::Path { segments, args, .. } => {
             // NUL-prefixed names are compiler-only inference holes. They
@@ -2268,27 +2272,16 @@ where
     }
 }
 
-fn write_function_domain_type<P>(ty: &crate::ast::Type<P>, out: &mut String, path_style: PathStyle)
-where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
-{
-    match ty {
-        crate::ast::Type::Function { .. } | crate::ast::Type::Forall { .. } => {
-            out.push('(');
-            write_type_with_path_style(ty, out, path_style);
-            out.push(')');
-        }
-        _ => write_type_with_path_style(ty, out, path_style),
-    }
-}
-
-fn write_chain_child_type<P>(ty: &crate::ast::Type<P>, out: &mut String, path_style: PathStyle)
+fn write_type_atom<P>(ty: &crate::ast::Type<P>, out: &mut String, path_style: PathStyle)
 where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
 {
     if matches!(
         ty,
-        crate::ast::Type::Function { .. } | crate::ast::Type::Forall { .. }
+        crate::ast::Type::Function { .. }
+            | crate::ast::Type::Forall { .. }
+            | crate::ast::Type::Product { .. }
+            | crate::ast::Type::Sum { .. }
     ) {
         out.push('(');
         write_type_with_path_style(ty, out, path_style);
@@ -3650,10 +3643,87 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "surface")]
     #[test]
-    fn write_function_domain_product_needs_no_parens() {
-        // A product / sum function domain renders bare (no wrapping
-        // parens), unlike a function- or forall-domain.
+    fn display_type_uses_only_structurally_required_parentheses() {
+        fn parse_type(source: &str) -> Ty {
+            let module = parse_module(&format!("module display; type Example = {source};"));
+            let crate::ast::Item::TypeAlias(alias) = &module.items[0] else {
+                panic!("expected type alias");
+            };
+            clone_with_span(&alias.body, sp())
+        }
+
+        for (source, expected) in [
+            ("(A & (B & C))", "A & B & C"),
+            ("((A & B) & C)", "(A & B) & C"),
+            ("(A | (B | C))", "A | B | C"),
+            ("((A | B) | C)", "(A | B) | C"),
+            ("(A & (B | C))", "A & (B | C)"),
+            ("((A | B) & C)", "(A | B) & C"),
+            ("(A | (B & C))", "A | (B & C)"),
+            ("((A & B) | C)", "(A & B) | C"),
+            ("(A & (B & C)) -> D", "(A & B & C) -> D"),
+            ("((A & B) & C) -> D", "((A & B) & C) -> D"),
+            ("(A | (B | C)) -> D", "(A | B | C) -> D"),
+            ("((A | B) | C) -> D", "((A | B) | C) -> D"),
+            ("A -> (B & (C & D))", "A -> B & C & D"),
+            ("A -> (B | (C | D))", "A -> B | C | D"),
+            ("(A -> B) -> C", "(A -> B) -> C"),
+            ("A -> (B -> C)", "A -> B -> C"),
+            ("((A -> B) & C)", "(A -> B) & C"),
+            ("(A & (B -> C))", "A & (B -> C)"),
+            ("((A -> B) | C)", "(A -> B) | C"),
+            ("(A | (B -> C))", "A | (B -> C)"),
+            ("[A][*F] (A & (F(A) & A))", "[A][*F] A & F(A) & A"),
+            ("([A] A -> A) -> B", "([A] A -> A) -> B"),
+            ("A -> [B] (B | B)", "A -> [B] B | B"),
+            ("([A] A -> A) & B", "([A] A -> A) & B"),
+            ("A & ([B] B -> B)", "A & ([B] B -> B)"),
+            ("([A] A -> A) | B", "([A] A -> A) | B"),
+            ("A | ([B] B -> B)", "A | ([B] B -> B)"),
+            ("Box((A & (B & C)))", "Box(A & B & C)"),
+            ("Box((A | B), ((C & D) & E))", "Box(A | B, (C & D) & E)"),
+            ("Box([A] A -> A, B -> C)", "Box([A] A -> A, B -> C)"),
+            (
+                "Alias & (provider.Item(A) & Alias)",
+                "Alias & provider.Item(A) & Alias",
+            ),
+            (". & (! | .)", ". & (! | .)"),
+        ] {
+            let original = parse_type(source);
+            let printed = display_type(&original);
+            assert_eq!(printed, expected, "source: {source}");
+            assert_eq!(
+                parse_type(&printed),
+                original,
+                "changed structure: {source}"
+            );
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn display_type_preserves_path_styles_inside_chains() {
+        let qualified = Ty::synth_path(
+            vec!["provider".into(), "nested".into(), "Item".into()],
+            vec![product(path("A"), path("B"))],
+            sp(),
+        );
+        let alias = Ty::synth_path(vec!["alias".into(), "Item".into()], Vec::new(), sp());
+        let ty = product(alias, product(qualified, path("A")));
+        assert_eq!(
+            display_type(&ty),
+            "alias.Item & provider.nested.Item(A & B) & A"
+        );
+        assert_eq!(
+            display_reflected_type(&ty),
+            "alias.Item & provider/nested.Item(A & B) & A"
+        );
+    }
+
+    #[test]
+    fn write_function_domain_groups_product_and_sum() {
         assert_eq!(
             display_type(&func(product(path("A"), path("B")), path("C"))),
             "(A & B) -> C"

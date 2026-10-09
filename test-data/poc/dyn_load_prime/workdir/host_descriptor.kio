@@ -99,7 +99,7 @@ pub fn param_kind_eq(a: Param_kind, b: Param_kind) -> Bool {
 pub labels { param_kinds: List(Param_kind) };
 
 /// The empty kind list.
-pub fn param_kinds_nil() -> Param_kinds { {param_kinds = nil(Param_kind, ())} }
+pub fn param_kinds_nil() -> Param_kinds { {param_kinds = nil(Param_kind)} }
 
 /// Prepends a kind to a kind list.
 pub fn param_kinds_cons(head: Param_kind, tail: Param_kinds) -> Param_kinds {
@@ -426,7 +426,7 @@ pub fn host_fn_eq(a: Host_fn, b: Host_fn) -> Bool {
 pub labels { host_types: List(Host_type) };
 
 /// The empty host-type list.
-pub fn host_types_nil() -> Host_types { {host_types = nil(Host_type, ())} }
+pub fn host_types_nil() -> Host_types { {host_types = nil(Host_type)} }
 
 /// Prepends a host type.
 pub fn host_types_cons(head: Host_type, tail: Host_types) -> Host_types {
@@ -539,7 +539,7 @@ pub fn find_host_type(types: Host_types, id: Host_id) -> Host_type_lookup {
 pub labels { host_functions: List(Host_fn) };
 
 /// The empty host-function list.
-pub fn host_functions_nil() -> Host_functions { {host_functions = nil(Host_fn, ())} }
+pub fn host_functions_nil() -> Host_functions { {host_functions = nil(Host_fn)} }
 
 /// Prepends a host function.
 pub fn host_functions_cons(head: Host_fn, tail: Host_functions) -> Host_functions {

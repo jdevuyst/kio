@@ -11,7 +11,7 @@ fn make_unit_slot() -> Unit_slot(.) {
   Unit_slot.make(., .[A](value: .) -> . { print("unit slot\n"(String)); value })
 }
 
-pub fn main() -> . {
+pub fn main() {
   let thunk = round_poly_thunk(make_thunk());
   let unit_slot = round_unit_slot(make_unit_slot());
   Unit_slot.run(., unit_slot)(String, ());

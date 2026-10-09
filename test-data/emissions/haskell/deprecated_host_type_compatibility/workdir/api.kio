@@ -6,4 +6,4 @@ host type Array[A];
 
 host type Transformer[A][B];
 
-pub fn unit() -> . { () }
+pub fn unit() { () }

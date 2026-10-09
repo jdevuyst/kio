@@ -1,0 +1,46 @@
+package native_docs;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js"
+  };
+
+  target ts {
+    out "out/ts"
+  };
+
+  target python {
+    out "out/python"
+  };
+
+  target rust {
+    out "out/rust"
+  };
+
+  target swift {
+    out "out/swift"
+  };
+
+  target go {
+    out "out/go"
+  };
+
+  target java {
+    out "out/java"
+  };
+
+  target haskell {
+    out "out/haskell"
+  };
+
+  target kio-prime {
+    out "out/kio-prime"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

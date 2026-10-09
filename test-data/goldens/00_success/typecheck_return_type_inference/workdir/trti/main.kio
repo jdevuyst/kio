@@ -21,7 +21,7 @@ import trti(String);
 // position with expected return `.`, so the typer pins
 // `A = .` from the return-type unification and the type-arg
 // can be dropped entirely.
-fn coerce(x: !) -> . { __absurd__(x) }
+fn coerce(x: !) { __absurd__(x) }
 
 // `__left__ : [A][B](x: A) -> (A | B)` — `[B]` appears
 // only in the return type. With both type-args elided, value-arg

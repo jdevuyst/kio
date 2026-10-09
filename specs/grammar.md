@@ -119,13 +119,14 @@ TypeRecMember     ::= DocBlock? (TypeAliasBody | Newtype)
 HostType          ::= HostTypeBody ';'
 HostTypeBody      ::= 'pub'? 'host' 'pub'? 'type' IDENT TypeParamList? RoleAnnotation? OwnedBlock?
 HostFn            ::= HostFnBody ';'
-HostFnBody        ::= 'pub'? 'host' 'pub'? 'fn' IDENT Signature '->' Type
+HostFnBody        ::= 'pub'? 'host' 'pub'? 'fn' IDENT ValueSignature '->' Type
 RoleAnnotation    ::= 'role' '(' IDENT ')'    (* IDENT ∈ i8…i128 / u8…u128 / f32 / f64 / bool / str *)
 OwnedBlock        ::= '{' 'owned' '}'
 
 TypeParamList     ::= TypeBinderGroup+
-Signature         ::= SignatureGroup+                     (* must include at least one ValueParamGroup *)
-FnSignature       ::= FnSignatureGroup+                   (* must include at least one FnValueParamGroup *)
+Signature         ::= SignatureGroup+                     (* ordinary declaration; type-only groups admitted *)
+ValueSignature    ::= SignatureGroup* ValueParamGroup SignatureGroup*
+FnSignature       ::= FnSignatureGroup+                   (* lambda; type-only groups admitted *)
 SignatureGroup    ::= TypeBinderGroup | ValueParamGroup
 FnSignatureGroup  ::= TypeBinderGroup | FnValueParamGroup
 ValueParamGroup   ::= '(' SignatureParamList? ')'
@@ -196,9 +197,9 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
 - A `NewtypeBody` holds an **unordered set** of members: exactly one `constructor` and exactly one `projector`, in **either order** (`constructor` then `projector`, or `projector` then `constructor`). Both must be present and neither may be duplicated; the order carries no meaning. `kio fmt` canonicalizes the pair to `constructor`-then-`projector` (see [`style.md`](style.md)).
 - `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec newtype`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
 - `TypeRecGroup` is capability-free and has no group-level visibility. It contains at least two ordinary `type` / `newtype` members, with visibility and doc comments attached to each member. The complete member heads are in scope throughout the group. Static validation requires the written group to be exactly one genuinely mutual cyclic component and requires every alias cycle to cross a `newtype` boundary; a one-member, acyclic, multi-component, or alias-only group is rejected. A member does not repeat the singleton `rec` marker.
-- The keyword `'fn'` leads only item declarations (`fn IDENT (…)`). Anonymous functions use `.(…) { … }`, so expression position does not reserve `fn`.
+- The keyword `'fn'` leads only item declarations. Ordinary declarations and dot-led anonymous functions require at least one type or value group: `fn value[A] { … }` and `.[A] { … }` are admitted alongside `fn value() { … }` and `.() { … }`. No value group is implied by a type-only signature. `host fn`, `RecFnDef`, and a written `Equiv` signature instead use `ValueSignature`, which requires at least one value group. Expression position does not reserve `fn`.
 - A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m(X);` creates a `→ m` import edge wherever it sits. See [`language.md` § Module cycles](language.md#module-cycles).
-- `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation pins the type to a host-supplied atomic value and drives literal reception (see [`language.md` § Literals](language.md#literals)). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The optional `{ owned }` block remains accepted and formatted for source compatibility, but selects no alternate representation: the Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and its `-> Type` return is mandatory (a `host fn` has no body to infer it from). `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
+- `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation records its literal-admission metadata (see [`language.md` § Literals](language.md#literals)); `role(bool)` also participates in [condition-type selection](language.md#conditionals). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The optional `{ owned }` block remains accepted and formatted for source compatibility, but selects no alternate representation: the Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and its `-> Type` return is mandatory (a `host fn` has no body to infer it from). `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
 
 The `IS_KIO_PRIME` corpus marker (see [`test-data/README.md`](../test-data/README.md)) asserts that every regular-module file in a case parses against the Kio' productions above. The corpus check `ci/checks/orchestrators/golden-tests.sh` verifies acceptance via the standalone `kio-prime-check` tool under [`ci/infra/kio-prime-check-rs/`](../ci/infra/kio-prime-check-rs/).
 
@@ -285,7 +286,7 @@ CapturePath    ::= IDENT ('.' IDENT)*
 
 RecItem        ::= Vis? 'rec' '(' ValuePath ')' RecFnDef                 (* exact one-member braced expansion; at most one visibility total — before `rec` (fmt-canonical) or on the fn *)
                  | 'rec' '(' ValuePath ')' '{' SemiEntries<RecFnDef> '}' (* grouping braces carry no visibility; each member does *)
-RecFnDef       ::= Vis? 'fn' IDENT Signature ('->' Type)? Block
+RecFnDef       ::= Vis? 'fn' IDENT ValueSignature ('->' Type)? Block
 
 TypeRecMember += DocBlock? Vis? 'labels' LabelsBody
 
@@ -310,7 +311,7 @@ VariadicPrimary   ::= 'foldl' ValuePath ValuePath      (* step, nullary base *)
                    | 'foldl1' ValuePath ValuePath     (* step, unary first-element seed *)
                    | 'foldr1' ValuePath ValuePath     (* step, unary last-element seed *)
 
-Equiv             ::= 'equiv' IDENT Signature?
+Equiv             ::= 'equiv' IDENT ValueSignature?
                     '{' ';'* Expr (';'+ Expr)+ ';'* '}'                       (* N >= 2 arms *)
 ```
 
@@ -744,7 +745,7 @@ SignatureDecl     ::= 'signature' IDENT 'v' '(' INT_LIT ')' ';'   (* IDENT = fil
 
 The version-block body admits optional `with`, `breaking`, and `nonbreaking` entries in any order, at most once each. Each partition admits `add`, `modify`, and `remove` operation blocks in any order, at most once each. Ordinary nonrecursive add/modify entries remain post-elaboration Kio' declarations inside `module` sections. A complete recursive `rec { ... }` group instead appears exactly once under `with { module <path> { ... } }`, while operations name its changed members by exact non-expression `ItemRef` FQNs such as `api.A;` or `foo/bar.B;`. Canonical removals use the same FQN form; the legacy nested `module path { Name; }` removal form remains parse-compatible but is not emitted. The complete grammar and context-epoch/replay rules are specified in [`versioning.md` § Changelog grammar](versioning.md#changelog-grammar).
 
-The one changelog-specific declaration production is the **body-less `fn` export signature**, which reuses the host-fn signature shape and is recorded without a body (a stray body is a changelog error):
+The one changelog-specific declaration production is the **body-less `fn` export signature**, which uses the ordinary function's `Signature`, including type-only groups, and is recorded without a body (a stray body is a changelog error). Unlike a host import, an ordinary export does not require a value group:
 
 ```ebnf
 SigExportFn       ::= ('pub' 'pure'? | 'pure' 'pub') 'fn' IDENT Signature '->' Type

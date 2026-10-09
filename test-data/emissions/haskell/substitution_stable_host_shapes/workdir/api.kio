@@ -48,7 +48,7 @@ host fn staged_host[A](_left: A) -> [B][C] (B & C) -> C;
 
 fn staged_module[A](_left: A)[B][C](_middle: B, right: C) -> C { right }
 
-pub fn run_staged_calls() -> . { let _ = staged_module((), (), ()); staged_host((), ((), ())) }
+pub fn run_staged_calls() { let _ = staged_module((), (), ()); staged_host((), ((), ())) }
 
 pub fn keep_pair(value: Pair) -> Box(Pair) { tie(value, pair_seed()) }
 

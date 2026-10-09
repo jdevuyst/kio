@@ -6,7 +6,7 @@ import qualified_provider as q;
 
 fn a() -> . { () }
 
-fn b() -> . { () }
+fn b() { () }
 
 fn alias_identity(value: Shape) -> Shape { value }
 

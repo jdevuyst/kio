@@ -16,7 +16,7 @@ fn drop_unit(p: String & .) -> String { into!(p) }
 
 fn drop_bottom(s: String | !) -> String { into!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   // `A & . → A`: build a `(String, ())` pair, then peel the unit.
   let pair = ("unit-absorbed\n", ());
   print(drop_unit(pair));

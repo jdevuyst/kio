@@ -16,7 +16,7 @@ import testapi/iter(loop);
 import turtle/command as cmd;
 import turtle/text as text;
 
-fn line(indent: String, body: String) -> . { print(text.cat3(indent, body, "\n")) }
+fn line(indent: String, body: String) { print(text.cat3(indent, body, "\n")) }
 
 fn pen_text(down: Bool) -> String {
   if! down {
@@ -36,8 +36,8 @@ fn turn_text(right: Bool) -> String {
 
 rec(loop) {
   /// Print every command of `b`, indented `depth` levels deep.
-  pub fn echo_block(b: list.List(cmd.Command), depth: I32) -> . { rec walk(b, depth) };
-  fn walk(b: list.List(cmd.Command), depth: I32) -> . {
+  pub fn echo_block(b: list.List(cmd.Command), depth: I32) { rec walk(b, depth) };
+  fn walk(b: list.List(cmd.Command), depth: I32) {
     match! list.uncons(b) {
       (
         , .(c: cmd.Command, rest: list.List(cmd.Command)) {
@@ -49,7 +49,7 @@ rec(loop) {
     }
   };
   /// One command and, when it is a `repeat`, everything under it.
-  fn emit(c: cmd.Command, depth: I32) -> . {
+  fn emit(c: cmd.Command, depth: I32) {
     let indent = text.spaces(mul_i32(depth, 2));
     match! cmd.un_command(c) {
       (

@@ -28,4 +28,4 @@ fn fact_step(state: I32 & I32) -> (I32 & I32) | I32 {
 
 fn factorial(n: I32) -> I32 { loop(.(state: I32 & I32) { fact_step(state) }, (n, 1)) }
 
-pub fn main() -> . { print(int_to_string(factorial(10))); print("\n") }
+pub fn main() { print(int_to_string(factorial(10))); print("\n") }

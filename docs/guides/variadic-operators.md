@@ -41,6 +41,11 @@ fn empty_list() -> List(I32) { [* *] }
 fn three_items() -> List(I32) { [* 1, 2, 3 *] }
 ```
 
+The `()` in `nil[A]()` is intentional: `foldr` requires a base it can call
+with Unit. A type-only constructor `fn nil[A] -> List(A)` has a different
+type and is not that base; wrap it in a function with a written `()` when
+using it here. See [Type-only values](../tutorials/language.md#type-only-values).
+
 `varop [* *]` declares the opening delimiter `[*` and closing delimiter `*]`.
 The clause `foldr cons nil` combines elements from the right:
 

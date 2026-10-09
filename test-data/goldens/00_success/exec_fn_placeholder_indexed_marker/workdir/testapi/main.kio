@@ -7,7 +7,7 @@ import testapi/text(string_concat);
 // The highest index sets arity, independently of occurrence order.
 fn apply2(f: (String & String) -> String, a: String, b: String) -> String { f(a, b) }
 
-pub fn main() -> . {
+pub fn main() {
   // The binding annotation supplies the lambda's expected
   // parameter and result types.
   let .(swap: (String & String) -> String) = .x. { string_concat(x2, x1) };

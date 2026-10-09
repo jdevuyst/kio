@@ -16,4 +16,4 @@ module testapi/main;
 
 import os/report as report;
 
-pub fn main() -> . { report.run() }
+pub fn main() { report.run() }

@@ -1,0 +1,14 @@
+package native_docs;
+
+build {
+  cache "out/cache";
+
+  target python {
+    out "out/python"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

@@ -4,14 +4,14 @@ import __intrinsics__;
 
 fn pair_of(x: .) -> . & . { __pair__(., ., x, x) }
 
-fn first(p: . & .) -> . { __fst__(., ., p) }
+fn first(p: . & .) { __fst__(., ., p) }
 
-fn second(p: . & .) -> . { __snd__(., ., p) }
+fn second(p: . & .) { __snd__(., ., p) }
 
 fn left(x: .) -> . | . { __left__(., ., x) }
 
 fn right(x: .) -> . | . { __right__(., ., x) }
 
-fn dispatch(s: . | .) -> . { __either__(., ., ., s, .(a) { a }, .(b) { b }) }
+fn dispatch(s: . | .) { __either__(., ., ., s, .(a) { a }, .(b) { b }) }
 
 fn dead[A](x: !) -> A { __absurd__(A, x) }

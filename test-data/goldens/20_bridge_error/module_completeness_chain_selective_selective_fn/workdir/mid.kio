@@ -2,4 +2,4 @@ module mid;
 
 import cap(tick);
 
-pub fn pass() -> . { tick() }
+pub fn pass() { tick() }

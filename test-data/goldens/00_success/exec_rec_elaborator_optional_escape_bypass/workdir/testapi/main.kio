@@ -20,4 +20,4 @@ rec(loop) fn repeat(remaining: I32) -> String {
     ))
 }
 
-pub fn main() -> . { print(repeat(2)) }
+pub fn main() { print(repeat(2)) }

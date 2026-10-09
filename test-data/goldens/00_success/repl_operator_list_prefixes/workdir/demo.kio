@@ -1,0 +1,17 @@
+module demo;
+
+pub fn choose(left: ., right: .) { left }
+
+pub fn empty() { () }
+
+pub op _ + _ { impl choose }
+
+pub varop [* *] { foldr choose empty }
+
+pub(demo) op _ .. _ { impl choose }
+
+pub(demo) varop [! !] { foldr choose empty }
+
+op _ - _ { impl choose }
+
+varop [% %] { foldr choose empty }

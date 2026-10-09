@@ -3,5 +3,5 @@
 A snippet references `nonexistent`, which is never declared.
 
 ```kio {@nonexistent}
-pub fn greet() -> . { () }
+pub fn greet() { () }
 ```

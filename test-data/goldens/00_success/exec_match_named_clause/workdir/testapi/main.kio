@@ -14,14 +14,14 @@ import testapi/io(print);
 // inline or named separately. This golden exercises the named-
 // function clause path: each clause references a previously-defined
 // top-level fn by name.
-fn show_int(n: I32) -> . { print(int_to_string(n)) }
+fn show_int(n: I32) { print(int_to_string(n)) }
 
-fn show_string(s: String) -> . { print(s) }
+fn show_string(s: String) { print(s) }
 
-fn handle(v: I32 | String) -> . {
+fn handle(v: I32 | String) {
   match! v {
     (show_int, show_string)
   }
 }
 
-pub fn main() -> . { handle(widen_sum!("matched right\n")) }
+pub fn main() { handle(widen_sum!("matched right\n")) }

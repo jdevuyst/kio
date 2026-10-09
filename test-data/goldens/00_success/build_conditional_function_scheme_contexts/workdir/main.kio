@@ -10,9 +10,9 @@ fn identity_b[B](value: B) -> B { value }
 
 fn identity_c[C](value: C) -> C { value }
 
-fn same[T](_left: T, _right: T) -> . { () }
+fn same[T](_left: T, _right: T) { () }
 
-pub fn uncontextual(condition: Bool) -> . {
+pub fn uncontextual(condition: Bool) {
   let selected =
     if! condition {
       identity_a
@@ -22,7 +22,7 @@ pub fn uncontextual(condition: Bool) -> . {
   selected(())
 }
 
-pub fn contextual_goal(condition: Bool) -> . {
+pub fn contextual_goal(condition: Bool) {
   same(
     , if! condition {
         identity_a
@@ -33,7 +33,7 @@ pub fn contextual_goal(condition: Bool) -> . {
     )
 }
 
-pub fn connected_result() -> . {
+pub fn connected_result() {
   same(
     , .(condition: Bool) {
         if! condition {

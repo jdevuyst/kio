@@ -19,7 +19,7 @@ fn choose(condition: Bool, value: String | .) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(choose(.t, widen_sum!("then\n", String | .)));
   io.print(choose(.f, widen_sum!("unused\n", String | .)));
   io.print(choose(.t, widen_sum!((), String | .)))

@@ -18,7 +18,7 @@ fn project_and_widen(p: String & I32) -> String | I32 { ease!(p) }
 // Sum), and widens into the target's left arm (R-Widen-Sum).
 fn collapse_and_widen(s: (String & I32) | (String & I32)) -> String | I32 { ease!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   let r1 = project_and_widen(("projected-and-widened\n", 0));
   let s1 =
     match! r1 {

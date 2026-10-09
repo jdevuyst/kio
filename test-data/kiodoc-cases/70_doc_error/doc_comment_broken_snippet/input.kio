@@ -7,4 +7,4 @@
 /// ```
 module doctest/broken;
 
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }

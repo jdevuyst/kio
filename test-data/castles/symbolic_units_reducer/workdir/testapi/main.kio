@@ -43,20 +43,20 @@ fn inertial_step() -> Expr {
     )
 }
 
-fn print_summary(summary: Summary) -> . {
+fn print_summary(summary: Summary) {
   io.print(text.cat3("after: ", render.reduced(summary), "\n"));
   io.print(text.cat3("score: ", render.score_text(algebra.score(summary)), "\n"));
   io.print(text.cat3("balanced: ", fmt.bool_to_string(algebra.balanced(summary)), "\n\n"))
 }
 
-fn print_case(name: String, expr: Expr) -> . {
+fn print_case(name: String, expr: Expr) {
   let summary = algebra.reduce(expr);
   io.print(text.cat3("case ", name, "\n"));
   io.print(text.cat3("before: ", render.source(expr), "\n"));
   print_summary(summary)
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("symbolic_units_reducer\n");
   print_case("gear_ratio", gear_ratio());
   print_case("density_flux", density_flux());

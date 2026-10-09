@@ -1,9 +1,9 @@
 module main;
 
-fn apply(_left: ., _right: .) -> . { () }
+fn apply(_left: ., _right: .) { () }
 
 op _ + _ { impl apply }
 
-fn shadow(apply: .) -> . { () + () }
+fn shadow(apply: .) { () + () }
 
-pub fn main() -> . { shadow(()) }
+pub fn main() { shadow(()) }

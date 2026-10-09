@@ -40,7 +40,7 @@ fn contract_line(label: String, source: String, name: String, signature: String)
   string_concat(label, string_concat(result, "\n"(String)))
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(line(
     , "private alias in export: "(String)
     , "module guest;\ntype Secret = .;\npub fn expose(value: Secret) -> . { () }\n"

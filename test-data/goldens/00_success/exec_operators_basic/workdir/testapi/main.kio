@@ -7,4 +7,4 @@ import testapi/io(print);
 
 op _ + __ { impl add_i32 }
 
-pub fn main() -> . { let n = 1 + 2 + 3; print(i32_to_string(n)) }
+pub fn main() { let n = 1 + 2 + 3; print(i32_to_string(n)) }

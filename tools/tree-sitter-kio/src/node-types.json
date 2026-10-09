@@ -6892,6 +6892,71 @@
     "named": false
   },
   {
+    "type": "doc_attribute",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_code",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_directive",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_emphasis",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_fence",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_heading",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_kio_code",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_kio_self_code",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_link",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_literal_fallback",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_marker",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_reference",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "doc_strong",
+    "named": true,
+    "extra": true
+  },
+  {
     "type": "elaborator_name",
     "named": true
   },

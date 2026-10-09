@@ -1,0 +1,23 @@
+module main;
+
+import elab/control(if);
+
+host type Bool role(bool);
+
+host type Left;
+
+host type Right;
+
+host fn left() -> Left;
+
+host fn right() -> Right;
+
+fn caller(condition: Bool) {
+  let result =
+    if! condition {
+      left()
+    } else {
+      right()
+    };
+  ()
+}

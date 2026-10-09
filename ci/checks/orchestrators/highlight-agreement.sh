@@ -12,11 +12,17 @@
 #      through the `vscode-textmate` engine (same engine VS Code
 #      uses internally)
 #
-# Tree-sitter must match (1) exactly, including every kind and token boundary.
+# Tree-sitter must match (1) after coalescing adjacent equal documentation roles;
+# its explicit line-local literal fallback remains neutral. A named malformed
+# wrapper fixture compares containment/resumption, not identical recovery colors
+# inside authenticated embedded payload. Normal example contexts remain exact.
 # TextMate may remain neutral only when later-line evidence disambiguates a
 # role: its line-oriented engine cannot revise earlier lines from that evidence.
 # Every positive TextMate classification must agree; the focused raw-scope
 # fixtures also pin provable roles and paired ambiguous prefixes.
+# Embedded examples use the ordinary Kio grammar per physical line; its lexical
+# recovery may color the full parser's raw-code floor without claiming a parsed
+# role. No such exception crosses a documentation fence or payload boundary.
 #
 # Implementation: a Node.js driver at `ci/infra/highlight-agreement-js/`
 # walks each fixture and runs the three tokenizers. The script
@@ -69,6 +75,11 @@ if ! command -v node >/dev/null 2>&1; then
   printf 'highlight-agreement: `node` not found on PATH.\n' >&2
   exit 2
 fi
+
+# Shared Kiodoc decisions and their target projections are checked before any
+# parser build; a stale generated leaf must not pass merely by being compiled.
+node "$REPO_ROOT/tools/kiodoc-grammar/generate.mjs" --check
+node "$REPO_ROOT/tools/textmate-kio/doc-rule.mjs" --check
 
 init_orchestrator_tmp highlight-agreement
 trap 'rm -rf "$ORCHESTRATOR_TMP"' EXIT

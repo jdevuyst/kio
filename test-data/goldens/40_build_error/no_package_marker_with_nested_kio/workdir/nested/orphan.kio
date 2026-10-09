@@ -5,4 +5,4 @@ module orphan_nested/junk;
 // file and no package file), it would fail at the parse-error tier
 // (exit 11). The fix bails at the build-error tier (exit 40)
 // before the recursion happens.
-fn brk() -> . { this is not valid kio }
+fn brk() { this is not valid kio }

@@ -627,7 +627,7 @@ fn checked_quad(image: Image, arg: I32) -> String {
 }
 
 fn line(label: String, body: String) -> String {
-  string_concat(label, string_concat(body, "\n"(String)))
+  body.>string_concat("\n"(String)).>>string_concat(label)
 }
 
 /// Instantiates the resolved image with the callback-advertising adapter and
@@ -648,7 +648,7 @@ fn callback_demo(image: Image, x: I32) -> String {
   }
 }
 
-fn run_image(image: Image) -> . {
+fn run_image(image: Image) {
   let default_loaded = instantiate_default(image);
   print(line(""(String), flow(default_loaded, 0(I32), 0(I32))));
   print(line("quad(5) = "(String), flow(default_loaded, 5(I32), 1(I32))));
@@ -664,10 +664,9 @@ fn run_image(image: Image) -> . {
   print(line("greet(3) = "(String), flow(default_loaded, 0(I32), 11(I32))));
   print(line("apply_cb(host_double, 21) = "(String), callback_demo(image, 21(I32))));
   print(line("un_tag(mk_tag(11)) = "(String), flow(default_loaded, 11(I32), 12(I32))));
-  print(string_concat(
-    , "exports:"(String)
-    , string_concat("\n"(String), flow(default_loaded, 0(I32), 13(I32)))
-    ));
+  print(flow(default_loaded, 0(I32), 13(I32))
+    .>>string_concat("\n"(String))
+    .>>string_concat("exports:"(String)));
   print(line("contract (match) = "(String), loaded_contract(image, good_contract())));
   print(line("contract (missing export) = "(String), loaded_contract(image, missing_contract())));
   print(line("contract (signature) = "(String), loaded_contract(image, signature_contract())));
@@ -676,7 +675,7 @@ fn run_image(image: Image) -> . {
 
 /// operation family: the marshalled export calls, the export listing, the
 /// contract outcomes, a contract-gated call, and a stuck call's reason.
-pub fn main() -> . {
+pub fn main() {
   print(loader_allocator_hygiene_report());
   match! un_load_outcome(load_package(guest_image())) {
     (

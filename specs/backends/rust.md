@@ -125,6 +125,17 @@ standard library. The runtime-support file `src/__kio_runtime.rs`
 is internal to the emitted crate — it is not a separate dependency
 the host installs.
 
+### Native documentation
+
+[Retained boundary documentation](README.md#doc-comments-on-the-emitted-surface) is emitted as
+Rustdoc `///` comments on exported methods, live host-trait methods and
+associated types, parameterized host-type carriers, and public newtype carriers.
+Authored prose precedes any synthesized declaration notes in the same doc block.
+Code examples are rendered as non-executable text blocks: Kio documentation does
+not introduce Rust doctests or additional host obligations. Line endings are
+framed so authored text remains inside the comment. Explicit links retain their
+labels and destinations without requesting Rust symbol lookup.
+
 ### Thread safety
 
 By default the emitted crate uses a **single-threaded** value
@@ -1288,7 +1299,7 @@ import hello(I32, String, print, int_to_string);
 
 pub labels { hed: I32, mid: String };
 
-pub fn main() -> . {
+pub fn main() {
   let r = ({hed = 42(I32)}, {mid = "hi"(String)});
   print(int_to_string(r.?{hed}));
   print(", "(String));

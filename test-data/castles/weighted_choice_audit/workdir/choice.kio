@@ -1,0 +1,51 @@
+module choice;
+
+import list/core as lists;
+import list/list as traversal;
+import testapi(Bool, I32);
+import testapi/arith as arith;
+
+pub type Choice[A] = lists.List(A & I32);
+
+pub fn empty[A] -> Choice(A) { lists.nil(A & I32) }
+
+pub fn weighted[A](outcome: A, multiplicity: I32) -> Choice(A) {
+  lists.singleton((outcome, multiplicity))
+}
+
+pub fn certain[A](outcome: A) -> Choice(A) { weighted(outcome, 1) }
+
+pub fn alternative[A](left: Choice(A), right: Choice(A)) -> Choice(A) {
+  traversal.append(left, right)
+}
+
+pub fn map[A][B](choices: Choice(A), transform: A -> B) -> Choice(B) {
+  traversal.map(.(outcome, weight) { (transform(outcome), weight) }, choices)
+}
+
+pub fn independent[A][B][C](left: Choice(A), right: Choice(B), combine: (A & B) -> C) -> Choice(C) {
+  traversal.foldl(
+    , .(acc, first, first_weight) {
+        let row =
+          traversal.map(
+            , .(second, second_weight) {
+                (combine(first, second), arith.mul_i32(first_weight, second_weight))
+              }
+            , right
+            );
+        traversal.append(acc, row)
+      }
+    , empty(_)
+    , left
+    )
+}
+
+pub fn condition[A](choices: Choice(A), keep: A -> Bool) -> Choice(A) {
+  traversal.filter(.(outcome, _weight) { keep(outcome) }, choices)
+}
+
+pub fn total[A](choices: Choice(A)) -> I32 {
+  traversal.foldl(.(acc, _outcome, weight) { arith.add_i32(acc, weight) }, 0, choices)
+}
+
+pub fn mass[A](choices: Choice(A), event: A -> Bool) -> I32 { choices.>condition(event).>total }

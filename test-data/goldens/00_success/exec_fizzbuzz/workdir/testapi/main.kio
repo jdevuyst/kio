@@ -47,6 +47,6 @@ fn step(stop: I32, n: I32) -> I32 | . {
   }
 }
 
-fn fizzbuzz(stop: I32) -> . { loop(.(n: I32) { step(stop, n) }, 1) }
+fn fizzbuzz(stop: I32) { loop(.(n: I32) { step(stop, n) }, 1) }
 
-pub fn main() -> . { fizzbuzz(15) }
+pub fn main() { fizzbuzz(15) }

@@ -15,7 +15,7 @@ module doctest/utils;
 /// let x = identity(helper());
 /// x
 /// ```
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }
 
 // Private helper — visible to {@} snippets in this module.
-fn helper() -> . { () }
+fn helper() { () }

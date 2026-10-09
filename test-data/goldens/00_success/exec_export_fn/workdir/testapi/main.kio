@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print("fn export\n"(String)) }
+pub fn main() { print("fn export\n"(String)) }

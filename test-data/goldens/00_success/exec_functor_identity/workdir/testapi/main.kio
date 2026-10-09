@@ -37,4 +37,4 @@ fn use_instance() -> String {
   Identity.un_id(String, mapped)
 }
 
-pub fn main() -> . { print(use_instance()) }
+pub fn main() { print(use_instance()) }

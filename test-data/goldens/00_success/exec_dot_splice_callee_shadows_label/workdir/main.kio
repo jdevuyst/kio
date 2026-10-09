@@ -18,4 +18,4 @@ fn snd[A](x: A, y: A) -> A { y }
 
 fn through_splice(n: I32) -> I32 { let once = n.>id; once.>snd(once) }
 
-fn main() -> . { let r1 = 1(I32).>id; let r2 = through_splice(2(I32)); () }
+fn main() { let r1 = 1(I32).>id; let r2 = through_splice(2(I32)); () }

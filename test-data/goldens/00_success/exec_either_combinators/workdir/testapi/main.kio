@@ -64,11 +64,11 @@ fn check_positive(v: I32) -> Either(String, I32) {
   }
 }
 
-fn show_eq(label: String, value: String) -> . {
+fn show_eq(label: String, value: String) {
   print(string_concat(label, string_concat(" == ", string_concat(value, "\n"))))
 }
 
-pub fn main() -> . {
+pub fn main() {
   show_eq("right(2) |> map_right(double)", print_either(map_right(double, right(String, I32, 2))));
   show_eq(
     , "left(\"err\") |> map_right(double)"

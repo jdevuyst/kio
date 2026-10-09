@@ -1,0 +1,7 @@
+module testapi/other;
+
+import testapi(String);
+import testapi/io as io;
+
+/// SECOND-SAME-DOC identity.
+pub fn same() { io.print("right\n"(String)) }

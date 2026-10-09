@@ -77,7 +77,7 @@ pub fn kind_name(kind: Fault_kind) -> String { facts(kind).?{text} }
 /// Every fault kind, in report order. The summary walks this rather than
 /// carrying seven counters, so no arm can quietly lose its counter.
 pub fn all_kinds() -> List(Fault_kind) {
-  let ks = cons(negative_exponent_fault(), nil(Fault_kind, ()));
+  let ks = cons(negative_exponent_fault(), nil(Fault_kind));
   let ks = cons(divide_by_zero_fault(), ks);
   let ks = cons(extra_operand_fault(), ks);
   let ks = cons(missing_operand_fault(), ks);

@@ -11,4 +11,4 @@ import testapi/text(string_concat);
 // product-domain concat slot (ABI arity 1) exercises the host-fn →
 // product-arrow adaptation: the pair the elaborator calls the slot
 // with must be spread back into `string_concat`'s two positional args.
-pub fn main() -> . { print(apply_pair!(())(string_concat, ("ab", "cd"))) }
+pub fn main() { print(apply_pair!(())(string_concat, ("ab", "cd"))) }

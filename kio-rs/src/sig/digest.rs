@@ -200,6 +200,43 @@ mod tests {
     }
 
     #[test]
+    fn type_only_export_digest_uses_replayed_stages_and_alpha_identity() {
+        let digest = |declaration: &str| {
+            let source = format!(
+                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{
+                    {declaration}
+                }} }} }} }}"
+            );
+            let file = crate::pass::parser::parse_signature_file(&source, None).unwrap();
+            let replayed = crate::sig::replay(&file).unwrap();
+            contract_digest(&replayed.current)
+        };
+        for (left, right) in [
+            ("pub fn f[A] -> .;", "pub fn f[A]() -> .;"),
+            ("pub fn f[A][B]() -> .;", "pub fn f[A]()[B] -> .;"),
+            ("pub fn f[A] -> A -> A;", "pub pure fn f[A] -> A -> A;"),
+        ] {
+            assert_ne!(digest(left), digest(right), "{left} versus {right}");
+        }
+        for (left, right) in [
+            (
+                "pub fn f[A] -> A -> A;",
+                "pub fn f[Value] -> Value -> Value;",
+            ),
+            (
+                "pub fn f[A][B] -> A -> B -> A;",
+                "pub fn f[Left][Right] -> Left -> Right -> Left;",
+            ),
+            (
+                "pub fn f[A](value: A)[B] -> A;",
+                "pub fn f[Left](renamed: Left)[Right] -> Left;",
+            ),
+        ] {
+            assert_eq!(digest(left), digest(right), "{left} versus {right}");
+        }
+    }
+
+    #[test]
     fn digest_is_stable_and_64_hex() {
         let s = snapshot(vec![export_fn("api", "f", ". -> @api/H")]);
         let a = contract_digest(&s);

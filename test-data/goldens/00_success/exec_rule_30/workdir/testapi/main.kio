@@ -122,7 +122,7 @@ fn gen_step(cells: Array(I32), gen: I32) -> I32 | . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Seed: single `1` cell at the center, all others `0`.
   let cells = array_make_filled(n(), 0);
   array_set(cells, 15, 1);

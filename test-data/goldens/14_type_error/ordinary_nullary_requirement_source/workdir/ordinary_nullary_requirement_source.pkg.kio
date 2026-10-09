@@ -1,0 +1,13 @@
+package ordinary_nullary_requirement_source;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  main
+}

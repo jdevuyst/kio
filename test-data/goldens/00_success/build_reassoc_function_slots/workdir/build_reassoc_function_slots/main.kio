@@ -15,4 +15,4 @@ pub fn reassoc_iso() -> Reassoc {
   (to, from)
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -12,9 +12,9 @@ import testapi/text as text;
 
 pub fn empty() -> m.State {
   {
-    , m.left = core.nil()
-    , m.right = core.nil()
-    , m.pairs = core.nil()
+    , m.left = core.nil(_)
+    , m.right = core.nil(_)
+    , m.pairs = core.nil(_)
     , m.left_watermark = 0
     , m.right_watermark = 0
     , m.accepted_left = 0

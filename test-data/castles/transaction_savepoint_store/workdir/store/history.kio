@@ -14,7 +14,7 @@ pub labels Entry = { key: String, value: I32 | ., revision: I32 };
 
 pub labels Snapshot = { head: I32, journal: cells.List(Entry) };
 
-pub fn empty() -> Snapshot { {head = 0, journal = cells.nil()} }
+pub fn empty() -> Snapshot { {head = 0, journal = cells.nil(_)} }
 
 pub fn write(s: Snapshot, key: String, value: I32 | ., revision: I32) -> Snapshot {
   {head = revision, journal = cells.cons({key, value, revision}, s.?{journal})}
@@ -68,7 +68,7 @@ rec(loop) fn visible_walk(
 }
 
 pub fn visible(s: Snapshot) -> cells.List(Entry) {
-  visible_walk(s.?{journal}, cells.nil(), cells.nil())
+  visible_walk(s.?{journal}, cells.nil(_), cells.nil(_))
 }
 
 pub fn view(s: Snapshot) -> String { lists.to_string(show_entry, visible(s)) }

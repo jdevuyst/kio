@@ -1,0 +1,14 @@
+package native_docs;
+
+build {
+  cache "out/cache";
+
+  target js {
+    out "out/js"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

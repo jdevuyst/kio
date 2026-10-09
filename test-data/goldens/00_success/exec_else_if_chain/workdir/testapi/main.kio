@@ -8,7 +8,7 @@ import testapi/io(print);
 // `Expr::IfElse` AST as the nested `} else { if … }`. With
 // `a = false` and `b = true` the middle arm fires; the output is
 // `B\n`. The chain's nested `Expr::IfElse` nodes all return `()`.
-pub fn main() -> . {
+pub fn main() {
   let a = .f;
   let b = .t;
   if! a {

@@ -82,7 +82,7 @@ pub fn shelf_lines(books: Book_index, holds: Hold_list) -> Line_list {
   let rows =
     dict.fold_asc(
       , books
-      , lcore.nil(String, ())
+      , lcore.nil(String)
       , .(step: Line_list & I32 & Book) {
           let .(rows: Line_list, call: I32, entry: Book) = step;
           lcore.cons(shelf_row(call, entry, holds), rows)
@@ -104,7 +104,7 @@ pub fn fines_lines(members: Member_index) -> Line_list {
   let rows =
     dict.fold_asc(
       , members
-      , lcore.nil(String, ())
+      , lcore.nil(String)
       , .(step: Line_list & I32 & Member) {
           let .(rows: Line_list, id: I32, who: Member) = step;
           lcore.cons(fines_row(id, who), rows)

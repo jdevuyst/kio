@@ -51,7 +51,7 @@ rec(loop) fn fill_coords(
   , rows: Array(I32)
   , cols: Array(I32)
   , boxes: Array(I32)
-  ) -> . {
+  ) {
   if! leq_i32(cell, last_cell()) {
     array_set(rows, cell, row);
     array_set(cols, cell, col);

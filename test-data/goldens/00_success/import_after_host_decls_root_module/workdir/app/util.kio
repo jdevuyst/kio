@@ -4,4 +4,4 @@ import app(S, print, upper);
 
 pub fn shout(s: S) -> S { upper(s) }
 
-pub fn announce(s: S) -> . { print(shout(s)) }
+pub fn announce(s: S) { print(shout(s)) }

@@ -10,4 +10,4 @@ fn true_lit() -> Comptime_bool { .t }
 
 fn str_lit() -> Comptime_str { "role" }
 
-pub fn main() -> . { () }
+pub fn main() { () }

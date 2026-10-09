@@ -106,11 +106,11 @@ pub fn boot() -> Vm {
   {
     , pc = 0
     , bank = zeroed()
-    , stack = l.nil(I32, ())
+    , stack = l.nil(I32)
     , depth = 0
     , high = 0
     , fuel = budget()
-    , out = l.nil(I32, ())
+    , out = l.nil(I32)
     }
 }
 

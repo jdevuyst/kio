@@ -6,7 +6,7 @@ fn make_polymorphic_unit() -> [A] . { polymorphic_unit!() }
 
 fn make_projected_polymorphic[Ct](value: Ct) -> [A] Ct { projected_polymorphic!(value) }
 
-pub fn main() -> . {
+pub fn main() {
   let direct = make_polymorphic_unit();
   direct(.);
   let projected = make_projected_polymorphic(());

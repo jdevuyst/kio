@@ -43,11 +43,11 @@ fn node_name(node: Node) -> String {
 
 fn node_text(node: Node) -> String { cat4(node_name(node), "(", num(weight(node)), ")") }
 
-fn heading(title: String) -> . { print(line(cat("\n", title))) }
+fn heading(title: String) { print(line(cat("\n", title))) }
 
-fn figure(label: String, value: String) -> . { print(line(cat4("  ", label, ": ", value))) }
+fn figure(label: String, value: String) { print(line(cat4("  ", label, ": ", value))) }
 
-pub fn print_message(text: String, symbols: I32, alphabet_size: I32) -> . {
+pub fn print_message(text: String, symbols: I32, alphabet_size: I32) {
   heading(cat4(
     , "message: "
     , num(symbols)
@@ -67,7 +67,7 @@ fn count_line(row: Count) -> String {
     )
 }
 
-pub fn print_frequencies(counts: List(Count)) -> . {
+pub fn print_frequencies(counts: List(Count)) {
   heading("frequency table");
   print(line("  code  glyph  count"));
   for_each(counts, .(row: Count) { print(count_line(row)) })
@@ -77,7 +77,7 @@ fn queue_text(nodes: List(Node)) -> String {
   fold(nodes, .(acc: String, node: Node) { cat3(acc, " ", node_text(node)) }, "")
 }
 
-pub fn print_queue(queue: List(Node), first_merge_key: I32) -> . {
+pub fn print_queue(queue: List(Node), first_merge_key: I32) {
   heading("node order: ascending (weight, key)");
   print(line("  a leaf's key is its symbol code; the k-th merged node takes"));
   print(line(cat3(
@@ -99,7 +99,7 @@ fn step_line(index: I32, entry: Step) -> String {
     )
 }
 
-rec(loop) fn print_steps(steps: List(Step), index: I32) -> . {
+rec(loop) fn print_steps(steps: List(Step), index: I32) {
   match! steps.>List.un_list {
     (
       , .(head: Step, rest: List(Step)) {
@@ -111,7 +111,7 @@ rec(loop) fn print_steps(steps: List(Step), index: I32) -> . {
   }
 }
 
-pub fn print_build(steps: List(Step)) -> . {
+pub fn print_build(steps: List(Step)) {
   heading("build steps: take the two front nodes, merge, re-insert");
   print_steps(steps, 1)
 }
@@ -126,18 +126,18 @@ fn entry_line(row: Entry) -> String {
     )
 }
 
-pub fn print_codes(rows: List(Entry)) -> . {
+pub fn print_codes(rows: List(Entry)) {
   heading("code table: 0 descends left, 1 descends right");
   print(line("  glyph  count  length  code"));
   for_each(rows, .(row: Entry) { print(entry_line(row)) })
 }
 
-pub fn print_encoded(bits: Bits) -> . {
+pub fn print_encoded(bits: Bits) {
   heading(cat3("encoded message: ", num(len(bits)), " bits"));
   print(line(cat("  ", bits_text(bits))))
 }
 
-pub fn print_decoded(symbols: I32, matches: Bool) -> . {
+pub fn print_decoded(symbols: I32, matches: Bool) {
   heading("decode: walk the tree bit by bit, back to symbols");
   figure("decoded symbols", num(symbols));
   print(line(if! matches {
@@ -147,7 +147,7 @@ pub fn print_decoded(symbols: I32, matches: Bool) -> . {
   }))
 }
 
-pub fn print_savings(figures: Savings) -> . {
+pub fn print_savings(figures: Savings) {
   let .({
     , symbol_count
     , alphabet
@@ -169,7 +169,7 @@ pub fn print_savings(figures: Savings) -> . {
   figure("cost per symbol", cat(num(milli_bits_each), " milli-bits"))
 }
 
-pub fn print_kraft(longest: I32, scale: I32, total: I32, words: I32, holds: Bool) -> . {
+pub fn print_kraft(longest: I32, scale: I32, total: I32, words: I32, holds: Bool) {
   heading("kraft check: sum of 2^-length over every codeword");
   figure("longest codeword", cat(num(longest), " bits"));
   figure("scale (2 ^ longest)", num(scale));

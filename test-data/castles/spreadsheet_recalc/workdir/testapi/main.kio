@@ -30,13 +30,13 @@ fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
 
 fn num(n: I32) -> String { int_to_string(n) }
 
-fn line(label: String, value: String) -> . { print(cat3(label, ": ", cat(value, "\n"))) }
+fn line(label: String, value: String) { print(cat3(label, ": ", cat(value, "\n"))) }
 
 fn of_sheet(n: I32) -> String { cat3(num(n), " of ", num(cell_count())) }
 
-fn cycle_line(cells: List(Addr)) -> . { line("cycle", addr_list(cells)) }
+fn cycle_line(cells: List(Addr)) { line("cycle", addr_list(cells)) }
 
-fn report(index: I32, e: Edit, st: Step) -> . {
+fn report(index: I32, e: Edit, st: Step) {
   print(cat3("\n== edit ", num(index), cat3(": ", render_edit(e), " ==\n")));
   line("dirty", addr_list(step_dirty(st)));
   line("recompute order", addr_list(step_order(st)));
@@ -47,7 +47,7 @@ fn report(index: I32, e: Edit, st: Step) -> . {
   print(grid(step_values(st)))
 }
 
-rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) -> . {
+rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) {
   match! script.>List.unpack {
     (
       , .(e: Edit, rest: List(Edit)) {
@@ -60,7 +60,7 @@ rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) -
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let s = initial_sheet();
   let p = build_plan(s);
   let vals = full_eval(s, p);

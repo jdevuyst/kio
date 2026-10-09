@@ -57,7 +57,7 @@ pub rec(loop) fn elaborator_ufcs_steps(n: I32) -> I32 {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(i32_to_string(fact(5)));
   print(",");
   print(i32_to_string(even_steps(3)));

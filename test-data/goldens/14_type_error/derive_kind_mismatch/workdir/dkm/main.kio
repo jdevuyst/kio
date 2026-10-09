@@ -23,4 +23,4 @@ fn flat_monad() -> Monad(Flat) { Monad.mk_monad(.[A][B](m, k) { k(m) }) }
 
 fn bad() -> Monad(Box) { derive!((box_monad, flat_monad), Monad(Box)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

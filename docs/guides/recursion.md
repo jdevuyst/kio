@@ -62,8 +62,15 @@ and collapses any one-member braced group to this shorthand.
 
 Every recursive call must use `rec`. A plain `countdown(...)` inside the group is not recursive syntax and is rejected.
 
+In an editor connected to `kio lsp`, a missing call marker can offer a quick fix.
+The compiler checks the proposed edit before offering it, including any required
+`poly` or `cont` annotation. The declaration's loop capability remains your
+choice: `rec(path)` names an ordinary value at `path`, not a compiler-selected
+function. If an edit would leave another error at the call or expose a different
+error, follow the diagnostic's help and correct the source directly.
+
 The marker precedes the recursive function's name, as in `rec countdown(n)`.
-The word remains available as an ordinary name: `fn id(rec: .) -> . { rec }`
+The word remains available as an ordinary name: `fn id(rec: .) { rec }`
 uses a parameter named `rec`, and `rec(x)` calls an ordinary function named
 `rec`. Neither expression is a recursive call.
 

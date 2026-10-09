@@ -10,4 +10,5 @@ pub mod commands;
 pub mod completion;
 pub mod expr_query;
 pub mod highlight;
+mod operator_refs;
 pub mod session;

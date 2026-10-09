@@ -14,4 +14,4 @@ type Reint = t.Int;
 
 fn as_reint() -> Reint { 42 }
 
-pub fn main() -> . { let _ = print(int_to_string(as_reint())); print("\n") }
+pub fn main() { let _ = print(int_to_string(as_reint())); print("\n") }

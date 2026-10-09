@@ -38,9 +38,9 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-fn line(body: String) -> . { io.print(text.cat2(body, "\n")) }
+fn line(body: String) { io.print(text.cat2(body, "\n")) }
 
-fn field(name: String, value: String) -> . { line(text.cat3(name, ": ", value)) }
+fn field(name: String, value: String) { line(text.cat3(name, ": ", value)) }
 
 fn num(value: I32) -> String { fmt.int_to_string(value) }
 
@@ -69,7 +69,7 @@ rec(loop) fn walk(index: I32, remaining: Roster, marks: Tally) -> Tally {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   line("rational_arithmetic_grader");
   line("");
   let marks = walk(1, fixture.exercises(), grader.no_marks());

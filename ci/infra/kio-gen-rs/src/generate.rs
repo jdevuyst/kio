@@ -917,7 +917,7 @@ fn gen_at<R: Rng>(
             _ => None,
         })
         .collect();
-    let weights: [u32; 13] = [
+    let weights: [u32; 15] = [
         if target_vars.is_empty() { 0 } else { 2 }, // 0: bound var
         2,                                          // 1: let
         if target_simple { 2 } else { 0 },          // 2: id
@@ -952,6 +952,8 @@ fn gen_at<R: Rng>(
         } else {
             0
         },
+        if target_simple { 1 } else { 0 }, // 13: type-only named specialization
+        if target_simple { 1 } else { 0 }, // 14: type-only captured lambda
     ];
     let total: u32 = weights.iter().sum();
     let mut pick = rng.gen_range(0..total);
@@ -1207,6 +1209,35 @@ fn gen_at<R: Rng>(
                 rhs: Box::new(rhs),
             }
         }
+        13 => Term::App(
+            Box::new(Term::PolyCall {
+                name: "kio_gen_type_only_id".to_string(),
+                type_args: vec![target.clone()],
+                args: vec![],
+            }),
+            vec![gen_at(
+                rng,
+                user_rng,
+                target,
+                env,
+                depth - 1,
+                surface_mode,
+                user_elaborators,
+            )],
+        ),
+        14 => Term::PolyCall {
+            name: "kio_gen_type_only_capture".to_string(),
+            type_args: vec![target.clone()],
+            args: vec![gen_at(
+                rng,
+                user_rng,
+                target,
+                env,
+                depth - 1,
+                surface_mode,
+                user_elaborators,
+            )],
+        },
         8 => {
             // Sum eliminator with two-clause structure. When target
             // happens to be a `Type::Sum`, the eliminator can render

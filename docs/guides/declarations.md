@@ -163,8 +163,17 @@ occurrence must be strictly positive:
 ```kio {@declarations}
 rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
 
-fn empty[A]() -> List(A) { List.mk_list(A, widen_sum!((), . | (A & List(A)))) }
+fn empty[A] -> List(A) { List.mk_list(A, widen_sum!((), . | (A & List(A)))) }
+
+fn empty_later[A]() -> List(A) { empty(A) }
 ```
+
+`empty(Int)` constructs a `List(Int)` with only a type argument. The optional
+`empty_later` wrapper deliberately keeps a Unit argument: `empty_later(Int)`
+returns a function, and `empty_later(Int, ())` constructs the list. A bare
+`empty` remains polymorphic; it does not construct a list until specialized.
+See [Type-only values](../tutorials/language.md#type-only-values) for the
+anonymous form.
 
 The projector exposes one layer; it does not unfold the type implicitly. The
 marker supplies only `List`'s own head, not every later declaration in the
@@ -301,7 +310,7 @@ module:
 ```kio {variant=module}
 module internal;
 
-pub(internal) fn helper() -> . { () }
+pub(internal) fn helper() { () }
 ```
 
 Here `internal` and modules below it may import `helper`; unrelated modules and
@@ -358,13 +367,21 @@ pub pure fn id[A](value: A) -> A { value }
 pure fn duplicate[A](value: A) -> Duplicate(A) { (id(value), id(value)) }
 
 pure fn keep_int(value: Int) -> Int { let .(kept: Int) = id(value); kept }
+
+pure fn apply[A][B](callback: A -> B, value: A) -> B { callback(value) }
 ```
 
 A pure body may use local parameters and bindings, core intrinsics and newtype
-members, and ordinary functions explicitly declared `pure`. It cannot execute
-a `host fn` or an unmarked ordinary function. Because each called pure function
-is checked by the same rule, the promise is transitive without inspecting a
-callee's body at each call site. An unrestricted function may use either kind.
+members, and ordinary functions explicitly declared `pure`. It cannot refer to
+a `host fn` or an unmarked ordinary function in executable code. Each referenced
+pure function is checked by the same rule, making the promise transitive without
+inspecting a callee's body at each call site. An unrestricted function may use
+either kind.
+
+A passed callback can still have effects: `apply` accepts a host callback from
+an unrestricted caller, just as it accepts `id`. A call to a pure function is
+effect-free when evaluating its arguments and invoking any callbacks they
+contain or capture are effect-free; function types carry no purity qualifier.
 
 Function signatures and type annotations are not executable references. They
 use the ordinary type rules and may mention `host type`s, aliases, newtypes, or

@@ -12,9 +12,9 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-fn integer(value: I32) -> . { io.print(fmt.int_to_string(value)) }
+fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 
-rec(loop) fn show_symbols(symbols: Array(I32), position: I32) -> . {
+rec(loop) fn show_symbols(symbols: Array(I32), position: I32) {
   if! num.less(position, a.array_len(symbols)) {
     if! num.equal(position, 0) {
       ()
@@ -28,7 +28,7 @@ rec(loop) fn show_symbols(symbols: Array(I32), position: I32) -> . {
   }
 }
 
-pub fn heading(name: String, source: Array(I32), index: sam.Index) -> . {
+pub fn heading(name: String, source: Array(I32), index: sam.Index) {
   io.print(name);
   io.print(" [");
   show_symbols(source, 0);
@@ -54,7 +54,7 @@ pub fn heading(name: String, source: Array(I32), index: sam.Index) -> . {
   io.print("\n")
 }
 
-pub fn query(source: Array(I32), index: sam.Index, symbols: Array(I32)) -> . {
+pub fn query(source: Array(I32), index: sam.Index, symbols: Array(I32)) {
   io.print("  query [");
   show_symbols(symbols, 0);
   io.print("] index=");

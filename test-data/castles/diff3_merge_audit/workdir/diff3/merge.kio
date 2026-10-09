@@ -160,7 +160,7 @@ rec(loop) fn join(ours: list.List(lcs.Match), theirs: list.List(lcs.Match), acc:
 }
 
 pub fn anchors(ours: lcs.Dp, theirs: lcs.Dp) -> list.List(Anchor) {
-  join(lcs.matches(ours), lcs.matches(theirs), list.nil(Anchor, ()))
+  join(lcs.matches(ours), lcs.matches(theirs), list.nil(Anchor))
 }
 
 fn follows(earlier: Anchor, later: Anchor) -> Bool {
@@ -249,7 +249,7 @@ rec(loop) fn walk(
 }
 
 pub fn regions(doc: scan.Doc, found: list.List(Anchor)) -> list.List(Region) {
-  walk(doc, found, (0, 0, 0), list.nil(Region, ()))
+  walk(doc, found, (0, 0, 0), list.nil(Region))
 }
 
 fn bump(counts: Tally, mark: Verdict) -> Tally {

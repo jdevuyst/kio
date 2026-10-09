@@ -95,7 +95,11 @@ use crate::error::Error;
 //   family, polymorphic-inference engine).
 // - [`synth`] — per-expression and per-item synthesis helpers,
 //   bidirectional `check_fn_against`, and intrinsic scheme builders.
+#[cfg(any(feature = "surface", feature = "prime", test))]
+mod call_args;
 mod types;
+#[cfg(any(feature = "surface", feature = "prime", test))]
+pub(crate) use call_args::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
 #[cfg(any(feature = "surface", test))]
 pub(crate) use types::canonicalize_type_expression_function_abi;
 pub(crate) use types::type_contains_goal;
@@ -237,10 +241,12 @@ pub(crate) use synth::{
 /// Result of synthesizing a path or lambda expression.
 ///
 /// `ty` is the synthesized System-F type — possibly polymorphic
-/// (`Forall(...Function(...))`). `is_scheme` is `true` iff the
-/// `Synth` came from a *named-callee scheme reference* (a `fn`,
-/// host fn, newtype member, or intrinsic that has type-parameter
-/// binders). Genuinely monomorphic consumers call [`Self::into_mono`]
+/// (`Forall(...Function(...))`). `is_scheme` marks a polymorphic named-callee
+/// reference whose producer establishes a callable scheme (an ordinary
+/// fn with an exposed function frontier, a host fn, newtype member, or
+/// intrinsic). Other ordinary fn references use value synthesis, including
+/// type-only results whose callable frontier requires alias expansion.
+/// Genuinely monomorphic consumers call [`Self::into_mono`]
 /// and require the user to apply the type arguments first. Value-type
 /// consumers instead admit a structurally complete callable scheme and
 /// reject incomplete schemes; see `synth_value_type`.
@@ -425,6 +431,10 @@ where
     type Elaborations: Default;
     type Typer: Typer<Self>;
 
+    fn new_elaborations(_scope: &PackageTypecheckScope<Self>) -> Self::Elaborations {
+        Self::Elaborations::default()
+    }
+
     fn merge_elaborations(target: &mut Self::Elaborations, source: Self::Elaborations);
 
     fn check_fn_capability_signature<'m>(
@@ -435,6 +445,24 @@ where
         Self: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
     {
         Ok(())
+    }
+}
+
+/// One literal selection, including optional editor evidence of a lexical
+/// role fallback. An explicit annotation or expected type consumes no fallback.
+pub struct LiteralResolution<P: crate::ast::Phase> {
+    pub(crate) ty: InternedType<P>,
+    #[cfg(feature = "lsp")]
+    pub(crate) lexical_role: Option<String>,
+}
+
+impl<P: crate::ast::Phase> LiteralResolution<P> {
+    pub(crate) fn contextual(ty: InternedType<P>) -> Self {
+        Self {
+            ty,
+            #[cfg(feature = "lsp")]
+            lexical_role: None,
+        }
     }
 }
 
@@ -640,9 +668,17 @@ where
     /// does not rerun front-end literal resolution.
     fn record_literal_resolution<'m>(
         literal_site: crate::ast::ExpressionSite,
-        resolved: InternedType<P>,
+        resolved: LiteralResolution<P>,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
+
+    #[cfg(feature = "lsp")]
+    fn record_selected_role<'m>(
+        _span: crate::span::Span,
+        _binding: &str,
+        _tcx: &mut TypeCtx<'m, '_, P>,
+    ) {
+    }
 
     /// Record a checked lambda value-parameter type. The post-typer
     /// rewrite bakes this into `Expr::FnExpr` so Kio' output has enough
@@ -1127,20 +1163,20 @@ mod tests {
     }
 
     #[test]
-    fn display_type_renders_product_and_sum_paren_wrapped() {
+    fn display_type_renders_product_and_sum_without_outer_parentheses() {
         let span = Span::new(0, 0);
         let prod = crate::ast::Type::Product {
             left: Box::new(unit()),
             right: Box::new(bottom()),
             meta: Meta::new(span),
         };
-        assert_eq!(display_type(&prod), "(. & !)");
+        assert_eq!(display_type(&prod), ". & !");
         let sum = crate::ast::Type::Sum {
             left: Box::new(unit()),
             right: Box::new(bottom()),
             meta: Meta::new(span),
         };
-        assert_eq!(display_type(&sum), "(. | !)");
+        assert_eq!(display_type(&sum), ". | !");
     }
 
     #[test]

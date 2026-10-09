@@ -1,0 +1,3 @@
+module src/main;
+
+pub fn main() { () }

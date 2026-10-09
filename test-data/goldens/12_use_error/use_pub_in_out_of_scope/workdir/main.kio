@@ -6,4 +6,4 @@ module main;
 // fully-private declaration.
 import helper/submod(secret);
 
-fn main() -> . { secret() }
+fn main() { secret() }

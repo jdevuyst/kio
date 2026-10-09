@@ -62,7 +62,7 @@ fn tape_array(b: Book) -> Array(Trade) { b.?{tape} }
 
 fn cell(b: Book, index: I32) -> I32 { array_get(ledger_of(b), index) }
 
-fn bump(b: Book, index: I32, amount: I32) -> . {
+fn bump(b: Book, index: I32, amount: I32) {
   array_set(ledger_of(b), index, add_i32(cell(b, index), amount))
 }
 
@@ -94,7 +94,7 @@ pub fn is_empty(orders: Array(Order)) -> Bool { leq_i32(array_len(orders), 0) }
 
 pub fn at(orders: Array(Order), index: I32) -> Order { array_get(orders, index) }
 
-pub fn set_at(orders: Array(Order), index: I32, o: Order) -> . { array_set(orders, index, o) }
+pub fn set_at(orders: Array(Order), index: I32, o: Order) { array_set(orders, index, o) }
 
 /// The best price on a queue, or nothing when the queue is empty. The
 /// front of the queue is the best order by construction.
@@ -106,7 +106,7 @@ pub fn best_price(orders: Array(Order)) -> I32 | . {
   }
 }
 
-rec(loop) fn shift_down(i: I32, orders: Array(Order)) -> . {
+rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
   if! leq_i32(sub_i32(array_len(orders), 1), i) {
     ()
   } else {
@@ -118,16 +118,13 @@ rec(loop) fn shift_down(i: I32, orders: Array(Order)) -> . {
 /// The queue is never empty where this is called, so the popped order is
 /// always there -- but the sum still has to be consumed, and consuming it
 /// is the whole of the proof.
-fn drop_back(orders: Array(Order)) -> . {
+fn drop_back(orders: Array(Order)) {
   match! array_pop_back(orders) {
     (.(_o: Order) { () }, .(_none: .) { () })
   }
 }
 
-pub fn remove_at(orders: Array(Order), index: I32) -> . {
-  shift_down(index, orders);
-  drop_back(orders)
-}
+pub fn remove_at(orders: Array(Order), index: I32) { shift_down(index, orders); drop_back(orders) }
 
 rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) -> I32 {
   if! leq_i32(array_len(orders), i) {
@@ -139,7 +136,7 @@ rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) ->
   }
 }
 
-rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) -> . {
+rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) {
   if! leq_i32(j, index) {
     ()
   } else {
@@ -152,7 +149,7 @@ rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) -> . {
 /// one beats on price, behind every order it ties with. The scan stops at
 /// the first order it beats, so a tie walks past -- which is the time half
 /// of the rule, and the only reason a queue position is worth anything.
-pub fn insert_ranked(orders: Array(Order), o: Order) -> . {
+pub fn insert_ranked(orders: Array(Order), o: Order) {
   let index = rank_index(0, side_of(o), price_of(o), orders);
   array_push(orders, o);
   shift_up(sub_i32(array_len(orders), 1), index, orders);
@@ -186,7 +183,7 @@ rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
 /// The quantity still on offer on one queue.
 pub fn resting_qty(orders: Array(Order)) -> I32 { sum_remaining(0, 0, orders) }
 
-pub fn record_trade(b: Book, t: Trade) -> . { array_push(tape_array(b), t) }
+pub fn record_trade(b: Book, t: Trade) { array_push(tape_array(b), t) }
 
 pub fn tape_len(b: Book) -> I32 { array_len(tape_array(b)) }
 
@@ -196,16 +193,16 @@ pub fn trade_at(b: Book, index: I32) -> Trade { array_get(tape_array(b), index) 
 /// the book first saw that order.
 pub fn take_id(b: Book) -> I32 { bump(b, next_id_cell, 1); cell(b, next_id_cell) }
 
-pub fn note_entered(b: Book, qty: I32) -> . { bump(b, entered_cell, qty) }
+pub fn note_entered(b: Book, qty: I32) { bump(b, entered_cell, qty) }
 
-pub fn note_cancelled(b: Book, qty: I32) -> . {
+pub fn note_cancelled(b: Book, qty: I32) {
   bump(b, cancelled_cell, qty);
   bump(b, cancel_count_cell, 1)
 }
 
-pub fn note_reduced(b: Book, qty: I32) -> . { bump(b, reduced_cell, qty) }
+pub fn note_reduced(b: Book, qty: I32) { bump(b, reduced_cell, qty) }
 
-pub fn note_unfilled(b: Book, qty: I32) -> . { bump(b, unfilled_cell, qty) }
+pub fn note_unfilled(b: Book, qty: I32) { bump(b, unfilled_cell, qty) }
 
 pub fn entered_qty(b: Book) -> I32 { cell(b, entered_cell) }
 

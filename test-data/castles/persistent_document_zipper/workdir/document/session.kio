@@ -20,16 +20,16 @@ pub newtype Session : zipper.Cursor & lists.List(zipper.Cursor) & lists.List(Sna
   }
 
 pub fn start() -> Session {
-  Session.make((zipper.start(tree.leaf("document")), lists.nil(), lists.nil()))
+  Session.make((zipper.start(tree.leaf("document")), lists.nil(_), lists.nil(_)))
 }
 
 pub fn error(state: Session, message: String) -> Session {
-  io.print(text.string_concat("  error: ", text.string_concat(message, "\n")));
+  io.print(message.>text.string_concat("\n").>>text.string_concat("  error: "));
   state
 }
 
-fn describe_cursor(cursor: zipper.Cursor) -> . {
-  io.print(text.string_concat("  focus: ", text.string_concat(zipper.path(cursor), "\n")))
+fn describe_cursor(cursor: zipper.Cursor) {
+  io.print(zipper.path(cursor).>text.string_concat("\n").>>text.string_concat("  focus: "))
 }
 
 pub fn where(state: Session) -> Session {
@@ -80,7 +80,7 @@ pub fn snapshot(state: Session, title: String) -> Session {
     .(_saved: Snapshot) { error(state, "snapshot name already exists") };
     .() {
       let saved = Snapshot.make((title, zipper.focus(zipper.root(cursor))));
-      io.print(text.string_concat("  retained: ", text.string_concat(title, "\n")));
+      io.print(title.>text.string_concat("\n").>>text.string_concat("  retained: "));
       Session.make((cursor, history, lists.cons(saved, snapshots)))
     }
   }
@@ -92,26 +92,23 @@ pub fn show(state: Session) -> Session {
   io.print("current document\n");
   tree.render(root);
   describe_cursor(cursor);
-  io.print(text.string_concat(
-    , "  nodes: "
-    , text.string_concat(fmt.int_to_string(tree.count(root)), "\n")
-    ));
-  io.print(text.string_concat(
-    , "  undo depth: "
-    , text.string_concat(fmt.int_to_string(traversal.length(history)), "\n")
-    ));
-  io.print(text.string_concat(
-    , "  snapshots: "
-    , text.string_concat(fmt.int_to_string(traversal.length(snapshots)), "\n")
-    ));
+  io.print(fmt.int_to_string(tree.count(root))
+    .>text.string_concat("\n")
+    .>>text.string_concat("  nodes: "));
+  io.print(fmt.int_to_string(traversal.length(history))
+    .>text.string_concat("\n")
+    .>>text.string_concat("  undo depth: "));
+  io.print(fmt.int_to_string(traversal.length(snapshots))
+    .>text.string_concat("\n")
+    .>>text.string_concat("  snapshots: "));
   state
 }
 
-rec(loop) fn render_snapshots(snapshots: lists.List(Snapshot)) -> . {
+rec(loop) fn render_snapshots(snapshots: lists.List(Snapshot)) {
   match! lists.uncons(snapshots) {
     .(saved: Snapshot, rest: lists.List(Snapshot)) {
       let .(title, root) = Snapshot.open(saved);
-      io.print(text.string_concat("snapshot ", text.string_concat(title, "\n")));
+      io.print(title.>text.string_concat("\n").>>text.string_concat("snapshot "));
       tree.render(root);
       rec render_snapshots(rest)
     };

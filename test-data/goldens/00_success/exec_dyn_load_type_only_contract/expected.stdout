@@ -1,0 +1,13 @@
+base: accepted
+direct higher kind: accepted
+alias higher kind: accepted
+substituted arrow: accepted
+nested higher kind: accepted
+explicit Unit: accepted
+base signature: ([#0] .)
+Unit signature: [#0] () -> .
+higher-kind Unit: dyn_load_prime: export signature `guest.bad`: higher-kinded forall binders require a complete function scheme
+higher-kind application: dyn_load_prime: export signature `guest.bad`: higher-kinded forall binders require a complete function scheme
+higher-kind product: dyn_load_prime: export signature `guest.bad`: higher-kinded forall binders require a complete function scheme
+higher-kind nominal: dyn_load_prime: export signature `guest.bad`: higher-kinded forall binders require a complete function scheme
+type-only host import: dyn_load_prime: malformed host function `guest.imported`: expected a value-parameter group

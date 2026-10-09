@@ -114,7 +114,7 @@ rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(A
 /// is recomputed. Skipping seen cells is what lets the walk close over a
 /// graph that cycles.
 pub fn dirty_set(deps: Deps, a: Addr) -> List(Addr) {
-  let seen = close(deps, one(a), nil(Addr, ()));
+  let seen = close(deps, one(a), nil(Addr));
   filter(all_addrs(), .(c: Addr) { mem(seen, c) })
 }
 

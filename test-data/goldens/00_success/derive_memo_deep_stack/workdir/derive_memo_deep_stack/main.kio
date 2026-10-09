@@ -31,4 +31,4 @@ fn derived1() -> Render(Deep) { derive!((render_pair, render_cell_string), Rende
 
 fn derived2() -> Render(Deep) { derive!((render_pair, render_cell_string), Render(Deep)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

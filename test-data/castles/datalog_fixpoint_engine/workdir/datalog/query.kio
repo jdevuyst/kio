@@ -48,4 +48,4 @@ rec(loop) fn vars_from(args: Args, acc: Codes) -> Codes {
 
 /// In order of first occurrence, and deduplicated - a variable written
 /// twice in one query is still reported once.
-pub fn query_vars(q: Atom) -> Codes { vars_from(args_of(q), list.nil(I32, ())) }
+pub fn query_vars(q: Atom) -> Codes { vars_from(args_of(q), list.nil(I32)) }

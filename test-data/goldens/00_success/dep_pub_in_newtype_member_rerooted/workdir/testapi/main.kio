@@ -6,4 +6,4 @@ import testapi/io(print);
 
 // Restricted newtype members remain usable inside their materialized owner
 // module; consumers reach them only through its public wrapper.
-pub fn main() -> . { print(roundtrip("newtype member re-rooted\n"(String))) }
+pub fn main() { print(roundtrip("newtype member re-rooted\n"(String))) }

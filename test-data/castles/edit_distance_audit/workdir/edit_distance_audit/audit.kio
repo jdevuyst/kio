@@ -20,7 +20,7 @@ fn classify(distance: I32) -> String {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   render.print_line("edit_distance_audit");
   let left = tokens.left_tokens();
   let right = tokens.right_tokens();

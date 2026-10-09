@@ -31,19 +31,18 @@ import testapi/text(string_concat);
 /// three shipped grids settle in well under a thousand.
 fn budget() -> I32 { 200000 }
 
-fn run_puzzle(index: I32, name: String, puzzle: Array(I32)) -> . {
+fn run_puzzle(index: I32, name: String, puzzle: Array(I32)) {
   let givens = array_clone(puzzle);
   let work = constraints.new_work(puzzle);
   let summary = search.solve(work, budget());
   report.print_puzzle(index, name, givens, work, summary)
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("sudoku_backtrack_solver\n");
-  print(string_concat(
-    , "9x9, digits 1-9, minimum-remaining-values search, step budget "
-    , string_concat(int_to_string(budget()), "\n")
-    ));
+  print(int_to_string(budget())
+    .>string_concat("\n")
+    .>>string_concat("9x9, digits 1-9, minimum-remaining-values search, step budget "));
   print("\n");
   run_puzzle(1, "gentle", puzzles.gentle());
   print("\n");

@@ -14,4 +14,4 @@ type Triple = String & String & String;
 // `String`.
 fn third((_a: String, _b: String, c: String)) -> String { c }
 
-pub fn main() -> . { print(third(("first\n", "second\n", "third\n"))) }
+pub fn main() { print(third(("first\n", "second\n", "third\n"))) }

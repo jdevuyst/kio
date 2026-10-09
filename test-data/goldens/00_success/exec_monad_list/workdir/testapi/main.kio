@@ -156,4 +156,4 @@ fn use_instance() -> String {
   join_list(result)
 }
 
-pub fn main() -> . { print(use_instance()) }
+pub fn main() { print(use_instance()) }

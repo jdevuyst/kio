@@ -72,9 +72,9 @@ rec(loop) fn rows(flat: m.Row, width: I32, reversed: m.Matrix) -> m.Matrix {
 
 fn contents(name: String, count: I32, variables: I32) -> Read_result {
   let width = a.add_i32(variables, 1);
-  match! values(a.mul_i32(count, width), c.nil()) {
+  match! values(a.mul_i32(count, width), c.nil(_)) {
     .(flat: m.Row) {
-      {loaded = {name, variables, original = rows(flat, width, c.nil())}}.>widen_sum!
+      {loaded = {name, variables, original = rows(flat, width, c.nil(_))}}.>widen_sum!
     };
     .(error: String) { {input_error = error}.>widen_sum! }
   }

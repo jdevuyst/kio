@@ -174,7 +174,7 @@ fn assert_str(label: String, expected: String, actual: . | String) -> String {
 }
 
 /// Loads the guest image, calls `square(7)` and `greet("World")` through the loaded existential, and prints a PASS / FAIL line for each.
-pub fn main() -> . {
+pub fn main() {
   print(assert_i32("square(7) == 49: "(String), 49(I32), loaded_square(7(I32))));
   print(assert_str(
     , "greet(\"World\") == \"Hi, World\": "(String)

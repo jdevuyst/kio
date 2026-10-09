@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Test-strategy audit
 
-The test corpus in this repo is the spec, exercised against any implementation (see `TESTING.md` and [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)). The interesting question is therefore **spec→test coverage**, not line-coverage of `kio-rs/`. This skill checks the corpus is structurally aligned with what the project commits to support.
+The test corpus exercises the effective authorized contract: the baseline specifications plus specific prior user approvals, not authority supplied by tests themselves (see `TESTING.md` and [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)). The interesting question is **spec→test coverage**, not line-coverage of `kio-rs/`. This skill checks the corpus is structurally aligned with what the project commits to support.
 
 Read `TESTING.md`, `test-data/README.md`, and `test-data/emissions/README.md` before starting.
 
@@ -36,6 +36,17 @@ coverage evidence or a contract question; it does not authorize changing
 accepted syntax or parser behavior to make the audit green.
 
 ## 2. Goldens hygiene
+
+Apply [`TESTING.md` § Corpus and expected-output maintenance](../../../TESTING.md#corpus-and-expected-output-maintenance)
+when inspecting corpus changes. Flag migrations, added annotations or refreshed
+expectations that hide an unapproved break; trace break approval through
+`review-commits` § Behavioral-contract authority rather than inferring it from
+green tests. Verify focused evidence remains for still-supported older forms,
+including the original inference/syntax subject and bug reproducers, without
+requiring the whole corpus to stay unchanged. Incidental human-readable `stderr`
+wording/layout changes are not approval findings when category, meaning and
+useful information are preserved; explicitly contracted output and
+machine-readable formats are not incidental presentation.
 
 Deprecated-history behavior needs paired host-source evidence: an unchanged
 old host still compiles where the backend claims source stability, and a new

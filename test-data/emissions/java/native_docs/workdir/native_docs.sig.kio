@@ -1,0 +1,30 @@
+signature native_docs v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module testapi {
+        host type Box[A];
+        host type String role(str)
+      };
+      module testapi/io {
+        import testapi as api;
+        host fn print(value: api.String) -> .
+      };
+      module testapi/retired {
+        host type Gone[A];
+        host fn archived(value: Gone(.)) -> Gone(.);
+        pub fn unit() -> .
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      testapi/retired.Gone;
+      testapi/retired.archived
+    }
+  }
+}

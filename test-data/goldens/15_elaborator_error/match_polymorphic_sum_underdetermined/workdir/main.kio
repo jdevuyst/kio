@@ -4,7 +4,7 @@ import elab/match(match);
 
 newtype Box[A] : A { pub constructor make; pub projector unpack }
 
-fn run(input: .) -> . {
+fn run(input: .) {
   match! input {
     .[A](_slot: Box(A) | .) -> . { () }
   }

@@ -46,7 +46,7 @@ fn select_nested(value: Bool) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(select_direct(.t));
   print(select_direct(.f));
   print(select_product(.t));

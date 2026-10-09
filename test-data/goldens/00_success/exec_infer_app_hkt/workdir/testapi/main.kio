@@ -23,4 +23,4 @@ fn peel[A](x: Box(A)) -> A { Box.un_box(A, x) }
 // against arg), so `peel(lift("ok\n"))` typechecks without explicit
 // type-args — the pattern's `A` slot binds from the argument's
 // `Box(String)` type.
-pub fn main() -> . { print(peel(lift("ok\n"(String)))) }
+pub fn main() { print(peel(lift("ok\n"(String)))) }

@@ -29,9 +29,9 @@ labels Cursor = {
 fn start() -> Cursor {
   {
     , section = 0
-    , base_rev = list.nil(String, ())
-    , ours_rev = list.nil(String, ())
-    , theirs_rev = list.nil(String, ())
+    , base_rev = list.nil(String)
+    , ours_rev = list.nil(String)
+    , theirs_rev = list.nil(String)
     }
 }
 

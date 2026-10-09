@@ -31,4 +31,4 @@ fn handle(p: Box(I32) | Box(String)) -> String {
   }
 }
 
-pub fn main() -> . { print(handle(widen_sum!(Box.mk_box("hi")))) }
+pub fn main() { print(handle(widen_sum!(Box.mk_box("hi")))) }

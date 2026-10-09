@@ -11,7 +11,7 @@ fn make_first() -> String -> String -> String { .(a: String)(b: String) -> Strin
 
 fn make_second() -> String -> String -> String { .(a: String)(b: String) -> String { b } }
 
-pub fn main() -> . {
+pub fn main() {
   // Full per-group application of a multi-group closure value.
   let first = make_first();
   print(first("first-direct\n"(String))("dropped"(String)));

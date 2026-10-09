@@ -67,4 +67,4 @@ fn use_instance() -> String {
   }
 }
 
-pub fn main() -> . { print(use_instance()) }
+pub fn main() { print(use_instance()) }

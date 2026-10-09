@@ -11,4 +11,4 @@ fn make_ok() -> Choice { __left__(Ok, Err & Code, {ok = "ok\n"}) }
 
 fn make_err() -> Choice { __right__(Ok, Err & Code, {err = "bad", code = "code\n"}) }
 
-pub fn main() -> . { let _ok = make_ok(); let _err = make_err(); print("ok\n"); print("code\n") }
+pub fn main() { let _ok = make_ok(); let _err = make_err(); print("ok\n"); print("code\n") }

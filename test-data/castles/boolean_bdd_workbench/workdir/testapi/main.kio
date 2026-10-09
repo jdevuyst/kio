@@ -95,7 +95,7 @@ fn restrictions(manager: engine.Manager) -> table.Store {
   store
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Ordered reduced Boolean decision diagrams: x < y < z\n");
   io.print("Truth rows: 000 001 010 011 100 101 110 111\n");
   let manager = report.formulas(fixtures.cases());

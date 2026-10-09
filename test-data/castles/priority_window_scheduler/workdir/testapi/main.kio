@@ -6,7 +6,7 @@ import priority_window_scheduler/report as report;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let early = model.early();
   let middle = model.middle();
   let late = model.late();

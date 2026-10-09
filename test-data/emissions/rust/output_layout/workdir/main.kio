@@ -8,4 +8,4 @@ host fn print(value: Str) -> .;
 
 host fn int_to_str(value: Int) -> Str;
 
-fn dummy() -> . { () }
+fn dummy() { () }

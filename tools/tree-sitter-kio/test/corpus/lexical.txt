@@ -38,8 +38,9 @@ iso! into! atom!
 
 (source_file
   (elaborator_name)
-  (elaborator_name)
-  (elaborator_name))
+  (ERROR
+    (elaborator_name)
+    (elaborator_name)))
 
 ================================================================================
 elaborator bang requires contiguity

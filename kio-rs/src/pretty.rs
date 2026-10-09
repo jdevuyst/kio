@@ -283,7 +283,12 @@ fn strip_item_doc(item: &Item) -> Item {
 /// `Public`, `pub(a/b) ` for `PublicIn`. The trailing space matches
 /// the bare-`pub` spelling the call sites used.
 pub fn pretty_visibility(vis: &crate::ast::Visibility) -> String {
-    render(&doc_vis(vis), WIDTH)
+    let mut prefix = render(&doc_vis(vis), WIDTH);
+    // Source rendering strips line-end spaces; a prefix is followed by a token.
+    if !prefix.is_empty() {
+        prefix.push(' ');
+    }
+    prefix
 }
 
 fn doc_vis(vis: &crate::ast::Visibility) -> Doc {
@@ -1401,7 +1406,6 @@ fn doc_signature(sig: &Signature) -> Doc {
     if groups.is_empty() {
         return text("()");
     }
-    let mut saw_value_group = false;
     let mut parts = Vec::new();
     for group in groups {
         match group {
@@ -1414,7 +1418,6 @@ fn doc_signature(sig: &Signature) -> Doc {
                 }
             }
             SignatureGroupRef::Value(params) => {
-                saw_value_group = true;
                 let docs: Vec<Doc> = params.iter().map(doc_signature_param).collect();
                 // Per-param leading trivia and the last param's
                 // trailing run flow through the trivia-aware list so a
@@ -1434,9 +1437,6 @@ fn doc_signature(sig: &Signature) -> Doc {
                 ));
             }
         }
-    }
-    if !saw_value_group {
-        parts.push(text("()"));
     }
     concat_all(parts)
 }
@@ -3728,7 +3728,6 @@ fn doc_host_fn_signature(h: &HostFn) -> Doc {
     if groups.is_empty() {
         return text("()");
     }
-    let mut saw_value_group = false;
     let mut parts = Vec::new();
     for group in groups {
         match group {
@@ -3741,14 +3740,10 @@ fn doc_host_fn_signature(h: &HostFn) -> Doc {
                 }
             }
             crate::ast::HostFnGroupRef::Value(params) => {
-                saw_value_group = true;
                 let docs: Vec<Doc> = params.iter().map(doc_host_fn_def_param).collect();
                 parts.push(comma_list(text("("), docs, text(")")));
             }
         }
-    }
-    if !saw_value_group {
-        parts.push(text("()"));
     }
     concat_all(parts)
 }

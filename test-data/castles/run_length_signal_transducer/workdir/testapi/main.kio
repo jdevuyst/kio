@@ -9,7 +9,7 @@ import signal/report as report;
 import testapi(I32, String);
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   match! input.consume() {
     .(state: codec.Encoder, original: lists.List(I32)) {
       let runs = codec.finish(state);

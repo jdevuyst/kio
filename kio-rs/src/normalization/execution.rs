@@ -422,6 +422,7 @@ enum Frame<'code> {
     LetBody,
     SeqValue(Code<'code>),
     SeqBody,
+    TypeApplication,
     Callee {
         call: Code<'code>,
         base: usize,
@@ -487,6 +488,7 @@ enum Handler<'code> {
 }
 
 enum Task<'code> {
+    TypeApplication(Value),
     Handler {
         handler: Handler<'code>,
         args: EvalArgs,
@@ -1960,6 +1962,43 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
     }
 
+    fn type_application(&mut self, value: Value, result: &mut Value) -> Control<'code> {
+        match value {
+            value @ Value::EvalClosure { .. } => self.task(Task::Handler {
+                handler: Handler::Value(value),
+                args: EvalArgs::One([Value::Unit]),
+            }),
+            Value::Seq { value, body } => {
+                self.push_value(value.unwrap_or_clone());
+                self.push_frame(Frame::SeqBody);
+                self.task(Task::TypeApplication(body.unwrap_or_clone()))
+            }
+            Value::CaseSplit {
+                scrutinee,
+                left_payload,
+                left,
+                right_payload,
+                right,
+            } => {
+                self.branches.push(Branch {
+                    scrutinee,
+                    left_payload,
+                    right_payload,
+                    next: Some(Task::TypeApplication(right.unwrap_or_clone())),
+                    left: None,
+                });
+                self.push_frame(Frame::BranchLeft);
+                self.task(Task::TypeApplication(left.unwrap_or_clone()))
+            }
+            value => {
+                // Primitive/member and opaque values erase types; only an
+                // ordinary evaluator closure owns an executable type stage.
+                *result = value;
+                Control::Return
+            }
+        }
+    }
+
     fn either(
         &mut self,
         scrutinee: Value,
@@ -2096,6 +2135,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     }
                 }
                 Control::Task => match self.tasks.pop().expect("scheduled operation") {
+                    Task::TypeApplication(value) => self.type_application(value, &mut result),
                     Task::Handler { handler, args } => self.handler(handler, args, &mut result),
                     Task::Either {
                         scrutinee,
@@ -2127,6 +2167,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                             EvalExpr::ProofedReflection { .. }
                                 | EvalExpr::Let { .. }
                                 | EvalExpr::Seq { .. }
+                                | EvalExpr::TypeApplication { .. }
                                 | EvalExpr::Call { .. }
                                 | EvalExpr::CallAtom { .. }
                                 | EvalExpr::CallPrimitive { .. }
@@ -2191,6 +2232,16 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                                 });
                                 self.push_frame(Frame::SeqValue(body));
                                 Control::Eval(value)
+                            }
+                            EvalExpr::TypeApplication { .. } => {
+                                let callee = code.child(|expr| {
+                                    let EvalExpr::TypeApplication { callee } = expr else {
+                                        unreachable!()
+                                    };
+                                    callee
+                                });
+                                self.push_frame(Frame::TypeApplication);
+                                Control::Eval(callee)
                             }
                             EvalExpr::Call { .. } => {
                                 let callee = code.child(|expr| {
@@ -2403,6 +2454,9 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                         self.push_value(std::mem::replace(&mut result, Value::Unit));
                         self.start_arguments(call, base, &mut result)
                     }
+                    Some(Frame::TypeApplication) => self.task(Task::TypeApplication(
+                        std::mem::replace(&mut result, Value::Unit),
+                    )),
                     Some(Frame::Arguments { call, base, next }) => {
                         self.push_value(std::mem::replace(&mut result, Value::Unit));
                         if next < Self::call_args(call.expr()).len() {

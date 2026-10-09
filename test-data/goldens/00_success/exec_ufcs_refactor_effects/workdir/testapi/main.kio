@@ -1,0 +1,37 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+import testapi/text as text;
+
+fn line(value: String) { value.>text.string_concat("\n").>io.print }
+
+fn mark(value: String) -> String { line(value); value }
+
+// The first application has an effect before it returns the second stage.
+// Parentheses make this operation observably non-associative.
+fn combine[A](left: String) -> String -> String {
+  line("stage: ".>text.string_concat(left));
+  .(right: String) -> String {
+    "("
+      .>text.string_concat(left)
+      .>text.string_concat(",")
+      .>text.string_concat(right)
+      .>text.string_concat(")")
+  }
+}
+
+pub fn main() {
+  line("first prefix");
+  line(combine(., combine(., combine(., mark("a"), mark("b")), mark("c")), mark("d")));
+  line("first UFCS");
+  line(mark("a").>combine(., mark("b")).>combine(., mark("c")).>combine(., mark("d")));
+  line("last prefix");
+  line(combine(., mark("a"), combine(., mark("b"), combine(., mark("c"), mark("d")))));
+  line("last UFCS");
+  line(mark("d").>>combine(., mark("c")).>>combine(., mark("b")).>>combine(., mark("a")));
+  line("mixed prefix");
+  line(combine(., combine(., mark("a"), combine(., mark("b"), mark("c"))), mark("d")));
+  line("mixed UFCS");
+  line(mark("c").>>combine(., mark("b")).>>combine(., mark("a")).>combine(., mark("d")))
+}

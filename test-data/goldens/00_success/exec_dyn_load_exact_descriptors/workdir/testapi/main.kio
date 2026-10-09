@@ -82,7 +82,7 @@ fn describe_duplicate_image(source: String) -> String {
   }
 }
 
-fn print_duplicate_image_results() -> . {
+fn print_duplicate_image_results() {
   print(string_concat(
     , "duplicate module identity: "(String)
     , string_concat(describe_duplicate_image("module same;\nmodule same;\n"(String)), "\n"(String))
@@ -96,7 +96,7 @@ fn print_duplicate_image_results() -> . {
     ))
 }
 
-fn print_malformed_host_descriptor_results() -> . {
+fn print_malformed_host_descriptor_results() {
   print(string_concat(
     , "malformed host type binder: "(String)
     , string_concat(
@@ -110,7 +110,7 @@ fn source_result_line(label: String, source: String) -> String {
   string_concat(label, string_concat(describe_duplicate_image(source), "\n"(String)))
 }
 
-fn print_source_derivation_results() -> . {
+fn print_source_derivation_results() {
   print(source_result_line(
     , "later local host type in literal: "(String)
     , "module later_literal;\nimport __intrinsics__;\npub fn literal() -> . { let "
@@ -149,8 +149,8 @@ fn print_source_derivation_results() -> . {
     , "module bad;\npub fn broken() -> . { .[A)() { () } }\n"(String)
     ));
   print(source_result_line(
-    , "lambda without value parameter group: "(String)
-    , "module bad;\npub fn broken() -> . { .[A] { () } }\n"(String)
+    , "type-only lambda: "(String)
+    , "module valid;\npub fn returned() -> [A] . { .[A] { () } }\n"(String)
     ));
   print(source_result_line(
     , "bare transparent alias: "(String)
@@ -370,7 +370,7 @@ fn group_shape_result() -> String {
   }
 }
 
-fn print_descriptor_lookup_results() -> . {
+fn print_descriptor_lookup_results() {
   let type_id = mk_host_id("host/a"(String), "Value"(String));
   let i32_type = mk_role_host_type(type_id, i32_role());
   let i32_type_duplicate =
@@ -1548,7 +1548,7 @@ fn owned_descriptor_result() -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print_duplicate_image_results();
   print_malformed_host_descriptor_results();
   print_source_derivation_results();

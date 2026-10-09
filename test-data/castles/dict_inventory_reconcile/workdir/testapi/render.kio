@@ -64,7 +64,7 @@ fn summary(row: Totals) -> String {
     )
 }
 
-pub fn render_report(report_value: Report) -> . {
+pub fn render_report(report_value: Report) {
   print("inventory reconciliation\n");
   print("known items:\n");
   print(render_line(report_bolt_of(report_value)));

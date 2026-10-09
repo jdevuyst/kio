@@ -8,7 +8,7 @@ newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
 
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn handle(p: Box(Foo) | Bar) -> . {
+fn handle(p: Box(Foo) | Bar) {
   let _r =
     match! p {
       .[A](b: Box(A)) -> . { () }

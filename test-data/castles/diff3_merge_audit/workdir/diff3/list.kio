@@ -17,13 +17,13 @@ import testapi/iter(loop);
 
 pub rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
 
-pub fn nil[A]() -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, rest: List(A)) -> List(A) {
   List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
 }
 
-pub fn one[A](value: A) -> List(A) { cons(value, nil(A, ())) }
+pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
 
 pub fn is_empty[A](xs: List(A)) -> Bool {
   match! xs.>List.unpack {
@@ -39,7 +39,7 @@ pub fn head_or[A](xs: List(A), fallback: A) -> A {
 
 pub fn tail[A](xs: List(A)) -> List(A) {
   match! xs.>List.unpack {
-    (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { nil(A, ()) })
+    (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { nil(A) })
   }
 }
 
@@ -52,7 +52,7 @@ pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   }
 }
 
-pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A)) }
 
 pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
 
@@ -83,7 +83,7 @@ rec(loop) fn take_onto[A](xs: List(A), count: I32, acc: List(A)) -> List(A) {
   }
 }
 
-fn take[A](xs: List(A), count: I32) -> List(A) { take_onto(xs, count, nil(A, ())) }
+fn take[A](xs: List(A), count: I32) -> List(A) { take_onto(xs, count, nil(A)) }
 
 /// The half-open span `[lo, hi)`. A reversed or out-of-range span is
 /// empty, which is what the region walk wants for a gap that exists on
@@ -100,4 +100,4 @@ rec(loop) fn zeros_onto(count: I32, acc: List(I32)) -> List(I32) {
   }
 }
 
-pub fn zeros(count: I32) -> List(I32) { zeros_onto(count, nil()) }
+pub fn zeros(count: I32) -> List(I32) { zeros_onto(count, nil(_)) }

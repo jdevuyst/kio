@@ -18,7 +18,4 @@ fn second_of(p: Pair) -> Second {
   }
 }
 
-pub fn main() -> . {
-  let p = {first = "skipped\n", second = "shown\n"};
-  print(Second.get(second_of(p)))
-}
+pub fn main() { let p = {first = "skipped\n", second = "shown\n"}; print(Second.get(second_of(p))) }

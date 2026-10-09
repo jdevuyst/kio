@@ -7,4 +7,4 @@ pub rec newtype Type_list : . | (__Type__ & Type_list) {
   pub projector un_type_list
   }
 
-pub fn main() -> . { () }
+pub fn main() { () }

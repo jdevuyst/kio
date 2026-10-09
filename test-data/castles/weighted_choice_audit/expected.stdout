@@ -1,0 +1,11 @@
+weighted loot and charm audit
+attack [0:2, 1:1, 2:4, 3:4, 4:1] total=12
+treasure [0:9, 5:3] total=12
+ready attack [0:0, 1:0, 2:0, 3:4, 4:1] total=5
+ready multiplicity=5/12
+readiness [false:7, true:5] total=12
+guaranteed attack [3:1] total=1
+empty attack [0:0, 1:0, 2:0, 3:0, 4:0] total=0
+empty left total=0
+empty right total=0
+impossible condition total=0

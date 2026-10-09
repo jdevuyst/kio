@@ -1,0 +1,105 @@
+[
+  {
+    "name": "heading_reference_interruption",
+    "source": "/// # Heading **bold [`ref`] tail** end.\nmodule app;\n",
+    "targets": [
+      { "text": "# Heading ", "kind": "comment.doc.heading" },
+      { "text": "**bold ", "kind": "comment.doc.strong" },
+      { "text": "ref", "kind": "comment.doc.reference" },
+      { "text": " tail**", "kind": "comment.doc.strong" },
+      { "text": " end.", "kind": "comment.doc.heading" }
+    ]
+  },
+  {
+    "name": "four_bounded_styles",
+    "source": "/// **outer __strong *italic _inner_ italic* strong__ outer**\nmodule app;\n",
+    "targets": [
+      { "text": "**outer ", "kind": "comment.doc.strong" },
+      { "text": "__strong ", "kind": "comment.doc.strong" },
+      { "text": "*italic ", "kind": "comment.doc.emphasis" },
+      { "text": "_inner_", "kind": "comment.doc.emphasis" },
+      { "text": " italic*", "kind": "comment.doc.emphasis" },
+      { "text": " strong__", "kind": "comment.doc.strong" },
+      { "text": " outer**", "kind": "comment.doc.strong" }
+    ]
+  },
+  {
+    "name": "literal_and_link_precedence",
+    "source": "/// **before ``[`hidden`]`` \\* [label](url) after**; [`live`].\n/// [key]: url/[`opaque`]\nmodule app;\n",
+    "targets": [
+      { "text": "**before ", "kind": "comment.doc.strong" },
+      { "text": "``[`hidden`]``", "kind": "comment.doc.code" },
+      { "text": "\\*", "kind": "comment.doc.marker" },
+      { "text": "[label](url)", "kind": "comment.doc.link" },
+      { "text": "live", "kind": "comment.doc.reference" },
+      { "text": "[key]: url/[`opaque`]", "kind": "comment.doc.link" }
+    ]
+  },
+  {
+    "name": "block_markers",
+    "source": "/// > > quote **bold**\n/// - item\n/// 12. item\n/// ***\nmodule app;\n",
+    "targets": [
+      { "text": "> > ", "kind": "comment.doc.marker" },
+      { "text": "**bold**", "kind": "comment.doc.strong" },
+      { "text": "- ", "kind": "comment.doc.marker" },
+      { "text": "12. ", "kind": "comment.doc.marker" },
+      { "text": "***", "kind": "comment.doc.marker" }
+    ]
+  },
+  {
+    "name": "fence_attributes_and_kio",
+    "source": "/// ```kio {check_exit_code=0}\n/// fn example() { () }\n/// ```\n/// [`after`].\nmodule app;\n",
+    "targets": [
+      { "text": "```kio ", "kind": "comment.doc.fence" },
+      { "text": "{check_exit_code=0}", "kind": "comment.doc.attribute" },
+      { "text": "fn", "kind": "keyword.declaration" },
+      { "text": "example", "kind": "entity.name.function" },
+      { "text": "after", "kind": "comment.doc.reference" }
+    ]
+  },
+  {
+    "name": "independent_fences_and_unfinished_string",
+    "source": "/// ```kio\n/// \"unfinished\n/// ```\n/// [`after`].\n/// ```kio\n/// fn second() { () }\n/// ```\nmodule app;\n",
+    "bodies": 2,
+    "targets": [
+      { "text": "\"unfinished", "kind": "comment.doc.code", "textmate": "literal.string" },
+      { "text": "after", "kind": "comment.doc.reference" },
+      { "text": "fn", "kind": "keyword.declaration" },
+      { "text": "second", "kind": "entity.name.function" }
+    ]
+  },
+  {
+    "name": "self_harness_context",
+    "source": "/// ```kio {@}\n/// let value = ();\n/// value\n/// ```\n/// [`after`].\nmodule app;\n",
+    "targets": [
+      { "text": "{@}", "kind": "comment.doc.attribute" },
+      { "text": "let", "kind": "keyword.declaration" },
+      { "text": "after", "kind": "comment.doc.reference" }
+    ]
+  },
+  {
+    "name": "malformed_wrapper_is_source_bounded",
+    "malformedContext": true,
+    "source": "/// ```kio {@}\n/// }\n/// module escaped;\n/// \"unfinished\n/// ```\n/// [`after`].\nmodule app;\n",
+    "targets": [{ "text": "after", "kind": "comment.doc.reference" }]
+  },
+  {
+    "name": "multiline_kio_function_and_next_fence",
+    "source": "/// ```kio\n/// fn text() {\n/// let value = ();\n/// value }\n/// ```\n/// [`after`].\n/// ```kio\n/// fn next() { () }\n/// ```\nmodule app;\n",
+    "bodies": 2,
+    "targets": [
+      { "text": "let", "kind": "keyword.declaration" },
+      { "text": "after", "kind": "comment.doc.reference" },
+      { "text": "next", "kind": "entity.name.function" }
+    ]
+  },
+  {
+    "name": "embedded_doc_is_not_recursive",
+    "source": "/// ```kio\n/// /// [`literal`]\n/// fn next() { () }\n/// ```\n/// [`after`].\nmodule app;\n",
+    "targets": [
+      { "text": "literal", "kind": "comment.doc", "textmate": "comment.doc" },
+      { "text": "next", "kind": "entity.name.function" },
+      { "text": "after", "kind": "comment.doc.reference" }
+    ]
+  }
+]

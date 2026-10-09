@@ -1,0 +1,6 @@
+  pass equiv `direct_and_saved` in main
+  pass equiv `local_and_saved` in main
+  pass equiv `aliased_unit` in main
+  pass equiv `explicit_unit` in main
+
+result: 4/4 equiv blocks passed

@@ -2,6 +2,6 @@ module derive_empty_candidates_unit_no_rule/main;
 
 import elab/derive(derive);
 
-fn bad() -> . { derive!((), .) }
+fn bad() { derive!((), .) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

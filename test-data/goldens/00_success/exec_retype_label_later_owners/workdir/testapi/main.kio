@@ -5,7 +5,7 @@ import testapi(String);
 import testapi/io(print);
 import widget/store as source;
 
-pub fn main() -> . {
+pub fn main() {
   target.accept_foo({source.foo=});
   print("terminal-identity\n");
   source.accept_foo(target.Foo.mk(()));

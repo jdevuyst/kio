@@ -5,7 +5,7 @@ import testapi(String);
 import testapi/io(print);
 import widget/store as source;
 
-pub fn main() -> . {
+pub fn main() {
   let later =
     (
       , target.Seed.mk("later-seed\n")

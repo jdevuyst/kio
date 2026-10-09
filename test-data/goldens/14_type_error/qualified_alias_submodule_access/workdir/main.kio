@@ -11,4 +11,4 @@ host type String role(str);
 // (Type-member access — `<alias>.<TypeName>.<member>` — is the
 // only three-segment shape that resolves; see
 // `exec_qualified_newtype_member`.)
-pub fn main() -> . { s.sub.hidden() }
+pub fn main() { s.sub.hidden() }

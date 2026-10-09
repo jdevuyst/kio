@@ -589,6 +589,21 @@ pub(crate) fn fnv1a_64_hex(s: &str) -> String {
 /// before a target-specific exact-identity digest is required.
 pub(crate) const READABLE_MINT_MAX_LEN: usize = 64;
 
+/// Keep a readable name within the shared byte budget, otherwise construct its
+/// backend-specific digest spelling from the complete owner identity. The
+/// fallback is lazy so a short name needs no additional identity rendering.
+/// Public collision rejection and private claim allocation remain separate.
+pub(crate) fn budgeted_mint_name<E>(
+    readable: String,
+    fallback: impl FnOnce(&str) -> Result<String, E>,
+) -> Result<String, E> {
+    if readable.len() <= READABLE_MINT_MAX_LEN {
+        Ok(readable)
+    } else {
+        fallback(&readable)
+    }
+}
+
 /// The candidate schedule for claiming a readable mint name owned by
 /// `owner` (the shape's canonical identity): the base name itself, then
 /// the base with the owner's FNV-1a hash suffix at 8 and 16 hex digits.
@@ -2104,6 +2119,32 @@ mod tests {
         assert_eq!(a, b, "same input hashes the same");
         assert_ne!(a, c, "distinct shapes hash distinctly");
         assert_eq!(a.len(), 16, "16 hex digits");
+    }
+
+    #[test]
+    fn mint_budget_preserves_the_boundary_and_lazy_fallback() {
+        for length in [63, 64] {
+            let readable = "A".repeat(length);
+            assert_eq!(
+                budgeted_mint_name::<()>(readable.clone(), |_| {
+                    panic!("an in-budget name needs no fallback identity")
+                }),
+                Ok(readable)
+            );
+        }
+        let readable = "A".repeat(65);
+        assert_eq!(
+            budgeted_mint_name::<()>(readable.clone(), |identity| {
+                assert_eq!(identity, readable);
+                Ok(format!("Shape_H{}", fnv1a_64_hex(identity)))
+            }),
+            Ok(format!("Shape_H{}", fnv1a_64_hex(&readable)))
+        );
+        assert_eq!(
+            budgeted_mint_name("é".repeat(33), |_| Err("identity error")),
+            Err("identity error"),
+            "the existing threshold counts bytes and propagates fallback errors"
+        );
     }
 
     #[test]

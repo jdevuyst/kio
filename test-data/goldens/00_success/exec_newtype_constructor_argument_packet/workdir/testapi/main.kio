@@ -9,7 +9,7 @@ fn printer() -> String -> String { io.print("function;"); .(text: String) { text
 
 fn value() -> String { io.print("value;"); "packed" }
 
-pub fn main() -> . {
+pub fn main() {
   let .(<Hidden> payload) = Pack.open(Pack.make(printer(), value()));
   let .(show, text) = payload;
   io.print(show(text));

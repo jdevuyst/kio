@@ -6,4 +6,4 @@ import eus(String);
 // the call site is an unresolved-name error (exit 13).
 fn extend(p: String & String) -> String & String & . { widen_prod!(p) }
 
-pub fn main() -> . { let _ = extend(("a", "b")); () }
+pub fn main() { let _ = extend(("a", "b")); () }

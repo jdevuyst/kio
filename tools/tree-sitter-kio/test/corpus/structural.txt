@@ -8438,13 +8438,17 @@ module m; elab make: . { captures (helper); impl run; captures (helper); };
         (callable_path
           (entity_name_function)))
       (separator_semicolon)
-      (ERROR
-        (entity_name_label)
-        (bracket_lparen)
-        (entity_name_label)
-        (bracket_rparen)
-        (separator_semicolon))
-      (bracket_rbrace)))
+      (MISSING bracket_rbrace)))
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen)))
+  (separator_semicolon)
+  (bracket_rbrace)
   (separator_semicolon))
 
 ================================================================================

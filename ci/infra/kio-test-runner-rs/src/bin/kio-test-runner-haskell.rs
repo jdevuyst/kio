@@ -2153,6 +2153,36 @@ fn render_export_driver(
                  \x20\x20roundExportSecond (T.pack \"export-right\") >>= TIO.putStrLn . (T.pack \"round export: \" <>)\n"
             )
         }
+        ExportDriver::TypeOnlyRoundtrip => format!(
+            r#"  putStrLn "ready"
+  direct <- ({direct} pkg :: IO (T.Text -> IO T.Text))
+  putStrLn "specialized"
+  direct (T.pack "direct-string") >>= TIO.putStrLn
+  integer <- ({direct} pkg :: IO (Integer -> IO Integer))
+  putStrLn "specialized-again"
+  integer 42 >>= print
+  delayed <- ({delayed} pkg :: IO (T.Text -> IO T.Text))
+  putStrLn "unit-called"
+  delayed (T.pack "unit-string") >>= TIO.putStrLn
+  {ordinary} pkg (T.pack "ordinary-string") >>= TIO.putStrLn
+  {phantom} pkg
+  putStrLn "phantom-called"
+  {phantom_unit} pkg
+  putStrLn "phantom-unit-called"
+  poly <- ({poly} pkg :: IO (forall b. IO (b -> IO b)))
+  putStrLn "poly-returned"
+  textIdentity <- poly @T.Text
+  textIdentity (T.pack "poly-string") >>= TIO.putStrLn
+  integerIdentity <- poly @Integer
+  integerIdentity 73 >>= print
+"#,
+            direct = pkg_export("testapi/main", "direct"),
+            delayed = pkg_export("testapi/main", "delayed"),
+            ordinary = pkg_export("testapi/main", "ordinary"),
+            phantom = pkg_export("testapi/main", "phantom"),
+            phantom_unit = pkg_export("testapi/main", "phantom_unit"),
+            poly = pkg_export("testapi/main", "poly"),
+        ),
         ExportDriver::HostSubstitutedUnitCallback => format!(
             "  {} pkg (\\() -> pure (T.pack \"callback\")) >>= TIO.putStrLn\n",
             pkg_export("testapi/api", "via_host"),

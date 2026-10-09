@@ -14,7 +14,7 @@ import testapi/text(string_concat);
 // each bare cross-module name through the importing module's own imports.
 // Running `main` through the interpreter therefore agrees with
 // compile-and-run only when the cross-module references resolve correctly.
-pub fn main() -> . {
+pub fn main() {
   let c = scale(bump(bump(bump(start()))), 10);
   print(string_concat(hello("kio"), string_concat(" count=", int_to_string(value(c)))))
 }

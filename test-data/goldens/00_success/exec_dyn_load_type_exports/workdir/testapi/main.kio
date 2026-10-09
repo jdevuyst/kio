@@ -115,7 +115,7 @@ fn show_i32(label: String, r: . | Value) -> String {
 }
 
 // Print each surface export as a `name : signature` line, listing order.
-fn print_exports(im: Image) -> . {
+fn print_exports(im: Image) {
   loop(
     , .(st: Export_infos) {
         match! un_export_infos(st) {
@@ -184,7 +184,7 @@ fn cps_via_ctor(im: Image) -> . | Value {
 
 /// Loads the piped-in image, lists the export surface, and prints each
 /// probed member export's result; a load failure prints the diagnostic.
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
       , .(im0: Lr_image) {

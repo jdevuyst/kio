@@ -19,7 +19,7 @@ fn show(label: String, outcome: Load_outcome) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(show(
     , "pub pure fn: "(String)
     , load_package("module a;\n\npub pure fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"(String))

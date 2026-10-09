@@ -14,4 +14,4 @@ fn applied[*F][A](value: F(A)) -> F(A) { identity(F(A), value) }
 
 fn residual[A]() -> . -> List(A) { nil(A) }
 
-pub fn main() -> . { List.get(., singleton(., ())) }
+pub fn main() { List.get(., singleton(., ())) }

@@ -16,9 +16,9 @@ op _ - _ { impl sub_i32 }
 // needing a non-trivial body that would dilute the test's focus.
 fn id_i32(x: I32) -> I32 { x }
 
-fn print_i32(n: I32) -> . { print(i32_to_string(n)); print("\n") }
+fn print_i32(n: I32) { print(i32_to_string(n)); print("\n") }
 
-pub fn main() -> . {
+pub fn main() {
   // Shape 1: negative literal on the RHS of `let`, at an
   // expression-starting position (after `=`).
   let a = -40;

@@ -28,7 +28,7 @@ fn render_int_line(line: String | .) -> String {
 
 fn pipe(a: String, b: String) -> String { string_concat(a, string_concat("|", b)) }
 
-pub fn main() -> . {
+pub fn main() {
   let l1 = render_int_line(read_ascii_line());
   let l2 = render_int_line(read_ascii_line());
   let l3 = render_line(read_ascii_line());

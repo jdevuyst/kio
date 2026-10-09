@@ -17,7 +17,7 @@ fn describe(choice: Choice) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let select =
     first(
       , .(condition: Bool) {

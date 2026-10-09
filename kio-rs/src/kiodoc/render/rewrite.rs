@@ -27,6 +27,11 @@
 
 use std::collections::HashSet;
 
+use crate::doc_markup::fences::{Block, scan_blocks};
+#[cfg(test)]
+use crate::doc_markup::rewrite::rewrite_inert;
+use crate::doc_markup::rewrite::{BracketKind, KiodocBracket, rewrite_prose_segment};
+
 use super::site::SymbolIndex;
 
 pub enum LinkTarget {
@@ -70,178 +75,49 @@ pub fn rewrite(
     scope: &dyn DirectiveScope,
     overrides: &HashSet<String>,
 ) -> String {
-    let fences = crate::kiodoc::parse::scan(prose);
-    if fences.is_empty() {
-        return rewrite_prose_segment(prose, url_prefix, link_ext, index, scope, overrides);
-    }
-
-    let mut out = String::with_capacity(prose.len());
-    let mut cursor = 0usize;
-    for fence in fences {
-        let start = fence.span.start as usize;
-        let end = fence.span.end as usize;
-        out.push_str(&rewrite_prose_segment(
-            &prose[cursor..start],
-            url_prefix,
-            link_ext,
-            index,
-            scope,
-            overrides,
-        ));
-        out.push_str(&prose[start..end]);
-        cursor = end;
-    }
-    out.push_str(&rewrite_prose_segment(
-        &prose[cursor..],
-        url_prefix,
-        link_ext,
-        index,
-        scope,
-        overrides,
-    ));
-    out
+    rewrite_with(
+        prose,
+        crate::doc_markup::lexical::inline_literal_end,
+        |parsed| render_bracket(parsed, url_prefix, link_ext, index, scope, overrides),
+    )
 }
 
-fn rewrite_prose_segment(
+fn rewrite_with(
     prose: &str,
-    url_prefix: &str,
-    link_ext: &str,
-    index: &SymbolIndex,
-    scope: &dyn DirectiveScope,
-    overrides: &HashSet<String>,
+    literal_end: fn(&str, usize) -> Option<usize>,
+    mut render: impl FnMut(&KiodocBracket<'_>) -> String,
 ) -> String {
-    let bytes = prose.as_bytes();
-    let len = bytes.len();
-    let mut out = String::with_capacity(len);
-    let mut i = 0;
-
-    while i < len {
-        if let Some(end) = crate::kiodoc::parse::inline_literal_end(prose, i) {
-            out.push_str(&prose[i..end]);
-            i = end;
-            continue;
-        }
-        if bytes[i] != b'[' {
-            push_char(&mut out, prose, &mut i);
-            continue;
-        }
-        // Try to parse a `` [`...`] `` Kiodoc bracket form starting
-        // here. If it doesn't match, emit the `[` verbatim.
-        match parse_kiodoc_bracket(&prose[i..]) {
-            Some(parsed) => {
-                let consumed = parsed.consumed;
-                // A trailing `(` or `[` makes this a plain Markdown
-                // link, not a Kiodoc form — leave it verbatim.
-                let after = prose[i + consumed..].trim_start();
-                if after.starts_with('(') || after.starts_with('[') {
-                    push_char(&mut out, prose, &mut i);
-                    continue;
-                }
-                let rendered =
-                    render_bracket(&parsed, url_prefix, link_ext, index, scope, overrides);
-                out.push_str(&rendered);
-                i += consumed;
-            }
-            None => push_char(&mut out, prose, &mut i),
+    let mut out = String::with_capacity(prose.len());
+    for block in scan_blocks(prose) {
+        match block {
+            Block::Prose(source) => out.push_str(&rewrite_prose_segment(
+                source.text,
+                literal_end,
+                &mut render,
+            )),
+            Block::Fence(fence) => out.push_str(fence.source.text),
         }
     }
     out
-}
-
-/// Copy the next UTF-8 character of `s` (starting at `*i`) to `out`,
-/// advancing `*i`.
-fn push_char(out: &mut String, s: &str, i: &mut usize) {
-    let ch = s[*i..].chars().next().unwrap();
-    out.push(ch);
-    *i += ch.len_utf8();
-}
-
-/// A parsed `` [`...`] `` Kiodoc bracket form.
-struct KiodocBracket {
-    kind: BracketKind,
-    /// Total bytes consumed, including both brackets and backticks.
-    consumed: usize,
-}
-
-enum BracketKind {
-    /// `` [`@signature term`] ``, `` [`@source term`] ``, or
-    /// `` [`@type term`] ``.
-    Directive { keyword: String, term: String },
-    /// `` [`name`] ``.
-    Ref { name: String },
-}
-
-/// Parse a `` [`...`] `` form at the start of `s`. The payload is
-/// either a directive (`@KEYWORD term`) or a plain ref name.
-fn parse_kiodoc_bracket(s: &str) -> Option<KiodocBracket> {
-    let bytes = s.as_bytes();
-    if bytes.len() < 4 || bytes[0] != b'[' || bytes[1] != b'`' {
-        return None;
-    }
-    // The payload runs from byte 2 to the closing backtick.
-    let mut j = 2;
-    while j < bytes.len() && bytes[j] != b'`' && bytes[j] != b']' && bytes[j] != b'\n' {
-        j += 1;
-    }
-    if j >= bytes.len() || bytes[j] != b'`' {
-        return None;
-    }
-    let payload = &s[2..j];
-    // Closing backtick then `]`.
-    if j + 1 >= bytes.len() || bytes[j + 1] != b']' {
-        return None;
-    }
-    let consumed = j + 2;
-    if payload.is_empty() {
-        return None;
-    }
-    // Directive form: `@KEYWORD term` — keyword and term separated by
-    // one or more whitespace characters.
-    if let Some(rest) = payload.strip_prefix('@') {
-        let space = rest.find(char::is_whitespace)?;
-        let keyword = &rest[..space];
-        let term = rest[space..].trim();
-        // The keyword must be a non-empty run of letters, and the
-        // term must be non-empty after trimming.
-        if keyword.is_empty()
-            || keyword.chars().any(|c| !c.is_ascii_alphabetic())
-            || term.is_empty()
-        {
-            return None;
-        }
-        return Some(KiodocBracket {
-            kind: BracketKind::Directive {
-                keyword: keyword.to_owned(),
-                term: term.to_owned(),
-            },
-            consumed,
-        });
-    }
-    Some(KiodocBracket {
-        kind: BracketKind::Ref {
-            name: payload.to_owned(),
-        },
-        consumed,
-    })
 }
 
 /// Render one parsed Kiodoc bracket to Markdown.
 fn render_bracket(
-    parsed: &KiodocBracket,
+    parsed: &KiodocBracket<'_>,
     url_prefix: &str,
     link_ext: &str,
     index: &SymbolIndex,
     scope: &dyn DirectiveScope,
     overrides: &HashSet<String>,
 ) -> String {
-    match &parsed.kind {
+    match parsed.kind {
         BracketKind::Directive { keyword, term } => {
             // An overridden term keeps the directive verbatim — the
             // author's reference-link definition is the rendered link.
             if overrides.contains(term) {
                 return verbatim_bracket(parsed);
             }
-            match keyword.as_str() {
+            match keyword {
                 "signature" => match scope.signature(term) {
                     Some(sig) => format!("`{}`", sig.replace('`', "")),
                     None => verbatim_bracket(parsed),
@@ -284,7 +160,7 @@ fn render_bracket(
 
 /// Reconstruct the literal `` [`...`] `` text for a bracket the
 /// rewriter chose not to transform.
-fn verbatim_bracket(parsed: &KiodocBracket) -> String {
+fn verbatim_bracket(parsed: &KiodocBracket<'_>) -> String {
     match &parsed.kind {
         BracketKind::Directive { keyword, term } => {
             format!("[`@{keyword} {term}`]")
@@ -330,6 +206,59 @@ mod tests {
         let mut i = SymbolIndex::default();
         i.insert("add", "pkg/main", "item-add");
         i
+    }
+
+    #[test]
+    fn inert_policy_never_expands_or_resolves_directives() {
+        let source = "[`add`]; [`missing`]; [`@signature add`]; [`@source missing`]; [`@type add`]; [`@unknown add`]; [`@type`]";
+        assert_eq!(
+            rewrite_inert(source),
+            "`add`; `missing`; `add`; `missing`; `add`; [`@unknown add`]; [`@type`]"
+        );
+        assert_eq!(
+            rewrite(
+                "[`@signature add`]",
+                "",
+                ".md",
+                &idx(),
+                &TestScope,
+                &HashSet::new()
+            ),
+            "`fn add(x: Int) -> Int`"
+        );
+        assert_eq!(
+            rewrite(
+                "[`@source missing`]",
+                "",
+                ".md",
+                &idx(),
+                &TestScope,
+                &HashSet::new()
+            ),
+            "[`@source missing`]"
+        );
+    }
+
+    #[test]
+    fn compatibility_opaque_and_unresolved_brackets() {
+        let source = "é [`@signature\t missing `]; [`@signature\u{a0}add`]; \\[`add`]; `` [`add`] ``; [`add`](url); [`@type`]";
+        let expected = "é [`@signature missing`]; `fn add(x: Int) -> Int`; \\[`add`]; `` [`add`] ``; [`add`](url); [`@type`]";
+        assert_eq!(
+            rewrite(source, "", ".md", &idx(), &TestScope, &HashSet::new()),
+            expected
+        );
+        let overrides = HashSet::from(["add".to_owned()]);
+        assert_eq!(
+            rewrite(
+                "[`@signature\tadd`]; [`add`]",
+                "",
+                ".md",
+                &idx(),
+                &TestScope,
+                &overrides
+            ),
+            "[`@signature add`]; [`add`]"
+        );
     }
 
     #[test]

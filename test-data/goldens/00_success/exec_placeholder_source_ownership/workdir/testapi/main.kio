@@ -21,7 +21,7 @@ fn apply_callee(f: (String & (String -> String)) -> String) -> String {
   f("a", .(value) { text.string_concat(value, "ufcs") })
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(apply2(.x. { text.string_concat(x2, x1) }));
   io.print("\n");
   io.print(apply2(.x. { text.string_concat(x2, x2) }));

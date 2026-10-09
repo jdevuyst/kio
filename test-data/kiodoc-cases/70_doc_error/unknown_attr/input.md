@@ -9,5 +9,5 @@ __INSERT_CODE_HERE__
 ```
 
 ```kio {@main stout}
-pub fn greet() -> . { () }
+pub fn greet() { () }
 ```

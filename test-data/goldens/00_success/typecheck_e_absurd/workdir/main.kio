@@ -5,12 +5,12 @@ import __intrinsics__;
 // Fully explicit type-arg. `__absurd__`'s binder `[α]` is
 // written `()` at the call site; the call's return type pins
 // to `()`.
-fn into_unit_explicit(x: !) -> . { __absurd__(., x) }
+fn into_unit_explicit(x: !) { __absurd__(., x) }
 
 // Fully elided type-arg. The call sits in a checked position
 // (the fn body, whose expected return is `()`); the typer
 // solves `[α] = ()` from the return-type unification.
-fn into_unit_elided(x: !) -> . { __absurd__(x) }
+fn into_unit_elided(x: !) { __absurd__(x) }
 
 // Same path with a different concrete return type. The binder
 // is reachable only through the return, so the typer must use
@@ -25,4 +25,4 @@ fn into_pair(x: !) -> . & . { __absurd__(x) }
 // to `()`. Exercises the rule on a non-leaf position.
 fn helper[T](v: T) -> T { v }
 
-fn through_helper(x: !) -> . { __absurd__(helper(!, x)) }
+fn through_helper(x: !) { __absurd__(helper(!, x)) }

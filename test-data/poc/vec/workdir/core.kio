@@ -211,7 +211,7 @@ pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
 pub rec labels { frames[A]: . | (Frame(A) & Frames(A)) };
 
 /// Builds the empty frame stack.
-pub fn frames_nil[A]() -> Frames(A) { {frames = widen_sum!((), . | (Frame(A) & Frames(A)))} }
+pub fn frames_nil[A] -> Frames(A) { {frames = widen_sum!((), . | (Frame(A) & Frames(A)))} }
 
 /// Pushes one zipper frame onto a frame stack.
 pub fn frames_push[A](fr: Frame(A), rest: Frames(A)) -> Frames(A) {

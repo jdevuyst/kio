@@ -5,7 +5,7 @@ import testapi(String);
 import testapi/io(print);
 import widget/store as source;
 
-pub fn main() -> . {
+pub fn main() {
   let selected = {source.foo = .(_next: source.Foo(String) -> String) { "selected-recursive\n" }};
   print(target.read_foo(selected, .(_value: target.Foo(String)) { "unused" }));
   let retained = {source.peer = .(_next: source.Peer(String) -> String) { "retained-recursive\n" }};

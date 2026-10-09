@@ -95,7 +95,7 @@ fn join_csv(xs: List(Int)) -> String {
 
 fn plus_ten(n: Int) -> Int { add(n, 10) }
 
-pub fn main() -> . {
+pub fn main() {
   // Inputs in source order: [1, 2, 3]. `push` cons-prepends, so
   // building bottom-up gives the list in source order.
   let xs = push(1, push(2, push(3, nil(Int, ()))));

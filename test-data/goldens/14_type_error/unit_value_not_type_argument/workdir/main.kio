@@ -2,4 +2,4 @@ module main;
 
 fn identity[A](value: A) -> A { value }
 
-fn rejected() -> . { identity((), ()) }
+fn rejected() { identity((), ()) }

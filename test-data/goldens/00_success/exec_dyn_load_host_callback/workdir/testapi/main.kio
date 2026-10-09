@@ -157,7 +157,7 @@ fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
 /// Loads the piped-in image, instantiates it with the callback-advertising
 /// adapter and matching `call` capability, and drives the higher-order
 /// exports; a load or instantiation failure prints the diagnostic instead.
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
       , .(im0: Lr_image) {

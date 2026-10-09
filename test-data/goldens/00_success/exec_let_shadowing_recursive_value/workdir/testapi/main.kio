@@ -50,14 +50,14 @@ fn result() -> Int {
   kind_code(second_or(first_kind(), items))
 }
 
-fn print_polymorphic(choose: [A] A -> A) -> . {
+fn print_polymorphic(choose: [A] A -> A) {
   let choose = keep_polymorphic(choose);
   print(choose("poly\n"(String)));
   print(int_to_string(choose(7(Int))));
   print("\n"(String))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let choose = identity;
   print(int_to_string(result()));
   print("\n"(String));

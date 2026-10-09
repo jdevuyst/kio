@@ -35,42 +35,8 @@
 //! See [`specs/kiodoc.md`](../../../../specs/kiodoc.md)
 //! § "Code-embedding directives" for the full contract.
 
+use crate::doc_markup::generated::DirectiveKeyword;
 use crate::span::Span;
-
-/// The set of valid directive keywords in the `` [`@KEYWORD term`] ``
-/// family. Extend this list when a new directive is added.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectiveKeyword {
-    /// `` [`@signature term`] `` — embeds the item's declaration
-    /// header inline.
-    Signature,
-    /// `` [`@source term`] `` — block-promotes the item's full source.
-    Source,
-    /// `` [`@type term`] `` — embeds the type of the item's bound
-    /// value inline.
-    Type,
-}
-
-impl DirectiveKeyword {
-    /// Parse a keyword string, returning `None` for unknown keywords.
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "signature" => Some(DirectiveKeyword::Signature),
-            "source" => Some(DirectiveKeyword::Source),
-            "type" => Some(DirectiveKeyword::Type),
-            _ => None,
-        }
-    }
-
-    /// The canonical lowercase spelling of the directive keyword.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DirectiveKeyword::Signature => "signature",
-            DirectiveKeyword::Source => "source",
-            DirectiveKeyword::Type => "type",
-        }
-    }
-}
 
 /// One `` [`@KEYWORD term`] `` directive found in prose text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +100,7 @@ pub fn scan_directives(text: &str) -> (Vec<Directive>, Vec<UnknownDirective>) {
     let mut i = 0usize;
 
     while i < len {
-        if let Some(end) = super::parse::inline_literal_end(text, i) {
+        if let Some(end) = crate::doc_markup::lexical::inline_literal_end(text, i) {
             i = end;
             continue;
         }
@@ -449,6 +415,21 @@ pub fn directive_span(base_offset: u32, directive_offset: u32) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compatibility_directive_separator_and_offsets() {
+        let source = "é [`@type\t add `]; [`@unknown x`]; [`@type`]";
+        let (known, unknown) = scan_directives(source);
+        assert_eq!(known.len(), 1);
+        assert_eq!(known[0].keyword, DirectiveKeyword::Type);
+        assert_eq!(known[0].term, "add");
+        assert_eq!(known[0].offset as usize, source.find("[`@type\t").unwrap());
+        assert_eq!(unknown.len(), 1);
+        assert_eq!(unknown[0].keyword, "unknown");
+        assert_eq!(unknown[0].term, "x");
+        let (known, unknown) = scan_directives("[`@signature\u{a0}add`]");
+        assert!(known.is_empty() && unknown.is_empty());
+    }
 
     #[test]
     fn scan_signature_directive() {

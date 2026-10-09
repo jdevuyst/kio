@@ -270,29 +270,38 @@ impl ContractSnapshot {
     /// The phase is a typechecked phase that still retains ordinary-function
     /// purity. The [`ExportContractPhase`] bound is what
     /// `exported_contract_type` needs (surface-only variants statically
-    /// uninhabited); the associated-type equality prevents a post-Prime phase
+    /// uninhabited); the associated-type equality prevents a purity-erasing phase
     /// from silently projecting an erased purity marker as `impure`.
     ///
-    /// A Prime package retains the marker and is accepted:
+    /// Prime, Enriched and Routed packages retain the marker and are accepted:
     ///
     /// ```no_run
-    /// use kio_lang::ast::Prime;
+    /// use kio_lang::ast::{Enriched, Prime, Routed};
     /// use kio_lang::pass::resolve::Package;
     /// use kio_lang::sig::ContractSnapshot;
     ///
-    /// fn project(package: &Package<Prime>) {
-    ///     let _ = ContractSnapshot::from_package(package);
+    /// fn project(
+    ///     prime: &Package<Prime>,
+    ///     enriched: &Package<Enriched>,
+    ///     routed: &Package<Routed>,
+    /// ) {
+    ///     let _ = ContractSnapshot::from_package(prime);
+    ///     let _ = ContractSnapshot::from_package(enriched);
+    ///     let _ = ContractSnapshot::from_package(routed);
     /// }
     /// ```
     ///
-    /// A post-Prime package is rejected at compile time:
+    /// A phase that erases the marker is rejected at compile time:
     ///
     /// ```compile_fail
-    /// use kio_lang::ast::Routed;
-    /// use kio_lang::pass::resolve::Package;
+    /// use kio_lang::ast::Phase;
+    /// use kio_lang::pass::resolve::{ExportContractPhase, Package};
     /// use kio_lang::sig::ContractSnapshot;
     ///
-    /// fn project(package: &Package<Routed>) {
+    /// fn project<P>(package: &Package<P>)
+    /// where
+    ///     P: ExportContractPhase + Phase<FnPurity = ()> + Clone,
+    /// {
     ///     let _ = ContractSnapshot::from_package(package);
     /// }
     /// ```

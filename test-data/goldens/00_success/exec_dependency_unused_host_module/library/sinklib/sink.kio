@@ -10,4 +10,4 @@ host type Str role(str);
 
 host fn discard(p0: Str) -> .;
 
-pub fn use_sink(s: Str) -> . { discard(s) }
+pub fn use_sink(s: Str) { discard(s) }

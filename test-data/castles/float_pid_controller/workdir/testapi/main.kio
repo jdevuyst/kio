@@ -6,7 +6,7 @@ import pid/report(print_step);
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let timeline = run(scenario());
   print("float pid controller\n");
   print_step("sample 1\n", timeline.?{first});

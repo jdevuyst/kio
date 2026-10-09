@@ -4,4 +4,4 @@ import core/store as _rehost_gdgphcgfcphdhegphcgf;
 
 pub type Token = _rehost_gdgphcgfcphdhegphcgf.Token;
 
-fn inspect_token(value: Token) -> . { Token.get(value) }
+fn inspect_token(value: Token) { Token.get(value) }

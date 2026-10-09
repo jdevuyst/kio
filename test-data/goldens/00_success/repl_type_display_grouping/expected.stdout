@@ -1,0 +1,9 @@
+kio repl — the module inspector
+loaded: display
+type `:help` for commands, `:quit` to leave
+((), (), ()) : . & . & .
+(((), ()), ()) : (. & .) & .
+.(x: . | ! | .) { x } : (. | ! | .) -> . | ! | .
+.(x: (. | !) | .) { x } : ((. | !) | .) -> (. | !) | .
+.(x: . & (! | .)) { x } : (. & (! | .)) -> . & (! | .)
+bye

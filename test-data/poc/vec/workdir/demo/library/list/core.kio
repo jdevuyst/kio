@@ -26,10 +26,10 @@ pub type List[A] = _rehost_gmgjhdhecpgdgphcgf.List(A);
 // =====================================================================
 // Constructors
 // =====================================================================
-/// `nil()` is the empty list; `cons(head, tail)` prepends one element;
+/// `nil(A)` is the empty list; `cons(head, tail)` prepends one element;
 /// `singleton(x)` is the one-element list. All three are O(1) and
 /// pure.
-pub fn nil[A]() -> List(A) { List.cons_cell(widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.cons_cell(widen_sum!((), . | (A & List(A)))) }
 
 /// Prepends one element to a cons-list spine in O(1).
 pub fn cons[A](head: A, tail: List(A)) -> List(A) {
@@ -37,7 +37,7 @@ pub fn cons[A](head: A, tail: List(A)) -> List(A) {
 }
 
 /// Builds the one-element structure while preserving the module representation invariant.
-pub fn singleton[A](x: A) -> List(A) { cons(x, nil(A, ())) }
+pub fn singleton[A](x: A) -> List(A) { cons(x, nil(A)) }
 
 // =====================================================================
 // One-step destructor
@@ -78,7 +78,7 @@ pub fn tail[A](xs: List(A)) -> List(A) {
             .(_h: A, t: List(A)) { t }
           }
         }
-      , .(_empty: .) { nil(A, ()) }
+      , .(_empty: .) { nil(A) }
       )
   }
 }
@@ -123,7 +123,7 @@ pub fn append_step[A](carry: List(A), x: A) -> List(A) { cons(x, carry) }
 
 // `uncons(nil) ≡ ()` — the empty list uncons-es to the absent arm.
 equiv uncons_nil[A]() {
-  uncons(nil(A, ()));
+  uncons(nil(A));
   widen_sum!((), . | (A & List(A)))
 }
 
@@ -139,7 +139,7 @@ equiv head_cons[A](x: A, xs: List(A)) {
 }
 
 equiv head_nil[A]() {
-  head(nil(A, ()));
+  head(nil(A));
   widen_sum!((), A | .)
 }
 
@@ -151,14 +151,14 @@ equiv tail_cons[A](x: A, xs: List(A)) {
 
 // `tail(nil) ≡ nil`.
 equiv tail_nil[A]() {
-  tail(nil(A, ()));
-  nil(A, ())
+  tail(nil(A));
+  nil(A)
 }
 
 // `singleton(x) ≡ cons(x, nil)`.
 equiv singleton_is_cons_nil[A](x: A) {
   singleton(x);
-  cons(x, nil(A, ()))
+  cons(x, nil(A))
 }
 
 fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
@@ -173,7 +173,7 @@ equiv head_present_eliminates[A][B](default: B, present: A -> B, x: A, xs: List(
 }
 
 equiv head_absent_eliminates[A][B](default: B, present: A -> B) {
-  fold_result(default, present, head(nil(A, ())));
+  fold_result(default, present, head(nil(A)));
   default
 }
 

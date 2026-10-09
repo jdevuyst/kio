@@ -1,5 +1,5 @@
 module main;
 
-fn append(_left: ., _right: .) -> . { () }
+fn append(_left: ., _right: .) { () }
 
 pure op _ + _ { impl append; };

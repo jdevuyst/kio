@@ -17,4 +17,4 @@ pub fn greeting() -> String {
   first_after_swap("discarded\n"(String), "dependency works\n"(String))
 }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

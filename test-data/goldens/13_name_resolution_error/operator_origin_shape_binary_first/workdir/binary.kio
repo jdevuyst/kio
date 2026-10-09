@@ -1,5 +1,5 @@
 module binary;
 
-pub fn choose(a: ., b: .) -> . { a }
+pub fn choose(a: ., b: .) { a }
 
 pub op _ ? _ { impl choose }

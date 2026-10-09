@@ -5,7 +5,7 @@ import earley/fixtures as fixtures;
 import earley/report as report;
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   io.print("Earley chart workbench\n");
   let nullable = fixtures.nullable();
   report.suite("nullable", nullable, fixtures.nullable_examples());

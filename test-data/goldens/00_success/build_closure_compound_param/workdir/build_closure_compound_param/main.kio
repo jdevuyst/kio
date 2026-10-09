@@ -14,4 +14,4 @@ fn use_step() -> I32 {
 
 fn use_build() -> I32 { build(.(_n: I32) -> I32 & Str & Bool { (0, "x", .t) }) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -7,7 +7,7 @@ Read straight through if you are new to Kio, or skip to the chapter that matches
 <!-- Snippets here illustrate Kio at every level: package files
 (variant=package), module bodies
 (via a harness), and expression-shaped fragments (a block-position
-harness wraps each in `pub fn body() -> . { ... }`). Each
+harness wraps each in `pub fn body() { ... }`). Each
 chapter's harness picks up where the previous one left off. -->
 
 <!-- Block-position harness for expression-shaped fragments: each
@@ -31,7 +31,7 @@ host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String) -> .;
 
-pub fn body() -> . {
+pub fn body() {
   __INSERT_CODE_HERE__
 }
 -->
@@ -106,7 +106,7 @@ host fn print(p0: String) -> .;
 // (`kiodoc`) and an expanded host surface — including `Int`, `add`,
 // `int_to_string` — declared directly in that module, so the rest of
 // the tutorial's snippets can reuse the same scope.
-pub fn main() -> . { print("hello\n") }
+pub fn main() { print("hello\n") }
 ```
 
 Build the package:
@@ -133,7 +133,7 @@ When you see a snippet like
 print("hello again\n")
 ```
 
-read it as *the body of `pub fn main() -> . { ... }` in a module whose host supplies `String`, `print`, and the other capabilities the chapter assumes* — the same shape as the hello-world above, with those `host` items exposed by the package's `bridge` block when they cross the package boundary.
+read it as *the body of `pub fn main() { ... }` in a module whose host supplies `String`, `print`, and the other capabilities the chapter assumes* — the same shape as the hello-world above, with those `host` items exposed by the package's `bridge` block when they cross the package boundary.
 
 ## Chapter 2 — Inside a module
 
@@ -143,7 +143,7 @@ The hello-world's `hello/main.kio` is a **module**. A module is a `.kio` source 
 // As in Chapter 1, real code would write:
 //   module hello/main;
 //   import hello(String, print);
-pub fn main() -> . { print("hello\n") }
+pub fn main() { print("hello\n") }
 ```
 
 The `module hello/main;` line says "this file is the module at path `hello/main`." The path mirrors the directory layout: `hello/main.kio` is the module `hello/main`; `hello/util/string.kio` would be `hello/util/string`.
@@ -173,6 +173,8 @@ two fixed builtin block imports are idempotent.
 ### pub and fn
 
 `fn name(args) -> Return { body }` defines a function. `pub` before `fn` makes the function visible to other modules — and, when the module is bridged, to the package surface, which is how the hello-world's `main` reaches the host. Without `pub`, the function is module-private.
+
+For an ordinary module-level `fn`, leaving out the return annotation fixes its result to unit (`.`); the body must produce unit rather than determine a different result type. A `host fn` still writes its result type.
 
 Same idea for `type`, `literal`, `newtype`, and `labels`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
 
@@ -262,13 +264,13 @@ host type String role(str);
 host fn print(p0: String) -> .;
 ```
 
-`host type String role(str);` says "the host supplies a type, this module will call it `String`, and string literals checked against it produce values of that type." `role(str)` is the binding.
+`host type String role(str);` says "the host supplies a type, this module will call it `String`, and string literals checked against it produce values of that type." `role(str)` says that this declared type accepts Kio string literals; the host binding supplies its representation.
 
 Role-bearing host types are atomic and therefore have no type parameters. A
 roleless host type may still be parameterized, such as `host type Array[A];`;
 `host type Array[A] role(i32);` is rejected.
 
-Other roles cover numbers. A module that needs 32-bit integers and booleans declares them similarly:
+Other roles admit numeric literals. A module can declare a type with `role(i32)` and a type for Boolean literals and conditions similarly:
 
 ```kio {variant=module}
 // arith.kio
@@ -341,7 +343,7 @@ A function is a `fn` at module level (or a `fn` expression inline).
 fn double(n: Int) -> Int { add(n, n) }
 ```
 
-Parameters as `name: Type` pairs; return type after `->`; the body is a block. A block is one or more statements separated by `;`, ending in a trailing expression whose value is the block's value.
+Parameters are `name: Type` pairs; a written return type follows `->`. The `double` example writes `-> Int` because it does not return unit. A block is one or more statements separated by `;`, ending in a trailing expression whose value is the block's value.
 
 ### let bindings
 
@@ -364,7 +366,7 @@ fn add_one(n: Int) -> Int { let .(inc: Int -> Int) = .(x) { add(x, 1) }; inc(n) 
 An expression followed by `;` runs the expression for its side effect and discards the value. The expression must have type `.` (unit) — most host I/O functions already return it.
 
 ```kio {@tutorial_module}
-fn greet_twice() -> . { print("hi\n"); print("hi again\n") }
+fn greet_twice() { print("hi\n"); print("hi again\n") }
 ```
 
 One statement, then a trailing expression: the second `print` is the block's tail. If you find yourself reaching for `let _ = e;` to throw away a value, the expression statement is the form you want — provided `e` is already unit-typed.
@@ -378,10 +380,10 @@ fn apply(f: Int -> Int, x: Int) -> Int { f(x) }
 
 fn immediate_identity() -> Int { .(n) { n }(41) }
 
-pub fn main() -> . { let y = apply(.(n) { add(n, 1) }, 41); print(int_to_string(y)) }
+pub fn main() { let y = apply(.(n) { add(n, 1) }, 41); print(int_to_string(y)) }
 ```
 
-A lambda's parameter types can be elided when the expected type is fixed by context — here, by `apply`'s signature. They can also be written explicitly (`.(n: Int) { add(n, 1) }`) for emphasis.
+A lambda's parameter types can be elided when the expected type is fixed by context — here, by `apply`'s signature. They can also be written explicitly (`.(n: Int) { add(n, 1) }`) for emphasis. Unlike a module-level `fn`, a lambda without a written return type takes its result from its body and surrounding expected function type; omission does not mean unit.
 
 Checked annotations may mix concrete structure with local `_` placeholders,
 but a placeholder cannot sit beneath a `forall` written inside that same
@@ -476,7 +478,7 @@ Two ways Kio composes data: **tuples** (anonymous products) and **labeled values
 ```kio {@tutorial_module}
 fn make_pair(s: String) -> String & String { (s, "world\n") }
 
-pub fn main() -> . {
+pub fn main() {
   let pair = make_pair("hello, ");
   let .(first: String, second: String) = pair;
   print(first);
@@ -491,7 +493,7 @@ Tuple values compose with call arguments. If a function expects `(A & (B & C))`,
 The same destructuring shape can appear in a function parameter:
 
 ```kio {@tutorial_module}
-fn show_pair_param((first: String, second: String)) -> . { print(first); print(second) }
+fn show_pair_param((first: String, second: String)) { print(first); print(second) }
 ```
 
 Parameter patterns and destructuring lets bind the product once and project the named components directly. The pattern shape extends to nesting (`((a: A, b: B), c: C)`), wildcards (`(_: A, b: B)` — keeps the slot's type but doesn't name it), and an "as-pattern" form (`name: (a: A, b: B)`) that binds the whole product alongside its components.
@@ -541,7 +543,7 @@ host fn print(p0: String) -> .;
 
 labels Greeting = { hello : String, goodbye : String };
 
-pub fn body() -> . {
+pub fn body() {
   __INSERT_CODE_HERE__
 }
 -->
@@ -589,7 +591,7 @@ Labels are the workhorse of "records with named fields" in Kio. The full vocabul
 Where `&` ("and") composes types into products, `|` ("or") composes types into **sums**.
 
 ```kio {@tutorial_module}
-fn classify(v: String | Int) -> . {
+fn classify(v: String | Int) {
   let _r =
     match! v {
       .(s: String) { print(s) };
@@ -610,7 +612,7 @@ Every clause body must produce the same result type. Both arms above produce the
 How do you build a `(String | Int)` value from a `String`? With another preview elaborator, `widen_sum!`, which injects a value into a target sum that contains its type as an arm:
 
 ```kio {@tutorial_module}
-fn classify_again(v: String | Int) -> . {
+fn classify_again(v: String | Int) {
   let _r =
     match! v {
       .(s: String) { print(s) };
@@ -619,7 +621,7 @@ fn classify_again(v: String | Int) -> . {
   ()
 }
 
-pub fn main() -> . { let v = widen_sum!("matched right\n", String | Int); classify_again(v) }
+pub fn main() { let v = widen_sum!("matched right\n", String | Int); classify_again(v) }
 ```
 
 `widen_sum!("matched right\n", String | Int)` says "put this `String` into this target sum." Like `match!`, `widen_sum!` is imported library code; the tutorial harness imports it from `spine_elaborators`. The elaborator walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
@@ -667,7 +669,7 @@ fn id[A](x: A) -> A { x }
 
 fn pair[A][B](x: A, y: B) -> (A & B) { (x, y) }
 
-pub fn body() -> . {
+pub fn body() {
   __INSERT_CODE_HERE__
 }
 -->
@@ -733,7 +735,7 @@ After `produce(seed)` consumes `Seed`, the declared `Witness` return type fixes
 `Result`. Without that expected result, the returned polymorphic value remains
 polymorphic.
 
-A nonempty list containing only type arguments remains a partial application.
+A nonempty list containing only type arguments performs only type application.
 For `id` above, `id(String)` has type `String -> String`, and `id(.)` has type
 `. -> .`; write `id(., ())` to apply the latter function to Unit. A direct
 empty call is different: `id()` omits `A`, writes one Unit value, infers
@@ -780,6 +782,46 @@ This is not automatic currying. A function of two value parameters is not a func
 
 You rarely need to think about the full inference rules in a small program; when a call or local binding feels ambiguous, add the type where it helps the reader too.
 
+### Type-only values
+
+Some polymorphic values need a type but no value argument. Leave out the
+value-parameter group to construct the result as soon as the type is supplied:
+
+```kio {@tutorial_module}
+fn nothing[A] -> A | . { widen_sum!((), A | .) }
+
+fn nothing_later[A]() -> A | . { nothing(A) }
+
+fn example() {
+  let make = nothing;
+  let _empty = make(Int);
+  let wait = nothing_later(Int);
+  let _also_empty = wait();
+  ()
+}
+```
+
+`nothing` has type `[A] A | .`: `nothing(Int)` constructs an empty result.
+Saving `nothing` in `make` keeps it polymorphic and does not run its body.
+`nothing_later` has type `[A] . -> A | .`: supplying `Int` leaves a function
+that waits for `()`. Choose the type-only form when selecting the type should
+construct the result; keep `()` when the caller should explicitly start a
+later computation. The two types are distinct.
+
+The anonymous form is `.[A] { body }`:
+
+```kio {@block_expr}
+let make = .[A] { widen_sum!((), A | .) };
+let _empty = make(Int);
+()
+```
+
+The lambda's result type comes from its body. For a named `fn`, omitting
+`-> Result` still means a Unit result, as it does for other named functions.
+Every signature needs at least one group: write `fn action()` for a Unit
+argument, not a group-free `fn action`. Repeated type groups such as `[A][B]`
+are separate steps; the body runs after the last written group is supplied.
+
 ## Chapter 8 — UFCS calls
 
 [UFCS](../guides/ufcs.md) — Uniform Function Call Syntax — is another spelling for an ordinary call. It lets you put one value before the callee when the expression reads better from left to right.
@@ -789,10 +831,14 @@ fn plus_one_prefix(n: Int) -> Int { add(n, 1) }
 
 fn plus_one_ufcs(n: Int) -> Int { n.>add(1) }
 
-fn show_ufcs(n: Int) -> . { n.>int_to_string.>print }
+fn show_ufcs(n: Int) { n.>int_to_string.>print }
 ```
 
 `n.>add(1)` means `add(n, 1)`: insert the left-hand value into the first value-argument slot. `n.>int_to_string.>print` applies the same rewrite twice, so the expression reads in data-flow order without changing which functions are called.
+
+For nested ordinary calls, UFCS can also keep the value being formatted at the
+front of the line. The [UFCS guide](../guides/ufcs.md#choosing-a-spelling)
+shows how `.>>` preserves a right-nested call's argument grouping.
 
 UFCS does not make `add` a member of `Int`, and it does not search for operations by receiver type. The callee must already be in scope, and name lookup, type arguments, and inference are the same as for the prefix call.
 

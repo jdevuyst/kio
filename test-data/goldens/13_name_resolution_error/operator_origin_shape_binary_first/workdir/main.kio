@@ -3,4 +3,4 @@ module main;
 import binary(op _ ? _);
 import ternary(op _ ? _ : _);
 
-pub fn run(a: ., b: .) -> . { a ? b }
+pub fn run(a: ., b: .) { a ? b }

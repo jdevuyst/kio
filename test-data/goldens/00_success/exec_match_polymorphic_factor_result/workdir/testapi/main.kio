@@ -14,4 +14,4 @@ fn project(input: Box(String) & Tag) -> String {
   }
 }
 
-pub fn main() -> . { io.print(project((Box.make("factor-result\n"), {tag=}))) }
+pub fn main() { io.print(project((Box.make("factor-result\n"), {tag=}))) }

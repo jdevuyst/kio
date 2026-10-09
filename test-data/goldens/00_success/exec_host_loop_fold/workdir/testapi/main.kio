@@ -51,7 +51,7 @@ fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = push(1, push(2, push(3, push(4, nil(Int, ())))));
   let total = fold(add, 0, xs);
   print(int_to_string(total));

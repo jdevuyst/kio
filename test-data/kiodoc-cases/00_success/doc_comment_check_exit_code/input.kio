@@ -10,4 +10,4 @@
 /// ```
 module doctest/expected_failure;
 
-pub fn identity(x: .) -> . { x }
+pub fn identity(x: .) { x }

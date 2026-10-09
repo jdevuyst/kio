@@ -41,11 +41,11 @@ pub fn key_order(a: I32, b: I32) -> dict.Ordering {
 }
 
 pub fn empty(node: clock.Node) -> Replica {
-  {node, observed = clock.zero(), records = dict.empty()}
+  {node, observed = clock.zero(), records = dict.empty(_, _)}
 }
 
 pub fn versions(replica: Replica, key: I32) -> core.List(Version) {
-  dict.get_or(key_order, replica.?{records}, key, core.nil())
+  dict.get_or(key_order, replica.?{records}, key, core.nil(_))
 }
 
 rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> core.List(Version) {

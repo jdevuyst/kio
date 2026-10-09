@@ -423,6 +423,15 @@ A `@type` directive against a type-level name produces:
 The kind phrasing varies by what `term` resolves to — "a type alias",
 "a `labels` declaration", "a `newtype`", or "a `host type`".
 
+## Documentation in host artifacts
+
+Package builds render retained boundary docs according to
+[the shared backend documentation contract](backends/README.md#doc-comments-on-the-emitted-surface).
+This presentation is scope-free: references and directive operands become code
+text, with no symbol lookup or directive expansion. Literal code and HTML remain
+shielded from that rewrite. It does not change documentation-site rendering,
+LSP hover rendering, or `kio doc check` validation and execution policies.
+
 ## Rendered output
 
 `kio doc build` validates the package (as `kio doc check`) and then
@@ -1015,7 +1024,7 @@ and classifies the marker's position as one of two kinds:
   trailing expression — the same shape a `fn` body accepts.
 
 Authors choose between the two by where they place
-the placeholder. Wrapping it in `pub fn main() -> . { … }`
+the placeholder. Wrapping it in `pub fn main() { … }`
 makes the harness admit expression-shaped snippets; placing it
 between top-level items makes the harness admit top-level forms.
 The two positions can coexist in one document via separate

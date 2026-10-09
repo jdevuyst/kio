@@ -35,8 +35,8 @@ pub type Option[A] = Present(A) | .;
 /// `Present(A) | .` sum (target inferred from the return type).
 pub fn some[A](x: A) -> Option(A) { widen_sum!({present = x}) }
 
-/// `none()` is the absent case - the bare `()` arm on the right.
-pub fn none[A]() -> Option(A) { widen_sum!(()) }
+/// `none(A)` is the absent case - the bare `()` arm on the right.
+pub fn none[A] -> Option(A) { widen_sum!(()) }
 
 // =====================================================================
 // Eliminators
@@ -66,14 +66,14 @@ pub fn from_option[A](default: A, m: Option(A)) -> A {
 /// Transforms present payloads and leaves absent options unchanged.
 pub fn map[A][B](f: A -> B, m: Option(A)) -> Option(B) {
   match! m {
-    (.(p: Present(A)) { some(f(Present.get(p))) }, .(_u: .) { none(B, ()) })
+    (.(p: Present(A)) { some(f(Present.get(p))) }, .(_u: .) { none(B) })
   }
 }
 
 /// `bind` (monadic `>>=`) chains an `A -> Option(B)` over `Option(A)`.
 pub fn bind[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) {
   match! m {
-    (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { none(B, ()) })
+    (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { none(B) })
   }
 }
 
@@ -116,7 +116,7 @@ pub fn to_sum[A](m: Option(A)) -> A | . {
 /// `from_sum(s)` re-labels a bare `A | .` as an `Option(A)`.
 pub fn from_sum[A](s: A | .) -> Option(A) {
   match! s {
-    (.(v: A) { some(v) }, .(_u: .) { none(A, ()) })
+    (.(v: A) { some(v) }, .(_u: .) { none(A) })
   }
 }
 

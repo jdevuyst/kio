@@ -84,7 +84,7 @@ rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Bloc
 /// a count no partition can have, so the first round is never mistaken for a
 /// stable one.
 rec(loop) fn refine(d: dfa.Dfa, bs: Blocks, before: I32) -> Blocks & I32 {
-  let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil(Ints, ()), empty());
+  let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil(Ints), empty());
   if! eq_i32(after, before) {
     (next, after)
   } else {

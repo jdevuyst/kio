@@ -4,4 +4,4 @@ host type Token;
 
 host fn f(value: Token) -> Token;
 
-pub fn c(value: .) -> . { value }
+pub fn c(value: .) { value }

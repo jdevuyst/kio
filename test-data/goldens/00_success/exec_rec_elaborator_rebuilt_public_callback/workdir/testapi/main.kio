@@ -7,7 +7,7 @@ import testapi/arith(leq_i32, sub_i32);
 import testapi/io(print);
 import testapi/iter(loop);
 
-pub rec(loop) fn repeat(remaining: I32) -> . {
+pub rec(loop) fn repeat(remaining: I32) {
   choose_callbacks!(
     , leq_i32(remaining, 0)
     , .(_unit: .) {
@@ -20,4 +20,4 @@ pub rec(loop) fn repeat(remaining: I32) -> . {
     )
 }
 
-pub fn main() -> . { repeat(2); print("rebuilt public callback\n") }
+pub fn main() { repeat(2); print("rebuilt public callback\n") }

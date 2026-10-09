@@ -24,7 +24,7 @@ varop [! !] { finalize finish; foldl1 right seed; };
 
 varop [% %] { finalize finish; foldr1 left seed; };
 
-pub fn main() -> . {
+pub fn main() {
   print([* "a", "b", "c" *]);
   print("\n");
   print([+ "a", "b", "c" +]);

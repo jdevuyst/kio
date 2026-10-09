@@ -4,4 +4,4 @@
 /// This is a typo: [`@signaure foo`].
 module baddir/main;
 
-fn foo() -> . { () }
+fn foo() { () }

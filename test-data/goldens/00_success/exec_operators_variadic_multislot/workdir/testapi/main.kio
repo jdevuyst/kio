@@ -18,7 +18,7 @@ op _ => _ { impl entry }
 
 varop [% %] { foldr cons nil }
 
-pub fn main() -> . {
+pub fn main() {
   print([% "a" => "1", "b" => "2", "c" => "3" %]);
   print("\n");
   print([% "solo" => "0" %]);

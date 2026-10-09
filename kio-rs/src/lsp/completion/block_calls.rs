@@ -59,7 +59,7 @@ fn selected_header(
     sources: &CompletionSources<'_>,
 ) -> Option<Header> {
     crate::scope_walk::selected_block_header(module, name, offset, |name| {
-        sources.provider(name).map(|(_, module)| module)
+        sources.provider_syntax(name)
     })
 }
 

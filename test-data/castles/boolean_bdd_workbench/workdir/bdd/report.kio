@@ -92,7 +92,7 @@ pub fn diagram(
   , store: table.Store
   , root: table.Node_id
   , expected: (I32 -> Bool) -> Bool
-  ) -> . {
+  ) {
   let .(bits: String, models: I32, agree: Bool) = truth_rows(store, root, expected, 0, "", 0, .t);
   let .(sample: String, valid: Bool) = witness(store, root, expected);
   io.print(name);
@@ -121,9 +121,9 @@ pub fn formulas(fixtures: lists.List(String & expr.Expression)) -> engine.Manage
     )
 }
 
-pub fn fact(name: String, value: Bool) -> . {
-  io.print(text.string_concat(
-    , name
-    , text.string_concat("=", text.string_concat(fmt.bool_to_string(value), "\n"))
-    ))
+pub fn fact(name: String, value: Bool) {
+  io.print(fmt.bool_to_string(value)
+    .>text.string_concat("\n")
+    .>>text.string_concat("=")
+    .>>text.string_concat(name))
 }

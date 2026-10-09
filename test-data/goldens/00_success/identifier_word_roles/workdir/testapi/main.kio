@@ -4,7 +4,7 @@ import testapi as api;
 import testapi/io as io;
 import word1_names2/word3_items4 as items1_word2;
 
-pub fn main() -> . {
+pub fn main() {
   io.print(items1_word2.word1_value2());
   io.print(items1_word2._word1_value2());
   io.print(items1_word2.word1_value2_());

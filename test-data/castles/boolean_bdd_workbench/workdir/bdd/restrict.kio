@@ -69,7 +69,7 @@ rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> S
 pub fn restrict(store: table.Store, id: table.Node_id, variable: I32, value: Bool) ->
   table.Store & table.Node_id & I32
    {
-  let initial = {store, cache = lists.nil(Cached, ()), hits = 0};
+  let initial = {store, cache = lists.nil(Cached), hits = 0};
   let .(final: State, answer: table.Node_id) = visit(initial, id, variable, value);
   (final.?{store}, answer, final.?{hits})
 }

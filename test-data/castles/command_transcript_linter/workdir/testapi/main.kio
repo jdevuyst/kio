@@ -6,7 +6,7 @@ import testapi(I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   let _exec_probe = scan.first_byte(scan.line1());
   let _retry_probe = scan.first_byte(scan.line3());
   let _bad_probe = scan.first_byte(scan.line4());

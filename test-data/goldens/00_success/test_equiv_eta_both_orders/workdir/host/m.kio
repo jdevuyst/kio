@@ -2,7 +2,7 @@ module host/m;
 
 import host(f);
 
-fn g(u: .) -> . { u }
+fn g(u: .) { u }
 
 equiv fn_lambda_then_bare() {
   .(x: .) { g(x) };

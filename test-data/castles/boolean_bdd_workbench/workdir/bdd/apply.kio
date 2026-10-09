@@ -15,7 +15,7 @@ pub type Cached = logic.Operation & table.Node_id & table.Node_id & table.Node_i
 
 pub labels Manager = { store: table.Store, cache: lists.List(Cached), hits: I32 };
 
-pub fn empty() -> Manager { {store = table.empty(), cache = lists.nil(), hits = 0} }
+pub fn empty() -> Manager { {store = table.empty(), cache = lists.nil(_), hits = 0} }
 
 fn remember(
   , m: Manager

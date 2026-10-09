@@ -13,4 +13,4 @@ fn projected() -> String {
   Label.get(__snd__(Label, Label, ({label = "left\n"}, {label = "right\n"})))
 }
 
-pub fn main() -> . { print(projected()) }
+pub fn main() { print(projected()) }

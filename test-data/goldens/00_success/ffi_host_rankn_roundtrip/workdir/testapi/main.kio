@@ -5,4 +5,4 @@ import testapi/io(print);
 
 pub fn poly_echo[T](x: T) -> T { x }
 
-pub fn main() -> . { print(apply_poly(poly_echo)) }
+pub fn main() { print(apply_poly(poly_echo)) }

@@ -1,0 +1,26 @@
+kio repl — the module inspector
+loaded: demo
+type `:help` for commands, `:quit` to leave
+`index([1], 0)` is not a name or a Kio expression — type `:help` for the command list
+<repl>:1:8: error: expected identifier
+  |
+1 | index([1], 0)
+  |        ^
+`index([1], 0)` is not a name or a Kio expression — type `:help` for the command list
+<repl>:1:8: error: expected identifier
+  |
+1 | index([1], 0)
+  |        ^
+`index([1], 0)` is not a name or a Kio expression — type `:help` for the command list
+<repl>:1:8: error: expected identifier
+  |
+1 | index([1], 0)
+  |        ^
+`index([1], 0)` is not a name or a Kio expression — type `:help` for the command list
+<repl>:1:8: error: expected identifier
+  |
+1 | index([1], 0)
+  |        ^
+[* () *] : .
+()
+bye

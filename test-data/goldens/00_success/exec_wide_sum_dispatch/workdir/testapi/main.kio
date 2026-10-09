@@ -132,7 +132,7 @@ fn describe(value: Wide) -> I32 {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   print("a:"(String));
   print(int_to_string(describe(inject_a())));
   print("\n"(String));

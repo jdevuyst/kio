@@ -2,6 +2,6 @@ module feature/qualified;
 
 import feature/store as storage;
 
-fn boxed() -> . { storage.Box.unpack(., storage.Box.pack(., ())) }
+fn boxed() { storage.Box.unpack(., storage.Box.pack(., ())) }
 
-fn wrapped() -> . { storage.Public.value(., storage.Public.wrap(., ())) }
+fn wrapped() { storage.Public.value(., storage.Public.wrap(., ())) }

@@ -21,7 +21,7 @@ fn show_inner(value: String | .) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let show_unit = .(_unit: .) -> String { "present unit\n" };
   print(describe(present(()), show_unit));
   print(describe(absent(., ()), show_unit));

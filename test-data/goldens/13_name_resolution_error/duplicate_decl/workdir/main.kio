@@ -1,5 +1,5 @@
 module main;
 
-fn foo() -> . { () }
+fn foo() { () }
 
-fn foo() -> . { () }
+fn foo() { () }

@@ -6,4 +6,4 @@ module main;
 // a façade its own subtree chose to expose.
 import helper/reexport(reexport);
 
-pub fn run() -> . { reexport() }
+pub fn run() { reexport() }

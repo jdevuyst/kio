@@ -10,4 +10,4 @@ import testapi/io(print);
 // projector member `Greeting.get`.
 labels { greeting: String };
 
-pub fn main() -> . { let g = {greeting = "hello\n"}; print(Greeting.get(g)) }
+pub fn main() { let g = {greeting = "hello\n"}; print(Greeting.get(g)) }

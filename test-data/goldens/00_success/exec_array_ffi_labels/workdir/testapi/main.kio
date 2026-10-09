@@ -77,7 +77,7 @@ fn render[A](show: A -> String, arr: Array(A)) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Array(Color): a payload-free labels-derived enum across the FFI.
   let colors = array_make_empty(Color, ());
   array_push(colors, widen_sum!({green=}, Color));

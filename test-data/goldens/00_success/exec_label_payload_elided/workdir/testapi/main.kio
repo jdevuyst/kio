@@ -28,7 +28,7 @@ fn project_label(r: Celsius & Label) -> Label {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let a = make_celsius(25);
   let r = make_record(20, "outside");
   print(int_to_string(Celsius.get(a)));

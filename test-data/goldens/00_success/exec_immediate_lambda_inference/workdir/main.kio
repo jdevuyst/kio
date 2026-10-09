@@ -4,7 +4,7 @@ import __intrinsics__;
 
 fn identity[A](value: A) -> A { value }
 
-fn main() -> . {
+fn main() {
   let absent = .(value) { value }(());
   let packed = .(left, right) { right }(__pair__(., ., (), ()));
   let explicit_poly = .[A](first: A, second) { second }(., (), ());

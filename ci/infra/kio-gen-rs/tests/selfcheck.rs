@@ -101,6 +101,138 @@ fn programs_are_well_typed() {
 }
 
 #[test]
+fn type_only_calls_preserve_type_and_value_stages() {
+    let env = initial_env();
+    for (ty, value) in [
+        (Type::Unit, Term::UnitLit),
+        (Type::Base(Base::Bool), Term::BoolLit(true)),
+    ] {
+        let specialized = Term::PolyCall {
+            name: "kio_gen_type_only_id".to_string(),
+            type_args: vec![ty.clone()],
+            args: vec![],
+        };
+        assert_eq!(
+            type_of(&specialized, &env).unwrap(),
+            Type::Fun(vec![ty.clone()], Box::new(ty.clone()))
+        );
+        let applied = Term::App(Box::new(specialized.clone()), vec![value.clone()]);
+        assert_eq!(type_of(&applied, &env).unwrap(), ty);
+        assert!(type_of(&Term::App(Box::new(specialized), vec![]), &env).is_err());
+
+        let captured = Term::PolyCall {
+            name: "kio_gen_type_only_capture".to_string(),
+            type_args: vec![ty.clone()],
+            args: vec![value],
+        };
+        assert_eq!(type_of(&captured, &env).unwrap(), ty);
+        // Specializing the captured lambda returns the value, not a Unit thunk.
+        assert!(type_of(&Term::App(Box::new(captured), vec![]), &env).is_err());
+    }
+
+    // These are malformed generator call stages; the independent walker must
+    // reject missing/extra types, misplaced values, and mismatched value types.
+    for (name, type_args, args) in [
+        ("kio_gen_type_only_id", vec![], vec![]),
+        ("kio_gen_type_only_id", vec![Type::Unit; 2], vec![]),
+        (
+            "kio_gen_type_only_id",
+            vec![Type::Unit],
+            vec![Term::UnitLit],
+        ),
+        ("kio_gen_type_only_capture", vec![], vec![Term::UnitLit]),
+        (
+            "kio_gen_type_only_capture",
+            vec![Type::Unit; 2],
+            vec![Term::UnitLit],
+        ),
+        ("kio_gen_type_only_capture", vec![Type::Unit], vec![]),
+        (
+            "kio_gen_type_only_capture",
+            vec![Type::Unit],
+            vec![Term::BoolLit(true)],
+        ),
+    ] {
+        let term = Term::PolyCall {
+            name: name.to_string(),
+            type_args,
+            args,
+        };
+        assert!(type_of(&term, &env).is_err(), "accepted malformed {term:?}");
+    }
+}
+
+#[test]
+fn type_only_support_tracks_body_calls_and_shrinking() {
+    for surface_mode in [false, true] {
+        for name in ["kio_gen_type_only_id", "kio_gen_type_only_capture"] {
+            let call = Term::PolyCall {
+                name: name.to_string(),
+                type_args: vec![Type::Unit],
+                args: if name == "kio_gen_type_only_id" {
+                    vec![]
+                } else {
+                    vec![Term::UnitLit]
+                },
+            };
+            let body = if name == "kio_gen_type_only_id" {
+                Term::App(Box::new(call), vec![Term::UnitLit])
+            } else {
+                call
+            };
+            let mut prog = Program {
+                fn_def_name: "gen".to_string(),
+                params: vec![],
+                ret: Type::Unit,
+                body,
+                user_elaborators: vec![],
+                uses_surface: false,
+                surface_mode,
+            };
+            let root = |program: &Program| {
+                emit::render_package_files(program)
+                    .into_iter()
+                    .find(|(path, _)| path == "workdir/prog.kio")
+                    .unwrap()
+                    .1
+            };
+            let source = root(&prog);
+            for helper in ["kio_gen_type_only_id", "kio_gen_type_only_capture"] {
+                assert_eq!(
+                    source.contains(&format!("pub pure fn {helper}[")),
+                    helper == name
+                );
+            }
+            if name == "kio_gen_type_only_id" {
+                assert!(source.contains("kio_gen_type_only_id(.)(())"), "{source}");
+                assert!(
+                    source.contains("kio_gen_type_only_id[A] -> A -> A"),
+                    "{source}"
+                );
+            } else {
+                assert!(
+                    source.contains("kio_gen_type_only_capture(., ())"),
+                    "{source}"
+                );
+                assert!(
+                    source.contains("let captured = .[B] { value };"),
+                    "{source}"
+                );
+                assert!(source.contains("captured(A)"), "{source}");
+            }
+            let shrunk = shrink::minimize_body(&prog);
+            assert_eq!(type_of(&shrunk.body, &initial_env()).unwrap(), Type::Unit);
+            assert!(!root(&shrunk).contains("pub pure fn kio_gen_type_only_"));
+
+            // A helper spelling inside a literal is not a dependency.
+            prog.ret = Type::Base(Base::Str);
+            prog.body = Term::StrLit(name.to_string());
+            assert!(!root(&prog).contains("pub pure fn kio_gen_type_only_"));
+        }
+    }
+}
+
+#[test]
 fn no_seed_panics() {
     for seed in 0..2_000u64 {
         let _ = generate::program_from_seed(seed);
@@ -188,10 +320,21 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             type_args,
             args,
         } => match name.as_str() {
-            "id" => {
+            "kio_gen_type_only_id" => {
+                if type_args.len() != 1 || !args.is_empty() {
+                    return Err(format!(
+                        "{name}: expected 1 type arg + 0 value args, got {} + {}",
+                        type_args.len(),
+                        args.len()
+                    ));
+                }
+                let t = type_args[0].clone();
+                Ok(Type::Fun(vec![t.clone()], Box::new(t)))
+            }
+            "id" | "kio_gen_type_only_capture" => {
                 if type_args.len() != 1 || args.len() != 1 {
                     return Err(format!(
-                        "id: expected 1 type arg + 1 value arg, got {} + {}",
+                        "{name}: expected 1 type arg + 1 value arg, got {} + {}",
                         type_args.len(),
                         args.len()
                     ));
@@ -199,7 +342,7 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
                 let t = &type_args[0];
                 let at = type_of(&args[0], env)?;
                 if &at != t {
-                    return Err(format!("id: arg type {at:?} != type arg {t:?}"));
+                    return Err(format!("{name}: arg type {at:?} != type arg {t:?}"));
                 }
                 Ok(t.clone())
             }

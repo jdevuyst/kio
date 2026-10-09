@@ -55,7 +55,7 @@ fn alloc3(cells: Array(I32), tag: I32, f0: I32, f1: I32, f2: I32) -> I32 {
   addr
 }
 
-fn link(cells: Array(I32), addr: I32, index: I32, target: I32) -> . {
+fn link(cells: Array(I32), addr: I32, index: I32, target: I32) {
   array_set(cells, field_addr(addr, index), ptr_cell(target))
 }
 

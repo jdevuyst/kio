@@ -9,7 +9,7 @@ __INSERT_CODE_HERE__
 ```
 
 ```kio {@main stdout}
-pub fn greet() -> . { () }
+pub fn greet() { () }
 ```
 
 Some intervening `kio {ignore}` fence breaks the pairing.

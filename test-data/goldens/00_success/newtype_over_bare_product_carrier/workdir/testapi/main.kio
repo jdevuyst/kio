@@ -44,7 +44,7 @@ fn root_val(d: Done(I32)) -> I32 {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let t = node(7, leaf(), leaf());
   let d = focus(t, top(I32, ()));
   print(string_concat(int_to_string(root_val(d)), "\n"))

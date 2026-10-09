@@ -59,7 +59,7 @@ An explicit return type is a useful baseline: it separates a clause-body problem
 Now omit the result and give the clauses concrete, incompatible results. The first clause returns `I32`; the second returns `String`:
 
 ```kio {@match_example check_exit_code=14}
-fn incompatible_results(source: I32 | String) -> . {
+fn incompatible_results(source: I32 | String) {
   let _result =
     match! source {
       .(number: I32) { number };

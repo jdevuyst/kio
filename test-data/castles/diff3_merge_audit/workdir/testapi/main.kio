@@ -17,7 +17,7 @@ import diff3/merge as merge;
 import diff3/render as render;
 import diff3/scan as scan;
 
-pub fn main() -> . {
+pub fn main() {
   let doc = scan.read_document();
   let ours = lcs.align(scan.base_lines(doc), scan.our_lines(doc));
   let theirs = lcs.align(scan.base_lines(doc), scan.their_lines(doc));

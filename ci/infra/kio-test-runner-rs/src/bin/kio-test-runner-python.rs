@@ -872,6 +872,39 @@ elif PROTOCOL == "export-multi-label-roundtrip":
     _print(str(row["A"]) + "\n")
     _print(row["B"] + "\n")
     _print(str(out_a) + "\n")
+elif PROTOCOL == "export-type-only-roundtrip":
+    main = _base("main")
+    _print("ready\n")
+    direct = main.direct()
+    _print("specialized\n")
+    value = direct("direct-string")
+    if type(value) is not str:
+        raise RuntimeError("type-only identity did not retain its string result")
+    _print(value + "\n")
+    integer = main.direct()
+    _print("specialized-again\n")
+    value = integer(42)
+    if type(value) is not int:
+        raise RuntimeError("type-only identity did not retain its integer result")
+    _print(str(value) + "\n")
+    delayed = main.delayed()
+    _print("unit-called\n")
+    _print(delayed("unit-string") + "\n")
+    _print(main.ordinary("ordinary-string") + "\n")
+    main.phantom()
+    _print("phantom-called\n")
+    main.phantomUnit()
+    _print("phantom-unit-called\n")
+    poly = main.poly()
+    _print("poly-returned\n")
+    value = poly("poly-string")
+    if type(value) is not str:
+        raise RuntimeError("returned polymorphic identity did not retain its string result")
+    _print(value + "\n")
+    value = poly(73)
+    if type(value) is not int:
+        raise RuntimeError("returned polymorphic identity did not retain its integer result")
+    _print(str(value) + "\n")
 elif PROTOCOL == "export-poly-roundtrip":
     root = _root_base()
     _print(str(root.polyEcho("poly-string")) + "\n")
@@ -1542,6 +1575,7 @@ fn python_driver(protocol: RunnerProtocol) -> &'static str {
             "export-positional-product-roundtrip"
         }
         ProtocolExecution::Invoke(ExportDriver::TypeRoundtrip) => "export-type-roundtrip",
+        ProtocolExecution::Invoke(ExportDriver::TypeOnlyRoundtrip) => "export-type-only-roundtrip",
         ProtocolExecution::Invoke(ExportDriver::NewtypeSumRoundtrip) => {
             "export-newtype-sum-roundtrip"
         }

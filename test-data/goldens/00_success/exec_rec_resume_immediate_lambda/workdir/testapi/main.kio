@@ -15,7 +15,7 @@ rec(loop) {
   fn leaf(value: I32) -> I32 { value }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("initial\n");
   io.print(fmt.int_to_string(initial(7)));
   io.print("\nsuccessor\n");

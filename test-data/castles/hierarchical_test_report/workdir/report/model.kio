@@ -33,9 +33,11 @@ pub fn total(c: Counts) -> I32 {
   arith.add_i32(c.?{passed}, arith.add_i32(c.?{failed}, c.?{skipped}))
 }
 
-pub fn empty_state() -> State { {stack = cells.nil(), roots = cells.nil(), errors = cells.nil()} }
+pub fn empty_state() -> State {
+  {stack = cells.nil(_), roots = cells.nil(_), errors = cells.nil(_)}
+}
 
-pub fn empty_suite(name: String) -> Suite { Suite.make(name, zero(), cells.nil(), cells.nil()) }
+pub fn empty_suite(name: String) -> Suite { Suite.make(name, zero(), cells.nil(_), cells.nil(_)) }
 
 pub fn suite_name(s: Suite) -> String {
   let .(name, _counts, _children, _failures) = s.>Suite.unpack;

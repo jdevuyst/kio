@@ -4218,6 +4218,9 @@ enum EvalExpr {
         callee: EvalRef<EvalExpr>,
         args: Vec<EvalRef<EvalExpr>>,
     },
+    TypeApplication {
+        callee: EvalRef<EvalExpr>,
+    },
     CallAtom {
         name: String,
         args: Vec<EvalRef<EvalExpr>>,
@@ -5517,6 +5520,9 @@ fn compile_eval_expr(
                 direct?
             } else {
                 let callee = compile_eval_expr(callee, state)?;
+                if args.iter().any(|arg| matches!(arg, CallArg::Type(_))) {
+                    return compile_staged_eval_call(callee, args, state);
+                }
                 let args = compile_value_arg_exprs_without_fn(args, meta.span, state)?;
                 if let Some(direct) = compile_direct_known_function_call(&callee, &args) {
                     direct
@@ -5559,6 +5565,35 @@ fn compile_eval_expr(
         | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
     };
     Some(EvalRef::new(compiled))
+}
+
+fn compile_staged_eval_call(
+    mut callee: EvalRef<EvalExpr>,
+    args: &[EvalAstCallArg],
+    state: &mut EvalCompileState<'_, '_>,
+) -> Option<EvalRef<EvalExpr>> {
+    let mut values = Vec::new();
+    for arg in args {
+        match arg {
+            CallArg::Value(value) => values.push(compile_eval_expr(value, state)?),
+            CallArg::Type(_) => {
+                if !values.is_empty() {
+                    callee = EvalRef::new(EvalExpr::Call {
+                        callee,
+                        args: std::mem::take(&mut values),
+                    });
+                }
+                callee = EvalRef::new(EvalExpr::TypeApplication { callee });
+            }
+        }
+    }
+    if !values.is_empty() {
+        callee = EvalRef::new(EvalExpr::Call {
+            callee,
+            args: values,
+        });
+    }
+    Some(callee)
 }
 
 fn compile_eval_expr_against(
@@ -6549,6 +6584,7 @@ fn compile_direct_eval_fn_call(
         return EvalExpr::CallFn { function, args };
     }
     if args.len() == function.abi_arity()
+        && abi_slots_saturate_groups(&function)
         && let Some((condition_slot, then_slot, else_slot)) = core_if_thunk_layout(&function)
         && let (Some(condition), Some(then_thunk), Some(else_thunk)) = (
             args.get(condition_slot).cloned(),
@@ -6563,6 +6599,7 @@ fn compile_direct_eval_fn_call(
         };
     }
     if args.len() == function.abi_arity()
+        && abi_slots_saturate_groups(&function)
         && let Some((scrutinee_slot, left_slot, right_slot)) = core_either_thunk_layout(&function)
         && let (Some(scrutinee), Some(left_thunk), Some(right_thunk)) = (
             args.get(scrutinee_slot).cloned(),
@@ -6684,6 +6721,14 @@ fn inline_small_eval_expr(
         EvalExpr::Local(slot) if *slot < param_count => Some(fn_args[*slot].as_ref().clone()),
         EvalExpr::Local(_) => None,
         EvalExpr::Atom(name) => Some(EvalExpr::Atom(name.clone())),
+        EvalExpr::TypeApplication { callee } => Some(EvalExpr::TypeApplication {
+            callee: EvalRef::new(inline_small_eval_expr(
+                callee,
+                fn_args,
+                param_count,
+                budget,
+            )?),
+        }),
         EvalExpr::CallAtom { name, args } => Some(EvalExpr::CallAtom {
             name: name.clone(),
             args: inline_small_eval_args(args, fn_args, param_count, budget)?,
@@ -7334,16 +7379,23 @@ fn compile_value_arg_exprs_for_fn_def(
         .collect();
     let all_value_args = args.iter().all(|a| matches!(a, CallArg::Value(_)));
     if type_param_count > 0 && all_value_args && args.len() == value_param_count {
-        return args
+        let mut values = args.iter().enumerate();
+        return def
+            .sig
+            .params
             .iter()
-            .enumerate()
-            .filter_map(|(index, arg)| match arg {
-                CallArg::Value(v) => Some(compile_eval_expr_against(
-                    v,
-                    value_param_types.get(index).and_then(Option::as_ref),
-                    state,
-                )),
-                CallArg::Type(_) => None,
+            .map(|param| match param {
+                SignatureParam::Type(_) => Some(EvalRef::new(EvalExpr::Unit)),
+                SignatureParam::Value(_) => {
+                    let (index, CallArg::Value(value)) = values.next()? else {
+                        return None;
+                    };
+                    compile_eval_expr_against(
+                        value,
+                        value_param_types.get(index).and_then(Option::as_ref),
+                        state,
+                    )
+                }
             })
             .collect();
     }
@@ -7351,7 +7403,12 @@ fn compile_value_arg_exprs_for_fn_def(
     let mut sig_iter = def.sig.params.iter();
     for arg in args {
         match sig_iter.next() {
-            Some(SignatureParam::Type(_)) => continue,
+            Some(SignatureParam::Type(_)) => {
+                if !matches!(arg, CallArg::Type(_)) {
+                    return None;
+                }
+                out.push(EvalRef::new(EvalExpr::Unit));
+            }
             Some(SignatureParam::Value(param)) => {
                 if let CallArg::Value(v) = arg {
                     let expected = param.ty.as_ref().map(convert_type::<EvalPhase, EvalPhase>);
@@ -7361,6 +7418,11 @@ fn compile_value_arg_exprs_for_fn_def(
             None => {
                 if let CallArg::Value(v) = arg {
                     out.push(compile_eval_expr(v, state)?);
+                } else {
+                    // A returned polymorphic value may be a primitive rather
+                    // than an ordinary closure. Its type stage needs the
+                    // evaluator's structural specialization operation.
+                    return None;
                 }
             }
         }
@@ -7558,7 +7620,8 @@ fn is_memo_candidate_expr_inner(expr: &EvalExpr, budget: &mut usize) -> bool {
     };
     *budget = next_budget;
     match expr {
-        EvalExpr::Call { .. }
+        EvalExpr::TypeApplication { .. }
+        | EvalExpr::Call { .. }
         | EvalExpr::CallAtom { .. }
         | EvalExpr::CallPrimitive { .. }
         | EvalExpr::ProofedReflection { .. }
@@ -9021,35 +9084,13 @@ fn checked_term_type_fn(param: TypeParam, body: EvalRef<CheckedTerm>) -> Checked
         body: Box::new(body.clone_type()),
         meta: zero_meta(),
     };
-    // FIXME(shared-syntax): Shared Kio/Kio' expression syntax cannot directly
-    // construct the bare pure `forall A. body` value, so this already-applied
-    // Unit redex represents it without leaving a value-call layer. Replace the
-    // redex if the shared syntax itself provides a direct constructor.
-    let unit_ty = Type::Unit { meta: zero_meta() };
-    let fn_value = EvalRef::new(CheckedTerm::from_node(
+    CheckedTerm::from_node(
         CheckedTermNode::TermFn {
             sig: Signature::from_parts(
                 vec![SignatureParam::Type(param)],
-                vec![
-                    crate::ast::SignatureGroupKind::Value { len: 0 },
-                    crate::ast::SignatureGroupKind::Type { len: 1 },
-                ],
+                vec![crate::ast::SignatureGroupKind::Type { len: 1 }],
             ),
             body,
-        },
-        Type::Function {
-            param: Box::new(unit_ty),
-            ret: Box::new(forall_ty.clone()),
-            meta: zero_meta(),
-            abi_arity: 0,
-            caps: (),
-        },
-    ));
-    CheckedTerm::from_node(
-        CheckedTermNode::TermCall {
-            fn_value,
-            params: Vec::new(),
-            arg_packet: checked_product_packet(&[]),
         },
         forall_ty,
     )
@@ -10809,6 +10850,14 @@ fn collect_value_param_layout<P: crate::ast::Phase>(
     let mut total_abi_arity = 0usize;
     for group in sig.canonical_groups() {
         let SignatureGroupRef::Value(group_params) = group else {
+            let SignatureGroupRef::Type(type_params) = group else {
+                unreachable!()
+            };
+            value_groups.extend(type_params.iter().map(|_| EvalParamGroup {
+                param_start: params.len(),
+                param_count: 0,
+                abi_arity: 0,
+            }));
             continue;
         };
         let group_start = params.len();
@@ -12544,6 +12593,153 @@ mod tests {
             body: EvalRef::new(body),
             diagnostic_body: test_source_unit(),
         })
+    }
+
+    fn type_only_closure_for_test(stages: usize, captured: Vec<Value>) -> Value {
+        let mut function = test_eval_function(&[], EvalExpr::Local(0)).unwrap_or_clone();
+        function.value_groups = vec![
+            EvalParamGroup {
+                param_start: 0,
+                param_count: 0,
+                abi_arity: 0,
+            };
+            stages
+        ]
+        .into();
+        Value::EvalClosure {
+            function: EvalRef::new(function),
+            captured: captured.into(),
+        }
+    }
+
+    fn specialize_for_test(value: Value, ctx: &EvalCtx<'_>) -> Value {
+        eval_compiled_expr(
+            &EvalExpr::TypeApplication {
+                callee: EvalRef::new(EvalExpr::Const(value)),
+            },
+            &mut EvalSlots::root(Vec::new()),
+            ctx,
+        )
+    }
+
+    #[test]
+    fn type_only_specialization_counts_suffix_and_capture_copies() {
+        assert_eq!(std::mem::size_of::<EvalExpr>(), 72);
+        for stages in [1, 4, 16] {
+            let metrics = Arc::new(EvalMetrics::default());
+            let ctx = EvalCtx::new().with_metrics(metrics.clone());
+            let mut value = type_only_closure_for_test(stages, vec![Value::Bool(true); 3]);
+            let mut copied_groups = 0;
+            for remaining in (0..stages).rev() {
+                value = specialize_for_test(value, &ctx);
+                if remaining > 0 {
+                    let Value::EvalClosure { function, captured } = &value else {
+                        panic!("a single type application consumed more than one stage")
+                    };
+                    assert_eq!(function.value_groups.len(), remaining);
+                    assert!(function.params.is_empty());
+                    assert_eq!(captured.len(), 3);
+                    copied_groups += function.value_groups.len();
+                }
+            }
+            assert!(matches!(value, Value::Bool(true)));
+            let snapshot = metrics.snapshot();
+            assert_eq!(snapshot.closure_builds, stages - 1);
+            assert_eq!(snapshot.capture_vec_builds, stages - 1);
+            assert_eq!(snapshot.capture_vec_values, 3 * (stages - 1));
+            assert_eq!(copied_groups, stages * (stages - 1) / 2);
+            eprintln!(
+                "type-stage-cost binders={stages} suffix_functions={} copied_groups={copied_groups} copied_params=0 copied_captures={}",
+                snapshot.closure_builds, snapshot.capture_vec_values
+            );
+        }
+    }
+
+    #[test]
+    fn type_only_specialization_preserves_primitive_and_opaque_values() {
+        let ctx = EvalCtx::new();
+        assert!(matches!(
+            specialize_for_test(Value::Primitive(ComptimeBuiltin::TypeUnit), &ctx),
+            Value::Primitive(ComptimeBuiltin::TypeUnit)
+        ));
+        assert!(
+            matches!(specialize_for_test(Value::Atom("__type_unit__".into()), &ctx), Value::Atom(name) if name == "__type_unit__")
+        );
+        let primitive = structural_recur_source_primitive_for_test("type-only-test");
+        let Value::Data(expected) = &primitive else {
+            panic!("structural primitive")
+        };
+        let specialized = specialize_for_test(primitive.clone(), &ctx);
+        let Value::Data(actual) = specialized else {
+            panic!("type application executed a primitive")
+        };
+        let Some(StructuralRecurDataIdentity::Primitive {
+            site: expected_site,
+            stage: expected_stage,
+        }) = expected.structural_recur_identity()
+        else {
+            panic!("primitive identity")
+        };
+        let Some(StructuralRecurDataIdentity::Primitive {
+            site: actual_site,
+            stage: actual_stage,
+        }) = actual.structural_recur_identity()
+        else {
+            panic!("specialized primitive identity")
+        };
+        assert!(Arc::ptr_eq(actual_site, expected_site));
+        assert_eq!(actual_stage, expected_stage);
+        let stuck = Value::Stuck(
+            EvalRef::new(Value::Atom("unknown".into())),
+            vec![Value::Bool(true)].into(),
+        );
+        assert!(nf_eq(
+            &specialize_for_test(stuck.clone(), &ctx),
+            &stuck,
+            &ctx
+        ));
+    }
+
+    #[test]
+    fn type_only_specialization_retains_sequence_and_case_payload_scope() {
+        let ctx = EvalCtx::new();
+        let split = Value::CaseSplit {
+            scrutinee: EvalRef::new(Value::Atom("choice".into())),
+            left_payload: "left_payload".into(),
+            left: EvalRef::new(type_only_closure_for_test(
+                1,
+                vec![Value::Atom("left_payload".into())],
+            )),
+            right_payload: "right_payload".into(),
+            right: EvalRef::new(type_only_closure_for_test(
+                1,
+                vec![Value::Atom("right_payload".into())],
+            )),
+        };
+        let value = specialize_for_test(
+            Value::Seq {
+                value: EvalRef::new(Value::Atom("effect".into())),
+                body: EvalRef::new(split),
+            },
+            &ctx,
+        );
+        let Value::Seq { value, body } = value else {
+            panic!("lost residual effect")
+        };
+        assert!(matches!(value.as_ref(), Value::Atom(name) if name == "effect"));
+        let Value::CaseSplit {
+            scrutinee,
+            left_payload,
+            left,
+            right_payload,
+            right,
+        } = body.as_ref()
+        else {
+            panic!("lost residual case")
+        };
+        assert!(matches!(scrutinee.as_ref(), Value::Atom(name) if name == "choice"));
+        assert!(matches!(left.as_ref(), Value::Atom(name) if name == left_payload));
+        assert!(matches!(right.as_ref(), Value::Atom(name) if name == right_payload));
     }
 
     #[test]
@@ -14369,6 +14565,59 @@ mod tests {
         );
 
         assert!(matches!(call, EvalExpr::CoreIf { .. }));
+    }
+
+    #[test]
+    fn type_packets_do_not_enter_raw_slot_shortcuts() {
+        for body in [
+            EvalExpr::CoreIf {
+                condition: EvalRef::new(EvalExpr::Local(0)),
+                then_thunk: EvalRef::new(EvalExpr::Local(1)),
+                else_thunk: EvalRef::new(EvalExpr::Local(2)),
+            },
+            EvalExpr::CoreEither {
+                scrutinee: EvalRef::new(EvalExpr::Local(0)),
+                left: test_either_thunk_branch(1),
+                right: test_either_thunk_branch(2),
+            },
+        ] {
+            let mut function =
+                test_eval_function(&["condition", "yes", "no"], body).unwrap_or_clone();
+            let mut groups = vec![
+                EvalParamGroup {
+                    param_start: 0,
+                    param_count: 0,
+                    abi_arity: 0
+                };
+                2
+            ];
+            groups.extend((0..3).map(|param_start| EvalParamGroup {
+                param_start,
+                param_count: 1,
+                abi_arity: 1,
+            }));
+            function.value_groups = groups.into();
+            assert!(
+                core_if_thunk_layout(&function).is_some()
+                    || core_either_thunk_layout(&function).is_some()
+            );
+            let call = compile_direct_eval_fn_call(
+                EvalRef::new(function),
+                vec![
+                    EvalRef::new(EvalExpr::Unit),
+                    EvalRef::new(EvalExpr::Unit),
+                    EvalRef::new(EvalExpr::Bool(true)),
+                ],
+            );
+            assert!(matches!(&call, EvalExpr::CallFn { .. }));
+            let value =
+                eval_compiled_expr(&call, &mut EvalSlots::root(Vec::new()), &EvalCtx::new());
+            let Value::EvalClosure { function, captured } = value else {
+                panic!("partial call executed its branch body")
+            };
+            assert_eq!(function.value_groups.len(), 2);
+            assert!(matches!(captured.as_slice(), [Value::Bool(true)]));
+        }
     }
 
     #[test]
@@ -18183,6 +18432,7 @@ mod tests {
         let enclosing_span = Span::new(5, 31);
         let current_value = Expr::<PrePrime>::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
                 occurrence: Default::default(),
                 segments: vec![PathSegment::new("enclosing".to_owned(), enclosing_span)],
@@ -18956,12 +19206,8 @@ mod tests {
 
     #[test]
     fn type_application_erases_then_beta_reduces() {
-        // Type-app / Λ-reduction (specs/formal/equiv.md § 1: type
-        // parameters are erased; prime.md § 3 β-TLam). Kio' has no
-        // anonymous type-level abstraction, so a polymorphic `fn`'s type
-        // binder carries no runtime value — applying `poly_id(t, v)`
-        // drops the type-arg `t` and β-reduces the value-arg `v` through.
-        // The result is `v`, exactly as if the type layer never existed.
+        // Type application consumes the abstraction before value beta
+        // reduction; the erased binder contributes no value local.
         let m = parse_module(
             "module x; fn poly_id[T](v: T) -> T { v } \
              equiv ta { poly_id(A, v); v }",
@@ -18974,17 +19220,31 @@ mod tests {
 
     #[test]
     fn type_only_fn_reduces_to_body() {
-        // A `fn` with ONLY type parameters becomes a zero-arity closure
-        // (every type binder erased); applying it to a type-arg forces
-        // the body. `type_only(A) → ()`.
         let m = parse_module(
-            "module x; fn type_only[T]() -> . { () } \
+            "module x; fn type_only[T] -> . { () } \
              equiv tof { type_only(A); () }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
+    }
+
+    #[test]
+    fn type_only_specialization_retains_explicit_unit_stage() {
+        let m = parse_module(
+            "module x; fn delayed[T]() -> . { () } \
+             equiv stages { delayed(A); .() { () } }",
+        );
+        let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
+        let values = eval_each(&equiv_terms(&m), &ctx);
+        let (residual, expected) = first_two(&values);
+        assert!(matches!(residual, Value::EvalClosure { .. }));
+        assert!(nf_eq(residual, expected, &ctx));
+        assert!(matches!(
+            apply(residual.clone(), Vec::new(), &ctx),
+            Value::Unit
+        ));
     }
 
     #[test]
@@ -22274,43 +22534,14 @@ mod tests {
             panic!("type-function term stored a non-forall type")
         };
         assert!(matches!(forall_body.as_ref(), Type::Unit { .. }));
-        let CheckedTermNode::TermCall {
-            fn_value,
-            params,
-            arg_packet,
-        } = term_type_fn.node.as_ref()
-        else {
-            panic!("type-function term was not materialized through its Unit call")
-        };
-        assert!(params.is_empty());
-        assert!(matches!(arg_packet.ty(), Type::Unit { .. }));
-        assert!(matches!(
-            arg_packet.node.as_ref(),
-            CheckedTermNode::Raw(Expr::Unit { .. })
-        ));
-        let CheckedTermNode::TermFn { sig, body } = fn_value.node.as_ref() else {
-            panic!("type-function Unit call did not wrap a checked function")
+        let CheckedTermNode::TermFn { sig, body } = term_type_fn.node.as_ref() else {
+            panic!("type-function term was not a direct abstraction")
         };
         assert_eq!(
             sig.groups,
-            vec![
-                crate::ast::SignatureGroupKind::Value { len: 0 },
-                crate::ast::SignatureGroupKind::Type { len: 1 },
-            ]
+            vec![crate::ast::SignatureGroupKind::Type { len: 1 }]
         );
         assert!(matches!(body.ty(), Type::Unit { .. }));
-        let Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } = fn_value.ty()
-        else {
-            panic!("type-function wrapper stored a non-function type")
-        };
-        assert_eq!(*abi_arity, 0);
-        assert!(matches!(param.as_ref(), Type::Unit { .. }));
-        assert_eq!(ret.as_ref(), term_type_fn.ty());
 
         // __term_type_app__: apply a forall-typed term to a type arg.
         let forall_ty = Type::Forall {
@@ -25805,12 +26036,13 @@ mod tests {
         };
         let canonical = generated.canonicalize_generated_names();
         fn type_fn_parts(term: &CheckedTerm) -> (&TypeParam, &CheckedTerm) {
-            let CheckedTermNode::TermCall { fn_value, .. } = term.node.as_ref() else {
-                panic!("type-function constructor lost its Unit application");
-            };
-            let CheckedTermNode::TermFn { sig, body } = fn_value.node.as_ref() else {
+            let CheckedTermNode::TermFn { sig, body } = term.node.as_ref() else {
                 panic!("type-function constructor lost its function");
             };
+            assert_eq!(
+                sig.groups,
+                vec![crate::ast::SignatureGroupKind::Type { len: 1 }]
+            );
             let [SignatureParam::Type(param)] = sig.params.as_slice() else {
                 panic!("type-function constructor lost its type parameter");
             };
@@ -26014,7 +26246,7 @@ mod tests {
             &ctx,
         );
         assert!(
-            matches!(&display, Value::DiagnosticText(text) if text == "(foo/bar.Box(m.Item) & Local)"),
+            matches!(&display, Value::DiagnosticText(text) if text == "foo/bar.Box(m.Item) & Local"),
             "reflected nested/applied type did not retain canonical, alias, and local spelling: {display:?}"
         );
     }
@@ -26083,7 +26315,7 @@ mod tests {
         );
         assert_eq!(
             compact_refl_type_display(&structured, &ctx),
-            "o.Choice(Box(.), (Local | missing.Hidden)) -> o.Item",
+            "o.Choice(Box(.), Local | missing.Hidden) -> o.Item",
             "short spelling must preserve nested applications, sums, function structure, and alias heads"
         );
 
@@ -26118,7 +26350,7 @@ mod tests {
         };
         assert_eq!(
             compact_refl_type_display(&alias_scope_boundary, &ctx),
-            "(([o] verbose.Item) & o.Item)",
+            "([o] verbose.Item) & o.Item",
             "a nested binder must make the shortest alias unavailable only in its lexical body, then release it"
         );
 
@@ -26129,7 +26361,7 @@ mod tests {
         };
         assert_eq!(
             compact_refl_type_display(&free_leaf_collision, &ctx),
-            "(Box & o.Box)",
+            "Box & o.Box",
             "a free bare head must protect the same spelling throughout one reflected type"
         );
 

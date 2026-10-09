@@ -89,7 +89,7 @@ pub(crate) fn java_host_type_identity(name: &QualifiedTypeName) -> String {
 
 /// Exact Java boundary inventory selected by the shared planner.
 pub(crate) struct JavaShapes<'p> {
-    _package: &'p Package<Routed>,
+    package: &'p Package<Routed>,
     host_bindings: BTreeMap<(String, String), JavaHostBinding>,
     has_live_host_binding: bool,
     live_root_type_parameters: Vec<String>,
@@ -255,13 +255,17 @@ impl<'p> JavaShapes<'p> {
                 .map(|(shell, origin)| (shell.product_companion(), origin)),
         );
         Self {
-            _package: package,
+            package,
             host_bindings,
             has_live_host_binding,
             live_root_type_parameters,
             newtype_payload_owners,
             facade_shells,
         }
+    }
+
+    pub(crate) fn package(&self) -> &'p Package<Routed> {
+        self.package
     }
 
     pub(crate) fn host_bindings(&self) -> impl Iterator<Item = &JavaHostBinding> {

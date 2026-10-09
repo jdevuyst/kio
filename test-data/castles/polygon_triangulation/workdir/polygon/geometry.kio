@@ -79,7 +79,7 @@ rec(loop) fn area_walk(points: Array(Point), i: I32, total: I32) -> I32 {
 
 pub fn area2(points: Array(Point)) -> I32 { area_walk(points, 0, 0) }
 
-rec(loop) fn reverse_walk(points: Array(Point), i: I32, j: I32) -> . {
+rec(loop) fn reverse_walk(points: Array(Point), i: I32, j: I32) {
   if! less(i, j) {
     arr.array_swap(points, i, j);
     rec reverse_walk(points, num.add_i32(i, 1), num.sub_i32(j, 1))

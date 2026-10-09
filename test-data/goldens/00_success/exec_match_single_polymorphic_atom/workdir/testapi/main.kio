@@ -10,4 +10,4 @@ fn classify() -> String {
   }
 }
 
-pub fn main() -> . { print(classify()) }
+pub fn main() { print(classify()) }

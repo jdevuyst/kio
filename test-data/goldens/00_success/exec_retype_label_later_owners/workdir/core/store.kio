@@ -2,4 +2,4 @@ module core/store;
 
 pub labels { foo: . };
 
-pub fn accept_foo(value: Foo) -> . { value.?{foo} }
+pub fn accept_foo(value: Foo) { value.?{foo} }

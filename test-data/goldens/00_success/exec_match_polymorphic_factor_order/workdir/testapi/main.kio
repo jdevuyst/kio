@@ -16,7 +16,7 @@ fn choose(input: (Box(String) & Tag) | (Other & Tag)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(choose(widen_sum!((Box.make("box"), {tag=}), (Box(String) & Tag) | (Other & Tag))));
   io.print(choose(widen_sum!(({other = "other"}, {tag=}), (Box(String) & Tag) | (Other & Tag))))
 }

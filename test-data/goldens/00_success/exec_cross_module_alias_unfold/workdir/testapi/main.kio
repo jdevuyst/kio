@@ -18,7 +18,7 @@ import testapi/opt(Option, none, some);
 // unrelated declaration cannot change which nominal the alias denotes.
 fn widen(o: Option) -> Option | String { fit!(o) }
 
-pub fn main() -> . {
+pub fn main() {
   touch();
   // `widen`'s result is non-unit; bind-and-discard to satisfy the
   // expression-statement `: .` rule. The point of the call is to force

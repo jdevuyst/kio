@@ -19,7 +19,7 @@ import forge/program as p;
 import forge/program(Item, Items);
 import testapi(I32, String);
 
-fn start() -> Items { l.nil(Item, ()) }
+fn start() -> Items { l.nil(Item) }
 
 fn ins(b: Items, x: Src) -> Items { l.cons(p.instr(x), b) }
 

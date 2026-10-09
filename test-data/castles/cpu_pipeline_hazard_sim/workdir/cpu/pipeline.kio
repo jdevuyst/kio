@@ -193,7 +193,7 @@ fn memory(cpu: Cpu, m: Machine) -> I32 {
 /// Write back. The register file takes the MEM/WB latch in the first half
 /// of the cycle, which is exactly why the hazard unit never has to worry
 /// about the instruction in WB.
-fn write_back(cpu: Cpu, m: Machine) -> . {
+fn write_back(cpu: Cpu, m: Machine) {
   let slot = m.?{st_wb};
   if! stage_empty(slot) {
     ()

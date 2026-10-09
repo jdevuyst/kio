@@ -65,18 +65,17 @@ fn render(yard: Array(String)) -> String {
 
 fn safe(yard: Array(String)) -> Bool { is_empty(array_get(yard, 0)) }
 
-pub fn main() -> . {
+pub fn main() {
   let before = initial_yard();
   let after = array_clone(before);
   array_swap(after, 0, 2);
   array_set(after, 4, "D9");
   print("train yard switchboard\n");
-  print(string_concat("tracks=", string_concat(int_to_string(array_len(after)), "\n")));
-  print(string_concat("before=", string_concat(render(before), "\n")));
-  print(string_concat("after=", string_concat(render(after), "\n")));
-  print(string_concat(
-    , "occupied="
-    , string_concat(int_to_string(occupied_count(after, 0, 4, 0)), "\n")
-    ));
-  print(string_concat("safe=", string_concat(bool_to_string(safe(after)), "\n")))
+  print(int_to_string(array_len(after)).>string_concat("\n").>>string_concat("tracks="));
+  print(render(before).>string_concat("\n").>>string_concat("before="));
+  print(render(after).>string_concat("\n").>>string_concat("after="));
+  print(int_to_string(occupied_count(after, 0, 4, 0))
+    .>string_concat("\n")
+    .>>string_concat("occupied="));
+  print(bool_to_string(safe(after)).>string_concat("\n").>>string_concat("safe="))
 }

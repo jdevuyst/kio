@@ -1,0 +1,7 @@
+module main;
+
+fn helper() { () }
+
+fn heaper() { () }
+
+pub fn main() { heper() }

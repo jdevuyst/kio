@@ -36,9 +36,9 @@ fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
 fn num(n: I32) -> String { int_to_string(n) }
 
-fn say(s: String) -> . { print(cat(s, "\n")) }
+fn say(s: String) { print(cat(s, "\n")) }
 
-fn field(label: String, value: String) -> . { say(cat(label, cat(": ", value))) }
+fn field(label: String, value: String) { say(cat(label, cat(": ", value))) }
 
 /// Integer equality, composed from `<=` in both directions: the host tier
 /// supplies comparisons but no `eq_i32`.
@@ -143,7 +143,7 @@ fn stop_text(s: Stop) -> String {
   }
 }
 
-pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) -> . {
+pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) {
   field("markov_ballad_weaver", "v1");
   field("seed", num(seed));
   field(
@@ -162,7 +162,7 @@ pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) -> . {
   field("word cap", num(cap))
 }
 
-rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) -> . {
+rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) {
   match! phrases.>List.un_list {
     (
       , .(p: List(String), more: List(List(String))) {
@@ -223,7 +223,7 @@ fn vocabulary(m: Model) -> I32 {
   add_i32(len(rows_of(m)), count_end_only(ends_of(m), rows_of(m), 0))
 }
 
-pub fn print_corpus(phrases: List(List(String)), m: Model) -> . {
+pub fn print_corpus(phrases: List(List(String)), m: Model) {
   say("");
   say("-- corpus --");
   field("phrases", num(len(phrases)));
@@ -232,7 +232,7 @@ pub fn print_corpus(phrases: List(List(String)), m: Model) -> . {
   print_phrases(phrases, 1)
 }
 
-rec(loop) fn print_rows(rows: List(Row)) -> . {
+rec(loop) fn print_rows(rows: List(Row)) {
   match! rows.>List.un_list {
     (
       , .(r: Row, more: List(Row)) {
@@ -244,7 +244,7 @@ rec(loop) fn print_rows(rows: List(Row)) -> . {
   }
 }
 
-pub fn print_model(m: Model) -> . {
+pub fn print_model(m: Model) {
   say("");
   say("-- model --");
   field("starts", tallies_text(starts_of(m)));
@@ -252,7 +252,7 @@ pub fn print_model(m: Model) -> . {
   print_rows(rows_of(m))
 }
 
-rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) -> . {
+rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) {
   match! lines.>List.un_list {
     (
       , .(l: Line, more: List(Line)) {
@@ -269,7 +269,7 @@ rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) -> . {
   }
 }
 
-pub fn print_verses(lines: List(Line), per_verse: I32) -> . {
+pub fn print_verses(lines: List(Line), per_verse: I32) {
   say("");
   say("-- verses --");
   print_lines(lines, 0, per_verse)
@@ -300,7 +300,7 @@ rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
   }
 }
 
-rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) -> . {
+rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) {
   if! leq_i32(per_verse, i) {
     ()
   } else match! lines.>List.un_list {
@@ -319,13 +319,13 @@ rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) -> .
 /// Only the first verse is traced. One verse is enough to check the generator
 /// by hand, and tracing all of them would bury the verses under their own
 /// arithmetic.
-pub fn print_first_verse_draws(lines: List(Line), per_verse: I32) -> . {
+pub fn print_first_verse_draws(lines: List(Line), per_verse: I32) {
   say("");
   say("-- draws (verse 1) --");
   print_trace(lines, 0, per_verse, 1)
 }
 
-pub fn print_stats(lines: List(Line)) -> . {
+pub fn print_stats(lines: List(Line)) {
   say("");
   say("-- stats --");
   field("words generated", num(words_generated(lines)));

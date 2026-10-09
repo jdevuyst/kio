@@ -84,7 +84,7 @@ fn parse_simple(kw: String) -> cmd.Command {
 
 rec(loop) {
   /// Parse the program: the block that runs to end of input.
-  pub fn parse_program() -> list.List(cmd.Command) { rec parse_block(0, list.nil(cmd.Command, ())) };
+  pub fn parse_program() -> list.List(cmd.Command) { rec parse_block(0, list.nil(cmd.Command)) };
   /// Read commands until this block's terminator, accumulating them head-first.
   /// `depth` is 0 for the program itself and one more inside each enclosing
   /// `repeat`: only a nested block is closed by `end`, so a stray `end` at the
@@ -101,7 +101,7 @@ rec(loop) {
               reverse(acc)
             } else if! string_eq(kw, "repeat") {
               let n = read_number();
-              let body = rec(cont) parse_block(add_i32(depth, 1), list.nil(cmd.Command, ()));
+              let body = rec(cont) parse_block(add_i32(depth, 1), list.nil(cmd.Command));
               rec parse_block(depth, list.cons(cmd.repeat(n, body), acc))
             } else {
               rec parse_block(depth, list.cons(parse_simple(kw), acc))

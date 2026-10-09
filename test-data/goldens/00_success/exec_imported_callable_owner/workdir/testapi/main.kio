@@ -6,7 +6,7 @@ import testapi/fmt(i32_to_string);
 import testapi/io(print);
 import testapi/syntax(op _ %* _, op _ %+ _, varop [* *], varop [+ +]);
 
-pub fn main() -> . {
+pub fn main() {
   let .(combined: I32) = 2 %+ 3;
   let .(folded: definitions.Box(I32)) = [* 4, 5 *];
   print(i32_to_string(combined));

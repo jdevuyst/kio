@@ -35,7 +35,7 @@ pub fn from_bool(b: Bool) -> Node_id {
   }
 }
 
-pub fn empty() -> Store { {nodes = lists.nil(), next = 2, reused = 0, reduced = 0} }
+pub fn empty() -> Store { {nodes = lists.nil(_), next = 2, reused = 0, reduced = 0} }
 
 pub fn size(s: Store) -> I32 { walk.length(s.?{nodes}) }
 

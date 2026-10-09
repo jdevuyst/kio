@@ -4,7 +4,7 @@ module do_in_kio_prime/main;
 // this surface syntax before resolving its ordinary elaborator name.
 fn bind[A][B](m: A, k: A -> B) -> B { k(m) }
 
-fn run() -> . {
+fn run() {
   do! bind {
     let _x <- ();
     ()

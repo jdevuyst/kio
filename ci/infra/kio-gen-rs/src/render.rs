@@ -68,6 +68,15 @@ pub struct RenderOpts {
     pub surface: bool,
 }
 
+pub(crate) fn emitted_value_names(program: &Program) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let opts = RenderOpts {
+        surface: program.uses_surface,
+    };
+    collect_emitted_value_names(&program.body, &opts, &mut names);
+    names
+}
+
 fn collect_surface_as_pattern_names(
     name: &str,
     ty: &Type,
@@ -421,9 +430,8 @@ fn render_term_opts_with_context(
                 .iter()
                 .map(|x| render_term_opts_with_context(x, opts, context))
                 .collect();
-            // A bare lambda in callee position would parse ambiguously; bind it
-            // through a `let` instead of applying it inline. Generators only
-            // produce App with a Var callee, so this branch is just defensive.
+            // Parenthesize block-shaped callees; variable and specialized
+            // polymorphic callees already admit a following argument group.
             let f_s = match **f {
                 Term::Lambda { .. } | Term::Let { .. } => {
                     format!("({})", render_term_opts_with_context(f, opts, context))

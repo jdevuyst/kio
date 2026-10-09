@@ -21,4 +21,4 @@ fn combine() -> String {
   Box.unbox(result)
 }
 
-pub fn main() -> . { io.print(combine()); io.print("\n") }
+pub fn main() { io.print(combine()); io.print("\n") }

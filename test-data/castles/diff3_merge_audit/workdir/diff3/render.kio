@@ -64,16 +64,16 @@ rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String))
 }
 
 fn merged(found: list.List(merge.Region)) -> list.List(String) {
-  merged_from(found, list.nil(String, ()))
+  merged_from(found, list.nil(String))
 }
 
-fn text(line: String) -> . { print(prim.cat(line, "\n")) }
+fn text(line: String) { print(prim.cat(line, "\n")) }
 
-fn field(label: String, value: String) -> . { text(prim.cat(label, prim.cat(": ", value))) }
+fn field(label: String, value: String) { text(prim.cat(label, prim.cat(": ", value))) }
 
-fn count(label: String, value: I32) -> . { field(label, int_to_string(value)) }
+fn count(label: String, value: I32) { field(label, int_to_string(value)) }
 
-rec(loop) fn print_lines(lines: list.List(String)) -> . {
+rec(loop) fn print_lines(lines: list.List(String)) {
   match! list.List.unpack(lines) {
     (
       , .(line: String, rest: list.List(String)) { text(line); rec print_lines(rest) }
@@ -96,7 +96,7 @@ pub fn report(
   , theirs: lcs.Dp
   , found_anchors: list.List(merge.Anchor)
   , found: list.List(merge.Region)
-  ) -> . {
+  ) {
   let base_count = list.len(scan.base_lines(doc));
   let ours_count = list.len(scan.our_lines(doc));
   let theirs_count = list.len(scan.their_lines(doc));

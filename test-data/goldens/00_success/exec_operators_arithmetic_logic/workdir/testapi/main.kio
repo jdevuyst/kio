@@ -70,7 +70,7 @@ op _ && __ { impl b_and }
 
 op _ || __ { impl b_or }
 
-fn show_bool(x: Bool) -> . {
+fn show_bool(x: Bool) {
   if! x {
     print("true\n")
   } else {
@@ -78,7 +78,7 @@ fn show_bool(x: Bool) -> . {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Arithmetic
   print(int_to_string(1 + 2 + 3));
   print("\n");

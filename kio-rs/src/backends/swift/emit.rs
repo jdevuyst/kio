@@ -14,6 +14,7 @@
 //! from the package's namespace ([`SwiftNames`]): the handle `<Handle>`, the
 //! host contract `<Handle>Host`, the factory `create<Handle>`.
 
+use crate::backends::{boundary_docs, doc};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap};
@@ -165,10 +166,10 @@ pub fn lower_package_with_signature(
     let literal_shapes = super::skin::SwiftLiteralContext::new(package, exact_host_types);
     let facade_shapes = super::skin::PreparedSwiftShapes::new(&prepared, &names.host_ty);
 
-    let host_swift = render_host_protocol(&prepared, &facade_shapes, &names)?;
+    let host_swift = render_host_protocol(package, &prepared, &facade_shapes, &names)?;
     let pkg_swift = render_pkg_swift(package, &prepared, &facade_shapes, &literal_shapes, &names)?;
     let ffi_swift = render_ffi_swift(&prepared, &facade_shapes, &names)?;
-    let shapes_swift = facade_shapes.render_shapes(&prepared);
+    let shapes_swift = facade_shapes.render_shapes(package, &prepared);
 
     Ok(SwiftPackage {
         pkg_swift: finalize_swift_file(pkg_swift),
@@ -1059,6 +1060,7 @@ fn emit_prepared_nested_use_aliases(
 /// Render `host.swift`: the current `<Handle>Host` requirements plus optional
 /// deprecated, trapping removal defaults from sealed signature history.
 fn render_host_protocol(
+    package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &super::skin::PreparedSwiftShapes,
     names: &SwiftNames,
@@ -1075,6 +1077,10 @@ fn render_host_protocol(
         if host_type.type_arity != 0 {
             continue;
         }
+        let binding = prepared
+            .host_binding(&host_type.name)
+            .expect("a live Swift host binding belongs to the prepared boundary");
+        push_doc(&mut out, boundary_docs::host_type(package, binding), "\t");
         let assoc = host_type_member_name(
             &host_type.name.module_segments().join("/"),
             host_type.name.name(),
@@ -1146,6 +1152,7 @@ fn render_host_protocol(
             format!(" -> {}", callable.ret_type)
         };
         let signature = format!("func {method}{generic}({params}){ret}");
+        push_doc(&mut out, boundary_docs::callable(package, site), "\t");
         if let Some(message) = retained_host_function_deprecation(site) {
             out.push_str(&format!(
                 "\t{}\t{signature}\n",
@@ -1246,6 +1253,7 @@ fn render_pkg_swift(
 
     let export_tree = collect_export_namespaces(prepared);
     out.push_str(&render_export_namespace_types(
+        package,
         &export_tree,
         prepared,
         shapes,
@@ -1394,17 +1402,27 @@ fn export_ns_type_name(path: &[FacadeSelector]) -> String {
 
 /// Render the Swift class for each non-root export-namespace node.
 fn render_export_namespace_types(
+    package: &Package<Routed>,
     root: &ExportTree,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &super::skin::PreparedSwiftShapes,
     names: &SwiftNames,
 ) -> Result<String, EmitError> {
     let mut out = String::new();
-    render_export_ns_type_rec(root, &mut Vec::new(), prepared, shapes, names, &mut out)?;
+    render_export_ns_type_rec(
+        package,
+        root,
+        &mut Vec::new(),
+        prepared,
+        shapes,
+        names,
+        &mut out,
+    )?;
     Ok(out)
 }
 
 fn render_export_ns_type_rec(
+    package: &Package<Routed>,
     node: &ExportTree,
     path: &mut Vec<FacadeSelector>,
     prepared: &PreparedBoundaryCallableSites,
@@ -1414,7 +1432,7 @@ fn render_export_ns_type_rec(
 ) -> Result<(), EmitError> {
     for (selector, child) in &node.children {
         path.push(selector.clone());
-        render_export_ns_type_rec(child, path, prepared, shapes, names, out)?;
+        render_export_ns_type_rec(package, child, path, prepared, shapes, names, out)?;
         path.pop();
     }
     if path.is_empty() {
@@ -1454,7 +1472,7 @@ fn render_export_ns_type_rec(
     }
     out.push_str("\t}\n");
     for e in &node.exports {
-        out.push_str(&render_export_method(e, prepared, shapes)?);
+        out.push_str(&render_export_method(package, e, prepared, shapes)?);
     }
     out.push_str("}\n\n");
     Ok(())
@@ -2047,6 +2065,7 @@ fn render_prepared_existential_projector_body(
 /// Render one exported method from its exact prepared callable plan and paired
 /// source execution layout.
 fn render_export_method(
+    package: &Package<Routed>,
     entry: &ExportEntry,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &super::skin::PreparedSwiftShapes,
@@ -2182,11 +2201,25 @@ fn render_export_method(
             )?
         )
     };
-    Ok(format!(
+    let mut out = String::new();
+    push_doc(&mut out, boundary_docs::callable(package, site), "\t");
+    out.push_str(&format!(
         "\tpublic func {method_name}{generic}({}) -> {} {{\n\t\t{returned}\n\t}}\n",
         params.join(", "),
         callable.ret_type,
-    ))
+    ));
+    Ok(out)
+}
+
+pub(super) fn push_doc(out: &mut String, comment: Option<&crate::ast::DocComment>, indent: &str) {
+    if let Some(comment) = comment {
+        doc::push_line_comments(
+            out,
+            &doc::render(comment, doc::Dialect::SwiftDoc),
+            indent,
+            "///",
+        );
+    }
 }
 
 /// The exported property name for one role-bearing facade edge.
@@ -2295,7 +2328,7 @@ fn render_package_class(
 
     // Root-level export methods (a `pub fn` in a top-level module).
     for e in &root.exports {
-        out.push_str(&render_export_method(e, prepared, shapes)?);
+        out.push_str(&render_export_method(package, e, prepared, shapes)?);
     }
     for entry in prepared
         .public_newtypes()
@@ -2461,18 +2494,15 @@ fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>
 
 /// Runtime closure layers for a signature. Each type binder becomes its own
 /// empty layer, each value group keeps its parameter names, and a signature
-/// with no value group receives the language's synthesized trailing nullary
-/// value stage.
+/// without any groups receives a nullary value stage.
 fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
     let mut groups = Vec::new();
-    let mut has_value_group = false;
     for group in sig.canonical_groups() {
         match group {
             crate::ast::SignatureGroupRef::Type(params) => {
                 groups.extend(params.iter().map(|_| Vec::new()));
             }
             crate::ast::SignatureGroupRef::Value(params) => {
-                has_value_group = true;
                 groups.push(
                     params
                         .iter()
@@ -2485,7 +2515,7 @@ fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&st
             }
         }
     }
-    if !has_value_group {
+    if groups.is_empty() {
         groups.push(Vec::new());
     }
     groups
@@ -3323,6 +3353,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         if type_arg_count > 0 {
             let staged =
                 self.emit_erased_type_applications(format!("self.{method}()"), type_arg_count - 1);
+            if !sig.has_value_group() {
+                assert!(
+                    args.is_empty(),
+                    "a routed type-only head has no value arguments"
+                );
+                return Ok(staged);
+            }
             if args.len() < first {
                 let missing = first - args.len();
                 let fresh: Vec<String> = (0..missing).map(|i| format!("__pa{i}")).collect();

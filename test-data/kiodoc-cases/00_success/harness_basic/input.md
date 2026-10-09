@@ -17,5 +17,5 @@ __INSERT_CODE_HERE__
 ```
 
 ```kio {@main}
-pub fn greet() -> . { print("hi\n") }
+pub fn greet() { print("hi\n") }
 ```

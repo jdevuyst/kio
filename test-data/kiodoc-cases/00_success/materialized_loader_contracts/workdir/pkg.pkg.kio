@@ -1,0 +1,11 @@
+package pkg;
+
+build {
+  cache ();
+
+  docs {
+    md "input"
+  };
+
+  target js {}
+}

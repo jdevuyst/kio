@@ -65,6 +65,8 @@ System F + nominal existentials: functions and type parameters written as `[Name
 
 **Function purity is part of Kio'.** An ordinary function declaration may be marked `pure`; no other declaration admits that modifier. The marker restricts executable value references in the function body to local binders, intrinsics and newtype members, and other ordinary functions marked `pure`. It does not classify types: local annotations may mention any well-formed type, including a host type. Named types in a declaration signature separately obey the visibility rule below. An unmarked function may refer to either kind of function. Surface compile-time primitives used by an elaborator implementation are consumed before persistent Kio' and are not Kio' values.
 
+As in [Kio's function-purity rule](language.md#module-system), a callback supplied through a local binder may have effects. The marker restricts declaration references; it does not make every invocation effect-free.
+
 The marker remains in the Kio' artifact and its public function contract. Consequently a freshly parsed package checks the same promise as direct compilation, without relying on the producer's surface AST. The runtime loader recognizes the modifier but trusts the precompiled body and does not perform that check. Retaining the marker is also what lets the full Kio pipeline substitute an elaborator's generated term and then revalidate a pure caller's completed body.
 
 **Type-expression binders are prefix-only.** A binder run scopes over the complete body to its right: `[A][B] (A & B) -> R` is `Forall(A, Forall(B, Function(Product(A, B), R)))`, and `[A] R` is `Forall(A, R)`. A binder run must have a body type; `[A] -> R` is not a type expression. Declaration signatures still use ordered type/value groups, with comma-separated value parameters inside one value group folding to that layer's product domain.
@@ -105,7 +107,13 @@ Two or more leading underscores reserve a name for compiler hygiene; a trailing 
 
 Top-level `fn`, `type` (nullary and parametric), and `newtype` (nullary and
 parametric); `pub` visibility modifier; dot-led anonymous functions
-(`.(...) { ... }`). **Block bodies** carry zero or more `;`-terminated
+(`.(...) { ... }` or `.[A] { ... }`). Ordinary functions and lambdas require
+one or more type or value groups; type-only groups imply no value stage.
+Thus `fn make[A] -> R { body }` and `.[A] -> R { body }` have type `[A] R`,
+whereas a written `[A]()` produces `[A] . -> R`. Each type binder is a separate
+application stage; the body runs when the final written group is applied,
+not when the abstraction is merely referenced. Host imports still require a
+value group. **Block bodies** carry zero or more `;`-terminated
 statements followed by a final expression — `let x = e;` binds a single name
 (no annotation, no patterns, no destructuring) and `e;` is an expression
 statement whose value is discarded (the typer requires `e : .`; use
@@ -116,8 +124,9 @@ A top-level `fn`'s `-> Type` return-type annotation may be elided, in which case
 the return type defaults to `.` (see
 [language.md § Function definitions](language.md#function-definitions)).
 
-A Kio' dot-lambda's value-parameter and return-type annotations are optional:
-each slot is either concrete or absent. The `_` type placeholder is
+A Kio' dot-lambda's written value-parameter and return-type annotations are
+optional: each slot is either concrete or absent. A type-only lambda has no
+value-parameter slot to complete. The `_` type placeholder is
 surface-only and never appears in Kio'. A checked lambda may omit a
 value-parameter annotation because its expected function type supplies that
 slot. In synthesis mode, value parameters must otherwise be concrete, except

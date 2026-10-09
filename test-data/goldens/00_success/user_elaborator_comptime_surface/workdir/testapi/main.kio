@@ -14,6 +14,6 @@ fn first(v: Pair_alias & String) -> String {
   head
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(first((("user_elaborator_comptime_surface: ok\n", "ignored"), "also ignored")))
 }

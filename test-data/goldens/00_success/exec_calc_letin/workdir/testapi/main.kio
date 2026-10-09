@@ -293,7 +293,7 @@ fn eval(e: Expr) -> I32 {
 // Test AST: `Let("x", Lit(2), Let("y", Lit(3), Add(Var("x"),
 // Var("y"))))` — binds `x = 2` and `y = 3`, then evaluates
 // `x + y`, producing `5`.
-pub fn main() -> . {
+pub fn main() {
   let ast = let_("x", lit(2), let_("y", lit(3), add(var("x"), var("y"))));
   print(string_concat(int_to_string(eval(ast)), "\n"))
 }

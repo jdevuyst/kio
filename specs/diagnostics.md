@@ -74,6 +74,10 @@ one without the other.
   An imported callable's written signature remains owned by its declaring
   source through a straight local alias. Its expected-type label identifies
   that signature or annotation, not the nominal type's definition.
+  This includes `host fn` signatures. A synthetic Unit domain for an empty
+  parameter group is explained by its declaration header rather than
+  a nonexistent written type annotation. A declaring file is used only with
+  spans owned by that source; otherwise the call-site context remains.
 - **help** proposes the fix the implementation is confident about
   ("import a type marked `role(bool)`").
 - A **machine-applicable fix** fires only when a near-miss is mechanically

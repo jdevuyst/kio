@@ -43,6 +43,6 @@ fn step(n: I32) -> I32 | . {
   }
 }
 
-fn bottles(start: I32) -> . { loop(.(n: I32) { step(n) }, start) }
+fn bottles(start: I32) { loop(.(n: I32) { step(n) }, start) }
 
-pub fn main() -> . { bottles(3) }
+pub fn main() { bottles(3) }

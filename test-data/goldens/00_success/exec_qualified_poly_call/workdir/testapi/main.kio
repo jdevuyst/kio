@@ -10,4 +10,4 @@ import testapi/io(print);
 // monomorphic-only treatment of qualified callees would either
 // over-emit the type-arg or crash with "type-arg passed to Mono
 // callee" — this case pins the polymorphic path through.
-pub fn main() -> . { print(h.id(String, "qualified poly call\n"(String))) }
+pub fn main() { print(h.id(String, "qualified poly call\n"(String))) }

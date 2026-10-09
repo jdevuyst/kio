@@ -134,7 +134,7 @@ fn contract_line(im: Image, label: String, name: String, sig: String) -> String 
 
 /// Loads the piped-in image and prints each probed export's result; a
 /// load failure prints the diagnostic instead.
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
       , .(im0: Lr_image) {

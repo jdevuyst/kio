@@ -20,7 +20,7 @@ fn apply_pair_flat(f: (String & String) -> String, left: String, right: String) 
   f(left, right)
 }
 
-pub fn main() -> . {
+pub fn main() {
   let unit_thunk = .() -> String { "thunk-ok\n"(String) };
   let unit_named = .(u: .) -> String { show_unit(u) };
   let product_one = .(pair: String & String) -> String { pair_join(pair) };

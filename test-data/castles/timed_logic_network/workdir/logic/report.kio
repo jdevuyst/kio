@@ -24,22 +24,20 @@ fn assignment(wire: I32, value: Bool) -> String {
   text.string_concat(model.name(wire), text.string_concat("=", bit(value)))
 }
 
-pub fn header(count: I32) -> . {
+pub fn header(count: I32) {
   io.print("logic: A -> slow(3); H=xor(A,slow)(1); T=transport(H,2); I=inertial(H,2)\n");
-  io.print(text.string_concat(
-    , "sources="
-    , text.string_concat(fmt.int_to_string(count), " initial A=0 slow=0 H=0 T=0 I=0\n")
-    ))
+  io.print(fmt.int_to_string(count)
+    .>text.string_concat(" initial A=0 slow=0 H=0 T=0 I=0\n")
+    .>>text.string_concat("sources="))
 }
 
-pub fn edge(event: model.Event) -> . {
-  io.print(text.string_concat(
-    , time(event.?{model.at})
-    , text.string_concat(assignment(event.?{model.target}, event.?{model.value}), "\n")
-    ))
+pub fn edge(event: model.Event) {
+  io.print(assignment(event.?{model.target}, event.?{model.value})
+    .>text.string_concat("\n")
+    .>>text.string_concat(time(event.?{model.at})))
 }
 
-pub fn canceled(now: I32, event: model.Event) -> . {
+pub fn canceled(now: I32, event: model.Event) {
   io.print(text.string_concat(
     , time(now)
     , text.string_concat(
@@ -62,7 +60,7 @@ fn show_wire(message: String, signal: model.Signal) -> String {
     )
 }
 
-pub fn summary(state: model.State) -> . {
+pub fn summary(state: model.State) {
   io.print(text.string_concat(
     , "settled-at="
     , text.string_concat(

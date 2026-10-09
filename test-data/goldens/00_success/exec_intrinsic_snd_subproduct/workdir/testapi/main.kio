@@ -13,7 +13,7 @@ import testapi/io(print);
 // `__snd__` call survives to codegen.
 fn tail_of[A][B][C](p: A & B & C) -> B & C { __snd__(A, B & C, p) }
 
-pub fn main() -> . {
+pub fn main() {
   let triple = __pair__(Int, Int & Int, 1(Int), __pair__(Int, Int, 2(Int), 3(Int)));
   let rest = tail_of(Int, Int, Int, triple);
   print(int_to_string(__fst__(Int, Int, rest)));

@@ -15,7 +15,7 @@ import datalog/report as report;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let facts = program.edb();
   let rules = program.rules();
   let semi = eval.semi_naive(rules, facts);

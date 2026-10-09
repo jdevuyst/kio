@@ -145,11 +145,15 @@ enum PublicationCommand<T> {
         expr_span: Span,
         resolved: T,
         binders: super::TypeBinderScope,
+        #[cfg(feature = "lsp")]
+        public_callee: bool,
     },
     PositionBinder {
         segment_span: Span,
         binder: ResolvedBinder,
     },
+    #[cfg(feature = "lsp")]
+    SelectedRole { span: Span, binding: String },
     LocalDecl {
         name: String,
         decl_span: Span,
@@ -168,6 +172,8 @@ enum PublicationCommand<T> {
     LiteralResolution {
         literal_site: crate::ast::ExpressionSite,
         resolved: T,
+        #[cfg(feature = "lsp")]
+        lexical_role: Option<String>,
     },
     PrimeRequalificationBindings {
         imports: Vec<UserElaboratorTemplateGeneratedImport>,
@@ -265,10 +271,14 @@ impl<T> PublicationCommand<T> {
                 expr_span,
                 resolved,
                 binders,
+                #[cfg(feature = "lsp")]
+                public_callee,
             } => PublicationCommand::PositionType {
                 expr_span,
                 resolved: map(resolved),
                 binders,
+                #[cfg(feature = "lsp")]
+                public_callee,
             },
             Self::PositionBinder {
                 segment_span,
@@ -277,6 +287,10 @@ impl<T> PublicationCommand<T> {
                 segment_span,
                 binder,
             },
+            #[cfg(feature = "lsp")]
+            Self::SelectedRole { span, binding } => {
+                PublicationCommand::SelectedRole { span, binding }
+            }
             Self::LocalDecl {
                 name,
                 decl_span,
@@ -307,9 +321,13 @@ impl<T> PublicationCommand<T> {
             Self::LiteralResolution {
                 literal_site,
                 resolved,
+                #[cfg(feature = "lsp")]
+                lexical_role,
             } => PublicationCommand::LiteralResolution {
                 literal_site,
                 resolved: map(resolved),
+                #[cfg(feature = "lsp")]
+                lexical_role,
             },
             Self::PrimeRequalificationBindings { imports, aliases } => {
                 PublicationCommand::PrimeRequalificationBindings { imports, aliases }
@@ -696,6 +714,17 @@ pub(crate) struct PublicationBuilder {
     entries: Vec<PublicationEntry>,
 }
 
+#[cfg(all(test, feature = "lsp"))]
+#[test]
+fn source_role_layout_publication() {
+    eprintln!(
+        "source role layout: publication_command={} publication_entry={} publication_builder={}",
+        std::mem::size_of::<PublicationCommand<PublicationValue<PublicationGoalInput>>>(),
+        std::mem::size_of::<PublicationEntry>(),
+        std::mem::size_of::<PublicationBuilder>(),
+    );
+}
+
 impl PublicationBuilder {
     pub(crate) fn new(store: &GoalStore, delta: &GoalDelta) -> Self {
         let owner = delta.owner();
@@ -812,6 +841,29 @@ impl PublicationBuilder {
             expr_span,
             resolved: PublicationValue::goal_free(PublicationGoalInput::pending(resolved)),
             binders: binders.into(),
+            #[cfg(feature = "lsp")]
+            public_callee: false,
+        });
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn record_public_callee_type(
+        &mut self,
+        expr_span: Span,
+        resolved: ScopedType,
+        binders: super::TypeBinderScope,
+        function_scheme: bool,
+    ) {
+        let resolved = PublicationGoalInput::pending(resolved);
+        self.push_command(PublicationCommand::PositionType {
+            expr_span,
+            resolved: if function_scheme {
+                PublicationValue::function_scheme(resolved)
+            } else {
+                PublicationValue::goal_free(resolved)
+            },
+            binders,
+            public_callee: true,
         });
     }
 
@@ -872,6 +924,8 @@ impl PublicationBuilder {
             expr_span,
             resolved: PublicationValue::function_scheme(PublicationGoalInput::pending(resolved)),
             binders: binders.into(),
+            #[cfg(feature = "lsp")]
+            public_callee: false,
         });
     }
 
@@ -880,6 +934,11 @@ impl PublicationBuilder {
             segment_span,
             binder,
         });
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn record_selected_role(&mut self, span: Span, binding: String) {
+        self.push_command(PublicationCommand::SelectedRole { span, binding });
     }
 
     pub(crate) fn record_local_decl(
@@ -914,6 +973,8 @@ impl PublicationBuilder {
             expr_span,
             resolved: PublicationValue::goal_free(resolved),
             binders: binders.into(),
+            #[cfg(feature = "lsp")]
+            public_callee: false,
         });
     }
 
@@ -947,10 +1008,13 @@ impl PublicationBuilder {
         &mut self,
         literal_site: crate::ast::ExpressionSite,
         resolved: ScopedType,
+        #[cfg(feature = "lsp")] lexical_role: Option<String>,
     ) {
         self.push_command(PublicationCommand::LiteralResolution {
             literal_site,
             resolved: PublicationValue::goal_free(PublicationGoalInput::pending(resolved)),
+            #[cfg(feature = "lsp")]
+            lexical_role,
         });
     }
 
@@ -1611,17 +1675,31 @@ impl ClosedPublicationDelta {
                     expr_span,
                     resolved,
                     binders,
-                } => elaborations.record_position_type(
-                    module_path,
-                    expr_span,
-                    resolved.into_interned_type(),
-                    binders,
-                ),
+                    #[cfg(feature = "lsp")]
+                    public_callee,
+                } => {
+                    elaborations.record_position_type(
+                        module_path,
+                        expr_span,
+                        resolved.into_interned_type(),
+                        binders,
+                    );
+                    #[cfg(feature = "lsp")]
+                    if public_callee {
+                        elaborations
+                            .position_index
+                            .record_public_callee(module_path, expr_span);
+                    }
+                }
                 PublicationCommand::PositionBinder {
                     segment_span,
                     binder,
                 } => {
                     elaborations.record_position_binder(module_path, segment_span, binder);
+                }
+                #[cfg(feature = "lsp")]
+                PublicationCommand::SelectedRole { span, binding } => {
+                    elaborations.record_selected_role(module_path, span, binding);
                 }
                 PublicationCommand::LocalDecl {
                     name,
@@ -1670,11 +1748,19 @@ impl ClosedPublicationDelta {
                 PublicationCommand::LiteralResolution {
                     literal_site,
                     resolved,
-                } => elaborations.record_literal_resolution(
-                    module_path,
-                    literal_site.id,
-                    resolved.into_interned_type(),
-                ),
+                    #[cfg(feature = "lsp")]
+                    lexical_role,
+                } => {
+                    #[cfg(feature = "lsp")]
+                    if let Some(binding) = lexical_role {
+                        elaborations.record_selected_role(module_path, literal_site.span, binding);
+                    }
+                    elaborations.record_literal_resolution(
+                        module_path,
+                        literal_site.id,
+                        resolved.into_interned_type(),
+                    );
+                }
                 PublicationCommand::PrimeRequalificationBindings { imports, aliases } => {
                     elaborations.record_prime_requalification_imports(module_path, &imports);
                     elaborations.record_generated_type_aliases(module_path, &aliases);
@@ -1724,6 +1810,71 @@ mod tests {
     use crate::pass::typecheck_core::{GoalContextCapability, GoalOwnerKind, RigidScope};
 
     struct TestContext;
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn ufcs_authentication_public_type_and_conflict_publish_only_on_commit() {
+        let context = TestContext;
+        let mut elaborations = Elaborations::new();
+        elaborations.position_index = super::super::PositionIndex::for_refactoring();
+        for (commit, conflict) in [(false, true), (true, false), (true, true)] {
+            let mut store = GoalStore::new();
+            let owner = root_owner(&mut store, 0);
+            let delta = store.begin_delta(owner, span(0)).expect("open delta");
+            let mut builder = PublicationBuilder::new(&store, &delta);
+            let types = if conflict {
+                vec![unit(0), bottom(0), unit(0)]
+            } else {
+                vec![unit(0)]
+            };
+            for ty in types {
+                builder.record_public_callee_type(
+                    span(0),
+                    store
+                        .scoped_type(owner, InternedType::fresh_with_identity(ty, true), span(0))
+                        .unwrap(),
+                    super::super::TypeBinderScope::default(),
+                    false,
+                );
+            }
+            builder.record_position_binder(
+                span(0),
+                ResolvedBinder::Fn {
+                    module_path: "<test>".into(),
+                    name: "f".into(),
+                },
+            );
+            let prepared = builder
+                .finish()
+                .prepare_root(&store, delta, Vec::new(), &context)
+                .unwrap();
+            if commit {
+                prepared.commit_without_rec_order(&mut store, &mut elaborations);
+                assert_eq!(
+                    elaborations
+                        .position_index
+                        .authenticated_callee("<test>", span(0), span(0), span(0))
+                        .is_some(),
+                    !conflict,
+                );
+            } else {
+                drop(prepared);
+                assert_eq!(elaborations.position_index.type_count(), 0);
+                assert_eq!(elaborations.position_index.binder_count(), 0);
+            }
+        }
+        let index = &elaborations.position_index;
+        assert_eq!(index.type_at("<test>", span(0)), Some(&unit(0)));
+        assert!(
+            index
+                .authenticated_callee("<test>", span(0), span(0), span(0))
+                .is_none()
+        );
+        eprintln!(
+            "ufcs publication layout: command={}",
+            std::mem::size_of::<PublicationCommand<PublicationValue<PublicationGoalInput>>>()
+        );
+    }
 
     impl GoalTypeContext for TestContext {
         fn capability(&self) -> GoalContextCapability {
@@ -2050,7 +2201,7 @@ mod tests {
                 .iter()
                 .map(|ty| crate::pass::typecheck_core::display_type(*ty))
                 .collect::<Vec<_>>(),
-            [".", "!", "(. & .)", "(. | .)"]
+            [".", "!", ". & .", ". | ."]
         );
         assert!(elaborations.is_value_at_type_slot("<test>", call_site.id, 1));
         assert!(elaborations.is_value_at_type_slot("<test>", call_site.id, 3));

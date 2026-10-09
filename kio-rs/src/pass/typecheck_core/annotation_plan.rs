@@ -1913,7 +1913,7 @@ impl<'m> LambdaHeaderPlan<'m> {
             super::synth::build_fn_type_from_body_type(
                 self.signature,
                 result,
-                parameters,
+                &parameters,
                 span,
                 tcx,
             ),
@@ -1936,7 +1936,6 @@ impl<'m> LambdaHeaderPlan<'m> {
         );
         let mut lexical = self.planning_lexical_view(tcx);
         let mut prefix_end = 0usize;
-        let mut saw_value_group = false;
         let mut selected_slots = Vec::with_capacity(self.value_slots.len());
         let type_param_count = self
             .signature
@@ -2025,7 +2024,6 @@ impl<'m> LambdaHeaderPlan<'m> {
                     lexical.advance_signature_prefix(prefix_end);
                 }
                 crate::ast::SignatureGroupRef::Value(params) => {
-                    saw_value_group = true;
                     prefix_end += params.len();
                     lexical.advance_signature_prefix(prefix_end);
                     let expected_binders = ExpectedAlphaBinderLookup {
@@ -2122,7 +2120,7 @@ impl<'m> LambdaHeaderPlan<'m> {
             }
         }
 
-        if !saw_value_group {
+        if self.group_refs().next().is_none() {
             let expected_binders = ExpectedAlphaBinderLookup {
                 lexical: &lexical,
                 selected: &selected_expected_binders,
@@ -2850,13 +2848,13 @@ impl<'m> LambdaHeaderPlan<'m> {
         }
         tcx.restore(publication_mark);
 
-        Ok(super::synth::finish_synth_fn_from_body_type(
+        super::synth::finish_synth_fn_from_body_type(
             full,
             self.signature,
             body_ty,
             value_param_types,
             tcx,
-        ))
+        )
     }
 }
 

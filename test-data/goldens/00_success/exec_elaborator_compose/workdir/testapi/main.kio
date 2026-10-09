@@ -30,7 +30,7 @@ fn drop_c(p: D & C) -> D { narrow_prod!(p) }
 
 fn last_factor(p: A & B & C & D) -> D { drop_c(drop_b(drop_a(reorder(p)))) }
 
-pub fn main() -> . {
+pub fn main() {
   let p = (A.mk_a(1), B.mk_b(2), C.mk_c(3), D.mk_d(4));
   // Force evaluation of the chain; the constant message confirms
   // the program reached the print without elaborator-side rejection.

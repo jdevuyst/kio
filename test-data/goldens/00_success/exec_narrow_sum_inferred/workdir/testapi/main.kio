@@ -21,4 +21,4 @@ fn triple(s: String) -> String | String | String { widen_sum!(s) }
 // the rule fills in the maximal narrowing.
 fn run(s: String) -> String { let wide = triple(s); let collapsed = narrow_sum!(wide); collapsed }
 
-pub fn main() -> . { print(run("narrow_sum inferred: ok\n")) }
+pub fn main() { print(run("narrow_sum inferred: ok\n")) }

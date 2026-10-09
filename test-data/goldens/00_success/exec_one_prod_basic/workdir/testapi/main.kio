@@ -9,4 +9,4 @@ import testapi/io(print);
 // Bool)` has a single String slot; one_prod! locates it.
 fn pick_string(p: String & I32 & Bool) -> String { one_prod!(p) }
 
-pub fn main() -> . { let triple = ("one_prod: picked\n", 1, .t); print(pick_string(triple)) }
+pub fn main() { let triple = ("one_prod: picked\n", 1, .t); print(pick_string(triple)) }

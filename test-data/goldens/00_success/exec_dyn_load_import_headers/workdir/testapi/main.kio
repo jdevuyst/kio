@@ -54,7 +54,7 @@ fn invoke(image: loader.Image, name: testapi.String) -> testapi.String {
   }
 }
 
-fn report_values(label: testapi.String, source: testapi.String) -> . {
+fn report_values(label: testapi.String, source: testapi.String) {
   match! loader.un_load_outcome(scan.load_package(source)) {
     (
       , .(loaded: loader.Lr_image) {
@@ -115,7 +115,7 @@ fn header_image(header: testapi.String) -> testapi.String {
     )
 }
 
-fn report_header(label: testapi.String, header: testapi.String) -> . {
+fn report_header(label: testapi.String, header: testapi.String) {
   let outcome =
     match! loader.un_load_outcome(scan.load_package(header_image(header))) {
       (
@@ -126,7 +126,7 @@ fn report_header(label: testapi.String, header: testapi.String) -> . {
   io.print(text.string_concat(label, text.string_concat(outcome, "\n"(testapi.String))))
 }
 
-pub fn main() -> . {
+pub fn main() {
   report_values("emitted: "(testapi.String), imageio.read_image_stdin());
   report_values("comma list: "(testapi.String), comma_image());
   report_header(

@@ -14,9 +14,9 @@ type I32_fn = I32 -> I32;
 
 fn concrete_string_clause(_text: String) -> I32 -> I32 { identity_i32 }
 
-fn print_line(value: I32) -> . { print(int_to_string(value)); print("\n") }
+fn print_line(value: I32) { print(int_to_string(value)); print("\n") }
 
-fn check_named_clause_orders() -> . {
+fn check_named_clause_orders() {
   let generic_first =
     match! widen_sum!(11, I32 | String) {
       (.(_number: I32) { identity(_) }, concrete_string_clause)
@@ -36,7 +36,7 @@ fn enclosing_common_result() -> I32_fn {
   }
 }
 
-fn check_contextual_common_results() -> . {
+fn check_contextual_common_results() {
   let .(explicit: I32_fn) =
     match! widen_sum!(33, I32 | String) {
       (.(_number: I32) { identity(_) }, .(_text: String) { identity(_) })
@@ -46,7 +46,7 @@ fn check_contextual_common_results() -> . {
   ()
 }
 
-fn check_three_result_positions() -> . {
+fn check_three_result_positions() {
   let concrete_first =
     match! widen_sum!(41, I32 | String | Bool) {
       (
@@ -77,7 +77,7 @@ fn check_three_result_positions() -> . {
   ()
 }
 
-pub fn main() -> . {
+pub fn main() {
   let generic_first =
     match! widen_sum!(11, I32 | String) {
       (

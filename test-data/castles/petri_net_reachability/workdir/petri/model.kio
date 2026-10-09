@@ -78,7 +78,13 @@ rec(loop) fn fire_places(
 }
 
 pub fn fire(net: Net, transition: Transition, marking: Marking) -> Marking | . {
-  fire_places(marking, transition.?{consumes}, transition.?{produces}, net.?{capacity}, lists.nil())
+  fire_places(
+    , marking
+    , transition.?{consumes}
+    , transition.?{produces}
+    , net.?{capacity}
+    , lists.nil(_)
+    )
 }
 
 pub fn enabled(net: Net, transition: Transition, marking: Marking) -> Bool {

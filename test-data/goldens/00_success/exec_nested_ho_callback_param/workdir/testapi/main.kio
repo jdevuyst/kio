@@ -19,7 +19,7 @@ type Apply = (((I32 -> I32) & I32) -> I32) & (I32 -> I32);
 
 fn proj_apply(p: Apply) -> ((I32 -> I32) & I32) -> I32 { one_prod!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   // `twice` applies its callback parameter twice — its first parameter
   // is itself function-typed, so storing it in `Apply` exercises a
   // nested callable value.

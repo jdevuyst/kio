@@ -37,4 +37,4 @@ fn use_derived() -> String {
   Identity.un_id(mapped)
 }
 
-pub fn main() -> . { print(use_derived()) }
+pub fn main() { print(use_derived()) }

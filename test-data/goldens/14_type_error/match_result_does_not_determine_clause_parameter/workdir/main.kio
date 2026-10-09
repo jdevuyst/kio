@@ -6,7 +6,7 @@ host type Value;
 
 host type Other;
 
-fn rejected(source: Value | Other, fallback: Value) -> . {
+fn rejected(source: Value | Other, fallback: Value) {
   let .(_result: Value) =
     match! source {
       (.(value) { value }, .(_other: Other) { fallback })

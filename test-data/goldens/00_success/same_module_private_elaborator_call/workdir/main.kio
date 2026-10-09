@@ -6,4 +6,4 @@ pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
 
 elab unit : . -> . { impl unit_impl }
 
-fn main() -> . { unit!() }
+fn main() { unit!() }

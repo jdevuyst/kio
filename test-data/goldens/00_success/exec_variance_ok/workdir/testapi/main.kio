@@ -20,4 +20,4 @@ rec newtype Reclist : . | (String & Reclist) { pub constructor mk_rl; pub projec
 // `[A]` is covariant in `Wrap`, so this is strictly positive.
 newtype Boxed : Wrap(Reclist) { pub constructor mk_boxed; pub projector un_boxed }
 
-pub fn main() -> . { print("variance ok\n"(String)) }
+pub fn main() { print("variance ok\n"(String)) }

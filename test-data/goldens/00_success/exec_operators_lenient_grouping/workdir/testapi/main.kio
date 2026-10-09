@@ -21,7 +21,7 @@ fn idx_lenient(a: Int, b: Int) -> Int { mul(a, b) }
 
 op _ ( ?? _ ?? ) { impl idx_lenient }
 
-pub fn main() -> . {
+pub fn main() {
   // Strict: needs explicit parens around the inner chain.
   let s = int_to_string(7 %% (2 + 3) %%);
   // Lenient: no parens needed around the inner chain.

@@ -57,6 +57,13 @@ pub const STYLE_CSS: &str = r#"/* kio doc — default stylesheet */
 .kio-literal-bool { color: var(--kio-tok-literal-bool); }
 .kio-comment-line { color: var(--kio-tok-comment-line); font-style: italic; }
 .kio-comment-doc { color: var(--kio-tok-comment-doc); font-style: italic; }
+.kio-comment-doc-reference { color: var(--kio-tok-entity-name-function); }
+.kio-comment-doc-directive, .kio-comment-doc-fence { color: var(--kio-tok-keyword-control); }
+.kio-comment-doc-code { color: var(--kio-tok-literal-string); }
+.kio-comment-doc-heading, .kio-comment-doc-strong { font-weight: bold; }
+.kio-comment-doc-emphasis { font-style: italic; }
+.kio-comment-doc-marker, .kio-comment-doc-attribute { color: var(--kio-tok-keyword-control); }
+.kio-comment-doc-link { color: var(--kio-tok-entity-name-function); text-decoration: underline; }
 .kio-punctuation-bracket { color: var(--kio-tok-punctuation-bracket); }
 .kio-punctuation-separator { color: var(--kio-tok-punctuation-separator); }
 .kio-slot { color: var(--kio-tok-slot); }

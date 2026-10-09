@@ -209,7 +209,7 @@ independently acquired sccache-backed compiler lease rechecks the daemon. A
 nested compiler command carrying that same canonical inherited lease reuses
 the readiness already established for the enclosing command, avoiding a shell
 and daemon probe per compiler child. A wrapper hidden in Cargo configuration remains the reason
-for the session-level check required by `AGENTS.md`; stopping or restarting the
+for the conditional session-level check required by `AGENTS.md`; stopping or restarting the
 daemon during a build violates the same lifecycle contract. With the pinned
 sccache, `--dist-status` contacts or starts the daemon, while `--show-stats` is
 not a readiness probe.
@@ -266,11 +266,11 @@ commands directly.
 
 Custom corpus `run.sh` files keep ordinary host-tool spellings. The harness
 prefixes their inherited `PATH` with proxies for Kio, Kio', Cargo, rustc, Go,
-javac, swiftc, and GHC after resolving the real tools. A custom script invokes
-Kio through `KIO_BIN` or a bare proxy name; it preserves the prefix and invokes
+javac, javadoc, swiftc, GHC, and Haddock after resolving the real tools. A custom
+script invokes Kio through `KIO_BIN` or a bare proxy name; it preserves the prefix and invokes
 host tools by bare command name. An absolute or previously captured real-tool
-path bypasses compiler admission. Cargo, rustc, javac, swiftc, and GHC enter the
-compiler resource through `ci/schedule.sh`, except the exact information-only
+path bypasses compiler admission. Cargo, rustc, javac, javadoc, swiftc, GHC, and
+Haddock enter the compiler resource through `ci/schedule.sh`, except the exact information-only
 `rustc --version --verbose` query, which stays direct. Other rustc argument
 vectors retain admission. Go admits
 `build`/`install`/`run`/`test`/`vet`, `list` with `-export` or `-compiled`, and
@@ -474,12 +474,19 @@ Use the changed behavior and its consumers to select the focused checks below.
 These entry points cover different tooling boundaries; they are not a second
 broad gate or a full-backend corpus run.
 
+When moving Rust code across feature boundaries or changing feature gates, run
+the affected reduced-feature `--all-targets` checks from the owning hygiene
+script, with its warning policy. A reduced `--lib` check does not compile the
+test-target configuration, and an all-features pass cannot validate absent
+features. Keep the configuration list in the owning script rather than copying
+it into another preflight runner.
+
 | Changed boundary | Required focused evidence |
 | --- | --- |
 | LSP behavior, or compiler syntax/semantics consumed by LSP | Relevant library tests plus `sh ci/checks/orchestrators/lsp-tests.sh`, which runs the separate `kio-rs/tests/lsp_smoke.rs` binary. A `--lib` pass does not run it. For source-generating code actions, apply the returned edit and analyse the resulting document; matching an edit string alone is insufficient. |
 | Terminal REPL behavior or shared inspector logic | From `kio-rs/`, use affected library filters such as `sh ../ci/cargo.sh test --lib repl_core::` or `sh ../ci/cargo.sh test --lib repl::`, and `sh ../ci/cargo.sh test --test repl_smoke` for executable command/session behavior. The smoke target drives the real CLI through pipes; it bypasses interactive reedline completion and highlighting, which have separate library tests. A `--lib` pass does not run the smoke target. |
 | Browser REPL wrapper or shared-core behavior consumed by it | `sh ci/checks/hygiene/kio-repl-wasm.sh` checks wrapper formatting, strict Clippy, native tests, a `wasm32-unknown-unknown` build, and exported JS/WASM methods and serialization in Node using the reduced `repl-core` feature set. It uses the mise-provisioned Node and wasm-pack; wasm-pack selects the matching wasm-bindgen runner. It does not execute the browser UI or validate its embedded package. |
-| Shared token classification, highlighting, TextMate or tree-sitter grammar | `sh ci/checks/orchestrators/highlight-tokens.sh` and `sh ci/checks/orchestrators/highlight-agreement.sh`. If tree-sitter parsing changes, also run `tree-sitter test` from `tools/tree-sitter-kio/`; token agreement does not exercise the entire parse corpus. |
+| Shared token classification, highlighting, TextMate or tree-sitter grammar | `sh ci/checks/orchestrators/highlight-tokens.sh` and `sh ci/checks/orchestrators/highlight-agreement.sh`. Agreement also checks shared Kiodoc rule generation and TextMate projection freshness, real-engine documentation/incremental fixtures, and bounded scanner operation counts. If tree-sitter parsing changes, also run `tree-sitter test` from `tools/tree-sitter-kio/`; token agreement does not exercise the entire parse corpus. |
 | VS Code behavior, semantic-token wiring, or bundled grammar artifacts | The extension's affected tests plus `sh ci/checks/orchestrators/vscode-e2e.sh` on a supported host. Grammar-source agreement does not validate the shipped editor bundle; report a platform/tool skip as missing runtime evidence, not a pass. |
 | Syntax/semantics used by embedded fixtures outside `.kio` files | Inspect the affected Rust/JS/TS integration fixtures and their source generators. Run their owning targets; for a Rust integration target use `sh ../ci/cargo.sh test --all-features --test <target>` from `kio-rs/`. A `src/`-only inventory or `--lib` selection misses `tests/`. |
 

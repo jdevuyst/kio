@@ -160,4 +160,4 @@ rec(loop) fn run(steps: List(Step), stack: List(Cell), last: I32) -> Answer {
 
 /// Evaluate an RPN queue. `last` is the position of the expression's final
 /// token, used only to place the fault of an expression that yields no value.
-pub fn evaluate(steps: List(Step), last: I32) -> Answer { run(steps, nil(Cell, ()), last) }
+pub fn evaluate(steps: List(Step), last: I32) -> Answer { run(steps, nil(Cell), last) }

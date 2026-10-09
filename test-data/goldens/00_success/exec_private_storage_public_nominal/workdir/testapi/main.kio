@@ -18,7 +18,7 @@ pub fn choose[A](condition: Bool, first: A, second: A) -> A {
   stored.>Stored.unpack.>Cell.unpack
 }
 
-pub fn main() -> . {
+pub fn main() {
   let condition = choose(.f, .f, .t);
   io.print(choose(condition, "left ", "wrong "));
   io.print(choose(.f, "wrong\n", "right\n"))

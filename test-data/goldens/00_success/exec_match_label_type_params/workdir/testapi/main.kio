@@ -34,7 +34,7 @@ fn handle(r: Ok(I32) | Err(String)) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let v_ok = {ok = 42};
   let v_err = {err = "ignored"};
   print(handle(widen_sum!(v_ok)));

@@ -33,10 +33,34 @@ pub(crate) fn handle_code_action(
     source: Option<&str>,
     module: Option<&Module<Surface>>,
     analysis: Option<&LspAnalysis>,
+    refactoring_analysis: Option<&LspAnalysis>,
     document_version: Option<i32>,
     fix_validation: Option<FixValidationContext<'_>>,
 ) -> Option<CodeActionResponse> {
     let mut actions = Vec::new();
+    if code_action_kind_requested(&params.context, &CodeActionKind::REFACTOR_REWRITE)
+        && let (Some(source), Some(module), Some(analysis), Some(version)) =
+            (source, module, refactoring_analysis, document_version)
+        && let Some(path) = crate::lsp::util::uri_to_canonical(&params.text_document.uri)
+        && analysis
+            .sources
+            .get(&path)
+            .is_some_and(|captured| captured == source)
+        && let Some(module_path) = analysis.file_to_module.get(&path)
+        && let Some(edit) =
+            super::ufcs_refactor::edit(source, module, analysis, module_path, params.range)
+    {
+        let uri = params.text_document.uri.clone();
+        actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+            title: "Convert nested calls to UFCS".to_owned(),
+            kind: Some(CodeActionKind::REFACTOR_REWRITE),
+            edit: Some(workspace_edit_from_changes(
+                HashMap::from([(uri.clone(), vec![edit])]),
+                Some(&BTreeMap::from([(uri, version)])),
+            )),
+            ..Default::default()
+        }));
+    }
     if code_action_kind_requested(&params.context, &CodeActionKind::QUICKFIX) {
         for diagnostic in &params.context.diagnostics {
             if !diagnostic_matches_document_version(diagnostic, document_version) {
@@ -88,7 +112,7 @@ pub(crate) fn handle_code_action(
     Some(actions)
 }
 
-fn code_action_kind_requested(
+pub(super) fn code_action_kind_requested(
     context: &lsp_types::CodeActionContext,
     kind: &CodeActionKind,
 ) -> bool {
@@ -295,6 +319,35 @@ fn fix_rechecks(
     };
     let mut matched_targets = vec![false; targets.len()];
     let mut expected = Vec::new();
+    let authenticated_removals = original.as_ref().ok().and_then(|analysis| {
+        authenticated_unused_removals(
+            source,
+            edits,
+            &analysis.warnings,
+            targets,
+            validation,
+            &line_index,
+        )
+    });
+    if authenticated_removals.is_none()
+        && original.as_ref().is_ok_and(|analysis| {
+            analysis.warnings.iter().any(|warning| {
+                warning.kind != crate::cmd::check::LspWarningKind::LocalBinding
+                    && targets.iter().any(|target| {
+                        warning_matches_lsp_diagnostic(
+                            warning,
+                            target,
+                            validation.package_root,
+                            validation.focus_file,
+                            &line_index,
+                        )
+                    })
+            })
+        })
+    {
+        // A clean recheck cannot authorize deleting extra declarations.
+        return false;
+    }
     let original_was_clean = match &original {
         Err(failure) => {
             for located in &failure.errors {
@@ -355,6 +408,13 @@ fn fix_rechecks(
 
                 let mut diagnostic = rechecked_warning(validation.package_root, warning);
                 if same_path(&diagnostic.file, validation.focus_file) {
+                    if authenticated_removals.as_ref().is_some_and(|removed| {
+                        removed.iter().any(|span| {
+                            span.start <= diagnostic.span.start && diagnostic.span.end <= span.end
+                        })
+                    }) {
+                        continue;
+                    }
                     let Some(span) = map_unaffected_span(diagnostic.span, &byte_edits) else {
                         return false;
                     };
@@ -387,6 +447,9 @@ fn fix_rechecks(
             .iter()
             .map(|located| rechecked_located_diagnostic(validation.package_root, located))
             .collect::<Vec<_>>(),
+        // Removing an authenticated unused declaration/import can expose new
+        // unused diagnostics. The full overlay must still typecheck cleanly.
+        (true, Ok(_)) if authenticated_removals.is_some() => return true,
         (true, Ok(analysis)) => analysis
             .warnings
             .iter()
@@ -416,6 +479,71 @@ fn fix_rechecks(
         }
     }
     true
+}
+
+fn authenticated_unused_removals(
+    source: &str,
+    edits: &[TextEdit],
+    warnings: &[crate::cmd::check::LspWarning],
+    targets: &[Diagnostic],
+    validation: FixValidationContext<'_>,
+    line_index: &LineIndex,
+) -> Option<Vec<crate::span::Span>> {
+    use crate::cmd::check::LspWarningKind;
+
+    let mut covered = vec![false; edits.len()];
+    let mut removed_declarations = Vec::new();
+    let mut has_unused_removal = false;
+    for target in targets {
+        let warning = warnings.iter().find(|warning| {
+            warning_matches_lsp_diagnostic(
+                warning,
+                target,
+                validation.package_root,
+                validation.focus_file,
+                line_index,
+            )
+        })?;
+        // Client diagnostic data is only a request. This exception derives
+        // from fresh compiler-owned kinds and an exact union of current fixes.
+        let diagnostic = super::diagnostics::warning_to_diagnostic(warning, line_index);
+        let (fix, matched) = diagnostic_fixes(&diagnostic, Some(source))?
+            .into_iter()
+            .filter(|fix| fix.machine_applicable && !fix.scaffold)
+            .find_map(|fix| {
+                let mut matched = Vec::new();
+                for edit in &fix.edits {
+                    let index = edits.iter().enumerate().find_map(|(index, requested)| {
+                        (!covered[index] && !matched.contains(&index) && edit == requested)
+                            .then_some(index)
+                    })?;
+                    matched.push(index);
+                }
+                Some((fix, matched))
+            })?;
+        for index in matched {
+            covered[index] = true;
+        }
+        match warning.kind {
+            LspWarningKind::LocalBinding => {}
+            LspWarningKind::UnusedImport | LspWarningKind::UnusedPrivateDeclaration => {
+                if fix.edits.iter().any(|edit| !edit.new_text.is_empty()) {
+                    return None;
+                }
+                has_unused_removal = true;
+                if warning.kind == LspWarningKind::UnusedPrivateDeclaration {
+                    for edit in byte_edits(line_index, &fix.edits)? {
+                        removed_declarations.push(crate::span::Span::new(
+                            u32::try_from(edit.start).ok()?,
+                            u32::try_from(edit.end).ok()?,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (has_unused_removal && covered.into_iter().all(|matched| matched))
+        .then_some(removed_declarations)
 }
 
 fn rechecked_located_diagnostic(
@@ -458,6 +586,16 @@ fn located_matches_lsp_diagnostic(
     }
     let (span, message) = located.error.diag();
     if message != diagnostic.message {
+        return false;
+    }
+    // These producers have the same candidate facts in focused and full
+    // analysis. Provider edits can change the allowed repair without changing
+    // the diagnostic's message or span, including withdrawing every fix.
+    if (matches!(located.error, crate::error::Error::Import(_))
+        || located.error.diagnostic().requires_current_fixes())
+        && super::diagnostics::fixes_data(located.error.diagnostic().fixes(), line_index).as_ref()
+            != diagnostic.data.as_ref().and_then(|data| data.get("fixes"))
+    {
         return false;
     }
     let range = line_index.to_range(span);
@@ -1084,6 +1222,74 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
+    fn unused_removal_authentication_requires_exact_compiler_owned_edits() {
+        use crate::cmd::check::{LspWarning, LspWarningKind};
+        use crate::error::{Fix, FixEdit};
+        use crate::span::Span;
+
+        let source = "fn dead() { () }\nfn live() { () }\n";
+        let index = LineIndex::new(source);
+        let overlay = SourceOverlay::default();
+        let root = Path::new("workspace");
+        let file = root.join("main.kio");
+        let validation = FixValidationContext {
+            package_root: root,
+            focus_file: &file,
+            overlay: &overlay,
+        };
+        let mut warning = LspWarning {
+            kind: LspWarningKind::UnusedPrivateDeclaration,
+            file_path: PathBuf::from("main.kio"),
+            span: Span::new(3, 7),
+            message: "unused private function `dead`".to_owned(),
+            fixes: vec![Fix::machine_applicable(
+                "Remove transitively unused private function",
+                vec![FixEdit::new(Span::new(0, 17), "")],
+            )],
+        };
+        let mut target = super::super::diagnostics::warning_to_diagnostic(&warning, &index);
+        let edits = diagnostic_fixes(&target, Some(source))
+            .unwrap()
+            .remove(0)
+            .edits;
+        let authenticate = |warning: &LspWarning, target: &Diagnostic, edits: &[TextEdit]| {
+            authenticated_unused_removals(
+                source,
+                edits,
+                std::slice::from_ref(warning),
+                std::slice::from_ref(target),
+                validation,
+                &index,
+            )
+        };
+        assert_eq!(
+            authenticate(&warning, &target, &edits),
+            Some(vec![Span::new(0, 17)])
+        );
+
+        let mut wider = edits.clone();
+        wider[0].range.end = Position::new(2, 0);
+        target.data.as_mut().unwrap()["unusedRemoval"] = serde_json::json!(true);
+        assert_eq!(authenticate(&warning, &target, &wider), None);
+        let mut replacement = edits.clone();
+        replacement[0].new_text = "fn replacement() { () }\n".to_owned();
+        assert_eq!(authenticate(&warning, &target, &replacement), None);
+        let mut extra = edits.clone();
+        extra.push(TextEdit {
+            range: Range::new(Position::new(1, 0), Position::new(2, 0)),
+            new_text: String::new(),
+        });
+        assert_eq!(authenticate(&warning, &target, &extra), None);
+
+        warning.kind = LspWarningKind::LocalBinding;
+        assert_eq!(authenticate(&warning, &target, &edits), None);
+        warning.kind = LspWarningKind::UnusedImport;
+        assert_eq!(authenticate(&warning, &target, &edits), Some(Vec::new()));
+        warning.fixes.clear();
+        assert_eq!(authenticate(&warning, &target, &edits), None);
+    }
+
+    #[test]
     fn auto_import_insertion_preserves_header_and_import_boundaries() {
         for marked in [
             "module main;|",
@@ -1162,7 +1368,7 @@ mod tests {
         };
 
         let actions =
-            handle_code_action(params, None, None, None, None, None).expect("code actions");
+            handle_code_action(params, None, None, None, None, None, None).expect("code actions");
         assert_eq!(actions.len(), 1);
         let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
             panic!("expected eager code action");
@@ -1199,7 +1405,7 @@ mod tests {
             partial_result_params: Default::default(),
         };
 
-        let actions = handle_code_action(params, None, None, None, Some(5), None)
+        let actions = handle_code_action(params, None, None, None, None, Some(5), None)
             .expect("code actions are a concrete empty response");
         assert!(actions.is_empty());
     }
@@ -1232,7 +1438,7 @@ mod tests {
             partial_result_params: Default::default(),
         };
 
-        let actions = handle_code_action(params, None, None, None, None, None)
+        let actions = handle_code_action(params, None, None, None, None, None, None)
             .expect("code actions are a concrete empty response");
         assert!(actions.is_empty());
     }

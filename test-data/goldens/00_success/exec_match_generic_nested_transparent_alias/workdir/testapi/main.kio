@@ -23,7 +23,7 @@ fn classify[A](source: (Left(A) & .) | (Right(A) & .), result: String) -> String
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(classify(left("value"), "left\n"));
   print(classify(right("value"), "right\n"))
 }

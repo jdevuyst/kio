@@ -4,4 +4,4 @@ module helper/reexport;
 // sealed `secret` and re-export its behaviour through a public façade.
 import helper/submod(secret);
 
-pub fn reexport() -> . { secret() }
+pub fn reexport() { secret() }

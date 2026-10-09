@@ -16,7 +16,7 @@ rec(loop) fn predict(
   , category: I32
   , position: I32
   , index: I32
-  ) -> . {
+  ) {
   if! arith.leq_i32(arrays.array_len(grammar), index) {
     ()
   } else {
@@ -30,7 +30,7 @@ rec(loop) fn predict(
   }
 }
 
-fn scan(tokens: Array(I32), columns: model.Chart, position: I32, token: I32, state: model.Item) -> . {
+fn scan(tokens: Array(I32), columns: model.Chart, position: I32, token: I32, state: model.Item) {
   if! arith.leq_i32(arrays.array_len(tokens), position) {
     ()
   } else if! numbers.equal(arrays.array_get(tokens, position), token) {
@@ -47,7 +47,7 @@ rec(loop) fn complete_waiters(
   , category: I32
   , index: I32
   , limit: I32
-  ) -> . {
+  ) {
   if! arith.leq_i32(limit, index) {
     ()
   } else {
@@ -68,7 +68,7 @@ rec(loop) fn complete_waiters(
   }
 }
 
-fn complete(grammar: model.Grammar, columns: model.Chart, position: I32, state: model.Item) -> . {
+fn complete(grammar: model.Grammar, columns: model.Chart, position: I32, state: model.Item) {
   let production = arrays.array_get(grammar, model.rule_index(state));
   let origin = arrays.array_get(columns, model.start(state));
   complete_waiters(
@@ -87,7 +87,7 @@ fn process(
   , columns: model.Chart
   , position: I32
   , state: model.Item
-  ) -> . {
+  ) {
   if! model.finished(grammar, state) {
     complete(grammar, columns, position, state)
   } else match! model.next(grammar, state) {
@@ -105,7 +105,7 @@ rec(loop) fn sweep(
   , position: I32
   , index: I32
   , limit: I32
-  ) -> . {
+  ) {
   if! arith.leq_i32(limit, index) {
     ()
   } else {
@@ -125,7 +125,7 @@ pub rec(loop) fn close(
   , tokens: Array(I32)
   , columns: model.Chart
   , position: I32
-  ) -> . {
+  ) {
   let column = arrays.array_get(columns, position);
   let before = arrays.array_len(column);
   sweep(grammar, tokens, columns, position, 0, before);

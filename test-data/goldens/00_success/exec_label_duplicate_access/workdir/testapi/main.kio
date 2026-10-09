@@ -8,7 +8,7 @@ import testapi/io(print);
 
 labels { foo: I32 };
 
-pub fn main() -> . {
+pub fn main() {
   let both = {foo = 7}.?{foo, foo};
   print(int_to_string(__fst__(I32, I32, both)));
   print(int_to_string(__snd__(I32, I32, both)))

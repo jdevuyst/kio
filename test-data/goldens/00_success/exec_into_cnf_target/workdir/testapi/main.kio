@@ -13,7 +13,7 @@ import testapi/io(print);
 // is the widening (an unused alternative arm).
 fn widen_to_cnf(p: I32 & String) -> I32 & (String | I32) { into!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = widen_to_cnf((42, "hello\n"));
   // Project the components: `onto!` drops one factor at a time.
   let i = onto!(widened, I32);

@@ -35,7 +35,7 @@ fn run_boxed(b: Boxed(I32 -> I32), x: I32) -> I32 {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let inc = .(n: I32) -> I32 { add(n, 1) };
   let p = (inc, int_to_string);
   // Project the two functions back out of the product and apply them.

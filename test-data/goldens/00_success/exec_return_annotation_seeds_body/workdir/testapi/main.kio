@@ -18,16 +18,16 @@ fn widen(x: I32) -> I32 | . { widen_sum!(x) }
 fn flip(x: I32 | String) -> String | I32 { reorder_sum!(x) }
 
 // `match!` returns the common clause result type `.`.
-fn show_opt(o: I32 | .) -> . {
+fn show_opt(o: I32 | .) {
   match! o {
     (.(n: I32) { print(int_to_string(n)) }, .(_u: .) { print("none") })
   }
 }
 
-fn show_or(x: String | I32) -> . {
+fn show_or(x: String | I32) {
   match! x {
     (.(s: String) { print(s) }, .(n: I32) { print(int_to_string(n)) })
   }
 }
 
-pub fn main() -> . { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum!(7))); print("\n") }
+pub fn main() { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum!(7))); print("\n") }

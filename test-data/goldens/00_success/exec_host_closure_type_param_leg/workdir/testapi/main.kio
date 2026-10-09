@@ -18,7 +18,7 @@ fn run_fn[K][R](g: K -> R, x: K) -> R { g(x) }
 // the parameter through unconverted is the bug this golden pins.
 pub fn apply_via[K][R](f: K -> R, x: K) -> R { run_fn(f, x) }
 
-pub fn main() -> . {
+pub fn main() {
   // Drive the same polymorphic helper from inside the package, at the
   // concrete `String -> String` instantiation, so the run exercises the
   // erased closure-value threading end to end.

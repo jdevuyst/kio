@@ -343,12 +343,153 @@ fn trailing_blocks_repl() -> Repl {
 pub mod wasm_tests;
 
 #[cfg(test)]
+fn type_only_values_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/type-only-values");
+    let files = BTreeMap::from([
+        (
+            root.join("app.pkg.kio"),
+            "package app; bridge { app; }".to_owned(),
+        ),
+        (
+            root.join("app.kio"),
+            "module app; type Existing = .; \
+             fn mark[A] { () } \
+             fn delayed[A]() { () }"
+                .to_owned(),
+        ),
+    ]);
+    Repl {
+        poc_id: "type-only-values".to_owned(),
+        session: Session::new_in_memory(root, files),
+        init_banner: String::new(),
+        completion_names: OnceCell::new(),
+    }
+}
+
+#[cfg(test)]
+fn reference_ownership_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/reference-ownership");
+    let files = [
+        (
+            "demo/a.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/a.kio"
+            ),
+        ),
+        (
+            "demo/b.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/b.kio"
+            ),
+        ),
+        (
+            "demo/main.kio",
+            include_str!(
+                "../../test-data/goldens/00_success/repl_reference_ownership/workdir/demo/main.kio"
+            ),
+        ),
+    ]
+    .into_iter()
+    .map(|(path, source)| (root.join(path), source.to_owned()))
+    .collect();
+    Repl {
+        poc_id: "reference-ownership".to_owned(),
+        session: Session::new_in_memory(root, files),
+        init_banner: String::new(),
+        completion_names: OnceCell::new(),
+    }
+}
+
+#[cfg(test)]
+fn declaration_selectors_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/selectors");
+    let files = [
+        ("demo/main.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/main.kio")),
+        ("demo/ops.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/ops.kio")),
+        ("demo/other.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/other.kio")),
+    ].into_iter().map(|(path, source)| (root.join(path), source.to_owned())).collect();
+    Repl {
+        poc_id: "selectors".to_owned(),
+        session: Session::new_in_memory(root, files),
+        init_banner: String::new(),
+        completion_names: OnceCell::new(),
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn reference_ownership_uses_the_in_memory_snapshot() {
+        let mut repl = reference_ownership_repl();
+        let loaded = repl.run_command(Command::Load("demo/main".to_owned()));
+        assert!(strip_ansi(&loaded.output).contains("loaded demo/main"));
+        let refs = strip_ansi(&repl.run_command(Command::Refs("truth".to_owned())).output);
+        assert!(
+            refs.contains("demo/a:") && refs.contains("in fn literal_use"),
+            "{refs}"
+        );
+        assert!(
+            !refs.contains("demo/b:") && !refs.contains("shadow"),
+            "{refs}"
+        );
+    }
+
+    #[test]
     fn default_poc_is_list() {
         assert_eq!(default_poc_id(), "list");
+    }
+
+    #[test]
+    fn declaration_selectors_preserve_browser_rendering_and_insertion() {
+        let mut repl = declaration_selectors_repl();
+        let loaded = repl.run_command(Command::Load("demo/main".to_owned()));
+        assert!(
+            strip_ansi(&loaded.output).contains("loaded demo/main"),
+            "{}",
+            loaded.output
+        );
+        let listing = repl
+            .run_command(Command::Ls {
+                module: Some("demo/ops".to_owned()),
+                verbose: false,
+            })
+            .output;
+        for keyword in ["op", "varop"] {
+            assert!(
+                listing.contains(&format!(
+                    "\x1b[38;2;229;192;123mpub\x1b[0m \x1b[38;2;229;192;123m{keyword}\x1b[0m"
+                )),
+                "{listing:?}"
+            );
+        }
+        let line = ":sig arithmetic.(op _ +";
+        let completion = repl.complete_core(line, line.len());
+        let selected = completion
+            .candidates
+            .iter()
+            .find(|item| item.label == "arithmetic.(op _ + _)")
+            .unwrap();
+        let inserted = format!(
+            "{}{}{}",
+            &line[..completion.replace.start],
+            selected.label,
+            &line[completion.replace.end..]
+        );
+        let command = parse_command(&inserted).unwrap();
+        assert_eq!(
+            strip_ansi(&repl.run_command(command).output).trim(),
+            "pub op _ + _ { impl choose }"
+        );
+        repl.run_command(Command::Reset);
+        assert!(
+            !repl
+                .complete_core(line, line.len())
+                .candidates
+                .iter()
+                .any(|item| item.label == selected.label)
+        );
     }
 
     #[test]
@@ -394,6 +535,61 @@ mod tests {
                 .iter()
                 .any(|item| item.label == "packet!")
         );
+    }
+
+    #[test]
+    fn type_only_values_preserve_browser_stages_and_binder_edits() {
+        let mut repl = type_only_values_repl();
+        let loaded = repl.run_command(Command::Load("app".to_owned()));
+        assert!(strip_ansi(&loaded.output).contains("loaded app"));
+        for (input, expected) in [
+            (":type mark", "mark : [A] ."),
+            (":type .[B] { () }", ".[B] { () } : [B] ."),
+            (":normalize mark(.)", "()"),
+            (":normalize .[B] { () }(.)", "()"),
+            (":type delayed(.)", "delayed(.) : . -> ."),
+            (":normalize delayed(., ())", "()"),
+        ] {
+            let outcome = repl.run_command(parse_command(input).unwrap());
+            assert!(outcome.keep_running, "{input}: {outcome:?}");
+            assert_eq!(strip_ansi(&outcome.output).trim(), expected, "{input}");
+        }
+        for input in [":normalize mark", ":normalize delayed(.)"] {
+            let output = strip_ansi(&repl.run_command(parse_command(input).unwrap()).output);
+            let residual = output.trim();
+            assert!(
+                residual.starts_with("<closure ") && residual.ends_with('>'),
+                "{input}: {residual}"
+            );
+        }
+        for input in [":normalize .[", ":normalize .[Sco"] {
+            let result = repl.complete_core(input, input.len());
+            assert!(result.candidates.is_empty(), "{input}: {result:?}");
+        }
+        for (binder, prefix) in [("Scoped", "Sco"), ("Other", "Ot")] {
+            let input = format!(":normalize .[{binder}] {{ .(value: {prefix}");
+            let result = repl.complete_core(&input, input.len());
+            assert_eq!(result.replace, input.len() - prefix.len()..input.len());
+            assert_eq!(result.candidates.len(), 1, "{input}: {result:?}");
+            let selected = &result.candidates[0];
+            assert_eq!(selected.label, binder);
+            assert_eq!(selected.kind.tag(), "type-param");
+            let outside = format!(":normalize .(value: {prefix}");
+            assert!(
+                repl.complete_core(&outside, outside.len())
+                    .candidates
+                    .is_empty(),
+                "{binder}: binding leaked outside its scope"
+            );
+            let inserted = format!(
+                "{}{}{}) {{ value }} }}(., ())",
+                &input[..result.replace.start],
+                selected.label,
+                &input[result.replace.end..]
+            );
+            let outcome = repl.run_command(parse_command(&inserted).unwrap());
+            assert_eq!(strip_ansi(&outcome.output).trim(), "()", "{inserted}");
+        }
     }
 
     #[test]

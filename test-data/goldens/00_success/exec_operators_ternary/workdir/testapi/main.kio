@@ -11,4 +11,4 @@ fn cond(p: I32, t: I32, e: I32) -> I32 { add_i32(p, add_i32(t, e)) }
 // `cond(a, b, cond(c, d, e))`.
 op _ ? _ : __ { impl cond }
 
-pub fn main() -> . { let n = 1 ? 2 : 3 ? 4 : 5; print(i32_to_string(n)) }
+pub fn main() { let n = 1 ? 2 : 3 ? 4 : 5; print(i32_to_string(n)) }

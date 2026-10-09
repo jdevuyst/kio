@@ -101,7 +101,7 @@ A `<name>` argument is resolved through the **current scope**: the items the cur
 | `:reset` | Drop every loaded module |
 | `:quit` | Leave the REPL (Ctrl-D also works) |
 
-`:signature`, `:source`, and `:t` are the **named-item query trio** — three fixed views of one named item: its declaration header, its full source, and the type of the value it binds. Kiodoc spells the same three as the `@signature` / `@source` / `@type` directives; the REPL and Kiodoc share one renderer per view, so a `:signature` query and the matching `@signature` directive produce identical output.
+`:signature`, `:source`, and `:t` are the **named-item query trio** — three fixed views of one named item: its declaration header, its full source, and the type of the value it binds. Kiodoc spells the same three as the `@signature` / `@source` / `@type` directives. They share the rendering of a selected declaration; Kiodoc's [directive arguments](../../specs/kiodoc.md#code-embedding-directives) retain their own lookup syntax.
 
 `:which`, `:refs`, and `:scope` are the navigation commands. `:which example_fn1` reports the fully-qualified `my_package/examples.example_fn1` (private and public declarations both count); `:refs example_fn1` lists every call site, type-position use, and `import`-clause mention of `example_fn1`, each as `module-path:line:col  in <kind> <name>` with the enclosing top-level item's spelling; `:scope` lists everything in the current module's scope under five sections (declared items, imported names by source, operator bindings, module aliases, intrinsics state).
 
@@ -120,11 +120,52 @@ Most commands have a short and a long spelling. Both are first-class — use whi
 | `:ls` | `:list` | `:mods` | `:modules` |
 | `:refs` | `:references` | `:pkgs` | `:packages` |
 
+## Selecting a declaration
+
+`:signature` (`:sig`), `:source` (`:src`), `:doc`, `:which`, and `:refs`
+accept one selector written as it would appear inside a selective import:
+an ordinary name, a braced label, or a complete `op` / `varop` grammar.
+For an operator, include its slots and the `op` or `varop` keyword; a symbol
+such as `+` alone does not identify its declaration.
+
+```text
+:sig add
+:sig math/arith.add
+:sig {field}
+:sig op _ + _
+:sig math/arith.(op _ + _)
+:sig collections.(varop [* *])
+:sig math/arith.(op _ (=) _)
+```
+
+A short selector uses the current module's declarations and selective imports.
+A module path followed by a dot selects the provider directly, even when it
+is not current. For a qualified operator, wrap the entire tagged selector in
+parentheses: `math/arith.(op _ + _)`. These outer parentheses are required;
+ordinary names keep `math/arith.add`, without parentheses. Parentheses inside
+the operator pattern keep their import meaning: `(=)` quotes the equals token,
+and `(_)` or `(__)` marks a lenient slot.
+
+An explicit module alias works too. If the current module imports `math/arith`
+as `arithmetic`, use `:sig arithmetic.(op _ + _)`. Selectors name declarations;
+they do not rename imports or accept a whole `import` statement or a list.
+This is inspector syntax, not new Kio expression syntax: `:type`, `:pure`,
+`:normalize`, and expression input keep their existing rules.
+
+`:which op _ + _` searches every loaded module and lists each provider if
+several declare that grammar. Qualify the selector to choose one. For an
+operator, `:refs` follows its selected provider and grammar across loaded
+modules, including import and use sites; another provider's identically
+spelled operator does not count.
+A label selector such as `{field}` remains distinct from a function `field`.
+`:help` includes a qualified-operator example, and Tab inserts the complete
+selector with its required parentheses.
+
 ## Expression queries
 
 A line that doesn't start with `:` is a bare query. The REPL looks at what the line is and dispatches it the same way the matching meta-command would:
 
-- A **name** — a single identifier, a module-qualified path, an operator symbol — routes to `:doc`: it prints the name's doc-comment and signature (or, for a loaded module path, the module summary).
+- A **name** — a single identifier or a module-qualified path — routes to `:doc`: it prints the name's doc-comment and signature (or, for a loaded module path, the module summary). Use an explicit declaration command with a complete selector to inspect an operator.
 - Any **other expression** — a literal, an application, an operator expression — prints its type first, then what the expression reduces to: the `:type` and `:normalize` views together. Expressions that call host functions usually can't reduce all the way, so the type line is the dependable summary even when the reduced form stays partial.
 
 Either way, a dim footer lists the other commands that fit the same input — each under its full spelling, in the order `:help` lists them — so you can see your options. Input that is neither a name nor a Kio expression prints one line pointing you at `:help`.
@@ -165,7 +206,7 @@ kio> :normalize example_fn1(3, 4)
 mul(3(Int), 4(Int))
 ```
 
-An expression that does not parse, or does not type-check, reports the error and leaves the session unchanged. Expression queries resolve names through the current scope, so load a module first; with nothing loaded, queries with short names have nothing to resolve against.
+An expression that does not parse, or does not type-check, reports the error and leaves the session unchanged. Invalid syntax keeps the “not a name or a Kio expression” guidance and adds the parser's explanation, with a marker pointing into the expression you submitted. The `<repl>` line and column refer to that expression, without the command prefix. Expression queries resolve names through the current scope, so load a module first; with nothing loaded, queries with short names have nothing to resolve against.
 
 `:t` and `:pure` accept both categories described above. `:normalize` accepts only an expression; `:load`, `:unload`, `:ls`, `:signature`, `:source`, `:doc`, `:which`, and `:refs` accept a name or fully-qualified item path. A slash-qualified item path is not a Kio expression: source code must import the item selectively or import its module under an alias and use `alias.item`. The REPL can still answer `:pure my_package/examples.example_fn1` without an import because that input uses `:pure`'s separate FQN/name branch. When a single-category command fails and the argument looks like the *other* category — a slash-qualified FQN handed to `:normalize`, or an expression like `1 + 2` handed to `:signature` — the error adds a one-line nudge toward the command that fits. The nudge is only a suggestion: a command that succeeds is never second-guessed, and the REPL never quietly switches commands on you.
 
@@ -212,6 +253,8 @@ kio> :lo<Tab>
 kio> :load
 kio> :load my_package/<Tab>
 my_package/app   my_package/examples   my_package/util
+kio> :sig math/arith.(op _ +<Tab>
+kio> :sig math/arith.(op _ + _)
 ```
 
 ## Auto-reload

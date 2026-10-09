@@ -2,4 +2,4 @@ module main;
 
 import elab(inspect_args);
 
-fn witness() -> . { let _inspected = inspect_args!(()); () }
+fn witness() { let _inspected = inspect_args!(()); () }

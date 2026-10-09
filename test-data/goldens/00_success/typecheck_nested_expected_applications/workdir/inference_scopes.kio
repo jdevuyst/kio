@@ -4,9 +4,9 @@ host type I32 role(i32);
 
 fn choose[A](left: A, _right: A) -> A { left }
 
-fn take[K][V](_key: K, _pair: K & V) -> . { () }
+fn take[K][V](_key: K, _pair: K & V) { () }
 
-fn composite_outer_slot() -> . { take(0, choose((1, 1), (2, 2))) }
+fn composite_outer_slot() { take(0, choose((1, 1), (2, 2))) }
 
 fn apply[A][B](value: A, f: A -> B) -> B { f(value) }
 

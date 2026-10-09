@@ -5,13 +5,13 @@ import testapi(F64, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 
-fn print_value(label: String, value: F64) -> . {
+fn print_value(label: String, value: F64) {
   io.print(label);
   io.print(fmt.f64_to_string(value));
   io.print("\n")
 }
 
-pub fn print_report() -> . {
+pub fn print_report() {
   io.print("float_weather_index\n");
   print_value("morning_raw=", daily.morning_raw());
   print_value("midday_raw=", daily.midday_raw());

@@ -4,7 +4,7 @@ newtype Wrap : . { pub constructor mk_wrap; pub projector un_wrap }
 
 fn make() -> Wrap { Wrap.mk_wrap(()) }
 
-fn open(w: Wrap) -> . { Wrap.un_wrap(w) }
+fn open(w: Wrap) { Wrap.un_wrap(w) }
 
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 

@@ -58,4 +58,4 @@ fn derived_again() -> Render(Pair(Cell(String), Pair(Cell(String), Cell(String))
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

@@ -100,7 +100,7 @@ pub rec(loop) fn insert(e: Event, es: lst.List(Event)) -> lst.List(Event) {
             lst.cons(head, rec(cont) insert(e, rest))
           }
         }
-      , .(_empty: .) { lst.cons(e, lst.nil(Event, ())) }
+      , .(_empty: .) { lst.cons(e, lst.nil(Event)) }
       )
   }
 }
@@ -108,7 +108,7 @@ pub rec(loop) fn insert(e: Event, es: lst.List(Event)) -> lst.List(Event) {
 rec(loop) {
   /// Both edges of every building, insertion-sorted into one sweep order.
   pub fn schedule(bs: lst.List(city.Building)) -> lst.List(Event) {
-    rec collect(bs, lst.nil(Event, ()))
+    rec collect(bs, lst.nil(Event))
   };
   fn collect(bs: lst.List(city.Building), acc: lst.List(Event)) -> lst.List(Event) {
     match! bs.>lst.List.un_list {

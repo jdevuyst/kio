@@ -20,7 +20,7 @@ fn handle(p: Foo | I32) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   // Foo branch: should hit the first clause.
   print(handle(widen_sum!(Foo.mk_foo(42))));
   // I32 branch: first clause doesn't fit, so the polymorphic clause

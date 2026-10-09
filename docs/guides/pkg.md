@@ -29,7 +29,7 @@ There are no `env`, `export`, or per-root adaptation blocks: the host
 boundary is computed from the modules the `bridge` block selects, not
 enumerated in the package file.
 
-```kio {variant=package}
+```kio {file}
 // logger.pkg.kio
 package logger;
 
@@ -44,7 +44,7 @@ bridge {
 A module declares what it needs from the host with `host type` and `host fn`
 declarations, and what it offers with ordinary `pub` items:
 
-```kio {variant=module}
+```kio {file}
 // logger.kio
 module logger;
 
@@ -53,23 +53,36 @@ host type String role(str);
 host fn print(s: String) -> .;
 ```
 
-```kio {ignore}
+```kio {file}
 // logger/main.kio
 module logger/main;
 
 import logger(String, print);
 
-pub fn log_impl(s: String) -> . { print(s) }
+pub fn log_impl(s: String) { print(s) }
 ```
+
+<!--kio {harness=logger_consumer file placeholder="__INSERT_CODE_HERE__"}
+module logger/check;
+
+import logger(String);
+import logger/main(log_impl);
+
+__INSERT_CODE_HERE__
+-->
+
+<!--kio {@logger_consumer}
+fn check_log(s: String) { log_impl(s) }
+-->
 
 `host type` / `host fn` are signature-only declarations — no body. They are
 always public and obey ordinary lexical scoping; another module reaches them
 through a plain `import`, like any other item. A `host type` may carry a
-`role(...)` annotation (`role(str)`, `role(i32)`, `role(bool)`, …) that ties
-the type to a host-supplied atomic value and lets literal tokens be typed
-against it. Multiple host types in one scope may carry the same role. A bare
-literal needs a unique admitted host identity when no surrounding type selects
-one; `if`/`else` and `__if_then_else__` likewise require exactly one in-scope
+`role(...)` annotation (`role(str)`, `role(i32)`, `role(bool)`, …) that records
+which literal shapes the declared type accepts. Multiple host types in one
+scope may carry the same role. A bare literal needs a unique admitted host
+identity when no surrounding type selects one; `if`/`else` and
+`__if_then_else__` likewise require exactly one in-scope
 `role(bool)` identity. Direct host types are selected when present; aliases are
 the fallback pool otherwise, with repeated paths to one declaration counted
 once. The pool uses unqualified lexical names: a qualified module import alone
@@ -661,6 +674,14 @@ bridge {
 
 For the full key list, see
 [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
+
+Give targets separate output directories, such as `out/js` and `out/rust` above.
+Building both into `out`, or placing one output inside another, is rejected
+before either directory changes. The same check covers packages built together
+and prevents an output from containing their known source or configuration
+inputs. Only selected targets are compared. Output directories are replaced
+on a build, including cache restores, so keep other files you want to retain
+outside them.
 
 ## See also
 

@@ -7,7 +7,7 @@ import testapi/io(print);
 
 fn keep[T](b: Box(T)) -> Box(T) { b }
 
-pub fn main() -> . {
+pub fn main() {
   let b = keep(box_make(42(I32)));
   print(i32_to_string(box_get(b)));
   print("\n"(String))

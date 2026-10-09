@@ -12,4 +12,4 @@ fn classify(value: String) -> String {
   }
 }
 
-pub fn main() -> . { print(classify("ignored")) }
+pub fn main() { print(classify("ignored")) }

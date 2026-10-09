@@ -127,7 +127,7 @@ fn run_loaded(image: Image) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   match! un_load_outcome(load_package(source())) {
     (
       , .(loaded: Lr_image) { print(run_loaded(Lr_image.get(loaded))) }

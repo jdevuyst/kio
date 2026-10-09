@@ -37,4 +37,4 @@ pub fn addr(n: I32) -> String {
 /// Wrap a name in backticks, the way the rejection lines quote a symbol.
 pub fn quoted(s: String) -> String { cat3("`", s, "`") }
 
-pub fn line(s: String) -> . { print(cat(s, "\n")) }
+pub fn line(s: String) { print(cat(s, "\n")) }

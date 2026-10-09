@@ -123,5 +123,5 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
 }
 
 pub fn evaluate(expr: ast.Expr, fuel: I32) -> Result {
-  run(evaluate_at(expr, env.empty()), lists.nil(), fuel)
+  run(evaluate_at(expr, env.empty()), lists.nil(_), fuel)
 }

@@ -40,4 +40,4 @@ fn use_list() -> String {
   head_or(mapped, "empty")
 }
 
-pub fn main() -> . { print(string_concat(use_list(), "\n")) }
+pub fn main() { print(string_concat(use_list(), "\n")) }

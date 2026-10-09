@@ -8,7 +8,7 @@ import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-fn show(label: String, source: String) -> . {
+fn show(label: String, source: String) {
   let result =
     match! un_load_outcome(load_package(source)) {
       (.(_image: Lr_image) { "loaded\n"(String) }, .(_diag: Lr_diag) { "rejected\n"(String) })
@@ -16,7 +16,7 @@ fn show(label: String, source: String) -> . {
   print(string_concat(label, result))
 }
 
-pub fn main() -> . {
+pub fn main() {
   show(
     , "canonical newtype: "(String)
     , "module a; pub newtype Box : . { pub constructor make; pub projector take "

@@ -31,7 +31,7 @@ fn bump_age(age: I32) -> I32 {
   }
 }
 
-fn min_set(table: Array(I32), index: I32, candidate: I32) -> . {
+fn min_set(table: Array(I32), index: I32, candidate: I32) {
   let current = array_get(table, index);
   if! leq_i32(candidate, current) {
     array_set(table, index, candidate)
@@ -40,7 +40,7 @@ fn min_set(table: Array(I32), index: I32, candidate: I32) -> . {
   }
 }
 
-fn process_cell(day: I32, age: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) -> . {
+fn process_cell(day: I32, age: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) {
   let current = array_get(table, table_index(day, age));
   if! reachable(current) {
     let next_day = add_i32(day, 1);
@@ -61,7 +61,7 @@ rec(loop) fn fill_ages(
   , table: Array(I32)
   , traffic: Array(I32)
   , service: Array(I32)
-  ) -> . {
+  ) {
   if! leq_i32(age, max_age()) {
     process_cell(day, age, table, traffic, service);
     rec fill_ages(add_i32(age, 1), day, table, traffic, service)

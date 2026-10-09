@@ -11,7 +11,7 @@ import testapi/types as t;
 // Sub-module access (`<alias>.<sub>.<fn>`) is rejected by
 // design — qualified imports bind one module's surface, not a
 // tree of sub-modules.
-pub fn main() -> . {
+pub fn main() {
   let temp = t.Celsius.mk_celsius(25(I32));
   print(int_to_string(t.Celsius.to_int(temp)))
 }

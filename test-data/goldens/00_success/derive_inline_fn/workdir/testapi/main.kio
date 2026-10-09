@@ -22,4 +22,4 @@ fn use_derived() -> String {
   Box.un_box(stepped)
 }
 
-pub fn main() -> . { print(use_derived()) }
+pub fn main() { print(use_derived()) }

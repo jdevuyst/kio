@@ -1,0 +1,13 @@
+module testapi/api;
+
+import testapi as t;
+
+host fn round_host(f: t.String -> t.String -> t.String) -> t.String -> t.String -> t.String;
+
+pub fn via_host(f: t.String -> t.String -> t.String) -> t.String -> t.String -> t.String {
+  let kept = round_host(f);
+  let _ = round_host(f);
+  kept
+}
+
+pub fn round_export(f: t.String -> t.String -> t.String) -> t.String -> t.String -> t.String { f }

@@ -395,7 +395,6 @@
     List<Object> groups = listOrEmpty(sig.get("groups"));
     List<SignatureStage> out = new ArrayList<>();
     int offset = 0;
-    boolean hasValueGroup = false;
     if (!groups.isEmpty()) {
       for (Object groupObj : groups) {
         Tag grouped = tag(groupObj);
@@ -413,7 +412,6 @@
             names.add(asString(asMap(tag(paramObj).data()).get("name")));
           }
           out.add(new SignatureStage(false, names));
-          hasValueGroup = true;
         }
       }
     } else {
@@ -423,7 +421,6 @@
         if (param.tag().equals("Type")) {
           if (!names.isEmpty()) {
             out.add(new SignatureStage(false, names));
-            hasValueGroup = true;
             names = new ArrayList<>();
           }
           out.add(new SignatureStage(true, List.of()));
@@ -433,13 +430,21 @@
       }
       if (!names.isEmpty()) {
         out.add(new SignatureStage(false, names));
-        hasValueGroup = true;
       }
     }
-    if (!hasValueGroup) {
+    if (out.isEmpty()) {
       out.add(new SignatureStage(false, List.of()));
     }
     return out;
+  }
+
+  private static boolean signatureHasValueGroup(Map<String, Object> sig) {
+    for (Object group : asList(sig.get("groups"))) {
+      if (tag(group).tag().equals("Value")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static Object applyTypeStages(Object fn, List<Object> typeArgs) {
@@ -846,6 +851,12 @@
         case "LowModuleCall": {
           Object fn = fn(asString(data.get("module_path")), asString(data.get("mangled")));
           fn = applyTypeStages(fn, asList(data.get("type_args")));
+          if (!asList(data.get("type_args")).isEmpty() && !signatureHasValueGroup(asMap(data.get("sig")))) {
+            if (!asList(data.get("args")).isEmpty()) {
+              throw new IllegalStateException("a routed type-only head has no value arguments");
+            }
+            return fn;
+          }
           List<Object> args = new ArrayList<>();
           for (Object arg : asList(data.get("args"))) {
             args.add(eval(moduleKey, arg, env));
@@ -856,6 +867,12 @@
           String member = asString(data.get("mangled"));
           Object fn = fn(asString(data.get("module_path")), member);
           fn = applyTypeStages(fn, asList(data.get("type_args")));
+          if (!asList(data.get("type_args")).isEmpty() && !signatureHasValueGroup(asMap(data.get("sig")))) {
+            if (!asList(data.get("args")).isEmpty()) {
+              throw new IllegalStateException("a routed type-only head has no value arguments");
+            }
+            return fn;
+          }
           List<Object> args = new ArrayList<>();
           for (Object arg : asList(data.get("args"))) {
             args.add(eval(moduleKey, arg, env));

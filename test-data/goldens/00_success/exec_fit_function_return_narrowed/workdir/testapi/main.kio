@@ -16,4 +16,4 @@ fn dual(s: String) -> String | String { widen_sum!(s) }
 // `String`. The wrapper applies the source function then collapses.
 fn collapse(f: String -> String | String) -> String -> String { fit!(f) }
 
-pub fn main() -> . { let narrowed = collapse(dual); print(narrowed("fit .-ret narrowed\n")) }
+pub fn main() { let narrowed = collapse(dual); print(narrowed("fit .-ret narrowed\n")) }

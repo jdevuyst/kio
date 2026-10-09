@@ -9,11 +9,9 @@ import testapi/io(print);
 import testapi/text(string_concat);
 import unifier as solver;
 
-fn line(prefix: String, value: String) -> . {
-  print(string_concat(prefix, string_concat(value, "\n")))
-}
+fn line(prefix: String, value: String) { print(value.>string_concat("\n").>>string_concat(prefix)) }
 
-pub fn run(name: String, left: term.Term, right: term.Term) -> . {
+pub fn run(name: String, left: term.Term, right: term.Term) {
   line("case: ", name);
   line("  left: ", term.render(left));
   line("  right: ", term.render(right));

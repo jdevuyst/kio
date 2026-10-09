@@ -3,4 +3,4 @@ module testapi/main;
 import provider(choose);
 import testapi/io as io;
 
-pub fn main() -> . { choose!(); io.print("checked\n") }
+pub fn main() { choose!(); io.print("checked\n") }

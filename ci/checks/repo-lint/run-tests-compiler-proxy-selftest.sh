@@ -206,7 +206,7 @@ esac
 : >"$KIO_TEST_NATIVE_MARKERS/${0##*/}"
 EOF
 
-for tool in javac swiftc ghc; do
+for tool in javac javadoc swiftc ghc haddock; do
   cp "$scratch/native-tool" "$scratch/bin with space/$tool"
 done
 
@@ -249,8 +249,10 @@ set -eu
   go tool -overlay fixture.json compile fixture.go
   go tool -modfile fixture.mod compile fixture.go
   javac Fixture.java
+javadoc Fixture.java
 swiftc Fixture.swift
 ghc Fixture.hs
+haddock Fixture.hs
 EOF
 
 cat >"$scratch/hold" <<'EOF'
@@ -268,8 +270,10 @@ chmod +x \
   "$scratch/bin with space/rustup" \
   "$scratch/bin with space/go" \
   "$scratch/bin with space/javac" \
+  "$scratch/bin with space/javadoc" \
   "$scratch/bin with space/swiftc" \
   "$scratch/bin with space/ghc" \
+  "$scratch/bin with space/haddock" \
   "$scratch/cases/bucket/native/run.sh" \
   "$scratch/hold"
 
@@ -401,7 +405,7 @@ test -e "$scratch/query-inherited"
 for marker in kio-tokens-admitted cargo-admitted rustc-admitted \
   go-run-admitted go-unknown-admitted \
   go-unknown-subcommand-admitted go-unknown-tool-admitted go-list-admitted \
-  go-tool-admitted go-dist-admitted javac swiftc ghc; do
+  go-tool-admitted go-dist-admitted javac javadoc swiftc ghc haddock; do
   [ -e "$scratch/$marker" ] || {
     printf 'run-tests-compiler-proxy-selftest: missing %s marker\n' "$marker" >&2
     exit 1

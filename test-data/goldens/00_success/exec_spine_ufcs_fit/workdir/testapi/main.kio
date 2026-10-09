@@ -12,7 +12,7 @@ import testapi/io(print);
 // the target sum (widen_sum!).
 fn coerce(p: String & I32) -> String | I32 { p.>fit! }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = coerce(("fit via UFCS\n", 0));
   let out =
     match! widened {

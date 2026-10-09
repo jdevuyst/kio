@@ -36,7 +36,7 @@ fn length_step[A](state: I32 & List(A)) -> (I32 & List(A)) | I32 {
 
 fn length[A](xs: List(A)) -> I32 { loop(.(state: I32 & List(A)) { length_step(state) }, (0, xs)) }
 
-pub fn main() -> . {
+pub fn main() {
   let xs = push(10, push(20, push(30, push(40, push(50, nil(I32, ()))))));
   print(int_to_string(length(xs)));
   print("\n")

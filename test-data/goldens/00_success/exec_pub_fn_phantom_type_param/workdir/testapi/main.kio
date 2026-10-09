@@ -10,4 +10,4 @@ import testapi/io(print);
 // rustc cannot infer the type-param and fails with E0283.
 pub fn ignore_type[A](n: Int) -> Int { n }
 
-pub fn main() -> . { print(int_to_string(ignore_type(String, 42(Int)))) }
+pub fn main() { print(int_to_string(ignore_type(String, 42(Int)))) }

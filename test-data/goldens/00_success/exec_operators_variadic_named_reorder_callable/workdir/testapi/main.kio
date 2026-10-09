@@ -18,4 +18,4 @@ op _ => _ { impl entry }
 
 varop [% %] { foldr cons_entry nil }
 
-pub fn main() -> . { print([% "a" => "1", "b" => "2" %]); print("\n") }
+pub fn main() { print([% "a" => "1", "b" => "2" %]); print("\n") }

@@ -37,4 +37,4 @@ fn use_chain() -> String {
   Box.un_box(String, chained)
 }
 
-pub fn main() -> . { print(use_chain()) }
+pub fn main() { print(use_chain()) }

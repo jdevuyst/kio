@@ -1,5 +1,697 @@
 [
   {
+    "name": "type_only_dot_star_binder_multiline",
+    "source": "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let value = x; value } } }\nfn after() { () }\n",
+    "targets": [
+      {
+        "start": 46,
+        "end": 47,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 79,
+        "end": 82,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "let_statement"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 106,
+        "end": 108,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_dot_star_binder_complete",
+    "source": "module m;\nfn run() { . // dot\n [*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }\nfn after() { () }\n",
+    "targets": [
+      {
+        "start": 34,
+        "end": 35,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 75,
+        "end": 77,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_incomplete_group_eof",
+    "source": "module m;\nfn run() { .[A",
+    "partial": true,
+    "targets": [
+      {
+        "start": 21,
+        "end": 22,
+        "text": ".",
+        "kind": "punctuation.separator",
+        "owners": [
+          "ERROR"
+        ],
+        "textmate": [
+          "punctuation.separator.kio"
+        ]
+      },
+      {
+        "start": 22,
+        "end": 23,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "ERROR"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_incomplete_return_eof",
+    "source": "module m;\nfn run() { .[A] ->",
+    "partial": true,
+    "targets": [
+      {
+        "start": 24,
+        "end": 25,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "ERROR"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 26,
+        "end": 28,
+        "text": "->",
+        "kind": "operator.builtin",
+        "owners": [
+          "ERROR"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_invalid_dot_before_varop",
+    "source": "module m;\nfn run() { . // dot\n +.[ value ].+ }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 31,
+        "end": 34,
+        "text": "+.[",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 41,
+        "end": 44,
+        "text": "].+",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_named",
+    "source": "module m;\npure fn value[A][B] -> . { () }\n",
+    "targets": [
+      {
+        "start": 15,
+        "end": 17,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 18,
+        "end": 23,
+        "text": "value",
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "start": 24,
+        "end": 25,
+        "text": "A",
+        "kind": "variable.parameter",
+        "owners": [
+          "type_param_group",
+          "fn_signature"
+        ]
+      },
+      {
+        "start": 26,
+        "end": 27,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_signature"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_lambda",
+    "source": "module m;\nfn run() { .[A][B] -> . { let value = (); value } }\n",
+    "targets": [
+      {
+        "start": 21,
+        "end": 22,
+        "text": ".",
+        "kind": "punctuation.separator",
+        "owners": [
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.separator.kio"
+        ]
+      },
+      {
+        "start": 23,
+        "end": 24,
+        "text": "A",
+        "kind": "variable.parameter",
+        "owners": [
+          "fn_signature",
+          "fn_lambda_expr"
+        ]
+      },
+      {
+        "start": 25,
+        "end": 26,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "fn_signature",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 36,
+        "end": 39,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "let_statement",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_lambda_dot_trivia",
+    "source": "module m;\nfn run() { . // dot\n [A] // stages\n [B] { let value = (); value } }\n",
+    "targets": [
+      {
+        "start": 33,
+        "end": 34,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 46,
+        "end": 47,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 47,
+        "end": 48,
+        "text": "B",
+        "kind": "variable.parameter",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ]
+      },
+      {
+        "start": 48,
+        "end": 49,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 52,
+        "end": 55,
+        "text": "let",
+        "kind": "keyword.declaration",
+        "owners": [
+          "let_statement",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_lambda_dot_newline",
+    "source": "module m;\nfn run() { .\n\n [A][B] -> . { () } }\n",
+    "targets": [
+      {
+        "start": 25,
+        "end": 26,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 27,
+        "end": 28,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 29,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_explicit_unit",
+    "source": "module m;\nfn run() { .[A]() { () } }\n",
+    "targets": [
+      {
+        "start": 23,
+        "end": 24,
+        "text": "A",
+        "kind": "variable.parameter",
+        "owners": [
+          "type_param_group",
+          "fn_lambda_expr"
+        ]
+      },
+      {
+        "start": 25,
+        "end": 26,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "value_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_signature_export",
+    "source": "signature app v(1);\nv(1) { breaking { add { module api { fn value[A] -> .; } } } }\n",
+    "targets": [
+      {
+        "start": 57,
+        "end": 59,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head",
+          "variant_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 66,
+        "end": 67,
+        "text": "A",
+        "kind": "variable.parameter",
+        "owners": [
+          "type_param_group",
+          "fn_decl_head",
+          "variant_block"
+        ]
+      },
+      {
+        "start": 67,
+        "end": 68,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "type_param_group",
+          "fn_decl_head",
+          "variant_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_whole_varops",
+    "source": "module m;\nfn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }\n",
+    "targets": [
+      {
+        "start": 21,
+        "end": 24,
+        "text": "..[",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 38,
+        "end": 41,
+        "text": "+.[",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 54,
+        "end": 57,
+        "text": "].+",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 58,
+        "end": 61,
+        "text": "]..",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 27,
+        "end": 28,
+        "text": "A",
+        "kind": "variable.parameter",
+        "owners": [
+          "fn_lambda_expr",
+          "variadic_element"
+        ]
+      },
+      {
+        "start": 44,
+        "end": 45,
+        "text": "B",
+        "kind": "variable.parameter",
+        "owners": [
+          "fn_lambda_expr",
+          "variadic_element"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_incomplete_group",
+    "source": "module m;\nfn broken() { . // dot\n[A }\nfn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 38,
+        "end": 40,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 41,
+        "end": 46,
+        "text": "after",
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_incomplete_return",
+    "source": "module m;\nfn broken() { . // dot\n[A] -> }\nfn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 42,
+        "end": 44,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 45,
+        "end": 50,
+        "text": "after",
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_incomplete_body",
+    "source": "module m;\nfn broken() { . // dot\n[A] {\nfn after() { () }\n",
+    "partial": true,
+    "targets": [
+      {
+        "start": 39,
+        "end": 41,
+        "text": "fn",
+        "kind": "keyword.declaration",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 42,
+        "end": 47,
+        "text": "after",
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head",
+          "function_definition"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_dot_member_control",
+    "source": "module m;\nfn run() { helper. // member\n fn(()) }\n",
+    "targets": [
+      {
+        "start": 40,
+        "end": 42,
+        "text": "fn",
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_only_dot_value_control",
+    "source": "module m;\nfn run() { . // dot\n (value: .) { value } }\n",
+    "targets": [
+      {
+        "start": 31,
+        "end": 32,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "value_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 37,
+        "text": "value",
+        "kind": "variable.parameter",
+        "owners": [
+          "value_param_group",
+          "fn_lambda_expr"
+        ]
+      },
+      {
+        "start": 40,
+        "end": 41,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "value_param_group",
+          "fn_lambda_expr"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
     "name": "git_manifest_source_fields",
     "source": "dependency helper; source { path \"packages/helper/helper.pkg.kio\"; ref \"main\"; git \"repo\"; }",
     "partial": false,

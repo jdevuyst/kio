@@ -11,4 +11,4 @@ fn direct() -> String { let kept = packet_identity!(String & String, ("di", "rec
 
 fn ufcs() -> String { let kept = ("uf", "cs\n").>packet_identity!(String & String); kept.>join }
 
-pub fn main() -> . { print(direct()); print(ufcs()) }
+pub fn main() { print(direct()); print(ufcs()) }

@@ -61,7 +61,7 @@ rec(loop) {
   fn seed(n: I32) -> Bool { let value = rec(cont) tail(n); value }
 }
 
-pub fn exercise(depth: I32, tail_depth: I32) -> . {
+pub fn exercise(depth: I32, tail_depth: I32) {
   if! deep(depth) {
     io.print("ordinary unwind\n")
   } else {
@@ -80,4 +80,4 @@ pub fn exercise(depth: I32, tail_depth: I32) -> . {
   }
 }
 
-pub fn main() -> . { exercise(100000, 1000000) }
+pub fn main() { exercise(100000, 1000000) }

@@ -13,17 +13,17 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-rec(loop) fn events(messages: lists.List(String)) -> . {
+rec(loop) fn events(messages: lists.List(String)) {
   match! lists.uncons(messages) {
     .(message: String, tail: lists.List(String)) {
-      io.print(text.string_concat("  ", text.string_concat(message, "\n")));
+      io.print(message.>text.string_concat("\n").>>text.string_concat("  "));
       rec events(tail)
     };
     .() { () }
   }
 }
 
-pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) -> . {
+pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) {
   let hazard =
     if! world.?{model.hazard} {
       "hazard"
@@ -61,7 +61,7 @@ pub fn tick(number: I32, world: model.World, result: model.Status, state: memory
   events(traversal.reverse(state.?{memory.events}))
 }
 
-pub fn summary(ticks: I32, state: memory.State) -> . {
+pub fn summary(ticks: I32, state: memory.State) {
   io.print(text.string_concat(
     , "summary ticks="
     , text.string_concat(

@@ -21,7 +21,7 @@ equiv callback_header_erases[A](value: A) {
 
 fn advance(_state: I32) -> I32 | String { widen_sum!("ok\n") }
 
-pub fn main() -> . {
+pub fn main() {
   io.print(keep!(drive(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }, 0)));
   io.print(keep!(identity(drive(
     , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }

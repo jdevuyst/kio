@@ -2,4 +2,4 @@ module pure_calls_host_fn/main;
 
 import pure_calls_host_fn(tick);
 
-pure fn bad() -> . { tick() }
+pure fn bad() { tick() }

@@ -76,6 +76,22 @@ through `sys.path` order, and a host that loads the artifact by file path
 (§ Loading protocol) bypasses the module namespace entirely, so a stdlib-name
 collision is resolvable rather than fatal.
 
+### Boundary documentation
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface) renders
+plain-text docstrings on typed-stub host and export methods, parameterized host
+type classes, and public newtype classes. Nullary host types represented only by
+generic type parameters have no declaration docstring slot.
+Names that are Python keywords are documented on their namespace's existing
+dynamic `__getattr__` accessor rather than emitted as invalid method names.
+
+Each documented runtime export callable exposes the same plain-text body as
+`__doc__`, usable by `help()` and `pydoc`. It is attached to fresh package-owned
+boundary callables, not to host-supplied callables or internal closures. Stub
+docstrings are their declaration body's first string expression. Quotes,
+backslashes, newlines, and control characters are escaped as Python string
+content rather than interpreted as source.
+
 ## Loading protocol
 
 A host that wants to call into the package performs three steps in order.
@@ -498,7 +514,7 @@ module hello/main;
 
 import hello(String, print);
 
-pub fn main() -> . { print("hello\n"(String)) }
+pub fn main() { print("hello\n"(String)) }
 ```
 
 A Python host loads and calls it as:

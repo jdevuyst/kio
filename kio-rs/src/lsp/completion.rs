@@ -52,9 +52,12 @@ use crate::scope_walk::{
 
 mod block_calls;
 mod call_types;
+mod doc_comments;
 pub(crate) use block_calls::handle_signature_request as handle_block_signature_request;
 #[cfg(test)]
 mod context_tests;
+#[cfg(test)]
+mod provider_tests;
 
 /// Handle completion against explicitly supplied current source and analysis.
 #[cfg(test)]
@@ -163,6 +166,42 @@ thread_local! {
 
 impl<'a> CompletionSources<'a> {
     fn provider(&self, name: &str) -> Option<(&'a str, Module<Surface>)> {
+        let path = self.provider_path(name)?;
+        let source = self.current_provider_source(path, name)?;
+        Some((source, Self::parse_provider(path, name, source)?))
+    }
+
+    fn provider_syntax(&self, name: &str) -> Option<Module<Surface>> {
+        let path = self.provider_path(name)?;
+        if let Some(state) = self.state {
+            let mut overlays = state
+                .open_documents()
+                .filter(|uri| crate::lsp::util::uri_to_canonical(uri).as_deref() == Some(path));
+            if let Some(uri) = overlays.next() {
+                // Two editor buffers for one file have no authoritative ordering.
+                if overlays.next().is_some() {
+                    return None;
+                }
+                let source = state.document(uri)?.text();
+                let module = Self::parse_provider(path, name, source)?;
+                let crate::lsp::util::FileUriPath::Path(original_path) =
+                    crate::lsp::util::file_uri_path(uri)
+                else {
+                    return None;
+                };
+                crate::package_collection::ModuleFileParserContext::from_module(
+                    &original_path,
+                    &module,
+                )
+                .ok()?;
+                return Some(module);
+            }
+        }
+        let source = self.current_provider_source(path, name)?;
+        Self::parse_provider(path, name, source)
+    }
+
+    fn provider_path(&self, name: &str) -> Option<&'a std::path::Path> {
         #[cfg(test)]
         COMPLETION_PROVIDER_READS.with(|reads| reads.borrow_mut().push(name.to_owned()));
         let catalog = self.catalog?;
@@ -174,14 +213,17 @@ impl<'a> CompletionSources<'a> {
         if paths.next().is_some() {
             return None;
         }
-        let source = self.current_provider_source(path, name)?;
+        Some(path)
+    }
+
+    fn parse_provider(path: &std::path::Path, name: &str, source: &str) -> Option<Module<Surface>> {
         let parsed = crate::pass::parser::parse_module_file_lazy(source).ok()?;
         if parsed.module.path.segments.join("/") != name {
             return None;
         }
         crate::package_collection::ModuleFileParserContext::from_module(path, &parsed.module)
             .ok()?;
-        Some((source, parsed.module))
+        Some(parsed.module)
     }
 
     fn current_provider_source(&self, path: &std::path::Path, name: &str) -> Option<&'a str> {
@@ -251,6 +293,18 @@ fn complete_source(
         KioFileKind::Module
     };
     let mut probe = probe_tooling(source, Some(kind), Some(byte_offset), None);
+    if let Some(suppression) = &probe.facts.suppression
+        && source[suppression.span.start as usize..].starts_with("///")
+    {
+        return Some(doc_comments::complete(
+            uri,
+            source,
+            byte_offset,
+            kind,
+            &probe,
+            &sources,
+        ));
+    }
     let argument_head = probe
         .facts
         .cursor

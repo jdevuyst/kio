@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(scope);
 import testapi/io as io;
 
-pub fn main() -> . {
+pub fn main() {
   scope! {
     io.print("thunk\n")
   }

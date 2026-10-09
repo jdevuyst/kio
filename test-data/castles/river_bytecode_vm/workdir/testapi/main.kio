@@ -3,4 +3,4 @@ module testapi/main;
 import river_bytecode_vm/report as report;
 import testapi/io(print);
 
-pub fn main() -> . { print(report.render()) }
+pub fn main() { print(report.render()) }

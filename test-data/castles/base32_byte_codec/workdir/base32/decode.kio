@@ -25,7 +25,7 @@ import testapi/iter(loop);
 pub labels Decoded = { ok: alphabet.Bytes } | { reject: I32 };
 
 rec(loop) {
-  pub fn decode(glyphs: alphabet.Glyphs) -> Decoded { rec walk(glyphs, 1, 0, 0, list.nil(I32, ())) };
+  pub fn decode(glyphs: alphabet.Glyphs) -> Decoded { rec walk(glyphs, 1, 0, 0, list.nil(I32)) };
   /// Read one glyph. `position` is the one-based index of the glyph under
   /// the cursor, so a refusal can say where it happened. Padding carries
   /// no bits and is stepped over.

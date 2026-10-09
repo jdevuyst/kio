@@ -1,8 +1,8 @@
 module pkg/main;
 
 /// Documentation belonging only to the function.
-fn value() -> . { () }
+fn value() { () }
 
-fn consumer(value: .) -> . { value }
+fn consumer(value: .) { value }
 
-fn later() -> . { () }
+fn later() { () }

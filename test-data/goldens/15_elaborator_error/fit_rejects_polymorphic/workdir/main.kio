@@ -11,4 +11,4 @@ fn foo(x: A) -> A { x }
 // `Type::Forall` on either source or target — coercing under a
 // binder needs instantiation machinery the spine engine doesn't
 // have. Same restriction the algebraic `ease!` carries.
-pub fn use_it() -> . { let _wrapped = fit!(foo, [A] A -> A); () }
+pub fn use_it() { let _wrapped = fit!(foo, [A] A -> A); () }

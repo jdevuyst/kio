@@ -199,7 +199,7 @@ Anonymous sum types cannot mention themselves. Recursion is grounded at a `newty
 ```kio {@module}
 rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A] -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
 
 fn head_or[A](xs: List(A), default: A) -> A {
   match! xs.>List.un_list {
@@ -208,6 +208,11 @@ fn head_or[A](xs: List(A), default: A) -> A {
   }
 }
 ```
+
+`nil(Int)` constructs an empty `List(Int)`; the type-only signature has no
+Unit argument. For a constructor that waits for an explicit Unit call, keep
+`()` in its signature as explained in
+[Type-only values](../tutorials/language.md#type-only-values).
 
 `rec labels` gives one label declaration an explicit atomic recursive scope.
 Its generated nominal heads are visible throughout the declaration, and a

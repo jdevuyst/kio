@@ -8,7 +8,7 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 
 // Heterogeneous branches construct their sum explicitly.
-pub fn main() -> . {
+pub fn main() {
   let v =
     if! .t {
       widen_sum!("string arm\n", String | Int)

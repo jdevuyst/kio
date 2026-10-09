@@ -30,7 +30,7 @@ fn cat(a: String, b: String) -> String { string_concat(a, b) }
 /// associative, so the grouping is invisible.
 op _ ++ __ { impl cat }
 
-fn line(text: String) -> . { print(text ++ "\n") }
+fn line(text: String) { print(text ++ "\n") }
 
 fn num(n: I32) -> String { int_to_string(n) }
 
@@ -46,14 +46,14 @@ fn num2(n: I32) -> String {
   }
 }
 
-pub fn print_header() -> . { line("skyline_silhouette v1") }
+pub fn print_header() { line("skyline_silhouette v1") }
 
 fn building_row(b: city.Building) -> String {
   let span = "[" ++ num2(city.left_of(b)) ++ "," ++ num2(city.right_of(b)) ++ ")";
   "  " ++ city.name_of(b) ++ "  " ++ span ++ "  h=" ++ num2(city.height_of(b))
 }
 
-rec(loop) fn each_building(bs: lst.List(city.Building)) -> . {
+rec(loop) fn each_building(bs: lst.List(city.Building)) {
   match! bs.>lst.List.un_list {
     (
       , .(b: city.Building, rest: lst.List(city.Building)) {
@@ -65,7 +65,7 @@ rec(loop) fn each_building(bs: lst.List(city.Building)) -> . {
   }
 }
 
-pub fn print_buildings(bs: lst.List(city.Building)) -> . {
+pub fn print_buildings(bs: lst.List(city.Building)) {
   line("");
   line("buildings (" ++ num(lst.length(bs)) ++ ")  span [left,right), height");
   each_building(bs)
@@ -76,7 +76,7 @@ fn event_row(e: events.Event) -> String {
   edge ++ "  " ++ events.owner_of(e) ++ "  h=" ++ num2(events.level_of(e))
 }
 
-rec(loop) fn each_event(es: lst.List(events.Event)) -> . {
+rec(loop) fn each_event(es: lst.List(events.Event)) {
   match! es.>lst.List.un_list {
     (
       , .(e: events.Event, rest: lst.List(events.Event)) {
@@ -88,7 +88,7 @@ rec(loop) fn each_event(es: lst.List(events.Event)) -> . {
   }
 }
 
-pub fn print_events(es: lst.List(events.Event)) -> . {
+pub fn print_events(es: lst.List(events.Event)) {
   line("");
   line("events (" ++ num(lst.length(es)) ++ ")  in sweep order");
   each_event(es)
@@ -128,7 +128,7 @@ fn step_row(s: sweep.Step) -> String {
   edge ++ peak ++ "  " ++ show_held(sweep.held_of(s))
 }
 
-rec(loop) fn each_step(steps: lst.List(sweep.Step)) -> . {
+rec(loop) fn each_step(steps: lst.List(sweep.Step)) {
   match! steps.>lst.List.un_list {
     (
       , .(s: sweep.Step, rest: lst.List(sweep.Step)) { line(step_row(s)); rec each_step(rest) }
@@ -137,7 +137,7 @@ rec(loop) fn each_step(steps: lst.List(sweep.Step)) -> . {
   }
 }
 
-pub fn print_sweep(steps: lst.List(sweep.Step)) -> . {
+pub fn print_sweep(steps: lst.List(sweep.Step)) {
   line("");
   line("sweep  position, edge, resulting height, key point?, active heights");
   each_step(steps)
@@ -164,7 +164,7 @@ rec(loop) fn each_point(ps: lst.List(sweep.Point), acc: String, first: Bool) -> 
   }
 }
 
-pub fn print_skyline(ps: lst.List(sweep.Point)) -> . {
+pub fn print_skyline(ps: lst.List(sweep.Point)) {
   line("");
   line("skyline (" ++ num(lst.length(ps)) ++ " key points)");
   line("  " ++ each_point(ps, "", .t))
@@ -183,7 +183,7 @@ rec(loop) fn each_column(grid: Array(I32), col: I32, acc: String) -> String {
 /// mistake the areas cannot see: a key point emitted twice at one position
 /// spans no width, so it costs no area, but it means the silhouette dipped and
 /// bounced back through an edge two buildings share.
-pub fn print_area(grid: Array(I32), swept: I32, painted: I32, same: Bool, forward: Bool) -> . {
+pub fn print_area(grid: Array(I32), swept: I32, painted: I32, same: Bool, forward: Bool) {
   line("");
   line("area");
   line("  columns (" ++ num(array_len(grid)) ++ "):" ++ each_column(grid, 0, ""));

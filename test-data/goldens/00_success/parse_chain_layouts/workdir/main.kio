@@ -30,4 +30,4 @@ type Inline2 = . & .;
 
 type Inline3 = . & .;
 
-fn use_them(p: Big_prod, q: Ugly_prod, r: Inline1) -> . { () }
+fn use_them(p: Big_prod, q: Ugly_prod, r: Inline1) { () }

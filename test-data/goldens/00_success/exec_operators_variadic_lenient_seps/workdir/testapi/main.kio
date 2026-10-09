@@ -16,7 +16,7 @@ varop [* *] { foldr cat nil }
 // element list as the spaced canonical form. So `[* , a, b, *]`,
 // `[* , , a , , b , , *]`, and `[* a, b *]` all evaluate to the same
 // thing.
-pub fn main() -> . {
+pub fn main() {
   print([* "a", "b" *]);
   print("\n");
   print([* "x", "y" *]);

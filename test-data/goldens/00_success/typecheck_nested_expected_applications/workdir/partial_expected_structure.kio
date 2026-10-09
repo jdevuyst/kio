@@ -8,6 +8,6 @@ host type String role(str);
 
 fn choose[A](left: A, _right: A) -> A { left }
 
-fn take[V](_pair: I32 & V) -> . { () }
+fn take[V](_pair: I32 & V) { () }
 
-fn preserves_known_leaf() -> . { take(choose((1, "a"), (2, "b"))) }
+fn preserves_known_leaf() { take(choose((1, "a"), (2, "b"))) }

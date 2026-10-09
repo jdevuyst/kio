@@ -73,7 +73,7 @@ fn text(i: Ins) -> String {
   }
 }
 
-rec(loop) fn marks_at(syms: Symbols, at: I32) -> . {
+rec(loop) fn marks_at(syms: Symbols, at: I32) {
   match! l.un_cons(syms) {
     (
       , .(s: Symbol, rest: Symbols) {
@@ -89,7 +89,7 @@ rec(loop) fn marks_at(syms: Symbols, at: I32) -> . {
   }
 }
 
-rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) -> . {
+rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) {
   match! l.un_cons(code) {
     (
       , .(i: Ins, rest: Prog) {
@@ -103,7 +103,7 @@ rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) -> . {
 }
 
 /// Print the listing.
-pub fn listing(code: Prog, syms: Symbols) -> . { rows(code, syms, 0) }
+pub fn listing(code: Prog, syms: Symbols) { rows(code, syms, 0) }
 
 rec(loop) fn joined(syms: Symbols, acc: String, first: Bool) -> String {
   match! l.un_cons(syms) {

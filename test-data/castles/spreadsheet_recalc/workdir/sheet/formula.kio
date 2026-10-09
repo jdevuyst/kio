@@ -67,7 +67,7 @@ rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr))
 
 /// Every address in the rectangle `lo`..`hi`, row-major.
 pub fn range_cells(lo: Addr, hi: Addr) -> List(Addr) {
-  block_onto(lo, hi, row_of(hi), col_of(hi), nil(Addr, ()))
+  block_onto(lo, hi, row_of(hi), col_of(hi), nil(Addr))
 }
 
 /// The cells this formula reads, in first-mention order. Each address lands
@@ -100,7 +100,7 @@ pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
   }
 }
 
-pub fn precedents(e: Expr) -> List(Addr) { precedents_onto(e, nil(Addr, ())) }
+pub fn precedents(e: Expr) -> List(Addr) { precedents_onto(e, nil(Addr)) }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
 

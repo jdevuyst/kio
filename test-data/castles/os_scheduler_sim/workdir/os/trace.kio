@@ -120,10 +120,10 @@ fn outcome_note(o: Outcome) -> String {
   }
 }
 
-pub fn header() -> . { print("tick  cpu  state   event\n") }
+pub fn header() { print("tick  cpu  state   event\n") }
 
 /// Print one line of the trace, while the window on the run is still open.
-pub fn emit(tick: I32, pid: I32, e: Event, o: Outcome) -> . {
+pub fn emit(tick: I32, pid: I32, e: Event, o: Outcome) {
   if! num.lt(tick, config.trace_limit()) {
     print(text.cat4(
       , text.cat4(text.pad_num(tick, 4), "  ", proc.pid_tag(pid), "   ")

@@ -13,7 +13,7 @@ import testapi/io(print);
 // is fit!'s narrow-before-widen discipline.
 fn project_and_widen(p: String & I32) -> String | I32 { fit!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let r = project_and_widen(("projected-and-widened\n", 0));
   let s =
     match! r {

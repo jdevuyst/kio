@@ -9,4 +9,4 @@ import testapi/io(print);
 // narrow_prod! to String." Equivalent to `narrow_prod!(p, String)`.
 fn first(p: String & I32) -> String { p.>narrow_prod!(String) }
 
-pub fn main() -> . { print(first(("narrow_prod via UFCS\n", 0))) }
+pub fn main() { print(first(("narrow_prod via UFCS\n", 0))) }

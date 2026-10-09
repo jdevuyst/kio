@@ -2,4 +2,4 @@ module testapi/main;
 
 import book/engine(run);
 
-pub fn main() -> . { run() }
+pub fn main() { run() }

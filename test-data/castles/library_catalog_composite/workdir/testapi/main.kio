@@ -2,4 +2,4 @@ module testapi/main;
 
 import catalog/engine as engine;
 
-pub fn main() -> . { engine.run() }
+pub fn main() { engine.run() }

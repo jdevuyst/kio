@@ -52,7 +52,7 @@ host fn loop[S][R](p0: S -> S | R, p1: S) -> R;
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum!((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match! result {
@@ -72,7 +72,7 @@ pub labels { vecbody[A]: I32 & I32 & Tree(A) };
 /// Persistent vector backed by a fanout-2 trie.
 pub type Vec[A] = Vecbody(A) | .;
 
-fn vempty[A]() -> Vec(A) { widen_sum!((), Vecbody(A) | .) }
+fn vempty[A] -> Vec(A) { widen_sum!((), Vecbody(A) | .) }
 
 fn vfull[A](count: I32, depth: I32, root: Tree(A)) -> Vec(A) {
   widen_sum!({vecbody = (count, depth, root)}, Vecbody(A) | .)
@@ -169,7 +169,7 @@ fn descend_frames[A](root: Tree(A), depth: I32, i: I32) -> Tree(A) & Frames(A) {
           }
         }
       }
-    , (depth, root, frames_nil(A, ()))
+    , (depth, root, frames_nil(A))
     )
 }
 
@@ -218,7 +218,7 @@ fn perfect_absent[A](depth: I32) -> Tree(A) {
           }
         }
       }
-    , (depth, leaf(absent(A, ())))
+    , (depth, leaf(absent(A)))
     )
 }
 
@@ -226,7 +226,7 @@ fn perfect_absent[A](depth: I32) -> Tree(A) {
 // Public API - basic queries
 // =====================================================================
 /// Builds the empty vector.
-pub fn empty[A]() -> Vec(A) { vempty(A, ()) }
+pub fn empty[A] -> Vec(A) { vempty(A) }
 
 /// Builds a one-element vector.
 pub fn singleton[A](x: A) -> Vec(A) { vfull(1, 0, leaf(present(x))) }
@@ -277,11 +277,11 @@ pub fn at[A](v: Vec(A), i: I32) -> A | . {
       , .(b: Vecbody(A)) {
           match! Vecbody.get(b) {
             .(count: I32, depth: I32, root: Tree(A)) {
-              select(in_bounds(i, count), at_tree(root, depth, i), absent(A, ()))
+              select(in_bounds(i, count), at_tree(root, depth, i), absent(A))
             }
           }
         }
-      , .(_e: .) { absent(A, ()) }
+      , .(_e: .) { absent(A) }
       )
   }
 }
@@ -298,12 +298,12 @@ pub fn update[A](v: Vec(A), i: I32, x: A) -> Vec(A) | . {
               select(
                 , in_bounds(i, count)
                 , present(vfull(count, depth, set_tree(root, depth, i, present(x))))
-                , absent()
+                , absent(_)
                 )
             }
           }
         }
-      , .(_e: .) { absent(Vec(A), ()) }
+      , .(_e: .) { absent(Vec(A)) }
       )
   }
 }
@@ -353,12 +353,16 @@ pub fn pop_back[A](v: Vec(A)) -> (A & Vec(A)) | . {
           match! Vecbody.get(b) {
             .(count: I32, depth: I32, root: Tree(A)) {
               let last = sub(count, 1);
-              let rest = vfull(last, depth, set_tree(root, depth, last, absent(A, ())));
-              fold_result(absent(), .(x: A) -> (A & Vec(A)) | . { present((x, rest)) }, at(v, last))
+              let rest = vfull(last, depth, set_tree(root, depth, last, absent(A)));
+              fold_result(
+                , absent(_)
+                , .(x: A) -> (A & Vec(A)) | . { present((x, rest)) }
+                , at(v, last)
+                )
             }
           }
         }
-      , .(_e: .) { absent(A & Vec(A), ()) }
+      , .(_e: .) { absent(A & Vec(A)) }
       )
   }
 }
@@ -441,7 +445,7 @@ pub fn fold[A][Acc](f: (Acc & A) -> Acc, z: Acc, v: Vec(A)) -> Acc { fold_vec(f,
 /// state clean - a concrete `Vec(B)` result would inline its sum arms into
 /// the state union.
 pub fn map[A][B](f: A -> B, v: Vec(A)) -> Vec(B) {
-  fold_vec(.(acc: Vec(B), x: A) -> Vec(B) { push_back(acc, f(x)) }, empty(), v)
+  fold_vec(.(acc: Vec(B), x: A) -> Vec(B) { push_back(acc, f(x)) }, empty(_), v)
 }
 
 /// Materializes the vector as a front-to-back cons-list.
@@ -462,13 +466,13 @@ pub fn to_list[A](v: Vec(A)) -> List(A) {
           }
         }
       }
-    , (sub(n, 1), nil(A, ()))
+    , (sub(n, 1), nil(A))
     )
 }
 
 /// Builds a vector by appending the list head-to-tail.
 pub fn from_list[A](xs: List(A)) -> Vec(A) {
-  fold_list(.(acc: Vec(A), x: A) -> Vec(A) { push_back(acc, x) }, empty(A, ()), xs)
+  fold_list(.(acc: Vec(A), x: A) -> Vec(A) { push_back(acc, x) }, empty(A), xs)
 }
 
 /// Appends every element of `v2` onto `v1`, in order.
@@ -486,7 +490,7 @@ pub fn slice[A](v: Vec(A), lo: I32, hi: I32) -> Vec(A) {
     , .(acc: Vec(A), i: I32) -> Vec(A) {
         fold_result(acc, .(x: A) -> Vec(A) { push_back(acc, x) }, at(v, i))
       }
-    , empty()
+    , empty(_)
     )
 }
 
@@ -520,9 +524,9 @@ pub op _ <@> _ { impl flip_map }
 // instead, not fabricated. The pure trie algebra's own laws live in
 // `core.kio`; the ones below are the constant-time vec-shape cases.
 
-// `length(empty()) == 0` - the empty arm yields the literal `0`, no loop.
+// `length(empty(A)) == 0` - the empty arm yields the literal `0`, no loop.
 equiv length_empty[A]() {
-  length(empty(A, ()));
+  length(empty(A));
   0
 }
 
@@ -533,22 +537,22 @@ equiv length_singleton[A](x: A) {
   1
 }
 
-// `at(empty(), i) == ()` for opaque `i` - the empty vec matches its
+// `at(empty(A), i) == ()` for opaque `i` - the empty vec matches its
 // absent arm before any descent, so the host `loop` never enters.
 equiv at_empty[A](i: I32) {
-  at(empty(A, ()), i);
-  absent(A, ())
+  at(empty(A), i);
+  absent(A)
 }
 
-// `pop_back(empty()) == ()` - same: the empty arm short-circuits.
+// `pop_back(empty(A)) == ()` - same: the empty arm short-circuits.
 equiv pop_empty[A]() {
-  pop_back(empty(A, ()));
-  absent(A & Vec(A), ())
+  pop_back(empty(A));
+  absent(A & Vec(A))
 }
 
-// `update(empty(), i, x) == ()` for opaque `i` - out of bounds on the
+// `update(empty(A), i, x) == ()` for opaque `i` - out of bounds on the
 // empty vec, again via the absent arm with no descent.
 equiv update_empty[A](i: I32, x: A) {
-  update(empty(A, ()), i, x);
-  absent(Vec(A), ())
+  update(empty(A), i, x);
+  absent(Vec(A))
 }

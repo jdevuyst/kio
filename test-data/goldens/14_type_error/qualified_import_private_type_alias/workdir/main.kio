@@ -2,4 +2,4 @@ module main;
 
 import provider as p;
 
-fn bad(value: p.Hidden) -> . { () }
+fn bad(value: p.Hidden) { () }

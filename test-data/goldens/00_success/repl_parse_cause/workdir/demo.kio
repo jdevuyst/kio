@@ -1,0 +1,7 @@
+module demo;
+
+fn choose(left: ., right: .) { left }
+
+fn empty() { () }
+
+varop [* *] { foldr choose empty }

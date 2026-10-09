@@ -1,0 +1,7 @@
+module pkg/provider;
+
+import __comptime__;
+
+pure fn build(ct: __Comptime__, _values: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }
+
+pub elab choose : (. & .) -> . { trailing product; trailing product fallback; impl build }

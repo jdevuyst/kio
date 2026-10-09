@@ -13,7 +13,7 @@ import testapi/iter(loop);
 /// An anonymous sum cannot mention itself, so the newtype ties the knot.
 pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; pub projector un_list }
 
-pub fn nil[A]() -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.mk_list(widen_sum!((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, tail: List(A)) -> List(A) {
   List.mk_list(widen_sum!((head, tail), . | (A & List(A))))
@@ -34,7 +34,7 @@ rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   }
 }
 
-pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A, ())) }
+pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A)) }
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
@@ -50,7 +50,7 @@ rec(loop) fn map_onto[A][B](xs: List(A), f: A -> B, acc: List(B)) -> List(B) {
   }
 }
 
-pub fn map[A][B](xs: List(A), f: A -> B) -> List(B) { reverse(map_onto(xs, f, nil(B, ()))) }
+pub fn map[A][B](xs: List(A), f: A -> B) -> List(B) { reverse(map_onto(xs, f, nil(B))) }
 
 rec(loop) fn count_onto[A](xs: List(A), pick: A -> Bool, acc: I32) -> I32 {
   match! xs.>List.un_list {
@@ -71,7 +71,7 @@ rec(loop) fn count_onto[A](xs: List(A), pick: A -> Bool, acc: I32) -> I32 {
 
 pub fn count[A](xs: List(A), pick: A -> Bool) -> I32 { count_onto(xs, pick, 0) }
 
-pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) -> . {
+pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) {
   match! xs.>List.un_list {
     (.(head: A, rest: List(A)) { action(head); rec for_each(rest, action) }, .(_empty: .) { () })
   }

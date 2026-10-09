@@ -10,4 +10,4 @@ fn apply_proj(p: t.Box -> [R] ([A] (String & A) -> R) -> R, v: t.Box) -> String 
   p(v)(.[A](text: String, _witness: A) { text })
 }
 
-pub fn main() -> . { print(apply_proj(t.Box.un_box, t.make_box("owner-ok\n"(String), ()))) }
+pub fn main() { print(apply_proj(t.Box.un_box, t.make_box("owner-ok\n"(String), ()))) }

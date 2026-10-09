@@ -69,7 +69,7 @@ fn initial_state() -> State {
   {
     , current_tick = 0
     , next_ticket = 1
-    , job_queue = empty(Job, ())
+    , job_queue = empty(Job)
     , backlog_count = 0
     , total_wait = 0
     , max_backlog = 0

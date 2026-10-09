@@ -2,4 +2,4 @@ module main;
 
 import provider as p;
 
-fn bad(value: p.Box) -> . { p.Box.seal(value) }
+fn bad(value: p.Box) { p.Box.seal(value) }

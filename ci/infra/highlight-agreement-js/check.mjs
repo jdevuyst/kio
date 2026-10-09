@@ -3,7 +3,8 @@
 //
 // For each fixture under test-data/highlight-corpus/, compare:
 //   - kio debug tokens (the oracle, re-derived from the kio binary)
-//   - tree-sitter WASM parser (exact token boundaries and kinds)
+//   - tree-sitter WASM parser (exact positive kinds/spans, explicit neutral
+//     line-local literal fallback)
 //   - vscode-textmate tokenization (positive roles must agree; neutrality
 //     is limited to roles that require later-line evidence)
 //
@@ -20,6 +21,8 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { checkStructuralHighlighting, checkIncrementalHighlighting } from "./structural-checks.mjs";
 import { checkTextMateHighlighting } from "./textmate-checks.mjs";
+import { checkDocHighlighting, checkDocTextMate, checkDocScannerCosts, checkDocStyling } from "./doc-checks.mjs";
+import { docBodies, projectDocNode, docCodeGaps } from "../../../tools/vscode-kio/src/doc-embedded.mts";
 
 // Both packages ship as CommonJS; ESM-import them through the
 // default-export pattern.
@@ -49,6 +52,19 @@ if (!corpusDir || !tsWasmPath || !tmGrammarPath || !kioBin) {
 // Map tree-sitter grammar node names → canonical TokenKind strings.
 const TS_KIND_MAP = {
   comment_doc: "comment.doc",
+  doc_reference: "comment.doc.reference",
+  doc_directive: "comment.doc.directive",
+  doc_fence: "comment.doc.fence",
+  doc_code: "comment.doc.code",
+  doc_kio_code: "comment.doc.code",
+  doc_kio_self_code: "comment.doc.code",
+  doc_heading: "comment.doc.heading",
+  doc_emphasis: "comment.doc.emphasis",
+  doc_strong: "comment.doc.strong",
+  doc_marker: "comment.doc.marker",
+  doc_link: "comment.doc.link",
+  doc_attribute: "comment.doc.attribute",
+  doc_literal_fallback: "comment.doc",
   comment_line: "comment.line",
   elaborator_name: "keyword.elaborator",
   block_head: "keyword.elaborator",
@@ -174,7 +190,7 @@ async function loadTreeSitterParser() {
 
 const EXACT_TYPE_NAME = /^_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*$/;
 
-function treeSitterLeaves(root, source) {
+function treeSitterLeaves(root, source, embedded = false) {
   const leaves = [];
   const stack = [{ node: root, parentType: root.parent?.type ?? null }];
   while (stack.length > 0) {
@@ -197,6 +213,7 @@ function treeSitterLeaves(root, source) {
       continue;
     }
     if (node.childCount === 0) {
+      if (embedded && node.type === "ERROR") continue;
       if (
         node.isNamed &&
         node.type !== "source_file" &&
@@ -224,12 +241,23 @@ function treeSitterTokens(parser, source) {
     throw new Error("tree-sitter parser returned no tree");
   }
   try {
-    return treeSitterLeaves(tree.rootNode, source).map(({ node, kind }) => ({
+    const tokens = treeSitterLeaves(tree.rootNode, source).filter(({ node }) => !["doc_kio_code", "doc_kio_self_code"].includes(node.type)).map(({ node, kind }) => ({
       start: node.startIndex,
       end: node.endIndex,
       kind,
       nodeType: node.type,
     }));
+    for (const body of docBodies(tree.rootNode)) {
+      const embedded = parser.parse(body.source);
+      try {
+        const projected = [];
+        for (const { node, kind } of treeSitterLeaves(embedded.rootNode, body.source, true)) {
+          for (const span of projectDocNode(body, node)) projected.push({ ...span, kind: kind.startsWith("comment.doc") ? "comment.doc" : kind, nodeType: node.type });
+        }
+        tokens.push(...projected.map((token) => ({ ...token, embeddedDoc: true })), ...docCodeGaps(body, projected).map((gap) => ({ ...gap, kind: "comment.doc.code", embeddedDoc: true })));
+      } finally { embedded.delete(); }
+    }
+    return tokens.sort((a, b) => a.start - b.start);
   } finally {
     tree.delete();
   }
@@ -306,6 +334,17 @@ const registry = new vsctm.Registry({
 // first matching prefix wins. TextMate emits a stack of scopes
 // per token; we look at the most-specific scope on top.
 const TM_SCOPE_MAP = [
+  ["variable.other.kiodoc", "comment.doc.reference"],
+  ["keyword.control.kiodoc", "comment.doc.directive"],
+  ["keyword.control.fence.kiodoc", "comment.doc.fence"],
+  ["string.unquoted.code.kiodoc", "comment.doc.code"],
+  ["markup.heading.kiodoc", "comment.doc.heading"],
+  ["markup.bold.kiodoc", "comment.doc.strong"],
+  ["markup.italic.kiodoc", "comment.doc.emphasis"],
+  ["markup.underline.link.kiodoc", "comment.doc.link"],
+  ["punctuation.definition.marker.kiodoc", "comment.doc.marker"],
+  ["keyword.other.attribute.kiodoc", "comment.doc.attribute"],
+  ["meta.embedded.block.kio", "comment.doc.code"],
   ["comment.line.documentation", "comment.doc"],
   ["comment.line", "comment.line"],
   ["string.quoted", "literal.string"],
@@ -327,9 +366,11 @@ const TM_SCOPE_MAP = [
 ];
 
 function mapTmScopes(scopes) {
+  const embedded = scopes.includes("meta.embedded.block.kio");
   // Walk inner→outer; first matching prefix wins.
   for (let i = scopes.length - 1; i >= 0; i--) {
     const scope = scopes[i];
+    if (embedded && ["entity.name.function.kio", "entity.name.type.kio", "entity.name.module.kio"].includes(scope)) return scope.slice(0, -4);
     for (const [prefix, kind] of TM_SCOPE_MAP) {
       if (scope.startsWith(prefix + ".") || scope === prefix) return kind;
     }
@@ -358,6 +399,8 @@ function textmateTokens(grammar, source) {
         start: lineStart + t.startIndex,
         end: lineStart + t.endIndex,
         kind,
+        docFallback: t.scopes.some((scope) => scope === "markup.raw.inline.kiodoc.kio" || scope === "markup.raw.block.kiodoc.kio"),
+        embeddedDoc: t.scopes.includes("meta.embedded.block.kio"),
       });
     }
     state = result.ruleStack;
@@ -451,7 +494,9 @@ function checkTextMateLabelFixture(grammar, name, source, tokens) {
 
 // TextMate's lexical comparison ignores entity refinements symmetrically;
 // the raw-scope fixtures independently require their structural role scopes.
-// Tree-sitter receives no normalization or span exemptions.
+// Tree-sitter preserves positive kinds and covered spans; adjacent equal doc
+// roles coalesce. Explicit literal fallback and the named malformed embedded
+// context fixture have separately bounded, source-authenticated exceptions.
 const TEXTMATE_NORMALIZATION = new Set([
   "entity.name.module",
   "entity.name.function",
@@ -466,10 +511,63 @@ function normalizeFor(tokens, set) {
   );
 }
 
-function treeSitterTokensAgree(reference, treeSitter) {
+function treeSitterTokensAgree(reference, treeSitter, malformedDocContext = false) {
+  if (malformedDocContext) {
+    // This named malformed-wrapper fixture tests projection/recovery isolation,
+    // not identical recovery grammars. Only authenticated payload is exempt.
+    const ranges = treeSitter.filter((token) => token.embeddedDoc).reduce((result, token) => {
+      if (result.at(-1)?.end === token.start) result.at(-1).end = token.end;
+      else result.push({ start: token.start, end: token.end });
+      return result;
+    }, []);
+    reference = reference.filter((token) => !ranges.some((range) => range.start <= token.start && token.end <= range.end));
+    treeSitter = treeSitter.filter((token) => !token.embeddedDoc);
+  }
+  // Only the explicitly represented line-local literal fallback may be neutral
+  // where the whole-run reference assigns a more specific documentation role.
+  const fallback = treeSitter.filter((token) => token.nodeType === "doc_literal_fallback");
+  let fallbackIndex = 0;
+  reference = reference.flatMap((token) => {
+    while (fallbackIndex < fallback.length && fallback[fallbackIndex].end <= token.start) fallbackIndex++;
+    if (!token.kind.startsWith("comment.doc")) return [token];
+    const result = [];
+    let start = token.start;
+    for (let index = fallbackIndex; index < fallback.length && fallback[index].start < token.end; index++) {
+      const span = fallback[index];
+      if (start < span.start) result.push({ ...token, start, end: span.start });
+      const end = Math.min(token.end, span.end);
+      result.push({ ...token, start: Math.max(start, span.start), end, kind: "comment.doc" });
+      start = end;
+    }
+    if (start < token.end) result.push({ ...token, start });
+    return result;
+  });
+  const docRuns = (tokens) => tokens.reduce((result, token) => {
+    const previous = result.at(-1);
+    if (token.kind.startsWith("comment.doc") && previous?.kind === token.kind && previous.end === token.start) previous.end = token.end;
+    else result.push({ ...token });
+    return result;
+  }, []);
+  reference = docRuns(reference);
+  treeSitter = docRuns(treeSitter);
   return reference.length === treeSitter.length && reference.every((token, index) =>
     token.start === treeSitter[index].start && token.end === treeSitter[index].end &&
     token.kind === treeSitter[index].kind);
+}
+
+function sourceTokenCoordinates(tokens, source) {
+  // Compiler spans are UTF-8 bytes; both JavaScript editor engines use UTF-16.
+  const coordinates = new Map([[0, 0]]);
+  let bytes = 0, units = 0;
+  for (const character of source) {
+    bytes += Buffer.byteLength(character);
+    units += character.length;
+    coordinates.set(bytes, units);
+  }
+  return tokens.map((token) => {
+    assert.ok(coordinates.has(token.start) && coordinates.has(token.end), "compiler spans must end on character boundaries");
+    return { ...token, start: coordinates.get(token.start), end: coordinates.get(token.end) };
+  });
 }
 
 function fmtTokens(tokens) {
@@ -496,6 +594,15 @@ function checkTextMateAgreement(refTokens, tmTokens, source) {
     for (let b = t.start; b < t.end; b++) {
       const refKind = refKindAt[b];
       if (refKind === null) continue; // outside any reference token
+      // These two raw-doc scopes are conservative line-local fallbacks, not
+      // positive reference/directive/fence claims. Their exact cells are tested
+      // through the actual TextMate engine in doc-checks.mjs.
+      if (t.docFallback && t.kind === "comment.doc" && refKind?.startsWith("comment.doc")) continue;
+      // The ordinary TextMate grammar lexically colors an unfinished example
+      // line where the full parser retains its raw-code floor. This exception
+      // is confined to authenticated embedded payload and never overrides a
+      // positive canonical Kio token or a documentation boundary/operand role.
+      if (t.embeddedDoc && refKind === "comment.doc.code" && !t.kind.startsWith("comment.doc")) continue;
       if (refKind !== t.kind) {
         failures.push(
           `byte ${b}: textmate says \`${t.kind}\` but reference says \`${refKind}\``,
@@ -506,7 +613,7 @@ function checkTextMateAgreement(refTokens, tmTokens, source) {
   return failures;
 }
 
-async function checkFixture(treeSitterParser, tmGrammar, fixtureDir) {
+async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDocContext = false) {
   const name = path.basename(fixtureDir);
   const sourcePath = path.join(fixtureDir, "source.kio");
   const source = fs.readFileSync(sourcePath, "utf8");
@@ -523,13 +630,13 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir) {
       encoding: "utf8",
     },
   );
-  const refTokens = JSON.parse(refRaw);
+  const refTokens = sourceTokenCoordinates(JSON.parse(refRaw), source);
 
   const refForTextMate = normalizeFor(refTokens, TEXTMATE_NORMALIZATION);
 
   // (2) Tree-sitter — every kind and every token boundary must agree.
   const tsTokens = treeSitterTokens(treeSitterParser, source);
-  if (!treeSitterTokensAgree(refTokens, tsTokens)) {
+  if (!treeSitterTokensAgree(refTokens, tsTokens, malformedDocContext)) {
     return {
       name,
       kind: "tree-sitter",
@@ -545,7 +652,7 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir) {
   // `identifier` for most refined positions and a structural label scope
   // for selective-import items. Applying the rewrite to both sides keeps that
   // partial refinement symmetric.
-  const tmTokens = textmateTokens(tmGrammar, source);
+  const tmTokens = textmateTokens(tmGrammar, source).filter((token) => !malformedDocContext || !token.embeddedDoc);
   const tmFixtureFailures = checkTextMateLabelFixture(
     tmGrammar,
     name,
@@ -640,6 +747,21 @@ async function main() {
   }
   checkTextMateLabelSpelling(tmGrammar);
   checkTextMateHighlighting(tmGrammar);
+  checkDocHighlighting(treeSitterParser);
+  checkDocScannerCosts(treeSitterParser);
+  checkDocTextMate(tmGrammar);
+  checkDocStyling(treeSitterParser, tmGrammar);
+  const styleFixtures = JSON.parse(fs.readFileSync(new URL("../../../tools/tree-sitter-kio/test/documentation-styling.json", import.meta.url), "utf8"));
+  const styleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kio-doc-styling-"));
+  try {
+    for (const fixture of styleFixtures) {
+      const directory = path.join(styleRoot, fixture.name);
+      fs.mkdirSync(directory);
+      fs.writeFileSync(path.join(directory, "source.kio"), fixture.source);
+      const result = await checkFixture(treeSitterParser, tmGrammar, directory, fixture.malformedContext ?? false);
+      assert.equal(result, null, JSON.stringify(result));
+    }
+  } finally { fs.rmSync(styleRoot, { recursive: true, force: true }); }
   const repoRoot = new URL("../../../", import.meta.url);
   checkStructuralHighlighting(
     treeSitterParser,

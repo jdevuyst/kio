@@ -1295,7 +1295,7 @@ impl<'a> Lowerer<'a> {
         let (sig, body) = self.canonicalize_entry_signature_and_body(&d.sig, body, d.meta.span);
         FnDef {
             vis: d.vis.clone(),
-            purity: (),
+            purity: d.purity,
             name: d.name.clone(),
             sig,
             ret: body_ret,
@@ -2048,7 +2048,7 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
-        if !found_value_group {
+        if !found_value_group && type_binders.is_empty() {
             return None;
         }
 
@@ -2064,7 +2064,33 @@ impl<'a> Lowerer<'a> {
         for (name, ty) in &value_binders {
             self.push_bound_routed(name, Some(ty.clone()));
         }
-        let body = self.lower_call(&callee, &call_args, meta);
+        let body = if found_value_group {
+            self.lower_call(&callee, &call_args, meta)
+        } else {
+            Expr::LowQualifiedModuleCall {
+                occurrence: Default::default(),
+                alias: segments[0].name.clone(),
+                mangled: segments
+                    .iter()
+                    .map(PathSegment::as_str)
+                    .collect::<Vec<_>>()
+                    .join("."),
+                type_args: call_args
+                    .iter()
+                    .map(|arg| {
+                        let CallArg::Type(ty) = arg else {
+                            unreachable!("a type-only forwarding signature has only type arguments")
+                        };
+                        self.routed_type(ty)
+                    })
+                    .collect(),
+                args: Vec::new(),
+                sig: source_sig.clone(),
+                ret_ty: Some(ret_ty.clone()),
+                meta: convert_meta(meta),
+                ext: (),
+            }
+        };
         for _ in &value_binders {
             self.pop_bound();
         }
@@ -2971,17 +2997,37 @@ impl<'a> Lowerer<'a> {
             ),
             None => CanonicalCallArgs::direct(lowered_value_args),
         };
+        self.low_indirect_call(callee_expr, lowered_type_args, canonical, meta)
+    }
+
+    fn low_indirect_call(
+        &self,
+        callee_expr: Expr<Routed>,
+        type_args: Vec<Type<Routed>>,
+        canonical: CanonicalCallArgs,
+        meta: &Meta<Enriched>,
+    ) -> Expr<Routed> {
         if canonical.wrappers.is_empty() {
             return Expr::LowIndirectCall {
                 occurrence: Default::default(),
                 callee: Box::new(callee_expr),
-                type_args: lowered_type_args,
+                type_args,
                 args: canonical.args,
                 meta: convert_meta(meta),
                 ext: (),
             };
         }
 
+        let callee_expr =
+            type_args
+                .into_iter()
+                .fold(callee_expr, |callee, type_arg| Expr::LowTypeApplication {
+                    occurrence: Default::default(),
+                    callee: Box::new(callee),
+                    type_arg,
+                    meta: convert_meta(meta),
+                    ext: (),
+                });
         let callee_name = self.next_call_callee_name();
         let call = Expr::LowIndirectCall {
             occurrence: Default::default(),
@@ -2991,7 +3037,7 @@ impl<'a> Lowerer<'a> {
                 meta: convert_meta(meta),
                 ext: (),
             }),
-            type_args: lowered_type_args,
+            type_args: Vec::new(),
             args: canonical.args.clone(),
             meta: convert_meta(meta),
             ext: (),
@@ -4821,7 +4867,7 @@ impl<'a> Lowerer<'a> {
         &self,
         mangled: String,
         type_args: Vec<Type<Routed>>,
-        value_args: Vec<Expr<Enriched>>,
+        mut value_args: Vec<Expr<Enriched>>,
         info: ModuleCallInfo<'_>,
     ) -> Expr<Routed> {
         let ModuleCallInfo {
@@ -4832,7 +4878,9 @@ impl<'a> Lowerer<'a> {
             meta,
         } = info;
         let sig_env = self.declaring_unfold_env(declaring_module);
-        let type_args = self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
+        let mut type_args =
+            self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
+        let returned_args = split_type_only_returned_args(sig, &mut type_args, &mut value_args);
         let canonical = self.lower_call_value_args_for_sig_with_function_adapters(
             value_args,
             sig,
@@ -4849,7 +4897,6 @@ impl<'a> Lowerer<'a> {
             .as_ref()
             .map(|ret| instantiate_signature_type(&routed_sig, &type_args, ret))
             .map(|ret| unfold_type_alias_type(&ret, &sig_env));
-        let public_ret = raw_ret.clone().map(canonicalize_function_abi_type);
         let call = Expr::LowModuleCall {
             occurrence: Default::default(),
             mangled,
@@ -4860,20 +4907,14 @@ impl<'a> Lowerer<'a> {
             meta: convert_meta(meta),
             ext: (),
         };
-        let call = self.wrap_canonical_call(call, canonical);
-        match (raw_ret, public_ret) {
-            (Some(actual), Some(expected)) => {
-                self.adapt_routed_value_to_expected(call, Some(actual), &expected, meta.span)
-            }
-            _ => call,
-        }
+        self.finish_module_call(call, canonical, raw_ret, returned_args, meta)
     }
 
     fn low_qualified_module_call(
         &self,
         names: (String, String),
         type_args: Vec<Type<Routed>>,
-        value_args: Vec<Expr<Enriched>>,
+        mut value_args: Vec<Expr<Enriched>>,
         info: ModuleCallInfo<'_>,
     ) -> Expr<Routed> {
         let ModuleCallInfo {
@@ -4884,7 +4925,9 @@ impl<'a> Lowerer<'a> {
             meta,
         } = info;
         let sig_env = self.declaring_unfold_env(declaring_module);
-        let type_args = self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
+        let mut type_args =
+            self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
+        let returned_args = split_type_only_returned_args(sig, &mut type_args, &mut value_args);
         let canonical = self.lower_call_value_args_for_sig_with_function_adapters(
             value_args,
             sig,
@@ -4901,7 +4944,6 @@ impl<'a> Lowerer<'a> {
             .as_ref()
             .map(|ret| instantiate_signature_type(&routed_sig, &type_args, ret))
             .map(|ret| unfold_type_alias_type(&ret, &sig_env));
-        let public_ret = raw_ret.clone().map(canonicalize_function_abi_type);
         let call = Expr::LowQualifiedModuleCall {
             occurrence: Default::default(),
             alias: names.0,
@@ -4913,14 +4955,54 @@ impl<'a> Lowerer<'a> {
             meta: convert_meta(meta),
             ext: (),
         };
-        let call = self.wrap_canonical_call(call, canonical);
-        match (raw_ret, public_ret) {
-            (Some(actual), Some(expected)) => {
-                self.adapt_routed_value_to_expected(call, Some(actual), &expected, meta.span)
-            }
-            _ => call,
-        }
+        self.finish_module_call(call, canonical, raw_ret, returned_args, meta)
     }
+
+    fn finish_module_call(
+        &self,
+        call: Expr<Routed>,
+        canonical: CanonicalCallArgs,
+        raw_ret: Option<Type<Routed>>,
+        (returned_types, returned_values): (Vec<Type<Routed>>, Vec<Expr<Enriched>>),
+        meta: &Meta<Enriched>,
+    ) -> Expr<Routed> {
+        let call = self.wrap_canonical_call(call, canonical);
+        let Some(actual) = raw_ret else {
+            assert!(
+                returned_types.is_empty() && returned_values.is_empty(),
+                "a typed type-only module declaration retains its return type"
+            );
+            return call;
+        };
+        let expected = canonicalize_function_abi_type(actual.clone());
+        let call = self.adapt_routed_value_to_expected(call, Some(actual), &expected, meta.span);
+        if returned_types.is_empty() && returned_values.is_empty() {
+            return call;
+        }
+        let canonical = self.lower_call_value_args_for_routed_callee_ty(
+            returned_values,
+            &expected,
+            &returned_types,
+            meta.span,
+        );
+        self.low_indirect_call(call, returned_types, canonical, meta)
+    }
+}
+
+fn split_type_only_returned_args(
+    sig: &Signature<Enriched>,
+    type_args: &mut Vec<Type<Routed>>,
+    value_args: &mut Vec<Expr<Enriched>>,
+) -> (Vec<Type<Routed>>, Vec<Expr<Enriched>>) {
+    if sig.params.is_empty() || sig.has_value_group() {
+        return (Vec::new(), Vec::new());
+    }
+    let returned_types = if type_args.len() > sig.params.len() {
+        type_args.split_off(sig.params.len())
+    } else {
+        Vec::new()
+    };
+    (returned_types, std::mem::take(value_args))
 }
 
 fn is_inlineable_abi_group_value(expr: &Expr<Routed>) -> bool {
@@ -7856,6 +7938,97 @@ mod tests {
         );
         assert!(matches!(after_second.as_ref(), Expr::Seq { value, .. }
             if matches!(value.as_ref(), Expr::LowHostCall { name, .. } if name == "effect")));
+    }
+
+    #[test]
+    fn type_only_module_heads_precede_returned_value_arguments() {
+        let routed = full_pipeline_to_routed(&[(
+            "test.kio",
+            "module test; \
+             host type N; \
+             host fn effect() -> N; \
+             host fn unit_effect() -> .; \
+             fn make[A] -> A -> A { .(value: A) { value } } \
+             fn make_unit[A] -> . -> . { .() { () } } \
+             fn caller() -> N { make(N, effect()) } \
+             fn unit_caller() { make_unit(., unit_effect()) }",
+        )]);
+        let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
+        else {
+            panic!("the returned function owns the value application")
+        };
+        assert!(
+            matches!(callee.as_ref(), Expr::LowModuleCall { type_args, args, .. }
+            if type_args.len() == 1 && args.is_empty())
+        );
+        assert!(matches!(args.as_slice(), [Expr::LowHostCall { name, .. }] if name == "effect"));
+
+        let Expr::Let { name, body, .. } = &routed_fn(&routed, "test", "unit_caller").body else {
+            panic!(
+                "the callee must be evaluated before the erased Unit argument: {:#?}",
+                routed_fn(&routed, "test", "unit_caller").body
+            )
+        };
+        let Expr::Seq { value, body, .. } = body.as_ref() else {
+            panic!("the Unit argument must execute after the callee binding")
+        };
+        assert!(matches!(value.as_ref(), Expr::LowHostCall { name, .. } if name == "unit_effect"));
+        assert!(
+            matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
+            if args.is_empty() && matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
+                if callee_name == name))
+        );
+    }
+
+    #[test]
+    fn returned_type_stages_precede_erased_value_argument_wrappers() {
+        let routed = full_pipeline_to_routed(&[(
+            "test.kio",
+            "module test; \
+             host fn effect() -> .; \
+             fn staged[A] -> [B] . -> . { .[B] { .() { () } } } \
+             fn caller() { staged(., ., effect()) }",
+        )]);
+        let Expr::Let { value, body, .. } = &routed_fn(&routed, "test", "caller").body else {
+            panic!("the fully specialized callee must precede argument wrappers")
+        };
+        let Expr::LowTypeApplication { callee, .. } = value.as_ref() else {
+            panic!("the returned type stage must run before the erased argument: {value:#?}")
+        };
+        assert!(
+            matches!(callee.as_ref(), Expr::LowModuleCall { type_args, args, .. }
+            if type_args.len() == 1 && args.is_empty())
+        );
+        let Expr::Seq { value, body, .. } = body.as_ref() else {
+            panic!("the erased argument must execute before the value call")
+        };
+        assert!(matches!(value.as_ref(), Expr::LowHostCall { name, .. } if name == "effect"));
+        assert!(
+            matches!(body.as_ref(), Expr::LowIndirectCall { type_args, args, .. }
+            if type_args.is_empty() && args.is_empty())
+        );
+    }
+
+    #[test]
+    fn qualified_type_only_values_forward_only_their_written_stages() {
+        let routed = full_pipeline_to_routed(&[
+            (
+                "factory.kio",
+                "module factory; pub fn make[A] -> A -> A { .(value: A) { value } }",
+            ),
+            (
+                "test.kio",
+                "module test; import factory as factory; fn saved() -> [A] A -> A { factory.make }",
+            ),
+        ]);
+        let Expr::FnExpr { sig, body, .. } = &routed_fn(&routed, "test", "saved").body else {
+            panic!("a qualified type-only value needs an ordinary forwarding abstraction")
+        };
+        assert!(sig.has_type_params() && !sig.has_value_group());
+        assert!(
+            matches!(body.as_ref(), Expr::LowQualifiedModuleCall { type_args, args, sig, .. }
+            if type_args.len() == 1 && args.is_empty() && !sig.has_value_group())
+        );
     }
 
     #[test]
@@ -12465,7 +12638,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             imports: Vec::new(),
             items: vec![Item::FnDef(FnDef {
                 vis: crate::ast::Visibility::Private,
-                purity: (),
+                purity: Default::default(),
                 name: "caller".to_owned(),
                 sig: Signature::new(Vec::new()),
                 ret: unit,

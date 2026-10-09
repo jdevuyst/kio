@@ -3,4 +3,4 @@ module main;
 import provider as p;
 
 // This caller text is not the annotation imposing the argument's type.
-fn caller() -> . { let apply = p.take; apply(()) }
+fn caller() { let apply = p.take; apply(()) }

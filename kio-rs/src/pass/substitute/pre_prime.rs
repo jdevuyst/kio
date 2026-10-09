@@ -386,12 +386,14 @@ fn materialize_expr(expr: Expr<PrePrime>, names: &mut GeneratedValueNames) -> Ex
         },
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(materialize_expr(*callee, names)),
             args: args
                 .into_iter()
@@ -430,12 +432,14 @@ fn rename_bound_uses(expr: Expr<PrePrime>, old: &str, new: &str) -> Expr<PrePrim
         }
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(rename_bound_uses(*callee, old, new)),
             args: args
                 .into_iter()
@@ -745,6 +749,7 @@ mod tests {
         };
         let after_inner = Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(path("consume")),
             args: vec![
                 CallArg::Type(ty(marker)),
@@ -846,6 +851,7 @@ mod tests {
         let marker = "_ct_forall_n7";
         let expr = Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(path("consume")),
             args: vec![
                 CallArg::Type(Type::Forall {

@@ -29,7 +29,7 @@ pub fn choose(value: . | Bool, detail: . | Bool) -> Bool {
   }
 }
 
-pub fn choose_effect(value: . | Bool, detail: . | Bool) -> . {
+pub fn choose_effect(value: . | Bool, detail: . | Bool) {
   match! value {
     (
       , .(flag: Bool) {

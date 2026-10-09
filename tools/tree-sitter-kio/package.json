@@ -9,6 +9,7 @@
     "grammar.js",
     "src/parser.c",
     "src/scanner.c",
+    "src/doc_rules.h",
     "src/node-types.json",
     "src/tree_sitter/parser.h",
     "queries/highlights.scm",

@@ -44,7 +44,7 @@ rec(loop) fn score_many(outer: I32, step: Many) -> I32 {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(int_to_string(score_many(10, zero_many())));
   print("\n");
   print(int_to_string(score_many(10, {fifth=}.>widen_sum!(Many))));

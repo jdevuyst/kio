@@ -11,7 +11,7 @@ pub op _ ## _ { impl mul_i32 }
 
 fn apply[A][B](f: A -> B, x: A) -> B { f(x) }
 
-pub fn main() -> . {
+pub fn main() {
   // Formatting preserves numbered references used as operator operands.
   let .(amp_lambda: I32 -> I32) = .x. { x1 & 100 };
   let .(hash_lambda: I32 -> I32) = .x. { x1 ## 100 };

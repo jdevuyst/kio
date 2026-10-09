@@ -1,0 +1,14 @@
+package type_only_exports;
+
+build {
+  cache ();
+
+  target ts {
+    out "out/ts/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/**
+}

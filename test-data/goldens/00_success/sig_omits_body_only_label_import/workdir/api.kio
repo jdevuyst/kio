@@ -5,7 +5,7 @@ import types as t;
 import types(A);
 import types(Kept);
 
-pub fn make() -> . { {item=}.?{item} }
+pub fn make() { {item=}.?{item} }
 
 pub fn keep(value: Kept) -> Kept { value }
 

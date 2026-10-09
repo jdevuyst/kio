@@ -39,4 +39,4 @@ pub fn first_leaf(d: I32, f: Forest) -> I32 {
     )
 }
 
-pub fn main() -> . { () }
+pub fn main() { () }

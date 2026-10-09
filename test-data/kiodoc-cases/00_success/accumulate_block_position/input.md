@@ -15,7 +15,7 @@ module kiodoc;
 host type S role(str);
 host fn print(p0: S) -> .;
 
-pub fn main() -> . {
+pub fn main() {
 __INSERT_CODE_HERE__
 }
 ```

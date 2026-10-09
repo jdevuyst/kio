@@ -248,6 +248,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
         }
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
@@ -268,6 +269,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
             if !hoisting {
                 return Expr::Call {
                     occurrence: Default::default(),
+                    diagnostic: Default::default(),
                     callee: Box::new(callee),
                     args,
                     meta,
@@ -288,6 +290,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
                 .collect();
             let mut result = Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(callee),
                 args,
                 meta,
@@ -417,12 +420,14 @@ fn rename_bound_uses(e: Expr<Prime>, old: &str, new: &str) -> Expr<Prime> {
         }
         Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta,
             ext: _,
         } => Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(rename_bound_uses(*callee, old, new)),
             args: args
                 .into_iter()
@@ -631,6 +636,7 @@ mod tests {
     fn call_with_args(name: &str, args: Vec<Expr<Prime>>) -> Expr<Prime> {
         Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(path(name)),
             args: args.into_iter().map(CallArg::Value).collect(),
             meta: Meta::new(span(3)),

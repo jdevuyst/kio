@@ -84,6 +84,49 @@ fn corpus_is_non_degenerate() {
 }
 
 #[test]
+fn type_only_helpers_are_generated_in_both_modes() {
+    let names = ["kio_gen_type_only_id", "kio_gen_type_only_capture"];
+    let mut counts = [[0; 2]; 3];
+    let mut first_seeds = [[None; 2]; 3];
+    for prime_only in [false, true] {
+        let opts = generate::GenOpts { prime_only };
+        for i in 0..N {
+            let seed = program_seed(RUN_SEED, i);
+            let prog = generate::program_from_seed_opts(seed, &opts);
+            let mode = if prime_only {
+                0
+            } else if prog.surface_mode {
+                2
+            } else {
+                1
+            };
+            for (helper, name) in names.iter().enumerate() {
+                // Count calls in generated bodies, not definitions in support text.
+                if contains_poly_call(&prog.body, name) {
+                    counts[mode][helper] += 1;
+                    first_seeds[mode][helper].get_or_insert(seed);
+                }
+            }
+        }
+    }
+    for (mode, label) in ["prime-only", "default core", "default surface"]
+        .iter()
+        .enumerate()
+    {
+        for (helper, name) in names.iter().enumerate() {
+            println!(
+                "{label}: {name}: {} bodies, first seed {:?}",
+                counts[mode][helper], first_seeds[mode][helper]
+            );
+            assert!(
+                counts[mode][helper] > 0,
+                "{label}: no generated {name} call"
+            );
+        }
+    }
+}
+
+#[test]
 fn coverable_exit_codes_match_spec_and_mutator_catalog() {
     // Stage-2 coverable codes (post slice 2.11): 0 (unmutated path),
     // 11/12/13/14/15 (covered by the mutator catalog). Codes 1, 2,

@@ -2,4 +2,4 @@ module main;
 
 type Identity[*F] = F;
 
-fn reject[*F](_value: Identity(F, .)) -> . { () }
+fn reject[*F](_value: Identity(F, .)) { () }

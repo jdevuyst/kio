@@ -18,7 +18,7 @@ equiv first_message() {
   "boundaries"
 }
 
-pub fn main() -> . {
+pub fn main() {
   let text = [* "boundaries", "discarded" *] <+> "ignored";
   io.print(text.>Message.make.>Message.read);
   io.print("\n")

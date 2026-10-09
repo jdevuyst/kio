@@ -29,11 +29,41 @@ Use that argument to choose the affected surface area:
 
 For syntax touching row forms, labels, field access/update, imports, dispatch, or inference, state the open-world argument explicitly before implementing the rule.
 
+## Actionable diagnostics and native fixes
+
+When adding or changing a diagnostic that proposes a source correction, assess
+whether it can carry a structured compiler-produced fix through the existing
+LSP code-action path. Record the available fix and its evidence, or explain why
+an edit needs an author choice or cannot preserve source ownership and intent.
+A help line alone does not establish that an editor action exists; not every
+diagnostic needs an action.
+
+Build edits from authenticated syntax and resolved facts, never diagnostic
+prose. Preserve comments, formatting and unrelated source, retain the current
+document/provider checks, and reanalyse the edited program. Do not invent a
+capability or resolve ambiguous intent just to offer a fix. Mark scaffolding or
+potentially intent-changing edits with the appropriate applicability rather
+than treating them as automatic repairs.
+
+Test the structured edit, actual LSP discovery and application, the resulting
+diagnostics, and relevant stale or invalid-repair refusals. Editor presentation
+claims additionally need the real editor provider with other extensions
+disabled; distinguish a native edit from an AI action. A diagnostic golden or
+an edit-string assertion alone does not prove editor application works.
+
 ## Completion currency
 
 Completion is bidirectional: identifier candidates equal the bindings in the cursor's lexical/source-order scope and selected namespace, with shadowing and ordinary import visibility preserved. At every position where the next user-selectable named atom comes from a closed language-defined vocabulary, contextual completion equals the choices that can still lead to an accepted, canonically spelled construct. This includes all five Kio-family file kinds, not only modules and packages. Reserved, removed, rejected, duplicate, mutually exclusive, order-invalid, and context-invalid choices are not suggestions. Parser recognition for a targeted diagnostic does not make a choice eligible; derive eligibility from the effective grammar, semantics, package/versioning and target-key contracts.
 
 Trace the shared context/scope machinery through each actual LSP, terminal REPL, and browser/wasm completion entry point. Suppress unrelated identifier suggestions in comments, literals, and binder-introduction positions; distinguish language-name matching from command discovery. Replacement ranges cover the complete started identifier or operator run. Candidate labels and optional type/documentation enrichment must retain the exact selected binding, provider edge, and current source version. Omit unauthenticated enrichment rather than attaching a same-spelled or stale declaration's metadata. Bounded menu presentation does not authorize discarding eligible matches; apply the response and menu contracts in `specs/cli.md` separately.
+
+REPL declaration queries use the single-import-item selector contract in
+`specs/cli.md` § Declaration selectors. Keep operator grammar and provider
+identity separate from the callable implementing it, preserve braced labels'
+separate namespace, and replace the whole selector in completion. Qualified
+operator insertion includes its required outer parentheses; inner import-pattern
+parentheses are independent. Shared declaration rendering does not imply that
+Kiodoc directives or expression queries accept REPL selector syntax.
 
 An authorized change to eligibility moves the affected providers and focused evidence together: exact positive/negative candidate sets, insertion into an otherwise-valid continuation, and edit-driven retraction. Cover document/provider edits, shadowing, incomplete intermediates, and close/reopen or session reload. Shared collector tests do not substitute for the distinct JSON-RPC, interactive terminal, and browser completion boundaries. Static audits inspect implementation and existing evidence; execution follows the scoped validation procedure below when requested or required by an authorized fix.
 
@@ -47,3 +77,13 @@ Include embedded Kio in Rust/JS/TS test fixtures and source-producing features,
 not only `.kio` files. A syntax migration must preserve each fixture's actual
 subject. Apply and reanalyse a code action's edit, checking the intended syntax
 and semantic result while preserving any deliberately remaining diagnostics.
+
+Editor lifecycle changes also need failure-injection coverage at the real client
+boundary: missing or invalid compiler selection, startup and connection failures,
+bounded automatic restart, settings/manual recovery, and deactivation during
+startup. Distinguish a closed transport from an exited process; assert child
+cleanup and absence of unhandled failures, not only a successful test-run exit.
+Recovery evidence includes diagnostics from the actual compiler. Keep desktop
+and remote Node hosts distinct from deliberate browser-only highlighting, and
+verify status and notification behavior without treating ordinary source errors
+or version-number differences as availability failures.

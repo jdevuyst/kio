@@ -21,4 +21,4 @@ type Fn_to_amp = . -> A & A;
 // `->|` — symmetric to `->&` with a sum chain.
 type Fn_to_pipe = . -> A | A;
 
-pub fn main() -> . { () }
+pub fn main() { () }

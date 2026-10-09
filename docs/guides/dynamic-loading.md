@@ -203,14 +203,27 @@ exported entries it intends to call, each named with its full signature —
 and has the loader check the image honestly offers them. An expectation
 pairs an export name with the signature's canonical rendering:
 
-```kio {ignore}
-let c = contract_cons(
-  , mk_expect(
-      , "add3"(String)
-      , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
-      )
-  , contract_nil()
-  );
+<!--kio {harness=contracts placeholder="__INSERT_CODE_HERE__" accumulate}
+module kiodoc;
+
+import docs_loader/loader(contract_cons, contract_nil, mk_expect);
+import docs_loader/testapi(String);
+
+fn check_contract() {
+  __INSERT_CODE_HERE__
+  ()
+}
+-->
+
+```kio {@contracts}
+let c =
+  contract_cons(
+    , mk_expect(
+        , "add3"(String)
+        , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
+        )
+    , contract_nil()
+    );
 ```
 
 `image_exports(im)` is the authority for these strings. It lists each callable
@@ -302,14 +315,15 @@ statable in a contract. A payload spelled through the image's own `type`
 aliases renders structurally, so the listed and contract-matched
 signature never names a type the host cannot see:
 
-```kio {ignore}
-let c = contract_cons(
-  , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
-  , contract_cons(
-    , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
-    , contract_nil()
-    )
-  );
+```kio {@contracts}
+let c =
+  contract_cons(
+    , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
+    , contract_cons(
+        , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
+        , contract_nil()
+        )
+    );
 ```
 
 At the erased runtime a constructor and a non-existential projector are

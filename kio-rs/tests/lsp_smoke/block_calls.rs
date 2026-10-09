@@ -104,9 +104,9 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
     );
     let applied = format!("{} }}", apply_lsp_text_edits(incomplete, &[edit]));
     send_full_text_change(&mut lsp, &uri, 3, &applied);
-    assert_eq!(
-        wait_for_publish_version(&mut lsp, &uri, 3)["diagnostics"],
-        json!([])
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 3)["diagnostics"],
+        &[("function", "run")],
     );
 
     for (version, source, expected) in [
@@ -137,9 +137,9 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
         );
     }
     send_full_text_change(&mut lsp, &uri, 6, valid);
-    assert_eq!(
-        wait_for_publish_version(&mut lsp, &uri, 6)["diagnostics"],
-        json!([])
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 6)["diagnostics"],
+        &[("function", "run")],
     );
     for (offset, active) in [
         (valid.find("{ () }").unwrap() + 2, 1),
@@ -160,19 +160,78 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
             "{label}"
         );
     }
+    let incomplete = "module app; import provider(renamed); fn run() { renamed! { () } ";
+    send_full_text_change(&mut lsp, &uri, 7, incomplete);
+    assert!(
+        !wait_for_publish_version(&mut lsp, &uri, 7)["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let pos = source_position(incomplete, incomplete.len());
+    assert_eq!(
+        completion_labels(&send_completion(&mut lsp, &uri, pos.0, pos.1)),
+        vec!["fallback"]
+    );
     let changed = provider.replace("product fallback;", "product alternate;");
     send_full_text_change(&mut lsp, &provider_uri, 2, &changed);
-    let _ = wait_for_publish_version(&mut lsp, &uri, 6);
-    let incomplete = "module app; import provider(renamed); fn run() { renamed! { () } alt";
-    send_full_text_change(&mut lsp, &uri, 7, incomplete);
-    let pos = source_position(incomplete, incomplete.len());
-    let response = send_completion(&mut lsp, &uri, pos.0, pos.1);
-    let labels = completion_labels(&response);
-    assert!(!labels.contains(&"fallback"), "{response}");
-    assert!(
-        labels.is_empty() || labels == vec!["alternate"],
-        "{response}"
+    // Keep the consumer version and cursor unchanged: only the provider edit
+    // and ordinary completion requests may refresh the selected header.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut last_completion = Value::Null;
+    let completion = loop {
+        assert!(
+            Instant::now() < deadline,
+            "new continuation unavailable after provider-only edit: {last_completion}"
+        );
+        let id = lsp.send_request(
+            "textDocument/completion",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": pos.0, "character": pos.1 },
+                "context": { "triggerKind": 1 },
+            }),
+        );
+        let response = loop {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .unwrap_or_else(|| {
+                    panic!("completion refresh timed out; last result: {last_completion}")
+                });
+            let message = lsp.try_recv_for(remaining).unwrap_or_else(|| {
+                panic!("completion refresh timed out; last result: {last_completion}")
+            });
+            if message["id"].as_i64() == Some(id) {
+                assert!(message.get("error").is_none(), "{message}");
+                break message["result"].clone();
+            }
+        };
+        let labels = completion_labels(&response);
+        assert!(!labels.contains(&"fallback"), "{response}");
+        assert!(
+            labels.is_empty() || labels == vec!["alternate"],
+            "{response}"
+        );
+        if labels == vec!["alternate"] {
+            break response;
+        }
+        last_completion = response;
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(fs::read_to_string(&provider_file).unwrap(), provider);
+    let item = &completion["items"][0];
+    assert_eq!(item["textEdit"]["newText"], "alternate", "{item}");
+    let applied = format!(
+        "{} {{ () }} }}",
+        apply_lsp_text_edits(incomplete, &[item["textEdit"].clone()])
     );
+    assert_eq!(applied, format!("{incomplete}alternate {{ () }} }}"));
+    send_full_text_change(&mut lsp, &uri, 8, &applied);
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 8)["diagnostics"],
+        &[("function", "run")],
+    );
+    assert_eq!(fs::read_to_string(&provider_file).unwrap(), provider);
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -210,9 +269,9 @@ fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
     let repaired = apply_lsp_text_edits(source, edits);
     assert!(repaired.contains("fallback { () }"));
     send_full_text_change(&mut lsp, &uri, 2, &repaired);
-    assert_eq!(
-        wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"],
-        json!([])
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"],
+        &[("function", "run")],
     );
 
     let missing = "module app; import provider(finish, box_pure); fn run() { finish! { () } }";
@@ -238,9 +297,9 @@ fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
     );
     let filled = scaffold.replace("after { }", "after { box_pure(()) }");
     send_full_text_change(&mut lsp, &uri, 5, &filled);
-    assert_eq!(
-        wait_for_publish_version(&mut lsp, &uri, 5)["diagnostics"],
-        json!([])
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 5)["diagnostics"],
+        &[("function", "run")],
     );
 
     send_full_text_change(&mut lsp, &uri, 6, missing);
@@ -322,7 +381,7 @@ fn lsp_trailing_labels_retract_after_provider_only_edits() {
         );
         send_full_text_change(&mut lsp, &provider_uri, version + 1, provider);
         let restored = wait_for_publish_version(&mut lsp, &uri, 1);
-        assert_eq!(restored["diagnostics"], json!([]), "{restored}");
+        assert_unused_private_diagnostics(&restored["diagnostics"], &[("function", "run")]);
         for method in methods {
             let response = query(&mut lsp, method);
             assert!(response.get("error").is_none(), "{method}: {response}");

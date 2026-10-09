@@ -306,13 +306,30 @@ fn util_kio(prog: &Program) -> String {
     // the generated label types. Including / excluding the labels has to
     // track the wrapper-usage decision, which is what `surface_mode`
     // records.
-    if prog.surface_mode {
+    let mut source = if prog.surface_mode {
         format!(
             "{UTIL_KIO_BASE}{UTIL_KIO_TAGS}{UTIL_KIO_LITERAL_ALIASES}{UTIL_KIO_OP}{UTIL_KIO_VARIADIC}"
         )
     } else {
         UTIL_KIO_BASE.to_string()
+    };
+    let names = render::emitted_value_names(prog);
+    if names.contains("kio_gen_type_only_id") {
+        source.push_str(
+            "\npub pure fn kio_gen_type_only_id[A] -> A -> A { .(value: A) { value } }\n",
+        );
     }
+    if names.contains("kio_gen_type_only_capture") {
+        source.push_str(
+            "
+pub pure fn kio_gen_type_only_capture[A](value: A) -> A {
+  let captured = .[B] { value };
+  captured(A)
+}
+",
+        );
+    }
+    source
 }
 
 fn generated_elaborator_imports(prog: &Program) -> String {

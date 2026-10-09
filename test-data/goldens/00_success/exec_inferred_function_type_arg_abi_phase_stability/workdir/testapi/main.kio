@@ -5,7 +5,7 @@ import testapi/io(print);
 
 fn delay[X](value: X)[A] -> X { print("delay\n"); value }
 
-fn run(delayed: [A][B] (B & B) -> B) -> . {
+fn run(delayed: [A][B] (B & B) -> B) {
   print("before type application\n");
   let after_a = delayed(.);
   print("after type application\n");
@@ -13,4 +13,4 @@ fn run(delayed: [A][B] (B & B) -> B) -> . {
   print(choose(("chosen\n", "ignored\n")))
 }
 
-pub fn main() -> . { let source = delay(.[B](left: B, _right: B) -> B { left }); run(source) }
+pub fn main() { let source = delay(.[B](left: B, _right: B) -> B { left }); run(source) }

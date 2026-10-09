@@ -1,0 +1,45 @@
+module testapi/main;
+
+import factory as factory;
+import factory(selected);
+
+host fn observe(_unit: .) -> .;
+
+host fn consume(_unit: .) -> .;
+
+type Identity[A] = A -> A;
+
+fn argument() { consume(); () }
+
+fn direct[A] -> A -> A { observe(); .(value: A) { value } }
+
+fn aliased[A] -> Identity(A) { observe(); .(value: A) { value } }
+
+fn many[A][B] -> A -> A { observe(); .(value: A) { value } }
+
+fn zero[A] -> . -> . { observe(); .() { () } }
+
+fn nested[A] -> [B] B -> B { observe(); .[B] { consume(); .(value: B) { value } } }
+
+fn interleaved[A](value: A)[B] -> B -> A { observe(); .(_other: B) { value } }
+
+fn ordinary[A](value: A) -> A { observe(); value }
+
+pub fn main() {
+  direct(., argument());
+  aliased(., argument());
+  many(., ., argument());
+  zero(., argument());
+  let saved = direct(.);
+  consume();
+  saved(());
+  factory.qualified(., argument());
+  let qualified_value = factory.qualified;
+  qualified_value(., argument());
+  let qualified_selected = factory.qualified(.);
+  qualified_selected(argument());
+  selected(., argument());
+  interleaved(., argument())(., argument());
+  nested(., ., argument());
+  ordinary(., argument())
+}

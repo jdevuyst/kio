@@ -22,7 +22,7 @@ fn collapse_sum(s: String | String) -> String { onto!(s) }
 
 fn collapse_pair(p: String & String) -> String { onto!(p) }
 
-pub fn main() -> . {
+pub fn main() {
   let chosen =
     if! .t {
       widen_sum!("sum-collapsed\n", String | String)

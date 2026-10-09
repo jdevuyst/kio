@@ -23,12 +23,12 @@ use crate::ast::{
     HostFnParamGroup, HostFnValueParam, HostType, Import, ImportItem, ImportKind, Item, LabelEntry,
     LabelForward, LabelValueLabel, Labels, LabelsArm, LiteralAlias, LiteralAliasValue, LockFile,
     Meta, Module, ModulePath, Newtype, Op, OpBody, OpChainKind, OpPart, OperatorDispatchKey,
-    PackageFile, Param, ParamPattern, ParamPatternElem, PathSegment, Purity, RecCallMode, RecGroup,
-    RehostDecl, RetypeDecl, Role, RoleAnnotation, RowLetEntry, SigChangeSet, SigExportFn, SigItem,
-    SigItemRef, SigModuleSection, SigRemoveModule, SigRemoveName, SigVersion, Signature,
-    SignatureFile, SignatureGroup, SignatureParam, SourceBlock, SourceOrigin, TargetBlock,
-    TargetEntry, Type, TypeAlias, TypeMember, TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor,
-    UserElaboratorDef, VariadicOperator, Visibility,
+    PackageFile, Param, ParamPattern, ParamPatternElem, PathSegment, Purity, RecCallAnnotation,
+    RecCallMode, RecCallSyntax, RecGroup, RehostDecl, RetypeDecl, Role, RoleAnnotation,
+    RowLetEntry, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection, SigRemoveModule,
+    SigRemoveName, SigVersion, Signature, SignatureFile, SignatureGroup, SignatureParam,
+    SourceBlock, SourceOrigin, TargetBlock, TargetEntry, Type, TypeAlias, TypeMember, TypeParam,
+    TypeRecGroup, TypeRecMember, UfcsFlavor, UserElaboratorDef, VariadicOperator, Visibility,
 };
 use crate::error::{Error, Fix, FixEdit};
 use crate::pass::lexer::{Token, TokenKind, Trivia};
@@ -1024,6 +1024,12 @@ struct ParsedLazyItem {
 enum ItemParseMode {
     Eager,
     Lazy,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SignaturePolicy {
+    TypeOrValue,
+    ValueRequired,
 }
 
 const PURE_HOST_FN_DIAGNOSTIC: &str = "a host fn cannot carry `pure` because `pure` means that a function does not call host functions";
@@ -3000,7 +3006,7 @@ impl<'a> Parser<'a> {
             return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
         }
         if mode == ItemParseMode::Lazy && !modifiers.host && self.peek_ident_named("fn") {
-            let d = self.fn_item_deferred(modifiers, item_start)?;
+            let d = self.fn_item_deferred(modifiers, item_start, SignaturePolicy::TypeOrValue)?;
             Ok(ParsedLazyItem {
                 outer_trivia: Vec::new(),
                 item: Item::FnDef(d),
@@ -3056,11 +3062,16 @@ impl<'a> Parser<'a> {
         Ok(item)
     }
 
-    fn fn_item_deferred(&mut self, modifiers: ItemModifiers, start: u32) -> Result<FnDef, Error> {
+    fn fn_item_deferred(
+        &mut self,
+        modifiers: ItemModifiers,
+        start: u32,
+        policy: SignaturePolicy,
+    ) -> Result<FnDef, Error> {
         self.expect_ident_named("fn")?;
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
-        let sig = self.signature()?;
+        let sig = self.signature(policy)?;
         let (ret, ret_elided) = if self.at_sym_prefix("->") {
             self.expect_fn_arrow()?;
             (self.type_expr()?, false)
@@ -3097,7 +3108,7 @@ impl<'a> Parser<'a> {
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         let sig = if self.peek_starts_signature_group() {
-            self.signature()?
+            self.signature(SignaturePolicy::ValueRequired)?
         } else {
             Signature::new(Vec::new())
         };
@@ -4970,7 +4981,7 @@ impl<'a> Parser<'a> {
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let groups = self.host_fn_param_groups()?;
+        let groups = self.host_fn_param_groups(SignaturePolicy::TypeOrValue)?;
         self.expect_fn_arrow()?;
         let ret = self.with_host_type_parameters(owner, &groups, Self::type_expr)?;
         // A `{` here is a function body — illegal in a signature file,
@@ -5298,7 +5309,7 @@ impl<'a> Parser<'a> {
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let groups = self.host_fn_param_groups()?;
+        let groups = self.host_fn_param_groups(SignaturePolicy::ValueRequired)?;
         self.expect_fn_arrow()?;
         let ret = self.with_host_type_parameters(owner, &groups, Self::type_expr)?;
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
@@ -5316,7 +5327,10 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn host_fn_param_groups(&mut self) -> Result<Vec<HostFnParamGroup>, Error> {
+    fn host_fn_param_groups(
+        &mut self,
+        policy: SignaturePolicy,
+    ) -> Result<Vec<HostFnParamGroup>, Error> {
         let owner = self.peek_span();
         let mut groups = Vec::new();
         while self.peek_starts_signature_group() {
@@ -5331,9 +5345,10 @@ impl<'a> Parser<'a> {
         if groups.is_empty() {
             return Err(self.err_here("expected a host function parameter group"));
         }
-        if !groups
-            .iter()
-            .any(|group| matches!(group, HostFnParamGroup::Value(_)))
+        if policy == SignaturePolicy::ValueRequired
+            && !groups
+                .iter()
+                .any(|group| matches!(group, HostFnParamGroup::Value(_)))
         {
             return Err(
                 self.err_here("host function signatures require an explicit value group `()`")
@@ -5726,12 +5741,16 @@ impl<'a> Parser<'a> {
     fn import_selection_kind(&self) -> ImportSelectionKind {
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             ImportSelectionKind::Label
-        } else if !matches!(self.peek_at(1), Some(TokenKind::Comma | TokenKind::RParen))
-            && self.peek_ident_named("op")
+        } else if !matches!(
+            self.peek_at(1),
+            None | Some(TokenKind::Comma | TokenKind::RParen)
+        ) && self.peek_ident_named("op")
         {
             ImportSelectionKind::FixedOperator
-        } else if !matches!(self.peek_at(1), Some(TokenKind::Comma | TokenKind::RParen))
-            && self.peek_ident_named("varop")
+        } else if !matches!(
+            self.peek_at(1),
+            None | Some(TokenKind::Comma | TokenKind::RParen)
+        ) && self.peek_ident_named("varop")
         {
             ImportSelectionKind::VariadicOperator
         } else if matches!(self.peek(), Some(TokenKind::Ident(_))) {
@@ -6402,8 +6421,10 @@ impl<'a> Parser<'a> {
                 let doc = extract_doc_comment(&mut leading);
                 let (modifiers, header) = match self
                     .rec_member_modifiers(Visibility::Private)
-                    .and_then(|modifiers| self.function_header().map(|header| (modifiers, header)))
-                {
+                    .and_then(|modifiers| {
+                        self.function_header(SignaturePolicy::ValueRequired)
+                            .map(|header| (modifiers, header))
+                    }) {
                     Ok(parsed) => parsed,
                     Err(error) => return Err(first_error.unwrap_or(error)),
                 };
@@ -6878,6 +6899,7 @@ impl<'a> Parser<'a> {
                 host: false,
             },
             start,
+            SignaturePolicy::ValueRequired,
         )
     }
 
@@ -6888,9 +6910,10 @@ impl<'a> Parser<'a> {
             .as_ref()
             .is_some_and(|tooling| tooling.collect_roles)
         {
-            return self.fn_item(modifiers);
+            let header = self.function_header(SignaturePolicy::ValueRequired)?;
+            return self.function_body(modifiers, header);
         }
-        let header = self.function_header()?;
+        let header = self.function_header(SignaturePolicy::ValueRequired)?;
         let owner = header.body_open;
         let polymorphic = header
             .sig
@@ -7443,7 +7466,7 @@ impl<'a> Parser<'a> {
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
         let sig = if self.peek_starts_signature_group() {
-            self.signature()?
+            self.signature(SignaturePolicy::ValueRequired)?
         } else {
             Signature::new(Vec::new())
         };
@@ -7528,16 +7551,16 @@ impl<'a> Parser<'a> {
     }
 
     fn fn_item(&mut self, modifiers: ItemModifiers) -> Result<FnDef, Error> {
-        let header = self.function_header()?;
+        let header = self.function_header(SignaturePolicy::TypeOrValue)?;
         self.function_body(modifiers, header)
     }
 
-    fn function_header(&mut self) -> Result<FunctionHeader, Error> {
+    fn function_header(&mut self, policy: SignaturePolicy) -> Result<FunctionHeader, Error> {
         let owner = self.expect_ident_named("fn")?;
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let sig = self.signature()?;
+        let sig = self.signature(policy)?;
         // The `.> Type` annotation is the one optional type position
         // in Kio's grammar (language.md § Function definitions): when
         // the next token is `{` rather than `.>`, the return type
@@ -8345,10 +8368,10 @@ impl<'a> Parser<'a> {
         self.peek_starts_type_param() || matches!(self.peek(), Some(TokenKind::LParen))
     }
 
-    fn signature(&mut self) -> Result<Signature, Error> {
+    fn signature(&mut self, policy: SignaturePolicy) -> Result<Signature, Error> {
         let groups = self.signature_groups(true)?;
         let sig = Signature::from_groups(groups);
-        if sig.value_group_count() == 0 {
+        if policy == SignaturePolicy::ValueRequired && sig.value_group_count() == 0 {
             return Err(self.err_here("callable signatures require an explicit value group `()`"));
         }
         Ok(sig)
@@ -8356,11 +8379,7 @@ impl<'a> Parser<'a> {
 
     fn fn_signature(&mut self) -> Result<Signature, Error> {
         let groups = self.signature_groups(false)?;
-        let sig = Signature::from_groups(groups);
-        if sig.value_group_count() == 0 {
-            return Err(self.err_here("lambda signatures require an explicit value group `()`"));
-        }
-        Ok(sig)
+        Ok(Signature::from_groups(groups))
     }
 
     fn signature_groups(&mut self, annotated: bool) -> Result<Vec<SignatureGroup>, Error> {
@@ -10606,6 +10625,7 @@ impl<'a> Parser<'a> {
                     }
                     e = Expr::Call {
                         occurrence: Default::default(),
+                        diagnostic: Default::default(),
                         callee: Box::new(e),
                         args,
                         meta: Meta::new(call_span),
@@ -10938,6 +10958,7 @@ impl<'a> Parser<'a> {
             let (args, end) = self.call_arg_list(None)?;
             e = Expr::Call {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 callee: Box::new(e),
                 args,
                 meta: Meta::new(Span::new(start, end)),
@@ -11813,13 +11834,13 @@ impl<'a> Parser<'a> {
 
     fn rec_call_expr(&mut self) -> Result<Expr, Error> {
         let start = self.peek_span().start;
-        self.expect_ident_role("rec", KeywordRole::Declaration)?;
+        let keyword = self.expect_ident_role("rec", KeywordRole::Declaration)?;
         let mut annotation_error = None;
         let parsed = (|| {
-            let modes = if matches!(self.peek(), Some(TokenKind::LParen)) {
+            let (modes, annotations) = if matches!(self.peek(), Some(TokenKind::LParen)) {
                 self.rec_call_modes(&mut annotation_error)?
             } else {
-                Vec::new()
+                (Vec::new(), Vec::new())
             };
             self.cursor_choices(CursorSlot::RecursiveCallee, &[]);
             let (name, name_span) = self.expect_ident()?;
@@ -11835,27 +11856,37 @@ impl<'a> Parser<'a> {
             } else {
                 return Err(self.err_here("expected argument list after `rec` callee"));
             };
-            Ok((modes, PathSegment::new(name, name_span), args, end))
+            Ok((
+                modes,
+                annotations,
+                PathSegment::new(name, name_span),
+                args,
+                end,
+            ))
         })();
         if let Some(error) = annotation_error {
             return Err(error);
         }
-        let (modes, callee, args, end) = parsed?;
+        let (modes, annotations, callee, args, end) = parsed?;
         Ok(Expr::RecCall {
             occurrence: Default::default(),
             modes,
             callee,
             args,
             meta: Meta::new(Span::new(start, end)),
-            ext: (),
+            ext: RecCallSyntax {
+                keyword,
+                annotations,
+            },
         })
     }
 
     fn rec_call_modes(
         &mut self,
         annotation_error: &mut Option<Error>,
-    ) -> Result<Vec<RecCallMode>, Error> {
-        self.expect_kind(TokenKind::LParen, "`(` opening `rec` call annotations")?;
+    ) -> Result<(Vec<RecCallMode>, Vec<RecCallAnnotation>), Error> {
+        let open = self.expect_kind(TokenKind::LParen, "`(` opening `rec` call annotations")?;
+        let mut tokens = vec![RecCallAnnotation::Punctuation(open)];
         let annotation_depth = self.cursor.depth();
         self.cursor_choices_from(
             CursorSlot::RecursiveAnnotation,
@@ -11863,7 +11894,9 @@ impl<'a> Parser<'a> {
                 .into_iter()
                 .map(RecCallMode::as_str),
         );
-        self.skip_commas();
+        while matches!(self.peek(), Some(TokenKind::Comma)) {
+            tokens.push(RecCallAnnotation::Punctuation(self.advance().span));
+        }
         self.cursor_choices_from(
             CursorSlot::RecursiveAnnotation,
             [RecCallMode::Poly, RecCallMode::Cont]
@@ -11895,6 +11928,7 @@ impl<'a> Parser<'a> {
                     }
                     self.record_keyword(span, KeywordRole::Control);
                     modes.push(mode);
+                    tokens.push(RecCallAnnotation::Mode { mode, span });
                 } else {
                     annotation_error.get_or_insert_with(|| {
                         Error::parse(span, format!("unknown `rec` call annotation `{name}`"))
@@ -11932,7 +11966,11 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             }
-            if self.skip_commas() {
+            let has_comma = matches!(self.peek(), Some(TokenKind::Comma));
+            while matches!(self.peek(), Some(TokenKind::Comma)) {
+                tokens.push(RecCallAnnotation::Punctuation(self.advance().span));
+            }
+            if has_comma {
                 self.cursor_choices_from(
                     CursorSlot::RecursiveAnnotation,
                     [RecCallMode::Poly, RecCallMode::Cont]
@@ -11947,8 +11985,9 @@ impl<'a> Parser<'a> {
             }
             break;
         }
-        self.expect_kind(TokenKind::RParen, "`)` closing `rec` call annotations")?;
-        Ok(modes)
+        let close = self.expect_kind(TokenKind::RParen, "`)` closing `rec` call annotations")?;
+        tokens.push(RecCallAnnotation::Punctuation(close));
+        Ok((modes, tokens))
     }
 
     fn leading_dot_expr(&mut self) -> Result<Expr, Error> {
@@ -12011,8 +12050,11 @@ impl<'a> Parser<'a> {
             }
             complete = true;
         }
-        let selected = !failed && complete && matches!(self.peek(), Some(TokenKind::LParen));
-        if selected {
+        let selected = !failed
+            && complete
+            && (matches!(self.peek(), Some(TokenKind::LParen | TokenKind::LBrace))
+                || self.at_sym_prefix("->"));
+        if selected && matches!(self.peek(), Some(TokenKind::LParen)) {
             self.advance();
         }
         let facts = self.take_tooling_suffix(&checkpoint);
@@ -12844,6 +12886,7 @@ impl<'a> Parser<'a> {
         // continuation's body.
         Ok(Expr::Call {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             callee: Box::new(value),
             args: vec![
                 CallArg::Type(Type::Infer {
@@ -13573,6 +13616,57 @@ pub(crate) fn parse_operator_grammar(source: &str) -> Result<crate::ast::Operato
             "expected a complete tagged operator grammar",
         )),
     }
+}
+
+/// Parse one inspector selector, optionally qualified by a module path. The
+/// separating dot belongs to the path prefix, not to the selector's grammar.
+#[cfg(feature = "repl-core")]
+pub(crate) fn parse_declaration_query(
+    source: &str,
+) -> Result<(Option<ModulePath>, ImportItem), Error> {
+    let tokens = crate::pass::lexer::lex(source)?;
+    let skeleton = crate::pass::tree_skeleton::build(tokens);
+    let mut parser = Parser::new(&skeleton, source.len());
+    let mut offset = 1;
+    while parser.peek_at(offset).is_some_and(|kind| kind.is_sym("/"))
+        && matches!(parser.peek_at(offset + 1), Some(TokenKind::Ident(_)))
+    {
+        offset += 2;
+    }
+    let provider = if matches!(parser.peek(), Some(TokenKind::Ident(_)))
+        && parser.peek_at(offset).is_some_and(|kind| kind.is_sym("."))
+    {
+        let path = parser.module_path()?;
+        parser.expect_sym(".", "`.` before the declaration selector")?;
+        Some(path)
+    } else {
+        None
+    };
+    let wrapped = provider.is_some() && matches!(parser.peek(), Some(TokenKind::LParen));
+    if wrapped {
+        parser.expect_kind(TokenKind::LParen, "`(` before the operator selector")?;
+    }
+    let selector = parser.parse_import_item()?;
+    if provider.is_some() {
+        match (wrapped, &selector) {
+            (false, ImportItem::OperatorPattern { .. }) => {
+                return Err(parser.err_here(
+                    "a qualified operator selector requires parentheses: module.(op _ + _)",
+                ));
+            }
+            (true, ImportItem::Name { .. } | ImportItem::Label { .. }) => {
+                return Err(parser.err_here(
+                    "a qualified selector's outer parentheses are only for `op` or `varop`",
+                ));
+            }
+            _ => {}
+        }
+    }
+    if wrapped {
+        parser.expect_kind(TokenKind::RParen, "`)` after the operator selector")?;
+    }
+    parser.expect_eof()?;
+    Ok((provider, selector))
 }
 
 /// Build the operator-scope trie key for a validated `op`

@@ -1,0 +1,5 @@
+module main;
+
+import support(hepler);
+
+pub fn main() { helper() }

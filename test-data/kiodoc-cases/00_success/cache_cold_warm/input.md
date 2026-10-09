@@ -19,11 +19,11 @@ __INSERT_CODE_HERE__
 ```
 
 ```kio {@main}
-pub fn greet() -> . { print("hi\n") }
+pub fn greet() { print("hi\n") }
 ```
 
 ```kio {@main}
-pub fn farewell() -> . { print("bye\n") }
+pub fn farewell() { print("bye\n") }
 ```
 
 ```kio {}

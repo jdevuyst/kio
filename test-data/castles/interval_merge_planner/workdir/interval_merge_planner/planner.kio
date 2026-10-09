@@ -146,21 +146,21 @@ fn show_i32(value: I32) -> String { fmt.int_to_string(value) }
 
 fn show_bool(value: Bool) -> String { fmt.bool_to_string(value) }
 
-fn line(label: String, value: I32) -> . { io.print(cat3(label, show_i32(value), "\n")) }
+fn line(label: String, value: I32) { io.print(cat3(label, show_i32(value), "\n")) }
 
-fn print_window(window_value: Window) -> . {
+fn print_window(window_value: Window) {
   io.print(cat5("- ", window_value.?{window_name}, " ", show_i32(window_value.?{start_minute}), "-"));
   io.print(cat3(show_i32(window_value.?{end_minute}), "", "\n"))
 }
 
-fn print_segment(number: I32, plan: Plan) -> . {
+fn print_segment(number: I32, plan: Plan) {
   io.print(cat3("- segment ", show_i32(number), " "));
   io.print(cat3(show_i32(plan.?{current_start}), "-", show_i32(plan.?{current_end})));
   io.print(cat3(" duration ", show_i32(duration(plan.?{current_start}, plan.?{current_end})), " "));
   io.print(cat3("windows ", show_i32(plan.?{current_windows}), "\n"))
 }
 
-fn print_gap(number: I32, left: Plan, right: Plan) -> . {
+fn print_gap(number: I32, left: Plan, right: Plan) {
   let gap_start = left.?{current_end};
   let gap_end = right.?{current_start};
   io.print(cat3("- gap ", show_i32(number), " "));
@@ -168,12 +168,12 @@ fn print_gap(number: I32, left: Plan, right: Plan) -> . {
   io.print(cat3(" duration ", show_i32(duration(gap_start, gap_end)), "\n"))
 }
 
-fn print_conflict(name: String, minutes: I32) -> . {
+fn print_conflict(name: String, minutes: I32) {
   io.print(cat3("- ", name, " overlaps active segment by "));
   io.print(cat3(show_i32(minutes), " minutes", "\n"))
 }
 
-pub fn run() -> . {
+pub fn run() {
   let w1 = backup_db();
   let w2 = search_reindex();
   let w3 = payroll_export();

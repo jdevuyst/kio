@@ -16,4 +16,4 @@ rec(loop) fn consume(state: model.State) -> model.State {
   }
 }
 
-pub fn main() -> . { render.document(consume(model.empty_state())) }
+pub fn main() { render.document(consume(model.empty_state())) }

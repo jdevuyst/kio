@@ -23,7 +23,7 @@ rec(loop) fn replay_lines(state: Vacuum) -> Vacuum {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   print("robot_vacuum_replay\n");
   let final_state = replay_lines(initial_vacuum());
   print(summary_line(final_state))

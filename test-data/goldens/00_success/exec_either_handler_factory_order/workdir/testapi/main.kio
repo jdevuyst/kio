@@ -20,6 +20,6 @@ fn make_right_handler() -> String -> . {
   .(_value: String) -> . { print("right invoke\n"(String)) }
 }
 
-pub fn main() -> . {
+pub fn main() {
   __either__(Bool, String, ., scrutinee(), make_left_handler(), make_right_handler())
 }

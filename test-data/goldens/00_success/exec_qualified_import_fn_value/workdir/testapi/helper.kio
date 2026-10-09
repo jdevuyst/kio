@@ -3,4 +3,4 @@ module testapi/helper;
 import testapi(String);
 import testapi/io(print);
 
-pub fn greet(s: String) -> . { print(s) }
+pub fn greet(s: String) { print(s) }

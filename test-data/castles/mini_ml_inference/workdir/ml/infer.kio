@@ -94,7 +94,7 @@ rec(loop) fn infer(
 }
 
 pub fn report(expr: ast.Expr) -> String {
-  match! infer(expr, lists.nil(), lists.nil(), 0) {
+  match! infer(expr, lists.nil(_), lists.nil(_), 0) {
     .(ty: types.Ty, substitutions: types.Substitution, _next: I32) {
       text.string_concat("type ", types.show(types.apply(substitutions, ty)))
     };

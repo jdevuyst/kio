@@ -774,7 +774,23 @@ fn arm_exit(dom: Value) -> Call_result {
 // handle.
 fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_local(host_fn_id(descriptor));
-  if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"(String), "produce"(String))) {
+  if! string_eq(protocol_name(), "type-only-stage-trace"(String)) {
+    if! host_fn_eq(
+      , descriptor
+      , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
+      ) {
+      print("observe\n"(String));
+      call_done(vunit())
+    } else if! host_fn_eq(
+      , descriptor
+      , mk_host_fn(mk_host_id("testapi/main"(String), "consume"(String)), "() -> ."(String))
+      ) {
+      print("consume\n"(String));
+      call_done(vunit())
+    } else {
+      call_stuck("type-only-stage-trace received an unexpected host descriptor"(String))
+    }
+  } else if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"(String), "produce"(String))) {
     print("direct\n"(String));
     call_done(vproduct(vi32(7(I32)), vhost(scalar_of_str("direct-value"(String)))))
   } else if! host_fn_eq(descriptor, cb_pair_descriptor()) {

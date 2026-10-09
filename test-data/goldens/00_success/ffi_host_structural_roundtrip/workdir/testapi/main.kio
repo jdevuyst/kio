@@ -7,7 +7,7 @@ import testapi/arith(make_pair);
 import testapi/fmt(i32_to_string, sum_to_string);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let pair = make_pair(42, "host-pair"(String));
   match! pair {
     .(n: I32, s: String) {

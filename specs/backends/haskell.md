@@ -256,6 +256,16 @@ native pair / `Either` carrier, named at each boundary slot by a stable alias.
 Exported flat pattern synonyms let the host build and read that value without
 depending on its nested carrier spelling. See § FFI surface.
 
+### Doc comments
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface)
+uses Haddock comments on exported signatures, host-record fields, associated
+host types, and minted nominal newtypes, for both body representations.
+Transparent newtypes without a nominal declaration have no separate type
+slot. Authored markup is rendered as Haddock, with unresolved references
+and native control syntax retained as inert text. Existing representation
+notes follow the authored documentation in the same block.
+
 ## Host record contract
 
 The Haskell host contract has two deliberately separate parts:
@@ -907,7 +917,7 @@ host fn print(output: Output, s: Str) -> .;
 module app/main;
 import app(Str);
 import app(print, stdout);
-pub fn main() -> . { print(stdout(), "hello\n"(Str)) }
+pub fn main() { print(stdout(), "hello\n"(Str)) }
 ```
 
 `kio build haskell` writes `out/haskell/Greet.hs` (the

@@ -1,0 +1,17 @@
+module testapi/main;
+
+host fn observe(_unit: .) -> .;
+
+host fn consume(_unit: .) -> .;
+
+pub fn direct[A] -> A -> A { observe(); .(value: A) { value } }
+
+pub fn delayed[A]() -> A -> A { consume(); .(value: A) { value } }
+
+pub fn ordinary[A](value: A) -> A { observe(); value }
+
+pub fn phantom[A] { observe() }
+
+pub fn phantom_unit[A]() { consume() }
+
+pub fn poly[A] -> [B] B -> B { observe(); .[B](value: B) { value } }

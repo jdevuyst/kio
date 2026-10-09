@@ -5,7 +5,7 @@ import testapi/fmt(i32_to_string);
 import testapi/io(print);
 import testapi/syntax(op ? _ : _, op _ => _, varop [! !], varop [% %], varop [+ +], varop [- -]);
 
-pub fn main() -> . {
+pub fn main() {
   let .(chosen: I32) = ? 5 : 6;
   print(i32_to_string(chosen));
   print("\n");

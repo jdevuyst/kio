@@ -8,5 +8,5 @@ declared harness with `{@NAME}`, or is standalone with `{}`.
 ```kio {@}
 module kiodoc;
 
-pub fn greet() -> . { () }
+pub fn greet() { () }
 ```

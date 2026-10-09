@@ -12,4 +12,4 @@ import testapi/io(print);
 // position; the two I32 slots drop.
 fn project_string(p: String & I32 & I32) -> String { narrow_prod!(p) }
 
-pub fn main() -> . { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }
+pub fn main() { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }

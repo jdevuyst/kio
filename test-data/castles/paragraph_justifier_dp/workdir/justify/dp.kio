@@ -136,5 +136,5 @@ rec(loop) fn fill(j: I32, n: I32, column: I32, rest: Words, rev_words: Words, ac
 /// predecessor and no candidate starts, and both `-1`s print as `-`.
 pub fn solve(xs: Words, column: I32) -> Table {
   let seed = make_table(list.one(0), list.one(-1), list.one(-1));
-  fill(1, list.len(xs), column, list.tail_of(xs), list.push_head(xs, list.nil(Word, ())), seed)
+  fill(1, list.len(xs), column, list.tail_of(xs), list.push_head(xs, list.nil(Word)), seed)
 }

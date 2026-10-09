@@ -39,6 +39,14 @@ Do **not** use `{ignore}` as the default for examples that are inconvenient to s
 
 **Blog post bodies are the authorial exception.** The no-leak rule does not apply to hand-written `docs/blog/*.md` bodies, and a post may link to any tracked repository path, including agent guidance. A GitHub link to a repository file or directory must pin the target with a full commit object ID (`blob/<commit>/…` or `tree/<commit>/…`), never a branch or tag such as `main`. Blog post edits remain approval-gated by `AGENTS.md`.
 
+**Blog source uses straight quotation marks and apostrophes.** Use ASCII `"`
+and `'` rather than curly quotation marks or apostrophes (U+2018–U+2019,
+U+201C–U+201D). This is a quotation-mark convention, not a ban on Unicode text
+or other punctuation. `blog-lint.sh` checks the post source; reviewers report
+violations and propose corrections without editing the protected post. If a
+quoted source or code example intentionally needs those characters, surface
+that conflict for an author decision rather than silently rewriting it.
+
 **Blog examples use current Kio.** The docs package's recursive Kiodoc CI checks
 include blog pages. Their examples must meet their declared snippet expectations
 with the current compiler, even when the surrounding prose discusses history.

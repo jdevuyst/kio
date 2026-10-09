@@ -9,4 +9,4 @@ fn extend(p: String & I32) -> String & I32 & . { widen_prod!(p) }
 
 fn pick(p: String & I32 & .) -> String { one_prod!(p) }
 
-pub fn main() -> . { print(pick(extend(("import_elaborators_multiple: ok\n", 3)))) }
+pub fn main() { print(pick(extend(("import_elaborators_multiple: ok\n", 3)))) }

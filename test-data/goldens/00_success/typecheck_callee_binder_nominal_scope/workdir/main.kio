@@ -12,4 +12,4 @@ fn alpha(value: Token) -> Token { renamed(Token, value) }
 
 fn caller[Token](value: Token) -> Token { generic(Token, value) }
 
-pub fn main() -> . { Token.get(caller(Token, alpha(explicit(Token.mk(()))))) }
+pub fn main() { Token.get(caller(Token, alpha(explicit(Token.mk(()))))) }

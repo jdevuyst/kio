@@ -29,10 +29,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
-// Which server this launch was pointed at — see `runTest.ts`. A launch
-// exercises one server, because the extension resolves its server once,
-// at activation.
+// Initial server configuration for this launch — see `runTest.ts`.
 const MODE = process.env.VSCODE_KIO_E2E_MODE ?? "mock";
+
+suite("Kio extension — isolated native tooling", () => {
+  test("built-in AI features are disabled", () => {
+    assert.strictEqual(vscode.workspace.getConfiguration("chat").get("disableAIFeatures"), true);
+    for (const id of ["GitHub.copilot", "GitHub.copilot-chat"]) {
+      assert.notStrictEqual(vscode.extensions.getExtension(id)?.isActive, true, id);
+    }
+  });
+});
 
 function workspaceDir(): string {
   const dir = process.env.VSCODE_KIO_TEST_WORKSPACE;
@@ -116,6 +123,30 @@ async function waitFor(
     await new Promise((r) => setTimeout(r, 100));
   }
   assert.fail(`timed out after ${timeoutMs}ms waiting for: ${description}`);
+}
+
+async function completeEditorRequest<T>(
+  request: () => Thenable<T>,
+  version: () => number,
+  deadline: number,
+  pause: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 100)),
+  now: () => number = Date.now,
+): Promise<T> {
+  const expectedVersion = version();
+  for (;;) {
+    try {
+      const result = await request();
+      assert.strictEqual(version(), expectedVersion, "the action request uses an unchanged document");
+      return result;
+    } catch (error) {
+      // Editor invalidation can cancel a request while the document opens
+      // or its applied edit propagates. Cancellation is not an empty result.
+      const canceled = error instanceof vscode.CancellationError
+        || (error instanceof Error && error.name === "Canceled" && error.message === "Canceled");
+      if (!canceled || now() >= deadline) throw error;
+      await pause();
+    }
+  }
 }
 
 // The activation / highlighting floor is server-independent, so it runs
@@ -209,10 +240,13 @@ suite("Kio extension — activation & highlighting", () => {
       path.resolve(__dirname, "../../fixtures/structural-highlighting.json"), "utf8")),
     ...JSON.parse(fs.readFileSync(
       path.resolve(__dirname, "../../../../tree-sitter-kio/test/structural.json"), "utf8")),
+    ...JSON.parse(fs.readFileSync(
+      path.resolve(__dirname, "../../../../tree-sitter-kio/test/documentation.json"), "utf8")),
   ] as Array<{
     name: string;
     source: string;
-    targets: Array<{ start: number; end: number; text: string; kind: string; vscodeKind?: string }>;
+    lineLocalNeutral?: string[];
+    targets: Array<{ start: number; end: number; text: string; kind: string; vscodeKind?: string; vscodeTargets?: Array<{ start: number; end: number; kind: string }> }>;
   }>;
   const structuralKinds: Record<string, number> = {
     "keyword.control": 0,
@@ -231,10 +265,46 @@ suite("Kio extension — activation & highlighting", () => {
     "slot": 0,
     "comment.line": 7,
     "comment.doc": 7,
+    "comment.doc.reference": 3,
+    "comment.doc.directive": 0,
+    "comment.doc.fence": 0,
+    "comment.doc.code": 5,
+    "comment.doc.heading": 0,
+    "comment.doc.strong": 5,
+    "comment.doc.emphasis": 5,
+    "comment.doc.marker": 8,
+    "comment.doc.link": 5,
+    "comment.doc.attribute": 0,
     "literal.number": 6,
     "literal.bool": 6,
     "literal.string": 5,
   };
+  const docStyling = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, "../../../../tree-sitter-kio/test/documentation-styling.json"), "utf8")) as Array<{
+      name: string; source: string; targets: Array<{ text: string; kind: string }>;
+    }>;
+  for (const fixture of docStyling) {
+    test(`bundled documentation styling: ${fixture.name}`, async () => {
+      const doc = await vscode.workspace.openTextDocument({ language: "kio", content: fixture.source });
+      try {
+        await vscode.window.showTextDocument(doc);
+        const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens>("vscode.provideDocumentSemanticTokens", doc.uri);
+        assert.ok(tokens, fixture.name);
+        const decoded = decodedSemanticTokens(doc, tokens).map((token) => {
+          const start = doc.offsetAt(new vscode.Position(token.line, token.character));
+          return { start, end: start + token.text.length, kind: token.type };
+        });
+        for (const target of fixture.targets) {
+          const start = doc.getText().indexOf(target.text);
+          assert.ok(start >= 0, `${fixture.name}: target exists`);
+          for (let index = start; index < start + target.text.length; index++) {
+            assert.ok(decoded.some((token) => token.start <= index && index < token.end && token.kind === structuralKinds[target.kind]),
+              `${fixture.name}: ${target.text} at ${index} has ${target.kind}`);
+          }
+        }
+      } finally { await vscode.commands.executeCommand("workbench.action.closeActiveEditor"); }
+    });
+  }
   for (const fixture of structuralFixtures) {
     test(`semantic tokens preserve structural roles: ${fixture.name}`, async () => {
       const failures: string[] = [];
@@ -267,6 +337,17 @@ suite("Kio extension — activation & highlighting", () => {
           const expectedKind = target.vscodeKind ?? target.kind;
           assert.notStrictEqual(structuralKinds[expectedKind], undefined, expectedKind);
           const actual = decoded.filter((token) => token.start < end && start < token.end);
+          if (target.vscodeTargets) {
+            assert.deepStrictEqual(actual, target.vscodeTargets.map((part) => ({
+              start: documentOffset(part.start), end: documentOffset(part.end), type: structuralKinds[part.kind],
+            })), `${label}: full-context Kio refinement of the query's code-body floor`);
+            continue;
+          }
+          if (fixture.lineLocalNeutral?.includes(target.text)) {
+            assert.ok(actual.length === 1 && actual[0].type === structuralKinds["comment.doc"] && actual[0].start <= start && actual[0].end >= end,
+              `${label}: line-local literal fallback stays neutral`);
+            continue;
+          }
           if (actual.length !== 1 || actual[0].start !== start ||
             actual[0].end !== end || actual[0].type !== structuralKinds[expectedKind]) {
             failures.push(`${label}: expected ${expectedKind}, received ${JSON.stringify(actual)}`);
@@ -372,6 +453,142 @@ suite("Kio extension — LSP client", () => {
 // actual `kio lsp` against a real package and waits for its verdict.
 if (MODE === "real")
 suite("Kio extension — real kio lsp", () => {
+  test("native quick fixes apply without an AI extension and leave capability choices explicit", async () => {
+    for (const [name, source, expected, title] of [
+      [
+        "import",
+        "module main; import support(\n// 😀 preserve this comment\nhepler); pub fn main() { helper() }\n",
+        "module main; import support(\n// 😀 preserve this comment\nhelper); pub fn main() { helper() }\n",
+        "Replace with `helper`",
+      ],
+      [
+        "module-path",
+        "module main; import supprt as chosen; pub fn main() { chosen.helper() }\n",
+        "module main; import support as chosen; pub fn main() { chosen.helper() }\n",
+        "Replace module path with `support`",
+      ],
+      [
+        "call",
+        "module main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n",
+        "module main; import support as host; pub rec(host.drive) fn again(x: .) { rec again(x) }\n",
+        "Mark recursive call with `rec`",
+      ],
+      [
+        "qualified-head",
+        "module main; import support as support; pub fn main() { suport. // preserve member\nhelper() }\n",
+        "module main; import support as support; pub fn main() { support. // preserve member\nhelper() }\n",
+        "Replace with `support`",
+      ],
+      [
+        "label-import",
+        "module main; import support({mrk}); pub fn main() { let _ = {mark = ()}; () }\n",
+        "module main; import support({mark}); pub fn main() { let _ = {mark = ()}; () }\n",
+        "Replace with `mark`",
+      ],
+      [
+        "definition",
+        "module main; pub fn again(x: .) { rec again(x) }\n",
+        undefined,
+        undefined,
+      ],
+    ] as const) {
+      const relative = `native-fix-${name}`;
+      const root = path.join(workspaceDir(), relative);
+      fs.mkdirSync(root);
+      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+      fs.writeFileSync(path.join(root, "support.kio"),
+        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n");
+      fs.writeFileSync(path.join(root, "main.kio"), source);
+      const doc = await openFixture(`${relative}/main.kio`);
+      const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)
+        .filter((diagnostic) => diagnostic.source === "kio"
+          && diagnostic.severity === vscode.DiagnosticSeverity.Error);
+      await waitFor(() => errors().length > 0, 20_000, `${name} diagnostic`);
+      assert.strictEqual(errors().length, 1);
+      const actions = await completeEditorRequest(() =>
+        vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider", doc.uri, errors()[0].range,
+          vscode.CodeActionKind.QuickFix.value,
+        ), () => doc.version, Date.now() + 5_000);
+      assert.ok(Array.isArray(actions), "the native provider completes the request");
+      if (expected === undefined) {
+        assert.match(errors()[0].message, /only allowed inside a `rec\(loop\)` function/);
+        assert.deepStrictEqual(actions, [], "a function definition needs the author's loop capability");
+        assert.strictEqual(doc.getText(), source);
+        continue;
+      }
+      const action = actions.find((candidate) => candidate.title === title);
+      assert.ok(action?.edit, `${name}: a native edit is discoverable`);
+      assert.strictEqual(action.kind?.value, "quickfix");
+      assert.strictEqual(action.command, undefined, "applying the fix needs no command or AI service");
+      assert.strictEqual(await vscode.workspace.applyEdit(action.edit), true);
+      assert.strictEqual(doc.getText(), expected);
+      await waitFor(() => errors().length === 0, 20_000, `${name} repair reanalysis`);
+    }
+  });
+
+  test("nested-call UFCS refactoring waits only for canceled editor requests", async () => {
+    let tick = 0;
+    const pause = async (): Promise<void> => { tick++; };
+    const now = (): number => tick;
+    let attempts = 0;
+    const complete = await completeEditorRequest(async () => {
+      if (attempts++ === 0) throw new vscode.CancellationError();
+      return ["completed"];
+    }, () => 1, 3, pause, now);
+    assert.deepStrictEqual(complete, ["completed"]);
+    assert.strictEqual(attempts, 2);
+    const unrelated = new Error("provider failed");
+    await assert.rejects(completeEditorRequest(async () => { throw unrelated; }, () => 1, 3, pause, now),
+      (error) => error === unrelated);
+    let version = 1;
+    await assert.rejects(completeEditorRequest(async () => { version++; return []; }, () => version, 3, pause, now),
+      /unchanged document/);
+    tick = 0;
+    attempts = 0;
+    await assert.rejects(completeEditorRequest(async () => {
+      attempts++;
+      throw new vscode.CancellationError();
+    }, () => 1, 3, pause, now), vscode.CancellationError);
+    assert.strictEqual(attempts, 4);
+    assert.strictEqual(tick, 3);
+  });
+
+  test("nested-call UFCS refactoring applies a whole imported host chain", async () => {
+    const root = path.join(workspaceDir(), "ufcs-refactor");
+    fs.mkdirSync(path.join(root, "demo"), { recursive: true });
+    fs.writeFileSync(path.join(root, "demo.pkg.kio"), "package demo; bridge { demo/**; }\n");
+    fs.writeFileSync(path.join(root, "demo/provider.kio"), "module demo/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;\n");
+    const body = 'p.string_concat("a", string_concat("b", p.string_concat("c", "d")))';
+    const source = `module demo/main; import demo/provider(Text, string_concat); import demo/provider as p; pub fn run() -> Text { ${body} }\n`;
+    fs.writeFileSync(path.join(root, "demo/main.kio"), source);
+    const doc = await openFixture("ufcs-refactor/demo/main.kio");
+    const start = source.indexOf(body);
+    const range = new vscode.Range(doc.positionAt(start), doc.positionAt(start + body.length));
+    const query = (at: vscode.Range, deadline: number): Promise<vscode.CodeAction[] | undefined> =>
+      completeEditorRequest(() => vscode.commands.executeCommand<vscode.CodeAction[]>(
+        "vscode.executeCodeActionProvider", doc.uri, at, vscode.CodeActionKind.RefactorRewrite.value,
+      ), () => doc.version, deadline);
+    let action: vscode.CodeAction | undefined;
+    const deadline = Date.now() + 20_000;
+    while (!action && Date.now() < deadline) {
+      const actions = await query(range, deadline);
+      action = actions?.find((candidate) => candidate.title === "Convert nested calls to UFCS");
+      if (!action) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(action?.edit, "the current clean document offers a versioned refactoring");
+    assert.strictEqual(action.kind?.value, "refactor.rewrite");
+    assert.strictEqual(await vscode.workspace.applyEdit(action.edit), true);
+    assert.strictEqual(doc.getText(), source.replace(body, '("d".>>p.string_concat("c").>>string_concat("b").>>p.string_concat("a"))'));
+    assert.strictEqual(vscode.languages.getDiagnostics(doc.uri).length, 0);
+    const again = await query(
+      new vscode.Range(doc.positionAt(start), doc.positionAt(doc.getText().lastIndexOf("}"))),
+      Date.now() + 5_000,
+    );
+    assert.ok(Array.isArray(again), "the edited document receives a completed action response");
+    assert.ok(!again.some((candidate) => candidate.title === "Convert nested calls to UFCS"));
+  });
+
   test("a type error in the package reaches the editor as a diagnostic", async () => {
     const doc = await openFixture("lsp-pkg/main.kio");
     const fromKio = (): vscode.Diagnostic[] =>

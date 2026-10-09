@@ -15,7 +15,7 @@ fn cat(head: String, tail: String) -> String { head }
 // `cat(a, cat(b, cat(c, nil())))`.
 varop [* *] { foldr cat nil }
 
-pub fn main() -> . {
+pub fn main() {
   print([* "a", "b", "c" *]);
   print("\n");
   print([* "solo" *]);

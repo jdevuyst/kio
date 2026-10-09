@@ -158,6 +158,14 @@ for the language-level statement.
 
 A lambda literal's typing rule depends on whether it appears in checking or synthesizing position.
 
+Its written signature groups elaborate by the ordered fold in
+[`prime.md` § 1.3](prime.md#13-top-level-declarations). Each type binder adds
+one `Λ` and each written value group adds one `λ`, including `()` as a Unit
+domain. A nonempty type-only signature adds no value abstraction. All
+reconstructed schemes satisfy the existing kind-checking discipline above;
+in particular, admitting type-only syntax does not admit the incomplete
+higher-kinded scheme `[*F] .`.
+
 ### 4.1. Checking a lambda against a polytype (E-FnCheck)
 
 ```text
@@ -176,7 +184,24 @@ R-surface annotation A_R is admitted by the same predicate and is absent or
 
 The rule **skolemizes** ᾱ — replaces each universal binder with a fresh constant `α_skol` introduced into Γ. The body is checked at the substituted return type R under the skolemized context. The binders are then re-bound at the elaborated term's outer Λ. Skolemization is **shallow** — only the leading ∀ binders of the immediate σ are skolemized; binders inside Tᵢ or R are not skolemized at this rule.
 
-**Surface-arity match.** The user's `[ᾱ_surf]` binder list must match σ's leading binders in length (the syntactic forall positions correspond). The skolemization runs only when the lengths agree; a mismatch is a type error at this rule, not elsewhere.
+**Surface-arity match.** Each written signature group must match the
+corresponding outer layer of σ. In the displayed value-group case, the user's
+`[ᾱ_surf]` binder list must match the leading binders before that value arrow
+in length. A type-only signature instead consumes only its written binder
+prefix; the rest of σ is the body's expected type. For nonempty ᾱ, its rule is:
+
+```text
+σ = ∀ᾱ. R
+Γ, ᾱ_skol ⊢ body ⇓ R ↪ body′
+A_R is admitted and absent or structurally matches R, as above
+─────────────────────────────────────────────────────────────────  E-FnCheck-Type
+Γ ⊢ .[ᾱ_surf] -> A_R { body } ⇓ σ ↪ Λᾱ. body′
+```
+
+Here `R` may itself start with more universal binders. For example,
+`.[A] { .[B] { () } }` checks against `[X][Y] .`: the outer `[A]` matches
+only `[X]`, leaving `[Y] .` for the inner lambda. A missing or incompatible
+expected layer is a type error, not a reason to invent a value group.
 
 **Annotation verification.** Each Aᵢ the user wrote is first materialized
 through its already-resolved transparent aliases, retaining the exact route of
@@ -216,6 +241,22 @@ A_R absent or exactly "_" and
     ∀ᾱ. (A₁, …, Aₙ) → R′ ↪
     Λᾱ. λ(x₁: A₁, …, xₙ: Aₙ). body′
 ```
+
+For a nonempty type-only signature, there are no value-parameter annotations
+to complete. Using the same result-annotation premises above, the body is
+checked against a concrete `A_R` or synthesizes `R′` when `A_R` is absent or
+exactly `_`:
+
+```text
+Γ, ᾱ ⊢ body ⇑ R′ ↪ body′                 (or checks against concrete A_R)
+∀ᾱ. R′ is a well-kinded value type
+─────────────────────────────────────────────────────────────────  E-FnSynth-Type
+Γ ⊢ .[ᾱ] -> A_R { body } ⇑ ∀ᾱ. R′ ↪ Λᾱ. body′
+```
+
+In particular, omitting the value group is not the `n = 0` instance of the
+displayed E-FnSynth rule: writing `()` still contributes `. → R′` and a
+Unit-domain `λ`.
 
 E-FnSynth is the rule for a lambda literal that sits in a **synthesizing
 position with no expected polytype** — for example, the right-hand side of an

@@ -190,7 +190,7 @@ fn render_csv(arr: Array(I32)) -> String {
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let arr = make_input();
   let sorted = quicksort(arr);
   print(render_csv(sorted));

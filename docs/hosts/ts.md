@@ -55,6 +55,14 @@ files and the brand together). The runtime targets ECMAScript 2020 (the JS
 backend's floor); the `.d.ts` targets TypeScript 5.0+ and type-checks under
 `--strict`.
 
+### Generated documentation
+
+The declaration file carries Kio docs as JSDoc on host requirements, package
+members, and named boundary types. Your editor can display them with the
+corresponding declaration. References remain written Kio names; at-signs and
+comment terminators are visibly escaped rather than interpreted as annotations.
+See [boundary documentation](../../specs/backends/ts.md#boundary-documentation).
+
 ## Loading the package
 
 A TypeScript host brings the package online in three steps — the same steps a JS host follows, with types added.
@@ -315,7 +323,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() -> . { print("hello from kio\n"(String)) }
+pub fn main() { print("hello from kio\n"(String)) }
 ```
 
 Build:

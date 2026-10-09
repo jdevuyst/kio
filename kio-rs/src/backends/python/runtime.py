@@ -196,7 +196,6 @@ def _signature_runtime_groups(sig):
     groups = sig.get("groups", [])
     out = []
     offset = 0
-    has_value_group = False
     if groups:
         for group in groups:
             tag, data = _tag(group)
@@ -206,7 +205,6 @@ def _signature_runtime_groups(sig):
             if tag == "Type":
                 out.extend((True, []) for _ in range(length))
             elif tag == "Value":
-                has_value_group = True
                 out.append((False, [_tag(param)[1]["name"] for param in chunk]))
     else:
         names = []
@@ -215,17 +213,22 @@ def _signature_runtime_groups(sig):
             if tag == "Type":
                 if names:
                     out.append((False, names))
-                    has_value_group = True
                     names = []
                 out.append((True, []))
             elif tag == "Value":
                 names.append(data["name"])
         if names:
             out.append((False, names))
-            has_value_group = True
-    if not has_value_group:
+    if not out:
         out.append((False, []))
     return out
+
+
+def _signature_has_value_group(sig):
+    for group in sig["groups"]:
+        if _tag(group)[0] == "Value":
+            return True
+    return False
 
 
 def _apply_type_stages(fn, type_args):
@@ -432,7 +435,10 @@ class _PackageRuntime:
                 path.append(_host_name_core(owner["name"]))
             else:
                 path.extend([_type_facade_name(owner["newtype"]), _host_name_core(owner["member"])])
-            _namespace_set(root, path, self._direct_callable(site))
+            function = self._direct_callable(site)
+            if "doc" in site:
+                function.__doc__ = site["doc"]
+            _namespace_set(root, path, function)
         return root
 
     def _direct_callable(self, site):
@@ -649,11 +655,17 @@ class _PackageRuntime:
         if tag == "LowModuleCall":
             fn = self.fn(data["module_path"], data["mangled"])
             fn = _apply_type_stages(fn, data["type_args"])
+            if data["type_args"] and not _signature_has_value_group(data["sig"]):
+                assert not data["args"], "a routed type-only head has no value arguments"
+                return fn
             args = [self.eval(module_key, arg, env) for arg in data["args"]]
             return _call_value(fn, *args)
         if tag == "LowQualifiedModuleCall":
             fn = self.fn(data["module_path"], data["mangled"])
             fn = _apply_type_stages(fn, data["type_args"])
+            if data["type_args"] and not _signature_has_value_group(data["sig"]):
+                assert not data["args"], "a routed type-only head has no value arguments"
+                return fn
             args = [self.eval(module_key, arg, env) for arg in data["args"]]
             return _call_value(fn, *args)
         if tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):

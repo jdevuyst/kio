@@ -12,7 +12,7 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) -> . {
+rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) {
   match! input.read() {
     .(next: input.World) {
       let world = next.?{input.world};
@@ -24,12 +24,14 @@ rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) -> . {
     };
     .(_end: input.End) { report.summary(ticks, state) };
     .(error: input.Invalid) {
-      io.print(text.string_concat("input error: ", text.string_concat(error.?{input.invalid}, "\n")))
+      io.print(error.?{input.invalid}
+        .>text.string_concat("\n")
+        .>>text.string_concat("input error: "))
     }
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("robot: reactive safety, remembered delivery sequence\n");
   simulate(model.delivery_tree(), 0, memory.empty())
 }

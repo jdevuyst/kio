@@ -3,4 +3,4 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print("bridge host precedence\n"(String)) }
+pub fn main() { print("bridge host precedence\n"(String)) }

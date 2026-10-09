@@ -67,7 +67,7 @@ fn show_swapped(result: Result(String, I32)) -> String {
     )
 }
 
-fn line(label: String, value: String) -> . { print(cat(label, cat(" = ", cat(value, "\n")))) }
+fn line(label: String, value: String) { print(cat(label, cat(" = ", cat(value, "\n")))) }
 
 // =====================================================================
 // The tour
@@ -75,7 +75,7 @@ fn line(label: String, value: String) -> . { print(cat(label, cat(" = ", cat(val
 //
 // `run` is the whole demonstrative tour. `inc` and `shout` are the
 // worked-example transforms.
-fn run() -> . {
+fn run() {
   let inc = .(n: I32) -> I32 { add_i32(n, 1) };
   let shout = .(s: String) -> String { cat(s, "!") };
   // ---------- Constructors + eliminator ----------
@@ -119,4 +119,4 @@ fn run() -> . {
   line("ok(inc) <*> ok(41)", show(rf <*> good))
 }
 
-pub fn main() -> . { run() }
+pub fn main() { run() }

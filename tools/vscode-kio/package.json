@@ -43,6 +43,16 @@
     "onLanguage:kio"
   ],
   "contributes": {
+    "commands": [
+      { "command": "kio.restartLanguageServer", "title": "Kio: Restart Language Server", "enablement": "kio.languageServerSupported" },
+      { "command": "kio.showLanguageServerOutput", "title": "Kio: Show Language Server Output", "enablement": "kio.languageServerSupported" }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "kio.restartLanguageServer", "when": "kio.languageServerSupported" },
+        { "command": "kio.showLanguageServerOutput", "when": "kio.languageServerSupported" }
+      ]
+    },
     "languages": [
       {
         "id": "kio",

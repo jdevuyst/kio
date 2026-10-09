@@ -11,7 +11,7 @@ import testapi/io(print);
 // arm; the `I32` arm is unreachable from this source.
 fn lift(s: String) -> String | I32 { widen_sum!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   let widened = lift("widen_sum: lifted\n");
   let out =
     match! widened {

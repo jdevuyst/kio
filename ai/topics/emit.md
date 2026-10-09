@@ -35,6 +35,52 @@ The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter 
   declaration parameter spelling, callee provenance, an ABI arity, or a
   producer-side side channel.
 
+## Callable purity and dispatch recovery
+
+The shared `pass::purity` analysis distinguishes effect-free evaluation from a
+value that cannot carry a host capability. Reading a path or constructing a
+closure is effect-free even when invoking that value is unknown. An ordinary
+validated `pure fn` can call its parameters, so its marker alone cannot prove
+that `apply(host_callback)` is effect-free. Calls require a callable and
+arguments proved capability-free; unknown values remain conservative. Literal
+closures use their checked executable structure, with lexical binders tracked
+separately from exact local, selective-import, and qualified-import function
+declarations. Types and source arrow identity gain no purity classification.
+
+Structural recovery consumes that proof for both `__if_then_else__` and
+`__either__`: a proved-pure computed handler may be evaluated in its selected
+branch or arm. Other computed handlers retain eager bindings in original
+argument order, including a preceding computed condition or scrutinee. The
+optimizer shares the analysis for let fusion and dead-code elimination.
+`FnDef::purity` survives Prime, Enriched, and Routed; imported declaration facts
+enter each consumer's enriched-cache key. Ordinary exact resolution and lexical
+shadowing determine the facts, so unrelated added declarations cannot change
+the meaning of an existing call.
+
+This rule applies to both dispatch occurrences on JS, TypeScript, Python, Java,
+Rust, Go, Swift, and Haskell: they consume the same recovered and optimized
+artifact. The Kio' backend bypasses host preparation and retains the original
+strict calls. The runtime workflows are
+[`exec_pure_handler_factories`](../../test-data/goldens/00_success/exec_pure_handler_factories/),
+[`exec_if_handler_factory_order`](../../test-data/goldens/00_success/exec_if_handler_factory_order/),
+and [`exec_either_handler_factory_order`](../../test-data/goldens/00_success/exec_either_handler_factory_order/).
+Private firing, shadowing, callable-argument, and cache-equivalence guards live
+beside the shared passes and enriched cache.
+
+The measured dispatch witness executes the same host-output assertion before
+and after this change. Instrumenting its generated JS function entries counted
+ordinary pure factory invocations falling from 9 to 5; `relay` and the unknown
+callback factory each remained at 1. This is avoided runtime work, not an
+end-to-end runtime-speed claim. A bounded debug-build ABBA comparison of
+`test-data/poc/elab` with `build js --no-cache` measured summed Enriched
+preparation at 18.16/22.84/19.97/21.41 ms (baseline/changed/changed/baseline),
+whole-command elapsed time at 37.18/36.05/45.69/53.91 s, and maximum RSS at
+344444/314952/346128/321100 KiB. The runs shared compiler resources with other
+work: they bound observed preparation and memory cost, but do not establish a
+whole-compiler or CI speedup. Each queried expression is visited once by the
+proof; declaration facts are indexed per consumer module, without traversing
+callee bodies or solving a package-wide effect graph.
+
 ## Runtime model — the body and the FFI skin
 
 A backend splits into two zones. The **FFI skin** is the host's typed contract — host record, host-native structural presentations, exported signatures, the per-signature boundary wrappers; it stays fully typed and idiomatic (see [`specs/backends/README.md`](../../specs/backends/README.md)). The **internal body** is the computation that implements the package's functions — no host ever reads it, calls into the middle of it, or sees its types.
@@ -367,6 +413,29 @@ The per-signature boundary-wrapper *leaves* that resist sharing — a product as
 a JavaScript object versus a Rust struct, private binary-versus-flat body
 conversion, and per-backend sum values — remain each emitter's, per the shared
 spec's § Per-backend obligations.
+
+Readable-first budget selection lives in `skin::budgeted_mint_name`: at most
+64 UTF-8 bytes retain the existing spelling; longer names lazily render their
+complete owner's established digest spelling. Rust uses it for private body
+shapes; Java uses it for exact public structural shells and forall interfaces.
+The helper does not choose identity bytes or merge collision policies: Rust's
+private claim schedule and Java's public collision rejection stay separate.
+Go and Swift's public shells use the reversible codec directly, Haskell uses
+its documented primary identities, and JS, TypeScript, and Python do not share
+this readable-first budget. Adding unrelated declarations cannot select a
+different public spelling. Keep boundary and collision guards in unit tests;
+[`exec_wide_product_mint_name`](../../test-data/goldens/00_success/exec_wide_product_mint_name/)
+exercises real native artifacts, and Java's
+[`bounded_public_type_names`](../../test-data/emissions/java/bounded_public_type_names/)
+compiles long product, sum, and forall declarations beside a readable control.
+
+Haskell native-body emission separates ordinary `EmitError` failures from
+explicit `NativeUnsupported` eligibility. Its intentional unsupported set is
+empty. Reconstruction gaps and unhandled Routed nodes propagate as errors;
+they do not silently select the retained universal renderer. Direct universal
+facade tests cover that renderer's boundary obligations without fabricating a
+source-level fallback witness. This is Haskell's body-selection mechanism, not
+a change to another backend's native or interpreted execution strategy.
 
 Haskell has three deliberately separate naming surfaces. Exact host-type
 families, host fields, and exports use readable `__`-separated source

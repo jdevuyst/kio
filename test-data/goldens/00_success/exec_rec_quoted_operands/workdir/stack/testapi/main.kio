@@ -16,7 +16,7 @@ pub rec(loop) fn deep(n: I32) -> Bool {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   io.print("deep quotation\n");
   if! deep(100000) {
     io.print("done\n")

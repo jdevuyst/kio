@@ -1884,6 +1884,31 @@ fn render_export_driver(
                  \tfmt.Println(\"round export:\", roundExport(\"export-left\")(\"export-right\"))\n"
             )
         }
+        ExportDriver::TypeOnlyRoundtrip => {
+            let main = module("main");
+            format!(
+                r#"    fmt.Println("ready")
+    direct := {main}.Direct()
+    fmt.Println("specialized")
+    fmt.Println(direct("direct-string").(string))
+    integer := {main}.Direct()
+    fmt.Println("specialized-again")
+    fmt.Println(integer(int32(42)).(int32))
+    delayed := {main}.Delayed()
+    fmt.Println("unit-called")
+    fmt.Println(delayed("unit-string").(string))
+    fmt.Println({main}.Ordinary("ordinary-string").(string))
+    {main}.Phantom()
+    fmt.Println("phantom-called")
+    {main}.PhantomUnit()
+    fmt.Println("phantom-unit-called")
+    poly := {main}.Poly()
+    fmt.Println("poly-returned")
+    fmt.Println(poly("poly-string").(string))
+    fmt.Println(poly(int32(73)).(int32))
+"#
+            )
+        }
         ExportDriver::HostSubstitutedUnitCallback => {
             let api = module("api");
             format!(

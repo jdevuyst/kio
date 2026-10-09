@@ -41,6 +41,7 @@ pub mod lexer;
 pub mod optimize;
 pub mod parser;
 pub(crate) mod placeholder;
+pub(crate) mod purity;
 #[cfg(any(feature = "surface", feature = "cli"))]
 pub(crate) mod rec_headers;
 pub mod recover_to_low;

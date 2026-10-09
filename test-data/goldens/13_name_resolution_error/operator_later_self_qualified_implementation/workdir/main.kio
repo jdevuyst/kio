@@ -2,4 +2,4 @@ module main;
 
 op + _ { impl main.later }
 
-fn later(value: .) -> . { value }
+fn later(value: .) { value }

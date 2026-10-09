@@ -3074,6 +3074,66 @@ fn module_path_surface(p: &ModulePath) -> String {
     module_path_str(p)
 }
 
+fn module_path_typo_fix(path: &ModulePath, replacement: &str) -> Option<Fix> {
+    use crate::naming::{NameRole, validate_user_name};
+
+    let first = path.segments.first()?;
+    let last = path.segments.last()?;
+    if first.span.start != path.span.start || last.span.end != path.span.end {
+        return None;
+    }
+    for segment in &path.segments {
+        if validate_user_name(&segment.name, NameRole::Module).is_err()
+            || segment.span.end.checked_sub(segment.span.start)?
+                != u32::try_from(segment.name.len()).ok()?
+            || segment.span.start < path.span.start
+            || segment.span.end > path.span.end
+        {
+            return None;
+        }
+    }
+    if path
+        .segments
+        .windows(2)
+        .any(|pair| pair[0].span.end >= pair[1].span.start)
+    {
+        return None;
+    }
+    let names: Vec<_> = replacement.split('/').collect();
+    if names
+        .iter()
+        .any(|name| validate_user_name(name, NameRole::Module).is_err())
+    {
+        return None;
+    }
+    let edits = if names.len() == path.segments.len() {
+        path.segments
+            .iter()
+            .zip(names)
+            .filter(|(segment, name)| segment.name != *name)
+            .map(|(segment, name)| FixEdit::new(segment.span, name))
+            .collect::<Vec<_>>()
+    } else {
+        // Parsed segments separated by exactly one byte have only the slash
+        // between them. Replacing that compact path cannot discard trivia.
+        if path
+            .segments
+            .windows(2)
+            .any(|pair| pair[0].span.end.checked_add(1) != Some(pair[1].span.start))
+        {
+            return None;
+        }
+        vec![FixEdit::new(path.span, replacement)]
+    };
+    if edits.is_empty() {
+        return None;
+    }
+    Some(Fix::machine_applicable(
+        format!("Replace module path with `{replacement}`"),
+        edits,
+    ))
+}
+
 pub trait ExportContractPhase:
     Phase<
         TypeLabelSugar = crate::ast::Never,
@@ -4648,7 +4708,10 @@ impl<P: ResolvePhase> Package<P> {
             ImportKind::Selective { items, from } => {
                 let target = self.lookup_target(from)?;
                 let importer = &in_module.module.path;
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                for (name, name_span) in items
+                    .iter()
+                    .filter_map(crate::ast::ImportItem::as_name_with_span)
+                {
                     let id = match target.scope.lookup(name) {
                         Some(id) => id,
                         None => {
@@ -4675,6 +4738,15 @@ impl<P: ResolvePhase> Package<P> {
                                 pub_names.iter().map(String::as_str),
                             ) {
                                 err = err.with_help(format!("did you mean `{near}`?"));
+                                // Reversing tie order identifies a unique nearest name
+                                // without changing which name the prose suggests.
+                                if crate::error::closest_name(
+                                    name,
+                                    pub_names.iter().rev().map(String::as_str),
+                                ) == Some(near)
+                                {
+                                    err = err.with_suggestion(name_span, near);
+                                }
                             }
                             return Err(err);
                         }
@@ -4725,6 +4797,12 @@ impl<P: ResolvePhase> Package<P> {
         if let Some(near) = crate::error::closest_name(&s, self.modules.keys().map(String::as_str))
         {
             err = err.with_help(format!("did you mean `{near}`?"));
+            if crate::error::closest_name(&s, self.modules.keys().rev().map(String::as_str))
+                == Some(near)
+                && let Some(fix) = module_path_typo_fix(path, near)
+            {
+                err = err.with_fix(fix);
+            }
         }
         Err(err)
     }
@@ -6430,7 +6508,7 @@ impl<'m> Resolver<'m> {
         let Some(head) = s.implementation.first() else {
             unreachable!("the parser emits a nonempty elaborator implementation path")
         };
-        self.lookup_name(head.as_str(), s.implementation.span(), &locals)
+        self.lookup_name(head.as_str(), s.implementation.span(), head.span, &locals)
     }
 
     fn check_fn_def<P: ResolvePhase>(&self, d: &'m crate::ast::FnDef<P>) -> Result<(), Error> {
@@ -6453,7 +6531,13 @@ impl<'m> Resolver<'m> {
             }
         }
         self.check_type(&d.ret, &locals)?;
-        self.check_expr(&d.body, &locals)
+        self.check_expr(&d.body, &locals).map_err(|error| {
+            if error.diagnostic().unresolved_name() == Some(d.name.as_str()) {
+                error.with_note("an ordinary function's own name is not in scope inside its body")
+            } else {
+                error
+            }
+        })
     }
 
     fn check_equiv<P: ResolvePhase>(&self, e: &'m crate::ast::Equiv<P>) -> Result<(), Error> {
@@ -6800,6 +6884,7 @@ impl<'m> Resolver<'m> {
         &self,
         name: &str,
         span: Span,
+        edit_span: Span,
         locals: &HashMap<&'m str, Binding>,
     ) -> Result<(), Error> {
         if self.name_is_visible(name, locals) {
@@ -6810,7 +6895,7 @@ impl<'m> Resolver<'m> {
         // unbound — the desugar mints hygienic non-reserved names for
         // user-introduced bindings, so the only `__name__`-shaped
         // declarations are the intrinsics.
-        Err(self.unbound_name_error(name, span, locals))
+        Err(self.unbound_name_error(name, span, edit_span, locals))
     }
 
     /// Resolve a value path without granting diagnostic evidence any binding
@@ -6850,7 +6935,7 @@ impl<'m> Resolver<'m> {
                 )
                 .expect("the member lookup proved a later type declaration"));
         }
-        self.lookup_name(head.as_str(), fallback_span, locals)
+        self.lookup_name(head.as_str(), fallback_span, head.span, locals)
     }
 
     fn name_is_visible(&self, name: &str, locals: &HashMap<&str, Binding>) -> bool {
@@ -6876,7 +6961,7 @@ impl<'m> Resolver<'m> {
         if let Some(error) = self.later_type_declaration_error(name, span, true) {
             return Err(error);
         }
-        Err(self.unbound_name_error(name, span, locals))
+        Err(self.unbound_name_error(name, span, span, locals))
     }
 
     fn later_type_declaration_error(
@@ -6935,7 +7020,13 @@ impl<'m> Resolver<'m> {
     /// any of them earns the nearest-match suggestion (the highest-value
     /// name-resolution diagnostic per `specs/diagnostics.md` and the
     /// phase-10 rubric).
-    fn unbound_name_error(&self, name: &str, span: Span, locals: &HashMap<&str, Binding>) -> Error {
+    fn unbound_name_error(
+        &self,
+        name: &str,
+        span: Span,
+        edit_span: Span,
+        locals: &HashMap<&str, Binding>,
+    ) -> Error {
         if let Some(problem) = self.implicit_type_cycles.get(&span) {
             return problem.error(span);
         }
@@ -6952,15 +7043,20 @@ impl<'m> Resolver<'m> {
             .collect();
         candidates.sort_unstable();
         candidates.dedup();
-        match crate::error::closest_name(name, candidates.iter().copied()) {
-            Some(near) => Error::name_res(span, message)
-                .with_unresolved_name(name.to_owned())
-                .with_help(format!(
-                    "a name `{near}` is in scope — did you mean `{near}`?"
-                ))
-                .with_suggestion(span, near.to_owned()),
-            None => Error::name_res(span, message).with_unresolved_name(name.to_owned()),
+        let mut error = Error::name_res(span, message)
+            .with_unresolved_name(name.to_owned())
+            .requiring_current_fixes();
+        if let Some((near, unique)) =
+            crate::error::closest_name_with_uniqueness(name, candidates.iter().copied())
+        {
+            error = error.with_help(format!(
+                "a name `{near}` is in scope — did you mean `{near}`?"
+            ));
+            if unique {
+                error = error.with_suggestion(edit_span, near);
+            }
         }
+        error
     }
 }
 
@@ -7039,6 +7135,124 @@ mod tests {
             );
         }
         repaired
+    }
+
+    #[test]
+    fn module_path_typo_fix_preserves_trivia_between_changed_segments() {
+        let source = "module utilx/ // 😀 keep\r\n\thelpe;";
+        let written = parse(source).unwrap().path;
+        let fix = module_path_typo_fix(&written, "utils/helper").unwrap();
+        assert_eq!(fix.edits.len(), 2);
+        assert_eq!(
+            apply_source_fix(source, &fix),
+            "module utils/ // 😀 keep\r\n\thelper;"
+        );
+    }
+
+    #[test]
+    fn unresolved_qualified_head_fix_preserves_primary_span_and_suffix() {
+        for (expression, primary_width) in [("Alia.mk(())", 7), ("().>Alia.mk", 4)] {
+            let source = format!(
+                "module main; newtype Wrapper : . {{ constructor mk; projector get; }}; \
+                 type Alias = Wrapper; fn main() -> Wrapper {{ {expression} }}"
+            );
+            let package = pkg(vec![&source]).unwrap();
+            let error = package.check_in_body_resolution().unwrap_err().error;
+            let diagnostic = error.diagnostic();
+            let start = u32::try_from(source.find("Alia.mk").unwrap()).unwrap();
+            assert_eq!(diagnostic.span, Span::new(start, start + primary_width));
+            let [fix] = diagnostic.fixes() else {
+                panic!("one head replacement")
+            };
+            assert_eq!(fix.edits[0].span, Span::new(start, start + 4));
+            assert_eq!(
+                apply_source_fix(&source, fix),
+                source.replace("Alia.mk", "Alias.mk")
+            );
+        }
+    }
+
+    #[test]
+    fn elaborator_implementation_typo_edits_only_its_qualified_head() {
+        let source = "module main; import support as support; \
+                      elab unit : . -> . { impl suport. // keep member\n helper; };";
+        let provider = "module support; import __comptime__; \
+                        pub pure fn helper(ct: __Comptime__) -> __Checked_term__ { \
+                            __term_unit__(ct) }";
+        let package = pkg(vec![source, provider]).unwrap();
+        let error = package.check_in_body_resolution().unwrap_err().error;
+        let diagnostic = error.diagnostic();
+        let start = u32::try_from(source.find("suport.").unwrap()).unwrap();
+        let end = u32::try_from(source.find("helper;").unwrap() + "helper".len()).unwrap();
+        assert_eq!(diagnostic.span, Span::new(start, end));
+        let [fix] = diagnostic.fixes() else {
+            panic!("one implementation-head replacement")
+        };
+        assert_eq!(fix.edits[0].span, Span::new(start, start + 6));
+        let repaired = apply_source_fix(source, fix);
+        assert_eq!(repaired, source.replace("suport.", "support."));
+        pkg(vec![&repaired, provider])
+            .unwrap()
+            .check_in_body_resolution()
+            .unwrap();
+    }
+
+    #[test]
+    fn module_path_typo_fix_changes_segment_count_only_without_trivia() {
+        for (written, replacement) in [("a/bc", "a/b/c"), ("a/b/c", "a/bc"), ("_a", "_b")] {
+            let source = format!("module {written};");
+            let fix = module_path_typo_fix(&path(written), replacement).unwrap();
+            assert_eq!(fix.edits.len(), 1);
+            assert_eq!(
+                apply_source_fix(&source, &fix),
+                format!("module {replacement};")
+            );
+        }
+        for written in ["a/ bc", "a /bc", "a/ // keep\nbc", "a / b/c"] {
+            assert!(module_path_typo_fix(&path(written), "a/b/c/d").is_none());
+        }
+    }
+
+    #[test]
+    fn module_path_typo_fix_rejects_unauthenticated_spans_and_names() {
+        let written = path("ab/cd");
+        for replacement in [
+            "ab/cd", "", "/ab", "ab/", "ab//cd", "../ab", "Ab/cd", "__ab/cd",
+        ] {
+            assert!(module_path_typo_fix(&written, replacement).is_none());
+        }
+        let mut invalid = Vec::new();
+        let mut candidate = written.clone();
+        candidate.segments.clear();
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.span.start -= 1;
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.span.end += 1;
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.segments[0].span.end = candidate.segments[0].span.start;
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.segments[0].span.end += 1;
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.segments[1].span = candidate.segments[0].span;
+        candidate.span.end = candidate.segments[1].span.end;
+        invalid.push(candidate);
+        let mut candidate = written.clone();
+        candidate.segments[0].span = candidate.span;
+        invalid.push(candidate);
+        let mut candidate = written;
+        candidate.segments[0].name = "__".to_owned();
+        invalid.push(candidate);
+        for candidate in invalid {
+            assert!(
+                module_path_typo_fix(&candidate, "ab/ce").is_none(),
+                "{candidate:?}"
+            );
+        }
     }
 
     #[test]

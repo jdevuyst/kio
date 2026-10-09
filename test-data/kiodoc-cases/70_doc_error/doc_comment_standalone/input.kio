@@ -8,4 +8,4 @@
 /// ```
 module doctest/standalone;
 
-pub fn greet() -> . { () }
+pub fn greet() { () }

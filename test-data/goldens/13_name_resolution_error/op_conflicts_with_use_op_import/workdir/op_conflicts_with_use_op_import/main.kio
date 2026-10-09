@@ -9,4 +9,4 @@ fn local_add(a: A, b: A) -> A { a }
 
 op _ + _ { impl local_add }
 
-pub fn main() -> . { () }
+pub fn main() { () }

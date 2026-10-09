@@ -1,9 +1,9 @@
 module main;
 
-pub fn empty() -> . { () }
+pub fn empty() { () }
 
-pub fn push(_head: ., tail: .) -> . { tail }
+pub fn push(_head: ., tail: .) { tail }
 
-fn finish(value: .) -> . { value }
+fn finish(value: .) { value }
 
 pub varop [* *] { foldr push empty; finalize finish }

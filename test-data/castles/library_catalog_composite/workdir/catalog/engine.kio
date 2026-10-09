@@ -41,9 +41,9 @@ fn initial() -> State {
   {
     , books = fixtures.books()
     , members = fixtures.members()
-    , holds = lcore.nil(Hold_rec, ())
-    , log = lcore.nil(String, ())
-    , failures = lcore.nil(Failure, ())
+    , holds = lcore.nil(Hold_rec)
+    , log = lcore.nil(String)
+    , failures = lcore.nil(Failure)
     , step = 0
     }
 }
@@ -88,7 +88,7 @@ rec(loop) fn drive(state: State, pending: Op_list) -> State {
   }
 }
 
-rec(loop) fn print_lines(lines: Line_list) -> . {
+rec(loop) fn print_lines(lines: Line_list) {
   match! lcore.uncons(lines) {
     (
       , .(line: String, rest: Line_list) { print(line.>cat("\n")); rec print_lines(rest) }
@@ -97,7 +97,7 @@ rec(loop) fn print_lines(lines: Line_list) -> . {
   }
 }
 
-pub fn run() -> . {
+pub fn run() {
   let .(final: State) = drive(initial(), fixtures.ops());
   let .({books, members, holds, log, failures, step}) = final;
   print("branch library circulation: "

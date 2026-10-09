@@ -1419,6 +1419,35 @@ fn build_driver_for_protocol(
                              println!(\"round export: {{}}\", round_export_second.call(\"export-right\".to_string()));\n"
                     )
                 }
+                ExportDriver::TypeOnlyRoundtrip => {
+                    let main = match &export_root {
+                        Some(root) => format!("pkg.{root}.main"),
+                        None => "pkg.main".to_owned(),
+                    };
+                    format!(
+                        r#"    println!("ready");
+    let direct = {main}.direct::<{crate_name}::shapes::KioNative<String>>();
+    println!("specialized");
+    println!("{{}}", direct.call("direct-string".to_owned()));
+    let integer = {main}.direct::<{crate_name}::shapes::KioNative<i32>>();
+    println!("specialized-again");
+    println!("{{}}", integer.call(42));
+    let delayed = {main}.delayed::<{crate_name}::shapes::KioNative<String>>();
+    println!("unit-called");
+    println!("{{}}", delayed.call("unit-string".to_owned()));
+    println!("{{}}", {main}.ordinary::<{crate_name}::shapes::KioNative<String>>("ordinary-string".to_owned()));
+    {main}.phantom::<{crate_name}::shapes::KioNative<()>>();
+    println!("phantom-called");
+    {main}.phantomUnit::<{crate_name}::shapes::KioNative<()>>();
+    println!("phantom-unit-called");
+    use {crate_name}::ffi::exp::testapi_main__poly::ret_impl as _;
+    let poly = {main}.poly::<{crate_name}::shapes::KioNative<()>>();
+    println!("poly-returned");
+    println!("{{}}", poly.apply::<{crate_name}::shapes::KioNative<String>>("poly-string".to_owned()));
+    println!("{{}}", poly.apply::<{crate_name}::shapes::KioNative<i32>>(73));
+"#
+                    )
+                }
                 ExportDriver::HostSubstitutedUnitCallback => {
                     let api = match &export_root {
                         Some(r) => format!("pkg.{r}.api"),

@@ -136,6 +136,7 @@ pub trait SurfaceToDesugared {
     fn visit_expr_call(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Call {
             occurrence: _,
+            diagnostic: _,
             callee,
             args,
             meta: Meta { span, .. },

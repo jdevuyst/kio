@@ -1,0 +1,14 @@
+module elaborators;
+
+import __comptime__;
+
+pure fn phantom_impl(
+  , _ct: __Comptime__
+  , fills: __Fill_ctx__
+  , _source: __Type__
+  , value: __Checked_term__
+  , _a: __Type__
+  , _b: __Type__
+  ) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+
+pub elab phantom : [Source] Source -> [A][B] A { impl(fills) phantom_impl }

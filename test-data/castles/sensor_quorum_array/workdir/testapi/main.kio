@@ -79,7 +79,7 @@ fn row(reads: Array(I32), limits: Array(I32), flags: Array(Bool), index: I32) ->
     )
 }
 
-pub fn main() -> . {
+pub fn main() {
   let reads = readings();
   let limits = thresholds();
   let flags = array_make_filled(array_len(reads), .f);

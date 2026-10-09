@@ -33,8 +33,8 @@ import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat, string_eq);
 
-fn show(label: String, value: String) -> . {
-  print(string_concat(label, string_concat(" = ", string_concat(value, "\n"))))
+fn show(label: String, value: String) {
+  print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))
 }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
@@ -43,7 +43,7 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   }
 }
 
-fn show_result[A](label: String, result: A | ., render: A -> String) -> . {
+fn show_result[A](label: String, result: A | ., render: A -> String) {
   show(
     , label
     , fold_result(
@@ -58,9 +58,7 @@ fn value_or[A](default: A, result: A | .) -> A {
   fold_result(default, .(value: A) { value }, result)
 }
 
-fn show_result_i32(label: String, result: I32 | .) -> . {
-  show_result(label, result, int_to_string)
-}
+fn show_result_i32(label: String, result: I32 | .) { show_result(label, result, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
   match! value {
@@ -88,18 +86,13 @@ fn vec_to_string(v: Vec(I32)) -> String {
 }
 
 fn demo_vec() -> Vec(I32) {
-  fold_range(
-    , 0
-    , 20
-    , .(acc: Vec(I32), i: I32) -> Vec(I32) { push_back(acc, mul(i, 10)) }
-    , empty(I32, ())
-    )
+  fold_range(0, 20, .(acc: Vec(I32), i: I32) -> Vec(I32) { push_back(acc, mul(i, 10)) }, empty(I32))
 }
 
-pub fn main() -> . {
+pub fn main() {
   let v = demo_vec();
   show("length(v)", int_to_string(length(v)));
-  show("is_empty(empty)", bool_to_string(is_empty(empty(I32, ()))));
+  show("is_empty(empty)", bool_to_string(is_empty(empty(I32))));
   show("is_empty(v)", bool_to_string(is_empty(v)));
   show_result_i32("at(v, 0)", at(v, 0));
   show_result_i32("at(v, 7)", at(v, 7));
@@ -159,7 +152,7 @@ pub fn main() -> . {
   show_result("at(Unit, 1)", at(unit_vec, 1), render_unit);
   let render_unit_pair = .(_pair: . & Vec(.)) -> String { "unit pair" };
   show_result("pop_back(Unit)", pop_back(unit_vec), render_unit_pair);
-  show_result("pop_back(empty Unit)", pop_back(empty(., ())), render_unit_pair);
+  show_result("pop_back(empty Unit)", pop_back(empty(.)), render_unit_pair);
   let nested = from_list([* widen_sum!(7, I32 | .), widen_sum!((), I32 | .) *]);
   show_result("at(nested number)", at(nested, 0), render_sum);
   show_result("at(nested unit)", at(nested, 1), render_sum);

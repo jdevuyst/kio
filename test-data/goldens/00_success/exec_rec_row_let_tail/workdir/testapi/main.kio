@@ -30,7 +30,7 @@ rec(loop) {
   fn row_seed(value: I32) -> I32 { value }
 }
 
-pub fn main() -> . {
+pub fn main() {
   print(i32_to_string(row_tail_no_cont(1)));
   print(",");
   print(i32_to_string(row_tail_cont(1)));

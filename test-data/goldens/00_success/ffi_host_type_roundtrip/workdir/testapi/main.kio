@@ -8,7 +8,7 @@ import testapi/opaque(make_token, token_value);
 
 fn keep(t: Token) -> Token { t }
 
-pub fn main() -> . {
+pub fn main() {
   let token = keep(make_token(37));
   print(i32_to_string(token_value(token)));
   print("|"(String));

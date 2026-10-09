@@ -1,0 +1,13 @@
+package app;
+
+build {
+  cache ();
+
+  target js {
+    out "src"
+  }
+}
+
+bridge {
+  src/main
+}

@@ -38,9 +38,9 @@ pub fn open(tree: Tree, value: I32) -> I32 {
   position
 }
 
-pub fn close(tree: Tree, position: I32) -> . { array.array_set(tree.?{ends}, position, size(tree)) }
+pub fn close(tree: Tree, position: I32) { array.array_set(tree.?{ends}, position, size(tree)) }
 
-pub fn leaf(tree: Tree, value: I32) -> . { let position = open(tree, value); close(tree, position) }
+pub fn leaf(tree: Tree, value: I32) { let position = open(tree, value); close(tree, position) }
 
 rec(loop) fn render_forest(tree: Tree, start: I32, stop: I32) -> String {
   if! less(start, stop) {

@@ -16,7 +16,7 @@ fn left(s: String) -> String | String | I32 { widen_sum!(s) }
 // sub-multiset of source's `{String, String, I32}`.
 fn collapse(s: String | String | I32) -> String | I32 { narrow_sum!(s) }
 
-pub fn main() -> . {
+pub fn main() {
   let r = collapse(left("narrow_sum collapsed\n"));
   let out =
     match! r {

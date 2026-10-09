@@ -21,7 +21,7 @@ fn pick(b: Bool, a: String, c: String) -> String | String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let result = pick(.t, "kio prime\n", "fallback\n");
   print(match! result {
     .(s: String) { s }

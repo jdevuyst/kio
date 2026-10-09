@@ -56,7 +56,7 @@ pub fn band(x: Bool, y: Bool) -> Bool { bool_to(y, no(), x) }
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum!((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match! result {
@@ -101,14 +101,14 @@ pub fn back[A](q: Queue(A)) -> List(A) {
 // =====================================================================
 // O(1) pure operations
 // =====================================================================
-/// `empty()` is the canonical empty queue: both spines `nil`. It
+/// `empty(A)` is the canonical empty queue: both spines `nil`. It
 /// trivially satisfies the invariant (front empty, back empty).
-pub fn empty[A]() -> Queue(A) { Queue.mk_unchecked((nil(A, ()), nil(A, ()))) }
+pub fn empty[A] -> Queue(A) { Queue.mk_unchecked((nil(A), nil(A))) }
 
 /// `singleton(x)` is the one-element queue. The element lives at the
 /// front so the invariant ("front empty only when back empty") holds
 /// directly, with no reversal — hence `singleton` stays pure.
-pub fn singleton[A](x: A) -> Queue(A) { Queue.mk_unchecked((cons(x, nil(A, ())), nil(A, ()))) }
+pub fn singleton[A](x: A) -> Queue(A) { Queue.mk_unchecked((cons(x, nil(A)), nil(A))) }
 
 /// `is_empty(q)` reads the front head in O(1). The invariant guarantees a
 /// non-empty queue has a non-empty front, so an empty front means an
@@ -178,7 +178,7 @@ pub fn pop_front[A](q: Queue(A)) -> (A & Queue(A)) | . {
                 .(h: A, t: List(A)) { present((h, Queue.mk_unchecked((t, b)))) }
               }
             }
-          , .(_empty: .) { absent(A & Queue(A), ()) }
+          , .(_empty: .) { absent(A & Queue(A)) }
           )
       }
     }
@@ -196,12 +196,12 @@ pub fn pop_front[A](q: Queue(A)) -> (A & Queue(A)) | . {
 
 // ---- empty / singleton invariants ----
 equiv empty_is_empty[A]() {
-  is_empty(empty(A, ()));
+  is_empty(empty(A));
   yes()
 }
 
 equiv empty_well_formed[A]() {
-  well_formed(empty(A, ()));
+  well_formed(empty(A));
   yes()
 }
 
@@ -217,7 +217,7 @@ equiv singleton_well_formed[A](x: A) {
 
 // ---- peek ----
 equiv peek_empty_is_none[A]() {
-  has_value(peek(empty(A, ())));
+  has_value(peek(empty(A)));
   no()
 }
 
@@ -230,25 +230,25 @@ equiv peek_singleton[A](x: A) {
 // Stated on a concrete two-element front spine so the projector /
 // constructor round-trips reduce without walking an opaque queue.
 equiv swap_spines_involution[A](f0: A, f1: A, b0: A) {
-  swap_spines(swap_spines(Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), cons(b0, nil(A, ()))))));
-  Queue.mk_unchecked((cons(f0, cons(f1, nil(A, ()))), cons(b0, nil(A, ()))))
+  swap_spines(swap_spines(Queue.mk_unchecked((cons(f0, cons(f1, nil(A))), cons(b0, nil(A))))));
+  Queue.mk_unchecked((cons(f0, cons(f1, nil(A))), cons(b0, nil(A))))
 }
 
 // ---- pop_front splits the head off a populated front (O(1), no loop) ----
 equiv pop_front_singleton[A](x: A) {
   pop_front(singleton(x));
-  present((x, Queue.mk_unchecked((nil(A, ()), nil(A, ())))))
+  present((x, Queue.mk_unchecked((nil(A), nil(A)))))
 }
 
 equiv pop_front_empty_is_none[A]() {
-  has_value(pop_front(empty(A, ())));
+  has_value(pop_front(empty(A)));
   no()
 }
 
 // ---- snoc_into_back conses onto the back, leaving the front intact ----
 equiv snoc_back_preserves_front[A](f0: A, x: A) {
   front(snoc_into_back(x, singleton(f0)));
-  cons(f0, nil(A, ()))
+  cons(f0, nil(A))
 }
 
 // ---- pure predicates and partial-read elimination ----
@@ -268,6 +268,6 @@ equiv peek_present_eliminates[A][B](d: B, f: A -> B, x: A) {
 }
 
 equiv peek_absent_eliminates[A][B](d: B, f: A -> B) {
-  fold_result(d, f, peek(empty(A, ())));
+  fold_result(d, f, peek(empty(A)));
   d
 }

@@ -2,4 +2,4 @@ module other;
 
 pub newtype Wrap : . { pub constructor wrap_mk; pub projector wrap_un }
 
-pub fn need_wrap(w: Wrap) -> . { Wrap.wrap_un(w) }
+pub fn need_wrap(w: Wrap) { Wrap.wrap_un(w) }

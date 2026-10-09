@@ -1,0 +1,54 @@
+first prefix
+a
+stage: a
+b
+stage: (a,b)
+c
+stage: ((a,b),c)
+d
+(((a,b),c),d)
+first UFCS
+a
+stage: a
+b
+stage: (a,b)
+c
+stage: ((a,b),c)
+d
+(((a,b),c),d)
+last prefix
+a
+stage: a
+b
+stage: b
+c
+stage: c
+d
+(a,(b,(c,d)))
+last UFCS
+a
+stage: a
+b
+stage: b
+c
+stage: c
+d
+(a,(b,(c,d)))
+mixed prefix
+a
+stage: a
+b
+stage: b
+c
+stage: (a,(b,c))
+d
+((a,(b,c)),d)
+mixed UFCS
+a
+stage: a
+b
+stage: b
+c
+stage: (a,(b,c))
+d
+((a,(b,c)),d)

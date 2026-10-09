@@ -58,6 +58,18 @@ namespaces load into one host program without collision (JS is dynamic —
 the package handle and host record are plain values, so only the factory
 name is a top-level symbol).
 
+### Boundary documentation
+
+The [shared documentation contract](README.md#doc-comments-on-the-emitted-surface) renders
+Markdown JSDoc on exported-function and public-newtype object properties.
+The public factory also describes documented host members, package functions, and newtypes
+under their actual property paths, without requiring an inferred return-record
+type. Erased host types have no JavaScript declaration slot.
+
+JSDoc framing writes `*/` as `*\/` and every `@` as `\@`, including in code.
+These visible escapes prevent comment termination and native tags. No
+documentation-only typedefs, globals, or executable wrappers are generated.
+
 ## Loading the package
 
 A host that wants to call into the package performs three steps in order.
@@ -622,7 +634,7 @@ module hello/main;
 
 import hello(String, print);
 
-pub fn main() -> . { print("hello\n"(String)) }
+pub fn main() { print("hello\n"(String)) }
 ```
 
 A Node host invokes the package as:
@@ -694,9 +706,9 @@ A package with named labels surfaces them in the FFI shape too. Given the
 following in a bridged module `hello/main`:
 
 ```kio
-labels { greeting : String };
+pub labels { greeting : String };
 
-pub fn say_hello(g: Greeting) -> . { print(g.?{greeting}) }
+pub fn say_hello(g: Greeting) { print(g.?{greeting}) }
 ```
 
 ```js

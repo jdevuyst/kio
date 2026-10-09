@@ -5,7 +5,7 @@ import testapi/arith(add_i32, call_step, make_pair);
 import testapi/fmt(bool_to_string, i32_to_string);
 import testapi/io(print);
 
-pub fn main() -> . {
+pub fn main() {
   let stepped =
     call_step(
       , .(n: I32, label: String, ok: Bool) -> I32 {

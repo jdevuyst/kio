@@ -15,7 +15,7 @@ import tree/text(cat, cat3, cat4, indent, num);
 
 fn entry(k: I32, v: String) -> String { cat3(num(k), "=", v) }
 
-rec(loop) fn draw(t: Node, level: I32) -> . {
+rec(loop) fn draw(t: Node, level: I32) {
   match! t.>Node.un_node {
     (
       , .(_e: Leaf) { print(cat3(indent(level), "leaf", "\n")) }
@@ -36,7 +36,7 @@ rec(loop) fn draw(t: Node, level: I32) -> . {
   }
 }
 
-pub fn draw_tree(t: Tree) -> . { draw(root_of(t), 1) }
+pub fn draw_tree(t: Tree) { draw(root_of(t), 1) }
 
 rec(loop) fn inorder(t: Node, acc: String) -> String {
   match! t.>Node.un_node {

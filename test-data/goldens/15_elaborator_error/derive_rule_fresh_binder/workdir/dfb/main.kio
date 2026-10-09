@@ -21,4 +21,4 @@ fn base() -> Pair(I32, I32) { Pair.mk_pair(I32, I32, __pair__(I32, I32, zero(), 
 
 fn bad() -> Pair(I32, I32) { derive!((weird, base), Pair(I32, I32)) }
 
-pub fn main() -> . { () }
+pub fn main() { () }

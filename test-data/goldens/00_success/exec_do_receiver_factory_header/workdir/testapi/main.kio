@@ -11,7 +11,7 @@ fn make_bind[*M](operation: [A][B] (M(A) & (A -> M(B))) -> M(B)) -> [A][B] (M(A)
   operation
 }
 
-pub fn main() -> . {
+pub fn main() {
   let explicit =
     do! make_bind(Box, bind) {
       let value <- Box.box(());

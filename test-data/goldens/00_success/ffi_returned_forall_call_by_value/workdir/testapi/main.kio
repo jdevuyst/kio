@@ -6,7 +6,7 @@ host fn observe(_unit: .) -> .;
 
 host fn consume(value: .) -> .;
 
-pub fn main() -> . {
+pub fn main() {
   let produced = produce(());
   observe(());
   consume(produced(.));

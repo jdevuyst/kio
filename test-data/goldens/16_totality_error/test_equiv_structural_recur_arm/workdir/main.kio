@@ -3,7 +3,7 @@ module main;
 import __comptime__;
 import elab/control(scope);
 
-pure fn run(ct: __Comptime__, k: . -> .) -> . {
+pure fn run(ct: __Comptime__, k: . -> .) {
   __structural_recur__(
     , ct
     , __Type__

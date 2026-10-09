@@ -285,7 +285,7 @@ both, or an independently determined branch can supply the common result.
 If they disagree, Kio does not silently invent a sum type:
 
 ```kio {@branches check_exit_code=14}
-fn disagree(flag: Bool, number: Int, text: String) -> . {
+fn disagree(flag: Bool, number: Int, text: String) {
   let result =
     if! flag {
       number

@@ -511,6 +511,8 @@ pub use core::{LazyModule, ModuleFile};
 pub(crate) use core::{PathSeparator, ScopeOwnerKind};
 // Canonical public grammar for operator-focused tooling.
 #[cfg(feature = "repl-core")]
+pub(crate) use core::parse_declaration_query;
+#[cfg(feature = "repl-core")]
 pub(crate) use core::parse_operator_grammar;
 #[cfg(any(feature = "repl", feature = "repl-core"))]
 pub(crate) use core::{op_name, variadic_name};
@@ -3080,6 +3082,32 @@ mod tests {
     }
 
     #[test]
+    fn recursive_call_annotation_spans_are_exact_source_tokens() {
+        let source =
+            "module app; fn use() { rec // 😀 keyword\n(, poly, // 😀 mode\n,cont,) again(value) }";
+        let module = p(source);
+        let Item::FnDef(def) = &module.items[0] else {
+            panic!("function")
+        };
+        let Expr::RecCall { ext, modes, .. } = &def.body else {
+            panic!("recursive call")
+        };
+        let slice = |span: crate::span::Span| &source[span.start as usize..span.end as usize];
+        assert_eq!(slice(ext.keyword), "rec");
+        assert_eq!(
+            ext.annotations
+                .iter()
+                .map(|token| slice(token.span()))
+                .collect::<Vec<_>>(),
+            ["(", ",", "poly", ",", ",", "cont", ",", ")"]
+        );
+        assert_eq!(
+            modes,
+            &[crate::ast::RecCallMode::Poly, crate::ast::RecCallMode::Cont]
+        );
+    }
+
+    #[test]
     fn contextual_rec_ordinary_call_gaps_preserve_completed_syntax() {
         for expression in ["rec(value)", "rec()", "rec(cont, cont)", "rec(escape)"] {
             let marked = format!("module app; rec(loop) fn run(value: .) {{ {expression} | }}");
@@ -3833,12 +3861,12 @@ mod tests {
 
     #[test]
     fn expression_probe_retains_only_committed_forall_facts() {
-        for source in [".[A](", ".[A](x"] {
+        for source in [".[A](", ".[A](x", ".[A] {}"] {
             let probe = probe_expression_fragment(source, None).expect("fragment probe");
             assert_eq!(probe.structural_bracket_offsets, vec![1, 3], "{source}");
             assert!(!probe.unclosed_structural_forall_at_eof, "{source}");
         }
-        for source in [".[A] {}", ".[A]foo", ".[! { [!1 }"] {
+        for source in [".[A]foo", ".[! { [!1 }"] {
             let probe = probe_expression_fragment(source, None).expect("fragment probe");
             assert!(probe.structural_bracket_offsets.is_empty(), "{source}");
             assert!(!probe.unclosed_structural_forall_at_eof, "{source}");
@@ -4511,6 +4539,67 @@ fn ok() -> . { () }
             assert!(matches!(d.sig.params[1], SignatureParam::Value(_)));
             assert!(matches!(d.sig.params[2], SignatureParam::Type(_)));
             assert!(matches!(d.sig.params[3], SignatureParam::Value(_)));
+        }
+    }
+
+    #[test]
+    fn type_only_functions_preserve_written_groups() {
+        for source in [
+            "module x; fn marker[A] -> . { () }",
+            "module x; pure fn marker[A][B] { () }",
+            "module x; fn marker() -> [A] . { .[A] { () } }",
+            "module x; fn marker() -> [A][B] . { .[A, B] -> . { () } }",
+            "module x; fn marker() -> [A] . { . [A] // body\n { () } }",
+        ] {
+            let eager = p(source);
+            assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), eager);
+            let rendered = crate::pretty::pretty_module(&eager);
+            let reparsed = p(&rendered);
+            let Item::FnDef(original) = &eager.items[0] else {
+                panic!("function")
+            };
+            let Item::FnDef(formatted) = &reparsed.items[0] else {
+                panic!("function")
+            };
+            assert_eq!(original.sig.groups, formatted.sig.groups, "{rendered}");
+            assert_eq!(rendered, crate::pretty::pretty_module(&reparsed));
+        }
+        let named = p("module x; fn marker[A] { () }");
+        let Item::FnDef(function) = &named.items[0] else {
+            panic!("function")
+        };
+        assert_eq!(function.sig.value_group_count(), 0);
+        let anonymous = p("module x; fn marker() -> [A] . { .[A] { () } }");
+        let Item::FnDef(function) = &anonymous.items[0] else {
+            panic!("function")
+        };
+        let Expr::FnExpr { sig, .. } = &function.body else {
+            panic!("type abstraction")
+        };
+        assert_eq!(sig.value_group_count(), 0);
+    }
+
+    #[test]
+    fn type_only_admission_preserves_other_declaration_boundaries() {
+        for source in [
+            "module x; fn constant -> . { () }",
+            "module x; host fn marker[A] -> .;",
+            "module x; equiv marker[A] { (); () }",
+            "module x; rec(loop) fn marker[A] -> . { () }",
+            "module x; rec(loop) { fn marker[A] -> . { () } }",
+        ] {
+            assert!(parse(source).is_err(), "{source}");
+            assert!(parse_lazy(source).is_err(), "{source}");
+        }
+        for source in [
+            "module x; host fn marker[A]() -> .;",
+            "module x; equiv marker[A]() { (); () }",
+            "module x; rec(loop) fn marker[A]() -> . { () }",
+            "module x; rec(loop) { fn marker[A]() -> . { () } }",
+            "module x; rec(loop) fn marker()[A]() -> . { () }",
+        ] {
+            let eager = p(source);
+            assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), eager);
         }
     }
 

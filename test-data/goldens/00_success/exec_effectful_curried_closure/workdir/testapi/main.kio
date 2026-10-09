@@ -15,7 +15,7 @@ fn make_logger() -> String -> String -> . {
   .(first: String)(second: String) -> . { print(first); print(second) }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let log = make_logger();
   // Full per-group application of the effectful curried closure value.
   log("alpha\n"(String))("beta\n"(String));

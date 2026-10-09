@@ -67,7 +67,7 @@ rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I
 
 pub fn initial() -> Array(I32) { let n = leaf_count(); fill_from(array_make_filled(n, 0), 0, n, 4) }
 
-fn row(table: Array(I32), code: I32, p0: I32, p1: I32, p2: I32) -> . {
+fn row(table: Array(I32), code: I32, p0: I32, p1: I32, p2: I32) {
   array_push(table, code);
   array_push(table, p0);
   array_push(table, p1);

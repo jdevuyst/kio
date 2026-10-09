@@ -1,0 +1,9 @@
+package rec_loop_initial_result;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}

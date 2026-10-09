@@ -4,4 +4,4 @@ host type String role(str);
 
 type Pair[A][B] = A & B;
 
-fn reject(value: Pair(String)) -> . { let _ = value; () }
+fn reject(value: Pair(String)) { let _ = value; () }

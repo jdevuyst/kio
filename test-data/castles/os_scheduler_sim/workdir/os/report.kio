@@ -23,13 +23,13 @@ import testapi/array(array_get, array_len);
 import testapi/io(print);
 import testapi/iter(loop);
 
-fn line(s: String) -> . { print(text.cat(s, "\n")) }
+fn line(s: String) { print(text.cat(s, "\n")) }
 
-fn blank() -> . { print("\n") }
+fn blank() { print("\n") }
 
 fn field(label: String, value: I32) -> String { text.cat3(label, "=", text.num_text(value)) }
 
-fn banner() -> . {
+fn banner() {
   line("os_scheduler_sim v1");
   line(text.cat4(
     , "config: "
@@ -63,7 +63,7 @@ rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> St
   }
 }
 
-rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid: I32) -> . {
+rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid: I32) {
   if! leq_i32(config.proc_count(), pid) {
     ()
   } else {
@@ -77,13 +77,13 @@ rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid
   }
 }
 
-fn fixture_table(pcb: proc.Pcb, programs: Array(Array(proc.Phase))) -> . {
+fn fixture_table(pcb: proc.Pcb, programs: Array(Array(proc.Phase))) {
   line("-- process fixture --");
   line("pid  arrive  program");
   fixture_rows(pcb, programs, 0)
 }
 
-rec(loop) fn process_rows(pcb: proc.Pcb, pid: I32) -> . {
+rec(loop) fn process_rows(pcb: proc.Pcb, pid: I32) {
   if! leq_i32(config.proc_count(), pid) {
     ()
   } else {
@@ -117,7 +117,7 @@ rec(loop) fn process_rows(pcb: proc.Pcb, pid: I32) -> . {
   }
 }
 
-fn process_table(pcb: proc.Pcb) -> . {
+fn process_table(pcb: proc.Pcb) {
   line("-- processes --");
   line("pid  arrive  finish  turn  wait  cpu  block  switch  fault  hit");
   process_rows(pcb, 0)
@@ -152,7 +152,7 @@ rec(loop) fn order_text(q: queue.Queues, i: I32, acc: String) -> String {
   }
 }
 
-fn totals(pcb: proc.Pcb, q: queue.Queues, ticks: I32, idle: I32) -> . {
+fn totals(pcb: proc.Pcb, q: queue.Queues, ticks: I32, idle: I32) {
   let cpu = proc.column_total(proc.cpu_column(pcb), 0, 0);
   let faults = proc.column_total(proc.fault_column(pcb), 0, 0);
   let hits = proc.column_total(proc.hit_column(pcb), 0, 0);
@@ -182,7 +182,7 @@ fn totals(pcb: proc.Pcb, q: queue.Queues, ticks: I32, idle: I32) -> . {
 /// A frame column, right-aligned to five characters like the numbers beside it.
 fn frame_owner_cell(pid: I32) -> String { text.cat("   ", proc.pid_tag(pid)) }
 
-rec(loop) fn frame_rows(mem: memory.Mem, frame: I32) -> . {
+rec(loop) fn frame_rows(mem: memory.Mem, frame: I32) {
   if! leq_i32(config.frame_count(), frame) {
     ()
   } else {
@@ -202,13 +202,13 @@ rec(loop) fn frame_rows(mem: memory.Mem, frame: I32) -> . {
   }
 }
 
-fn frame_table(mem: memory.Mem) -> . {
+fn frame_table(mem: memory.Mem) {
   line("-- frame table (final) --");
   line("frame  owner  vpage  ref");
   frame_rows(mem, 0)
 }
 
-pub fn run() -> . {
+pub fn run() {
   let pcb = proc.new_pcb(fixture.arrivals());
   let programs = fixture.programs();
   let mem = memory.new_mem();

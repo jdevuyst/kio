@@ -11,7 +11,7 @@ import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
-rec(loop) fn cancellation_report(now: I32, canceled: lists.List(model.Event)) -> . {
+rec(loop) fn cancellation_report(now: I32, canceled: lists.List(model.Event)) {
   match! lists.uncons(canceled) {
     .(event: model.Event, tail: lists.List(model.Event)) {
       report.canceled(now, event);

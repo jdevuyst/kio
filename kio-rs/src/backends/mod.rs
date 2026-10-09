@@ -132,7 +132,9 @@
 //!   emitted as a namespaced Haskell module exposing a branded
 //!   `create<Handle>` factory under the package's namespace.
 
+pub(crate) mod boundary_docs;
 pub mod boundary_facade;
+pub(crate) mod doc;
 pub mod go;
 pub mod haskell;
 pub mod java;

@@ -63,7 +63,7 @@ fn format_step(p: Pair, acc: String) -> String {
   }
 }
 
-pub fn main() -> . {
+pub fn main() {
   let d = ("a" => 1) :: ("b" => 2) :: ("c" => 3) :: nil(Pair, ());
   print(fold(format_step, "", d))
 }
