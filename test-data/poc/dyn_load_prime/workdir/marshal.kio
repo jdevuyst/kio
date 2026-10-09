@@ -18,29 +18,29 @@ import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
 /// `Value` destructuring local to this runtime-call boundary.
 pub fn loop_op(dom: Value) -> Call_result {
   __either__(
-    , V_closure
-    , V_product | V_sum | V_unit | V_host | V_hostfn
-    , Call_result
-    , Value.get(dom)
-    , .(_c: V_closure) -> Call_result {
-        call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
-      }
-    , .(rest: V_product | V_sum | V_unit | V_host | V_hostfn) -> Call_result {
-        __either__(
-          , V_product
-          , V_sum | V_unit | V_host | V_hostfn
-          , Call_result
-          , rest
-          , .(p: V_product) -> Call_result {
-              call_fold(
-                , __fst__(Value, Value, V_product.get(p))
-                , __snd__(Value, Value, V_product.get(p))
-                )
-            }
-          , .(_rest2: V_sum | V_unit | V_host | V_hostfn) -> Call_result {
-              call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
-            }
+  , V_closure
+  , V_product | V_sum | V_unit | V_host | V_hostfn
+  , Call_result
+  , Value.get(dom)
+  , .(_c: V_closure) -> Call_result {
+      call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
+    }
+  , .(rest: V_product | V_sum | V_unit | V_host | V_hostfn) -> Call_result {
+      __either__(
+      , V_product
+      , V_sum | V_unit | V_host | V_hostfn
+      , Call_result
+      , rest
+      , .(p: V_product) -> Call_result {
+          call_fold(
+          , __fst__(Value, Value, V_product.get(p))
+          , __snd__(Value, Value, V_product.get(p))
           )
-      }
-    )
+        }
+      , .(_rest2: V_sum | V_unit | V_host | V_hostfn) -> Call_result {
+          call_stuck("the `loop` host fn expected a (step, initial-state) pair"(String))
+        }
+      )
+    }
+  )
 }

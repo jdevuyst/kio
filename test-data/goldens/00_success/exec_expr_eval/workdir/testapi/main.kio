@@ -64,11 +64,7 @@ fn state(nodes: List(Frame), values: List(I32)) -> State { State.mk_state((nodes
 // Combiner sub-helper: `add` for op-code 0, `mul` for op-code 1.
 // One `if`/`else` over the `op` discriminant.
 fn apply_op(op: I32, left: I32, right: I32) -> I32 {
-  if! leq_i32(op, 0) {
-    add_i32(left, right)
-  } else {
-    mul_i32(left, right)
-  }
+  if! leq_i32(op, 0) { add_i32(left, right) } else { mul_i32(left, right) }
 }
 
 // Combine helper: receives the value-stack top (`right`) and
@@ -78,9 +74,9 @@ fn apply_op(op: I32, left: I32, right: I32) -> I32 {
 fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
   match! rest1.>List.un_list {
     (
-      , .(left: I32, rest2: List(I32)) { push(apply_op(op, left, right), rest2) }
-      , .(_empty: .) { push(0, nil(I32, ())) }
-      )
+    , .(left: I32, rest2: List(I32)) { push(apply_op(op, left, right), rest2) }
+    , .(_empty: .) { push(0, nil(I32, ())) }
+    )
   }
 }
 
@@ -90,9 +86,9 @@ fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
 fn combine(op: I32, values: List(I32)) -> List(I32) {
   match! values.>List.un_list {
     (
-      , .(right: I32, rest1: List(I32)) { combine_with_right(op, right, rest1) }
-      , .(_empty: .) { push(0, nil(I32, ())) }
-      )
+    , .(right: I32, rest1: List(I32)) { combine_with_right(op, right, rest1) }
+    , .(_empty: .) { push(0, nil(I32, ())) }
+    )
   }
 }
 
@@ -103,14 +99,14 @@ fn combine(op: I32, values: List(I32)) -> List(I32) {
 fn handle_expr(e: Expr, rest_nodes: List(Frame), values: List(I32)) -> State {
   match! e.>Expr.un_expr {
     (
-      , .(op: I32, l: Expr, r: Expr) {
-          let with_op = push(frame_op(op), rest_nodes);
-          let with_right = push(frame_expr(r), with_op);
-          let with_left = push(frame_expr(l), with_right);
-          state(with_left, values)
-        }
-      , .(n: I32) { state(rest_nodes, push(n, values)) }
-      )
+    , .(op: I32, l: Expr, r: Expr) {
+        let with_op = push(frame_op(op), rest_nodes);
+        let with_right = push(frame_expr(r), with_op);
+        let with_left = push(frame_expr(l), with_right);
+        state(with_left, values)
+      }
+    , .(n: I32) { state(rest_nodes, push(n, values)) }
+    )
   }
 }
 
@@ -120,9 +116,9 @@ fn handle_expr(e: Expr, rest_nodes: List(Frame), values: List(I32)) -> State {
 fn handle_frame(top: Frame, rest_nodes: List(Frame), values: List(I32)) -> State {
   match! top.>Frame.un_frame {
     (
-      , .(e: Expr) { handle_expr(e, rest_nodes, values) }
-      , .(op: I32) { state(rest_nodes, combine(op, values)) }
-      )
+    , .(e: Expr) { handle_expr(e, rest_nodes, values) }
+    , .(op: I32) { state(rest_nodes, combine(op, values)) }
+    )
   }
 }
 
@@ -142,11 +138,11 @@ fn exit_top(values: List(I32)) -> I32 {
 fn step_inner(nodes: List(Frame), values: List(I32)) -> State | I32 {
   match! nodes.>List.un_list {
     (
-      , .(top: Frame, rest_nodes: List(Frame)) {
-          widen_sum!(handle_frame(top, rest_nodes, values), State | I32)
-        }
-      , .(_empty: .) { widen_sum!(exit_top(values), State | I32) }
-      )
+    , .(top: Frame, rest_nodes: List(Frame)) {
+        widen_sum!(handle_frame(top, rest_nodes, values), State | I32)
+      }
+    , .(_empty: .) { widen_sum!(exit_top(values), State | I32) }
+    )
   }
 }
 

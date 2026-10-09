@@ -26,11 +26,11 @@ fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
     .(remaining: List(A), output: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(x: A, rest: List(A)) {
-              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
-            }
-          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
-          )
+        , .(x: A, rest: List(A)) {
+            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+          }
+        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -49,11 +49,9 @@ fn prepend_reversed_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | L
     .(remaining: List(A), acc: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(y: A, rest: List(A)) {
-              widen_sum!((rest, push(y, acc)), (List(A) & List(A)) | List(A))
-            }
-          , .(_empty: .) { widen_sum!(acc, (List(A) & List(A)) | List(A)) }
-          )
+        , .(y: A, rest: List(A)) { widen_sum!((rest, push(y, acc)), (List(A) & List(A)) | List(A)) }
+        , .(_empty: .) { widen_sum!(acc, (List(A) & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -80,34 +78,32 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // `List.cons` / `List.un_list`.
 fn list_monad() -> Monad(List) {
   Monad.mk_monad(
-    , List
-    , .[A][B](m, k) {
-        let reversed =
-          loop(
-            , .(state: List(A) & List(B)) {
-                match! state {
-                  .(remaining: List(A), output_reversed: List(B)) {
-                    match! remaining.>List.un_list {
-                      (
-                        , .(x: A, rest: List(A)) {
-                            widen_sum!(
-                              , (rest, prepend_reversed(k(x), output_reversed))
-                              , (List(A) & List(B)) | List(B)
-                              )
-                          }
-                        , .(_empty: .) {
-                            widen_sum!(output_reversed, (List(A) & List(B)) | List(B))
-                          }
-                        )
+  , List
+  , .[A][B](m, k) {
+      let reversed =
+        loop(
+        , .(state: List(A) & List(B)) {
+            match! state {
+              .(remaining: List(A), output_reversed: List(B)) {
+                match! remaining.>List.un_list {
+                  (
+                  , .(x: A, rest: List(A)) {
+                      widen_sum!(
+                      , (rest, prepend_reversed(k(x), output_reversed))
+                      , (List(A) & List(B)) | List(B)
+                      )
                     }
-                  }
+                  , .(_empty: .) { widen_sum!(output_reversed, (List(A) & List(B)) | List(B)) }
+                  )
                 }
               }
-            , (m, nil(B, ()))
-            );
-        reverse(reversed)
-      }
-    )
+            }
+          }
+        , (m, nil(B, ()))
+        );
+      reverse(reversed)
+    }
+  )
 }
 
 // Walk a `List(String)` and join the elements with "," followed
@@ -118,18 +114,18 @@ fn join_step(state: List(String) & String) -> (List(String) & String) | String {
     .(remaining: List(String), acc: String) {
       match! remaining.>List.un_list {
         (
-          , .(x: String, rest: List(String)) {
-              let sep =
-                match! rest.>List.un_list {
-                  (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
-                };
-              widen_sum!(
-                , (rest, string_concat(acc, string_concat(x, sep)))
-                , (List(String) & String) | String
-                )
-            }
-          , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
-          )
+        , .(x: String, rest: List(String)) {
+            let sep =
+              match! rest.>List.un_list {
+                (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
+              };
+            widen_sum!(
+            , (rest, string_concat(acc, string_concat(x, sep)))
+            , (List(String) & String) | String
+            )
+          }
+        , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
+        )
       }
     }
   }

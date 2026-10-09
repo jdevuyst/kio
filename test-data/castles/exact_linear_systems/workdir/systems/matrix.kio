@@ -45,7 +45,7 @@ rec(loop) fn subtract_walk(row: Row, pivot: Row, factor: q.Rational, result: Row
   match! c.uncons(row) {
     .(value: q.Rational, rest: Row) {
       let difference = q.subtract(value, q.multiply(factor, at(pivot, 0)));
-      rec subtract_walk(rest, c.tail(pivot), factor, c.cons(difference, result))
+      recur subtract_walk(rest, c.tail(pivot), factor, c.cons(difference, result))
     };
     .() { l.reverse(result) }
   }
@@ -58,7 +58,7 @@ pub fn subtract_multiple(row: Row, pivot: Row, factor: q.Rational) -> Row {
 rec(loop) fn dot_walk(left: Row, right: Row, total: q.Rational) -> q.Rational {
   match! c.uncons(left) {
     .(value: q.Rational, rest: Row) {
-      rec dot_walk(rest, c.tail(right), q.add(total, q.multiply(value, at(right, 0))))
+      recur dot_walk(rest, c.tail(right), q.add(total, q.multiply(value, at(right, 0))))
     };
     .() { total }
   }
@@ -68,18 +68,16 @@ pub fn dot(left: Row, right: Row) -> q.Rational { dot_walk(left, right, q.zero()
 
 pub fn all_zero(row: Row) -> Bool {
   l.foldl(
-    , .(ok, value) {
-        if! ok {
-          q.is_zero(value)
-        } else {
-          .f
-        }
-      }
-    , .t
-    , row
-    )
+  , .(ok, value) {
+      if! ok { q.is_zero(value) } else { .f }
+    }
+  , .t
+  , row
+  )
 }
 
 pub fn show(row: Row) -> String { l.to_string(q.show, row) }
 
-pub fn indices(count: I32) -> c.List(I32) { l.iterate(count, .(n) { a.add_i32(n, 1) }, 0) }
+pub fn indices(count: I32) -> c.List(I32) {
+  l.iterate(count, .(n) { a.add_i32(n, 1) }, 0)
+}

@@ -22,41 +22,29 @@ pub fn worker_name(id: I32) -> String {
 }
 
 pub fn slot_name(id: I32) -> String {
-  if! eq_i32(id, 0) {
-    "morning"
-  } else if! eq_i32(id, 1) {
-    "evening"
-  } else {
-    "night"
-  }
+  if! eq_i32(id, 0) { "morning" } else if! eq_i32(id, 1) { "evening" } else { "night" }
 }
 
 pub fn skill_name(id: I32) -> String {
-  if! eq_i32(id, 0) {
-    "front"
-  } else if! eq_i32(id, 1) {
-    "meds"
-  } else {
-    "lead"
-  }
+  if! eq_i32(id, 0) { "front" } else if! eq_i32(id, 1) { "meds" } else { "lead" }
 }
 
 fn mk_shift(
-  , day_value: I32
-  , slot_value: I32
-  , worker_value: I32
-  , demand_value: I32
-  , skill_value: I32
-  , preference_value: I32
-  ) -> Shift {
+, day_value: I32
+, slot_value: I32
+, worker_value: I32
+, demand_value: I32
+, skill_value: I32
+, preference_value: I32
+) -> Shift {
   {
-    , day = day_value
-    , slot = slot_value
-    , worker = worker_value
-    , demand = demand_value
-    , skill = skill_value
-    , preference = preference_value
-    }
+  , day = day_value
+  , slot = slot_value
+  , worker = worker_value
+  , demand = demand_value
+  , skill = skill_value
+  , preference = preference_value
+  }
 }
 
 pub fn shift_at(index: I32) -> Shift {

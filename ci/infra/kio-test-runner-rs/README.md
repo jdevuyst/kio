@@ -127,6 +127,7 @@ sharpened exact variants in the protocol registry.
 | `testapi-bare-arith` | print, integer formatting, and unsuffixed i32 arithmetic functions. |
 | `testapi-compute` | the exact arithmetic, comparison, text, input, and loop contract used by compute cases. |
 | `testapi-compute-rec-partial-let` | the exact `Bool`, `I32`, and `String` role types plus `leq_i32`, `i32_to_string`, `print`, and `loop`. |
+| `testapi-reentry` | the standard elaborator role types and `testapi.Bool`, `I32`, and `String`; `loop` and `loop_reentry`; `add_i32`, `sub_i32`, `leq_i32`, and `eq_i32`; `i32_to_string`, `bool_to_string`, `print`, and `string_concat`. |
 | `testapi-bare-compute` | the corresponding compute contract with unsuffixed i32 arithmetic. |
 | `testapi-io` | the exact print, stderr, exit, and input contract. |
 | `testapi-arith-collection` | print, formatting, string concatenation, `_i32` arithmetic/comparison, and loop functions used by the collection family. |
@@ -336,6 +337,7 @@ select behavior. The index below documents those shared rendering shapes.
 | `StringConcat` | `fn string_concat(a: Str, b: Str) -> Str;` | String `+` (JS) / `format!` (Rust). |
 | `StringEq` | `fn string_eq(a: Str, b: Str) -> Bool;` | Character-by-character string equality. |
 | `Loop` | `fn loop[S][R](step: S -> (S \| R), state: S) -> R;` | General-recursion driver; `step` returns the continue arm to loop or the exit arm to return. |
+| `LoopReentry` | `fn loop_reentry[S][R](step: ((S -> R) & S) -> (S \| R), state: S) -> R;` | Supplies each step with a reusable callback that starts the same loop at a new state and remains callable after the original run returns. Each run iterates ordinary continue arms; nested synchronous callback calls may retain host frames. |
 | `NumericToString` | `fn <kind>_to_string(v: <Kind>) -> Str;` | Stringify a numeric value (`String(v)` / `.to_string()` — using a JS `BigInt` for wide integers and shortest-round-trip rendering for floats). |
 | `BoolToString` | `fn bool_to_string(v: Bool) -> Str;` | Stringify a bool. |
 | `PrintI32` | `fn print_i32(v: I32) -> .;` | Write the decimal i32 value to stdout, no implicit newline. |

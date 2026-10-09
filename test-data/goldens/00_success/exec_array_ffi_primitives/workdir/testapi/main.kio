@@ -17,28 +17,28 @@ import testapi/text(string_concat);
 // State is `(acc, i)`; folds until `i` reaches `array_len`.
 fn render_array[A](show: A -> String, arr: Array(A)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) {
-            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
-              widen_sum!(
-                , if! leq_i32(i, 0) {
-                    (show(array_get(arr, i)), add_i32(i, 1))
-                  } else {
-                    (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
-                  }
-                , (String & I32) | String
-                )
-            } else {
-              widen_sum!(acc, (String & I32) | String)
-            }
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) {
+          if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+            widen_sum!(
+            , if! leq_i32(i, 0) {
+                (show(array_get(arr, i)), add_i32(i, 1))
+              } else {
+                (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
+              }
+            , (String & I32) | String
+            )
+          } else {
+            widen_sum!(acc, (String & I32) | String)
           }
         }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 pub fn main() {

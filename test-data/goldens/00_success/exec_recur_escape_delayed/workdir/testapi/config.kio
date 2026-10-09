@@ -1,0 +1,5 @@
+module testapi/config;
+
+import testapi(I32);
+
+pub fn depth() -> I32 { 64 }

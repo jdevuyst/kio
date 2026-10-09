@@ -33,7 +33,9 @@ pub newtype Wrap[X] : Tree(X, String) { pub constructor mk_wrap; pub projector u
 // exercising the recursive leading-slot nesting end-to-end.
 pub newtype Cross[*F] : [A] F(A) -> F(A) { pub constructor mk_cross; pub projector cross }
 
-fn wrap_cross() -> Cross(Wrap) { Cross.mk_cross(Wrap, .[A](m) { m }) }
+fn wrap_cross() -> Cross(Wrap) {
+  Cross.mk_cross(Wrap, .[A](m) { m })
+}
 
 // Build a one-branch tree `branch(label, "v", leaf)`, wrap it, send it
 // across the identity dictionary, peel both wrapper layers, and read
@@ -44,30 +46,30 @@ fn round_trip(label: String) -> String {
   let leaf = Tree.mk_tree(String, String, __left__(., String & String & Tree(String, String), ()));
   let branch =
     Tree.mk_tree(
-      , String
-      , String
-      , __right__(
-          , .
-          , String & String & Tree(String, String)
-          , __pair__(
-              , String
-              , String & Tree(String, String)
-              , label
-              , __pair__(String, Tree(String, String), "v"(String), leaf)
-              )
-          )
-      );
+    , String
+    , String
+    , __right__(
+      , .
+      , String & String & Tree(String, String)
+      , __pair__(
+        , String
+        , String & Tree(String, String)
+        , label
+        , __pair__(String, Tree(String, String), "v"(String), leaf)
+        )
+      )
+    );
   let wrapped = Wrap.mk_wrap(String, branch);
   let crossed = Cross.cross(Wrap, wrap_cross())(String, wrapped);
   let out = Wrap.un_wrap(String, crossed);
   __either__(
-    , .
-    , String & String & Tree(String, String)
-    , String
-    , Tree.un_tree(String, String, out)
-    , .(u) { "leaf: unexpected\n"(String) }
-    , .(node) { __fst__(String, String & Tree(String, String), node) }
-    )
+  , .
+  , String & String & Tree(String, String)
+  , String
+  , Tree.un_tree(String, String, out)
+  , .(u) { "leaf: unexpected\n"(String) }
+  , .(node) { __fst__(String, String & Tree(String, String), node) }
+  )
 }
 
 pub fn main() { print(round_trip("leading nested brand ok\n"(String))) }

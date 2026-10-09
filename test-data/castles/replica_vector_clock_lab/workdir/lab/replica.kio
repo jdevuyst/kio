@@ -17,10 +17,10 @@ pub labels Version = { value: I32, stamp: clock.Clock };
 pub labels Message = { key: I32, payload: Version };
 
 pub labels Replica = {
-  , node: clock.Node
-  , observed: clock.Clock
-  , records: dict.Dict(I32, core.List(Version))
-  };
+, node: clock.Node
+, observed: clock.Clock
+, records: dict.Dict(I32, core.List(Version))
+};
 
 pub labels Fault =
   { missing: I32 }
@@ -31,13 +31,7 @@ pub labels Fault =
 pub type Change = Replica & Message;
 
 pub fn key_order(a: I32, b: I32) -> dict.Ordering {
-  if! arith.lt_i32(a, b) {
-    dict.lt()
-  } else if! arith.eq_i32(a, b) {
-    dict.eq()
-  } else {
-    dict.gt()
-  }
+  if! arith.lt_i32(a, b) { dict.lt() } else if! arith.eq_i32(a, b) { dict.eq() } else { dict.gt() }
 }
 
 pub fn empty(node: clock.Node) -> Replica {
@@ -54,7 +48,7 @@ rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> 
       if! clock.lexical_before(incoming.?{stamp}, head.?{stamp}) {
         core.cons(incoming, retained)
       } else {
-        core.cons(head, rec(cont) insert_ordered(incoming, tail))
+        core.cons(head, recur(cont) insert_ordered(incoming, tail))
       }
     };
     .(_empty: .) { core.singleton(incoming) }
@@ -64,29 +58,21 @@ rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> 
 fn merge(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
   let obsolete =
     lists.foldl(
-      , .(found: Bool, old: Version) {
-          if! found {
-            .t
-          } else {
-            clock.leq(incoming.?{stamp}, old.?{stamp})
-          }
-        }
-      , .f
-      , retained
-      );
+    , .(found: Bool, old: Version) {
+        if! found { .t } else { clock.leq(incoming.?{stamp}, old.?{stamp}) }
+      }
+    , .f
+    , retained
+    );
   if! obsolete {
     retained
   } else {
     let survivors = lists.filter(
-      , .(old: Version) {
-          if! clock.leq(old.?{stamp}, incoming.?{stamp}) {
-            .f
-          } else {
-            .t
-          }
-        }
-      , retained
-      );
+    , .(old: Version) {
+        if! clock.leq(old.?{stamp}, incoming.?{stamp}) { .f } else { .t }
+      }
+    , retained
+    );
     insert_ordered(incoming, survivors)
   }
 }
@@ -95,10 +81,10 @@ pub fn deliver(replica: Replica, message: Message) -> Replica {
   let incoming = message.?{payload};
   let retained = merge(incoming, versions(replica, message.?{key}));
   {
-    , node = replica.?{node}
-    , observed = clock.join(replica.?{observed}, incoming.?{stamp})
-    , records = dict.insert(key_order, replica.?{records}, message.?{key}, retained)
-    }
+  , node = replica.?{node}
+  , observed = clock.join(replica.?{observed}, incoming.?{stamp})
+  , records = dict.insert(key_order, replica.?{records}, message.?{key}, retained)
+  }
 }
 
 pub fn replay(replica: Replica, messages: core.List(Message)) -> Replica {
@@ -141,26 +127,18 @@ pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result(Change,
 }
 
 fn same_version(x: Version, y: Version) -> Bool {
-  if! arith.eq_i32(x.?{value}, y.?{value}) {
-    clock.equal(x.?{stamp}, y.?{stamp})
-  } else {
-    .f
-  }
+  if! arith.eq_i32(x.?{value}, y.?{value}) { clock.equal(x.?{stamp}, y.?{stamp}) } else { .f }
 }
 
 fn same_versions(xs: core.List(Version), ys: core.List(Version)) -> Bool {
   if! arith.eq_i32(lists.length(xs), lists.length(ys)) {
     lists.foldl(
-      , .(same: Bool, v: Version) {
-          if! same {
-            lists.elem(same_version, v, ys)
-          } else {
-            .f
-          }
-        }
-      , .t
-      , xs
-      )
+    , .(same: Bool, v: Version) {
+        if! same { lists.elem(same_version, v, ys) } else { .f }
+      }
+    , .t
+    , xs
+    )
   } else {
     .f
   }
@@ -170,16 +148,12 @@ pub fn converged(x: Replica, y: Replica) -> Bool {
   if! clock.equal(x.?{observed}, y.?{observed}) {
     if! arith.eq_i32(dict.size(x.?{records}), dict.size(y.?{records})) {
       dict.fold_asc(
-        , x.?{records}
-        , .t
-        , .(same: Bool, key: I32, retained: core.List(Version)) {
-            if! same {
-              same_versions(retained, versions(y, key))
-            } else {
-              .f
-            }
-          }
-        )
+      , x.?{records}
+      , .t
+      , .(same: Bool, key: I32, retained: core.List(Version)) {
+          if! same { same_versions(retained, versions(y, key)) } else { .f }
+        }
+      )
     } else {
       .f
     }

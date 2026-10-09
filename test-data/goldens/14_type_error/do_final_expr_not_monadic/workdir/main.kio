@@ -14,8 +14,5 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // type `Box(_)`. A do-block's final expression must match the
 // receiver's monad shape.
 fn bad() -> Box(.) {
-  do! box_bind {
-    let _x <- box_pure(());
-    "plain string"
-  }
+  do! box_bind { let _x <- box_pure(()); "plain string" }
 }

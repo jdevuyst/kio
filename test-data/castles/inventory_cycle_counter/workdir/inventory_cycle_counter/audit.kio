@@ -9,11 +9,7 @@ pub fn delta(bin: Bin) -> I32 { arith.sub_i32(bin.?{observed}, bin.?{expected}) 
 
 pub fn abs_delta(bin: Bin) -> I32 {
   let d = delta(bin);
-  if! arith.lt_i32(d, 0) {
-    arith.sub_i32(0, d)
-  } else {
-    d
-  }
+  if! arith.lt_i32(d, 0) { arith.sub_i32(0, d) } else { d }
 }
 
 pub fn status(bin: Bin) -> String {
@@ -28,7 +24,7 @@ pub fn status(bin: Bin) -> String {
 
 pub fn discrepancy(a: Bin, b: Bin, c: Bin, d: Bin) -> I32 {
   arith.add_i32(
-    , arith.add_i32(abs_delta(a), abs_delta(b))
-    , arith.add_i32(abs_delta(c), abs_delta(d))
-    )
+  , arith.add_i32(abs_delta(a), abs_delta(b))
+  , arith.add_i32(abs_delta(c), abs_delta(d))
+  )
 }

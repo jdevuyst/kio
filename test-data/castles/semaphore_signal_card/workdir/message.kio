@@ -14,16 +14,16 @@ pub labels Facts = { has_vowel: Bool, crossings_even: Bool, shapes_distinct: Boo
 
 pub fn spelled() -> Message {
   (
-    , letters.s()
-    , letters.e()
-    , letters.m()
-    , letters.a()
-    , letters.p()
-    , letters.h()
-    , letters.o()
-    , letters.r()
-    , letters.e()
-    )
+  , letters.s()
+  , letters.e()
+  , letters.m()
+  , letters.a()
+  , letters.p()
+  , letters.h()
+  , letters.o()
+  , letters.r()
+  , letters.e()
+  )
 }
 
 // Two letters share a shape class when both Bool facts agree.

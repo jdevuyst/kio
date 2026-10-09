@@ -11,19 +11,19 @@ fn f(x: I32) -> I32 {
 
 fn g(x: I32) -> I32 {
   inc(
-    , x
-    , 1
-    // the increment
-    // dangling before the closing paren
-    )
+  , x
+  , 1
+  // the increment
+  // dangling before the closing paren
+  )
 }
 
 fn pair_of(x: I32) -> I32 & I32 {
   (
-    , x
-    , x
-    // last tuple element
-    )
+  , x
+  , x
+  // last tuple element
+  )
 }
 
 fn block_with_dangling(x: I32) -> I32 {
@@ -54,19 +54,19 @@ fn f(x: I32) -> I32 {
 
 fn g(x: I32) -> I32 {
   inc(
-    , x
-    , 1
-    // the increment
-    // dangling before the closing paren
-    )
+  , x
+  , 1
+  // the increment
+  // dangling before the closing paren
+  )
 }
 
 fn pair_of(x: I32) -> I32 & I32 {
   (
-    , x
-    , x
-    // last tuple element
-    )
+  , x
+  , x
+  // last tuple element
+  )
 }
 
 fn block_with_dangling(x: I32) -> I32 {

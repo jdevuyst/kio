@@ -16,56 +16,45 @@ rec(loop) fn sizes(table: model.Chart, index: I32, result: String) -> String {
   if! arith.leq_i32(arrays.array_len(table), index) {
     text.string_concat(result, "]")
   } else {
-    let separator = if! arith.leq_i32(index, 0) {
-      ""
-    } else {
-      ","
-    };
+    let separator = if! arith.leq_i32(index, 0) { "" } else { "," };
     let size = fmt.int_to_string(arrays.array_len(arrays.array_get(table, index)));
-    rec sizes(
-      , table
-      , arith.add_i32(index, 1)
-      , text.string_concat(result, text.string_concat(separator, size))
-      )
+    recur sizes(
+    , table
+    , arith.add_i32(index, 1)
+    , text.string_concat(result, text.string_concat(separator, size))
+    )
   }
 }
 
 rec(loop) fn examples(
-  , name: String
-  , grammar: model.Grammar
-  , inputs: Array(fixtures.Example)
-  , index: I32
-  ) {
+, name: String
+, grammar: model.Grammar
+, inputs: Array(fixtures.Example)
+, index: I32
+) {
   if! arith.leq_i32(arrays.array_len(inputs), index) {
     ()
   } else {
     let fixture = arrays.array_get(inputs, index);
     let .(table: model.Chart, accepted: Bool) = recognize.run(grammar, 0, fixtures.input(fixture));
-    let verdict = if! accepted {
-      "accepted"
-    } else {
-      "rejected"
-    };
+    let verdict = if! accepted { "accepted" } else { "rejected" };
     io.print(text.string_concat(
-      , name
+    , name
+    , text.string_concat(
+      , " "
       , text.string_concat(
-          , " "
+        , fixtures.title(fixture)
+        , text.string_concat(
+          , ": "
           , text.string_concat(
-              , fixtures.title(fixture)
-              , text.string_concat(
-                  , ": "
-                  , text.string_concat(
-                      , verdict
-                      , text.string_concat(
-                          , " chart="
-                          , text.string_concat(sizes(table, 0, "["), "\n")
-                          )
-                      )
-                  )
-              )
+            , verdict
+            , text.string_concat(" chart=", text.string_concat(sizes(table, 0, "["), "\n"))
+            )
           )
-      ));
-    rec examples(name, grammar, inputs, arith.add_i32(index, 1))
+        )
+      )
+    ));
+    recur examples(name, grammar, inputs, arith.add_i32(index, 1))
   }
 }
 

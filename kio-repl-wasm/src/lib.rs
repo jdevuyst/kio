@@ -561,6 +561,16 @@ mod tests {
     }
 
     #[test]
+    fn recursive_annotations_have_no_owner_in_browser_prompts() {
+        let mut repl = trailing_blocks_repl();
+        repl.run_command(Command::Load("app".to_owned()));
+        for source in ["recur(", "recur(cont, ", ".() { recur(", "enter! { recur("] {
+            let result = repl.complete_core(source, source.len());
+            assert!(result.candidates.is_empty(), "{source}: {result:?}");
+        }
+    }
+
+    #[test]
     fn type_only_values_preserve_browser_stages_and_binder_edits() {
         let mut repl = type_only_values_repl();
         let loaded = repl.run_command(Command::Load("app".to_owned()));

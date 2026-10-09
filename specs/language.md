@@ -1198,9 +1198,9 @@ What "contextual" buys: adding a new keyword later cannot break existing user co
 
 Per-keyword semantics are documented at the declaration sites; this is the consolidated reference.
 
-- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `elab`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions and the recursive-call position below, ordinary identifiers.
+- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `elab`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
 - **Module-header words** (recognized at the start of a `*.kio` module file): `module` for a module declaration.
-- **Recursive-call introducer**: `rec` introduces a recursive callee, with optional call annotations before that callee: `rec step(x)` or `rec(cont) step(x)`. Without a following callee, a bare `rec` reference or an ordinary call such as `rec(x)` uses the ordinary identifier. In particular, `fn id(rec: .) { rec }` is an ordinary function.
+- **Recursive-call introducer**: `recur` introduces a recursive callee, with optional call annotations before that callee: `recur step(x)` or `recur(cont) step(x)`. Without a following callee, a bare `recur` reference or an ordinary call such as `recur(x)` uses the ordinary identifier. Both `rec` and `recur` remain ordinary names outside their grammatical positions; `fn id(rec: .) { rec }` is an ordinary function.
 - **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Elaborator names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; adjacent `!` introduces a generic elaborator call. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
 - **Inside elaborator declarations**: `impl`, `captures`, and `trailing` introduce entries; `product`, `thunk`, and `sequence` select the descriptor after `trailing`.
 - **Import-leading and import-context words**: `import` begins a module's
@@ -1313,7 +1313,7 @@ pub fn greeting() -> String { "hello" }
 
 A `fn` always has a parameter list (parens required, even when empty). `let` is never used at the top level — it is reserved for local naming inside blocks.
 
-**Order-sensitive visibility.** Declarations, including `host type` and `host fn`, are processed top-to-bottom. A declaration sees only names introduced *above* it in the same file, plus names brought in by `import`. A host declaration introduces its name after its own signature is checked; host types in that signature must already be in scope. There is no implicit forward reference within a file. The explicit exceptions are the capability-free recursive-data scopes (`rec newtype`, `rec labels`, and bare `rec { ... }` type groups; see [Type declarations](#type-declarations)) and `rec(loop)` function groups. A singleton data declaration sees only the heads its own declaration contributes. A bare type group sees exactly its written member heads. A `rec(loop)` group gives its member bodies access to the group's member names only through explicit `rec name(...)` calls.
+**Order-sensitive visibility.** Declarations, including `host type` and `host fn`, are processed top-to-bottom. A declaration sees only names introduced *above* it in the same file, plus names brought in by `import`. A host declaration introduces its name after its own signature is checked; host types in that signature must already be in scope. There is no implicit forward reference within a file. The explicit exceptions are the capability-free recursive-data scopes (`rec newtype`, `rec labels`, and bare `rec { ... }` type groups; see [Type declarations](#type-declarations)) and `rec(loop)` function groups. A singleton data declaration sees only the heads its own declaration contributes. A bare type group sees exactly its written member heads. A `rec(loop)` group gives its member bodies access to the group's member names only through explicit `recur name(...)` calls.
 
 A direct consequence: an ordinary **`fn` cannot refer to itself**, because its own name is not yet in scope when its body is checked. Mutual recursion between ordinary `fn`s is equally impossible. Use an explicit `rec(loop)` group when term recursion is intended. The same order-sensitivity rules out self-referential type aliases.
 
@@ -1675,6 +1675,21 @@ loop[S][R](step: S -> (S | R), state: S) -> R
 
 There is no privileged built-in named `loop`: hosts, package files, root modules, or earlier module declarations provide a normal function, and `rec(loop)` resolves that path by the usual rules.
 
+Escaping groups require a re-entry-capable provider whose step also receives
+an ordinary `S -> R` callback:
+
+```text
+loop[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R
+```
+
+The transition sum still means next state on the left and final result on the
+right. The host calls `step(reenter, state)`; `reenter(next_state)` runs that
+same state machine and returns its result, including after the creating step
+has returned. Ordinary groups retain the simple provider contract above. A
+general provider can serve an ordinary group through an ordinary adapter that
+ignores the step's re-entry argument and forwards the state; the compiler does
+not dispatch on the provider's type or give any provider privileged identity.
+
 Single-function recursion uses the shorthand:
 
 ```kio
@@ -1682,7 +1697,7 @@ pub rec(loop) fn countdown(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     n
   } else {
-    rec countdown(sub_i32(n, 1))
+    recur countdown(sub_i32(n, 1))
   }
 }
 ```
@@ -1704,8 +1719,8 @@ Mutual recursion uses a braced group. Visibility belongs to each member:
 
 ```kio
 rec(loop) {
-  pub fn even(n: I32) -> Bool { if! eq_i32(n, 0) { true } else { rec odd(sub_i32(n, 1)) } }
-  fn odd(n: I32) -> Bool { if! eq_i32(n, 0) { false } else { rec even(sub_i32(n, 1)) } }
+  pub fn even(n: I32) -> Bool { if! eq_i32(n, 0) { true } else { recur odd(sub_i32(n, 1)) } }
+  fn odd(n: I32) -> Bool { if! eq_i32(n, 0) { false } else { recur even(sub_i32(n, 1)) } }
 }
 ```
 
@@ -1719,17 +1734,19 @@ also occupy the ordinary module namespace, so conflicts with another top-level
 declaration receive the ordinary duplicate-name diagnostic.
 
 Inside a member body, calls to members of that group must be written with the
-`rec` marker. A call to a member name without `rec` is rejected, even for
+`recur` marker. A call to a member name without `recur` is rejected, even for
 direct self-recursion. Outside the member bodies the lowered wrappers are called
 normally. The call marker carries the optimization/shape facts the compiler
 relies on:
 
-- `rec name(...)` — monomorphic, tail-position recursive call.
-- `rec(poly) name(T, ...)` — tail-position recursive call whose type arguments differ from the current member instantiation.
-- `rec(cont) name(...)` — monomorphic recursive call in a non-tail position.
-- `rec(poly, cont) name(T, ...)` — type-changing recursive call in a non-tail position.
+- `recur name(...)` — monomorphic, tail-position recursive call.
+- `recur(poly) name(T, ...)` — tail-position recursive call whose type arguments differ from the current member instantiation.
+- `recur(cont) name(...)` — monomorphic recursive call in a non-tail position.
+- `recur(poly, cont) name(T, ...)` — type-changing recursive call in a non-tail position.
+- `recur(escape) name(...)` — a recursive call captured by an ordinary closure that may outlive the current loop step.
+- `recur(poly, escape) name(T, ...)` — an escaping call at a different type instantiation.
 
-This is a source-visible lowering contract: the author states the shape being requested, and the compiler checks that the annotation is both necessary and sufficient. `kio fmt` prints combined annotations in the canonical order `poly`, `cont`, `escape`.
+This is a source-visible lowering contract: the author states the shape being requested, and the compiler checks that the annotation is both necessary and sufficient. `escape` entails `cont`; source may write both, but `kio fmt` removes the entailed `cont`. `poly` remains orthogonal and comes first in canonical combined annotations. Duplicate annotations are errors.
 
 Tail positions include the function body's final expression. The reference
 `if!` branches, `scope!` body, and selected `match!` clause bodies retain tail
@@ -1739,18 +1756,33 @@ library name or descriptor: duplicating, discarding, delaying, or
 postprocessing a block does not grant tail permission. The condition of
 `if!`, the scrutinee of `match!`, ordinary function arguments, tuple/label
 fields, and other subexpressions are non-tail positions and require
-`rec(cont)`. The `cont` annotation is rejected in tail position so the source
+`recur(cont)`. The `cont` annotation is rejected in tail position so the source
 states the intended lowering precisely.
 
-`rec(escape)` is reserved for recursive calls captured by closures that can re-enter the same recursive group after the current loop step has returned. It is not part of the language; such calls are rejected — a recursive call captured inside a nested function or sequence continuation is an error.
+`recur(escape)` permits recursive calls captured by ordinary explicit or
+placeholder closures, including generated monadic sequence continuations. The
+closure may be returned, stored, called repeatedly, or passed to an unknown
+higher-order consumer. Each invocation re-enters the same closed recursion
+group at the named member and selected instantiation. The call's arguments are
+evaluated left-to-right, exactly once, before its state is passed to re-entry.
+An ordinary closure is an escaping boundary even when a particular consumer
+calls it immediately; inspecting a callee's body or name does not change that
+classification. Authenticated structural continuations that execute as part
+of the current step retain their existing tail/non-tail rules instead.
+
+A call beneath an escaping boundary requires `escape`; adding only `cont`
+does not suffice. Conversely, `escape` without such a boundary is unnecessary
+and rejected. Written `cont` beside `escape` is accepted even when the call is
+the closure body's final expression, because the closure may outlive the
+step. The independent necessity checks for `poly` still apply.
 
 The continuation boundary is introduced by a bind or sequenced expression.
-In `do! chain { let x <- rec(cont) step(v); x }`, the recursive call supplies
+In `do! chain { let x <- recur(cont) step(v); x }`, the recursive call supplies
 the first ordinary value argument of the expanded
-`chain(rec(cont) step(v), .(x) { x })`, outside the bind continuation.
+`chain(recur(cont) step(v), .(x) { x })`, outside the bind continuation.
 It therefore requires `cont` and is not an escaping call. Recursive calls in
 the rest of the block after a bind or sequence are inside its ordinary
-generated continuation and remain rejected.
+generated continuation and require `escape`.
 
 `rec(loop)` supports polymorphic recursion. A recursive member's type parameters may be supplied explicitly at a recursive call site:
 
@@ -1759,22 +1791,22 @@ pub rec(loop) fn walk[A](n: I32, marker: A) -> I32 {
   if! leq_i32(n, 0) {
     n
   } else {
-    rec(poly) walk(String, sub_i32(n, 1), "next")
+    recur(poly) walk(String, sub_i32(n, 1), "next")
   }
 }
 ```
 
-If the leading type arguments are omitted, the call uses the current member instantiation and `rec(poly)` is rejected as redundant. If the type arguments differ from the current member instantiation, `rec(poly)` is required. The number and order of written type arguments must match the callee member's type-parameter list. Mutual-recursion members share the same type-parameter list and return type shape, so every member can return through the one loop result type; individual `rec(poly)` calls can still choose a different instantiation for the next state. The lowering packages each member's value parameters in an existential state packet, so `rec(loop)` type parameters must be kind `*`.
+If the leading type arguments are omitted, the call uses the current member instantiation and `recur(poly)` is rejected as redundant. If the type arguments differ from the current member instantiation, `recur(poly)` is required. The number and order of written type arguments must match the callee member's type-parameter list. Mutual-recursion members share the same type-parameter list and return type shape, so every member can return through the one loop result type; individual `recur(poly)` calls can still choose a different instantiation for the next state. The lowering packages each member's value parameters in an existential state packet, so `rec(loop)` type parameters must be kind `*`.
 
-The form is surface-only. The desugar pass replaces a group with private state-packet `newtype`s, a loop-step lambda, and one ordinary wrapper function per member, preserving each member's visibility. Tail recursive calls construct the next state packet and return the left arm of `S | R`; each non-recursive tail result returns the right arm. A group that contains `rec(cont)` uses continuation-carrying state instead: each state packet also carries the rest of the computation as a function from the callee's result to the loop step result, so a non-tail recursive call becomes "enqueue the callee state with an updated continuation" rather than a Kio' fixpoint. A continuation-bearing packet that refers back to itself is emitted as `rec newtype`; packets that refer to one another are emitted as one minimal Kio' `rec { ... }` type group. No recursive-function group or recursive-call marker reaches Kio'.
+The form is surface-only. The desugar pass replaces a group with private state-packet `newtype`s, a loop-step lambda, and one ordinary wrapper function per member, preserving each member's visibility. Tail recursive calls construct the next state packet and return the left arm of `S | R`; each non-recursive tail result returns the right arm. A group that contains `recur(cont)` uses continuation-carrying state instead: each state packet also carries the rest of the computation as a function from the callee's result to the loop step result, so a non-tail recursive call becomes "enqueue the callee state with an updated continuation" rather than a Kio' fixpoint. A continuation-bearing packet that refers back to itself is emitted as `rec newtype`; packets that refer to one another are emitted as one minimal Kio' `rec { ... }` type group. No recursive-function group or recursive-call marker reaches Kio'.
 
 The loop boundary is semantic, not just an implementation shortcut:
 
 - **Kio' core stays total.** Recursive control flow is an explicit capability supplied to the surface program, not a term-level fixed point in the Kio' core.
-- **Recursive depth is backend-independent.** The depth a recursive run can sustain is a property of the supplied `loop` function, not of the host language's native call-stack limit or per-call frame size. The same Kio package must not overflow on one backend or platform only because its recursive calls consumed a different native stack.
-- **Polymorphic recursion is Kio-defined.** `rec(poly)` is accepted or rejected by Kio's own recursive-call rules, not by whether the host language's native recursive functions support the same generic-instantiation pattern.
+- **Loop-managed depth is backend-independent.** Ordinary transitions and deep runs begun after earlier calls have returned depend on the supplied loop, not native recursive calls. An escaped closure can also invoke the host re-entry callback synchronously while an earlier host call waits for its result. Such nested waiting calls retain host frames and can exhaust the host stack; the capability does not capture an opaque host continuation or promise stack safety for arbitrarily deep synchronous re-entry.
+- **Polymorphic recursion is Kio-defined.** `recur(poly)` is accepted or rejected by Kio's own recursive-call rules, not by whether the host language's native recursive functions support the same generic-instantiation pattern.
 
-Backends therefore must not lower `rec(loop)` groups to host-native recursive functions. The open-world argument is the same as for ordinary lexical resolution: the `loop` path is resolved as a normal value path, `rec name(...)` only searches the closed member set written in the group, and each wrapper has the fixed identity `(declaring module, member name)`. None of these rules searches an ambient declaration pool by signature or role, so adding an unrelated declaration cannot retarget an existing recursive call or wrapper call.
+Backends therefore must not lower `rec(loop)` groups to host-native recursive functions. The open-world argument is the same as for ordinary lexical resolution: the `loop` path is resolved as a normal value path, `recur name(...)` only searches the closed member set written in the group, and each wrapper has the fixed identity `(declaring module, member name)`. None of these rules searches an ambient declaration pool by signature or role, so adding an unrelated declaration cannot retarget an existing recursive call or wrapper call.
 
 ### Anonymous functions
 

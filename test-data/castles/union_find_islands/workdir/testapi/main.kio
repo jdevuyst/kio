@@ -4,34 +4,26 @@ import elab/control(if);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(
-  , array_clone
-  , array_get
-  , array_len
-  , array_make_empty
-  , array_make_filled
-  , array_push
-  , array_set
-  , array_swap
-  );
+, array_clone
+, array_get
+, array_len
+, array_make_empty
+, array_make_filled
+, array_push
+, array_set
+, array_swap
+);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
 fn not_bool(value: Bool) -> Bool {
-  if! value {
-    .f
-  } else {
-    .t
-  }
+  if! value { .f } else { .t }
 }
 
 fn and_bool(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    .f
-  }
+  if! left { right } else { .f }
 }
 
 fn eq_i32(left: I32, right: I32) -> Bool { and_bool(leq_i32(left, right), leq_i32(right, left)) }
@@ -97,7 +89,7 @@ fn make_edge_tos() -> Array(I32) {
 rec(loop) fn init_parents_at(index: I32, parents: Array(I32)) -> Array(I32) {
   if! leq_i32(index, sub_i32(cell_count(), 1)) {
     array_set(parents, index, index);
-    rec init_parents_at(add_i32(index, 1), parents)
+    recur init_parents_at(add_i32(index, 1), parents)
   } else {
     parents
   }
@@ -109,11 +101,7 @@ fn make_sizes() -> Array(I32) { array_make_filled(cell_count(), 1) }
 
 rec(loop) fn root_of(parents: Array(I32), cell: I32) -> I32 {
   let parent = array_get(parents, cell);
-  if! eq_i32(parent, cell) {
-    cell
-  } else {
-    rec root_of(parents, parent)
-  }
+  if! eq_i32(parent, cell) { cell } else { recur root_of(parents, parent) }
 }
 
 fn attach_roots(parents: Array(I32), sizes: Array(I32), left_root: I32, right_root: I32) -> I32 {
@@ -147,12 +135,12 @@ fn both_land(land: Array(Bool), left: I32, right: I32) -> Bool {
 
 fn edge_header(index: I32, left: I32, right: I32) -> String {
   string_concat(
-    , "edge "
-    , string_concat(
-        , int_to_string(index)
-        , string_concat(": ", concat3(int_to_string(left), "-", int_to_string(right)))
-        )
+  , "edge "
+  , string_concat(
+    , int_to_string(index)
+    , string_concat(": ", concat3(int_to_string(left), "-", int_to_string(right)))
     )
+  )
 }
 
 fn print_edge_union(index: I32, left: I32, right: I32, changed: Bool) {
@@ -168,15 +156,15 @@ fn print_edge_skip(index: I32, left: I32, right: I32) {
 }
 
 rec(loop) fn run_edges(
-  , index: I32
-  , froms: Array(I32)
-  , tos: Array(I32)
-  , land: Array(Bool)
-  , parents: Array(I32)
-  , sizes: Array(I32)
-  , union_count: I32
-  , skipped_count: I32
-  ) -> I32 & I32 {
+, index: I32
+, froms: Array(I32)
+, tos: Array(I32)
+, land: Array(Bool)
+, parents: Array(I32)
+, sizes: Array(I32)
+, union_count: I32
+, skipped_count: I32
+) -> I32 & I32 {
   if! leq_i32(index, sub_i32(array_len(froms), 1)) {
     let left = array_get(froms, index);
     let right = array_get(tos, index);
@@ -184,31 +172,18 @@ rec(loop) fn run_edges(
       let changed = union_cells(parents, sizes, left, right);
       print_edge_union(index, left, right, changed);
       if! changed {
-        rec run_edges(
-          , add_i32(index, 1)
-          , froms
-          , tos
-          , land
-          , parents
-          , sizes
-          , add_i32(union_count, 1)
-          , skipped_count
-          )
+        recur run_edges(
+        , add_i32(index, 1)
+        , froms
+        , tos
+        , land
+        , parents
+        , sizes
+        , add_i32(union_count, 1)
+        , skipped_count
+        )
       } else {
-        rec run_edges(
-          , add_i32(index, 1)
-          , froms
-          , tos
-          , land
-          , parents
-          , sizes
-          , union_count
-          , skipped_count
-          )
-      }
-    } else {
-      print_edge_skip(index, left, right);
-      rec run_edges(
+        recur run_edges(
         , add_i32(index, 1)
         , froms
         , tos
@@ -216,8 +191,21 @@ rec(loop) fn run_edges(
         , parents
         , sizes
         , union_count
-        , add_i32(skipped_count, 1)
+        , skipped_count
         )
+      }
+    } else {
+      print_edge_skip(index, left, right);
+      recur run_edges(
+      , add_i32(index, 1)
+      , froms
+      , tos
+      , land
+      , parents
+      , sizes
+      , union_count
+      , add_i32(skipped_count, 1)
+      )
     }
   } else {
     (union_count, skipped_count)
@@ -225,11 +213,7 @@ rec(loop) fn run_edges(
 }
 
 fn cell_kind(land: Array(Bool), index: I32) -> String {
-  if! array_get(land, index) {
-    "#"
-  } else {
-    "."
-  }
+  if! array_get(land, index) { "#" } else { "." }
 }
 
 fn print_map(land: Array(Bool)) {
@@ -241,25 +225,25 @@ fn print_map(land: Array(Bool)) {
 
 fn print_cell_root(cell: I32, root: I32) {
   println(string_concat(
-    , "cell "
-    , string_concat(int_to_string(cell), string_concat(" -> root ", int_to_string(root)))
-    ))
+  , "cell "
+  , string_concat(int_to_string(cell), string_concat(" -> root ", int_to_string(root)))
+  ))
 }
 
 fn print_root_size(root: I32, size: I32) {
   println(string_concat(
-    , "root "
-    , string_concat(int_to_string(root), string_concat(" size ", int_to_string(size)))
-    ))
+  , "root "
+  , string_concat(int_to_string(root), string_concat(" size ", int_to_string(size)))
+  ))
 }
 
 rec(loop) fn report_cells(index: I32, land: Array(Bool), parents: Array(I32)) {
   if! leq_i32(index, sub_i32(cell_count(), 1)) {
     if! array_get(land, index) {
       print_cell_root(index, root_of(parents, index));
-      rec report_cells(add_i32(index, 1), land, parents)
+      recur report_cells(add_i32(index, 1), land, parents)
     } else {
-      rec report_cells(add_i32(index, 1), land, parents)
+      recur report_cells(add_i32(index, 1), land, parents)
     }
   } else {
     ()
@@ -267,18 +251,18 @@ rec(loop) fn report_cells(index: I32, land: Array(Bool), parents: Array(I32)) {
 }
 
 rec(loop) fn report_roots(
-  , index: I32
-  , land: Array(Bool)
-  , parents: Array(I32)
-  , sizes: Array(I32)
-  , count: I32
-  ) -> I32 {
+, index: I32
+, land: Array(Bool)
+, parents: Array(I32)
+, sizes: Array(I32)
+, count: I32
+) -> I32 {
   if! leq_i32(index, sub_i32(cell_count(), 1)) {
     if! and_bool(array_get(land, index), eq_i32(root_of(parents, index), index)) {
       print_root_size(index, array_get(sizes, index));
-      rec report_roots(add_i32(index, 1), land, parents, sizes, add_i32(count, 1))
+      recur report_roots(add_i32(index, 1), land, parents, sizes, add_i32(count, 1))
     } else {
-      rec report_roots(add_i32(index, 1), land, parents, sizes, count)
+      recur report_roots(add_i32(index, 1), land, parents, sizes, count)
     }
   } else {
     count

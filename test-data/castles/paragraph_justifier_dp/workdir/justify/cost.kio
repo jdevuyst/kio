@@ -27,11 +27,7 @@ pub fn infinite() -> I32 { 1000000 }
 /// enters without ever leaving `i32`.
 pub fn sat_add(a: I32, b: I32) -> I32 {
   let total = add_i32(a, b);
-  if! leq_i32(infinite(), total) {
-    infinite()
-  } else {
-    total
-  }
+  if! leq_i32(infinite(), total) { infinite() } else { total }
 }
 
 pub fn fits(used: I32, column: I32) -> Bool { leq_i32(used, column) }
@@ -39,11 +35,5 @@ pub fn fits(used: I32, column: I32) -> Bool { leq_i32(used, column) }
 fn cube(n: I32) -> I32 { mul_i32(mul_i32(n, n), n) }
 
 pub fn badness(used: I32, column: I32, last: Bool) -> I32 {
-  if! lt_i32(column, used) {
-    infinite()
-  } else if! last {
-    0
-  } else {
-    cube(sub_i32(column, used))
-  }
+  if! lt_i32(column, used) { infinite() } else if! last { 0 } else { cube(sub_i32(column, used)) }
 }

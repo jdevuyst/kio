@@ -27,11 +27,11 @@ fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
     .(remaining: List(A), output: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(x: A, rest: List(A)) {
-              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
-            }
-          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
-          )
+        , .(x: A, rest: List(A)) {
+            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+          }
+        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -57,29 +57,29 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // go through `List`'s own `cons` / `un_list` members.
 fn list_functor() -> Functor(List) {
   Functor.mk_functor(
-    , List
-    , .[A][B](s, xs) {
-        let reversed =
-          loop(
-            , .(state: List(A) & List(B)) {
-                match! state {
-                  .(remaining: List(A), output: List(B)) {
-                    match! remaining.>List.un_list {
-                      (
-                        , .(x: A, rest: List(A)) {
-                            widen_sum!((rest, push(s(x), output)), (List(A) & List(B)) | List(B))
-                          }
-                        , .(_empty: .) { widen_sum!(output, (List(A) & List(B)) | List(B)) }
-                        )
+  , List
+  , .[A][B](s, xs) {
+      let reversed =
+        loop(
+        , .(state: List(A) & List(B)) {
+            match! state {
+              .(remaining: List(A), output: List(B)) {
+                match! remaining.>List.un_list {
+                  (
+                  , .(x: A, rest: List(A)) {
+                      widen_sum!((rest, push(s(x), output)), (List(A) & List(B)) | List(B))
                     }
-                  }
+                  , .(_empty: .) { widen_sum!(output, (List(A) & List(B)) | List(B)) }
+                  )
                 }
               }
-            , (xs, nil(B, ()))
-            );
-        reverse(reversed)
-      }
-    )
+            }
+          }
+        , (xs, nil(B, ()))
+        );
+      reverse(reversed)
+    }
+  )
 }
 
 // Walk a `List(String)` and join the elements with "," followed
@@ -90,18 +90,18 @@ fn join_step(state: List(String) & String) -> (List(String) & String) | String {
     .(remaining: List(String), acc: String) {
       match! remaining.>List.un_list {
         (
-          , .(x: String, rest: List(String)) {
-              let sep =
-                match! rest.>List.un_list {
-                  (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
-                };
-              widen_sum!(
-                , (rest, string_concat(acc, string_concat(x, sep)))
-                , (List(String) & String) | String
-                )
-            }
-          , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
-          )
+        , .(x: String, rest: List(String)) {
+            let sep =
+              match! rest.>List.un_list {
+                (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
+              };
+            widen_sum!(
+            , (rest, string_concat(acc, string_concat(x, sep)))
+            , (List(String) & String) | String
+            )
+          }
+        , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
+        )
       }
     }
   }

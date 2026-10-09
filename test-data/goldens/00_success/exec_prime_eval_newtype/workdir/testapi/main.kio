@@ -46,7 +46,7 @@ pub fn main() {
   line("point_x = ", point_x(p));
   line("point_y = ", point_y(p));
   line(
-    , "sum = "
-    , add_i32(add_i32(Celsius.un(c), unbox(box_i32(7))), add_i32(point_x(p), point_y(p)))
-    )
+  , "sum = "
+  , add_i32(add_i32(Celsius.un(c), unbox(box_i32(7))), add_i32(point_x(p), point_y(p)))
+  )
 }

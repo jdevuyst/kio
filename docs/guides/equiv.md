@@ -46,10 +46,7 @@ needs local statements wraps them in a `scope! { ... }` expression:
 
 ```kio {@equiv}
 equiv local_work[A](value: A) {
-  scope! {
-    let copy = value;
-    copy
-  };
+  scope! { let copy = value; copy };
   value
 }
 ```
@@ -139,10 +136,7 @@ erase the action:
 
 ```kio {@equiv}
 equiv extra_action_fails() {
-  scope! {
-    print("hello");
-    print("hello")
-  };
+  scope! { print("hello"); print("hello") };
   print("hello")
 }
 ```
@@ -163,13 +157,13 @@ The double-swap law therefore discharges for every `A | B` value:
 ```kio {@equiv}
 fn swap[A][B](value: A | B) -> B | A {
   __either__(
-    , A
-    , B
-    , B | A
-    , value
-    , .(left) { __right__(B, A, left) }
-    , .(right) { __left__(B, A, right) }
-    )
+  , A
+  , B
+  , B | A
+  , value
+  , .(left) { __right__(B, A, left) }
+  , .(right) { __left__(B, A, right) }
+  )
 }
 
 equiv swap_twice[A][B](value: A | B) {

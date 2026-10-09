@@ -72,11 +72,11 @@ fn repeated_compiler_block_image() -> String {
 fn outcome(label: String, loaded: Load_outcome) -> String {
   match! un_load_outcome(loaded) {
     (
-      , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
-      , .(diagnostic: Lr_diag) {
-          string_concat(label, string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String)))
-        }
-      )
+    , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
+    , .(diagnostic: Lr_diag) {
+        string_concat(label, string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String)))
+      }
+    )
   }
 }
 
@@ -87,9 +87,9 @@ pub fn main() {
   print(outcome("value same origin: "(String), load_package(value_same_origin_image())));
   print(outcome("module alias conflict: "(String), load_package(module_alias_conflict_image())));
   print(outcome(
-    , "module alias same origin: "(String)
-    , load_package(module_alias_same_origin_image())
-    ));
+  , "module alias same origin: "(String)
+  , load_package(module_alias_same_origin_image())
+  ));
   print(outcome("type alias collision: "(String), load_package(type_alias_collision_image())));
   print(outcome("ordinary alias members: "(String), load_package(ordinary_alias_members_image())));
   print(outcome("compiler blocks: "(String), load_package(repeated_compiler_block_image())))

@@ -23,16 +23,12 @@ fn line(prefix: String, value: String) {
 }
 
 fn yes_no(value: Bool) -> String {
-  if! value {
-    "yes"
-  } else {
-    "no"
-  }
+  if! value { "yes" } else { "no" }
 }
 
 rec(loop) fn matrix_rows(prefix: String, rows: m.Matrix) {
   match! c.uncons(rows) {
-    .(row: m.Row, rest: m.Matrix) { line(prefix, m.show(row)); rec matrix_rows(prefix, rest) };
+    .(row: m.Row, rest: m.Matrix) { line(prefix, m.show(row)); recur matrix_rows(prefix, rest) };
     .() { () }
   }
 }
@@ -41,11 +37,11 @@ rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, i
   match! c.uncons(vectors) {
     .(vector: m.Row, rest: m.Matrix) {
       line(
-        , text.string_concat("  direction ", text.string_concat(fmt.int_to_string(index), " = "))
-        , m.show(vector)
-        );
+      , text.string_concat("  direction ", text.string_concat(fmt.int_to_string(index), " = "))
+      , m.show(vector)
+      );
       line("    A*direction = ", m.show(verify.residuals(original, variables, vector, .t)));
-      rec directions(original, variables, rest, a.add_i32(index, 1))
+      recur directions(original, variables, rest, a.add_i32(index, 1))
     };
     .() { () }
   }
@@ -57,14 +53,7 @@ fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots
       let changed = m.replace(particular, column, q.add(m.at(particular, column), q.integer(1)));
       let residual = verify.residuals(original, variables, changed, .f);
       line("  perturbed witness residual = ", m.show(residual));
-      line(
-        , "  perturbed witness rejected = "
-        , yes_no(if! m.all_zero(residual) {
-            .f
-          } else {
-            .t
-          })
-        )
+      line("  perturbed witness rejected = ", yes_no(if! m.all_zero(residual) { .f } else { .t }))
     };
     .() { line("  every vector solves the zero system", "") }
   }
@@ -75,17 +64,13 @@ fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solut
   let nullspace = values.?{solution.directions};
   let free = values.?{solution.free_columns};
   line(
-    , "  classification = "
-    , if! integers.eq_i32(l.length(pivots), variables) {
-        "unique"
-      } else {
-        "underdetermined"
-      }
-    );
+  , "  classification = "
+  , if! integers.eq_i32(l.length(pivots), variables) { "unique" } else { "underdetermined" }
+  );
   line(
-    , "  free columns = "
-    , l.to_string(fmt.int_to_string, l.map(.(column) { a.add_i32(column, 1) }, free))
-    );
+  , "  free columns = "
+  , l.to_string(fmt.int_to_string, l.map(.(column) { a.add_i32(column, 1) }, free))
+  );
   line("  particular = ", m.show(particular));
   let residual = verify.residuals(original, variables, particular, .f);
   line("  A*particular-b = ", m.show(residual));

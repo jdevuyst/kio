@@ -52,22 +52,24 @@ labels Absorbed = { ab_db: Atoms, ab_added: Atoms };
 
 fn absorbed(db: Atoms, added: Atoms) -> Absorbed { {ab_db = db, ab_added = added} }
 
-fn holds(db: Atoms, fact: Atom) -> Bool { list.any(db, .(f: Atom) { atom_eq(f, fact) }) }
+fn holds(db: Atoms, fact: Atom) -> Bool {
+  list.any(db, .(f: Atom) { atom_eq(f, fact) })
+}
 
 /// Insert this round's conclusions, keeping the database a set. What was
 /// genuinely new is handed back as the next round's delta.
 rec(loop) fn absorb(db: Atoms, candidates: Atoms, added: Atoms) -> Absorbed {
   match! candidates.>list.List.un_list {
     (
-      , .(fact: Atom, rest: Atoms) {
-          if! holds(db, fact) {
-            rec absorb(db, rest, added)
-          } else {
-            rec absorb(list.snoc(db, fact), rest, list.snoc(added, fact))
-          }
+    , .(fact: Atom, rest: Atoms) {
+        if! holds(db, fact) {
+          recur absorb(db, rest, added)
+        } else {
+          recur absorb(list.snoc(db, fact), rest, list.snoc(added, fact))
         }
-      , .(_empty: .) { absorbed(db, added) }
-      )
+      }
+    , .(_empty: .) { absorbed(db, added) }
+    )
   }
 }
 
@@ -80,18 +82,18 @@ fn heads(r: program.Rule, solutions: subst.Substs) -> Atoms {
 
 fn naive_heads(rules: program.Rules, db: Atoms) -> Atoms {
   list.concat_map(
-    , rules
-    , .(r: program.Rule) { heads(r, unify.solve_all(program.body_of(r), db, subst.empty())) }
-    )
+  , rules
+  , .(r: program.Rule) { heads(r, unify.solve_all(program.body_of(r), db, subst.empty())) }
+  )
 }
 
 fn delta_heads(rules: program.Rules, db: Atoms, old: Atoms, delta: Atoms) -> Atoms {
   list.concat_map(
-    , rules
-    , .(r: program.Rule) {
-        heads(r, unify.solve_delta(program.body_of(r), db, old, delta, subst.empty()))
-      }
-    )
+  , rules
+  , .(r: program.Rule) {
+      heads(r, unify.solve_delta(program.body_of(r), db, old, delta, subst.empty()))
+    }
+  )
 }
 
 rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I32, trace: Trace) -> Run {
@@ -105,7 +107,7 @@ rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I
   if! eq_i32(added, 0) {
     mk_run(next_trace, total, next_db)
   } else {
-    rec naive_rounds(rules, next_db, add_i32(index, 1), total, next_trace)
+    recur naive_rounds(rules, next_db, add_i32(index, 1), total, next_trace)
   }
 }
 
@@ -116,14 +118,14 @@ pub fn naive(rules: program.Rules, edb: Atoms) -> Run {
 /// The next round's `old` is simply this round's `db`, which is why the
 /// three-list invariant `db = old + delta` costs nothing to maintain.
 rec(loop) fn semi_rounds(
-  , rules: program.Rules
-  , old: Atoms
-  , db: Atoms
-  , delta: Atoms
-  , index: I32
-  , derivs: I32
-  , trace: Trace
-  ) -> Run {
+, rules: program.Rules
+, old: Atoms
+, db: Atoms
+, delta: Atoms
+, index: I32
+, derivs: I32
+, trace: Trace
+) -> Run {
   let candidates = delta_heads(rules, db, old, delta);
   let attempted = list.length(candidates);
   let step = absorb(db, candidates, list.nil(Atom));
@@ -135,7 +137,7 @@ rec(loop) fn semi_rounds(
   if! eq_i32(added, 0) {
     mk_run(next_trace, total, next_db)
   } else {
-    rec semi_rounds(rules, db, next_db, next_delta, add_i32(index, 1), total, next_trace)
+    recur semi_rounds(rules, db, next_db, next_delta, add_i32(index, 1), total, next_trace)
   }
 }
 
@@ -145,12 +147,10 @@ pub fn semi_naive(rules: program.Rules, edb: Atoms) -> Run {
   semi_rounds(rules, list.nil(Atom), edb, edb, 1, 0, list.nil(Round))
 }
 
-fn subset(xs: Atoms, ys: Atoms) -> Bool { list.all(xs, .(x: Atom) { holds(ys, x) }) }
+fn subset(xs: Atoms, ys: Atoms) -> Bool {
+  list.all(xs, .(x: Atom) { holds(ys, x) })
+}
 
 pub fn same_fixpoint(xs: Atoms, ys: Atoms) -> Bool {
-  if! subset(xs, ys) {
-    subset(ys, xs)
-  } else {
-    .f
-  }
+  if! subset(xs, ys) { subset(ys, xs) } else { .f }
 }

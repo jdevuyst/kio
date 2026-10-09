@@ -33,48 +33,48 @@ type Shape = Circle | Square;
 fn show_shape(s: Shape) -> String {
   match! s {
     (
-      , .(c: Circle) { string_concat("circle(", string_concat(int_to_string(Circle.get(c)), ")")) }
-      , .(sq: Square) {
-          match! Square.get(sq) {
-            .(side: I32, idx: I32) {
-              string_concat(
-                , "square("
-                , string_concat(
-                    , int_to_string(side)
-                    , string_concat(",", string_concat(int_to_string(idx), ")"))
-                    )
-                )
-            }
+    , .(c: Circle) { string_concat("circle(", string_concat(int_to_string(Circle.get(c)), ")")) }
+    , .(sq: Square) {
+        match! Square.get(sq) {
+          .(side: I32, idx: I32) {
+            string_concat(
+            , "square("
+            , string_concat(
+              , int_to_string(side)
+              , string_concat(",", string_concat(int_to_string(idx), ")"))
+              )
+            )
           }
         }
-      )
+      }
+    )
   }
 }
 
 fn render[A](show: A -> String, arr: Array(A)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) {
-            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
-              widen_sum!(
-                , if! leq_i32(i, 0) {
-                    (show(array_get(arr, i)), add_i32(i, 1))
-                  } else {
-                    (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
-                  }
-                , (String & I32) | String
-                )
-            } else {
-              widen_sum!(acc, (String & I32) | String)
-            }
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) {
+          if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+            widen_sum!(
+            , if! leq_i32(i, 0) {
+                (show(array_get(arr, i)), add_i32(i, 1))
+              } else {
+                (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
+              }
+            , (String & I32) | String
+            )
+          } else {
+            widen_sum!(acc, (String & I32) | String)
           }
         }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 pub fn main() {

@@ -9,17 +9,17 @@ import gc/fixture(build_image);
 import gc/heap(top, {heap_cells}, {heap_roots});
 import gc/mark(mark_heap, {mark_bits}, {mark_trace});
 import gc/report(
-  , addr_list
-  , blank
-  , labeled
-  , line
-  , print_heap
-  , print_mark
-  , print_plan
-  , print_relocation
-  , print_sweep
-  , print_verify
-  );
+, addr_list
+, blank
+, labeled
+, line
+, print_heap
+, print_mark
+, print_plan
+, print_relocation
+, print_sweep
+, print_verify
+);
 import gc/sweep(sweep, {live_objects});
 import gc/verify(audit);
 import testapi(String);

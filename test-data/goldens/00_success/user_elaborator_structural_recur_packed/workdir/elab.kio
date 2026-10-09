@@ -28,41 +28,41 @@ pure fn retain_bare(_ct: __Comptime__, structural: Structural_recur) -> Structur
 
 pure fn direct_flattened(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   __structural_recur__(
-    , ct
-    , Fuel
-    , .
-    , __Checked_term__
-    , fuel
-    , ()
-    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
-        __either__(
-          , .
-          , Fuel
-          , __Checked_term__
-          , Fuel.un_fuel(current)
-          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
-          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
-          )
-      }
-    )
+  , ct
+  , Fuel
+  , .
+  , __Checked_term__
+  , fuel
+  , ()
+  , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+      __either__(
+      , .
+      , Fuel
+      , __Checked_term__
+      , Fuel.un_fuel(current)
+      , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+      , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+      )
+    }
+  )
 }
 
 pure fn indirect_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   let structural = retain_structural(ct, __structural_recur__(ct)(Fuel, ., __Checked_term__));
   structural((
-    , fuel
-    , ()
-    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
-        __either__(
-          , .
-          , Fuel
-          , __Checked_term__
-          , Fuel.un_fuel(current)
-          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
-          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
-          )
-      }
-    ))
+  , fuel
+  , ()
+  , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+      __either__(
+      , .
+      , Fuel
+      , __Checked_term__
+      , Fuel.un_fuel(current)
+      , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+      , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+      )
+    }
+  ))
 }
 
 pure fn bare_hof_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
@@ -71,19 +71,19 @@ pure fn bare_hof_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   let proofed = structural(ct);
   let typed = proofed(Fuel, ., __Checked_term__);
   typed((
-    , fuel
-    , ()
-    , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
-        __either__(
-          , .
-          , Fuel
-          , __Checked_term__
-          , Fuel.un_fuel(current)
-          , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
-          , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
-          )
-      }
-    ))
+  , fuel
+  , ()
+  , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
+      __either__(
+      , .
+      , Fuel
+      , __Checked_term__
+      , Fuel.un_fuel(current)
+      , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
+      , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
+      )
+    }
+  ))
 }
 
 pure fn flattened_direct_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__) -> __Checked_term__ {

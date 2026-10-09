@@ -16,17 +16,11 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // state between them; the inner expression appears as a regular
 // monadic value the outer bind step consumes.
 fn inner() -> Box(String) {
-  do! box_bind {
-    let s <- box_pure("nested ok\n");
-    box_pure(s)
-  }
+  do! box_bind { let s <- box_pure("nested ok\n"); box_pure(s) }
 }
 
 fn outer() -> Box(String) {
-  do! box_bind {
-    let s <- inner();
-    box_pure(s)
-  }
+  do! box_bind { let s <- inner(); box_pure(s) }
 }
 
 pub fn main() { print(Box.un_box(outer())) }

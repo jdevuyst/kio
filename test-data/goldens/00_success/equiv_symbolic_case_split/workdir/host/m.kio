@@ -37,24 +37,39 @@ equiv source_swap_swap_is_id(x: A) {
 
 equiv case_payload_names_are_alpha[A][B](s: A | B) {
   __either__(
-    , A
-    , B
-    , B | A
-    , s
-    , .(left_payload) { __right__(B, A, left_payload) }
-    , .(right_payload) { __left__(B, A, right_payload) }
-    );
+  , A
+  , B
+  , B | A
+  , s
+  , .(left_payload) { __right__(B, A, left_payload) }
+  , .(right_payload) { __left__(B, A, right_payload) }
+  );
   __either__(A, B, B | A, s, .(x) { __right__(B, A, x) }, .(y) { __left__(B, A, y) })
 }
 
 equiv case_closures_capture_alpha_payload[A][X](s: A | A) {
   __either__(
-    , A
-    , A
-    , X -> A
-    , s
-    , .(left_payload) { .(_x: X) { left_payload } }
-    , .(right_payload) { .(_x: X) { right_payload } }
-    );
-  __either__(A, A, X -> A, s, .(l) { .(_y: X) { l } }, .(r) { .(_y: X) { r } })
+  , A
+  , A
+  , X -> A
+  , s
+  , .(left_payload) {
+      .(_x: X) { left_payload }
+    }
+  , .(right_payload) {
+      .(_x: X) { right_payload }
+    }
+  );
+  __either__(
+  , A
+  , A
+  , X -> A
+  , s
+  , .(l) {
+      .(_y: X) { l }
+    }
+  , .(r) {
+      .(_y: X) { r }
+    }
+  )
 }

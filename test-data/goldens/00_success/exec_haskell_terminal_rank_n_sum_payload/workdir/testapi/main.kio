@@ -10,9 +10,9 @@ fn identity[T](value: T) -> T { value }
 fn run(choice: . | ([T] T -> T)) -> String {
   match! choice {
     (
-      , .(poly: [T] T -> T) { poly(String, "terminal rank-n sum payload ok\n"(String)) }
-      , .(_unit: .) { "wrong sum arm\n"(String) }
-      )
+    , .(poly: [T] T -> T) { poly(String, "terminal rank-n sum payload ok\n"(String)) }
+    , .(_unit: .) { "wrong sum arm\n"(String) }
+    )
   }
 }
 

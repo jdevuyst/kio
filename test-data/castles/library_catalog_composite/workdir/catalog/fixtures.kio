@@ -16,13 +16,13 @@ fn queued(pending: Op_list, next: Op) -> Op_list { lcore.cons(next, pending) }
 
 pub fn books() -> Book_index {
   [%
-    , 206 => book("Embassytown", 1)
-    , 205 => book("Kindred", 2)
-    , 204 => book("Ubik", 1)
-    , 203 => book("Solaris", 2)
-    , 202 => book("Neuromancer", 1)
-    , 201 => book("Dune", 3)
-    %](dom.cmp_i32)
+  , 206 => book("Embassytown", 1)
+  , 205 => book("Kindred", 2)
+  , 204 => book("Ubik", 1)
+  , 203 => book("Solaris", 2)
+  , 202 => book("Neuromancer", 1)
+  , 201 => book("Dune", 3)
+  %](dom.cmp_i32)
 }
 
 pub fn members() -> Member_index {

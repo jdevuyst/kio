@@ -2,6 +2,10 @@ module factory;
 
 pub type Identity[A] = A -> A;
 
-pub fn qualified[A] -> Identity(A) { .(value: A) { value } }
+pub fn qualified[A] -> Identity(A) {
+  .(value: A) { value }
+}
 
-pub fn selected[A] -> Identity(A) { .(value: A) { value } }
+pub fn selected[A] -> Identity(A) {
+  .(value: A) { value }
+}

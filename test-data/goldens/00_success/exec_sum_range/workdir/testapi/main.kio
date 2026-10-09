@@ -15,13 +15,11 @@ import testapi/iter(loop);
 // to surface the named `sum_range` combinator alongside the
 // numeric recurrences.
 fn sum_step(n: I32, (i: I32, acc: I32)) -> (I32 & I32) | I32 {
-  if! leq_i32(i, n) {
-    widen_sum!((add_i32(i, 1), add_i32(acc, i)))
-  } else {
-    widen_sum!(acc)
-  }
+  if! leq_i32(i, n) { widen_sum!((add_i32(i, 1), add_i32(acc, i))) } else { widen_sum!(acc) }
 }
 
-fn sum_range(n: I32) -> I32 { loop(.(state: I32 & I32) { sum_step(n, state) }, (1, 0)) }
+fn sum_range(n: I32) -> I32 {
+  loop(.(state: I32 & I32) { sum_step(n, state) }, (1, 0))
+}
 
 pub fn main() { print(int_to_string(sum_range(100))); print("\n") }

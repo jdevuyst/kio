@@ -153,17 +153,17 @@ pub fn flip_dir(dir: Dir) -> Dir {
 pub fn descend_step[A](dir: Dir, t: Tree(A)) -> Tree(A) {
   match! untree(t) {
     (
-      , .(pair: Tree(A) & Tree(A)) {
-          match! pair {
-            .(l: Tree(A), r: Tree(A)) {
-              match! dir {
-                (.(_lft: Goleft) { l }, .(_rgt: Goright) { r })
-              }
+    , .(pair: Tree(A) & Tree(A)) {
+        match! pair {
+          .(l: Tree(A), r: Tree(A)) {
+            match! dir {
+              (.(_lft: Goleft) { l }, .(_rgt: Goright) { r })
             }
           }
         }
-      , .(_lo: Leafopt(A)) { t }
-      )
+      }
+    , .(_lo: Leafopt(A)) { t }
+    )
   }
 }
 

@@ -4025,6 +4025,7 @@ pub struct Elaborations {
 pub(crate) struct RecLoopDiagnosticRecord {
     pub(crate) outer_call: crate::ast::ExpressionOccurrenceId,
     pub(crate) selected_path: Span,
+    pub(crate) escape_call: Option<Span>,
     pub(crate) actual_type: InternedType,
     pub(crate) initial_result_sites: Vec<crate::ast::ExpressionOccurrenceId>,
     pub(crate) callee_binder_goals: Vec<crate::ast::TypeGoalRef>,
@@ -5359,12 +5360,18 @@ impl Elaborations {
 
     pub(crate) fn record_rec_loop_diagnostic(&mut self, source: &Expr, actual_type: &InternedType) {
         let Expr::Call {
-            diagnostic: crate::ast::RecLoopDiagnostic::Loop { selected_path },
-            args,
-            ..
+            diagnostic, args, ..
         } = source
         else {
             return;
+        };
+        let (selected_path, escape_call) = match diagnostic {
+            crate::ast::RecLoopDiagnostic::Loop { selected_path } => (*selected_path, None),
+            crate::ast::RecLoopDiagnostic::Reentry {
+                selected_path,
+                escape_call,
+            } => (*selected_path, Some(*escape_call)),
+            _ => return,
         };
         fn result_sites(source: &Expr, sites: &mut Vec<crate::ast::ExpressionOccurrenceId>) {
             let Expr::Call {
@@ -5399,7 +5406,8 @@ impl Elaborations {
         }
         records.push(RecLoopDiagnosticRecord {
             outer_call: source.site().id,
-            selected_path: *selected_path,
+            selected_path,
+            escape_call,
             actual_type: actual_type.clone(),
             initial_result_sites,
             callee_binder_goals: Vec::new(),
@@ -5450,10 +5458,18 @@ impl Elaborations {
                         }
                     })
             {
-                error = error.with_rec_loop_context(
-                    record.selected_path,
-                    &display_type(&record.actual_type),
-                );
+                error = if let Some(escape_call) = record.escape_call {
+                    error.with_rec_reentry_context(
+                        record.selected_path,
+                        escape_call,
+                        &display_type(&record.actual_type),
+                    )
+                } else {
+                    error.with_rec_loop_context(
+                        record.selected_path,
+                        &display_type(&record.actual_type),
+                    )
+                };
                 if let Some(source) = record.actual_type.requirement_source() {
                     error = error.with_secondary_in_file(
                         source.file.clone(),
@@ -6361,7 +6377,8 @@ fn synth_rec_order<'m>(
         || matches!(
             plan.disposition,
             RecOrderDisposition::DeferredTail {
-                requirement: crate::ast::RecOrderTailRequirement::Optional,
+                requirement: crate::ast::RecOrderTailRequirement::Optional
+                    | crate::ast::RecOrderTailRequirement::Escaping,
                 ..
             }
         )
@@ -6371,7 +6388,10 @@ fn synth_rec_order<'m>(
     let flow = match plan.disposition {
         RecOrderDisposition::Ordered(flow) => flow,
         RecOrderDisposition::DeferredTail { .. } => {
-            return Err(deferred_rec_tail_error(original.span()));
+            return Err(deferred_rec_tail_error(
+                plan.source_call.as_deref(),
+                original.span(),
+            ));
         }
     };
     let mark = tcx.save();
@@ -6457,9 +6477,11 @@ fn synth_rec_order<'m>(
     Ok(Synth::value(plan.runtime_ty.clone()))
 }
 
-pub(crate) fn deferred_rec_tail_error(span: Span) -> Error {
-    Error::parse(span, "recursive call is not in tail position")
-        .with_help("write `rec(cont)` for a non-tail recursive call")
+pub(crate) fn deferred_rec_tail_error(
+    source: Option<&crate::ast::RecCallDiagnostic>,
+    span: Span,
+) -> Error {
+    crate::pass::desugar::rec_boundary_error(source, span, true)
 }
 
 fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error> {
@@ -7751,7 +7773,8 @@ fn check_value_against<'m>(
             || matches!(
                 plan.disposition,
                 RecOrderDisposition::DeferredTail {
-                    requirement: crate::ast::RecOrderTailRequirement::Optional,
+                    requirement: crate::ast::RecOrderTailRequirement::Optional
+                        | crate::ast::RecOrderTailRequirement::Escaping,
                     ..
                 }
             )
@@ -9922,6 +9945,7 @@ mod tests {
         elaborations.rec_loop_diagnostics = Some(Box::new(vec![RecLoopDiagnosticRecord {
             outer_call,
             selected_path,
+            escape_call: None,
             actual_type: actual_type.clone(),
             initial_result_sites: vec![initial],
             callee_binder_goals: vec![goal],
@@ -9975,6 +9999,198 @@ mod tests {
     }
 
     #[test]
+    fn rec_escape_explicit_and_answer_changing_calls_validate_prime() {
+        for body in [
+            "host fn retain(callback: . -> .) -> .; rec(drive) fn again(value: .) -> . { retain(.() { recur(escape) again(value) }) }",
+            "rec(drive) fn again(value: .) -> . -> . { .() { (recur(escape) again(value))() } }",
+            "host fn retain(callback: . -> .) -> .; rec(drive) fn again[A](value: A) -> A { let ignored = retain(.() { recur(poly, escape) again(., ()) }); value }",
+        ] {
+            let source = format!(
+                "module main; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; {body}"
+            );
+            check_package_sources(&[&source]).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+        }
+    }
+
+    #[test]
+    fn rec_escape_shadowed_type_binder_is_a_distinct_instantiation() {
+        for binder in ["A", "B"] {
+            let source = format!("module main; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+                host fn retain(callback: [T] T -> T) -> .;
+                rec(drive) fn again[A](value: A) -> A {{
+                    let ignored = retain(.[{binder}](inner: {binder}) -> {binder} {{ recur(poly, escape) again({binder}, inner) }});
+                    value
+                }}");
+            check_package_sources(&[&source]).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+            let without_poly = source.replace("poly, escape", "escape");
+            let error = check_package_sources(&[&without_poly])
+                .expect_err("the lambda's binder is not the member's binder");
+            assert!(
+                error.diag().1.contains("changes type parameters"),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rec_escape_omitted_type_argument_keeps_outer_binder_under_shadowing() {
+        let source = "module main; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+            host fn retain(callback: [T] T -> .) -> .;
+            rec(drive) fn again[A](value: A) -> A {
+                let ignored = retain(.[A](inner: A) -> . { let result = recur(escape) again(value); () });
+                value
+            }";
+        check_package_sources(&[source])
+            .expect("omitted type arguments refer to the member instantiation");
+    }
+
+    #[test]
+    fn rec_escape_inner_closure_in_residual_outer_callback_keeps_ordinary_semantics() {
+        let source = "module main;
+            import __intrinsics__;
+            import __comptime__;
+            host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+            host type Later;
+            host fn later() -> Later;
+            pure fn invoke_then_impl(ct: __Comptime__, fills: __Fill_ctx__,
+                _s: __Type__, _r: __Type__, callback: __Checked_term__, _later: __Checked_term__
+            ) -> (__Checked_term__ & __Fill_ctx__) {
+                let unit = __reflect_type__(ct, .);
+                let zero = __type_arity_zero__(ct);
+                let thunk = __type_arrow__(ct, unit, zero, unit);
+                let callback_type = __type_arrow__(ct, unit, zero, thunk);
+                (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
+            }
+            elab invoke_then : [S][R] (S -> R) -> Later -> R { impl(fills) invoke_then_impl; };
+            rec(drive) fn repeat() -> Later -> . -> . {
+                invoke_then!(.(_unit: .) { .() { (recur(escape) repeat())(later())() } })
+            }";
+        check_package_sources(&[source])
+            .expect("the outer callback needs no structural-tail permission");
+    }
+
+    #[test]
+    fn rec_escape_deferred_boundary_fixes_keep_comments_and_recheck() {
+        let source = "module main;
+            import __intrinsics__;
+            import __comptime__;
+            host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+            host fn retain(callback: . -> .) -> .;
+            pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, _value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) {
+                (__term_unit__(ct), fills)
+            }
+            elab ignore : [A] A -> . { impl(fills) ignore_impl; };
+            rec(drive) {
+                fn spin(value: .) -> . { ignore!(. -> ., .x. { recur // keep\n spin(x1) }) };
+                fn saved(value: .) -> . { retain(.() { recur(escape) saved(value) }) }
+            }";
+        let error = check_package_sources(&[source])
+            .expect_err("unused opaque callback still crosses its closure boundary");
+        assert_eq!(
+            &source[error.diag().0.start as usize..error.diag().0.end as usize],
+            "recur // keep\n spin(x1)"
+        );
+        let mut repaired = source.to_owned();
+        let mut edits = error.diagnostic().fixes()[0].edits.clone();
+        edits.sort_by_key(|edit| std::cmp::Reverse(edit.span.start));
+        for edit in edits {
+            repaired.replace_range(
+                edit.span.start as usize..edit.span.end as usize,
+                &edit.replacement,
+            );
+        }
+        assert!(repaired.contains("recur(escape) // keep\n spin(x1)"));
+        check_package_sources(&[&repaired])
+            .expect("the deferred source-owned escape repair rechecks");
+
+        let source = "module main; import control(if);
+            host type Bool role(bool);
+            host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+            host fn retain(callback: . -> Bool) -> Bool;
+            rec(drive) {
+                fn spin(go: Bool) -> Bool { if! go { recur(// keep\n escape) spin(go) } else { go } };
+                fn saved(go: Bool) -> Bool { retain(.() { recur(escape) saved(go) }) }
+            }";
+        let error = check_package_sources(&[source])
+            .expect_err("a structural callback needs no escape permission");
+        assert!(error.diag().1.contains("unnecessary"), "{error:?}");
+        let mut repaired = source.to_owned();
+        let mut edits = error.diagnostic().fixes()[0].edits.clone();
+        edits.sort_by_key(|edit| std::cmp::Reverse(edit.span.start));
+        for edit in edits {
+            repaired.replace_range(
+                edit.span.start as usize..edit.span.end as usize,
+                &edit.replacement,
+            );
+        }
+        assert!(repaired.contains("// keep"));
+        check_package_sources(&[&repaired])
+            .expect("the unnecessary-escape repair keeps the other re-entry call");
+    }
+
+    #[test]
+    fn rec_escape_removal_fixes_recheck_continuation_and_poly_obligations() {
+        for call in [
+            "recur(cont, escape) spin(value)",
+            "after(recur(escape) spin(value))",
+            "after(recur(escape) spin(., ()))",
+            "recur(poly, cont, escape) spin(value)",
+        ] {
+            let source = format!(
+                "module main;
+                host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+                host fn retain(callback: . -> .) -> .;
+                host fn after(value: .) -> .;
+                rec(drive) {{
+                    fn spin[A](value: A) -> . {{ {call} }};
+                    fn saved[A](value: A) -> . {{ retain(.() {{ recur(escape) saved(value) }}) }}
+                }}"
+            );
+            let error = check_package_sources(&[&source])
+                .expect_err("escape is unnecessary inside the current step");
+            assert!(error.diag().1.contains("unnecessary"), "{call}: {error:?}");
+            let repaired = error.diagnostic().fixes().iter().find_map(|fix| {
+                let mut repaired = source.clone();
+                let mut edits = fix.edits.clone();
+                edits.sort_by_key(|edit| std::cmp::Reverse(edit.span.start));
+                for edit in edits {
+                    repaired.replace_range(
+                        edit.span.start as usize..edit.span.end as usize,
+                        &edit.replacement,
+                    );
+                }
+                check_package_sources(&[&repaired]).ok().map(|_| repaired)
+            });
+            assert!(
+                repaired.is_some(),
+                "no atomic repair rechecked for {call}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rec_escape_simple_loop_error_owns_selected_path_and_escape_site() {
+        let source = "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R;
+            host fn retain(callback: . -> .) -> .;
+            rec(drive) fn again(value: .) -> . { retain(.() { recur(escape) again(value) }) }";
+        let error =
+            check_package_sources(&[source]).expect_err("a simple provider cannot re-enter");
+        let selected = source.find("rec(drive)").unwrap() as u32 + 4;
+        assert_eq!(error.diag().0, Span::new(selected, selected + 5));
+        assert!(
+            error.diag().1.contains("cannot provide recursive re-entry"),
+            "{error:?}"
+        );
+        assert!(
+            error.diagnostic().secondary().iter().any(|label| source
+                [label.span.start as usize..label.span.end as usize]
+                .starts_with("recur(escape)")),
+            "{error:?}"
+        );
+        assert!(!format!("{error:?}").contains("__rec_"), "{error:?}");
+    }
+
+    #[test]
     fn rec_loop_diagnostic_terminal_modes_keep_body_goals_distinct_and_drain_scratch() {
         let valid = "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; ";
         let wrong =
@@ -9985,7 +10201,7 @@ mod tests {
                 "host fn phantom[T](x: .) -> .; rec(drive) fn again(x: .) { phantom(x) }",
                 false,
             ),
-            (wrong, "rec(drive) fn again(x: .) { rec again(x) }", true),
+            (wrong, "rec(drive) fn again(x: .) { recur again(x) }", true),
         ] {
             let source = format!("{prefix}{body}");
             let package = lowered_package(&[("main.kio", &source)]);
@@ -10026,7 +10242,7 @@ mod tests {
             "main.kio",
             "module main; \
             host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
-            rec(drive) { fn first(x: .) { rec second(x) }; fn second(x: .) { rec first(x) } }",
+            rec(drive) { fn first(x: .) { recur second(x) }; fn second(x: .) { recur first(x) } }",
         )]);
         let mut plain = package.clone();
         let mut erase = Erase { count: 0 };
@@ -11039,6 +11255,7 @@ mod tests {
                     source = Expr::RecOrder {
                         occurrence: ExpressionOccurrence::fresh(),
                         plan: Box::new(RecOrderPlan {
+                            source_call: None,
                             tail_continuation: None,
                             name,
                             disposition: RecOrderDisposition::Ordered(if runtime_binding {
@@ -11651,7 +11868,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
                 Box.unbox(do! bind {
-                    let next = rec(cont) go(value);
+                    let next = recur(cont) go(value);
                     Box.box(next)
                 })
             }");
@@ -11672,7 +11889,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             newtype Other[A] : A { constructor other; projector unother; }; \
             rec(loop) fn go(value: .) -> . { \
                 Box.unbox(invoke!(.(unit: .) -> Box(.) { \
-                    let next = rec(cont) go(value); Box.box(next) \
+                    let next = recur(cont) go(value); Box.box(next) \
                 })) \
             }";
         for annotation in ["Box(.)", "Box(_)", "_", "Other(.)"] {
@@ -11718,7 +11935,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                  host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
                  rec(loop) fn search(outer: Bool, inner: Bool, value: Data | .) -> Data | . { \
                    choose! outer { \
-                     choose! inner { value } else { rec search(.f, .f, value) } \
+                     choose! inner { value } else { recur search(.f, .f, value) } \
                    } else { widen_sum!(()) } \
                  }";
         let package = lowered_control_package(&[("alternate.kio", &provider), ("main.kio", main)]);
@@ -11742,7 +11959,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                     host fn make[A]() -> A;
                     fn invoke(predicate: . -> Bool) -> Bool {{ predicate() }}
                     rec(loop) fn repeat(go: Bool) -> Bool {{
-                      if! {call} {{ rec repeat(.f) }} else {{ go }}
+                      if! {call} {{ recur repeat(.f) }} else {{ go }}
                     }}"
                 );
                 let package = lowered_control_package(&[("main.kio", &main)]);
@@ -11761,7 +11978,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             fn invoke(factory: . -> (Bool -> Bool), value: Bool) -> Bool { factory()(value) }
             rec(loop) fn repeat(go: Bool) -> Bool {
               if! invoke(.() { .(value) { value } }, go) {
-                rec repeat(.f)
+                recur repeat(.f)
               } else { go }
             }";
         let package = lowered_control_package(&[("main.kio", main)]);
@@ -11788,7 +12005,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
-              if! invoke(.() -> . { go }) { rec repeat(.f) } else { go }
+              if! invoke(.() -> . { go }) { recur repeat(.f) } else { go }
             }");
         assert!(message.contains("type mismatch"), "{message}");
     }
@@ -11800,7 +12017,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
-              if! invoke(.() { rec repeat(go) }) { rec repeat(.f) } else { go }
+              if! invoke(.() { recur repeat(go) }) { recur repeat(.f) } else { go }
             }"])
         .expect_err("a recursive closure still requires a terminal-use proof");
         assert!(matches!(error, Error::Parse(_)), "{error:?}");
@@ -11839,6 +12056,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 let source = Expr::RecOrder {
                     occurrence: ExpressionOccurrence::fresh(),
                     plan: Box::new(RecOrderPlan {
+                        source_call: None,
                         tail_continuation: None,
                         name: "__rec_tail_value_test__".into(),
                         disposition: RecOrderDisposition::DeferredTail {
@@ -11899,7 +12117,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(condition: Bool) -> . { \
                 Box.unbox(select!(condition, .() { \
-                    let next = rec(cont) go(condition); Box.box(next) \
+                    let next = recur(cont) go(condition); Box.box(next) \
                 }, Box.box(()))) \
             }";
         let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
@@ -11924,7 +12142,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(value: .) -> c.Wrap { \
                 finish(Box.unbox(invoke!(.(unit: .) -> Box(.) { \
-                    let next = rec(cont) go(value); Box.box(()) \
+                    let next = recur(cont) go(value); Box.box(()) \
                 }))) \
             }";
         let package = lowered_package(&[
@@ -11946,7 +12164,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
                 Other.unother(do! bind {
-                    let next = rec(cont) go(value);
+                    let next = recur(cont) go(value);
                     Other.other(next)
                 })
             }");
@@ -11961,7 +12179,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         ok("module main; import sequence(do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             rec(loop) fn factory() -> [A][B](A & (A -> B)) -> B {
-                do! rec(cont) factory() {
+                do! recur(cont) factory() {
                     let x <- ();
                     .[A][B](value: A, next: A -> B) { next(value) }
                 }
@@ -11975,7 +12193,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 "module main; import sequence(do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 rec(loop) fn factory({parameter}) -> [A][B](A & (A -> B)) -> B {{
-                    do! rec(cont) factory({arguments}) {{
+                    do! recur(cont) factory({arguments}) {{
                         .[A][B](value: A, next: A -> B) {{ next(value) }}
                     }}
                 }}"
@@ -11990,7 +12208,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 "module main; import sequence(do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 rec(loop) fn factory[T]() -> [A][B](A & (A -> B)) -> B {{
-                    do! rec(cont) factory({arguments}) {{
+                    do! recur(cont) factory({arguments}) {{
                         .[A][B](value: A, next: A -> B) {{ next(value) }}
                     }}
                 }}"
@@ -12003,7 +12221,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         let message = err("module main; import sequence(do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             rec(loop) fn factory(value: .) -> [A][B](A & (A -> B)) -> B {
-                do! rec(cont) factory(.(x: .) { x }) {
+                do! recur(cont) factory(.(x: .) { x }) {
                     .[A][B](value: A, next: A -> B) { next(value) }
                 }
             }");
@@ -12017,7 +12235,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             newtype Box[A] : A { constructor box; projector unbox; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: Box(.)) -> Box(.) {
-                Box.box(Box.unbox(do! bind { rec(cont) go(value) }))
+                Box.box(Box.unbox(do! bind { recur(cont) go(value) }))
             }");
     }
 
@@ -12027,7 +12245,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             fn bind[A][B](value: A, next: A -> B) -> B { next(value) }
             rec(loop) fn go(value: .) -> . {
-                do! bind { do! bind { let next <- rec(cont) go(value); next } }
+                do! bind { do! bind { let next <- recur(cont) go(value); next } }
             }");
     }
 
@@ -12040,19 +12258,19 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             rec(loop) {
                 fn first(value: .) -> . {
                     do! bind {
-                        let next = if! .t { rec(cont) second(value) } else { rec(cont) second(value) };
-                        do! bind { let out <- rec(cont) second(next); out }
+                        let next = if! .t { recur(cont) second(value) } else { recur(cont) second(value) };
+                        do! bind { let out <- recur(cont) second(next); out }
                     }
                 };
-                fn second(value: .) -> . { rec first(value) }
+                fn second(value: .) -> . { recur first(value) }
             }");
     }
 
     #[test]
     fn do_contract_deferred_tail_marks_preserve_partial_headers_and_expected_input() {
         for continuation in [
-            ".(x: . -> .) { rec go(__left__(., . -> ., x(()))) }",
-            ".(x: . -> .) -> _ { rec go(__left__(., . -> ., x(()))) }",
+            ".(x: . -> .) { recur go(__left__(., . -> ., x(()))) }",
+            ".(x: . -> .) -> _ { recur go(__left__(., . -> ., x(()))) }",
         ] {
             ok(&format!(
                 "module main; import sequence(do);
@@ -15208,7 +15426,7 @@ fn generic_last() -> . {
               impl(fills) invoke_then_impl; \
             }; \
             rec(loop) fn repeat(state: .) -> . { \
-              let residual = invoke_then!(.(_unit: .) { rec(cont) repeat(state) }); \
+              let residual = invoke_then!(.(_unit: .) { recur(cont) repeat(state) }); \
               residual(later()) \
             }"])
         .expect_err("a residual function must not capture a lifted recursive callback");
@@ -15216,7 +15434,7 @@ fn generic_last() -> . {
             panic!("expected a recursion escape diagnostic, got {error:?}");
         };
         assert!(
-            message.contains("`rec(escape)` is reserved"),
+            message.contains("recursive call crosses a closure boundary"),
             "got: {message}"
         );
         assert_eq!(
@@ -18921,7 +19139,7 @@ fn generic_last() -> . {
             host fn nil[A]() -> A; \
             host fn loop[S][R](step: S -> (S | R), seed: S) -> R; \
             rec(loop) { \
-              pub fn keep(value: .) -> I32 { rec walk(value) }; \
+              pub fn keep(value: .) -> I32 { recur walk(value) }; \
               fn walk(_value: .) -> I32 { nil(I32)() } \
             }";
         let package = lowered_package(&[("x.kio", source)]);
@@ -21210,7 +21428,7 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn consume_pair[B](first: I32 & B, tail: I32) -> I32 { tail } \
             rec(loop) fn stale_slot[A](maker: [X] String -> (X & A), n: I32) -> I32 { \
-              consume_pair(maker(\"stale\"), rec(cont) stale_slot(maker, n)) \
+              consume_pair(maker(\"stale\"), recur(cont) stale_slot(maker, n)) \
             }"])
         .expect("the substituted recursive carrier must retain the refined slot type");
     }
@@ -21223,7 +21441,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn consume[A](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              consume(Identity(I32), rec(cont) value(0)) \
+              consume(Identity(I32), recur(cont) value(0)) \
             }"])
         .expect("the retained source spelling must keep the direct type slot");
     }
@@ -21236,7 +21454,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn layered[A](first: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              layered(I32, n, Identity(I32), rec(cont) value(0)) \
+              layered(I32, n, Identity(I32), recur(cont) value(0)) \
             }"])
         .expect("the retained source spelling must end the preceding value packet");
     }
@@ -21249,7 +21467,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn layered[A](receiver: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              n.>layered(I32, Identity(I32), rec(cont) value(0)) \
+              n.>layered(I32, Identity(I32), recur(cont) value(0)) \
             }"])
         .expect("UFCS must splice from retained type-slot spellings");
     }
@@ -21262,7 +21480,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](tail) -> I32 { tail }( \
-                Identity(I32), rec(cont) value(0) \
+                Identity(I32), recur(cont) value(0) \
               ) \
             }"])
         .expect("the retained immediate-lambda route must classify its initial type slot");
@@ -21276,7 +21494,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](first: A)[B](tail) -> I32 { tail }( \
-                I32, n, Identity(I32), rec(cont) value(0) \
+                I32, n, Identity(I32), recur(cont) value(0) \
               ) \
             }"])
         .expect("the retained immediate-lambda route must classify successor type slots");
@@ -21290,7 +21508,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
               .[A](tail: I32) -> I32 { tail }( \
-                Identity(I32), rec(cont) value(0) \
+                Identity(I32), recur(cont) value(0) \
               ) \
             }"])
         .expect("the concrete immediate-lambda route must retain its type-slot classification");
@@ -21310,7 +21528,7 @@ fn generic_last() -> . {
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              type Identity[A] = A; \
              rec(loop) fn value(n: I32) -> I32 { \
-               same!(Identity(I32), rec(cont) value(0)) \
+               same!(Identity(I32), recur(cont) value(0)) \
              }",
         ])
         .expect("bang calls retain the uniform named-callable type-slot contract");
@@ -21325,7 +21543,7 @@ fn generic_last() -> . {
             fn effectful_identity[A](tag: String) -> A -> A { .(value: A) -> A { value } } \
             fn pair_second((transform: I32 -> I32, value: I32)) -> I32 { value } \
             rec(loop) fn tuple_order(n: I32) -> I32 { \
-              pair_second((effectful_identity(\"before\"), rec(cont) tuple_order(0))) \
+              pair_second((effectful_identity(\"before\"), recur(cont) tuple_order(0))) \
             }"])
         .expect("the earlier tuple operand must retain the original call's expected type");
     }
@@ -21337,8 +21555,8 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn take_second(first: I32, second: I32) -> I32 { second } \
             rec(loop) fn sequence(n: I32) -> I32 { \
-              let ignored = take_second(0, rec(cont) sequence(0)); \
-              take_second(0, rec(cont) sequence(0)) \
+              let ignored = take_second(0, recur(cont) sequence(0)); \
+              take_second(0, recur(cont) sequence(0)) \
             }"])
         .expect("a recursive let RHS must synthesize even when its binding is discarded");
     }
@@ -21351,7 +21569,7 @@ fn generic_last() -> . {
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
             rec(loop) fn value(n: I32) -> Box(I32) { \
-              let .(box: Box(_)) = choose_box(0, rec(cont) value(0)); \
+              let .(box: Box(_)) = choose_box(0, recur(cont) value(0)); \
               box \
             }"])
         .expect("a recursive partial let must synthesize its RHS before checking the annotation");
@@ -21365,7 +21583,7 @@ fn generic_last() -> . {
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
             rec(loop) fn value(n: I32) -> Box(I32) { scope! { \
-              let .(box: Box(_)) = choose_box(0, rec(cont) value(0)); \
+              let .(box: Box(_)) = choose_box(0, recur(cont) value(0)); \
               box \
             } }"])
         .expect("plain `do` must preserve ordinary partial-let type flow");
@@ -21380,7 +21598,7 @@ fn generic_last() -> . {
             newtype Other[A] : A { pub constructor mk_other; pub projector un_other; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
             rec(loop) fn value(n: I32) -> Box(I32) { \
-              let .(box: Other(_)) = choose_box(0, rec(cont) value(0)); \
+              let .(box: Other(_)) = choose_box(0, recur(cont) value(0)); \
               box \
             }"]);
         assert!(
@@ -21395,8 +21613,8 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn unit_after(value: .) -> . { () } \
             rec(loop) fn sequence(value: .) -> . { \
-              unit_after(rec(cont) sequence(())); \
-              rec sequence(()) \
+              unit_after(recur(cont) sequence(())); \
+              recur sequence(()) \
             }"])
         .expect("a recursive expression statement must retain its exact Unit expectation");
     }
@@ -21408,8 +21626,8 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn identity(value: I32) -> I32 { value } \
             rec(loop) fn sequence(value: I32) -> I32 { \
-              identity(rec(cont) sequence(0)); \
-              rec sequence(0) \
+              identity(recur(cont) sequence(0)); \
+              recur sequence(0) \
             }"]);
         assert!(
             message.contains("type mismatch"),
@@ -21426,7 +21644,7 @@ fn generic_last() -> . {
             host fn condition() -> Bool; \
             fn identity(value: Bool) -> Bool { value } \
             rec(loop) fn choose(n: I32) -> Bool { \
-              (if! rec(cont) choose(0) { identity } else { identity })(condition()) \
+              (if! recur(cont) choose(0) { identity } else { identity })(condition()) \
             }";
         let package = lowered_package(&[("x.kio", source)]);
         let checked = check_package_preserving_normalization(&package)
@@ -21445,9 +21663,9 @@ fn generic_last() -> . {
             host fn done(value: I32) -> Bool; \
             host fn empty() -> String; \
             rec(loop) { \
-              pub fn spaces(n: I32) -> String { rec pad(n, empty()) }; \
+              pub fn spaces(n: I32) -> String { recur pad(n, empty()) }; \
               fn pad(n: I32, acc: String) -> String { \
-                if! done(n) { acc } else { rec pad(n, acc) } \
+                if! done(n) { acc } else { recur pad(n, acc) } \
               } \
             }";
         check_package_sources(&[source])
@@ -26176,7 +26394,7 @@ fn generic_last() -> . {
     fn fills_ambient_recursive_lambda_needs_anchor_before_lifted_check() {
         let host = "module host; \
             pub host fn loop[S][R](step: S -> (S | R), initial: S) -> R;";
-        let lambda = ".[A](_value: A) { rec run(value) }";
+        let lambda = ".[A](_value: A) { recur run(value) }";
         let main = format!(
             "module main; import elab(invoke); import host(loop); \
              rec(loop) fn run(value: .) -> . {{ invoke!({lambda}) }}"

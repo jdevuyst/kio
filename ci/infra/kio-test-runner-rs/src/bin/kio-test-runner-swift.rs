@@ -893,6 +893,19 @@ fn swift_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding
             ret_type: "r".to_owned(),
             where_clause: String::new(),
         },
+        HostFnBodyKind::LoopReentry => TraitMethod {
+            name: member(binding.leaf),
+            type_params: vec!["s".to_owned(), "r".to_owned()],
+            arg_types: vec![
+                format!(
+                    "(Product<(s) -> r, s>) -> {}<s, r>",
+                    ffi_host_free("arg0_cbret")
+                ),
+                "s".to_owned(),
+            ],
+            ret_type: "r".to_owned(),
+            where_clause: String::new(),
+        },
         HostFnBodyKind::Array {
             operation, array, ..
         } => swift_array_method(binding.leaf, operation, array, &member, &ffi_host_free),
@@ -2066,6 +2079,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         HostFnBodyKind::StringSlice { .. } => CanonicalKind::StringSlice,
         HostFnBodyKind::StringCodeAt { .. } => CanonicalKind::StringCodeAt,
         HostFnBodyKind::Loop => CanonicalKind::Loop,
+        HostFnBodyKind::LoopReentry => CanonicalKind::LoopReentry,
         HostFnBodyKind::NumericToString { value, .. } => CanonicalKind::NumericToString {
             kind: value.fixture.role().to_owned(),
         },
@@ -2220,6 +2234,9 @@ fn render_swift_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
         CanonicalKind::FloatArith { op, .. } => arith_body(op, false),
         CanonicalKind::Cmp { cmp, .. } => cmp_body(cmp),
         CanonicalKind::Loop => render_loop_body(m),
+        CanonicalKind::LoopReentry => {
+            "func run(_ initial: s) -> r {\n\t\tvar state = initial\n\t\twhile true {\n\t\t\tswitch arg0(Product(_0: run, _1: state)) {\n\t\t\tcase ._0(let next): state = next\n\t\t\tcase ._1(let result): return result\n\t\t\t}\n\t\t}\n\t}\n\treturn run(arg1)".to_owned()
+        }
         CanonicalKind::Array(op) => render_array_body(op, m),
         CanonicalKind::Custom => format!(
             "fatalError(\"kio-test-runner-swift: no canonical impl for host fn `{}`\")",

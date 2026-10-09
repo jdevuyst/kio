@@ -38,11 +38,7 @@ fn read_edge(previous: I32, serial: I32) -> Line {
         .(at: I32) {
           let valid =
             if! arith.leq_i32(1, at) {
-              if! arith.leq_i32(at, 30) {
-                arith.leq_i32(previous, at)
-              } else {
-                .f
-              }
+              if! arith.leq_i32(at, 30) { arith.leq_i32(previous, at) } else { .f }
             } else {
               .f
             };
@@ -66,7 +62,7 @@ rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List(model.Event
   match! read_edge(previous, serial) {
     .(next: Edge) {
       let event = next.?{edge};
-      rec read_all(event.?{model.at}, arith.add_i32(serial, 1), queue.insert(event, events))
+      recur read_all(event.?{model.at}, arith.add_i32(serial, 1), queue.insert(event, events))
     };
     .(_end: End) { {stimulus = events}.>widen_sum! };
     .(error: Invalid) { {problem = error.?{invalid}}.>widen_sum! }

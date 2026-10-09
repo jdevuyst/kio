@@ -11,7 +11,10 @@ labels { payload: [A] ., marker: . };
 
 fn named[A] { observe() }
 
-fn nested[A] -> [B] . { observe(); .[B] { consume() } }
+fn nested[A] -> [B] . {
+  observe();
+  .[B] { consume() }
+}
 
 fn adjacent[A][B] { consume() }
 

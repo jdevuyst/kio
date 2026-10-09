@@ -15,7 +15,7 @@ rec(loop) fn run_from(current: State) -> State {
   if! leq_i32(current.?{tick}, 0) {
     current
   } else {
-    rec run_from(state(current.?{items}, sub_i32(current.?{tick}, 1)))
+    recur run_from(state(current.?{items}, sub_i32(current.?{tick}, 1)))
   }
 }
 

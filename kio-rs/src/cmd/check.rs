@@ -4811,8 +4811,8 @@ mod tests {
             "pub fn combine(left: ., right: .) -> . { left }\n",
             "\n",
             "rec(loop) {\n",
-            "  pub fn first(value: .) -> . { rec second(value) };\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  pub fn first(value: .) -> . { recur second(value) };\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
             "\n",
             "pub newtype Wrap : . { pub constructor mk; pub projector get; };\n",
@@ -6146,15 +6146,15 @@ mod tests {
             "module pkg/main;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { rec second(value) };\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  fn first(value: .) -> . { recur second(value) };\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let (dir, analysis, source_path) = analyze_lsp_fixture(source);
         let uri =
             crate::lsp::diagnostics::path_to_uri(&source_path, dir.path()).expect("source URI");
         let line_index = LineIndex::new(source);
-        let call_start = source.find("rec second").expect("recursive call") + "rec ".len();
+        let call_start = source.find("recur second").expect("recursive call") + "recur ".len();
         let declaration_start = source.find("fn second").expect("member declaration") + "fn ".len();
         let call_span = crate::span::Span::new(call_start as u32, call_start as u32 + 6);
         let declaration_span =
@@ -6251,15 +6251,15 @@ mod tests {
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { rec(cont) second(value) + value };\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  fn first(value: .) -> . { recur(cont) second(value) + value };\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let (_, analysis, _) = analyze_lsp_fixture(source);
         let call_start = source
-            .find("rec(cont) second")
+            .find("recur(cont) second")
             .expect("mode-qualified recursive call")
-            + "rec(cont) ".len();
+            + "recur(cont) ".len();
         let call_span = crate::span::Span::new(call_start as u32, call_start as u32 + 6);
 
         assert!(
@@ -10685,8 +10685,8 @@ mod contract_surface_tests {
         let error = projected_contract_error(
             "module api;\n\
              rec(loop) {\n\
-               pub fn left[A](value: A) -> A { rec right(A, value) };\n\
-               pub fn right[A, B](value: A) -> A { rec left(A, value) }\n\
+               pub fn left[A](value: A) -> A { recur right(A, value) };\n\
+               pub fn right[A, B](value: A) -> A { recur left(A, value) }\n\
              }\n",
         );
         assert!(
@@ -11235,8 +11235,8 @@ mod contract_surface_tests {
             "module api;\n\
              host type I32 role(i32);\n\
              rec(loop) {\n\
-               pub fn ping(n: I32) -> I32 { rec pong(n) };\n\
-               pub fn pong(n: I32) -> I32 { rec ping(n) }\n\
+               pub fn ping(n: I32) -> I32 { recur pong(n) };\n\
+               pub fn pong(n: I32) -> I32 { recur ping(n) }\n\
              }\n",
         )
         .unwrap();

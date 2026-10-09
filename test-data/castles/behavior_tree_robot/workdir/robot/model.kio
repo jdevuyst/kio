@@ -39,9 +39,9 @@ pub fn delivery_tree() -> Tree {
   let route = select(lists.cons(shortcut, lists.singleton(task(2, "detour", 2))));
   let delivery =
     seq(
-      , 11
-      , lists.cons(route, lists.cons(task(3, "collect", 2), lists.singleton(task(4, "deliver", 2))))
-      );
+    , 11
+    , lists.cons(route, lists.cons(task(3, "collect", 2), lists.singleton(task(4, "deliver", 2))))
+    );
   let .(mission: Tree) = {once = (12, delivery)}.>widen_sum!;
   let .(safety: Tree) = {hazard_guard = task(5, "brake", 2)}.>widen_sum!;
   select(lists.cons(safety, lists.singleton(mission)))

@@ -33,11 +33,11 @@ rec(loop) fn join_from(sequence: Array(String), i: I32, acc: String) -> String {
   if! arith.leq_i32(array.array_len(sequence), i) {
     acc
   } else {
-    rec join_from(
-      , sequence
-      , arith.add_i32(i, 1)
-      , text.string_concat(acc, array.array_get(sequence, i))
-      )
+    recur join_from(
+    , sequence
+    , arith.add_i32(i, 1)
+    , text.string_concat(acc, array.array_get(sequence, i))
+    )
   }
 }
 

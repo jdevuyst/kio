@@ -22,7 +22,7 @@ pub rec(loop) fn lookup(name: String, environment: values.Environment) -> String
       if! text.string_eq(name, key) {
         value.>widen_sum!(String | values.Value)
       } else {
-        rec lookup(name, remaining)
+        recur lookup(name, remaining)
       }
     };
     .() { text.string_concat("unbound variable: ", name).>widen_sum!(String | values.Value) }

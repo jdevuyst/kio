@@ -45,13 +45,13 @@ pub fn opt(body: Pattern) -> Pattern { Pattern.pack({opt = body}.>widen_sum!(Nod
 fn tightness(p: Pattern) -> I32 {
   match! p.>Pattern.unpack {
     (
-      , .(_x: Chr) { 3 }
-      , .(_x: Cat) { 1 }
-      , .(_x: Alt) { 0 }
-      , .(_x: Star) { 2 }
-      , .(_x: Plus) { 2 }
-      , .(_x: Opt) { 2 }
-      )
+    , .(_x: Chr) { 3 }
+    , .(_x: Cat) { 1 }
+    , .(_x: Alt) { 0 }
+    , .(_x: Star) { 2 }
+    , .(_x: Plus) { 2 }
+    , .(_x: Opt) { 2 }
+    )
   }
 }
 
@@ -62,28 +62,24 @@ rec(loop) fn show_at(p: Pattern, floor: I32) -> String {
   let text =
     match! p.>Pattern.unpack {
       (
-        , .(x: Chr) { letter(x.?{chr}) }
-        , .(x: Cat) {
-            let .(left: Pattern, right: Pattern) = x.?{cat};
-            string_concat(rec(cont) show_at(left, 1), rec(cont) show_at(right, 1))
-          }
-        , .(x: Alt) {
-            let .(left: Pattern, right: Pattern) = x.?{alt};
-            string_concat(
-              , rec(cont) show_at(left, 0)
-              , string_concat("|", rec(cont) show_at(right, 0))
-              )
-          }
-        , .(x: Star) { string_concat(rec(cont) show_at(x.?{star}, 3), "*") }
-        , .(x: Plus) { string_concat(rec(cont) show_at(x.?{plus}, 3), "+") }
-        , .(x: Opt) { string_concat(rec(cont) show_at(x.?{opt}, 3), "?") }
-        )
+      , .(x: Chr) { letter(x.?{chr}) }
+      , .(x: Cat) {
+          let .(left: Pattern, right: Pattern) = x.?{cat};
+          string_concat(recur(cont) show_at(left, 1), recur(cont) show_at(right, 1))
+        }
+      , .(x: Alt) {
+          let .(left: Pattern, right: Pattern) = x.?{alt};
+          string_concat(
+          , recur(cont) show_at(left, 0)
+          , string_concat("|", recur(cont) show_at(right, 0))
+          )
+        }
+      , .(x: Star) { string_concat(recur(cont) show_at(x.?{star}, 3), "*") }
+      , .(x: Plus) { string_concat(recur(cont) show_at(x.?{plus}, 3), "+") }
+      , .(x: Opt) { string_concat(recur(cont) show_at(x.?{opt}, 3), "?") }
+      )
     };
-  if! lt_i32(tightness(p), floor) {
-    string_concat("(", string_concat(text, ")"))
-  } else {
-    text
-  }
+  if! lt_i32(tightness(p), floor) { string_concat("(", string_concat(text, ")")) } else { text }
 }
 
 pub fn show(p: Pattern) -> String { show_at(p, 0) }

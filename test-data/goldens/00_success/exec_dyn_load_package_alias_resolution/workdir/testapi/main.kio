@@ -49,12 +49,12 @@ fn exact_target_types() -> Host_types { host_types_cons(target_type(), host_type
 
 fn exact_target_functions() -> Host_fn_bindings {
   host_fn_bindings_cons(
-    , zero_group_binding(target_function("ping"(String)))
-    , host_fn_bindings_cons(
-        , zero_group_binding(target_function("_ping"(String)))
-        , host_fn_bindings_nil()
-        )
+  , zero_group_binding(target_function("ping"(String)))
+  , host_fn_bindings_cons(
+    , zero_group_binding(target_function("_ping"(String)))
+    , host_fn_bindings_nil()
     )
+  )
 }
 
 fn target_adapter() -> Host_adapter {
@@ -78,20 +78,20 @@ fn serve_target(call: Host_fn & Value) -> Call_result {
 fn call_loaded[P](surface: Surface(P), name: String) -> String {
   match! surface.?{lookup}(name) {
     (
-      , .(callee: P) {
-          match! surface.?{apply}((callee, surface.?{unit_in})) {
-            (
-              , .(answer: P) {
-                  match! surface.?{i32_out}(answer) {
-                    (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
-                  }
-                }
-              , .(diag: Diag) { diag_message(diag) }
-              )
-          }
+    , .(callee: P) {
+        match! surface.?{apply}((callee, surface.?{unit_in})) {
+          (
+          , .(answer: P) {
+              match! surface.?{i32_out}(answer) {
+                (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
+              }
+            }
+          , .(diag: Diag) { diag_message(diag) }
+          )
         }
-      , .(diag: Diag) { diag_message(diag) }
-      )
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
   }
 }
 
@@ -102,36 +102,36 @@ fn line(label: String, body: String) -> String {
 fn run_loaded(image: Image) -> String {
   match! instantiate(target_adapter(), serve_target, make_lit_default, test_bool_default, image) {
     (
-      , .(loaded: Loaded) {
-          Loaded.get(loaded)(.[P](surface: Surface(P)) {
-            string_concat(
-              , line(
-                  , "qualified alias callback: "(String)
-                  , call_loaded(surface, "call_qualified"(String))
-                  )
-              , string_concat(
-                  , line(
-                      , "underscore alias callback: "(String)
-                      , call_loaded(surface, "call_underscore"(String))
-                      )
-                  , line(
-                      , "selective import callback: "(String)
-                      , call_loaded(surface, "call_selective"(String))
-                      )
-                  )
+    , .(loaded: Loaded) {
+        Loaded.get(loaded)(.[P](surface: Surface(P)) {
+          string_concat(
+          , line(
+            , "qualified alias callback: "(String)
+            , call_loaded(surface, "call_qualified"(String))
+            )
+          , string_concat(
+            , line(
+              , "underscore alias callback: "(String)
+              , call_loaded(surface, "call_underscore"(String))
               )
-          })
-        }
-      , .(diag: Diag) { line("instantiation: "(String), diag_message(diag)) }
-      )
+            , line(
+              , "selective import callback: "(String)
+              , call_loaded(surface, "call_selective"(String))
+              )
+            )
+          )
+        })
+      }
+    , .(diag: Diag) { line("instantiation: "(String), diag_message(diag)) }
+    )
   }
 }
 
 pub fn main() {
   match! un_load_outcome(load_package(source())) {
     (
-      , .(loaded: Lr_image) { print(run_loaded(Lr_image.get(loaded))) }
-      , .(diag: Lr_diag) { print(line("load: "(String), diag_message(Lr_diag.get(diag)))) }
-      )
+    , .(loaded: Lr_image) { print(run_loaded(Lr_image.get(loaded))) }
+    , .(diag: Lr_diag) { print(line("load: "(String), diag_message(Lr_diag.get(diag)))) }
+    )
   }
 }

@@ -24,9 +24,9 @@ fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A 
 fn list_to_array_step[A](arr: Array(A), xs: List(A)) -> List(A) | . {
   match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) { array_push(arr, x); widen_sum!(rest, List(A) | .) }
-      , .(_empty: .) { widen_sum!((), List(A) | .) }
-      )
+    , .(x: A, rest: List(A)) { array_push(arr, x); widen_sum!(rest, List(A) | .) }
+    , .(_empty: .) { widen_sum!((), List(A) | .) }
+    )
   }
 }
 
@@ -50,28 +50,28 @@ fn array_to_list_step[A](arr: Array(A), i: I32, acc: List(A)) -> (I32 & List(A))
 
 fn array_to_list[A](arr: Array(A)) -> List(A) {
   loop(
-    , I32 & List(A)
-    , List(A)
-    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-        match! state {
-          .(i: I32, acc: List(A)) { array_to_list_step(arr, i, acc) }
-        }
+  , I32 & List(A)
+  , List(A)
+  , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+      match! state {
+        .(i: I32, acc: List(A)) { array_to_list_step(arr, i, acc) }
       }
-    , (sub_i32(array_len(arr), 1), nil(A, ()))
-    )
+    }
+  , (sub_i32(array_len(arr), 1), nil(A, ()))
+  )
 }
 
 // Render an `Array(I32)` as comma-separated decimals.
 fn render_array_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
   if! leq_i32(i, sub_i32(array_len(arr), 1)) {
     widen_sum!(
-      , if! leq_i32(i, 0) {
-          (int_to_string(array_get(arr, i)), add_i32(i, 1))
-        } else {
-          (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
-        }
-      , (String & I32) | String
-      )
+    , if! leq_i32(i, 0) {
+        (int_to_string(array_get(arr, i)), add_i32(i, 1))
+      } else {
+        (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
+      }
+    , (String & I32) | String
+    )
   } else {
     widen_sum!(acc, (String & I32) | String)
   }
@@ -79,15 +79,15 @@ fn render_array_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | S
 
 fn render_array(arr: Array(I32)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) { render_array_step(arr, acc, i) }
-        }
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) { render_array_step(arr, acc, i) }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 // Render a `List(I32)` as comma-separated decimals by routing

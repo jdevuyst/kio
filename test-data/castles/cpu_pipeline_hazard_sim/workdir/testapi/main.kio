@@ -15,18 +15,18 @@ import cpu/num(and);
 import cpu/pipeline(run);
 import cpu/program(build);
 import cpu/report(
-  , blank
-  , counters
-  , dump_memory
-  , dump_registers
-  , heading
-  , headline
-  , labeled
-  , line
-  , pipeline_header
-  , program_listing
-  , yes_no
-  );
+, blank
+, counters
+, dump_memory
+, dump_registers
+, heading
+, headline
+, labeled
+, line
+, pipeline_header
+, program_listing
+, yes_no
+);
 import testapi(Bool, String);
 
 pub fn main() {

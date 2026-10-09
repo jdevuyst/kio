@@ -468,6 +468,28 @@ impl Error {
         self.with_note("`rec` requires a loop compatible with `[State][Result] (State -> (State | Result), State) -> Result`")
     }
 
+    #[cfg(feature = "surface")]
+    pub(crate) fn with_rec_reentry_context(
+        mut self,
+        selected_path: Span,
+        escape_call: Span,
+        actual_type: &str,
+    ) -> Self {
+        let diagnostic = self.diagnostic_mut();
+        diagnostic.span = selected_path;
+        diagnostic.message = format!(
+            "the selected `rec` loop cannot provide recursive re-entry; found `{actual_type}`"
+        );
+        let extra = diagnostic.extra_mut();
+        extra.notes.clear();
+        extra.secondary.clear();
+        extra.fixes.clear();
+        extra.help = None;
+        self.with_note("escaping recursion requires `[State][Result] ((((State -> Result) & State) -> (State | Result)) & State) -> Result`")
+            .with_secondary(escape_call, "this recursive call requires the re-entry capability")
+            .with_help("select a loop that supplies the reusable re-entry callback to its step")
+    }
+
     /// Primary span and message for diagnostic rendering.
     ///
     /// The floor-level pair every Kio diagnostic carries. Callers that

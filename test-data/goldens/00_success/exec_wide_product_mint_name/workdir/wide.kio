@@ -20,37 +20,34 @@ fn row_total(r: Cells) -> I32 {
 }
 
 pub fn grid_total(
-  , a: Cells
-  , b: Cells
-  , c: Cells
-  , d: Cells
-  , e: Cells
-  , f: Cells
-  , g: Cells
-  , h: Cells
-  , i: Cells
-  , j: Cells
-  ) -> I32 {
+, a: Cells
+, b: Cells
+, c: Cells
+, d: Cells
+, e: Cells
+, f: Cells
+, g: Cells
+, h: Cells
+, i: Cells
+, j: Cells
+) -> I32 {
   add_i32(
-    , row_total(a)
+  , row_total(a)
+  , add_i32(
+    , row_total(b)
     , add_i32(
-        , row_total(b)
+      , row_total(c)
+      , add_i32(
+        , row_total(d)
         , add_i32(
-            , row_total(c)
-            , add_i32(
-                , row_total(d)
-                , add_i32(
-                    , row_total(e)
-                    , add_i32(
-                        , row_total(f)
-                        , add_i32(
-                            , row_total(g)
-                            , add_i32(row_total(h), add_i32(row_total(i), row_total(j)))
-                            )
-                        )
-                    )
-                )
+          , row_total(e)
+          , add_i32(
+            , row_total(f)
+            , add_i32(row_total(g), add_i32(row_total(h), add_i32(row_total(i), row_total(j))))
             )
+          )
         )
+      )
     )
+  )
 }

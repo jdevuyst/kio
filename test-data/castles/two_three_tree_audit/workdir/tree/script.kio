@@ -18,16 +18,16 @@ import tree/delete(delete);
 import tree/insert(insert);
 import tree/node(Tree, contains, empty_tree, height, root_of, size_of);
 import tree/tally(
-  , Tally
-  , borrow_lefts
-  , borrow_rights
-  , merges
-  , root_grows
-  , root_shrinks
-  , splits
-  , tally_add
-  , tally_zero
-  );
+, Tally
+, borrow_lefts
+, borrow_rights
+, merges
+, root_grows
+, root_shrinks
+, splits
+, tally_add
+, tally_zero
+);
 import tree/text(cat, cat3, cat4, num, pad_num);
 
 labels Op_kind = { put: I32 & String } | { remove: I32 };
@@ -56,9 +56,9 @@ fn cons[A](x: A, rest: List(A)) -> List(A) {
 rec(loop) fn snoc[A](xs: List(A), x: A) -> List(A) {
   match! xs.>List.un_list {
     (
-      , .(head: A, rest: List(A)) { let tail = rec(cont) snoc(rest, x); cons(head, tail) }
-      , .(_e: .) { cons(x, nil(A)) }
-      )
+    , .(head: A, rest: List(A)) { let tail = recur(cont) snoc(rest, x); cons(head, tail) }
+    , .(_e: .) { cons(x, nil(A)) }
+    )
   }
 }
 
@@ -89,11 +89,7 @@ fn script() -> Ops {
 }
 
 fn event_part(acc: String, name: String, n: I32) -> String {
-  if! eq_i32(n, 0) {
-    acc
-  } else {
-    cat4(acc, " ", name, cat("=", num(n)))
-  }
+  if! eq_i32(n, 0) { acc } else { cat4(acc, " ", name, cat("=", num(n))) }
 }
 
 /// Name the rebalances one operation caused, so the transcript says *which*
@@ -118,37 +114,27 @@ fn apply_op(r: Run, o: Op) -> Run {
   let .(t: Tree, acc: Tally, step: I32) = r;
   match! o.>Op.un_op {
     (
-      , .(p: Put) {
-          let .(k: I32, v: String) = p.?{put};
-          let note =
-            if! contains(root_of(t), k) {
-              "replaced"
-            } else {
-              "added"
-            };
-          let .(next: Tree, ev: Tally) = insert(t, k, v);
-          emit(step, "ins", k, next, note, ev);
-          (next, tally_add(acc, ev), add_i32(step, 1))
-        }
-      , .(d: Remove) {
-          let k = d.?{remove};
-          let note =
-            if! contains(root_of(t), k) {
-              "removed"
-            } else {
-              "absent"
-            };
-          let .(next: Tree, ev: Tally) = delete(t, k);
-          emit(step, "del", k, next, note, ev);
-          (next, tally_add(acc, ev), add_i32(step, 1))
-        }
-      )
+    , .(p: Put) {
+        let .(k: I32, v: String) = p.?{put};
+        let note = if! contains(root_of(t), k) { "replaced" } else { "added" };
+        let .(next: Tree, ev: Tally) = insert(t, k, v);
+        emit(step, "ins", k, next, note, ev);
+        (next, tally_add(acc, ev), add_i32(step, 1))
+      }
+    , .(d: Remove) {
+        let k = d.?{remove};
+        let note = if! contains(root_of(t), k) { "removed" } else { "absent" };
+        let .(next: Tree, ev: Tally) = delete(t, k);
+        emit(step, "del", k, next, note, ev);
+        (next, tally_add(acc, ev), add_i32(step, 1))
+      }
+    )
   }
 }
 
 rec(loop) fn walk(ops: Ops, r: Run) -> Run {
   match! ops.>List.un_list {
-    (.(o: Op, rest: Ops) { let next = apply_op(r, o); rec walk(rest, next) }, .(_e: .) { r })
+    (.(o: Op, rest: Ops) { let next = apply_op(r, o); recur walk(rest, next) }, .(_e: .) { r })
   }
 }
 

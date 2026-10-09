@@ -1,0 +1,58 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+type Saved = String & (I32 -> Bool);
+
+rec(iter.loop_reentry) {
+  fn save[A](captured: I32, fallback: A, receive: (I32 -> Bool) -> A) -> A {
+    if! arith.leq_i32(captured, 0) {
+      fallback
+    } else {
+      receive(.(value: I32) -> Bool {
+        recur(poly, escape) answer(Bool, value, captured, .(same: Bool) { same })
+      })
+    }
+  };
+  fn answer[A](value: I32, captured: I32, finish: Bool -> A) -> A {
+    recur save(A, 0, finish(arith.eq_i32(value, captured)), .(_unused: I32 -> Bool) { finish(.f) })
+  }
+}
+
+fn keep(callback: I32 -> Bool) -> Saved { ("saved", callback) }
+
+fn make_saved(value: I32) -> Saved {
+  save(value, ("unused", .(_value: I32) -> Bool { .f }), keep)
+}
+
+pub fn main() {
+  let first = make_saved(7);
+  let second = make_saved(11);
+  io.print("ready\n");
+  match! first {
+    .(first_name: String, first_call: I32 -> Bool) {
+      match! second {
+        .(second_name: String, second_call: I32 -> Bool) {
+          io.print(first_name);
+          io.print("\n");
+          io.print(fmt.bool_to_string(first_call(7)));
+          io.print("\n");
+          io.print(fmt.bool_to_string(second_call(7)));
+          io.print("\n");
+          io.print(second_name);
+          io.print("\n");
+          io.print(fmt.bool_to_string(second_call(11)));
+          io.print("\n");
+          io.print(fmt.bool_to_string(first_call(9)));
+          io.print("\n")
+        }
+      }
+    }
+  }
+}

@@ -28,7 +28,7 @@ pub rec(loop) fn insert(event: model.Event, queue: lists.List(model.Event)) -> l
       if! before(event, head) {
         lists.cons(event, queue)
       } else {
-        lists.cons(head, rec(cont) insert(event, tail))
+        lists.cons(head, recur(cont) insert(event, tail))
       }
     };
     .() { lists.singleton(event) }
@@ -41,13 +41,9 @@ pub fn for_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Eve
 
 pub fn without_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Event) {
   traversal.filter(
-    , .(event: model.Event) {
-        if! numbers.eq_i32(event.?{model.target}, id) {
-          .f
-        } else {
-          .t
-        }
-      }
-    , queue
-    )
+  , .(event: model.Event) {
+      if! numbers.eq_i32(event.?{model.target}, id) { .f } else { .t }
+    }
+  , queue
+  )
 }

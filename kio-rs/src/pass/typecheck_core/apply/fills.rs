@@ -855,14 +855,6 @@ impl<'m> MarkedProjection<'m> {
         if candidates.iter().all(Option::is_none) {
             return Ok(());
         }
-        assert!(
-            candidates
-                .iter()
-                .flatten()
-                .any(|candidate| { candidate.requirement == RecOrderTailRequirement::Required }),
-            "a deferred-tail call retained no required recursive source"
-        );
-
         let mut usage = vec![DeferredTailUsage::default(); candidates.len()];
         if let ProjectedCheckedResult::Recipe(recipe) = checked {
             if !recipe.ty.seal.matches(&self.seal) {
@@ -875,6 +867,15 @@ impl<'m> MarkedProjection<'m> {
                 .fold(recipe, DeferredTailRole::Tail);
         }
 
+        if has_residual_abstraction {
+            for (candidate, usage) in candidates.iter().zip(&mut usage) {
+                if candidate.as_ref().is_some_and(|candidate| {
+                    candidate.requirement != RecOrderTailRequirement::Required
+                }) {
+                    usage.escape = true;
+                }
+            }
+        }
         let mut resolutions = resolve_deferred_tail_decisions(&candidates, &usage)?;
         if has_residual_abstraction {
             for (candidate, resolution) in candidates.iter().zip(&resolutions) {
@@ -882,11 +883,13 @@ impl<'m> MarkedProjection<'m> {
                     resolution,
                     Some((_, super::DeferredTailResolution::Lifted(_)))
                 ) {
-                    return Err(crate::pass::desugar::rec_escape_error(
-                        candidate
-                            .as_ref()
-                            .expect("a deferred-tail resolution lost its source candidate")
-                            .span,
+                    let candidate = candidate
+                        .as_ref()
+                        .expect("a deferred-tail resolution lost its source candidate");
+                    return Err(crate::pass::desugar::rec_boundary_error(
+                        candidate.source_call.as_deref(),
+                        candidate.span,
+                        true,
                     ));
                 }
             }
@@ -4079,12 +4082,13 @@ struct StagedDeferredRecLambda<'m> {
     resolution: Option<super::DeferredTailResolution>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DeferredTailCandidate {
     token: crate::ast::NodeId,
     requirement: RecOrderTailRequirement,
     lifted_flow: RecOrderTypeFlow,
     span: crate::span::Span,
+    source_call: Option<Arc<crate::ast::RecCallDiagnostic>>,
 }
 
 #[cfg(all(target_pointer_width = "64", not(test)))]
@@ -4235,10 +4239,19 @@ fn resolve_deferred_tail_decisions(
             usage[index].terminal,
             usage[index].escape,
         ) {
+            (RecOrderTailRequirement::Escaping, true, false) => {
+                return Err(crate::pass::desugar::rec_boundary_error(
+                    candidate.source_call.as_deref(),
+                    candidate.span,
+                    false,
+                ));
+            }
+            (RecOrderTailRequirement::Escaping, _, _) => OrdinaryBypass,
             (_, true, false) => Lifted(candidate.lifted_flow),
-            (RecOrderTailRequirement::Optional, false, _) => OrdinaryBypass,
+            (RecOrderTailRequirement::Optional, _, _) => OrdinaryBypass,
             _ => {
                 return Err(crate::pass::typecheck_full::deferred_rec_tail_error(
+                    candidate.source_call.as_deref(),
                     candidate.span,
                 ));
             }
@@ -4263,6 +4276,12 @@ fn collect_deferred_tail_candidates(
             }
         }
         StagedOperand::DeferredRecLambda(deferred, leaf) => {
+            let crate::ast::Expr::FnExpr { body, .. } = deferred.lambda.source else {
+                unreachable!("a deferred recursive lambda changed expression family")
+            };
+            let crate::ast::Expr::RecOrder { plan, .. } = body.as_ref() else {
+                unreachable!("a deferred recursive lambda lost its root carrier")
+            };
             let template = leaf
                 .as_ref()
                 .expect("a deferred recursive lambda lost its template identity")
@@ -4274,6 +4293,7 @@ fn collect_deferred_tail_candidates(
                         requirement: deferred.requirement,
                         lifted_flow: deferred.lifted_flow,
                         span: deferred.lambda.source.span(),
+                        source_call: plan.source_call.clone(),
                     })
                     .is_none(),
                 "two deferred recursive lambdas shared one template identity"
@@ -4332,9 +4352,8 @@ fn install_deferred_tail_resolutions(
                     "a deferred recursive lambda acquired two runtime return views"
                 );
             } else {
-                assert_eq!(
-                    deferred.requirement,
-                    RecOrderTailRequirement::Optional,
+                assert!(
+                    deferred.requirement != RecOrderTailRequirement::Required,
                     "a required recursive lambda selected ordinary bypass"
                 );
             }
@@ -10834,6 +10853,7 @@ mod tests {
         requirement: RecOrderTailRequirement,
     ) -> Option<DeferredTailCandidate> {
         Some(DeferredTailCandidate {
+            source_call: None,
             token: crate::ast::NodeId(u64::from(index) + 1),
             requirement,
             lifted_flow: RecOrderTypeFlow::SynthesizedValue,
@@ -15339,6 +15359,7 @@ mod tests {
         let rec_order = Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "ordered".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(

@@ -1,0 +1,6 @@
+Invoking the saved closure twice each starts 100000 loop-managed steps.
+Bounded interpreter measurements at 64, 128 and 256 steps show excessive
+interpretation cost when projected to this stress depth. The shared-source
+exec_recur_escape_delayed case retains dynamic semantic coverage at 64 steps,
+including delayed and repeated re-entry with independent captured arguments.
+All native backend stress runs and Prime validation remain applicable.

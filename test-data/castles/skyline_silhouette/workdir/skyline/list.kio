@@ -22,19 +22,19 @@ pub fn cons[A](head: A, rest: List(A)) -> List(A) {
 }
 
 rec(loop) {
-  pub fn length[A](xs: List(A)) -> I32 { rec count(xs, 0) };
+  pub fn length[A](xs: List(A)) -> I32 { recur count(xs, 0) };
   fn count[A](xs: List(A), seen: I32) -> I32 {
     match! xs.>List.un_list {
-      (.(_head: A, rest: List(A)) { rec count(rest, add_i32(seen, 1)) }, .(_empty: .) { seen })
+      (.(_head: A, rest: List(A)) { recur count(rest, add_i32(seen, 1)) }, .(_empty: .) { seen })
     }
   }
 }
 
 rec(loop) {
-  pub fn reverse[A](xs: List(A)) -> List(A) { rec flip(xs, nil(A)) };
+  pub fn reverse[A](xs: List(A)) -> List(A) { recur flip(xs, nil(A)) };
   fn flip[A](xs: List(A), done: List(A)) -> List(A) {
     match! xs.>List.un_list {
-      (.(head: A, rest: List(A)) { rec flip(rest, cons(head, done)) }, .(_empty: .) { done })
+      (.(head: A, rest: List(A)) { recur flip(rest, cons(head, done)) }, .(_empty: .) { done })
     }
   }
 }

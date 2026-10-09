@@ -5,16 +5,8 @@ import elab/match(match);
 import host(Bool);
 
 equiv if_else_same_shape() {
-  if! .t {
-    ()
-  } else {
-    ()
-  };
-  if! .t {
-    ()
-  } else {
-    ()
-  }
+  if! .t { () } else { () };
+  if! .t { () } else { () }
 }
 
 equiv match_same_shape() {

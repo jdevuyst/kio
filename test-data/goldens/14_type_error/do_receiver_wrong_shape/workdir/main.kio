@@ -12,8 +12,5 @@ fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
 fn not_bind[A](m: Box(A)) -> Box(A) { m }
 
 fn bad() -> Box(.) {
-  do! not_bind {
-    let _x <- box_pure(());
-    box_pure(())
-  }
+  do! not_bind { let _x <- box_pure(()); box_pure(()) }
 }

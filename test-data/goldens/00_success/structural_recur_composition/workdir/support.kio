@@ -15,25 +15,25 @@ pub pure fn three(ct: __Comptime__) -> __Type_arity__ {
 pub pure fn predecessor(ct: __Comptime__, n: __Type_arity__) -> __Type_arity__ {
   let result =
     __type_arity_fold__(
-      , ct
-      , __Type_arity__ & __Type_arity__
-      , n
-      , (zero(ct), zero(ct))
-      , .(_previous: __Type_arity__, current: __Type_arity__) -> __Type_arity__ & __Type_arity__ {
-          (current, __type_arity_succ__(ct, current))
-        }
-      );
+    , ct
+    , __Type_arity__ & __Type_arity__
+    , n
+    , (zero(ct), zero(ct))
+    , .(_previous: __Type_arity__, current: __Type_arity__) -> __Type_arity__ & __Type_arity__ {
+        (current, __type_arity_succ__(ct, current))
+      }
+    );
   __fst__(result)
 }
 
 pub pure fn reject[R](ct: __Comptime__) -> R {
   __structural_recur__(
-    , ct
-    , .
-    , .
-    , R
-    , ()
-    , ()
-    , .(again: (. & .) -> R, _fuel: ., _state: .) -> R { again((), ()) }
-    )
+  , ct
+  , .
+  , .
+  , R
+  , ()
+  , ()
+  , .(again: (. & .) -> R, _fuel: ., _state: .) -> R { again((), ()) }
+  )
 }

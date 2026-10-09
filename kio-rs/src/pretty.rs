@@ -43,8 +43,8 @@ use crate::ast::{
 };
 use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_source_trivia};
 use crate::doc::{
-    Doc, align, comma_list, concat, concat_all, empty, flat_alt, group, hardline, join, line, nest,
-    render, text,
+    Doc, align, broken_comma_list, comma_list, concat, concat_all, empty, executable_block,
+    flat_alt, group, hardline, join, line, nest, render, text,
 };
 use crate::pass::lexer::Trivia;
 
@@ -695,7 +695,7 @@ fn doc_fn_def(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
         text(format!("fn {}", d.name)),
         doc_signature(&d.sig),
         ret_doc,
-        group(doc_block_body_expr(&d.body, true)),
+        group(doc_block_body_expr(&d.body)),
     ])
 }
 
@@ -773,27 +773,29 @@ fn doc_capture_path(capture: &crate::ast::UserElaboratorCapture) -> Doc {
 /// [`crate::pass::parser`]). A dangling comment forces the block to
 /// the broken multi-line layout — a comment can't sit inline before
 /// `}` — so the flat form is suppressed whenever one is present. This
-/// is the single choke point for block / lambda / `match!`-clause
-/// bodies; `allow_flat` mirrors the width-driven vs. always-break
-/// distinction the two former entry points carried.
-fn doc_block_body_expr(body: &Expr, allow_flat: bool) -> Doc {
+/// is shared by every executable body.
+fn doc_block_body_expr(body: &Expr) -> Doc {
     let content = doc_expr_with_own_meta_trivia(body);
-    doc_braced_block(
-        empty(),
-        Some(content),
-        allow_flat && !has_comments(&body.meta().trailing_trivia),
-    )
+    doc_executable_block(Some(content))
 }
 
 /// Block-body layout for pre-rendered content and its separately owned closer.
 /// A dangling comment forces the broken layout.
-fn doc_block_body_with_trailing(content: Doc, trailing: &[Trivia], allow_flat: bool) -> Doc {
+fn doc_block_body_with_trailing(content: Doc, trailing: &[Trivia]) -> Doc {
     if has_comments(trailing) {
         let with_dangling = concat_all([content, hardline(), doc_trailing_comments(trailing)]);
-        doc_braced_block(empty(), Some(with_dangling), false)
+        doc_executable_block(Some(with_dangling))
     } else {
-        doc_braced_block(empty(), Some(content), allow_flat)
+        doc_executable_block(Some(content))
     }
+}
+
+fn doc_executable_block(body: Option<Doc>) -> Doc {
+    let layout = match body {
+        Some(body) => doc_braced_block(empty(), Some(body), true),
+        None => flat_alt(text(" {}"), concat_all([text(" {"), hardline(), text("}")])),
+    };
+    executable_block(layout)
 }
 
 fn doc_braced_block(header: Doc, body: Option<Doc>, allow_flat: bool) -> Doc {
@@ -1215,26 +1217,19 @@ fn doc_labels(d: &Labels) -> Doc {
         // comment on the last entry sits below it before the `}`.
         let mut rendered_arms: Vec<Doc> = Vec::new();
         for entries in arms {
-            let mut inner: Vec<Doc> = Vec::new();
-            for entry in entries {
-                inner.push(hardline());
-                inner.push(doc_inline_leading_trivia(&entry.meta.leading_trivia));
-                inner.push(text(", "));
-                // Same item-content nesting as the shared A1 layouts:
-                // the `", "` prefix advances the column, the nest keeps
-                // a multi-line entry anchored at its own start.
-                inner.push(nest(2, doc_label_entry(entry)));
-            }
-            if let Some(last) = entries.last() {
-                let trailing = last.meta.trailing_trivia.as_slice();
-                if has_comments(trailing) {
-                    inner.push(hardline());
-                    inner.push(doc_trailing_comments(trailing));
-                }
-            }
-            inner.push(hardline());
-            inner.push(text("}"));
-            rendered_arms.push(concat(text("{"), nest(2, concat_all(inner))));
+            rendered_arms.push(broken_comma_list(
+                text("{"),
+                entries.iter().map(|entry| {
+                    (
+                        doc_inline_leading_trivia(&entry.meta.leading_trivia),
+                        doc_label_entry(entry),
+                    )
+                }),
+                entries.last().map_or_else(empty, |entry| {
+                    doc_trailing_comments(&entry.meta.trailing_trivia)
+                }),
+                text("}"),
+            ));
         }
         concat_all([text(" "), join(text(" | "), rendered_arms)])
     } else {
@@ -1283,15 +1278,12 @@ fn doc_labels_arm(entries: &[crate::ast::LabelEntry]) -> Doc {
         return concat_all([text("{ "), join(text(", "), entries), text(" }")]);
     }
     let flat = concat_all([text("{ "), join(text(", "), entries.clone()), text(" }")]);
-    let mut broken_inner = Doc::Empty;
-    for entry in &entries {
-        broken_inner = concat(
-            broken_inner,
-            concat(hardline(), concat(text(", "), nest(2, entry.clone()))),
-        );
-    }
-    broken_inner = concat(broken_inner, hardline());
-    let broken = concat(text("{"), nest(2, concat(broken_inner, text("}"))));
+    let broken = broken_comma_list(
+        text("{"),
+        entries.into_iter().map(|entry| (empty(), entry)),
+        empty(),
+        text("}"),
+    );
     flat_alt(flat, broken)
 }
 
@@ -1786,6 +1778,18 @@ fn doc_label_sugar(labels: &[LabelSugarLabel], label_trivia: &[Vec<Trivia>]) -> 
 // ---- expressions -------------------------------------------------------
 
 fn doc_expr(e: &Expr) -> Doc {
+    let doc = doc_expr_layout(e);
+    if matches!(e, Expr::BlockCall { .. }) {
+        group(doc)
+    } else {
+        doc
+    }
+}
+
+/// Cuddled trailing blocks share this layout decision, including a final
+/// labelled call whose wrapper braces are elided. Their bodies retain their
+/// own groups, so expanding the arms does not expand nested expressions.
+fn doc_expr_layout(e: &Expr) -> Doc {
     if let Some(doc) = doc_source_existential_let(e) {
         return doc;
     }
@@ -1808,16 +1812,14 @@ fn doc_expr(e: &Expr) -> Doc {
             ..
         } => {
             let head = if modes.is_empty() {
-                format!("rec {}", callee.name)
+                format!("recur {}", callee.name)
             } else {
-                let mut modes = modes.clone();
-                modes.sort_by_key(|mode| mode.fmt_rank());
-                let names = modes
+                let names = crate::ast::RecCallMode::canonical_modes(modes)
                     .into_iter()
                     .map(|mode| mode.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("rec({names}) {}", callee.name)
+                format!("recur({names}) {}", callee.name)
             };
             doc_call(text(head), args, delimited_closing(source_trivia))
         }
@@ -1836,12 +1838,12 @@ fn doc_expr(e: &Expr) -> Doc {
             // and must emit above the body so the round-trip
             // preserves it. A comment dangling before the closing `}`
             // rides `body.meta.trailing_trivia` and emits before it.
-            parts.push(group(doc_block_body_expr(body, true)));
+            parts.push(group(doc_block_body_expr(body)));
             concat_all(parts)
         }
         Expr::FnPlaceholder { stem, body, .. } => concat(
             text(format!(".{}.", stem.name)),
-            group(doc_block_body_expr(body, true)),
+            group(doc_block_body_expr(body)),
         ),
         Expr::Let {
             name,
@@ -2021,12 +2023,32 @@ fn doc_expr(e: &Expr) -> Doc {
                 if let Some(label) = &block.label {
                     parts.push(text(format!(" {}", label.name)));
                 }
+                let elide = block_index + 1 == blocks.len()
+                    && block.label.is_some()
+                    && !has_comments(&block.leading)
+                    && !has_comments(&block.trailing)
+                    && block
+                        .separators
+                        .iter()
+                        .all(|separator| !has_comments(&separator.leading))
+                    && matches!(
+                        block.items.as_slice(),
+                        [crate::ast::NeutralItem::Expression {
+                            value: Expr::BlockCall { meta, .. },
+                            ..
+                        }] if !has_comments(&meta.leading_trivia)
+                            && !has_comments(&meta.trailing_trivia)
+                    );
                 let item_docs = block
                     .items
                     .iter()
                     .map(|item| match item {
                         crate::ast::NeutralItem::Expression { value, .. } => {
-                            doc_expr_with_own_meta_trivia(value)
+                            if elide {
+                                doc_expr_layout(value)
+                            } else {
+                                doc_expr_with_own_meta_trivia(value)
+                            }
                         }
                         crate::ast::NeutralItem::Binding {
                             name,
@@ -2110,34 +2132,17 @@ fn doc_expr(e: &Expr) -> Doc {
                         content.push(text(";"));
                     }
                     if index + 1 < block.items.len() {
-                        content.push(hardline());
+                        content.push(line());
                     }
                 }
-                let elide = block_index + 1 == blocks.len()
-                    && block.label.is_some()
-                    && !has_comments(&block.leading)
-                    && !has_comments(&block.trailing)
-                    && block
-                        .separators
-                        .iter()
-                        .all(|separator| !has_comments(&separator.leading))
-                    && matches!(
-                        block.items.as_slice(),
-                        [crate::ast::NeutralItem::Expression {
-                            value: Expr::BlockCall { meta, .. },
-                            ..
-                        }] if !has_comments(&meta.leading_trivia)
-                            && !has_comments(&meta.trailing_trivia)
-                    );
                 if elide {
                     parts.extend([text(" "), concat_all(content)]);
                 } else if block.items.is_empty() && !has_comments(&block.trailing) {
-                    parts.push(text(" {}"));
+                    parts.push(doc_executable_block(None));
                 } else {
                     parts.push(doc_block_body_with_trailing(
                         concat_all(content),
                         &block.trailing,
-                        false,
                     ));
                 }
             }
@@ -2352,7 +2357,7 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
             ..
         }
     );
-    let left_splice = matches!(callee, Expr::Ufcs { flavor, .. } if !flavor.callee_on_right());
+    let splice = matches!(callee, Expr::Ufcs { .. });
     let normal_operator = matches!(
         callee,
         Expr::OpChain {
@@ -2360,7 +2365,7 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
             ..
         }
     );
-    bare_literal || left_splice || normal_operator
+    bare_literal || splice || normal_operator
 }
 
 /// Render an expression that owns a following postfix receiver suffix.
@@ -3248,10 +3253,10 @@ fn delimited_closing(trivia: &Option<Box<DelimitedTrivia>>) -> &[Trivia] {
 /// When any item carries a leading `LineComment` — or the last item
 /// a trailing / dangling comment before the closer — force the
 /// multi-line A1 broken layout (open on the head's line, items at
-/// +2 indent each preceded by their trivia comments and a leading-
+/// its base column each preceded by their trivia comments and a leading-
 /// comma `, `, a multi-line item's continuation anchored at the
 /// item's content column, the last item's trailing comment on its
-/// own line, closer at the same +2 column). Otherwise fall back to
+/// own line, closer at the same base column). Otherwise fall back to
 /// the standard width-driven [`comma_list`].
 ///
 /// `item_trivia` must be parallel to `items`; the parser captures
@@ -3301,26 +3306,20 @@ fn doc_comma_list_with_boundaries(
     if !any_leading && !trailing_comment {
         return crate::doc::comma_list_with_padding(open, items, close, padded);
     }
-    let mut inner = empty();
+    let mut annotated_items = Vec::new();
     let mut pending = Vec::new();
     for (i, (item, trivia)) in items.iter().zip(item_trivia).enumerate() {
         append_source_trivia(&mut pending, trivia.clone());
-        inner = concat(inner, hardline());
-        inner = concat(inner, doc_inline_leading_trivia(&pending));
-        inner = concat(inner, text(", "));
-        // nest(2) mirrors the `", "` prefix so a multi-line item's
-        // continuation lines anchor at the item's content column, not
-        // at the comma column — same as `comma_list`'s broken layout.
-        inner = concat(inner, nest(2, item.clone()));
+        annotated_items.push((doc_inline_leading_trivia(&pending), item.clone()));
         pending = item_tails.get(i).cloned().unwrap_or_default();
     }
     append_source_trivia(&mut pending, closing.to_vec());
-    if has_comments(&pending) {
-        inner = concat(inner, hardline());
-        inner = concat(inner, doc_trailing_comments(&pending));
-    }
-    inner = concat(inner, hardline());
-    concat(open, nest(2, concat(inner, close)))
+    broken_comma_list(
+        open,
+        annotated_items,
+        doc_trailing_comments(&pending),
+        close,
+    )
 }
 
 /// True when `trivia` contains at least one `LineComment` or
@@ -4258,10 +4257,10 @@ mod tests {
         let long = crate::pass::parser::parse("module c; import long_provider_name(first_long_selected_name, second_long_selected_name, third_long_selected_name, varop [% %]);").unwrap();
         let rendered = pretty_module(&long);
         assert!(
-            rendered.contains("import long_provider_name(\n  , "),
+            rendered.contains("import long_provider_name(\n, "),
             "{rendered}"
         );
-        assert!(rendered.contains("\n  );"));
+        assert!(rendered.contains("\n);"));
         assert_eq!(
             pretty_module(&crate::pass::parser::parse(&rendered).unwrap()),
             rendered
@@ -4321,25 +4320,22 @@ import a as a;
         let formatted = pretty_module(&module);
         assert!(
             formatted
-                .contains("import a as a;\n// statement\nimport z(\n  // alpha comment\n  , alpha"),
+                .contains("import a as a;\n// statement\nimport z(\n// alpha comment\n, alpha"),
             "{formatted}"
         );
         assert!(
-            formatted.contains("  // operator comment\n  , op _ + _"),
+            formatted.contains("// operator comment\n, op _ + _"),
             "{formatted}"
         );
         assert!(
-            formatted.contains("  // opening selection\n  // zebra comment\n  , zebra"),
+            formatted.contains("// opening selection\n// zebra comment\n, zebra"),
             "{formatted}"
         );
         assert!(
-            formatted.contains("  // label comment\n  , {field}"),
+            formatted.contains("// label comment\n, {field}"),
             "{formatted}"
         );
-        assert!(
-            formatted.contains("\n  // list closer\n  );"),
-            "{formatted}"
-        );
+        assert!(formatted.contains("\n// list closer\n);"), "{formatted}");
         for comment in [
             "statement",
             "opening selection",
@@ -4368,14 +4364,14 @@ import p( // opening selection
 "#;
         let formatted = roundtrip(source);
         assert!(
-            formatted.contains("import p(\n  // next slot\n  // alpha\n  , alpha"),
+            formatted.contains("import p(\n// next slot\n// alpha\n, alpha"),
             "{formatted}"
         );
         assert!(
-            formatted.contains("  // opening selection\n  // zebra\n  , zebra"),
+            formatted.contains("// opening selection\n// zebra\n, zebra"),
             "{formatted}"
         );
-        assert!(formatted.contains("\n  // dangling\n  );"), "{formatted}");
+        assert!(formatted.contains("\n// dangling\n);"), "{formatted}");
         for comment in [
             "opening selection",
             "next slot",
@@ -4388,15 +4384,15 @@ import p( // opening selection
     }
 
     #[test]
-    fn selective_import_width_and_comment_paths_indent_the_closer() {
+    fn selective_import_width_and_comment_paths_keep_the_base_column() {
         for source in [
             "module c; import p(first_long_selected_name, second_long_selected_name, third_long_selected_name, fourth_long_selected_name);",
             "module c; import p(, // attached\n short);",
         ] {
             let formatted = roundtrip(source);
-            assert!(formatted.contains("\n  , "), "{formatted}");
-            assert!(formatted.contains("\n  );"), "{formatted}");
-            assert!(!formatted.contains("\n);"), "{formatted}");
+            assert!(formatted.contains("\n, "), "{formatted}");
+            assert!(formatted.contains("\n);"), "{formatted}");
+            assert!(!formatted.contains("\n  );"), "{formatted}");
         }
         assert!(roundtrip("module c; import p(short);").contains("import p(short);"));
     }
@@ -4415,7 +4411,7 @@ import p( // opening selection
             };
             let formatted = pretty_module(&module);
             assert!(
-                formatted.contains(&format!("  // delimiter\n  , varop {open} {close}")),
+                formatted.contains(&format!("// delimiter\n, varop {open} {close}")),
                 "{formatted}"
             );
             assert_eq!(formatted.matches("// delimiter").count(), 1, "{formatted}");
@@ -4446,6 +4442,108 @@ import p( // opening selection
             "pretty-printer is not idempotent under parse for input:\n{src}"
         );
         pp1
+    }
+
+    #[test]
+    fn executable_blocks_unfold_one_level_at_a_time() {
+        for (body, expected) in [
+            (
+                "if! ready { run() } else { wait() }",
+                "if! ready { run() } else { wait() }",
+            ),
+            (
+                "if! ready { do! bind { run() } } else { wait() }",
+                "if! ready {\n  do! bind { run() }\n} else {\n  wait()\n}",
+            ),
+            (
+                "choose! ready { nested! { run() } } otherwise { wait() }",
+                "choose! ready {\n  nested! { run() }\n} otherwise {\n  wait()\n}",
+            ),
+            ("do! bind { run() }", "do! bind { run() }"),
+            ("do! bind { run(); wait() }", "do! bind { run(); wait() }"),
+            ("scope! { let x = run(); x }", "scope! { let x = run(); x }"),
+            (
+                "choose! ready { {field = value} } otherwise { other }",
+                "choose! ready { {field = value} } otherwise { other }",
+            ),
+        ] {
+            let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
+            let Item::FnDef(function) = &parsed.items[0] else {
+                panic!("function")
+            };
+            assert_eq!(render(&doc_expr(&function.body), WIDTH), expected);
+            let output = roundtrip(&format!("module x; fn f() {{ {body} }}"));
+            assert!(output.contains("fn f() {\n"), "{output}");
+        }
+    }
+
+    #[test]
+    fn trailing_block_chains_share_width_depth_and_comment_choices() {
+        for (body, width, expected) in [
+            (
+                "if! a { x } else if! b { y } else { z }",
+                100,
+                "if! a { x } else if! b { y } else { z }",
+            ),
+            (
+                "if! a { x } else if! b { y } else { z }",
+                30,
+                "if! a {\n  x\n} else if! b {\n  y\n} else {\n  z\n}",
+            ),
+            (
+                "choose! a { x } otherwise choose! b { nested! { y } } otherwise { z }",
+                100,
+                "choose! a {\n  x\n} otherwise choose! b {\n  nested! { y }\n} otherwise {\n  z\n}",
+            ),
+            (
+                "if! a { x } else if! b { // keep\ny } else { z }",
+                100,
+                "if! a {\n  x\n} else if! b {\n  // keep\n  y\n} else {\n  z\n}",
+            ),
+            (
+                "if! a { x } else { y // tail\n}",
+                100,
+                "if! a {\n  x\n} else {\n  y\n  // tail\n}",
+            ),
+            (
+                "choose! a { nested! {} } otherwise {}",
+                100,
+                "choose! a {\n  nested! {}\n} otherwise {\n}",
+            ),
+        ] {
+            let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
+            let Item::FnDef(function) = &parsed.items[0] else {
+                panic!("function")
+            };
+            let actual = render(&doc_expr(&function.body), width);
+            assert_eq!(actual, expected);
+            roundtrip(&format!("module x; fn f() {{ {actual} }}"));
+        }
+    }
+
+    #[test]
+    fn calling_a_ufcs_result_preserves_the_call_boundary() {
+        for callee in [
+            "vault.>Vault.open",
+            "vault.>>open",
+            "open.<vault",
+            "open.<<vault",
+        ] {
+            for arguments in ["", "()", "value", "value, other"] {
+                let invocation = format!("({callee})({arguments})");
+                let source = format!("module x; fn run() {{ {invocation} }}");
+                let output = roundtrip(&source);
+                assert!(output.contains(&invocation), "{output}");
+                let reparsed = parse(&output).unwrap();
+                let Item::FnDef(function) = &reparsed.items[0] else {
+                    panic!("function")
+                };
+                let Expr::Call { callee, .. } = &function.body else {
+                    panic!("callback invocation became a splice: {output}");
+                };
+                assert!(matches!(callee.as_ref(), Expr::Ufcs { .. }));
+            }
+        }
     }
 
     #[test]
@@ -5248,7 +5346,7 @@ elab demo : Box(
             "nested_list",
             "wrap([! a, b, c !])",
             12,
-            "wrap([!\n  , a\n  , b\n  , c\n  !])",
+            "wrap([!\n, a\n, b\n, c\n!])",
         );
     }
 
@@ -5261,7 +5359,7 @@ elab demo : Box(
             "list",
             "[! a, b, c !]",
             12,
-            "[!\n  , a\n  , b\n  , c\n  !]",
+            "[!\n, a\n, b\n, c\n!]",
         );
         assert_op_expr_layout_and_topology(
             list_prefix,
@@ -5296,7 +5394,7 @@ elab demo : Box(
             "entries",
             "[% a => b, c => d %]",
             16,
-            "[%\n  , a => b\n  , c => d\n  %]",
+            "[%\n, a => b\n, c => d\n%]",
         );
 
         let repeated_comma_prefix = "module x; varop [! !] { foldr push empty; };";
@@ -5306,7 +5404,7 @@ elab demo : Box(
             "separated",
             "[! , a,, b,, c, !]",
             12,
-            "[!\n  , a\n  , b\n  , c\n  !]",
+            "[!\n, a\n, b\n, c\n!]",
         );
 
         assert_op_expr_layout_and_topology(
@@ -5315,7 +5413,7 @@ elab demo : Box(
             "broken_entry",
             "[% key => build(alpha, beta, gamma), other => value %]",
             16,
-            "[%\n  , key\n      => build(\n           , alpha\n           , beta\n           , gamma\n           )\n  , other\n      => value\n  %]",
+            "[%\n, key\n    => build(\n       , alpha\n       , beta\n       , gamma\n       )\n, other => value\n%]",
         );
     }
 
@@ -5624,7 +5722,7 @@ elab demo : Box(
         for expression in [
             ".x. { pair(x2, x1, x2) }",
             ".arg. { let arg2 = arg1; arg2 }",
-            "._x. { _x1.>apply(._y. { _y1 }) }",
+            "._x. {\n    _x1.>apply(._y. { _y1 })\n  }",
         ] {
             let output = roundtrip(&format!("module m; fn make() {{ {expression} }}"));
             assert!(output.contains(expression), "{output}");
@@ -5850,9 +5948,9 @@ elab demo : Box(
 
     #[test]
     fn rec_call_annotations_print_in_canonical_order() {
-        let pp = roundtrip("module x; rec(loop) fn f() -> . { rec(escape, cont, poly) f() }");
+        let pp = roundtrip("module x; rec(loop) fn f() -> . { recur(escape, cont, poly) f() }");
         assert!(
-            pp.contains("rec(poly, cont, escape) f()"),
+            pp.contains("recur(poly, escape) f()"),
             "expected canonical rec-call annotation order; got:\n{pp}"
         );
     }
@@ -6192,47 +6290,47 @@ elab demo : Box(
         for (source, expected) in [
             (
                 "fn f() { g( // close\n) }",
-                "fn f() {\n  g(\n    // close\n    )\n}",
+                "fn f() {\n  g(\n  // close\n  )\n}",
             ),
             (
                 "fn f() { ( // unit\n) }",
-                "fn f() {\n  (\n    // unit\n    )\n}",
+                "fn f() {\n  (\n  // unit\n  )\n}",
             ),
             (
                 "fn f() { { // unit\n} }",
-                "fn f() {\n  (\n    // unit\n    )\n}",
+                "fn f() {\n  (\n  // unit\n  )\n}",
             ),
             (
                 "fn f() { ( // first\n, // second\n, // last\n) }",
-                "fn f() {\n  (\n    // first\n    // second\n    // last\n    )\n}",
+                "fn f() {\n  (\n  // first\n  // second\n  // last\n  )\n}",
             ),
             (
                 "fn f() { g( // first\n, // second\n, // last\n) }",
-                "fn f() {\n  g(\n    // first\n    // second\n    // last\n    )\n}",
+                "fn f() {\n  g(\n  // first\n  // second\n  // last\n  )\n}",
             ),
             (
                 "fn f() { g( // first\n())( // second\n) }",
-                "fn f() {\n  g(\n    // first\n    , ()\n    )(\n    // second\n    )\n}",
+                "fn f() {\n  g(\n  // first\n  , ()\n  )(\n  // second\n  )\n}",
             ),
             (
                 "fn f() { g(h( // inner\n) // outer\n) // block\n}",
-                "fn f() {\n  g(\n    , h(\n        // inner\n        )\n    // outer\n    )\n  // block\n}",
+                "fn f() {\n  g(\n  , h(\n    // inner\n    )\n  // outer\n  )\n  // block\n}",
             ),
             (
                 "fn f( // first\n)( // second\nx: .) { x }",
-                "fn f(\n  // first\n  )(\n  // second\n  , x: .\n  ) { x }",
+                "fn f(\n// first\n)(\n// second\n, x: .\n) { x }",
             ),
             (
                 "fn f(x // A\n: Pair( // B\n.)) { x }",
-                "fn f(\n  // A\n  , x: Pair(\n      // B\n      , .\n      )\n  ) { x }",
+                "fn f(\n// A\n, x: Pair(\n  // B\n  , .\n  )\n) { x }",
             ),
             (
                 "fn f( // leading\nx // colon\n: // type\n. // trailing\n) { x }",
-                "fn f(\n  // leading\n  // colon\n  // type\n  , x: .\n  // trailing\n  ) { x }",
+                "fn f(\n// leading\n// colon\n// type\n, x: .\n// trailing\n) { x }",
             ),
             (
                 "fn f() // arrow\n-> // return type\nPair( // first type\n., // second type\n.) // body opener\n{ // body note\n() }",
-                "fn f()\n  // arrow\n  // return type\n  -> Pair(\n    // first type\n    , .\n    // second type\n    , .\n    ) {\n  // body opener\n\n  // body note\n  ()\n}",
+                "fn f()\n  // arrow\n  // return type\n  -> Pair(\n  // first type\n  , .\n  // second type\n  , .\n  ) {\n  // body opener\n\n  // body note\n  ()\n}",
             ),
             (
                 "fn f() { .() // arrow\n-> // return type\n. // body opener\n{ // body note\n() } }",
@@ -6269,7 +6367,7 @@ elab demo : Box(
             ),
             (
                 "fn f(){ g((x // inner\n), y) }",
-                "fn f() {\n  g(\n    , x\n    // inner\n    , y\n    )\n}",
+                "fn f() {\n  g(\n  , x\n  // inner\n  , y\n  )\n}",
             ),
             (
                 "fn f(){ (g() // callee\n)() }",
@@ -6304,7 +6402,7 @@ elab demo : Box(
     #[test]
     fn delimited_comment_owners_cover_call_consumers_and_type_groups() {
         for source in [
-            "fn f() { rec f( // 1\n) }",
+            "fn f() { recur f( // 1\n) }",
             "fn f() { e!( // 1\n) }",
             "fn f() { x.>g(y // 1\n) }",
             "fn f() { x.>e!(y // 1\n) }",
@@ -6815,12 +6913,12 @@ fn f() -> . {
 }"#;
         let pp = roundtrip(src);
         assert!(
-            pp.contains("\n    , arg_alpha"),
-            "expected leading-comma break for arg_alpha at +4 indent; got:\n{pp}"
+            pp.contains("\n  , arg_alpha"),
+            "expected leading-comma break for arg_alpha at the body base; got:\n{pp}"
         );
         assert!(
-            pp.contains("\n    , arg_epsilon"),
-            "expected leading-comma break for arg_epsilon at +4 indent; got:\n{pp}"
+            pp.contains("\n  , arg_epsilon"),
+            "expected leading-comma break for arg_epsilon at the body base; got:\n{pp}"
         );
     }
 
@@ -6833,7 +6931,7 @@ fn f() -> . {
                    Inner_one, Inner_two, Inner_three, Inner_four, Inner_five, Inner_six, Inner_seven);";
         let pp = roundtrip(src);
         assert!(
-            pp.contains("\n  , Inner_one"),
+            pp.contains("\n, Inner_one"),
             "expected leading-comma break for Inner_one; got:\n{pp}"
         );
     }
@@ -6859,16 +6957,12 @@ fn f() -> . {
              \n\
              fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {\n\
              \x20 reverse(fold_list(\n\
-             \x20   , xs\n\
-             \x20   , whole\n\
-             \x20   , .(carry: A, x: A) -> A {\n\
-             \x20       if! keep(x) {\n\
-             \x20         cons(x, carry)\n\
-             \x20       } else {\n\
-             \x20         carry\n\
-             \x20       }\n\
-             \x20     }\n\
-             \x20   ))\n\
+             \x20 , xs\n\
+             \x20 , whole\n\
+             \x20 , .(carry: A, x: A) -> A {\n\
+             \x20     if! keep(x) { cons(x, carry) } else { carry }\n\
+             \x20   }\n\
+             \x20 ))\n\
              }\n"
         );
     }
@@ -6894,18 +6988,14 @@ fn f() -> . {
              \n\
              fn step[A](v: A | A, dflt: A) -> A {\n\
              \x20 match!(\n\
-             \x20   , v\n\
-             \x20   , (\n\
-             \x20       , .(l: A) {\n\
-             \x20           if! is_good(l) {\n\
-             \x20             l\n\
-             \x20           } else {\n\
-             \x20             dflt\n\
-             \x20           }\n\
-             \x20         }\n\
-             \x20       , .(r: A) { r }\n\
-             \x20       )\n\
+             \x20 , v\n\
+             \x20 , (\n\
+             \x20   , .(l: A) {\n\
+             \x20       if! is_good(l) { l } else { dflt }\n\
+             \x20     }\n\
+             \x20   , .(r: A) { r }\n\
              \x20   )\n\
+             \x20 )\n\
              }\n"
         );
     }
@@ -6929,14 +7019,14 @@ fn f() -> . {
             "module x;\n\
              \n\
              labels Wide = {\n\
-             \x20 , first_long_label_name: Someextremelylongtypeconstructorname(\n\
-             \x20     , Aaaaaaaa\n\
-             \x20     , Bbbbbbbb\n\
-             \x20     , Gggggggg\n\
-             \x20     , Hhhhhhhh\n\
-             \x20     )\n\
-             \x20 , second_label: I32\n\
-             \x20 };\n"
+             , first_long_label_name: Someextremelylongtypeconstructorname(\n\
+             \x20 , Aaaaaaaa\n\
+             \x20 , Bbbbbbbb\n\
+             \x20 , Gggggggg\n\
+             \x20 , Hhhhhhhh\n\
+             \x20 )\n\
+             , second_label: I32\n\
+             };\n"
         );
     }
 
@@ -6956,11 +7046,11 @@ fn f() -> . {
         let plain_pp = roundtrip(plain);
         let commented_pp = roundtrip(commented);
         assert!(
-            commented_pp.contains("\n  // keep me\n"),
+            commented_pp.contains("\n// keep me\n"),
             "entry comment survived: {commented_pp}"
         );
         assert_eq!(
-            commented_pp.replace("  // keep me\n", ""),
+            commented_pp.replace("// keep me\n", ""),
             plain_pp,
             "labels layouts diverge once the comment line is removed"
         );
@@ -7025,7 +7115,7 @@ fn f() -> . {
     #[test]
     fn scope_call_round_trips_as_block_expression() {
         let pp = roundtrip("module x; fn f() -> . { scope! { let x = (); x } }");
-        assert!(pp.contains("scope! {\n"), "got:\n{pp}");
+        assert!(pp.contains("scope! { let x = (); x }"), "got:\n{pp}");
         assert!(pp.contains("let x = ();"), "got:\n{pp}");
     }
 
@@ -7410,12 +7500,12 @@ fn f() -> . {
         );
         // Inner call breaks to A1 with leading commas.
         assert!(
-            pp.contains("\n      , arg_alpha"),
+            pp.contains("\n    , arg_alpha"),
             "expected A1 break for call args; got:\n{pp}"
         );
         // The `;` closes the call at the close-paren's line.
         assert!(
-            pp.contains("\n      );"),
+            pp.contains("\n    );"),
             "expected `;` trailing the call's close paren; got:\n{pp}"
         );
     }
@@ -7566,8 +7656,8 @@ fn f() -> . {
             "expected wide segment's args to break to A1; got:\n{pp}"
         );
         assert!(
-            pp.contains("\n        , arg_one_with_a_long_name"),
-            "expected leading-comma arg at +8; got:\n{pp}"
+            pp.contains("\n      , arg_one_with_a_long_name"),
+            "expected leading-comma arg at the segment base; got:\n{pp}"
         );
     }
 

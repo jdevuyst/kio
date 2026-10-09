@@ -20,28 +20,28 @@ import elab/spine_elaborators(widen_sum);
 import sudoku/constraints as constraints;
 import sudoku/geometry as geo;
 import sudoku/model(
-  , Complete
-  , Outcome
-  , Pick
-  , Pick_cell
-  , Pick_count
-  , Report
-  , Work
-  , {backtracks}
-  , {board}
-  , {complete}
-  , {exhausted}
-  , {max_depth}
-  , {pick_cell}
-  , {pick_count}
-  , {placements}
-  , {solved}
-  , {stack_cell}
-  , {stack_digit}
-  , {steps}
-  , {unsolvable}
-  , {verdict}
-  );
+, Complete
+, Outcome
+, Pick
+, Pick_cell
+, Pick_count
+, Report
+, Work
+, {backtracks}
+, {board}
+, {complete}
+, {exhausted}
+, {max_depth}
+, {pick_cell}
+, {pick_count}
+, {placements}
+, {solved}
+, {stack_cell}
+, {stack_digit}
+, {steps}
+, {unsolvable}
+, {verdict}
+);
 import sudoku/num as num;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
@@ -97,13 +97,13 @@ rec(loop) fn scan(work: Work, cell: I32, best: I32, best_count: I32) -> Pick {
         if! leq_i32(count, 1) {
           widen_sum!({pick_cell = cell, pick_count = count})
         } else {
-          rec scan(work, add_i32(cell, 1), cell, count)
+          recur scan(work, add_i32(cell, 1), cell, count)
         }
       } else {
-        rec scan(work, add_i32(cell, 1), best, best_count)
+        recur scan(work, add_i32(cell, 1), best, best_count)
       }
     } else {
-      rec scan(work, add_i32(cell, 1), best, best_count)
+      recur scan(work, add_i32(cell, 1), best, best_count)
     }
   } else if! leq_i32(no_candidate_count(), best_count) {
     widen_sum!({complete=})
@@ -116,47 +116,47 @@ fn select(work: Work) -> Pick { scan(work, 0, 0, no_candidate_count()) }
 
 fn report(outcome: Outcome, steps_taken: I32, placed: I32, undone: I32, deepest: I32) -> Report {
   {
-    , verdict = outcome
-    , placements = placed
-    , backtracks = undone
-    , max_depth = deepest
-    , steps = steps_taken
-    }
+  , verdict = outcome
+  , placements = placed
+  , backtracks = undone
+  , max_depth = deepest
+  , steps = steps_taken
+  }
 }
 
 /// The search itself. `descending` selects the phase; every other piece of
 /// loop state is either the mutable bundle or a statistic.
 rec(loop) fn drive(
-  , work: Work
-  , descending: Bool
-  , budget: I32
-  , steps_taken: I32
-  , placed: I32
-  , undone: I32
-  , deepest: I32
-  ) -> Report {
+, work: Work
+, descending: Bool
+, budget: I32
+, steps_taken: I32
+, placed: I32
+, undone: I32
+, deepest: I32
+) -> Report {
   if! leq_i32(budget, steps_taken) {
     report(widen_sum!({exhausted=}, Outcome), steps_taken, placed, undone, deepest)
   } else if! descending {
     let taken = add_i32(steps_taken, 1);
     match! select(work) {
       (
-        , .(_done: Complete) {
-            report(widen_sum!({solved=}, Outcome), taken, placed, undone, deepest)
-          }
-        , .(pick: Pick_cell & Pick_count) {
-            if! num.is_zero(pick.?{pick_count}) {
-              if! num.is_zero(depth(work)) {
-                report(widen_sum!({unsolvable=}, Outcome), taken, placed, undone, deepest)
-              } else {
-                rec drive(work, .f, budget, taken, placed, undone, deepest)
-              }
+      , .(_done: Complete) {
+          report(widen_sum!({solved=}, Outcome), taken, placed, undone, deepest)
+        }
+      , .(pick: Pick_cell & Pick_count) {
+          if! num.is_zero(pick.?{pick_count}) {
+            if! num.is_zero(depth(work)) {
+              report(widen_sum!({unsolvable=}, Outcome), taken, placed, undone, deepest)
             } else {
-              push_frame(work, pick.?{pick_cell});
-              rec drive(work, .f, budget, taken, placed, undone, num.max_i32(deepest, depth(work)))
+              recur drive(work, .f, budget, taken, placed, undone, deepest)
             }
+          } else {
+            push_frame(work, pick.?{pick_cell});
+            recur drive(work, .f, budget, taken, placed, undone, num.max_i32(deepest, depth(work)))
           }
-        )
+        }
+      )
     }
   } else if! num.is_zero(depth(work)) {
     report(widen_sum!({unsolvable=}, Outcome), add_i32(steps_taken, 1), placed, undone, deepest)
@@ -176,11 +176,11 @@ rec(loop) fn drive(
     let next = constraints.first_legal_from(work, cell, add_i32(tried, 1));
     if! num.is_zero(next) {
       pop_frame(work);
-      rec drive(work, .f, budget, taken, placed, retracted, deepest)
+      recur drive(work, .f, budget, taken, placed, retracted, deepest)
     } else {
       constraints.place(work, cell, next);
       set_top_digit(work, next);
-      rec drive(work, .t, budget, taken, add_i32(placed, 1), retracted, deepest)
+      recur drive(work, .t, budget, taken, add_i32(placed, 1), retracted, deepest)
     }
   }
 }

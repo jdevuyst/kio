@@ -43,9 +43,9 @@ fn identity(value: String) -> String { value }
 
 fn lambda_shadow() -> String {
   .x. { print(x2); let .x. = ("unused", "unused", "lambda binding\n"); x3 }((
-    , "unused"
-    , "lambda pair\n"
-    ))
+  , "unused"
+  , "lambda pair\n"
+  ))
 }
 
 equiv numbered_pair[A][B](first: A, second: B) {
@@ -59,10 +59,7 @@ equiv numbered_tail[A][B][C](first: A, second: B, third: C) {
 }
 
 equiv numbered_sequence[A](value: A) {
-  do! bind {
-    let .x. <- pure(value);
-    pure(x1)
-  };
+  do! bind { let .x. <- pure(value); pure(x1) };
   pure(value)
 }
 

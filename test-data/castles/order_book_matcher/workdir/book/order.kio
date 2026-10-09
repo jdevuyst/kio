@@ -42,23 +42,23 @@ pub fn side_text(side: Side) -> String {
 /// keeps the front of the queue. A reduce-only amend leaves it alone --
 /// which is precisely why reducing an order keeps its queue position.
 pub labels Order = {
-  , ord_id: I32
-  , ord_side: Side
-  , ord_price: I32
-  , ord_qty: I32
-  , ord_remaining: I32
-  , ord_seq: I32
-  };
+, ord_id: I32
+, ord_side: Side
+, ord_price: I32
+, ord_qty: I32
+, ord_remaining: I32
+, ord_seq: I32
+};
 
 pub fn order(id: I32, side: Side, price: I32, qty: I32, remaining: I32, seq: I32) -> Order {
   {
-    , ord_id = id
-    , ord_side = side
-    , ord_price = price
-    , ord_qty = qty
-    , ord_remaining = remaining
-    , ord_seq = seq
-    }
+  , ord_id = id
+  , ord_side = side
+  , ord_price = price
+  , ord_qty = qty
+  , ord_remaining = remaining
+  , ord_seq = seq
+  }
 }
 
 pub fn id_of(o: Order) -> I32 { o.?{ord_id} }
@@ -110,16 +110,12 @@ pub fn no_cap() -> Cap { {uncapped=}.>widen_sum!(Cap) }
 pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
   match! cap {
     (
-      , .(c: Capped) {
-          let limit = c.?{capped};
-          if! is_buy(taker) {
-            leq_i32(maker_price, limit)
-          } else {
-            leq_i32(limit, maker_price)
-          }
-        }
-      , .(_u: Uncapped) { .t }
-      )
+    , .(c: Capped) {
+        let limit = c.?{capped};
+        if! is_buy(taker) { leq_i32(maker_price, limit) } else { leq_i32(limit, maker_price) }
+      }
+    , .(_u: Uncapped) { .t }
+    )
   }
 }
 
@@ -127,9 +123,5 @@ pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
 /// asks by ascending price. Equal prices tie here on purpose -- the tie
 /// is broken by arrival sequence, and a newcomer always loses it.
 pub fn ranks_ahead(side: Side, price: I32, resting_price: I32) -> Bool {
-  if! is_buy(side) {
-    int_lt(resting_price, price)
-  } else {
-    int_lt(price, resting_price)
-  }
+  if! is_buy(side) { int_lt(resting_price, price) } else { int_lt(price, resting_price) }
 }

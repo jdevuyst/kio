@@ -169,25 +169,37 @@ instance bodies are where the concrete brand crossing happens — `Box` lifts
 and projects through `Box.mk_box` / `Box.un_box`, `Identity` through its own:
 
 ```kio {@hkt}
-fn box_monad() -> Monad(Box) { Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) }) }
+fn box_monad() -> Monad(Box) {
+  Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
+}
 
 fn box_functor() -> Functor(Box) {
   Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
 }
 
-fn box_pure() -> Pure(Box) { Pure.mk_pure(.[A](x) { Box.mk_box(x) }) }
+fn box_pure() -> Pure(Box) {
+  Pure.mk_pure(.[A](x) { Box.mk_box(x) })
+}
 
-fn box_extract() -> Extract(Box) { Extract.mk_extract(.[A](m) { Box.un_box(m) }) }
+fn box_extract() -> Extract(Box) {
+  Extract.mk_extract(.[A](m) { Box.un_box(m) })
+}
 
-fn identity_monad() -> Monad(Identity) { Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) }) }
+fn identity_monad() -> Monad(Identity) {
+  Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) })
+}
 
 fn identity_functor() -> Functor(Identity) {
   Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
 }
 
-fn identity_pure() -> Pure(Identity) { Pure.mk_pure(.[A](x) { Identity.mk_id(x) }) }
+fn identity_pure() -> Pure(Identity) {
+  Pure.mk_pure(.[A](x) { Identity.mk_id(x) })
+}
 
-fn identity_extract() -> Extract(Identity) { Extract.mk_extract(.[A](m) { Identity.un_id(m) }) }
+fn identity_extract() -> Extract(Identity) {
+  Extract.mk_extract(.[A](m) { Identity.un_id(m) })
+}
 ```
 
 The `Monad` and `Functor` payload literals are polymorphic in `[A][B]`,
@@ -366,11 +378,11 @@ fn run_derived_functor(s: String) -> String {
   let branded = Identity.mk_id(s);
   let mapped =
     Functor.fmap(functor)(
-      , String
-      , String
-      , .(value) { string_concat(value, " ok\n"(String)) }
-      , branded
-      );
+    , String
+    , String
+    , .(value) { string_concat(value, " ok\n"(String)) }
+    , branded
+    );
   Identity.un_id(mapped)
 }
 ```

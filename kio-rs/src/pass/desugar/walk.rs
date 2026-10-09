@@ -76,6 +76,7 @@ pub trait SurfaceToDesugared {
         modes: Vec<crate::ast::RecCallMode>,
         callee: PathSegment,
         args: Vec<CallArg<Surface>>,
+        syntax: crate::ast::RecCallSyntax,
         meta: Meta<Surface>,
     ) -> Result<Expr<Desugared>, Error>;
 
@@ -1123,8 +1124,9 @@ pub trait SurfaceToDesugared {
                 callee,
                 args,
                 meta,
+                ext,
                 ..
-            } => self.rewrite_expr_rec_call(modes, callee, args, meta),
+            } => self.rewrite_expr_rec_call(modes, callee, args, ext, meta),
             Expr::FnExpr { .. } => self.visit_expr_fn(e),
             Expr::Let { .. } => self.visit_expr_let(e),
             Expr::RowLet {

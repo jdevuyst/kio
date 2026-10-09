@@ -6,13 +6,8 @@ import elab/control(if);
 labels { text: String };
 
 rec(loop) {
-  pub fn spaces(n: I32) -> String { rec pad(n, empty()) };
+  pub fn spaces(n: I32) -> String { recur pad(n, empty()) };
   fn pad(n: I32, acc: String) -> String {
-    if! done(n) {
-      let wrapped = {text = acc};
-      wrapped.?{text}
-    } else {
-      rec pad(n, acc)
-    }
+    if! done(n) { let wrapped = {text = acc}; wrapped.?{text} } else { recur pad(n, acc) }
   }
 }

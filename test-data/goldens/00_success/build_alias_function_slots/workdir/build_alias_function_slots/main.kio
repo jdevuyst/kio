@@ -20,13 +20,13 @@ fn left() -> Maybe_mapper { __left__(Mapper, ., id_i32) }
 
 fn choose(m: Maybe_mapper, fallback: Mapper) -> Mapper {
   __either__(
-    , Mapper
-    , .
-    , Mapper
-    , m
-    , .(mapper: Mapper) -> Mapper { mapper }
-    , .(_unit: .) -> Mapper { fallback }
-    )
+  , Mapper
+  , .
+  , Mapper
+  , m
+  , .(mapper: Mapper) -> Mapper { mapper }
+  , .(_unit: .) -> Mapper { fallback }
+  )
 }
 
 pub fn main() { () }

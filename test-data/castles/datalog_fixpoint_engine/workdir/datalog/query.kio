@@ -22,27 +22,29 @@ pub fn answers(q: Atom, db: Atoms) -> subst.Substs {
   unify.solve_all(list.of1(q), db, subst.empty())
 }
 
-fn holds_code(codes: Codes, code: I32) -> Bool { list.any(codes, .(c: I32) { eq_i32(c, code) }) }
+fn holds_code(codes: Codes, code: I32) -> Bool {
+  list.any(codes, .(c: I32) { eq_i32(c, code) })
+}
 
 rec(loop) fn vars_from(args: Args, acc: Codes) -> Codes {
   match! args.>list.List.un_list {
     (
-      , .(t: Term, rest: Args) {
-          match! t {
-            (
-              , .(_k: T_const) { rec vars_from(rest, acc) }
-              , .(v: T_var) {
-                  if! holds_code(acc, v.?{t_var}) {
-                    rec vars_from(rest, acc)
-                  } else {
-                    rec vars_from(rest, list.snoc(acc, v.?{t_var}))
-                  }
-                }
-              )
-          }
+    , .(t: Term, rest: Args) {
+        match! t {
+          (
+          , .(_k: T_const) { recur vars_from(rest, acc) }
+          , .(v: T_var) {
+              if! holds_code(acc, v.?{t_var}) {
+                recur vars_from(rest, acc)
+              } else {
+                recur vars_from(rest, list.snoc(acc, v.?{t_var}))
+              }
+            }
+          )
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

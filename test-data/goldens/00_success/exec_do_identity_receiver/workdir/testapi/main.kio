@@ -8,11 +8,7 @@ type Identity[A] = A;
 fn bind[A][B](value: Identity(A), next: A -> Identity(B)) -> Identity(B) { next(value) }
 
 pub fn main() {
-  let result =
-    do! bind {
-      let value <- ();
-      value
-    };
+  let result = do! bind { let value <- (); value };
   result;
   io.print("identity\n")
 }

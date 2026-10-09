@@ -19,9 +19,7 @@ fn show_int(n: I32) { print(int_to_string(n)) }
 fn show_string(s: String) { print(s) }
 
 fn handle(v: I32 | String) {
-  match! v {
-    (show_int, show_string)
-  }
+  match! v { (show_int, show_string) }
 }
 
 pub fn main() { handle(widen_sum!("matched right\n")) }

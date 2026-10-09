@@ -18,34 +18,34 @@ pub fn dispatch_left(s: I32 | String) -> String {
 }
 
 pub fn rotate((
-  , a: I32
-  , b: I32
-  , c: I32
-  , d: I32
-  , e: I32
-  , f: I32
-  , g: I32
-  , h: I32
-  , i: I32
-  , j: I32
-  , k: I32
-  , l: I32
-  )) -> Wide_product { (l, a, b, c, d, e, f, g, h, i, j, k) }
+, a: I32
+, b: I32
+, c: I32
+, d: I32
+, e: I32
+, f: I32
+, g: I32
+, h: I32
+, i: I32
+, j: I32
+, k: I32
+, l: I32
+)) -> Wide_product { (l, a, b, c, d, e, f, g, h, i, j, k) }
 
 pub fn classify(value: Wide_sum) -> I32 {
   match! value {
     (
-      , .(_v: I8) { 1(I32) }
-      , .(_v: I16) { 2(I32) }
-      , .(_v: I32) { 3(I32) }
-      , .(_v: I64) { 4(I32) }
-      , .(_v: U8) { 5(I32) }
-      , .(_v: U16) { 6(I32) }
-      , .(_v: U32) { 7(I32) }
-      , .(_v: U64) { 8(I32) }
-      , .(_v: Bool) { 9(I32) }
-      , .(_v: String) { 10(I32) }
-      )
+    , .(_v: I8) { 1(I32) }
+    , .(_v: I16) { 2(I32) }
+    , .(_v: I32) { 3(I32) }
+    , .(_v: I64) { 4(I32) }
+    , .(_v: U8) { 5(I32) }
+    , .(_v: U16) { 6(I32) }
+    , .(_v: U32) { 7(I32) }
+    , .(_v: U64) { 8(I32) }
+    , .(_v: Bool) { 9(I32) }
+    , .(_v: String) { 10(I32) }
+    )
   }
 }
 

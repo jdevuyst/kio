@@ -44,22 +44,22 @@ fn inject_d() -> Wide {
 
 fn inject_h() -> Wide {
   __right__(
-    , A
-    , Tail1
+  , A
+  , Tail1
+  , __right__(
+    , B
+    , Tail3
     , __right__(
-        , B
-        , Tail3
-        , __right__(
-            , C
-            , Tail4
-            , __right__(
-                , D
-                , Tail5
-                , __right__(E, Tail6, __right__(F, Tail7, __right__(G, H, H.mk_h(8(I32)))))
-                )
-            )
+      , C
+      , Tail4
+      , __right__(
+        , D
+        , Tail5
+        , __right__(E, Tail6, __right__(F, Tail7, __right__(G, H, H.mk_h(8(I32)))))
         )
+      )
     )
+  )
 }
 
 fn describe_tail7(value: Tail7) -> I32 {
@@ -68,68 +68,68 @@ fn describe_tail7(value: Tail7) -> I32 {
 
 fn describe_tail6(value: Tail6) -> I32 {
   __either__(
-    , F
-    , Tail7
-    , I32
-    , value
-    , .(f: F) -> I32 { F.un_f(f) }
-    , .(tail: Tail7) -> I32 { describe_tail7(tail) }
-    )
+  , F
+  , Tail7
+  , I32
+  , value
+  , .(f: F) -> I32 { F.un_f(f) }
+  , .(tail: Tail7) -> I32 { describe_tail7(tail) }
+  )
 }
 
 fn describe_tail5(value: Tail5) -> I32 {
   __either__(
-    , E
-    , Tail6
-    , I32
-    , value
-    , .(e: E) -> I32 { E.un_e(e) }
-    , .(tail: Tail6) -> I32 { describe_tail6(tail) }
-    )
+  , E
+  , Tail6
+  , I32
+  , value
+  , .(e: E) -> I32 { E.un_e(e) }
+  , .(tail: Tail6) -> I32 { describe_tail6(tail) }
+  )
 }
 
 fn describe_tail4(value: Tail4) -> I32 {
   __either__(
-    , D
-    , Tail5
-    , I32
-    , value
-    , .(d: D) -> I32 { D.un_d(d) }
-    , .(tail: Tail5) -> I32 { describe_tail5(tail) }
-    )
+  , D
+  , Tail5
+  , I32
+  , value
+  , .(d: D) -> I32 { D.un_d(d) }
+  , .(tail: Tail5) -> I32 { describe_tail5(tail) }
+  )
 }
 
 fn describe_tail3(value: Tail3) -> I32 {
   __either__(
-    , C
-    , Tail4
-    , I32
-    , value
-    , .(c: C) -> I32 { C.un_c(c) }
-    , .(tail: Tail4) -> I32 { describe_tail4(tail) }
-    )
+  , C
+  , Tail4
+  , I32
+  , value
+  , .(c: C) -> I32 { C.un_c(c) }
+  , .(tail: Tail4) -> I32 { describe_tail4(tail) }
+  )
 }
 
 fn describe_tail1(value: Tail1) -> I32 {
   __either__(
-    , B
-    , Tail3
-    , I32
-    , value
-    , .(b: B) -> I32 { B.un_b(b) }
-    , .(tail: Tail3) -> I32 { describe_tail3(tail) }
-    )
+  , B
+  , Tail3
+  , I32
+  , value
+  , .(b: B) -> I32 { B.un_b(b) }
+  , .(tail: Tail3) -> I32 { describe_tail3(tail) }
+  )
 }
 
 fn describe(value: Wide) -> I32 {
   __either__(
-    , A
-    , Tail1
-    , I32
-    , value
-    , .(a: A) -> I32 { A.un_a(a) }
-    , .(tail: Tail1) -> I32 { describe_tail1(tail) }
-    )
+  , A
+  , Tail1
+  , I32
+  , value
+  , .(a: A) -> I32 { A.un_a(a) }
+  , .(tail: Tail1) -> I32 { describe_tail1(tail) }
+  )
 }
 
 pub fn main() {

@@ -36,9 +36,9 @@ fn nil_c[K][V]() -> Crumbs(K, V) {
 
 fn cons_l[K][V](key: K, val: V, t: Crumbs(K, V)) -> Crumbs(K, V) {
   {crumbs = widen_sum!(
-    , (widen_sum!({left = (key, val)}, Left(K, V) | Right(K, V)), t)
-    , . | ((Left(K, V) | Right(K, V)) & Crumbs(K, V))
-    )}
+  , (widen_sum!({left = (key, val)}, Left(K, V) | Right(K, V)), t)
+  , . | ((Left(K, V) | Right(K, V)) & Crumbs(K, V))
+  )}
 }
 
 fn boxed[K][V](t: Trail(K, V)) -> Box(K, V) { {box = t} }
@@ -47,35 +47,35 @@ fn boxed[K][V](t: Trail(K, V)) -> Box(K, V) { {box = t} }
 // recursive sum-of-products carrier through the loop body.
 fn head_key(b: Box(I32, I32)) -> I32 {
   loop(
-    , .(cur: Box(I32, I32)) -> Box(I32, I32) | I32 {
-        match! Crumbs.get(I32, I32, Box.get(I32, I32, cur)) {
-          (
-            , .(cell: (Left(I32, I32) | Right(I32, I32)) & Crumbs(I32, I32)) {
-                match! cell {
-                  .(arm: Left(I32, I32) | Right(I32, I32), _rest: Crumbs(I32, I32)) {
-                    match! arm {
-                      (
-                        , .(l: Left(I32, I32)) {
-                            match! Left.get(I32, I32, l) {
-                              .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
-                            }
-                          }
-                        , .(r: Right(I32, I32)) {
-                            match! Right.get(I32, I32, r) {
-                              .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
-                            }
-                          }
-                        )
+  , .(cur: Box(I32, I32)) -> Box(I32, I32) | I32 {
+      match! Crumbs.get(I32, I32, Box.get(I32, I32, cur)) {
+        (
+        , .(cell: (Left(I32, I32) | Right(I32, I32)) & Crumbs(I32, I32)) {
+            match! cell {
+              .(arm: Left(I32, I32) | Right(I32, I32), _rest: Crumbs(I32, I32)) {
+                match! arm {
+                  (
+                  , .(l: Left(I32, I32)) {
+                      match! Left.get(I32, I32, l) {
+                        .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
+                      }
                     }
-                  }
+                  , .(r: Right(I32, I32)) {
+                      match! Right.get(I32, I32, r) {
+                        .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
+                      }
+                    }
+                  )
                 }
               }
-            , .(_empty: .) { widen_sum!(0, Box(I32, I32) | I32) }
-            )
-        }
+            }
+          }
+        , .(_empty: .) { widen_sum!(0, Box(I32, I32) | I32) }
+        )
       }
-    , b
-    )
+    }
+  , b
+  )
 }
 
 pub fn main() { print(int_to_string(head_key(boxed(cons_l(7, 70, nil_c(I32, I32, ())))))) }

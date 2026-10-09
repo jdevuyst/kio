@@ -10,17 +10,17 @@ import host_descriptor(host_fn_eq);
 import host_descriptor(mk_host_fn, mk_host_id);
 import hostrec(make_lit_default, serve_default, test_bool_default);
 import loader(
-  , {apply}
-  , {bool_in}
-  , {exports}
-  , {f64_out}
-  , {hostfn_in}
-  , {i32_in}
-  , {i32_out}
-  , {lookup}
-  , {pair_in}
-  , {pair_out}
-  );
+, {apply}
+, {bool_in}
+, {exports}
+, {f64_out}
+, {hostfn_in}
+, {i32_in}
+, {i32_out}
+, {lookup}
+, {pair_in}
+, {pair_out}
+);
 import loader(Contract, Diag, Host_adapter, Image, Loaded, Surface, contract_check);
 import loader(Export_info, Export_infos, un_export_infos);
 import loader(Lr_diag, Lr_image);
@@ -128,40 +128,40 @@ fn guest_image() -> String {
 fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> String {
   match! surf.?{lookup}(name) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
-            (
-              , .(r: P) {
-                  match! surf.?{i32_out}(r) {
-                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
-                  }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+          (
+          , .(r: P) {
+              match! surf.?{i32_out}(r) {
+                (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
 fn run_greet[P](surf: Surface(P), who: String) -> String {
   match! surf.?{lookup}("greet"(String)) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{str_in}(who))) {
-            (
-              , .(r: P) {
-                  match! surf.?{str_out}(r) {
-                    (.(s: String) { s }, .(d: Diag) { diag_message(d) })
-                  }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{str_in}(who))) {
+          (
+          , .(r: P) {
+              match! surf.?{str_out}(r) {
+                (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -170,13 +170,13 @@ fn run_greet[P](surf: Surface(P), who: String) -> String {
 fn run_greet_wrong[P](surf: Surface(P)) -> String {
   match! surf.?{lookup}("greet"(String)) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{i32_in}(3(I32)))) {
-            (.(_r: P) { "unexpectedly succeeded"(String) }, .(d: Diag) { diag_message(d) })
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{i32_in}(3(I32)))) {
+          (.(_r: P) { "unexpectedly succeeded"(String) }, .(d: Diag) { diag_message(d) })
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -185,25 +185,25 @@ fn run_greet_wrong[P](surf: Surface(P)) -> String {
 fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
   match! surf.?{lookup}("add3"(String)) {
     (
-      , .(g: P) {
-          let arg =
-            surf.?{pair_in}((
-              , surf.?{i32_in}(a)
-              , surf.?{pair_in}((surf.?{i32_in}(b), surf.?{i32_in}(c)))
-              ));
-          match! surf.?{apply}((g, arg)) {
-            (
-              , .(r: P) {
-                  match! surf.?{i32_out}(r) {
-                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
-                  }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+    , .(g: P) {
+        let arg =
+          surf.?{pair_in}((
+          , surf.?{i32_in}(a)
+          , surf.?{pair_in}((surf.?{i32_in}(b), surf.?{i32_in}(c)))
+          ));
+        match! surf.?{apply}((g, arg)) {
+          (
+          , .(r: P) {
+              match! surf.?{i32_out}(r) {
+                (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -211,25 +211,25 @@ fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
 fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
   match! surf.?{lookup}("pick"(String)) {
     (
-      , .(g: P) {
-          let arg =
-            surf.?{pair_in}((
-              , surf.?{bool_in}(b)
-              , surf.?{pair_in}((surf.?{i32_in}(x), surf.?{i32_in}(y)))
-              ));
-          match! surf.?{apply}((g, arg)) {
-            (
-              , .(r: P) {
-                  match! surf.?{i32_out}(r) {
-                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
-                  }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+    , .(g: P) {
+        let arg =
+          surf.?{pair_in}((
+          , surf.?{bool_in}(b)
+          , surf.?{pair_in}((surf.?{i32_in}(x), surf.?{i32_in}(y)))
+          ));
+        match! surf.?{apply}((g, arg)) {
+          (
+          , .(r: P) {
+              match! surf.?{i32_out}(r) {
+                (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -238,34 +238,34 @@ fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
 fn run_scaled_gain[P](surf: Surface(P)) -> String {
   match! surf.?{lookup}("default_gain"(String)) {
     (
-      , .(gain_fn: P) {
-          match! surf.?{apply}((gain_fn, surf.?{unit_in})) {
-            (
-              , .(gain: P) {
-                  match! surf.?{lookup}("scale"(String)) {
-                    (
-                      , .(scale_fn: P) {
-                          match! surf.?{apply}((scale_fn, gain)) {
-                            (
-                              , .(r: P) {
-                                  match! surf.?{f64_out}(r) {
-                                    (.(x: F64) { f64_to_string(x) }, .(d: Diag) { diag_message(d) })
-                                  }
-                                }
-                              , .(d: Diag) { diag_message(d) }
-                              )
+    , .(gain_fn: P) {
+        match! surf.?{apply}((gain_fn, surf.?{unit_in})) {
+          (
+          , .(gain: P) {
+              match! surf.?{lookup}("scale"(String)) {
+                (
+                , .(scale_fn: P) {
+                    match! surf.?{apply}((scale_fn, gain)) {
+                      (
+                      , .(r: P) {
+                          match! surf.?{f64_out}(r) {
+                            (.(x: F64) { f64_to_string(x) }, .(d: Diag) { diag_message(d) })
                           }
                         }
                       , .(d: Diag) { diag_message(d) }
                       )
+                    }
                   }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+                , .(d: Diag) { diag_message(d) }
+                )
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -273,47 +273,47 @@ fn run_scaled_gain[P](surf: Surface(P)) -> String {
 fn run_divmod[P](surf: Surface(P), a: I32, b: I32) -> String {
   match! surf.?{lookup}("divmod"(String)) {
     (
-      , .(g: P) {
-          let arg = surf.?{pair_in}((surf.?{i32_in}(a), surf.?{i32_in}(b)));
-          match! surf.?{apply}((g, arg)) {
-            (
-              , .(r: P) {
-                  match! surf.?{pair_out}(r) {
-                    (
-                      , .(parts: P & P) {
-                          match! parts {
-                            .(q: P, m: P) {
-                              match! surf.?{i32_out}(q) {
+    , .(g: P) {
+        let arg = surf.?{pair_in}((surf.?{i32_in}(a), surf.?{i32_in}(b)));
+        match! surf.?{apply}((g, arg)) {
+          (
+          , .(r: P) {
+              match! surf.?{pair_out}(r) {
+                (
+                , .(parts: P & P) {
+                    match! parts {
+                      .(q: P, m: P) {
+                        match! surf.?{i32_out}(q) {
+                          (
+                          , .(qn: I32) {
+                              match! surf.?{i32_out}(m) {
                                 (
-                                  , .(qn: I32) {
-                                      match! surf.?{i32_out}(m) {
-                                        (
-                                          , .(mn: I32) {
-                                              string_concat(
-                                                , int_to_string(qn)
-                                                , string_concat(" r "(String), int_to_string(mn))
-                                                )
-                                            }
-                                          , .(d: Diag) { diag_message(d) }
-                                          )
-                                      }
-                                    }
-                                  , .(d: Diag) { diag_message(d) }
-                                  )
+                                , .(mn: I32) {
+                                    string_concat(
+                                    , int_to_string(qn)
+                                    , string_concat(" r "(String), int_to_string(mn))
+                                    )
+                                  }
+                                , .(d: Diag) { diag_message(d) }
+                                )
                               }
                             }
-                          }
+                          , .(d: Diag) { diag_message(d) }
+                          )
                         }
-                      , .(d: Diag) { diag_message(d) }
-                      )
+                      }
+                    }
                   }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+                , .(d: Diag) { diag_message(d) }
+                )
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -321,71 +321,68 @@ fn run_divmod[P](surf: Surface(P), a: I32, b: I32) -> String {
 fn run_classify[P](surf: Surface(P), n: I32) -> String {
   match! surf.?{lookup}("classify"(String)) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{i32_in}(n))) {
-            (
-              , .(r: P) {
-                  match! surf.?{sum_is_left}(r) {
-                    (
-                      , .(is_left: Bool) {
-                          match! surf.?{sum_payload}(r) {
-                            (
-                              , .(payload: P) {
-                                  if! is_left {
-                                    match! surf.?{str_out}(payload) {
-                                      (.(s: String) { s }, .(d: Diag) { diag_message(d) })
-                                    }
-                                  } else match! surf.?{i32_out}(payload) {
-                                    (.(m: I32) { int_to_string(m) }, .(d: Diag) { diag_message(d) })
-                                  }
-                                }
-                              , .(d: Diag) { diag_message(d) }
-                              )
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{i32_in}(n))) {
+          (
+          , .(r: P) {
+              match! surf.?{sum_is_left}(r) {
+                (
+                , .(is_left: Bool) {
+                    match! surf.?{sum_payload}(r) {
+                      (
+                      , .(payload: P) {
+                          if! is_left {
+                            match! surf.?{str_out}(payload) {
+                              (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+                            }
+                          } else match! surf.?{i32_out}(payload) {
+                            (.(m: I32) { int_to_string(m) }, .(d: Diag) { diag_message(d) })
                           }
                         }
                       , .(d: Diag) { diag_message(d) }
                       )
+                    }
                   }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+                , .(d: Diag) { diag_message(d) }
+                )
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
 // Render the surface's export listing, one `name : signature` line each.
 fn render_exports[P](surf: Surface(P)) -> String {
   loop(
-    , .(st: Export_infos & String) {
-        match! st {
-          .(rem: Export_infos, acc: String) {
-            match! un_export_infos(rem) {
-              (
-                , .(e: Export_info, rest: Export_infos) {
-                    let line =
-                      string_concat(
-                        , "  "(String)
-                        , string_concat(
-                            , export_info_name(e)
-                            , string_concat(
-                                , " : "(String)
-                                , string_concat(export_info_sig(e), "\n"(String))
-                                )
-                            )
-                        );
-                    widen_sum!((rest, string_concat(acc, line)), (Export_infos & String) | String)
-                  }
-                , .(_e: .) { widen_sum!(acc, (Export_infos & String) | String) }
-                )
-            }
+  , .(st: Export_infos & String) {
+      match! st {
+        .(rem: Export_infos, acc: String) {
+          match! un_export_infos(rem) {
+            (
+            , .(e: Export_info, rest: Export_infos) {
+                let line =
+                  string_concat(
+                  , "  "(String)
+                  , string_concat(
+                    , export_info_name(e)
+                    , string_concat(" : "(String), string_concat(export_info_sig(e), "\n"(String)))
+                    )
+                  );
+                widen_sum!((rest, string_concat(acc, line)), (Export_infos & String) | String)
+              }
+            , .(_e: .) { widen_sum!(acc, (Export_infos & String) | String) }
+            )
           }
         }
       }
-    , (surf.?{exports}, ""(String))
-    )
+    }
+  , (surf.?{exports}, ""(String))
+  )
 }
 
 // The guest newtype's members are loadable entries: `Tag.mk_tag` (the
@@ -395,34 +392,34 @@ fn render_exports[P](surf: Surface(P)) -> String {
 fn run_tag_roundtrip[P](surf: Surface(P), x: I32) -> String {
   match! surf.?{lookup}("Tag.mk_tag"(String)) {
     (
-      , .(mk: P) {
-          match! surf.?{apply}((mk, surf.?{i32_in}(x))) {
-            (
-              , .(tagged: P) {
-                  match! surf.?{lookup}("guest.Tag.un_tag"(String)) {
-                    (
-                      , .(un: P) {
-                          match! surf.?{apply}((un, tagged)) {
-                            (
-                              , .(r: P) {
-                                  match! surf.?{i32_out}(r) {
-                                    (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
-                                  }
-                                }
-                              , .(d: Diag) { diag_message(d) }
-                              )
+    , .(mk: P) {
+        match! surf.?{apply}((mk, surf.?{i32_in}(x))) {
+          (
+          , .(tagged: P) {
+              match! surf.?{lookup}("guest.Tag.un_tag"(String)) {
+                (
+                , .(un: P) {
+                    match! surf.?{apply}((un, tagged)) {
+                      (
+                      , .(r: P) {
+                          match! surf.?{i32_out}(r) {
+                            (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                           }
                         }
                       , .(d: Diag) { diag_message(d) }
                       )
+                    }
                   }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+                , .(d: Diag) { diag_message(d) }
+                )
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -477,44 +474,41 @@ fn with_surface(handle: Loaded, arg: I32, which: I32) -> String {
 // an absent export and a wrong canonical signature.
 fn good_contract() -> Contract {
   contract_cons(
-    , mk_expect("greet"(String), "(h{hostapi.String}) -> h{hostapi.String}"(String))
+  , mk_expect("greet"(String), "(h{hostapi.String}) -> h{hostapi.String}"(String))
+  , contract_cons(
+    , mk_expect("quad"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
     , contract_cons(
-        , mk_expect("quad"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+      , mk_expect("use_poly"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+      , contract_cons(
+        , mk_expect(
+          , "add3"(String)
+          , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
+          )
         , contract_cons(
-            , mk_expect("use_poly"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
-            , contract_cons(
-                , mk_expect(
-                    , "add3"(String)
-                    , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
-                    )
-                , contract_cons(
-                    , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
-                    , contract_cons(
-                        , mk_expect(
-                            , "guest.Tag.un_tag"(String)
-                            , "[#0] (n{guest.Tag}(#0)) -> #0"(String)
-                            )
-                        , contract_nil()
-                        )
-                    )
-                )
+          , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
+          , contract_cons(
+            , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
+            , contract_nil()
             )
+          )
         )
+      )
     )
+  )
 }
 
 fn missing_contract() -> Contract {
   contract_cons(
-    , mk_expect("triple"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
-    , contract_nil()
-    )
+  , mk_expect("triple"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+  , contract_nil()
+  )
 }
 
 fn signature_contract() -> Contract {
   contract_cons(
-    , mk_expect("add3"(String), "(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}"(String))
-    , contract_nil()
-    )
+  , mk_expect("add3"(String), "(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}"(String))
+  , contract_nil()
+  )
 }
 
 // =====================================================================
@@ -525,16 +519,16 @@ fn signature_contract() -> Contract {
 fn host_double(dom: Value) -> Call_result {
   match! value_to_scalar(dom) {
     (
-      , .(s: Scalar) {
-          match! scalar_as_i32(s) {
-            (
-              , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
-              , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
-              )
-          }
+    , .(s: Scalar) {
+        match! scalar_as_i32(s) {
+          (
+          , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
+          , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
+          )
         }
-      , .(_no: .) { call_stuck("host_double expected a scalar"(String)) }
-      )
+      }
+    , .(_no: .) { call_stuck("host_double expected a scalar"(String)) }
+    )
   }
 }
 
@@ -542,20 +536,20 @@ fn host_double(dom: Value) -> Call_result {
 // implemented by the `call` capability passed to `instantiate`.
 fn host_double_descriptor() -> Host_fn {
   mk_host_fn(
-    , mk_host_id("testapi/main"(String), "host_double"(String))
-    , "(h{hostapi.I32}) -> h{hostapi.I32}"(String)
-    )
+  , mk_host_id("testapi/main"(String), "host_double"(String))
+  , "(h{hostapi.I32}) -> h{hostapi.I32}"(String)
+  )
 }
 
 fn adapter_with_callbacks() -> Host_adapter {
   let standard = default_host_adapter();
   mk_host_adapter(
-    , host_adapter_types(standard)
-    , host_fn_bindings_cons(
-        , mk_host_fn_binding(host_double_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
-        , host_adapter_functions(standard)
-        )
+  , host_adapter_types(standard)
+  , host_fn_bindings_cons(
+    , mk_host_fn_binding(host_double_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
+    , host_adapter_functions(standard)
     )
+  )
 }
 
 fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
@@ -575,27 +569,27 @@ fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
 fn run_apply_cb[P](surf: Surface(P), x: I32) -> String {
   match! surf.?{hostfn_in}(host_double_descriptor()) {
     (
-      , .(cb: P) {
-          match! surf.?{lookup}("apply_cb"(String)) {
-            (
-              , .(f: P) {
-                  match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
-                    (
-                      , .(r: P) {
-                          match! surf.?{i32_out}(r) {
-                            (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
-                          }
-                        }
-                      , .(d: Diag) { diag_message(d) }
-                      )
+    , .(cb: P) {
+        match! surf.?{lookup}("apply_cb"(String)) {
+          (
+          , .(f: P) {
+              match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
+                (
+                , .(r: P) {
+                    match! surf.?{i32_out}(r) {
+                      (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
+                    }
                   }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+                , .(d: Diag) { diag_message(d) }
+                )
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -635,16 +629,18 @@ fn line(label: String, body: String) -> String {
 /// with the minted handle.
 fn callback_demo(image: Image, x: I32) -> String {
   match! un_inst(instantiate(
-    , adapter_with_callbacks()
-    , serve_with_callbacks
-    , make_lit_default
-    , test_bool_default
-    , image
-    )) {
+  , adapter_with_callbacks()
+  , serve_with_callbacks
+  , make_lit_default
+  , test_bool_default
+  , image
+  )) {
     (
-      , .(handle: Loaded) { Loaded.get(handle)(.[P](surf: Surface(P)) { run_apply_cb(surf, x) }) }
-      , .(d: Diag) { diag_message(d) }
-      )
+    , .(handle: Loaded) {
+        Loaded.get(handle)(.[P](surf: Surface(P)) { run_apply_cb(surf, x) })
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 
@@ -679,8 +675,8 @@ pub fn main() {
   print(loader_allocator_hygiene_report());
   match! un_load_outcome(load_package(guest_image())) {
     (
-      , .(im: Lr_image) { run_image(Lr_image.get(im)) }
-      , .(d: Lr_diag) { print(diag_message(Lr_diag.get(d))) }
-      )
+    , .(im: Lr_image) { run_image(Lr_image.get(im)) }
+    , .(d: Lr_diag) { print(diag_message(Lr_diag.get(d))) }
+    )
   }
 }

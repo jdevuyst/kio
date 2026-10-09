@@ -1128,7 +1128,9 @@ fn go_canonical_method(
                 selection.role_type(bool_),
             )
         }
-        HostFnBodyKind::Loop => go_alias_method(binding, qualifier, selection, 2, true),
+        HostFnBodyKind::Loop | HostFnBodyKind::LoopReentry => {
+            go_alias_method(binding, qualifier, selection, 2, true)
+        }
         HostFnBodyKind::StringSlice { string, index } => go_method_with_types(
             binding,
             vec![
@@ -2306,6 +2308,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         HostFnBodyKind::StringSlice { .. } => CanonicalKind::StringSlice,
         HostFnBodyKind::StringCodeAt { .. } => CanonicalKind::StringCodeAt,
         HostFnBodyKind::Loop => CanonicalKind::Loop,
+        HostFnBodyKind::LoopReentry => CanonicalKind::LoopReentry,
         HostFnBodyKind::NumericToString { value, .. } => CanonicalKind::NumericToString {
             kind: value.fixture.role().to_owned(),
         },
@@ -2548,6 +2551,24 @@ fn render_go_body_for_binding(
             );
             render_loop_body(&cbret)
         }
+        HostFnBodyKind::LoopReentry => {
+            let alias = |slot| {
+                env_alias(
+                    ns,
+                    binding.module,
+                    binding.leaf,
+                    slot,
+                    &selection.root_arguments(),
+                )
+            };
+            let (case_0, case_1) = sum_cases(&alias("arg0_cbret"));
+            let pair = alias("arg0_cbarg0");
+            let state = &m.arg_types[1];
+            let result = &m.ret_type;
+            format!(
+                "var run func({state}) {result}\n\trun = func(state {state}) {result} {{\n\t\tfor {{\n\t\t\tswitch next := arg0({pair}{{F0: run, F1: state}}).Case().(type) {{\n\t\t\tcase {case_0}:\n\t\t\t\tstate = next.Value()\n\t\t\tcase {case_1}:\n\t\t\t\treturn next.Value()\n\t\t\tdefault:\n\t\t\t\tpanic(\"loop_reentry: foreign step result\")\n\t\t\t}}\n\t\t}}\n\t}}\n\treturn run(arg1)"
+            )
+        }
         HostFnBodyKind::UnreachableI32Print { .. } => {
             "panic(\"unreachable host function\")".to_owned()
         }
@@ -2610,6 +2631,9 @@ fn render_go_body(kind: &CanonicalKind, m: &TraitMethod, ns: &str) -> String {
         CanonicalKind::FloatArith { op, .. } => float_arith_body(op),
         CanonicalKind::Cmp { cmp, kind } => cmp_body(cmp, kind),
         CanonicalKind::Loop => unreachable!("loop uses its protocol-owned callback aliases"),
+        CanonicalKind::LoopReentry => {
+            unreachable!("re-entry uses its protocol-owned callback aliases")
+        }
         CanonicalKind::Array(op) => render_array_body(op, m, ns, None),
         CanonicalKind::Custom => format!(
             "panic(\"kio-test-runner-go: no canonical impl for host fn `{}`\")",

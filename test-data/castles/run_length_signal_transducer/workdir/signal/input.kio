@@ -16,7 +16,7 @@ rec(loop) fn read(state: codec.Encoder, originals_rev: lists.List(I32)) -> Read_
   match! io.read_ascii_line() {
     .(line: String) {
       match! fmt.string_to_int(line) {
-        .(value: I32) { rec read(codec.accept(state, value), lists.cons(value, originals_rev)) };
+        .(value: I32) { recur read(codec.accept(state, value), lists.cons(value, originals_rev)) };
         .() { line.>widen_sum!(Read_result) }
       }
     };

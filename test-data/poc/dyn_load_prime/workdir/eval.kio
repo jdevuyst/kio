@@ -6,22 +6,22 @@ import elab/match(match);
 import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_fn, Host_type);
 import prime(
-  , T_absurd
-  , T_app
-  , T_either
-  , T_fst
-  , T_hostfn
-  , T_ite
-  , T_lam
-  , T_left
-  , T_let
-  , T_lit
-  , T_pair
-  , T_right
-  , T_snd
-  , T_unit
-  , T_var
-  );
+, T_absurd
+, T_app
+, T_either
+, T_fst
+, T_hostfn
+, T_ite
+, T_lam
+, T_left
+, T_let
+, T_lit
+, T_pair
+, T_right
+, T_snd
+, T_unit
+, T_var
+);
 import prime(Group_slots, Nat, Term, Term_node);
 import prime(lit_text, lit_type);
 import prime(un_group_slots, un_nat, un_term);
@@ -436,29 +436,27 @@ fn host_group_stuck() -> Eval_result {
 /// Looks up de Bruijn index `i` in environment `e`, driven by the host `loop`.
 pub fn env_lookup(e: Env, i: Nat) -> . | Value {
   loop(
-    , .(st: Env & Nat) {
-        match! st {
-          .(ce: Env, ci: Nat) {
-            match! un_env(ce) {
-              (
-                , .(head: Value, rest: Env) {
-                    match! un_nat(ci) {
-                      (
-                        , .(pred: Nat) { widen_sum!((rest, pred), (Env & Nat) | . | Value) }
-                        , .(_z: .) {
-                            widen_sum!(widen_sum!(head, . | Value), (Env & Nat) | . | Value)
-                          }
-                        )
-                    }
-                  }
-                , .(_empty: .) { widen_sum!(widen_sum!((), . | Value), (Env & Nat) | . | Value) }
-                )
-            }
+  , .(st: Env & Nat) {
+      match! st {
+        .(ce: Env, ci: Nat) {
+          match! un_env(ce) {
+            (
+            , .(head: Value, rest: Env) {
+                match! un_nat(ci) {
+                  (
+                  , .(pred: Nat) { widen_sum!((rest, pred), (Env & Nat) | . | Value) }
+                  , .(_z: .) { widen_sum!(widen_sum!(head, . | Value), (Env & Nat) | . | Value) }
+                  )
+                }
+              }
+            , .(_empty: .) { widen_sum!(widen_sum!((), . | Value), (Env & Nat) | . | Value) }
+            )
           }
         }
       }
-    , (e, i)
-    )
+    }
+  , (e, i)
+  )
 }
 
 // =====================================================================
@@ -513,13 +511,13 @@ fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
         if! eq_i32(slots, 0(I32)) {
           match! un_value(value) {
             (
-              , .(_unit: V_unit) { flat_finish(flat_ok(acc)) }
-              , .(_closure: V_closure) { flat_finish(flat_bad()) }
-              , .(_product: V_product) { flat_finish(flat_bad()) }
-              , .(_sum: V_sum) { flat_finish(flat_bad()) }
-              , .(_host: V_host) { flat_finish(flat_bad()) }
-              , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
-              )
+            , .(_unit: V_unit) { flat_finish(flat_ok(acc)) }
+            , .(_closure: V_closure) { flat_finish(flat_bad()) }
+            , .(_product: V_product) { flat_finish(flat_bad()) }
+            , .(_sum: V_sum) { flat_finish(flat_bad()) }
+            , .(_host: V_host) { flat_finish(flat_bad()) }
+            , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
+            )
           }
         } else {
           flat_finish(flat_bad())
@@ -528,22 +526,22 @@ fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
         flat_finish(flat_ok(vals_push(value, acc)))
       } else match! un_value(value) {
         (
-          , .(product: V_product) {
-              match! V_product.get(product) {
-                .(head: Value, tail: Value) {
-                  widen_sum!(
-                    , {flat_group = (tail, (sub_i32(slots, 1(I32)), vals_push(head, acc)))}
-                    , Flat_group | Flat_result
-                    )
-                }
+        , .(product: V_product) {
+            match! V_product.get(product) {
+              .(head: Value, tail: Value) {
+                widen_sum!(
+                , {flat_group = (tail, (sub_i32(slots, 1(I32)), vals_push(head, acc)))}
+                , Flat_group | Flat_result
+                )
               }
             }
-          , .(_closure: V_closure) { flat_finish(flat_bad()) }
-          , .(_sum: V_sum) { flat_finish(flat_bad()) }
-          , .(_unit: V_unit) { flat_finish(flat_bad()) }
-          , .(_host: V_host) { flat_finish(flat_bad()) }
-          , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
-          )
+          }
+        , .(_closure: V_closure) { flat_finish(flat_bad()) }
+        , .(_sum: V_sum) { flat_finish(flat_bad()) }
+        , .(_unit: V_unit) { flat_finish(flat_bad()) }
+        , .(_host: V_host) { flat_finish(flat_bad()) }
+        , .(_hostfn: V_hostfn) { flat_finish(flat_bad()) }
+        )
       }
     }
   }
@@ -556,27 +554,27 @@ fn flatten_group(value: Value, slots: I32, acc: Vals) -> Flat_result {
 fn vals_to_domain(acc: Vals) -> Value {
   match! un_vals(acc) {
     (
-      , .(deepest: Value, rest0: Vals) {
-          loop(
-            , .(state: Value & Vals) {
-                match! state {
-                  .(built: Value, remaining: Vals) {
-                    match! un_vals(remaining) {
-                      (
-                        , .(value: Value, rest: Vals) {
-                            widen_sum!((vproduct(value, built), rest), (Value & Vals) | Value)
-                          }
-                        , .(_empty: .) { widen_sum!(built, (Value & Vals) | Value) }
-                        )
+    , .(deepest: Value, rest0: Vals) {
+        loop(
+        , .(state: Value & Vals) {
+            match! state {
+              .(built: Value, remaining: Vals) {
+                match! un_vals(remaining) {
+                  (
+                  , .(value: Value, rest: Vals) {
+                      widen_sum!((vproduct(value, built), rest), (Value & Vals) | Value)
                     }
-                  }
+                  , .(_empty: .) { widen_sum!(built, (Value & Vals) | Value) }
+                  )
                 }
               }
-            , (deepest, rest0)
-            )
-        }
-      , .(_empty: .) { vunit() }
-      )
+            }
+          }
+        , (deepest, rest0)
+        )
+      }
+    , .(_empty: .) { vunit() }
+    )
   }
 }
 
@@ -595,76 +593,76 @@ fn finish_loop(payload: Value, k: Kont, fuel: I32) -> State | Eval_result {
 fn feed(r: Call_result, k: Kont, fuel: I32) -> State | Eval_result {
   match! r {
     (
-      , .(d: Ev_done) { go(mk_state(c_ret(Ev_done.get(d)), k, fuel)) }
-      , .(st: Ev_stuck) { halt(ev_stuck(stuck_reason(st))) }
-      , .(f: Ev_fold) {
-          match! Ev_fold.get(f) {
-            .(step: Value, init: Value) { apply_loop_step(step, init, k, fuel) }
+    , .(d: Ev_done) { go(mk_state(c_ret(Ev_done.get(d)), k, fuel)) }
+    , .(st: Ev_stuck) { halt(ev_stuck(stuck_reason(st))) }
+    , .(f: Ev_fold) {
+        match! Ev_fold.get(f) {
+          .(step: Value, init: Value) { apply_loop_step(step, init, k, fuel) }
+        }
+      }
+    , .(a: Ev_apply) {
+        match! Ev_apply.get(a) {
+          .(fv: Value, arg: Value) { go(mk_state(c_ret(arg), kont_push(mk_app1(fv), k), fuel)) }
+        }
+      }
+    , .(at: Ev_apply_then) {
+        match! Ev_apply_then.get(at) {
+          .(fv: Value, arg: Value, cont: Host_fn, state: Value) {
+            go(mk_state(
+            , c_ret(arg)
+            , kont_push(mk_app1(fv), kont_push(mk_hostcont(cont, state), k))
+            , fuel
+            ))
           }
         }
-      , .(a: Ev_apply) {
-          match! Ev_apply.get(a) {
-            .(fv: Value, arg: Value) { go(mk_state(c_ret(arg), kont_push(mk_app1(fv), k), fuel)) }
-          }
-        }
-      , .(at: Ev_apply_then) {
-          match! Ev_apply_then.get(at) {
-            .(fv: Value, arg: Value, cont: Host_fn, state: Value) {
-              go(mk_state(
-                , c_ret(arg)
-                , kont_push(mk_app1(fv), kont_push(mk_hostcont(cont, state), k))
-                , fuel
-                ))
-            }
-          }
-        }
-      )
+      }
+    )
   }
 }
 
 // Fire a host fn by handing its exact descriptor and flattened host-boundary
 // domain to the callback, then feed the callback's result back into the machine.
 fn fire_hostfn(
-  , call: (Host_fn & Value) -> Call_result
-  , descriptor: Host_fn
-  , dom: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result { feed(call((descriptor, dom)), k, fuel) }
+, call: (Host_fn & Value) -> Call_result
+, descriptor: Host_fn
+, dom: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result { feed(call((descriptor, dom)), k, fuel) }
 
 fn apply_host_group(
-  , call: (Host_fn & Value) -> Call_result
-  , descriptor: Host_fn
-  , groups: Group_slots
-  , acc: Vals
-  , arg: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, descriptor: Host_fn
+, groups: Group_slots
+, acc: Vals
+, arg: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result {
   match! un_group_slots(groups) {
     (
-      , .(slots: I32, rest: Group_slots) {
-          match! flatten_group(arg, slots, acc) {
-            (
-              , .(_bad: Flat_bad) { halt(host_group_stuck()) }
-              , .(ok: Flat_ok) {
-                  let accumulated = Flat_ok.get(ok);
-                  match! un_group_slots(rest) {
-                    (
-                      , .(_next_slots: I32, _later: Group_slots) {
-                          go(mk_state(c_ret(vhostfn(descriptor, rest, accumulated)), k, fuel))
-                        }
-                      , .(_done: .) {
-                          fire_hostfn(call, descriptor, vals_to_domain(accumulated), k, fuel)
-                        }
-                      )
+    , .(slots: I32, rest: Group_slots) {
+        match! flatten_group(arg, slots, acc) {
+          (
+          , .(_bad: Flat_bad) { halt(host_group_stuck()) }
+          , .(ok: Flat_ok) {
+              let accumulated = Flat_ok.get(ok);
+              match! un_group_slots(rest) {
+                (
+                , .(_next_slots: I32, _later: Group_slots) {
+                    go(mk_state(c_ret(vhostfn(descriptor, rest, accumulated)), k, fuel))
                   }
-                }
-              )
-          }
+                , .(_done: .) {
+                    fire_hostfn(call, descriptor, vals_to_domain(accumulated), k, fuel)
+                  }
+                )
+              }
+            }
+          )
         }
-      , .(_missing: .) { halt(host_group_stuck()) }
-      )
+      }
+    , .(_missing: .) { halt(host_group_stuck()) }
+    )
   }
 }
 
@@ -678,60 +676,60 @@ fn apply_host_group(
 // the final stage. Applying any other value shape is ill-formed (a well-typed image
 // never does) and goes stuck.
 fn resume_app1(
-  , call: (Host_fn & Value) -> Call_result
-  , fn_val: Value
-  , arg: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, fn_val: Value
+, arg: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result {
   match! un_value(fn_val) {
     (
-      , .(clo: V_closure) {
-          match! V_closure.get(clo) {
-            .(cenv: Env, body: Term) { go(mk_state(c_eval(body, env_push(arg, cenv)), k, fuel)) }
+    , .(clo: V_closure) {
+        match! V_closure.get(clo) {
+          .(cenv: Env, body: Term) { go(mk_state(c_eval(body, env_push(arg, cenv)), k, fuel)) }
+        }
+      }
+    , .(hf: V_hostfn) {
+        match! V_hostfn.get(hf) {
+          .(descriptor: Host_fn, groups: Group_slots, acc: Vals) {
+            apply_host_group(call, descriptor, groups, acc, arg, k, fuel)
           }
         }
-      , .(hf: V_hostfn) {
-          match! V_hostfn.get(hf) {
-            .(descriptor: Host_fn, groups: Group_slots, acc: Vals) {
-              apply_host_group(call, descriptor, groups, acc, arg, k, fuel)
-            }
-          }
-        }
-      , .(_p: V_product) { halt(apply_stuck()) }
-      , .(_s: V_sum) { halt(apply_stuck()) }
-      , .(_u: V_unit) { halt(apply_stuck()) }
-      , .(_h: V_host) { halt(apply_stuck()) }
-      )
+      }
+    , .(_p: V_product) { halt(apply_stuck()) }
+    , .(_s: V_sum) { halt(apply_stuck()) }
+    , .(_u: V_unit) { halt(apply_stuck()) }
+    , .(_h: V_host) { halt(apply_stuck()) }
+    )
   }
 }
 
 // Resume the held-argument frame: the incoming value is the function;
 // the held value is the argument. Same application, arguments swapped.
 fn resume_app2(
-  , call: (Host_fn & Value) -> Call_result
-  , arg: Value
-  , fn_val: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result { resume_app1(call, fn_val, arg, k, fuel) }
+, call: (Host_fn & Value) -> Call_result
+, arg: Value
+, fn_val: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result { resume_app1(call, fn_val, arg, k, fuel) }
 
 // Resume a product-projection frame: the incoming value must be a
 // product; return the requested component.
 fn resume_proj(v: Value, want_first: Side, k: Kont, fuel: I32) -> State | Eval_result {
   match! un_value(v) {
     (
-      , .(prod: V_product) {
-          match! V_product.get(prod) {
-            .(a: Value, b: Value) { go(mk_state(c_ret(side_select(a, b, want_first)), k, fuel)) }
-          }
+    , .(prod: V_product) {
+        match! V_product.get(prod) {
+          .(a: Value, b: Value) { go(mk_state(c_ret(side_select(a, b, want_first)), k, fuel)) }
         }
-      , .(_c: V_closure) { halt(proj_stuck()) }
-      , .(_s: V_sum) { halt(proj_stuck()) }
-      , .(_u: V_unit) { halt(proj_stuck()) }
-      , .(_h: V_host) { halt(proj_stuck()) }
-      , .(_f: V_hostfn) { halt(proj_stuck()) }
-      )
+      }
+    , .(_c: V_closure) { halt(proj_stuck()) }
+    , .(_s: V_sum) { halt(proj_stuck()) }
+    , .(_u: V_unit) { halt(proj_stuck()) }
+    , .(_h: V_host) { halt(proj_stuck()) }
+    , .(_f: V_hostfn) { halt(proj_stuck()) }
+    )
   }
 }
 
@@ -740,20 +738,20 @@ fn resume_proj(v: Value, want_first: Side, k: Kont, fuel: I32) -> State | Eval_r
 fn resume_either(v: Value, on_l: Value, on_r: Value, k: Kont, fuel: I32) -> State | Eval_result {
   match! un_value(v) {
     (
-      , .(sm: V_sum) {
-          match! V_sum.get(sm) {
-            .(sd: Side, payload: Value) {
-              let handler = side_select(on_l, on_r, sd);
-              go(mk_state(c_ret(payload), kont_push(mk_app1(handler), k), fuel))
-            }
+    , .(sm: V_sum) {
+        match! V_sum.get(sm) {
+          .(sd: Side, payload: Value) {
+            let handler = side_select(on_l, on_r, sd);
+            go(mk_state(c_ret(payload), kont_push(mk_app1(handler), k), fuel))
           }
         }
-      , .(_c: V_closure) { halt(either_stuck()) }
-      , .(_p: V_product) { halt(either_stuck()) }
-      , .(_u: V_unit) { halt(either_stuck()) }
-      , .(_h: V_host) { halt(either_stuck()) }
-      , .(_f: V_hostfn) { halt(either_stuck()) }
-      )
+      }
+    , .(_c: V_closure) { halt(either_stuck()) }
+    , .(_p: V_product) { halt(either_stuck()) }
+    , .(_u: V_unit) { halt(either_stuck()) }
+    , .(_h: V_host) { halt(either_stuck()) }
+    , .(_f: V_hostfn) { halt(either_stuck()) }
+    )
   }
 }
 
@@ -765,26 +763,26 @@ fn resume_either(v: Value, on_l: Value, on_r: Value, k: Kont, fuel: I32) -> Stat
 // (left = else, right = then). Applying `test_bool` to a non-`V_host` value is
 // ill-formed (a well-typed image never does) and goes stuck.
 fn resume_ite(
-  , test_bool: (Host_type & Scalar) -> Side
-  , bool_type: Host_type
-  , v: Value
-  , then_v: Value
-  , else_v: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result {
+, test_bool: (Host_type & Scalar) -> Side
+, bool_type: Host_type
+, v: Value
+, then_v: Value
+, else_v: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result {
   match! un_value(v) {
     (
-      , .(hv: V_host) {
-          let taken = side_select(else_v, then_v, test_bool((bool_type, V_host.get(hv))));
-          go(mk_state(c_ret(vunit()), kont_push(mk_app1(taken), k), fuel))
-        }
-      , .(_c: V_closure) { halt(ite_stuck()) }
-      , .(_p: V_product) { halt(ite_stuck()) }
-      , .(_s: V_sum) { halt(ite_stuck()) }
-      , .(_u: V_unit) { halt(ite_stuck()) }
-      , .(_f: V_hostfn) { halt(ite_stuck()) }
-      )
+    , .(hv: V_host) {
+        let taken = side_select(else_v, then_v, test_bool((bool_type, V_host.get(hv))));
+        go(mk_state(c_ret(vunit()), kont_push(mk_app1(taken), k), fuel))
+      }
+    , .(_c: V_closure) { halt(ite_stuck()) }
+    , .(_p: V_product) { halt(ite_stuck()) }
+    , .(_s: V_sum) { halt(ite_stuck()) }
+    , .(_u: V_unit) { halt(ite_stuck()) }
+    , .(_f: V_hostfn) { halt(ite_stuck()) }
+    )
   }
 }
 
@@ -795,23 +793,19 @@ fn resume_ite(
 fn resume_loop(step: Value, v: Value, k: Kont, fuel: I32) -> State | Eval_result {
   match! un_value(v) {
     (
-      , .(sm: V_sum) {
-          match! V_sum.get(sm) {
-            .(sd: Side, payload: Value) {
-              side_select(
-                , apply_loop_step(step, payload, k, fuel)
-                , finish_loop(payload, k, fuel)
-                , sd
-                )
-            }
+    , .(sm: V_sum) {
+        match! V_sum.get(sm) {
+          .(sd: Side, payload: Value) {
+            side_select(apply_loop_step(step, payload, k, fuel), finish_loop(payload, k, fuel), sd)
           }
         }
-      , .(_c: V_closure) { halt(loop_stuck()) }
-      , .(_p: V_product) { halt(loop_stuck()) }
-      , .(_u: V_unit) { halt(loop_stuck()) }
-      , .(_h: V_host) { halt(loop_stuck()) }
-      , .(_f: V_hostfn) { halt(loop_stuck()) }
-      )
+      }
+    , .(_c: V_closure) { halt(loop_stuck()) }
+    , .(_p: V_product) { halt(loop_stuck()) }
+    , .(_u: V_unit) { halt(loop_stuck()) }
+    , .(_h: V_host) { halt(loop_stuck()) }
+    , .(_f: V_hostfn) { halt(loop_stuck()) }
+    )
   }
 }
 
@@ -823,114 +817,114 @@ fn resume_loop(step: Value, v: Value, k: Kont, fuel: I32) -> State | Eval_result
 // fn — `F_app1` / `F_app2` — can fire through it) and `test_bool` (so a
 // final conditional frame can get its branch decision from the host).
 fn do_ret_frame(
-  , call: (Host_fn & Value) -> Call_result
-  , test_bool: (Host_type & Scalar) -> Side
-  , v: Value
-  , top: Frame
-  , rest: Kont
-  , fuel: I32
-  ) -> State | Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, test_bool: (Host_type & Scalar) -> Side
+, v: Value
+, top: Frame
+, rest: Kont
+, fuel: I32
+) -> State | Eval_result {
   match! un_frame(top) {
     (
-      , .(fr: F_app1) { resume_app1(call, F_app1.get(fr), v, rest, fuel) }
-      , .(fr: F_app2) { resume_app2(call, F_app2.get(fr), v, rest, fuel) }
-      , .(fr: F_arg) {
-          match! F_arg.get(fr) {
-            .(arg_t: Term, e: Env) {
-              go(mk_state(c_eval(arg_t, e), kont_push(mk_app1(v), rest), fuel))
-            }
+    , .(fr: F_app1) { resume_app1(call, F_app1.get(fr), v, rest, fuel) }
+    , .(fr: F_app2) { resume_app2(call, F_app2.get(fr), v, rest, fuel) }
+    , .(fr: F_arg) {
+        match! F_arg.get(fr) {
+          .(arg_t: Term, e: Env) {
+            go(mk_state(c_eval(arg_t, e), kont_push(mk_app1(v), rest), fuel))
           }
         }
-      , .(fr: F_let) {
-          match! F_let.get(fr) {
-            .(body: Term, e: Env) { go(mk_state(c_eval(body, env_push(v, e)), rest, fuel)) }
+      }
+    , .(fr: F_let) {
+        match! F_let.get(fr) {
+          .(body: Term, e: Env) { go(mk_state(c_eval(body, env_push(v, e)), rest, fuel)) }
+        }
+      }
+    , .(fr: F_psnd) {
+        match! F_psnd.get(fr) {
+          .(snd_t: Term, e: Env) {
+            go(mk_state(c_eval(snd_t, e), kont_push(mk_pfst(v), rest), fuel))
           }
         }
-      , .(fr: F_psnd) {
-          match! F_psnd.get(fr) {
-            .(snd_t: Term, e: Env) {
-              go(mk_state(c_eval(snd_t, e), kont_push(mk_pfst(v), rest), fuel))
-            }
+      }
+    , .(fr: F_pfst) { go(mk_state(c_ret(vproduct(F_pfst.get(fr), v)), rest, fuel)) }
+    , .(_fr: F_fst) { resume_proj(v, s_left(), rest, fuel) }
+    , .(_fr: F_snd) { resume_proj(v, s_right(), rest, fuel) }
+    , .(_fr: F_left) { go(mk_state(c_ret(vleft(v)), rest, fuel)) }
+    , .(_fr: F_right) { go(mk_state(c_ret(vright(v)), rest, fuel)) }
+    , .(fr: F_eith_f) {
+        match! F_eith_f.get(fr) {
+          .(on_l: Term, on_r: Term, e: Env) {
+            go(mk_state(c_eval(on_l, e), kont_push(mk_eith_g(v, on_r, e), rest), fuel))
           }
         }
-      , .(fr: F_pfst) { go(mk_state(c_ret(vproduct(F_pfst.get(fr), v)), rest, fuel)) }
-      , .(_fr: F_fst) { resume_proj(v, s_left(), rest, fuel) }
-      , .(_fr: F_snd) { resume_proj(v, s_right(), rest, fuel) }
-      , .(_fr: F_left) { go(mk_state(c_ret(vleft(v)), rest, fuel)) }
-      , .(_fr: F_right) { go(mk_state(c_ret(vright(v)), rest, fuel)) }
-      , .(fr: F_eith_f) {
-          match! F_eith_f.get(fr) {
-            .(on_l: Term, on_r: Term, e: Env) {
-              go(mk_state(c_eval(on_l, e), kont_push(mk_eith_g(v, on_r, e), rest), fuel))
-            }
+      }
+    , .(fr: F_eith_g) {
+        match! F_eith_g.get(fr) {
+          .(scrutinee: Value, on_r: Term, e: Env) {
+            go(mk_state(c_eval(on_r, e), kont_push(mk_eith_apply(scrutinee, v), rest), fuel))
           }
         }
-      , .(fr: F_eith_g) {
-          match! F_eith_g.get(fr) {
-            .(scrutinee: Value, on_r: Term, e: Env) {
-              go(mk_state(c_eval(on_r, e), kont_push(mk_eith_apply(scrutinee, v), rest), fuel))
-            }
+      }
+    , .(fr: F_eith_apply) {
+        match! F_eith_apply.get(fr) {
+          .(scrutinee: Value, on_l: Value) { resume_either(scrutinee, on_l, v, rest, fuel) }
+        }
+      }
+    , .(fr: F_ite_then) {
+        match! F_ite_then.get(fr) {
+          .(bool_type: Host_type, then_t: Term, else_t: Term, e: Env) {
+            go(mk_state(
+            , c_eval(then_t, e)
+            , kont_push(mk_ite_else(bool_type, v, else_t, e), rest)
+            , fuel
+            ))
           }
         }
-      , .(fr: F_eith_apply) {
-          match! F_eith_apply.get(fr) {
-            .(scrutinee: Value, on_l: Value) { resume_either(scrutinee, on_l, v, rest, fuel) }
+      }
+    , .(fr: F_ite_else) {
+        match! F_ite_else.get(fr) {
+          .(bool_type: Host_type, condition: Value, else_t: Term, e: Env) {
+            go(mk_state(
+            , c_eval(else_t, e)
+            , kont_push(mk_ite_apply(bool_type, condition, v), rest)
+            , fuel
+            ))
           }
         }
-      , .(fr: F_ite_then) {
-          match! F_ite_then.get(fr) {
-            .(bool_type: Host_type, then_t: Term, else_t: Term, e: Env) {
-              go(mk_state(
-                , c_eval(then_t, e)
-                , kont_push(mk_ite_else(bool_type, v, else_t, e), rest)
-                , fuel
-                ))
-            }
+      }
+    , .(fr: F_ite_apply) {
+        match! F_ite_apply.get(fr) {
+          .(bool_type: Host_type, condition: Value, then_v: Value) {
+            resume_ite(test_bool, bool_type, condition, then_v, v, rest, fuel)
           }
         }
-      , .(fr: F_ite_else) {
-          match! F_ite_else.get(fr) {
-            .(bool_type: Host_type, condition: Value, else_t: Term, e: Env) {
-              go(mk_state(
-                , c_eval(else_t, e)
-                , kont_push(mk_ite_apply(bool_type, condition, v), rest)
-                , fuel
-                ))
-            }
-          }
+      }
+    , .(_fr: F_absurd) { halt(ev_stuck("reached `__absurd__` — the impossible branch"(String))) }
+    , .(fr: F_loop) { resume_loop(F_loop.get(fr), v, rest, fuel) }
+    , .(fr: F_hostcont) {
+        match! F_hostcont.get(fr) {
+          .(cont: Host_fn, state: Value) { feed(call((cont, vproduct(v, state))), rest, fuel) }
         }
-      , .(fr: F_ite_apply) {
-          match! F_ite_apply.get(fr) {
-            .(bool_type: Host_type, condition: Value, then_v: Value) {
-              resume_ite(test_bool, bool_type, condition, then_v, v, rest, fuel)
-            }
-          }
-        }
-      , .(_fr: F_absurd) { halt(ev_stuck("reached `__absurd__` — the impossible branch"(String))) }
-      , .(fr: F_loop) { resume_loop(F_loop.get(fr), v, rest, fuel) }
-      , .(fr: F_hostcont) {
-          match! F_hostcont.get(fr) {
-            .(cont: Host_fn, state: Value) { feed(call((cont, vproduct(v, state))), rest, fuel) }
-          }
-        }
-      )
+      }
+    )
   }
 }
 
 // Feed the current value to the continuation: resume the top frame, or
 // finish with `Done` when the continuation is empty.
 fn do_ret(
-  , call: (Host_fn & Value) -> Call_result
-  , test_bool: (Host_type & Scalar) -> Side
-  , v: Value
-  , k: Kont
-  , fuel: I32
-  ) -> State | Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, test_bool: (Host_type & Scalar) -> Side
+, v: Value
+, k: Kont
+, fuel: I32
+) -> State | Eval_result {
   match! un_kont(k) {
     (
-      , .(top: Frame, rest: Kont) { do_ret_frame(call, test_bool, v, top, rest, fuel) }
-      , .(_empty: .) { halt(ev_done(v)) }
-      )
+    , .(top: Frame, rest: Kont) { do_ret_frame(call, test_bool, v, top, rest, fuel) }
+    , .(_empty: .) { halt(ev_done(v)) }
+    )
   }
 }
 
@@ -946,68 +940,66 @@ fn do_eval(make_lit: (String & Host_type) -> Value, t: Term, e: Env, k: Kont, fu
    {
   match! un_term(t) {
     (
-      , .(nd: T_var) {
-          match! env_lookup(e, T_var.get(nd)) {
-            (
-              , .(v: Value) { go(mk_state(c_ret(v), k, fuel)) }
-              , .(_oob: .) {
-                  halt(ev_stuck("a variable reference escaped its environment (malformed image)"(String)))
-                }
-              )
-          }
-        }
-      , .(nd: T_lam) { go(mk_state(c_ret(vclosure(e, T_lam.get(nd))), k, fuel)) }
-      , .(nd: T_app) {
-          match! T_app.get(nd) {
-            .(f: Term, a: Term) { go(mk_state(c_eval(f, e), kont_push(mk_arg(a, e), k), fuel)) }
-          }
-        }
-      , .(nd: T_let) {
-          match! T_let.get(nd) {
-            .(rhs: Term, body: Term) {
-              go(mk_state(c_eval(rhs, e), kont_push(mk_let(body, e), k), fuel))
+    , .(nd: T_var) {
+        match! env_lookup(e, T_var.get(nd)) {
+          (
+          , .(v: Value) { go(mk_state(c_ret(v), k, fuel)) }
+          , .(_oob: .) {
+              halt(ev_stuck("a variable reference escaped its environment (malformed image)"(String)))
             }
+          )
+        }
+      }
+    , .(nd: T_lam) { go(mk_state(c_ret(vclosure(e, T_lam.get(nd))), k, fuel)) }
+    , .(nd: T_app) {
+        match! T_app.get(nd) {
+          .(f: Term, a: Term) { go(mk_state(c_eval(f, e), kont_push(mk_arg(a, e), k), fuel)) }
+        }
+      }
+    , .(nd: T_let) {
+        match! T_let.get(nd) {
+          .(rhs: Term, body: Term) {
+            go(mk_state(c_eval(rhs, e), kont_push(mk_let(body, e), k), fuel))
           }
         }
-      , .(nd: T_pair) {
-          match! T_pair.get(nd) {
-            .(a: Term, b: Term) { go(mk_state(c_eval(a, e), kont_push(mk_psnd(b, e), k), fuel)) }
+      }
+    , .(nd: T_pair) {
+        match! T_pair.get(nd) {
+          .(a: Term, b: Term) { go(mk_state(c_eval(a, e), kont_push(mk_psnd(b, e), k), fuel)) }
+        }
+      }
+    , .(nd: T_fst) { go(mk_state(c_eval(T_fst.get(nd), e), kont_push(mk_fst(), k), fuel)) }
+    , .(nd: T_snd) { go(mk_state(c_eval(T_snd.get(nd), e), kont_push(mk_snd(), k), fuel)) }
+    , .(nd: T_left) { go(mk_state(c_eval(T_left.get(nd), e), kont_push(mk_left(), k), fuel)) }
+    , .(nd: T_right) { go(mk_state(c_eval(T_right.get(nd), e), kont_push(mk_right(), k), fuel)) }
+    , .(nd: T_either) {
+        match! T_either.get(nd) {
+          .(s: Term, f: Term, g: Term) {
+            go(mk_state(c_eval(s, e), kont_push(mk_eith_f(f, g, e), k), fuel))
           }
         }
-      , .(nd: T_fst) { go(mk_state(c_eval(T_fst.get(nd), e), kont_push(mk_fst(), k), fuel)) }
-      , .(nd: T_snd) { go(mk_state(c_eval(T_snd.get(nd), e), kont_push(mk_snd(), k), fuel)) }
-      , .(nd: T_left) { go(mk_state(c_eval(T_left.get(nd), e), kont_push(mk_left(), k), fuel)) }
-      , .(nd: T_right) { go(mk_state(c_eval(T_right.get(nd), e), kont_push(mk_right(), k), fuel)) }
-      , .(nd: T_either) {
-          match! T_either.get(nd) {
-            .(s: Term, f: Term, g: Term) {
-              go(mk_state(c_eval(s, e), kont_push(mk_eith_f(f, g, e), k), fuel))
-            }
+      }
+    , .(nd: T_ite) {
+        match! T_ite.get(nd) {
+          .(bool_type: Host_type, c: Term, th: Term, el: Term) {
+            go(mk_state(c_eval(c, e), kont_push(mk_ite_then(bool_type, th, el, e), k), fuel))
           }
         }
-      , .(nd: T_ite) {
-          match! T_ite.get(nd) {
-            .(bool_type: Host_type, c: Term, th: Term, el: Term) {
-              go(mk_state(c_eval(c, e), kont_push(mk_ite_then(bool_type, th, el, e), k), fuel))
-            }
+      }
+    , .(nd: T_absurd) { go(mk_state(c_eval(T_absurd.get(nd), e), kont_push(mk_absurd(), k), fuel)) }
+    , .(_nd: T_unit) { go(mk_state(c_ret(vunit()), k, fuel)) }
+    , .(nd: T_lit) {
+        let l = T_lit.get(nd);
+        go(mk_state(c_ret(make_lit((lit_text(l), lit_type(l)))), k, fuel))
+      }
+    , .(nd: T_hostfn) {
+        match! T_hostfn.get(nd) {
+          .(descriptor: Host_fn, groups: Group_slots) {
+            go(mk_state(c_ret(vhostfn_fresh(descriptor, groups)), k, fuel))
           }
         }
-      , .(nd: T_absurd) {
-          go(mk_state(c_eval(T_absurd.get(nd), e), kont_push(mk_absurd(), k), fuel))
-        }
-      , .(_nd: T_unit) { go(mk_state(c_ret(vunit()), k, fuel)) }
-      , .(nd: T_lit) {
-          let l = T_lit.get(nd);
-          go(mk_state(c_ret(make_lit((lit_text(l), lit_type(l)))), k, fuel))
-        }
-      , .(nd: T_hostfn) {
-          match! T_hostfn.get(nd) {
-            .(descriptor: Host_fn, groups: Group_slots) {
-              go(mk_state(c_ret(vhostfn_fresh(descriptor, groups)), k, fuel))
-            }
-          }
-        }
-      )
+      }
+    )
   }
 }
 
@@ -1021,11 +1013,11 @@ fn do_eval(make_lit: (String & Host_type) -> Value, t: Term, e: Env, k: Kont, fu
 // (with `call` so a resolved application to a host fn can fire, and
 // `test_bool` so a conditional frame can get its branch decision).
 fn transition(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , s: State
-  ) -> State | Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, s: State
+) -> State | Eval_result {
   match! un_state(s) {
     .(c: Ctrl, k: Kont, fuel: I32) {
       if! leq_i32(fuel, 0) {
@@ -1034,13 +1026,13 @@ fn transition(
         let fuel1 = sub_i32(fuel, 1);
         match! un_ctrl(c) {
           (
-            , .(ev: Cs_eval) {
-                match! Cs_eval.get(ev) {
-                  .(t: Term, e: Env) { do_eval(make_lit, t, e, k, fuel1) }
-                }
+          , .(ev: Cs_eval) {
+              match! Cs_eval.get(ev) {
+                .(t: Term, e: Env) { do_eval(make_lit, t, e, k, fuel1) }
               }
-            , .(rt: Cs_ret) { do_ret(call, test_bool, Cs_ret.get(rt), k, fuel1) }
-            )
+            }
+          , .(rt: Cs_ret) { do_ret(call, test_bool, Cs_ret.get(rt), k, fuel1) }
+          )
         }
       }
     }
@@ -1067,51 +1059,51 @@ pub fn default_fuel() -> I32 { 1000000(I32) }
 /// Evaluates a closed Kio' term to a universal value under an explicit
 /// step budget and host capabilities, driving the CEK machine with the host `loop`.
 pub fn prime_eval_fuel(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , t: Term
-  , fuel: I32
-  ) -> Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, t: Term
+, fuel: I32
+) -> Eval_result {
   loop(
-    , .(s: State) { transition(call, make_lit, test_bool, s) }
-    , mk_state(c_eval(t, env_nil()), kont_nil(), fuel)
-    )
+  , .(s: State) { transition(call, make_lit, test_bool, s) }
+  , mk_state(c_eval(t, env_nil()), kont_nil(), fuel)
+  )
 }
 
 /// Evaluates a Kio' term in a caller-supplied environment under an
 /// explicit step budget — the incremental form `instantiate` uses to bind
 /// each top-level value once.
 pub fn prime_eval_in_fuel(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , t: Term
-  , e: Env
-  , fuel: I32
-  ) -> Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, t: Term
+, e: Env
+, fuel: I32
+) -> Eval_result {
   loop(
-    , .(s: State) { transition(call, make_lit, test_bool, s) }
-    , mk_state(c_eval(t, e), kont_nil(), fuel)
-    )
+  , .(s: State) { transition(call, make_lit, test_bool, s) }
+  , mk_state(c_eval(t, e), kont_nil(), fuel)
+  )
 }
 
 /// Evaluates a Kio' term in a caller-supplied environment under the default budget.
 pub fn prime_eval_in(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , t: Term
-  , e: Env
-  ) -> Eval_result { prime_eval_in_fuel(call, make_lit, test_bool, t, e, default_fuel()) }
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, t: Term
+, e: Env
+) -> Eval_result { prime_eval_in_fuel(call, make_lit, test_bool, t, e, default_fuel()) }
 
 /// Evaluates a closed Kio' term under the default step budget against the host capabilities.
 pub fn prime_eval(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , t: Term
-  ) -> Eval_result { prime_eval_fuel(call, make_lit, test_bool, t, default_fuel()) }
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, t: Term
+) -> Eval_result { prime_eval_fuel(call, make_lit, test_bool, t, default_fuel()) }
 
 // =====================================================================
 // prime_apply — apply an already-evaluated closure value to an argument
@@ -1130,24 +1122,24 @@ pub fn prime_eval(
 // host call / literal / conditional the body makes, exactly as `prime_eval`.
 /// Applies an evaluated closure value to an argument value under an explicit budget and host capabilities.
 pub fn prime_apply_fuel(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , fn_val: Value
-  , arg: Value
-  , fuel: I32
-  ) -> Eval_result {
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, fn_val: Value
+, arg: Value
+, fuel: I32
+) -> Eval_result {
   loop(
-    , .(s: State) { transition(call, make_lit, test_bool, s) }
-    , mk_state(c_ret(arg), kont_push(mk_app1(fn_val), kont_nil()), fuel)
-    )
+  , .(s: State) { transition(call, make_lit, test_bool, s) }
+  , mk_state(c_ret(arg), kont_push(mk_app1(fn_val), kont_nil()), fuel)
+  )
 }
 
 /// Applies an evaluated closure value to an argument value under the default budget against the host capabilities.
 pub fn prime_apply(
-  , call: (Host_fn & Value) -> Call_result
-  , make_lit: (String & Host_type) -> Value
-  , test_bool: (Host_type & Scalar) -> Side
-  , fn_val: Value
-  , arg: Value
-  ) -> Eval_result { prime_apply_fuel(call, make_lit, test_bool, fn_val, arg, default_fuel()) }
+, call: (Host_fn & Value) -> Call_result
+, make_lit: (String & Host_type) -> Value
+, test_bool: (Host_type & Scalar) -> Side
+, fn_val: Value
+, arg: Value
+) -> Eval_result { prime_apply_fuel(call, make_lit, test_bool, fn_val, arg, default_fuel()) }

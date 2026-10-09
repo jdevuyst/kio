@@ -15,13 +15,13 @@ pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector r
 
 fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
   Render.mk_render(
-    , Pair(A, B)
-    , .(p) {
-        let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
-        let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
-        string_concat(left, right)
-      }
-    )
+  , Pair(A, B)
+  , .(p) {
+      let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
+      let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
+      string_concat(left, right)
+    }
+  )
 }
 
 // A brand-generic combinator: it derives a `Render(Pair(a, a))`
@@ -34,22 +34,24 @@ fn paired_render[A](get_elem: . -> Render(A)) -> Render(Pair(A, A)) {
   derive!((render_pair, get_elem), Render(Pair(A, A)))
 }
 
-fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+fn render_cell_string() -> Render(Cell(String)) {
+  Render.mk_render(.(c) { Cell.un_cell(c) })
+}
 
 // Instantiate the combinator at `A = Cell(String)`.
 fn run() -> String {
   let inst = paired_render(render_cell_string);
   let value =
     Pair.mk_pair(
+    , Cell(String)
+    , Cell(String)
+    , __pair__(
       , Cell(String)
       , Cell(String)
-      , __pair__(
-          , Cell(String)
-          , Cell(String)
-          , Cell.mk_cell("derive! poly:"(String))
-          , Cell.mk_cell(" ok\n"(String))
-          )
-      );
+      , Cell.mk_cell("derive! poly:"(String))
+      , Cell.mk_cell(" ok\n"(String))
+      )
+    );
   Render.render(inst)(value)
 }
 

@@ -30,13 +30,13 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // re-wraps the continuation's result via `Maybe.mk_maybe`.
 fn maybe_monad() -> Monad(Maybe) {
   Monad.mk_monad(
-    , Maybe
-    , .[A][B](m, k) {
-        match! Maybe.un_maybe(m) {
-          (.(av: A) { k(av) }, .(_unit: .) { Maybe.mk_maybe(widen_sum!((), . | B)) })
-        }
+  , Maybe
+  , .[A][B](m, k) {
+      match! Maybe.un_maybe(m) {
+        (.(av: A) { k(av) }, .(_unit: .) { Maybe.mk_maybe(widen_sum!((), . | B)) })
       }
-    )
+    }
+  )
 }
 
 // Two `just` values composed through `do`-bind: pull each value
@@ -48,10 +48,7 @@ fn use_dictionary() -> String {
   let monad = maybe_monad();
   let just_hello = Maybe.mk_maybe(widen_sum!("monad on maybe ok\n"(String), . | String));
   let result =
-    do! Monad.bind(monad) {
-      let x <- just_hello;
-      Maybe.mk_maybe(widen_sum!(x, . | String))
-    };
+    do! Monad.bind(monad) { let x <- just_hello; Maybe.mk_maybe(widen_sum!(x, . | String)) };
   match! Maybe.un_maybe(result) {
     (.(s: String) { s }, .(_unit: .) { "absent\n"(String) })
   }

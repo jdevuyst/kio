@@ -9,11 +9,7 @@ import testapi/io as io;
 import testapi/text as text;
 
 fn bit(value: Bool) -> String {
-  if! value {
-    "1"
-  } else {
-    "0"
-  }
+  if! value { "1" } else { "0" }
 }
 
 fn time(at: I32) -> String {
@@ -39,43 +35,40 @@ pub fn edge(event: model.Event) {
 
 pub fn canceled(now: I32, event: model.Event) {
   io.print(text.string_concat(
-    , time(now)
+  , time(now)
+  , text.string_concat(
+    , "cancel "
     , text.string_concat(
-        , "cancel "
-        , text.string_concat(
-            , assignment(event.?{model.target}, event.?{model.value})
-            , text.string_concat(
-                , " due="
-                , text.string_concat(fmt.int_to_string(event.?{model.at}), "\n")
-                )
-            )
-        )
-    ))
+      , assignment(event.?{model.target}, event.?{model.value})
+      , text.string_concat(" due=", text.string_concat(fmt.int_to_string(event.?{model.at}), "\n"))
+      )
+    )
+  ))
 }
 
 fn show_wire(message: String, signal: model.Signal) -> String {
   text.string_concat(
-    , message
-    , text.string_concat(" ", assignment(signal.?{model.wire}, signal.?{model.level}))
-    )
+  , message
+  , text.string_concat(" ", assignment(signal.?{model.wire}, signal.?{model.level}))
+  )
 }
 
 pub fn summary(state: model.State) {
   io.print(text.string_concat(
-    , "settled-at="
+  , "settled-at="
+  , text.string_concat(
+    , fmt.int_to_string(state.?{model.last_time})
     , text.string_concat(
-        , fmt.int_to_string(state.?{model.last_time})
+      , " edges="
+      , text.string_concat(
+        , fmt.int_to_string(state.?{model.edges})
         , text.string_concat(
-            , " edges="
-            , text.string_concat(
-                , fmt.int_to_string(state.?{model.edges})
-                , text.string_concat(
-                    , " canceled="
-                    , text.string_concat(fmt.int_to_string(state.?{model.canceled}), "\n")
-                    )
-                )
-            )
+          , " canceled="
+          , text.string_concat(fmt.int_to_string(state.?{model.canceled}), "\n")
+          )
         )
-    ));
+      )
+    )
+  ));
   io.print(text.string_concat(traversal.foldl(show_wire, "final", state.?{model.wires}), "\n"))
 }

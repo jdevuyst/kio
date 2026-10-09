@@ -1,3 +1,3 @@
-`rec` calls are only allowed inside a `rec\(loop\)` function
+`recur` calls are only allowed inside a `rec\(loop\)` function
 declare the enclosing recursive function with `rec\(path\) fn`, where `path` names your chosen loop capability
 the loop capability is an ordinary value of type

@@ -2,23 +2,23 @@
 module library/option;
 
 import library/core(
-  , Option
-  , and_then
-  , apply
-  , bind
-  , cat_step
-  , from_option
-  , from_sum
-  , join_step
-  , map
-  , map_step
-  , none
-  , option
-  , or_else
-  , some
-  , then
-  , to_sum
-  );
+, Option
+, and_then
+, apply
+, bind
+, cat_step
+, from_option
+, from_sum
+, join_step
+, map
+, map_step
+, none
+, option
+, or_else
+, some
+, then
+, to_sum
+);
 import library/elab/control(if);
 import library/elab/match(match);
 import library/elab/spine_elaborators(flatten_sum, narrow_sum, widen_sum);
@@ -47,26 +47,26 @@ pub fn string_concat(p0: String, p1: String) -> String {
 // live in `core.kio`. `fold_list` is the shared walk they route through.
 fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
   loop(
-    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-        match! state {
-          .(carry: Acc, rest: List(A)) {
-            match! uncons(rest) {
-              (
-                , .(pair: A & List(A)) {
-                    match! pair {
-                      .(head: A, tail: List(A)) {
-                        widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
-                      }
-                    }
+  , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+      match! state {
+        .(carry: Acc, rest: List(A)) {
+          match! uncons(rest) {
+            (
+            , .(pair: A & List(A)) {
+                match! pair {
+                  .(head: A, tail: List(A)) {
+                    widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
                   }
-                , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
-                )
-            }
+                }
+              }
+            , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+            )
           }
         }
       }
-    , (seed, xs)
-    )
+    }
+  , (seed, xs)
+  )
 }
 
 /// Folds present option payloads and skips absent entries.
@@ -82,10 +82,10 @@ pub fn map_option[A][B][Acc](f: A -> Option(B), xs: List(A), seed: Acc, step: (A
 /// Renders present option payloads and concatenates them into a string.
 pub fn join_options[A](show: A -> String, empty: String, xs: List(Option(A))) -> String {
   fold_list(
-    , xs
-    , empty
-    , .(carry: String, m: Option(A)) -> String { join_step(carry, show, string_concat, m) }
-    )
+  , xs
+  , empty
+  , .(carry: String, m: Option(A)) -> String { join_step(carry, show, string_concat, m) }
+  )
 }
 
 // =====================================================================
@@ -95,19 +95,19 @@ pub fn join_options[A](show: A -> String, empty: String, xs: List(Option(A))) ->
 // These speak the host's `Bool`, so they live here rather than in the
 // pure core.
 /// Reports whether an option carries a value.
-pub fn is_some[A](m: Option(A)) -> Bool { option(.f, .(_x: A) -> Bool { .t }, m) }
+pub fn is_some[A](m: Option(A)) -> Bool {
+  option(.f, .(_x: A) -> Bool { .t }, m)
+}
 
 /// Reports whether an option is absent.
-pub fn is_none[A](m: Option(A)) -> Bool { option(.t, .(_x: A) -> Bool { .f }, m) }
+pub fn is_none[A](m: Option(A)) -> Bool {
+  option(.t, .(_x: A) -> Bool { .f }, m)
+}
 
 // Bridges a host `Bool` verdict to an `Option` via the bare sum `A | .`,
 // keeping the `some` label internal to the core.
 fn one_or_none[A](b: Bool, x: A) -> Option(A) {
-  from_sum(if! b {
-    widen_sum!(x, A | .)
-  } else {
-    widen_sum!((), A | .)
-  })
+  from_sum(if! b { widen_sum!(x, A | .) } else { widen_sum!((), A | .) })
 }
 
 /// Keeps a present value only when `pred` accepts it.
@@ -209,13 +209,23 @@ equiv monad_right_id_none[A]() {
 // `bind(bind(some(x), f), g) ≡ bind(some(x), \y. bind(f(y), g))`.
 equiv monad_assoc_present[A][B][C](x: A, f: A -> B, g: B -> C) {
   bind(bind(some(x), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
-  bind(some(x), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
+  bind(
+  , some(x)
+  , .(y: A) -> Option(C) {
+      bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) })
+    }
+  )
 }
 
 // Associativity on the absent spine.
 equiv monad_assoc_none[A][B][C](f: A -> B, g: B -> C) {
   bind(bind(none(A), .(y: A) -> Option(B) { some(f(y)) }), .(z: B) -> Option(C) { some(g(z)) });
-  bind(none(A), .(y: A) -> Option(C) { bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) }) })
+  bind(
+  , none(A)
+  , .(y: A) -> Option(C) {
+      bind(some(f(y)), .(z: B) -> Option(C) { some(g(z)) })
+    }
+  )
 }
 
 // ---- Eliminator laws ----

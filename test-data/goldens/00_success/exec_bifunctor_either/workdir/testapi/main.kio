@@ -32,18 +32,18 @@ pub newtype Bifunctor[**F] : [A][B][C][D] ((A -> B) & (C -> D) & F(A, C)) -> F(B
 // `Either.mk_either`.
 fn either_bifunctor() -> Bifunctor(Either) {
   Bifunctor.mk_bifunctor(
-    , Either
-    , .[A][B][C][D](lf, rf, val) {
-        __either__(
-          , A
-          , C
-          , Either(B, D)
-          , Either.un_either(A, C, val)
-          , .(a) { Either.mk_either(B, D, __left__(B, D, lf(a))) }
-          , .(c) { Either.mk_either(B, D, __right__(B, D, rf(c))) }
-          )
-      }
-    )
+  , Either
+  , .[A][B][C][D](lf, rf, val) {
+      __either__(
+      , A
+      , C
+      , Either(B, D)
+      , Either.un_either(A, C, val)
+      , .(a) { Either.mk_either(B, D, __left__(B, D, lf(a))) }
+      , .(c) { Either.mk_either(B, D, __right__(B, D, rf(c))) }
+      )
+    }
+  )
 }
 
 // Bimap a single `Either(String, String)` through the instance — the
@@ -54,22 +54,22 @@ fn either_bifunctor() -> Bifunctor(Either) {
 fn run_bimap(bf: Bifunctor(Either), value: Either(String, String)) -> String {
   let mapped =
     Bifunctor.bimap(Either, bf)(
-      , String
-      , String
-      , String
-      , String
-      , .(e) { string_concat("err: "(String), e) }
-      , .(v) { string_concat("hello "(String), v) }
-      , value
-      );
+    , String
+    , String
+    , String
+    , String
+    , .(e) { string_concat("err: "(String), e) }
+    , .(v) { string_concat("hello "(String), v) }
+    , value
+    );
   __either__(
-    , String
-    , String
-    , String
-    , Either.un_either(String, String, mapped)
-    , .(err) { string_concat(err, "\n"(String)) }
-    , .(s) { string_concat(s, "\n"(String)) }
-    )
+  , String
+  , String
+  , String
+  , Either.un_either(String, String, mapped)
+  , .(err) { string_concat(err, "\n"(String)) }
+  , .(s) { string_concat(s, "\n"(String)) }
+  )
 }
 
 // Bimap both a `right`-arm and a `left`-arm carrier through the same

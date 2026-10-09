@@ -1,15 +1,15 @@
 module catalog/audit;
 
 import catalog/domain(
-  , Audit_list
-  , Copies_available
-  , Failure
-  , Line_list
-  , No_copies
-  , Not_held
-  , Unknown_call
-  , Unknown_member
-  );
+, Audit_list
+, Copies_available
+, Failure
+, Line_list
+, No_copies
+, Not_held
+, Unknown_call
+, Unknown_member
+);
 import catalog/domain(cat, istr);
 import catalog/domain({copies_available}, {no_copies}, {not_held}, {unknown_call}, {unknown_member});
 import elab/match(match);
@@ -23,17 +23,17 @@ labels Tally = { e_call: I32, e_member: I32, e_copies: I32, e_held: I32, e_hold:
 pub fn failure_text(reason: Failure) -> String {
   match! reason {
     (
-      , .(bad: Unknown_call) { "unknown call-number ".>cat(istr(bad.?{unknown_call})) }
-      , .(bad: Unknown_member) { "unknown member ".>cat(istr(bad.?{unknown_member})) }
-      , .(bad: No_copies) { "no copies left of ".>cat(istr(bad.?{no_copies})) }
-      , .(bad: Not_held) {
-          let .(id: I32, call: I32) = bad.?{not_held};
-          "member ".>cat(istr(id)).>cat(" does not hold ").>cat(istr(call))
-        }
-      , .(bad: Copies_available) {
-          "copies still on the shelf for ".>cat(istr(bad.?{copies_available}))
-        }
-      )
+    , .(bad: Unknown_call) { "unknown call-number ".>cat(istr(bad.?{unknown_call})) }
+    , .(bad: Unknown_member) { "unknown member ".>cat(istr(bad.?{unknown_member})) }
+    , .(bad: No_copies) { "no copies left of ".>cat(istr(bad.?{no_copies})) }
+    , .(bad: Not_held) {
+        let .(id: I32, call: I32) = bad.?{not_held};
+        "member ".>cat(istr(id)).>cat(" does not hold ").>cat(istr(call))
+      }
+    , .(bad: Copies_available) {
+        "copies still on the shelf for ".>cat(istr(bad.?{copies_available}))
+      }
+    )
   }
 }
 
@@ -50,24 +50,21 @@ fn one_more_hold(counts: Tally) -> Tally { counts.!{e_hold = add_i32(counts.?{e_
 fn bump(counts: Tally, reason: Failure) -> Tally {
   match! reason {
     (
-      , .(_bad: Unknown_call) { one_more_call(counts) }
-      , .(_bad: Unknown_member) { one_more_member(counts) }
-      , .(_bad: No_copies) { one_more_copies(counts) }
-      , .(_bad: Not_held) { one_more_held(counts) }
-      , .(_bad: Copies_available) { one_more_hold(counts) }
-      )
+    , .(_bad: Unknown_call) { one_more_call(counts) }
+    , .(_bad: Unknown_member) { one_more_member(counts) }
+    , .(_bad: No_copies) { one_more_copies(counts) }
+    , .(_bad: Not_held) { one_more_held(counts) }
+    , .(_bad: Copies_available) { one_more_hold(counts) }
+    )
   }
 }
 
 fn tally(reasons: Audit_list) -> Tally {
   list.foldl(
-    , .(step: Tally & Failure) {
-        let .(counts: Tally, reason: Failure) = step;
-        bump(counts, reason)
-      }
-    , {e_call = 0, e_member = 0, e_copies = 0, e_held = 0, e_hold = 0}
-    , reasons
-    )
+  , .(step: Tally & Failure) { let .(counts: Tally, reason: Failure) = step; bump(counts, reason) }
+  , {e_call = 0, e_member = 0, e_copies = 0, e_held = 0, e_hold = 0}
+  , reasons
+  )
 }
 
 fn row(label: String, count: I32) -> String { label.>cat(istr(count)) }

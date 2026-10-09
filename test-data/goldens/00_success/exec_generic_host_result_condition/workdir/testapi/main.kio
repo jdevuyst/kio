@@ -7,9 +7,5 @@ import testapi/io(print);
 
 pub fn main() {
   let flags = array_make_filled(1, .t);
-  if! array_get(flags, 0) {
-    print("true\n")
-  } else {
-    print("false\n")
-  }
+  if! array_get(flags, 0) { print("true\n") } else { print("false\n") }
 }

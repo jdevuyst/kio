@@ -5,4 +5,7 @@ import provider(Wrapped);
 
 fn consume(wrapper: Wrapped(.) -> .) { () }
 
-fn partial() { noise(); consume(.(function: Wrapped(_)) { () }) }
+fn partial() {
+  noise();
+  consume(.(function: Wrapped(_)) { () })
+}

@@ -40,12 +40,12 @@ pub fn at_of(p: Placed) -> I32 { p.?{at} }
 fn token_text(t: Token) -> String {
   match! t {
     (
-      , .(n: Num) { int_to_string(n.?{num}) }
-      , .(o: Oper) { symbol(o.?{oper}) }
-      , .(_l: Lparen) { "(" }
-      , .(_r: Rparen) { ")" }
-      , .(b: Bad) { b.?{bad} }
-      )
+    , .(n: Num) { int_to_string(n.?{num}) }
+    , .(o: Oper) { symbol(o.?{oper}) }
+    , .(_l: Lparen) { "(" }
+    , .(_r: Rparen) { ")" }
+    , .(b: Bad) { b.?{bad} }
+    )
   }
 }
 

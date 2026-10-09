@@ -15,23 +15,23 @@ pub labels Census = { live_objects: I32, dead_objects: I32, live_cells: I32, dea
 
 pub fn sweep(cells: Array(I32), marks: Array(Bool)) -> Census {
   fold_objects(
-    , cells
-    , .(census, addr) {
-        let size = object_size(cells, addr);
-        let .(counted: Census) =
-          if! array_get(marks, addr) {
-            census.!{
-              , live_objects = add_i32(census.?{live_objects}, 1)
-              , live_cells = add_i32(census.?{live_cells}, size)
-              }
-          } else {
-            census.!{
-              , dead_objects = add_i32(census.?{dead_objects}, 1)
-              , dead_cells = add_i32(census.?{dead_cells}, size)
-              }
-          };
-        counted
-      }
-    , {live_objects = 0, dead_objects = 0, live_cells = 0, dead_cells = 0}
-    )
+  , cells
+  , .(census, addr) {
+      let size = object_size(cells, addr);
+      let .(counted: Census) =
+        if! array_get(marks, addr) {
+          census.!{
+          , live_objects = add_i32(census.?{live_objects}, 1)
+          , live_cells = add_i32(census.?{live_cells}, size)
+          }
+        } else {
+          census.!{
+          , dead_objects = add_i32(census.?{dead_objects}, 1)
+          , dead_cells = add_i32(census.?{dead_cells}, size)
+          }
+        };
+      counted
+    }
+  , {live_objects = 0, dead_objects = 0, live_cells = 0, dead_cells = 0}
+  )
 }

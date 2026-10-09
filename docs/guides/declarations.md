@@ -263,9 +263,9 @@ fn pack_string(value: Int, hidden: String) -> Pack(Int) { Pack.mk_pack(Int, (val
 
 fn first[A](pack: Pack(A)) -> A {
   Pack.open_pack(A, pack)(
-    , _
-    , .[Hidden](payload) { let .(value: A, _hidden: Hidden) = payload; value }
-    )
+  , _
+  , .[Hidden](payload) { let .(value: A, _hidden: Hidden) = payload; value }
+  )
 }
 
 fn first_pattern[A](pack: Pack(A)) -> A {

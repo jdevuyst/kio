@@ -42,12 +42,7 @@ pub fn apply(state: Session, operation: zipper.Cursor -> (zipper.Cursor | String
   let .(cursor, history, snapshots) = Session.open(state);
   match! operation(cursor) {
     .(changed: zipper.Cursor) {
-      let past =
-        if! edit {
-          lists.cons(cursor, history)
-        } else {
-          history
-        };
+      let past = if! edit { lists.cons(cursor, history) } else { history };
       describe_cursor(changed);
       Session.make((changed, past, snapshots))
     };
@@ -70,12 +65,9 @@ pub fn snapshot(state: Session, title: String) -> Session {
   let .(cursor, history, snapshots) = Session.open(state);
   let existing =
     traversal.find(
-      , .(saved: Snapshot) {
-          let .(name, _root) = Snapshot.open(saved);
-          text.string_eq(name, title)
-        }
-      , snapshots
-      );
+    , .(saved: Snapshot) { let .(name, _root) = Snapshot.open(saved); text.string_eq(name, title) }
+    , snapshots
+    );
   match! existing {
     .(_saved: Snapshot) { error(state, "snapshot name already exists") };
     .() {
@@ -110,7 +102,7 @@ rec(loop) fn render_snapshots(snapshots: lists.List(Snapshot)) {
       let .(title, root) = Snapshot.open(saved);
       io.print(title.>text.string_concat("\n").>>text.string_concat("snapshot "));
       tree.render(root);
-      rec render_snapshots(rest)
+      recur render_snapshots(rest)
     };
     .() { () }
   }

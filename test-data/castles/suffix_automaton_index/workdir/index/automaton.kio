@@ -8,27 +8,21 @@ import testapi/array as a;
 import testapi/iter(loop);
 
 pub labels State = {
-  , longest: I32
-  , suffix: I32
-  , ends: I32
-  , transitions: Array(I32)
-  , copied_from: I32
-  };
+, longest: I32
+, suffix: I32
+, ends: I32
+, transitions: Array(I32)
+, copied_from: I32
+};
 
 pub labels Index = { states: Array(State), last: I32, clones: I32 };
 
 pub fn empty() -> Index {
   let states = a.array_make_empty(State, ());
   a.array_push(
-    , states
-    , {
-        , longest = 0
-        , suffix = -1
-        , ends = 0
-        , transitions = a.array_make_filled(3, -1)
-        , copied_from = -1
-        }
-    );
+  , states
+  , {longest = 0, suffix = -1, ends = 0, transitions = a.array_make_filled(3, -1), copied_from = -1}
+  );
   {states, last = 0, clones = 0}
 }
 
@@ -48,7 +42,7 @@ rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32)
     let state = a.array_get(states, p);
     if! num.less(a.array_get(state.?{transitions}, symbol), 0) {
       a.array_set(state.?{transitions}, symbol, target);
-      rec add_missing(states, state.?{suffix}, symbol, target)
+      recur add_missing(states, state.?{suffix}, symbol, target)
     } else {
       p
     }
@@ -62,7 +56,7 @@ rec(loop) fn redirect(states: Array(State), p: I32, symbol: I32, old: I32, clone
     let state = a.array_get(states, p);
     if! num.equal(a.array_get(state.?{transitions}, symbol), old) {
       a.array_set(state.?{transitions}, symbol, clone);
-      rec redirect(states, state.?{suffix}, symbol, old, clone)
+      recur redirect(states, state.?{suffix}, symbol, old, clone)
     } else {
       ()
     }
@@ -74,15 +68,15 @@ pub fn append(index: Index, symbol: I32) -> Index {
   let current = a.array_len(states);
   let length = n.add_i32(a.array_get(states, last).?{longest}, 1);
   a.array_push(
-    , states
-    , {
-        , longest = length
-        , suffix = 0
-        , ends = 1
-        , transitions = a.array_make_filled(3, -1)
-        , copied_from = -1
-        }
-    );
+  , states
+  , {
+    , longest = length
+    , suffix = 0
+    , ends = 1
+    , transitions = a.array_make_filled(3, -1)
+    , copied_from = -1
+    }
+  );
   let p = add_missing(states, last, symbol, current);
   if! num.less(p, 0) {
     {states, last = current, clones}
@@ -97,15 +91,15 @@ pub fn append(index: Index, symbol: I32) -> Index {
       let clone = a.array_len(states);
       // Clones start with zero endpoint weight and own their mutable transitions.
       a.array_push(
-        , states
-        , {
-            , longest = split_length
-            , suffix = reached.?{suffix}
-            , ends = 0
-            , transitions = a.array_clone(reached.?{transitions})
-            , copied_from = q
-            }
-        );
+      , states
+      , {
+        , longest = split_length
+        , suffix = reached.?{suffix}
+        , ends = 0
+        , transitions = a.array_clone(reached.?{transitions})
+        , copied_from = q
+        }
+      );
       redirect(states, p, symbol, q, clone);
       set_link(states, q, clone);
       set_link(states, current, clone);
@@ -116,7 +110,7 @@ pub fn append(index: Index, symbol: I32) -> Index {
 
 rec(loop) fn consume(index: Index, symbols: Array(I32), position: I32) -> Index {
   if! num.less(position, a.array_len(symbols)) {
-    rec consume(append(index, a.array_get(symbols, position)), symbols, n.add_i32(position, 1))
+    recur consume(append(index, a.array_get(symbols, position)), symbols, n.add_i32(position, 1))
   } else {
     index
   }

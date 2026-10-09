@@ -41,16 +41,16 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // absent case unchanged.
 fn leaf_functor() -> Functor(Leaf) {
   Functor.mk_functor(
-    , Leaf
-    , .[A][B](s, m) {
-        match! Leaf.un_leaf(m) {
-          (
-            , .(p: Present(A)) { Leaf.mk_leaf(some(s(Present.get(A, p)))) }
-            , .(_u: .) { Leaf.mk_leaf(none(B, ())) }
-            )
-        }
+  , Leaf
+  , .[A][B](s, m) {
+      match! Leaf.un_leaf(m) {
+        (
+        , .(p: Present(A)) { Leaf.mk_leaf(some(s(Present.get(A, p)))) }
+        , .(_u: .) { Leaf.mk_leaf(none(B, ())) }
+        )
       }
-    )
+    }
+  )
 }
 
 // Exercise the instance on a present leaf: brand a String into a

@@ -13,24 +13,24 @@ fn sum5(a: F64, b: F64, c: F64, d: F64, e: F64) -> F64 {
 
 fn weighted_level(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) -> F64 {
   sum5(
-    , mul_f64(s0, 0.125(F64))
-    , mul_f64(s1, 0.25(F64))
-    , mul_f64(s2, 0.25(F64))
-    , mul_f64(s3, 0.25(F64))
-    , mul_f64(s4, 0.125(F64))
-    )
+  , mul_f64(s0, 0.125(F64))
+  , mul_f64(s1, 0.25(F64))
+  , mul_f64(s2, 0.25(F64))
+  , mul_f64(s3, 0.25(F64))
+  , mul_f64(s4, 0.125(F64))
+  )
 }
 
 fn roughness(raw: F64 & F64 & F64 & F64 & F64, smoothed: F64 & F64 & F64 & F64 & F64) -> F64 {
   let .(r0: F64, r1: F64, r2: F64, r3: F64, r4: F64) = raw;
   let .(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) = smoothed;
   sum5(
-    , square(residual(r0, s0))
-    , square(residual(r1, s1))
-    , square(residual(r2, s2))
-    , square(residual(r3, s3))
-    , square(residual(r4, s4))
-    )
+  , square(residual(r0, s0))
+  , square(residual(r1, s1))
+  , square(residual(r2, s2))
+  , square(residual(r3, s3))
+  , square(residual(r4, s4))
+  )
 }
 
 pub fn score_report(calibrated: F64 & F64 & F64 & F64 & F64, smoothed: F64 & F64 & F64 & F64 & F64) ->

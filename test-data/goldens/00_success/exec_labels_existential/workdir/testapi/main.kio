@@ -13,6 +13,8 @@ fn make_box[A][U](x: A, y: U) -> Box(A) { Box.mk((x, y)) }
 
 fn discard[A][B](_p: A & B) { () }
 
-fn extract[A](b: Box(A)) { Box.get(A, b)(.[U](pair) { discard(pair) }) }
+fn extract[A](b: Box(A)) {
+  Box.get(A, b)(.[U](pair) { discard(pair) })
+}
 
 pub fn main() { let b = make_box("x\n", "y\n"); extract(b); print("labels-existential-ok\n") }

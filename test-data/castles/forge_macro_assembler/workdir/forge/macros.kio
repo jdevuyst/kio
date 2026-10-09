@@ -37,10 +37,10 @@ fn drain_tail() -> Srcs { [* i.emit(i.rb()), i.sub(i.ra(), i.rd()), i.jmp("drain
 /// The table every program is assembled against.
 pub fn table() -> Macros {
   l.cons(
-    , p.macro_def("square_b", square_b())
-    , l.cons(
-        , p.macro_def("dec_a", dec_a())
-        , l.cons(p.macro_def("drain_tail", drain_tail()), l.nil(Macro))
-        )
+  , p.macro_def("square_b", square_b())
+  , l.cons(
+    , p.macro_def("dec_a", dec_a())
+    , l.cons(p.macro_def("drain_tail", drain_tail()), l.nil(Macro))
     )
+  )
 }

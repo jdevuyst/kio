@@ -2,21 +2,21 @@
 module queue/queue;
 
 import queue/core(
-  , Bool
-  , Queue
-  , back
-  , count_step
-  , empty
-  , front
-  , no
-  , peek
-  , pop_front
-  , singleton
-  , snoc_into_back
-  , swap_spines
-  , well_formed
-  , yes
-  );
+, Bool
+, Queue
+, back
+, count_step
+, empty
+, front
+, no
+, peek
+, pop_front
+, singleton
+, snoc_into_back
+, swap_spines
+, well_formed
+, yes
+);
 import queue/elab/match(match);
 import queue/elab/spine_elaborators(widen_sum);
 import queue/list/core(List, cons, head, nil, uncons);
@@ -37,33 +37,35 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   }
 }
 
-fn has_value[A](result: A | .) -> Bool { fold_result(no(), .(_value: A) -> Bool { yes() }, result) }
+fn has_value[A](result: A | .) -> Bool {
+  fold_result(no(), .(_value: A) -> Bool { yes() }, result)
+}
 
 // =====================================================================
 // Loop-driven list walks
 // =====================================================================
 fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
   loop(
-    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-        match! state {
-          .(carry: Acc, rest: List(A)) {
-            match! uncons(rest) {
-              (
-                , .(pair: A & List(A)) {
-                    match! pair {
-                      .(head: A, tail: List(A)) {
-                        widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
-                      }
-                    }
+  , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+      match! state {
+        .(carry: Acc, rest: List(A)) {
+          match! uncons(rest) {
+            (
+            , .(pair: A & List(A)) {
+                match! pair {
+                  .(head: A, tail: List(A)) {
+                    widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
                   }
-                , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
-                )
-            }
+                }
+              }
+            , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+            )
           }
         }
       }
-    , (seed, xs)
-    )
+    }
+  , (seed, xs)
+  )
 }
 
 fn reverse_list[A](xs: List(A)) -> List(A) {
@@ -76,16 +78,16 @@ fn reverse_list[A](xs: List(A)) -> List(A) {
 fn mkq[A](f: List(A), b: List(A)) -> Queue(A) {
   match! uncons(f) {
     (
-      , .(_pair: A & List(A)) { Queue.mk_unchecked((f, b)) }
-      , .(_empty: .) {
-          match! uncons(b) {
-            (
-              , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A))) }
-              , .(_bempty: .) { empty(A) }
-              )
-          }
+    , .(_pair: A & List(A)) { Queue.mk_unchecked((f, b)) }
+    , .(_empty: .) {
+        match! uncons(b) {
+          (
+          , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A))) }
+          , .(_bempty: .) { empty(A) }
+          )
         }
-      )
+      }
+    )
   }
 }
 
@@ -101,14 +103,14 @@ pub fn enqueue[A](x: A, q: Queue(A)) -> Queue(A) {
 /// Remove the oldest element from a queue, returning it with the residual queue.
 pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
   fold_result(
-    , absent(A & Queue(A))
-    , .(pair: A & Queue(A)) {
-        match! pair {
-          .(h: A, rest: Queue(A)) { present((h, mkq(front(rest), back(rest)))) }
-        }
+  , absent(A & Queue(A))
+  , .(pair: A & Queue(A)) {
+      match! pair {
+        .(h: A, rest: Queue(A)) { present((h, mkq(front(rest), back(rest)))) }
       }
-    , pop_front(q)
-    )
+    }
+  , pop_front(q)
+  )
 }
 
 /// Reverse the FIFO order of a queue.
@@ -134,10 +136,12 @@ pub fn to_list[A](q: Queue(A)) -> List(A) { append_list(front(q), reverse_list(b
 
 fn list_length[A](xs: List(A)) -> I32 {
   fold_list(
-    , xs
-    , 0
-    , .(carry: I32, x: A) -> I32 { count_step(.(n: I32) -> I32 { add_i32(n, 1) }, carry, x) }
-    )
+  , xs
+  , 0
+  , .(carry: I32, x: A) -> I32 {
+      count_step(.(n: I32) -> I32 { add_i32(n, 1) }, carry, x)
+    }
+  )
 }
 
 /// Count the elements in a queue.
@@ -211,27 +215,27 @@ equiv fifo_first_out[A](a0: A, a1: A) {
 
 equiv fifo_second_out[A](a0: A, a1: A) {
   fold_result(
-    , absent(A)
-    , .(pair: A & Queue(A)) {
-        match! pair {
-          .(_h: A, rest: Queue(A)) { peek(rest) }
-        }
+  , absent(A)
+  , .(pair: A & Queue(A)) {
+      match! pair {
+        .(_h: A, rest: Queue(A)) { peek(rest) }
       }
-    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
-    );
+    }
+  , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
+  );
   present(a1)
 }
 
 equiv dequeue_head_is_oldest[A](a0: A, a1: A) {
   fold_result(
-    , absent(A)
-    , .(pair: A & Queue(A)) {
-        match! pair {
-          .(h: A, _rest: Queue(A)) { present(h) }
-        }
+  , absent(A)
+  , .(pair: A & Queue(A)) {
+      match! pair {
+        .(h: A, _rest: Queue(A)) { present(h) }
       }
-    , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
-    );
+    }
+  , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil(A))), nil(A))))
+  );
   present(a0)
 }
 

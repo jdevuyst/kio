@@ -147,13 +147,13 @@ pub fn un_value(v: Value) -> Value_shape { Value.get(v) }
 pub fn value_to_scalar(v: Value) -> . | Scalar {
   match! un_value(v) {
     (
-      , .(hv: V_host) { widen_sum!(V_host.get(hv), . | Scalar) }
-      , .(_c: V_closure) { widen_sum!((), . | Scalar) }
-      , .(_p: V_product) { widen_sum!((), . | Scalar) }
-      , .(_s: V_sum) { widen_sum!((), . | Scalar) }
-      , .(_u: V_unit) { widen_sum!((), . | Scalar) }
-      , .(_f: V_hostfn) { widen_sum!((), . | Scalar) }
-      )
+    , .(hv: V_host) { widen_sum!(V_host.get(hv), . | Scalar) }
+    , .(_c: V_closure) { widen_sum!((), . | Scalar) }
+    , .(_p: V_product) { widen_sum!((), . | Scalar) }
+    , .(_s: V_sum) { widen_sum!((), . | Scalar) }
+    , .(_u: V_unit) { widen_sum!((), . | Scalar) }
+    , .(_f: V_hostfn) { widen_sum!((), . | Scalar) }
+    )
   }
 }
 

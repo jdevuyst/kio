@@ -1,0 +1,10 @@
+module main;
+
+host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+
+host fn retain(callback: [T] T -> T) -> .;
+
+pub rec(drive) fn again[A](value: A) -> A {
+  let ignored = retain(.[A](inner: A) -> A { recur(escape) again(A, inner) });
+  value
+}

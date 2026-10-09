@@ -16,26 +16,26 @@ import elab/match(match);
 import elab/spine_elaborators(widen_sum);
 import forge/isa as isa;
 import forge/isa(
-  , Add
-  , Div
-  , Emit
-  , Halt
-  , Ins
-  , Jmp_addr
-  , Jmpz_addr
-  , Loadi
-  , Mod
-  , Mov
-  , Mul
-  , Pop
-  , Push
-  , Ra
-  , Rb
-  , Rc
-  , Rd
-  , Reg
-  , Sub
-  );
+, Add
+, Div
+, Emit
+, Halt
+, Ins
+, Jmp_addr
+, Jmpz_addr
+, Loadi
+, Mod
+, Mov
+, Mul
+, Pop
+, Push
+, Ra
+, Rb
+, Rc
+, Rd
+, Reg
+, Sub
+);
 import forge/list as l;
 import forge/program(Prog);
 import testapi(Bool, I32, String);
@@ -49,11 +49,7 @@ pub type Words = l.List(I32);
 /// Integer equality, out of the antisymmetry of `<=`: this host tier
 /// supplies the comparisons but no `eq_i32`.
 pub fn int_eq(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) {
-    leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
 }
 
 fn is_zero(n: I32) -> Bool { int_eq(n, 0) }
@@ -67,11 +63,11 @@ fn zeroed() -> Regs { {va = 0, vb = 0, vc = 0, vd = 0} }
 pub fn read_reg(regs: Regs, r: Reg) -> I32 {
   match! r {
     (
-      , .(_a: Ra) { regs.?{va} }
-      , .(_b: Rb) { regs.?{vb} }
-      , .(_c: Rc) { regs.?{vc} }
-      , .(_d: Rd) { regs.?{vd} }
-      )
+    , .(_a: Ra) { regs.?{va} }
+    , .(_b: Rb) { regs.?{vb} }
+    , .(_c: Rc) { regs.?{vc} }
+    , .(_d: Rd) { regs.?{vd} }
+    )
   }
 }
 
@@ -86,11 +82,11 @@ fn set_d(regs: Regs, v: I32) -> Regs { regs.!{vd = v} }
 fn write_reg(regs: Regs, r: Reg, v: I32) -> Regs {
   match! r {
     (
-      , .(_a: Ra) { set_a(regs, v) }
-      , .(_b: Rb) { set_b(regs, v) }
-      , .(_c: Rc) { set_c(regs, v) }
-      , .(_d: Rd) { set_d(regs, v) }
-      )
+    , .(_a: Ra) { set_a(regs, v) }
+    , .(_b: Rb) { set_b(regs, v) }
+    , .(_c: Rc) { set_c(regs, v) }
+    , .(_d: Rd) { set_d(regs, v) }
+    )
   }
 }
 
@@ -104,14 +100,14 @@ pub fn budget() -> I32 { 120 }
 
 pub fn boot() -> Vm {
   {
-    , pc = 0
-    , bank = zeroed()
-    , stack = l.nil(I32)
-    , depth = 0
-    , high = 0
-    , fuel = budget()
-    , out = l.nil(I32)
-    }
+  , pc = 0
+  , bank = zeroed()
+  , stack = l.nil(I32)
+  , depth = 0
+  , high = 0
+  , fuel = budget()
+  , out = l.nil(I32)
+  }
 }
 
 /// Why the machine stopped.
@@ -167,12 +163,7 @@ fn alu_checked(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
 
 fn push_word(m: Vm, v: I32) -> Outcome {
   let deep = add_i32(m.?{depth}, 1);
-  let peak =
-    if! lt_i32(m.?{high}, deep) {
-      deep
-    } else {
-      m.?{high}
-    };
+  let peak = if! lt_i32(m.?{high}, deep) { deep } else { m.?{high} };
   going(advance(m.!{stack = l.cons(v, m.?{stack}), depth = deep, high = peak}))
 }
 
@@ -180,12 +171,12 @@ fn pop_word(m: Vm, dst: Reg) -> Outcome {
   let next = l.un_cons(m.?{stack});
   match! next {
     (
-      , .(top: I32, rest: Words) {
-          let .(popped: Vm) = m.!{stack = rest, depth = sub_i32(m.?{depth}, 1)};
-          store(popped, dst, top)
-        }
-      , .(_empty: .) { stop(m, faulted("stack underflow")) }
-      )
+    , .(top: I32, rest: Words) {
+        let .(popped: Vm) = m.!{stack = rest, depth = sub_i32(m.?{depth}, 1)};
+        store(popped, dst, top)
+      }
+    , .(_empty: .) { stop(m, faulted("stack underflow")) }
+    )
   }
 }
 
@@ -197,27 +188,23 @@ fn emit_word(m: Vm, r: Reg) -> Outcome {
 fn exec(m: Vm, i: Ins) -> Outcome {
   match! i {
     (
-      , .(x: Loadi) { let .(r: Reg, n: I32) = x.?{isa.loadi}; store(m, r, n) }
-      , .(x: Mov) { let .(dst: Reg, src: Reg) = x.?{isa.mov}; store(m, dst, read(m, src)) }
-      , .(x: Add) { let .(dst: Reg, src: Reg) = x.?{isa.add}; alu(m, dst, src, add_i32) }
-      , .(x: Sub) { let .(dst: Reg, src: Reg) = x.?{isa.sub}; alu(m, dst, src, sub_i32) }
-      , .(x: Mul) { let .(dst: Reg, src: Reg) = x.?{isa.mul}; alu(m, dst, src, mul_i32) }
-      , .(x: Div) { let .(dst: Reg, src: Reg) = x.?{isa.div}; alu_checked(m, dst, src, div_i32) }
-      , .(x: Mod) { let .(dst: Reg, src: Reg) = x.?{isa.mod}; alu_checked(m, dst, src, mod_i32) }
-      , .(x: Push) { push_word(m, read(m, x.?{isa.push})) }
-      , .(x: Pop) { pop_word(m, x.?{isa.pop}) }
-      , .(x: Emit) { emit_word(m, x.?{isa.emit}) }
-      , .(_x: Halt) { stop(m, halted()) }
-      , .(x: Jmp_addr) { going(set_pc(m, x.?{isa.jmp_addr})) }
-      , .(x: Jmpz_addr) {
-          let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
-          if! is_zero(read(m, r)) {
-            going(set_pc(m, at))
-          } else {
-            going(advance(m))
-          }
-        }
-      )
+    , .(x: Loadi) { let .(r: Reg, n: I32) = x.?{isa.loadi}; store(m, r, n) }
+    , .(x: Mov) { let .(dst: Reg, src: Reg) = x.?{isa.mov}; store(m, dst, read(m, src)) }
+    , .(x: Add) { let .(dst: Reg, src: Reg) = x.?{isa.add}; alu(m, dst, src, add_i32) }
+    , .(x: Sub) { let .(dst: Reg, src: Reg) = x.?{isa.sub}; alu(m, dst, src, sub_i32) }
+    , .(x: Mul) { let .(dst: Reg, src: Reg) = x.?{isa.mul}; alu(m, dst, src, mul_i32) }
+    , .(x: Div) { let .(dst: Reg, src: Reg) = x.?{isa.div}; alu_checked(m, dst, src, div_i32) }
+    , .(x: Mod) { let .(dst: Reg, src: Reg) = x.?{isa.mod}; alu_checked(m, dst, src, mod_i32) }
+    , .(x: Push) { push_word(m, read(m, x.?{isa.push})) }
+    , .(x: Pop) { pop_word(m, x.?{isa.pop}) }
+    , .(x: Emit) { emit_word(m, x.?{isa.emit}) }
+    , .(_x: Halt) { stop(m, halted()) }
+    , .(x: Jmp_addr) { going(set_pc(m, x.?{isa.jmp_addr})) }
+    , .(x: Jmpz_addr) {
+        let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
+        if! is_zero(read(m, r)) { going(set_pc(m, at)) } else { going(advance(m)) }
+      }
+    )
   }
 }
 
@@ -233,6 +220,6 @@ fn step(code: Prog, m: Vm) -> Outcome {
 
 pub rec(loop) fn run(code: Prog, m: Vm) -> Vm & Stop {
   match! step(code, m) {
-    (.(g: Going) { rec run(code, g.?{going}) }, .(d: Done) { d.?{done} })
+    (.(g: Going) { recur run(code, g.?{going}) }, .(d: Done) { d.?{done} })
   }
 }

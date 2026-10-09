@@ -34,7 +34,9 @@ pub fn cps_result(vault: Vault([U] U -> Seal), consume: . -> .) {
   consume()
 }
 
-pub fn local_stage(value: Seal) -> Vault([A] Seal) { Vault.store(.[A] { value }) }
+pub fn local_stage(value: Seal) -> Vault([A] Seal) {
+  Vault.store(.[A] { value })
+}
 
 pub fn local_continuation(value: Seal) -> Vault([A] A -> Seal) {
   Vault.store(.[A](_argument: A) { value })

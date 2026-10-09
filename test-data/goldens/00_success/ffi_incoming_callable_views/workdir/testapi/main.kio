@@ -40,7 +40,9 @@ pub fn receive_computed(vault: Vault(. -> Seal), consume: . -> .) {
   consume()
 }
 
-pub fn local_callback(value: Seal) -> Vault(. -> Seal) { Vault.store(.() { value }) }
+pub fn local_callback(value: Seal) -> Vault(. -> Seal) {
+  Vault.store(.() { value })
+}
 
 pub fn specialized_observer(consume: . -> .) -> Vault(Seal -> .) {
   let generic = .[A](_value: A) { consume() };
@@ -52,9 +54,9 @@ fn apply_callback(callback: ((t.I32 & t.I32) & t.I32) -> ., value: (t.I32 & t.I3
    { callback(value); value }
 
 pub fn invoke_via_helper(
-  , vault: Vault(((t.I32 & t.I32) & t.I32) -> .)
-  , value: (t.I32 & t.I32) & t.I32
-  ) -> (t.I32 & t.I32) & t.I32 { apply_callback(vault.>Vault.open, value) }
+, vault: Vault(((t.I32 & t.I32) & t.I32) -> .)
+, value: (t.I32 & t.I32) & t.I32
+) -> (t.I32 & t.I32) & t.I32 { apply_callback(vault.>Vault.open, value) }
 
 pub fn invoke_direct(vault: Vault(((t.I32 & t.I32) & t.I32) -> .), value: (t.I32 & t.I32) & t.I32) ->
   (t.I32 & t.I32) & t.I32

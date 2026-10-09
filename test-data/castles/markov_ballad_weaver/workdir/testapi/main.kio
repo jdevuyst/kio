@@ -6,13 +6,13 @@ module testapi/main;
 import ballad/fixture(read_int, read_phrases);
 import ballad/model(empty_model, learn);
 import ballad/report(
-  , print_corpus
-  , print_first_verse_draws
-  , print_header
-  , print_model
-  , print_stats
-  , print_verses
-  );
+, print_corpus
+, print_first_verse_draws
+, print_header
+, print_model
+, print_stats
+, print_verses
+);
 import ballad/weave(weave);
 import testapi(I32);
 import testapi/arith(mul_i32);

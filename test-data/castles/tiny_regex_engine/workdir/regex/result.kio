@@ -26,8 +26,8 @@ fn render_miss(pattern: String, candidate: String, reason: String) -> String {
 pub fn render(pattern: String, candidate: String, verdict: Verdict) -> String {
   match! verdict {
     (
-      , .(s: Span) { render_hit(pattern, candidate, s.?{span}) }
-      , .(m: Miss) { render_miss(pattern, candidate, m.?{miss}) }
-      )
+    , .(s: Span) { render_hit(pattern, candidate, s.?{span}) }
+    , .(m: Miss) { render_miss(pattern, candidate, m.?{miss}) }
+    )
   }
 }

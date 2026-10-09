@@ -13,4 +13,7 @@ fn run(delayed: [A][B] (B & B) -> B) {
   print(choose(("chosen\n", "ignored\n")))
 }
 
-pub fn main() { let source = delay(.[B](left: B, _right: B) -> B { left }); run(source) }
+pub fn main() {
+  let source = delay(.[B](left: B, _right: B) -> B { left });
+  run(source)
+}

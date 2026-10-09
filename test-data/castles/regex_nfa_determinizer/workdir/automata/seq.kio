@@ -47,7 +47,7 @@ fn head_or[A](xs: List(A), fallback: A) -> A {
 /// directly instead.
 pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
   match! xs.>List.unpack {
-    (.(head: A, rest: List(A)) { rec fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
+    (.(head: A, rest: List(A)) { recur fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
   }
 }
 
@@ -61,13 +61,15 @@ pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
 
 fn snoc[A](xs: List(A), value: A) -> List(A) { append(xs, one(value)) }
 
-pub fn len[A](xs: List(A)) -> I32 { fold(xs, .(n: I32, _x: A) { add_i32(n, 1) }, 0) }
+pub fn len[A](xs: List(A)) -> I32 {
+  fold(xs, .(n: I32, _x: A) { add_i32(n, 1) }, 0)
+}
 
 rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
   if! leq_i32(count, 0) {
     xs
   } else match! xs.>List.unpack {
-    (.(_head: A, rest: List(A)) { rec drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
+    (.(_head: A, rest: List(A)) { recur drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
   }
 }
 
@@ -78,15 +80,11 @@ pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, i
 pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
   match! xs.>List.unpack {
     (
-      , .(head: I32, rest: Ints) {
-          if! eq_i32(head, value) {
-            .t
-          } else {
-            rec member(value, rest)
-          }
-        }
-      , .(_empty: .) { .f }
-      )
+    , .(head: I32, rest: Ints) {
+        if! eq_i32(head, value) { .t } else { recur member(value, rest) }
+      }
+    , .(_empty: .) { .f }
+    )
   }
 }
 
@@ -94,17 +92,17 @@ pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
 pub rec(loop) fn insert(value: I32, xs: Ints) -> Ints {
   match! xs.>List.unpack {
     (
-      , .(head: I32, rest: Ints) {
-          if! lt_i32(value, head) {
-            cons(value, xs)
-          } else if! eq_i32(value, head) {
-            xs
-          } else {
-            cons(head, rec(cont) insert(value, rest))
-          }
+    , .(head: I32, rest: Ints) {
+        if! lt_i32(value, head) {
+          cons(value, xs)
+        } else if! eq_i32(value, head) {
+          xs
+        } else {
+          cons(head, recur(cont) insert(value, rest))
         }
-      , .(_empty: .) { cons(value, empty()) }
-      )
+      }
+    , .(_empty: .) { cons(value, empty()) }
+    )
   }
 }
 
@@ -116,19 +114,14 @@ pub fn singleton(value: I32) -> Ints { insert(value, empty()) }
 pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
   let .(_count: I32, found: Ints) =
     fold(
-      , xs
-      , .(acc: I32 & Ints, x: A) {
-          let .(at: I32, hits: Ints) = acc;
-          let next =
-            if! keep(x) {
-              insert(at, hits)
-            } else {
-              hits
-            };
-          (add_i32(at, 1), next)
-        }
-      , (0, empty())
-      );
+    , xs
+    , .(acc: I32 & Ints, x: A) {
+        let .(at: I32, hits: Ints) = acc;
+        let next = if! keep(x) { insert(at, hits) } else { hits };
+        (add_i32(at, 1), next)
+      }
+    , (0, empty())
+    );
   found
 }
 
@@ -137,37 +130,29 @@ pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
 rec(loop) fn ints_eq(xs: Ints, ys: Ints) -> Bool {
   match! xs.>List.unpack {
     (
-      , .(x: I32, xr: Ints) {
-          match! ys.>List.unpack {
-            (
-              , .(y: I32, yr: Ints) {
-                  if! eq_i32(x, y) {
-                    rec ints_eq(xr, yr)
-                  } else {
-                    .f
-                  }
-                }
-              , .(_empty: .) { .f }
-              )
-          }
+    , .(x: I32, xr: Ints) {
+        match! ys.>List.unpack {
+          (
+          , .(y: I32, yr: Ints) {
+              if! eq_i32(x, y) { recur ints_eq(xr, yr) } else { .f }
+            }
+          , .(_empty: .) { .f }
+          )
         }
-      , .(_empty: .) { is_empty(ys) }
-      )
+      }
+    , .(_empty: .) { is_empty(ys) }
+    )
   }
 }
 
 rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
   match! rows.>List.unpack {
     (
-      , .(row: Ints, rest: List(Ints)) {
-          if! ints_eq(row, needle) {
-            at
-          } else {
-            rec scan_for(rest, needle, add_i32(at, 1))
-          }
-        }
-      , .(_empty: .) { at }
-      )
+    , .(row: Ints, rest: List(Ints)) {
+        if! ints_eq(row, needle) { at } else { recur scan_for(rest, needle, add_i32(at, 1)) }
+      }
+    , .(_empty: .) { at }
+    )
   }
 }
 
@@ -176,9 +161,5 @@ rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
 /// then takes — so there is no not-found sentinel to thread.
 pub fn intern(rows: List(Ints), needle: Ints) -> List(Ints) & I32 {
   let at = scan_for(rows, needle, 0);
-  if! lt_i32(at, len(rows)) {
-    (rows, at)
-  } else {
-    (snoc(rows, needle), at)
-  }
+  if! lt_i32(at, len(rows)) { (rows, at) } else { (snoc(rows, needle), at) }
 }

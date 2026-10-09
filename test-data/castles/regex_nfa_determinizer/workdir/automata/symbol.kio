@@ -18,11 +18,5 @@ pub fn width() -> I32 { 3 }
 pub fn epsilon() -> I32 { 3 }
 
 pub fn letter(code: I32) -> String {
-  if! eq_i32(code, code_a()) {
-    "a"
-  } else if! eq_i32(code, code_b()) {
-    "b"
-  } else {
-    "c"
-  }
+  if! eq_i32(code, code_a()) { "a" } else if! eq_i32(code, code_b()) { "b" } else { "c" }
 }

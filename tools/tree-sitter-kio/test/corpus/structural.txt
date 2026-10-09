@@ -92,7 +92,6 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
               (separator_dot)))
           (bracket_rparen)))
       (bracket_rbrace))))
-
 ================================================================================
 structural star_literal
 ================================================================================
@@ -1918,7 +1917,7 @@ fn run() { id([*F] F(.) -> F(.)) }
 structural all_expression_forms
 ================================================================================
 module source;
-fn run() { id([[ do! (f) { let x <- get(); x }, rec next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]]) }
+fn run() { id([[ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1972,7 +1971,7 @@ fn run() { id([[ do! (f) { let x <- get(); x }, rec next(x), x.?{label}, x.!{lab
               (separator_comma)
               (variadic_element
                 (recursive_call_expression
-                  (keyword_rec)
+                  (keyword_recur)
                   (entity_name_function)
                   (expression_arguments
                     (bracket_lparen)
@@ -3757,7 +3756,7 @@ fn after() { let(x) }
 ================================================================================
 structural recursive_prefix_multiline_annotation
 ================================================================================
-module source; fn broken() { rec(
+module source; fn broken() { recur(
  poly
 ) again(x) }
 fn after() { let(x) }
@@ -3780,7 +3779,7 @@ fn after() { let(x) }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -5880,7 +5879,7 @@ module m; fn f() { let .(rec, value) = pair; () }
 ================================================================================
 structural nested_local_binders
 ================================================================================
-module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; rec(poly) again(value) } }
+module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -5946,7 +5945,7 @@ module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, val
               (identifier)))
           (separator_semicolon)
           (recursive_call_expression
-            (keyword_rec)
+            (keyword_recur)
             (recursive_call_annotations
               (bracket_lparen)
               (recursive_call_annotation
@@ -9205,7 +9204,7 @@ module source; fn use() { f(rec, rec(poly), helper.rec) }
 ================================================================================
 structural rec_call_owned_callee
 ================================================================================
-module source; fn use() { rec again(value) }
+module source; fn use() { recur again(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9225,7 +9224,7 @@ module source; fn use() { rec again(value) }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (entity_name_function)
         (expression_arguments
           (bracket_lparen)
@@ -9237,7 +9236,7 @@ module source; fn use() { rec again(value) }
 ================================================================================
 structural rec_call_owned_annotations
 ================================================================================
-module source; fn use() { rec(poly, cont) again(value) }
+module source; fn use() { recur(poly, cont) again(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9257,7 +9256,7 @@ module source; fn use() { rec(poly, cont) again(value) }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -9277,7 +9276,7 @@ module source; fn use() { rec(poly, cont) again(value) }
 ================================================================================
 structural rec_call_balanced_comment_callee
 ================================================================================
-module source; fn use() { rec(poly) // callee
+module source; fn use() { recur(poly) // callee
  again(value) }
 --------------------------------------------------------------------------------
 
@@ -9298,7 +9297,7 @@ module source; fn use() { rec(poly) // callee
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -9350,7 +9349,7 @@ module source; fn use() { rec(poly) // final
 ================================================================================
 structural rec_call_incomplete_callee
 ================================================================================
-module source; fn use() { rec again
+module source; fn use() { recur again
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9371,13 +9370,13 @@ module source; fn use() { rec again
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (entity_name_function))))))
 
 ================================================================================
 structural rec_call_incomplete_annotated_callee
 ================================================================================
-module source; fn use() { rec(poly) again
+module source; fn use() { recur(poly) again
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9398,7 +9397,7 @@ module source; fn use() { rec(poly) again
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (recursive_call_annotations
             (bracket_lparen)
             (recursive_call_annotation
@@ -9409,7 +9408,7 @@ module source; fn use() { rec(poly) again
 ================================================================================
 structural rec_call_unclosed_annotation
 ================================================================================
-module source; fn use() { rec(poly
+module source; fn use() { recur(poly
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9430,7 +9429,7 @@ module source; fn use() { rec(poly
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen)
           (recursive_call_annotation
             name: (keyword_control)))))))
@@ -9438,7 +9437,7 @@ module source; fn use() { rec(poly
 ================================================================================
 structural rec_call_empty_annotation_prefix
 ================================================================================
-module source; fn use() { rec(
+module source; fn use() { recur(
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9459,7 +9458,7 @@ module source; fn use() { rec(
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen))))))
 
 ================================================================================
@@ -9491,7 +9490,7 @@ module source; fn use() { rec
 ================================================================================
 structural rec_call_annotation_recovery_sibling
 ================================================================================
-module source; fn use() { rec(poly }
+module source; fn use() { recur(poly }
 fn neighbor() { rec(value) }
 --------------------------------------------------------------------------------
 
@@ -9512,7 +9511,7 @@ fn neighbor() { rec(value) }
     (expression_block
       (bracket_lbrace)
       (incomplete_recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (bracket_lparen)
         (recursive_call_annotation
           name: (keyword_control)))
@@ -9568,7 +9567,7 @@ fn use(rec: .)->.{rec}
 ================================================================================
 structural rec_call_unclosed_annotation_partial_name
 ================================================================================
-module source; fn use() { rec(po
+module source; fn use() { recur(po
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9589,7 +9588,7 @@ module source; fn use() { rec(po
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen)
           (recursive_call_annotation
             name: (identifier)))))))
@@ -9597,7 +9596,7 @@ module source; fn use() { rec(po
 ================================================================================
 structural rec_call_unclosed_annotation_invalid_name
 ================================================================================
-module source; fn use() { rec(value
+module source; fn use() { recur(value
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9618,7 +9617,7 @@ module source; fn use() { rec(value
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen)
           (recursive_call_annotation
             name: (identifier)))))))
@@ -9626,7 +9625,7 @@ module source; fn use() { rec(value
 ================================================================================
 structural rec_call_unclosed_annotation_invalid_tail
 ================================================================================
-module source; fn use() { rec(value, poly
+module source; fn use() { recur(value, poly
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9647,7 +9646,7 @@ module source; fn use() { rec(value, poly
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen)
           (recursive_call_annotation
             name: (identifier))
@@ -9658,7 +9657,7 @@ module source; fn use() { rec(value, poly
 ================================================================================
 structural rec_call_unclosed_annotation_valid_then_invalid
 ================================================================================
-module source; fn use() { rec(poly, value, cont
+module source; fn use() { recur(poly, value, cont
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9679,7 +9678,7 @@ module source; fn use() { rec(poly, value, cont
       (incomplete_expression_block
         (bracket_lbrace)
         (incomplete_recursive_call_expression
-          (keyword_rec)
+          (keyword_recur)
           (bracket_lparen)
           (recursive_call_annotation
             name: (keyword_control))
@@ -9693,7 +9692,7 @@ module source; fn use() { rec(poly, value, cont
 ================================================================================
 structural rec_call_closed_invalid_annotation
 ================================================================================
-module source; fn use() { rec(value) again() }
+module source; fn use() { recur(value) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9713,7 +9712,7 @@ module source; fn use() { rec(value) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -9728,7 +9727,7 @@ module source; fn use() { rec(value) again() }
 ================================================================================
 structural rec_call_closed_invalid_annotation_tail
 ================================================================================
-module source; fn use() { rec(poly, value, cont) again() }
+module source; fn use() { recur(poly, value, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9748,7 +9747,7 @@ module source; fn use() { rec(poly, value, cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -9769,7 +9768,7 @@ module source; fn use() { rec(poly, value, cont) again() }
 ================================================================================
 structural rec_call_closed_invalid_nested_annotation
 ================================================================================
-module source; fn use() { rec(()) again() }
+module source; fn use() { recur(()) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9789,7 +9788,7 @@ module source; fn use() { rec(()) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -9806,7 +9805,7 @@ module source; fn use() { rec(()) again() }
 ================================================================================
 structural rec_call_closed_empty_annotation
 ================================================================================
-module source; fn use() { rec() again() }
+module source; fn use() { recur() again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9826,7 +9825,7 @@ module source; fn use() { rec() again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (bracket_rparen))
@@ -9839,13 +9838,13 @@ module source; fn use() { rec() again() }
 ================================================================================
 structural rec_call_raw_annotated_keyword_callee
 ================================================================================
-rec(poly)
+recur(poly)
  newtype(())
 --------------------------------------------------------------------------------
 
 (source_file
   (recursive_call_expression
-    (keyword_rec)
+    (keyword_recur)
     (recursive_call_annotations
       (bracket_lparen)
       (recursive_call_annotation
@@ -9878,7 +9877,7 @@ rec(poly)
 ================================================================================
 structural rec_call_duplicate_mode_roles
 ================================================================================
-module source; fn use() { rec(poly, poly) again() }
+module source; fn use() { recur(poly, poly) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9898,7 +9897,7 @@ module source; fn use() { rec(poly, poly) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -9951,12 +9950,12 @@ module source; fn use() { rec(poly, poly) }
 ================================================================================
 structural rec_call_raw_invalid_annotation
 ================================================================================
-rec(value) again()
+recur(value) again()
 --------------------------------------------------------------------------------
 
 (source_file
   (recursive_call_expression
-    (keyword_rec)
+    (keyword_recur)
     (recursive_call_annotations
       (bracket_lparen)
       (recursive_call_annotation
@@ -9970,12 +9969,12 @@ rec(value) again()
 ================================================================================
 structural rec_call_raw_invalid_nested_calls
 ================================================================================
-rec(helper(helper(helper(value)))) again()
+recur(helper(helper(helper(value)))) again()
 --------------------------------------------------------------------------------
 
 (source_file
   (recursive_call_expression
-    (keyword_rec)
+    (keyword_recur)
     (recursive_call_annotations
       (bracket_lparen)
       (recursive_call_annotation
@@ -10030,7 +10029,7 @@ rec(poly) fn again() { () }
 ================================================================================
 structural rec_call_nested_annotation_name
 ================================================================================
-module source; fn use() { rec((poly)) again() }
+module source; fn use() { recur((poly)) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10050,7 +10049,7 @@ module source; fn use() { rec((poly)) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10068,7 +10067,7 @@ module source; fn use() { rec((poly)) again() }
 ================================================================================
 structural rec_call_nonidentifier_annotation_prefix
 ================================================================================
-module source; fn use() { rec(poly, 123) again() }
+module source; fn use() { recur(poly, 123) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10088,7 +10087,7 @@ module source; fn use() { rec(poly, 123) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -10106,7 +10105,7 @@ module source; fn use() { rec(poly, 123) again() }
 ================================================================================
 structural rec_call_mode_after_nested_invalid_item
 ================================================================================
-module source; fn use() { rec((poly), cont) again() }
+module source; fn use() { recur((poly), cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10126,7 +10125,7 @@ module source; fn use() { rec((poly), cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10185,7 +10184,7 @@ module source; fn use() { rec((poly), cont) }
 ================================================================================
 structural rec_call_annotation_comma_runs
 ================================================================================
-module source; fn use() { rec(,,poly,,cont,,) again() }
+module source; fn use() { recur(,,poly,,cont,,) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10205,7 +10204,7 @@ module source; fn use() { rec(,,poly,,cont,,) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (separator_comma)
@@ -10268,7 +10267,7 @@ module source; fn use() { rec(,,poly,,cont,,) }
 ================================================================================
 structural rec_call_comma_only_annotation
 ================================================================================
-module source; fn use() { rec(,,) again() }
+module source; fn use() { recur(,,) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10288,7 +10287,7 @@ module source; fn use() { rec(,,) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (separator_comma)
@@ -10303,7 +10302,7 @@ module source; fn use() { rec(,,) again() }
 ================================================================================
 structural rec_call_missing_comma_item_boundary
 ================================================================================
-module source; fn use() { rec(value poly, cont) again() }
+module source; fn use() { recur(value poly, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10323,7 +10322,7 @@ module source; fn use() { rec(value poly, cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (recursive_call_annotation
@@ -10342,7 +10341,7 @@ module source; fn use() { rec(value poly, cont) again() }
 ================================================================================
 structural rec_call_star_variadic_annotation_item
 ================================================================================
-module source; fn use() { rec([* poly, poly *], cont) again() }
+module source; fn use() { recur([* poly, poly *], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10362,7 +10361,7 @@ module source; fn use() { rec([* poly, poly *], cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10387,7 +10386,7 @@ module source; fn use() { rec([* poly, poly *], cont) again() }
 ================================================================================
 structural rec_call_general_variadic_annotation_item
 ================================================================================
-module source; fn use() { rec([+ poly, poly +], cont) again() }
+module source; fn use() { recur([+ poly, poly +], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10407,7 +10406,7 @@ module source; fn use() { rec([+ poly, poly +], cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10430,7 +10429,7 @@ module source; fn use() { rec([+ poly, poly +], cont) again() }
 ================================================================================
 structural rec_call_nested_variadic_annotation_item
 ================================================================================
-module source; fn use() { rec([+ poly, [* poly, poly *] +], cont) again() }
+module source; fn use() { recur([+ poly, [* poly, poly *] +], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10450,7 +10449,7 @@ module source; fn use() { rec([+ poly, [* poly, poly *] +], cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10480,7 +10479,7 @@ module source; fn use() { rec([+ poly, [* poly, poly *] +], cont) again() }
 ================================================================================
 structural rec_call_unclosed_variadic_annotation_item
 ================================================================================
-module source; fn use() { rec([* poly, poly, cont) again() }
+module source; fn use() { recur([* poly, poly, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10500,7 +10499,7 @@ module source; fn use() { rec([* poly, poly, cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10569,7 +10568,7 @@ module source; fn use() { rec([* poly, poly *], cont) }
 ================================================================================
 structural rec_call_mismatched_variadic_annotation_item
 ================================================================================
-module source; fn use() { rec([+ poly, poly %], cont) again() }
+module source; fn use() { recur([+ poly, poly %], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10589,7 +10588,7 @@ module source; fn use() { rec([+ poly, poly %], cont) again() }
     (expression_block
       (bracket_lbrace)
       (recursive_call_expression
-        (keyword_rec)
+        (keyword_recur)
         (recursive_call_annotations
           (bracket_lparen)
           (invalid_recursive_call_annotation
@@ -10606,5 +10605,672 @@ module source; fn use() { rec([+ poly, poly %], cont) again() }
         (entity_name_function)
         (expression_arguments
           (bracket_lparen)
+          (bracket_rparen)))
+      (bracket_rbrace))))
+================================================================================
+structural ordinary_recur_word_call
+================================================================================
+module source; fn broken() { recur(value) }
+fn after() { let(x) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural ordinary_recur_word_annotation_name_call
+================================================================================
+module source; fn broken() { recur(poly) }
+fn after() { let(x) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace)))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_compact_prime_body
+================================================================================
+module source; fn use(recur: .)->.{recur}
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_direct_call
+================================================================================
+module source; fn use(recur: . -> .) -> . { recur() }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_arrow
+                (separator_dot)
+                (operator_arrow_type)
+                (separator_dot))))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_balanced_nested_call
+================================================================================
+module source; fn use(recur: . -> ., poly: .) -> . { recur(((poly))) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_arrow
+                (separator_dot)
+                (operator_arrow_type)
+                (separator_dot))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (grouped_expression
+            (bracket_lparen)
+            (grouped_expression
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_qualified_head
+================================================================================
+module source; fn use() { recur.helper(value) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_qualified_leaf
+================================================================================
+module source; fn use() { helper.recur(value) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_right_ufcs
+================================================================================
+module source; fn use() { value.>recur }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ufcs_expr
+        (expression_path
+          (identifier))
+        (operator_arrow_ufcs)
+        (call_callee
+          (entity_name_function)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_left_ufcs
+================================================================================
+module source; fn use() { recur.<value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ufcs_expr
+        (call_callee
+          (entity_name_function))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_delimited_arguments
+================================================================================
+module source; fn use() { f(recur, recur(poly), helper.recur) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen)))
+          (separator_comma)
+          (expression_path
+            (identifier)
+            (separator_dot)
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_balanced_comment_boundary
+================================================================================
+module source; fn use() { recur(poly) // final
+ }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (comment_line)
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_bare_at_eof
+================================================================================
+module source; fn use() { recur
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (incomplete_expression_block
+        (bracket_lbrace)
+        (expression_path
+          (identifier))))))
+
+================================================================================
+structural recur_name_headerless_prime_body
+================================================================================
+fn use(recur: .)->.{recur}
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_raw_balanced_call
+================================================================================
+recur(poly)
+--------------------------------------------------------------------------------
+
+(source_file
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (expression_path
+        (identifier))
+      (bracket_rparen))))
+
+================================================================================
+structural recur_name_duplicate_argument_names
+================================================================================
+module source; fn use() { recur(poly, poly) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_nested_item_call_inverse
+================================================================================
+module source; fn use() { recur((poly), cont) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (grouped_expression
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_argument_comma_runs
+================================================================================
+module source; fn use() { recur(,,poly,,cont,,) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (separator_comma)
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (separator_comma)
+          (expression_path
+            (identifier))
+          (separator_comma)
+          (separator_comma)
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+structural recur_name_variadic_argument
+================================================================================
+module source; fn use() { recur([* poly, poly *], cont) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    path: (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (variadic_expression
+            (ambiguous_lbracket_star
+              (star_open_prefix)
+              (kind_annotation))
+            (variadic_elements
+              (variadic_element
+                (expression_path
+                  (identifier)))
+              (separator_comma)
+              (variadic_element
+                (expression_path
+                  (identifier))))
+            (variadic_star_close))
+          (separator_comma)
+          (expression_path
+            (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))

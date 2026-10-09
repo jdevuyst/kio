@@ -41,7 +41,7 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 
 rec(loop) fn length_from[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
-    (.(_x: A, rest: List(A)) { rec length_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_x: A, rest: List(A)) { recur length_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -51,7 +51,7 @@ pub fn length[A](xs: List(A)) -> I32 { length_from(xs, 0) }
 /// so its recursive call is a `cont`.
 pub rec(loop) fn append[A](xs: List(A), ys: List(A)) -> List(A) {
   match! xs.>List.un_list {
-    (.(x: A, rest: List(A)) { cons(x, rec(cont) append(rest, ys)) }, .(_empty: .) { ys })
+    (.(x: A, rest: List(A)) { cons(x, recur(cont) append(rest, ys)) }, .(_empty: .) { ys })
   }
 }
 
@@ -62,66 +62,58 @@ pub fn snoc[A](xs: List(A), x: A) -> List(A) { append(xs, of1(x)) }
 pub rec(loop) fn concat_map[A][B](xs: List(A), f: A -> List(B)) -> List(B) {
   match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) { append(f(x), rec(cont) concat_map(rest, f)) }
-      , .(_empty: .) { nil(B) }
-      )
+    , .(x: A, rest: List(A)) { append(f(x), recur(cont) concat_map(rest, f)) }
+    , .(_empty: .) { nil(B) }
+    )
   }
 }
 
 pub rec(loop) fn map[A][B](xs: List(A), f: A -> B) -> List(B) {
   match! xs.>List.un_list {
-    (.(x: A, rest: List(A)) { cons(f(x), rec(cont) map(rest, f)) }, .(_empty: .) { nil(B) })
+    (.(x: A, rest: List(A)) { cons(f(x), recur(cont) map(rest, f)) }, .(_empty: .) { nil(B) })
   }
 }
 
 pub rec(loop) fn fold[A][Acc](xs: List(A), step: (Acc & A) -> Acc, seed: Acc) -> Acc {
   match! xs.>List.un_list {
-    (.(x: A, rest: List(A)) { rec fold(rest, step, step(seed, x)) }, .(_empty: .) { seed })
+    (.(x: A, rest: List(A)) { recur fold(rest, step, step(seed, x)) }, .(_empty: .) { seed })
   }
 }
 
 pub rec(loop) fn any[A](xs: List(A), p: A -> Bool) -> Bool {
   match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) {
-          if! p(x) {
-            .t
-          } else {
-            rec any(rest, p)
-          }
-        }
-      , .(_empty: .) { .f }
-      )
+    , .(x: A, rest: List(A)) {
+        if! p(x) { .t } else { recur any(rest, p) }
+      }
+    , .(_empty: .) { .f }
+    )
   }
 }
 
 pub rec(loop) fn all[A](xs: List(A), p: A -> Bool) -> Bool {
   match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) {
-          if! p(x) {
-            rec all(rest, p)
-          } else {
-            .f
-          }
-        }
-      , .(_empty: .) { .t }
-      )
+    , .(x: A, rest: List(A)) {
+        if! p(x) { recur all(rest, p) } else { .f }
+      }
+    , .(_empty: .) { .t }
+    )
   }
 }
 
 rec(loop) fn count_from[A](xs: List(A), p: A -> Bool, acc: I32) -> I32 {
   match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) {
-          if! p(x) {
-            rec count_from(rest, p, add_i32(acc, 1))
-          } else {
-            rec count_from(rest, p, acc)
-          }
+    , .(x: A, rest: List(A)) {
+        if! p(x) {
+          recur count_from(rest, p, add_i32(acc, 1))
+        } else {
+          recur count_from(rest, p, acc)
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

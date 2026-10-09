@@ -27,13 +27,13 @@ fn is_blank(s: String) -> Bool { string_eq(s, "") }
 pub fn read_int(fallback: I32) -> I32 {
   match! read_ascii_line() {
     (
-      , .(s: String) {
-          match! string_to_int(s) {
-            (.(n: I32) { n }, .(_bad: .) { fallback })
-          }
+    , .(s: String) {
+        match! string_to_int(s) {
+          (.(n: I32) { n }, .(_bad: .) { fallback })
         }
-      , .(_eof: .) { fallback }
-      )
+      }
+    , .(_eof: .) { fallback }
+    )
   }
 }
 
@@ -49,17 +49,17 @@ fn close_phrase(words: List(String), acc: List(List(String))) -> List(List(Strin
 rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(List(String)) {
   match! read_ascii_line() {
     (
-      , .(s: String) {
-          if! string_eq(s, sentinel()) {
-            reverse(close_phrase(words, acc))
-          } else if! is_blank(s) {
-            rec read_onto(nil(String), close_phrase(words, acc))
-          } else {
-            rec read_onto(cons(s, words), acc)
-          }
+    , .(s: String) {
+        if! string_eq(s, sentinel()) {
+          reverse(close_phrase(words, acc))
+        } else if! is_blank(s) {
+          recur read_onto(nil(String), close_phrase(words, acc))
+        } else {
+          recur read_onto(cons(s, words), acc)
         }
-      , .(_eof: .) { reverse(close_phrase(words, acc)) }
-      )
+      }
+    , .(_eof: .) { reverse(close_phrase(words, acc)) }
+    )
   }
 }
 

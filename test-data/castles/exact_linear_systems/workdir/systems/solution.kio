@@ -16,41 +16,33 @@ pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.L
 pub labels Outcome = { solved: Family } | { inconsistent: q.Rational };
 
 fn is_free(column: I32, pivots: c.List(I32)) -> Bool {
-  if! l.elem(integers.eq_i32, column, pivots) {
-    .f
-  } else {
-    .t
-  }
+  if! l.elem(integers.eq_i32, column, pivots) { .f } else { .t }
 }
 
 fn particular(reduced: m.Matrix, pivots: c.List(I32), variables: I32) -> m.Row {
   l.map(
-    , .(column) {
-        match! l.index_of(integers.eq_i32, column, pivots) {
-          .(row: I32) { m.at(m.row_at(reduced, row), variables) };
-          .() { q.zero() }
-        }
+  , .(column) {
+      match! l.index_of(integers.eq_i32, column, pivots) {
+        .(row: I32) { m.at(m.row_at(reduced, row), variables) };
+        .() { q.zero() }
       }
-    , m.indices(variables)
-    )
+    }
+  , m.indices(variables)
+  )
 }
 
 fn direction(reduced: m.Matrix, pivots: c.List(I32), variables: I32, free: I32) -> m.Row {
   l.map(
-    , .(column) {
-        match! l.index_of(integers.eq_i32, column, pivots) {
-          .(row: I32) { q.negate(m.at(m.row_at(reduced, row), free)) };
-          .() {
-            if! integers.eq_i32(column, free) {
-              q.integer(1)
-            } else {
-              q.zero()
-            }
-          }
+  , .(column) {
+      match! l.index_of(integers.eq_i32, column, pivots) {
+        .(row: I32) { q.negate(m.at(m.row_at(reduced, row), free)) };
+        .() {
+          if! integers.eq_i32(column, free) { q.integer(1) } else { q.zero() }
         }
       }
-    , m.indices(variables)
-    )
+    }
+  , m.indices(variables)
+  )
 }
 
 pub fn solve(result: reduction.Reduction, variables: I32) -> Outcome {
@@ -62,13 +54,10 @@ pub fn solve(result: reduction.Reduction, variables: I32) -> Outcome {
       let free_columns = l.filter(.(column) { is_free(column, pivots) }, m.indices(variables));
       let family =
         {
-          , particular = particular(reduced, pivots, variables)
-          , directions = l.map(
-              , .(free) { direction(reduced, pivots, variables, free) }
-              , free_columns
-              )
-          , free_columns
-          };
+        , particular = particular(reduced, pivots, variables)
+        , directions = l.map(.(free) { direction(reduced, pivots, variables, free) }, free_columns)
+        , free_columns
+        };
       {solved = family}.>widen_sum!
     }
   }

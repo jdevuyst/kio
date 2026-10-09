@@ -8,11 +8,7 @@ import testapi/text as text;
 pub type Reading = String & String & String & I32 & String & String;
 
 fn both(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    .f
-  }
+  if! left { right } else { .f }
 }
 
 fn same_i32_text(value: I32, expected: String) -> Bool {
@@ -25,13 +21,13 @@ pub fn scan(line: String) -> Reading {
   let _third_bar = text.string_code_at(line, 14);
   let _fourth_bar = text.string_code_at(line, 22);
   (
-    , text.string_slice(line, 0, 5)
-    , text.string_slice(line, 6, 8)
-    , text.string_slice(line, 9, 14)
-    , text.string_len(line)
-    , text.string_slice(line, 19, 22)
-    , text.string_slice(line, 26, 29)
-    )
+  , text.string_slice(line, 0, 5)
+  , text.string_slice(line, 6, 8)
+  , text.string_slice(line, 9, 14)
+  , text.string_len(line)
+  , text.string_slice(line, 19, 22)
+  , text.string_slice(line, 26, 29)
+  )
 }
 
 pub fn time(reading: Reading) -> String {
@@ -75,16 +71,16 @@ pub fn is_alert(reading: Reading) -> Bool { text.string_eq(state(reading), "ALER
 pub fn has_expected_layout(line: String) -> Bool {
   let scanned = scan(line);
   both(
-    , same_i32_text(line_len(scanned), "29")
+  , same_i32_text(line_len(scanned), "29")
+  , both(
+    , text.string_eq(text.string_slice(line, 5, 6), "|")
     , both(
-        , text.string_eq(text.string_slice(line, 5, 6), "|")
-        , both(
-            , text.string_eq(text.string_slice(line, 8, 9), "|")
-            , both(
-                , text.string_eq(text.string_slice(line, 14, 15), "|")
-                , text.string_eq(text.string_slice(line, 22, 23), "|")
-                )
-            )
+      , text.string_eq(text.string_slice(line, 8, 9), "|")
+      , both(
+        , text.string_eq(text.string_slice(line, 14, 15), "|")
+        , text.string_eq(text.string_slice(line, 22, 23), "|")
         )
+      )
     )
+  )
 }

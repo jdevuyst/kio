@@ -11,17 +11,38 @@ type Identity[A] = A -> A;
 
 fn argument() { consume(); () }
 
-fn direct[A] -> A -> A { observe(); .(value: A) { value } }
+fn direct[A] -> A -> A {
+  observe();
+  .(value: A) { value }
+}
 
-fn aliased[A] -> Identity(A) { observe(); .(value: A) { value } }
+fn aliased[A] -> Identity(A) {
+  observe();
+  .(value: A) { value }
+}
 
-fn many[A][B] -> A -> A { observe(); .(value: A) { value } }
+fn many[A][B] -> A -> A {
+  observe();
+  .(value: A) { value }
+}
 
-fn zero[A] -> . -> . { observe(); .() { () } }
+fn zero[A] -> . -> . {
+  observe();
+  .() { () }
+}
 
-fn nested[A] -> [B] B -> B { observe(); .[B] { consume(); .(value: B) { value } } }
+fn nested[A] -> [B] B -> B {
+  observe();
+  .[B] {
+    consume();
+    .(value: B) { value }
+  }
+}
 
-fn interleaved[A](value: A)[B] -> B -> A { observe(); .(_other: B) { value } }
+fn interleaved[A](value: A)[B] -> B -> A {
+  observe();
+  .(_other: B) { value }
+}
 
 fn ordinary[A](value: A) -> A { observe(); value }
 

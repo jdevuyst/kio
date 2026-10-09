@@ -39,11 +39,7 @@ fn values() -> Array(I32) {
 // Pointwise maximum of two I32s, built from `leq_i32` since the
 // host vocabulary has no `max` primitive.
 fn max(a: I32, b: I32) -> I32 {
-  if! leq_i32(a, b) {
-    b
-  } else {
-    a
-  }
+  if! leq_i32(a, b) { b } else { a }
 }
 
 // Inner DP step: walks capacity `c` from `cap` down to `w` (the

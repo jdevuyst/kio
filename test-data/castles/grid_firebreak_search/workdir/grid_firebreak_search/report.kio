@@ -2,14 +2,14 @@ module grid_firebreak_search/report;
 
 import elab/control(if);
 import grid_firebreak_search/model(
-  , Plan
-  , {blocked}
-  , {candidate_count}
-  , {frontier_count}
-  , {score}
-  , {selected}
-  , {spend}
-  );
+, Plan
+, {blocked}
+, {candidate_count}
+, {frontier_count}
+, {score}
+, {selected}
+, {spend}
+);
 import grid_firebreak_search/search as search;
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
@@ -34,10 +34,10 @@ rec(iter.loop) fn print_cell_list(cursor: I32, cells: Array(I32)) {
     let cell_text = fmt.int_to_string(array.array_get(cells, cursor));
     if! arith.leq_i32(cursor, 0) {
       io.print(cell_text);
-      rec print_cell_list(arith.add_i32(cursor, 1), cells)
+      recur print_cell_list(arith.add_i32(cursor, 1), cells)
     } else {
       io.print(text.string_concat(",", cell_text));
-      rec print_cell_list(arith.add_i32(cursor, 1), cells)
+      recur print_cell_list(arith.add_i32(cursor, 1), cells)
     }
   } else {
     io.print("\n")

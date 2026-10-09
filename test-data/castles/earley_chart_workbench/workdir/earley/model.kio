@@ -45,11 +45,7 @@ pub fn advance(state: Item) -> Item {
 
 pub fn same(a: Item, b: Item) -> Bool {
   if! numbers.equal(a.?{production_index}, b.?{production_index}) {
-    if! numbers.equal(a.?{dot}, b.?{dot}) {
-      numbers.equal(a.?{origin}, b.?{origin})
-    } else {
-      .f
-    }
+    if! numbers.equal(a.?{dot}, b.?{dot}) { numbers.equal(a.?{origin}, b.?{origin}) } else { .f }
   } else {
     .f
   }

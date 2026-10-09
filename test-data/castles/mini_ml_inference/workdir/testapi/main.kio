@@ -34,7 +34,7 @@ rec(loop) fn cases(remaining: I32, completed: I32) {
             .>text.string_concat("\n")
             .>>text.string_concat(": ")
             .>>text.string_concat(name));
-          rec cases(arith.sub_i32(remaining, 1), arith.add_i32(completed, 1))
+          recur cases(arith.sub_i32(remaining, 1), arith.add_i32(completed, 1))
         };
         .(error: String) {
           io.print(error.>text.string_concat("\n").>>text.string_concat("input error: "))

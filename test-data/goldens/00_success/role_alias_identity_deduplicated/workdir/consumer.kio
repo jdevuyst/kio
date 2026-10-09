@@ -11,11 +11,7 @@ type First = provider.Bool;
 type Second = provider.Bool;
 
 fn surface(condition: First) -> Second {
-  if! condition {
-    .t(Second)
-  } else {
-    .f(Second)
-  }
+  if! condition { .t(Second) } else { .f(Second) }
 }
 
 fn core(condition: First) -> Second {

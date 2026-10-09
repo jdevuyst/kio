@@ -188,7 +188,7 @@ and, for a named form, its transparent alias head. A bare `rec { ... }` type
 group gives exactly one genuinely mutual component access to all of its member
 heads. None of these data forms sees an unrelated later declaration, and a
 redundant marker or over-broad group is an error. A separate `rec(loop)` group
-lets functions call each other through `rec name(...)`. Term recursion always
+lets functions call each other through `recur name(...)`. Term recursion always
 goes through that loop-capability form — see [Recursion](../guides/recursion.md)
 and [Aliases, newtypes, visibility, and purity](../guides/declarations.md#recursive-newtypes).
 
@@ -356,7 +356,10 @@ fn quadruple(n: Int) -> Int { let twice = add(n, n); add(twice, twice) }
 Write `let .(name: Type) = expr;` when the RHS needs that local expected type:
 
 ```kio {@tutorial_module}
-fn add_one(n: Int) -> Int { let .(inc: Int -> Int) = .(x) { add(x, 1) }; inc(n) }
+fn add_one(n: Int) -> Int {
+  let .(inc: Int -> Int) = .(x) { add(x, 1) };
+  inc(n)
+}
 ```
 
 `let` may shadow an outer binding of the same name; the inner binding wins for the rest of the block.
@@ -378,9 +381,14 @@ A function value can appear inline as `.(args) { body }` — a lambda.
 ```kio {@tutorial_module}
 fn apply(f: Int -> Int, x: Int) -> Int { f(x) }
 
-fn immediate_identity() -> Int { .(n) { n }(41) }
+fn immediate_identity() -> Int {
+  .(n) { n }(41)
+}
 
-pub fn main() { let y = apply(.(n) { add(n, 1) }, 41); print(int_to_string(y)) }
+pub fn main() {
+  let y = apply(.(n) { add(n, 1) }, 41);
+  print(int_to_string(y))
+}
 ```
 
 A lambda's parameter types can be elided when the expected type is fixed by context — here, by `apply`'s signature. They can also be written explicitly (`.(n: Int) { add(n, 1) }`) for emphasis. Unlike a module-level `fn`, a lambda without a written return type takes its result from its body and surrounding expected function type; omission does not mean unit.
@@ -413,11 +421,7 @@ Importing `if` provides an `if!` call with two blocks. Both branches produce one
 
 ```kio {@tutorial_module}
 fn choose(condition: Bool, when_true: Int, when_false: Int) -> Int {
-  if! condition {
-    when_true
-  } else {
-    when_false
-  }
+  if! condition { when_true } else { when_false }
 }
 ```
 
@@ -444,10 +448,7 @@ wrapper:
 
 ```kio {@tutorial_module}
 fn increment_in_expression(value: Int) -> Int {
-  scope! {
-    let next = add(value, 1);
-    next
-  }
+  scope! { let next = add(value, 1); next }
 }
 ```
 
@@ -463,7 +464,9 @@ stem appears between adjacent dots and names its parameter references:
 ```kio {@tutorial_module}
 fn apply_int(f: Int -> Int, value: Int) -> Int { f(value) }
 
-fn increment_placeholder(value: Int) -> Int { apply_int(.x. { add(x1, 1) }, value) }
+fn increment_placeholder(value: Int) -> Int {
+  apply_int(.x. { add(x1, 1) }, value)
+}
 ```
 
 `.x. { add(x1, 1) }` lowers to a one-parameter lambda. Indexed references may

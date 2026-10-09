@@ -14,22 +14,18 @@ pub type Marking = lists.List(I32);
 pub labels Transition = { name: String, consumes: Marking, produces: Marking };
 
 pub labels Net = {
-  , initial: Marking
-  , terminal: Marking
-  , capacity: I32
-  , transitions: lists.List(Transition)
-  };
+, initial: Marking
+, terminal: Marking
+, capacity: I32
+, transitions: lists.List(Transition)
+};
 
 pub rec(loop) fn equal(left: Marking, right: Marking) -> Bool {
   match! lists.uncons(left) {
     .(x: I32, xs: Marking) {
       match! lists.uncons(right) {
         .(y: I32, ys: Marking) {
-          if! arithmetic.eq_i32(x, y) {
-            rec equal(xs, ys)
-          } else {
-            .f
-          }
+          if! arithmetic.eq_i32(x, y) { recur equal(xs, ys) } else { .f }
         };
         .() { .f }
       }
@@ -39,12 +35,12 @@ pub rec(loop) fn equal(left: Marking, right: Marking) -> Bool {
 }
 
 rec(loop) fn fire_places(
-  , tokens: Marking
-  , needs: Marking
-  , gives: Marking
-  , bound: I32
-  , reversed: Marking
-  ) -> Marking | . {
+, tokens: Marking
+, needs: Marking
+, gives: Marking
+, bound: I32
+, reversed: Marking
+) -> Marking | . {
   match! lists.uncons(tokens) {
     .(token: I32, rest: Marking) {
       match!((lists.uncons(needs), lists.uncons(gives))) {
@@ -52,7 +48,7 @@ rec(loop) fn fire_places(
           let after = arithmetic.add_i32(arithmetic.sub_i32(token, need), give);
           if! arithmetic.leq_i32(need, token) {
             if! arithmetic.leq_i32(after, bound) {
-              rec fire_places(rest, needs_rest, gives_rest, bound, lists.cons(after, reversed))
+              recur fire_places(rest, needs_rest, gives_rest, bound, lists.cons(after, reversed))
             } else {
               ().>widen_sum!
             }
@@ -79,12 +75,12 @@ rec(loop) fn fire_places(
 
 pub fn fire(net: Net, transition: Transition, marking: Marking) -> Marking | . {
   fire_places(
-    , marking
-    , transition.?{consumes}
-    , transition.?{produces}
-    , net.?{capacity}
-    , lists.nil(_)
-    )
+  , marking
+  , transition.?{consumes}
+  , transition.?{produces}
+  , net.?{capacity}
+  , lists.nil(_)
+  )
 }
 
 pub fn enabled(net: Net, transition: Transition, marking: Marking) -> Bool {
@@ -98,14 +94,10 @@ pub fn completed(net: Net, marking: Marking) -> Bool { equal(marking, net.?{term
 
 pub fn enabled_count(net: Net, marking: Marking) -> I32 {
   traversal.foldl(
-    , .(count: I32, transition: Transition) {
-        if! enabled(net, transition, marking) {
-          arithmetic.add_i32(count, 1)
-        } else {
-          count
-        }
-      }
-    , 0
-    , net.?{transitions}
-    )
+  , .(count: I32, transition: Transition) {
+      if! enabled(net, transition, marking) { arithmetic.add_i32(count, 1) } else { count }
+    }
+  , 0
+  , net.?{transitions}
+  )
 }

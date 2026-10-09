@@ -812,7 +812,7 @@ mod tests {
             "a written Unit value must remain explicit in canonical Kio': {out}"
         );
         assert!(
-            out.contains("let f = nil; let _kg0 = f(T); .(_kg1: .) { _kg0(_kg1) }"),
+            out.contains("let f = nil;\n  let _kg0 = f(T);\n  .(_kg1: .) { _kg0(_kg1) }"),
             "a locally bound type-only Unit-domain function must remain residual: {out}"
         );
         assert!(

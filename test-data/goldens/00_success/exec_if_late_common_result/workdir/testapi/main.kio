@@ -20,15 +20,11 @@ fn describe(choice: Choice) -> String {
 pub fn main() {
   let select =
     first(
-      , .(condition: Bool) {
-          if! condition {
-            widen_sum!({left=})
-          } else {
-            widen_sum!({right=})
-          }
-        }
-      , .(_condition: Bool) -> Choice { widen_sum!({left=}) }
-      );
+    , .(condition: Bool) {
+        if! condition { widen_sum!({left=}) } else { widen_sum!({right=}) }
+      }
+    , .(_condition: Bool) -> Choice { widen_sum!({left=}) }
+    );
   io.print(describe(select(.t)));
   io.print(describe(select(.f)))
 }

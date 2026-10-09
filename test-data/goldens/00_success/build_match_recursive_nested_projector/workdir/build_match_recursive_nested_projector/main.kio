@@ -8,16 +8,16 @@ pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_
 pub rec(loop) fn same_length[A](left: List(A), right: List(A)) -> Bool {
   match! left.>List.un_list {
     (
-      , .(_head: A, rest: List(A)) {
-          match! right.>List.un_list {
-            (.(_other: A, others: List(A)) { rec same_length(rest, others) }, .(_empty: .) { .f })
-          }
+    , .(_head: A, rest: List(A)) {
+        match! right.>List.un_list {
+          (.(_other: A, others: List(A)) { recur same_length(rest, others) }, .(_empty: .) { .f })
         }
-      , .(_empty: .) {
-          match! right.>List.un_list {
-            (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
-          }
+      }
+    , .(_empty: .) {
+        match! right.>List.un_list {
+          (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
         }
-      )
+      }
+    )
   }
 }

@@ -38,24 +38,24 @@ pub fn fold_edit[R](e: Edit, on_number: I32 -> R, on_formula: Expr -> R, on_clea
   let change = e.?{edit_kind};
   match! change {
     (
-      , .(n: Put_number) { on_number(n.?{put_number}) }
-      , .(f: Put_formula) { on_formula(f.?{put_formula}) }
-      , .(_c: Clear) { on_clear }
-      )
+    , .(n: Put_number) { on_number(n.?{put_number}) }
+    , .(f: Put_formula) { on_formula(f.?{put_formula}) }
+    , .(_c: Clear) { on_clear }
+    )
   }
 }
 
 fn apply_edit(s: Sheet, e: Edit) -> Sheet {
   set_content(
-    , s
-    , edit_addr(e)
-    , fold_edit(
-        , e
-        , .(n: I32) { number_content(n) }
-        , .(x: Expr) { formula_content(x) }
-        , blank_content()
-        )
+  , s
+  , edit_addr(e)
+  , fold_edit(
+    , e
+    , .(n: I32) { number_content(n) }
+    , .(x: Expr) { formula_content(x) }
+    , blank_content()
     )
+  )
 }
 
 /// The current sheet's shape: inverted edges, cycle, evaluation order.
@@ -77,15 +77,15 @@ pub fn plan_order(p: Plan) -> List(Addr) { p.?{plan_order} }
 rec(loop) fn eval_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), vals: Values) -> Values {
   match! todo.>List.unpack {
     (
-      , .(a: Addr, rest: List(Addr)) {
-          if! mem(cyc, a) {
-            rec eval_onto(s, cyc, rest, set_value(vals, a, cycle_value()))
-          } else {
-            rec eval_onto(s, cyc, rest, set_value(vals, a, eval_cell(s, vals, a)))
-          }
+    , .(a: Addr, rest: List(Addr)) {
+        if! mem(cyc, a) {
+          recur eval_onto(s, cyc, rest, set_value(vals, a, cycle_value()))
+        } else {
+          recur eval_onto(s, cyc, rest, set_value(vals, a, eval_cell(s, vals, a)))
         }
-      , .(_empty: .) { vals }
-      )
+      }
+    , .(_empty: .) { vals }
+    )
   }
 }
 
@@ -97,15 +97,15 @@ pub fn full_eval(s: Sheet, p: Plan) -> Values {
 rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(Addr) {
   match! frontier.>List.unpack {
     (
-      , .(a: Addr, rest: List(Addr)) {
-          if! mem(seen, a) {
-            rec close(deps, rest, seen)
-          } else {
-            rec close(deps, append(rest, deps_of(deps, a)), cons(a, seen))
-          }
+    , .(a: Addr, rest: List(Addr)) {
+        if! mem(seen, a) {
+          recur close(deps, rest, seen)
+        } else {
+          recur close(deps, append(rest, deps_of(deps, a)), cons(a, seen))
         }
-      , .(_empty: .) { seen }
-      )
+      }
+    , .(_empty: .) { seen }
+    )
   }
 }
 
@@ -119,14 +119,14 @@ pub fn dirty_set(deps: Deps, a: Addr) -> List(Addr) {
 }
 
 pub labels Step = {
-  , step_sheet: Sheet
-  , step_values: Values
-  , step_plan: Plan
-  , step_dirty: List(Addr)
-  , step_order: List(Addr)
-  , step_recomputed: I32
-  , step_skipped: I32
-  };
+, step_sheet: Sheet
+, step_values: Values
+, step_plan: Plan
+, step_dirty: List(Addr)
+, step_order: List(Addr)
+, step_recomputed: I32
+, step_skipped: I32
+};
 
 pub fn step_sheet(st: Step) -> Sheet { st.?{step_sheet} }
 
@@ -156,12 +156,12 @@ pub fn recalc(s: Sheet, vals: Values, e: Edit) -> Step {
   let vals2 = eval_onto(next, plan_cycle(p), order, vals);
   let count = len(order);
   {
-    , step_sheet = next
-    , step_values = vals2
-    , step_plan = p
-    , step_dirty = dirty
-    , step_order = order
-    , step_recomputed = count
-    , step_skipped = sub_i32(cell_count(), count)
-    }
+  , step_sheet = next
+  , step_values = vals2
+  , step_plan = p
+  , step_dirty = dirty
+  , step_order = order
+  , step_recomputed = count
+  , step_skipped = sub_i32(cell_count(), count)
+  }
 }

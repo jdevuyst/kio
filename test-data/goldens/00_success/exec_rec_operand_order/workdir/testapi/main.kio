@@ -19,7 +19,10 @@ type Identity[A] = A;
 
 fn mark(tag: String, value: I32) -> I32 { print(tag); value }
 
-fn effectful_identity[A](tag: String) -> A -> A { print(tag); .(value: A) -> A { value } }
+fn effectful_identity[A](tag: String) -> A -> A {
+  print(tag);
+  .(value: A) -> A { value }
+}
 
 fn take_second(first: I32, second: I32) -> I32 { second }
 
@@ -42,18 +45,14 @@ fn consume_rank_n(f: [T] T -> T, tail: I32) -> I32 { let _ = f(., ()); tail }
 fn consume_typed[A](tail: I32) -> I32 { tail }
 
 rec(loop) fn call_order(n: I32) -> I32 {
-  if! leq_i32(n, 0) {
-    mark("b", 2)
-  } else {
-    ignore_first(mark("a", 1), rec(cont) call_order(0))
-  }
+  if! leq_i32(n, 0) { mark("b", 2) } else { ignore_first(mark("a", 1), recur(cont) call_order(0)) }
 }
 
 rec(loop) fn tuple_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("d", 4)
   } else {
-    pair_second((mark("c", 3), rec(cont) tuple_order(0)))
+    pair_second((mark("c", 3), recur(cont) tuple_order(0)))
   }
 }
 
@@ -61,42 +60,31 @@ rec(loop) fn label_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("f", 6)
   } else {
-    row_second({first = mark("e", 5), second = rec(cont) label_order(0)})
+    row_second({first = mark("e", 5), second = recur(cont) label_order(0)})
   }
 }
 
 rec(loop) fn ufcs_order(n: I32) -> I32 {
-  if! leq_i32(n, 0) {
-    mark("h", 8)
-  } else {
-    mark("g", 7).>take_second(rec(cont) ufcs_order(0))
-  }
+  if! leq_i32(n, 0) { mark("h", 8) } else { mark("g", 7).>take_second(recur(cont) ufcs_order(0)) }
 }
 
 rec(loop) fn inferred_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("j", 10)
   } else {
-    apply_i32(effectful_identity("i"), rec(cont) inferred_order(0))
+    apply_i32(effectful_identity("i"), recur(cont) inferred_order(0))
   }
 }
 
 rec(loop) fn direct_order(n: I32, f: I32 -> I32) -> I32 {
-  if! leq_i32(n, 0) {
-    f(mark("l", 12))
-  } else {
-    rec direct_order(0, effectful_identity("k"))
-  }
+  if! leq_i32(n, 0) { f(mark("l", 12)) } else { recur direct_order(0, effectful_identity("k")) }
 }
 
 rec(loop) fn callee_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("n", 14)
   } else {
-    scope! {
-      print("m");
-      take_second
-    }(0, rec(cont) callee_order(0))
+    scope! { print("m"); take_second }(0, recur(cont) callee_order(0))
   }
 }
 
@@ -104,7 +92,7 @@ rec(loop) fn receiver_last_right_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("p", 16)
   } else {
-    rec(cont) receiver_last_right_order(0).>>take_second(mark("o", 15))
+    recur(cont) receiver_last_right_order(0).>>take_second(mark("o", 15))
   }
 }
 
@@ -112,7 +100,7 @@ rec(loop) fn receiver_last_left_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("r", 18)
   } else {
-    take_second(mark("q", 17)).<(rec(cont) receiver_last_left_order(0))
+    take_second(mark("q", 17)).<(recur(cont) receiver_last_left_order(0))
   }
 }
 
@@ -120,7 +108,7 @@ rec(loop) fn receiver_first_left_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("E", 31)
   } else {
-    take_second(mark("F", 32)).<<(rec(cont) receiver_first_left_order(0))
+    take_second(mark("F", 32)).<<(recur(cont) receiver_first_left_order(0))
   }
 }
 
@@ -128,7 +116,7 @@ rec(loop) fn expected_tuple_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("t", 20)
   } else {
-    fn_pair_second((effectful_identity("s"), rec(cont) expected_tuple_order(0)))
+    fn_pair_second((effectful_identity("s"), recur(cont) expected_tuple_order(0)))
   }
 }
 
@@ -136,7 +124,7 @@ rec(loop) fn expected_label_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("v", 22)
   } else {
-    fn_row_value({transform = effectful_identity("u"), value = rec(cont) expected_label_order(0)})
+    fn_row_value({transform = effectful_identity("u"), value = recur(cont) expected_label_order(0)})
   }
 }
 
@@ -144,7 +132,7 @@ rec(loop) fn nested_carrier_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("y", 25)
   } else {
-    take_second(mark("w", 23), take_second(mark("x", 24), rec(cont) nested_carrier_order(0)))
+    take_second(mark("w", 23), take_second(mark("x", 24), recur(cont) nested_carrier_order(0)))
   }
 }
 
@@ -152,7 +140,7 @@ rec(loop) fn deferred_call_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("B", 28)
   } else {
-    consume(effectful_identity("A"), 0, rec(cont) deferred_call_order(0))
+    consume(effectful_identity("A"), 0, recur(cont) deferred_call_order(0))
   }
 }
 
@@ -161,11 +149,11 @@ rec(loop) fn rank_n_inline_order(n: I32) -> I32 {
     mark("C", 29)
   } else {
     consume_rank_n(
-      , scope! {
-          .[T](value) { value }
-        }
-      , rec(cont) rank_n_inline_order(0)
-      )
+    , scope! {
+        .[T](value) { value }
+      }
+    , recur(cont) rank_n_inline_order(0)
+    )
   }
 }
 
@@ -173,7 +161,7 @@ rec(loop) fn value_shaped_type_arg_order(n: I32) -> I32 {
   if! leq_i32(n, 0) {
     mark("D", 30)
   } else {
-    consume_typed(Identity(I32), rec(cont) value_shaped_type_arg_order(0))
+    consume_typed(Identity(I32), recur(cont) value_shaped_type_arg_order(0))
   }
 }
 
@@ -182,7 +170,10 @@ rec(loop) {
     if! leq_i32(n, 0) {
       carried
     } else {
-      take_second(0, rec(cont) direct_member_order(mark("z", 0), rec(cont) direct_member_leaf(0)))
+      take_second(
+      , 0
+      , recur(cont) direct_member_order(mark("z", 0), recur(cont) direct_member_leaf(0))
+      )
     }
   };
   fn direct_member_leaf(n: I32) -> I32 { mark("0", 26) }

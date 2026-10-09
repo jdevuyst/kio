@@ -14,7 +14,7 @@ rec(loop) fn row_tail_no_cont(n: I32) -> I32 {
     n
   } else {
     let .({value as next}) = {value = 0};
-    rec row_tail_no_cont(next)
+    recur row_tail_no_cont(next)
   }
 }
 
@@ -23,8 +23,8 @@ rec(loop) {
     if! leq_i32(n, 0) {
       n
     } else {
-      let .({value as next}) = {value = rec(cont) row_seed(0)};
-      rec row_tail_cont(next)
+      let .({value as next}) = {value = recur(cont) row_seed(0)};
+      recur row_tail_cont(next)
     }
   };
   fn row_seed(value: I32) -> I32 { value }

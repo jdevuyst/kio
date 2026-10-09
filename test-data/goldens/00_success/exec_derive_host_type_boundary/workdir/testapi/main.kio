@@ -19,19 +19,21 @@ pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector r
 
 // Base instance for `Cell(String)` — a zero-precondition rule whose
 // result mentions the host type.
-fn render_cell_string() -> Render(Cell(String)) { Render.mk_render(.(c) { Cell.un_cell(c) }) }
+fn render_cell_string() -> Render(Cell(String)) {
+  Render.mk_render(.(c) { Cell.un_cell(c) })
+}
 
 // Compositional rule: given instances for `a` and `b`, render a
 // `Pair(a, b)`. Both preconditions are strict sub-terms of the result.
 fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
   Render.mk_render(
-    , Pair(A, B)
-    , .(p) {
-        let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
-        let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
-        string_concat(left, right)
-      }
-    )
+  , Pair(A, B)
+  , .(p) {
+      let left = Render.render(ra)(__fst__(A, B, Pair.un_pair(A, B, p)));
+      let right = Render.render(rb)(__snd__(A, B, Pair.un_pair(A, B, p)));
+      string_concat(left, right)
+    }
+  )
 }
 
 // Derive a one-level instance over a `Pair` of host-`String` cells.
@@ -41,15 +43,15 @@ fn run() -> String {
   let inst = derive!((render_pair, render_cell_string), Render(Pair(Cell(String), Cell(String))));
   let value =
     Pair.mk_pair(
+    , Cell(String)
+    , Cell(String)
+    , __pair__(
       , Cell(String)
       , Cell(String)
-      , __pair__(
-          , Cell(String)
-          , Cell(String)
-          , Cell.mk_cell("derive host: "(String))
-          , Cell.mk_cell("ok\n"(String))
-          )
-      );
+      , Cell.mk_cell("derive host: "(String))
+      , Cell.mk_cell("ok\n"(String))
+      )
+    );
   Render.render(inst)(value)
 }
 

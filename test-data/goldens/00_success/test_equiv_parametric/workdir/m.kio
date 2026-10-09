@@ -15,10 +15,7 @@ equiv reflexive_value[A](x: A) {
 }
 
 equiv let_through_param[A](x: A) {
-  scope! {
-    let y = x;
-    y
-  };
+  scope! { let y = x; y };
   x
 }
 

@@ -7,8 +7,6 @@ fn accept(callback: [A] A -> .) { callback(()) }
 
 pub fn main() {
   accept(.[A](_value: A) {
-    scope! {
-      io.print("scope\n")
-    }
+    scope! { io.print("scope\n") }
   })
 }

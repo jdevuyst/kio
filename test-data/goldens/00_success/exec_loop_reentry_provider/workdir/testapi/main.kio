@@ -1,0 +1,48 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+type State = I32 & I32;
+
+type Ticket = I32 -> I32;
+
+fn step(reenter: State -> Ticket, state: State) -> State | Ticket {
+  match! state {
+    .(remaining: I32, answer: I32) {
+      if! arith.eq_i32(remaining, 0) {
+        widen_sum!(.(n: I32) { reenter((n, n))(0) })
+      } else if! arith.leq_i32(remaining, 1) {
+        if! arith.eq_i32(remaining, 1) {
+          widen_sum!(.(_unit: I32) { answer })
+        } else {
+          let nested = reenter((4, 73))(0);
+          widen_sum!(.(_unit: I32) { nested })
+        }
+      } else {
+        widen_sum!((arith.sub_i32(remaining, 1), answer))
+      }
+    }
+  }
+}
+
+fn make_ticket() -> Ticket { iter.loop_reentry(step, (0, 0)) }
+
+pub fn main() {
+  let ticket = make_ticket();
+  io.print("ready\n");
+  io.print(fmt.i32_to_string(ticket(17)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(ticket(29)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(ticket(64)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(iter.loop_reentry(step, (-1, 0))(0)));
+  io.print("\n")
+}

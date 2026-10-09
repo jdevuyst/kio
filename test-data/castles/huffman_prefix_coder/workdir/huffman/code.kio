@@ -34,14 +34,14 @@ fn entry(symbol: I32, freq: I32, bits: Bits) -> Entry {
 rec(loop) fn collect(node: Node, prefix: Bits, acc: List(Entry)) -> List(Entry) {
   match! node.>Node.un_node {
     (
-      , .(symbol: Leaf_symbol, weight: Leaf_weight) {
-          cons(entry(symbol.?{leaf_symbol}, weight.?{leaf_weight}, reverse(prefix)), acc)
-        }
-      , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
-          let after_left = rec(cont) collect(left.?{fork_left}, cons(0, prefix), acc);
-          rec collect(right.?{fork_right}, cons(1, prefix), after_left)
-        }
-      )
+    , .(symbol: Leaf_symbol, weight: Leaf_weight) {
+        cons(entry(symbol.?{leaf_symbol}, weight.?{leaf_weight}, reverse(prefix)), acc)
+      }
+    , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
+        let after_left = recur(cont) collect(left.?{fork_left}, cons(0, prefix), acc);
+        recur collect(right.?{fork_right}, cons(1, prefix), after_left)
+      }
+    )
   }
 }
 
@@ -50,24 +50,24 @@ fn before(a: Entry, b: Entry) -> Bool { lt_i32(a.?{entry_symbol}, b.?{entry_symb
 rec(loop) fn insert_by_symbol(row: Entry, rows: List(Entry)) -> List(Entry) {
   match! rows.>List.un_list {
     (
-      , .(head: Entry, rest: List(Entry)) {
-          if! before(row, head) {
-            cons(row, rows)
-          } else {
-            cons(head, rec(cont) insert_by_symbol(row, rest))
-          }
+    , .(head: Entry, rest: List(Entry)) {
+        if! before(row, head) {
+          cons(row, rows)
+        } else {
+          cons(head, recur(cont) insert_by_symbol(row, rest))
         }
-      , .(_empty: .) { of1(row) }
-      )
+      }
+    , .(_empty: .) { of1(row) }
+    )
   }
 }
 
 rec(loop) fn sort_onto(rows: List(Entry), acc: List(Entry)) -> List(Entry) {
   match! rows.>List.un_list {
     (
-      , .(head: Entry, rest: List(Entry)) { rec sort_onto(rest, insert_by_symbol(head, acc)) }
-      , .(_empty: .) { acc }
-      )
+    , .(head: Entry, rest: List(Entry)) { recur sort_onto(rest, insert_by_symbol(head, acc)) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -79,17 +79,17 @@ pub fn code_table(root: Node) -> List(Entry) {
 pub rec(loop) fn bits_for(rows: List(Entry), symbol: I32, fallback: Bits) -> Bits {
   match! rows.>List.un_list {
     (
-      , .(head: Entry, rest: List(Entry)) {
-          let at = head.?{entry_symbol};
-          if! lt_i32(at, symbol) {
-            rec bits_for(rest, symbol, fallback)
-          } else if! lt_i32(symbol, at) {
-            fallback
-          } else {
-            head.?{entry_bits}
-          }
+    , .(head: Entry, rest: List(Entry)) {
+        let at = head.?{entry_symbol};
+        if! lt_i32(at, symbol) {
+          recur bits_for(rest, symbol, fallback)
+        } else if! lt_i32(symbol, at) {
+          fallback
+        } else {
+          head.?{entry_bits}
         }
-      , .(_empty: .) { fallback }
-      )
+      }
+    , .(_empty: .) { fallback }
+    )
   }
 }

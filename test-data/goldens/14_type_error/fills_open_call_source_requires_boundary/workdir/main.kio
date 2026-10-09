@@ -6,4 +6,6 @@ host type String role(str);
 
 host fn apply[A](function: . -> A) -> A;
 
-fn rejected() -> String { infer!(apply(.(_unit: .) { "inline" })) }
+fn rejected() -> String {
+  infer!(apply(.(_unit: .) { "inline" }))
+}

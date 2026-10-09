@@ -30,25 +30,17 @@ rec(loop) fn decades(n: I32, bound: I32, acc: I32) -> I32 {
   } else if! leq_i32(10, acc) {
     acc
   } else {
-    rec decades(n, mul_i32(bound, 10), add_i32(acc, 1))
+    recur decades(n, mul_i32(bound, 10), add_i32(acc, 1))
   }
 }
 
 /// How wide `int_to_string(n)` prints, counted rather than measured.
 fn int_width(n: I32) -> I32 {
-  if! lt_i32(n, 0) {
-    add_i32(1, decades(sub_i32(0, n), 10, 1))
-  } else {
-    decades(n, 10, 1)
-  }
+  if! lt_i32(n, 0) { add_i32(1, decades(sub_i32(0, n), 10, 1)) } else { decades(n, 10, 1) }
 }
 
 rec(loop) fn spaces(n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) {
-    acc
-  } else {
-    rec spaces(sub_i32(n, 1), cat(acc, " "))
-  }
+  if! leq_i32(n, 0) { acc } else { recur spaces(sub_i32(n, 1), cat(acc, " ")) }
 }
 
 fn pad(text: String, width: I32, field: I32) -> String {
@@ -59,7 +51,9 @@ pub fn render_value(v: Value) -> String {
   fold_value(v, .(n: I32) { int_to_string(n) }, ".", "#CYCLE")
 }
 
-fn value_width(v: Value) -> I32 { fold_value(v, .(n: I32) { int_width(n) }, 1, 6) }
+fn value_width(v: Value) -> I32 {
+  fold_value(v, .(n: I32) { int_width(n) }, 1, 6)
+}
 
 pub fn render_content(c: Content) -> String {
   fold_content(c, "-", .(n: I32) { int_to_string(n) }, .(e: Expr) { render_expr(e) })
@@ -67,10 +61,10 @@ pub fn render_content(c: Content) -> String {
 
 pub fn render_edit(e: Edit) -> String {
   cat3(
-    , addr_name(edit_addr(e))
-    , " = "
-    , fold_edit(e, .(n: I32) { int_to_string(n) }, .(x: Expr) { render_expr(x) }, "<cleared>")
-    )
+  , addr_name(edit_addr(e))
+  , " = "
+  , fold_edit(e, .(n: I32) { int_to_string(n) }, .(x: Expr) { render_expr(x) }, "<cleared>")
+  )
 }
 
 fn field() -> I32 { 7 }
@@ -79,7 +73,7 @@ rec(loop) fn header_onto(col: I32, acc: String) -> String {
   if! leq_i32(cols(), col) {
     acc
   } else {
-    rec header_onto(add_i32(col, 1), cat(acc, pad(col_letter(col), 1, field())))
+    recur header_onto(add_i32(col, 1), cat(acc, pad(col_letter(col), 1, field())))
   }
 }
 
@@ -88,12 +82,12 @@ rec(loop) fn row_onto(vals: Values, row: I32, col: I32, acc: String) -> String {
     acc
   } else {
     let v = value_at(vals, make_addr(row, col));
-    rec row_onto(
-      , vals
-      , row
-      , add_i32(col, 1)
-      , cat(acc, pad(render_value(v), value_width(v), field()))
-      )
+    recur row_onto(
+    , vals
+    , row
+    , add_i32(col, 1)
+    , cat(acc, pad(render_value(v), value_width(v), field()))
+    )
   }
 }
 
@@ -104,7 +98,7 @@ rec(loop) fn grid_onto(vals: Values, row: I32, acc: String) -> String {
     let number = add_i32(row, 1);
     let label = pad(int_to_string(number), int_width(number), 2);
     let line = cat3(label, row_onto(vals, row, 0, ""), "\n");
-    rec grid_onto(vals, add_i32(row, 1), cat(acc, line))
+    recur grid_onto(vals, add_i32(row, 1), cat(acc, line))
   }
 }
 
@@ -117,30 +111,26 @@ pub fn grid(vals: Values) -> String {
 rec(loop) fn names_onto(xs: List(Addr), sep: String, acc: String) -> String {
   match! xs.>List.unpack {
     (
-      , .(a: Addr, rest: List(Addr)) { rec names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
-      , .(_empty: .) { acc }
-      )
+    , .(a: Addr, rest: List(Addr)) { recur names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 pub fn addr_list(xs: List(Addr)) -> String {
-  if! is_empty(xs) {
-    "(none)"
-  } else {
-    names_onto(xs, "", "")
-  }
+  if! is_empty(xs) { "(none)" } else { names_onto(xs, "", "") }
 }
 
 rec(loop) fn listing_onto(s: Sheet, todo: List(Addr), acc: String) -> String {
   match! todo.>List.unpack {
     (
-      , .(a: Addr, rest: List(Addr)) {
-          let line =
-            cat3(cat("  ", addr_name(a)), " = ", cat(render_content(content_at(s, a)), "\n"));
-          rec listing_onto(s, rest, cat(acc, line))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(a: Addr, rest: List(Addr)) {
+        let line =
+          cat3(cat("  ", addr_name(a)), " = ", cat(render_content(content_at(s, a)), "\n"));
+        recur listing_onto(s, rest, cat(acc, line))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

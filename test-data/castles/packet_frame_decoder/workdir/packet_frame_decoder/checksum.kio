@@ -7,11 +7,7 @@ import testapi/text as text;
 
 fn expected_for_alpha(packet: String) -> String {
   if! text.string_eq(frame.kind(packet), "D") {
-    if! text.string_eq(frame.payload(packet), "PING") {
-      "326"
-    } else {
-      "???"
-    }
+    if! text.string_eq(frame.payload(packet), "PING") { "326" } else { "???" }
   } else {
     "???"
   }
@@ -19,11 +15,7 @@ fn expected_for_alpha(packet: String) -> String {
 
 fn expected_for_beta(packet: String) -> String {
   if! text.string_eq(frame.kind(packet), "A") {
-    if! text.string_eq(frame.payload(packet), "PONG") {
-      "329"
-    } else {
-      "???"
-    }
+    if! text.string_eq(frame.payload(packet), "PONG") { "329" } else { "???" }
   } else {
     "???"
   }
@@ -31,11 +23,7 @@ fn expected_for_beta(packet: String) -> String {
 
 fn expected_for_gamma(packet: String) -> String {
   if! text.string_eq(frame.kind(packet), "D") {
-    if! text.string_eq(frame.payload(packet), "DROP") {
-      "320"
-    } else {
-      "???"
-    }
+    if! text.string_eq(frame.payload(packet), "DROP") { "320" } else { "???" }
   } else {
     "???"
   }
@@ -43,11 +31,7 @@ fn expected_for_gamma(packet: String) -> String {
 
 fn expected_for_delta(packet: String) -> String {
   if! text.string_eq(frame.kind(packet), "H") {
-    if! text.string_eq(frame.payload(packet), "PING") {
-      "999"
-    } else {
-      "???"
-    }
+    if! text.string_eq(frame.payload(packet), "PING") { "999" } else { "???" }
   } else {
     "???"
   }

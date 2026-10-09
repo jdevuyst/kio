@@ -20,15 +20,11 @@ fn handle_product(s: (I32 & String) & Bool) -> String {
 fn handle_sum(s: I32 | String | Bool) -> String {
   match! s {
     (
-      , .(x: I32 | String) { "int-or-string\n" }
-      , .(b: Bool) {
-          if! b {
-            "bool-true\n"
-          } else {
-            "bool-false\n"
-          }
-        }
-      )
+    , .(x: I32 | String) { "int-or-string\n" }
+    , .(b: Bool) {
+        if! b { "bool-true\n" } else { "bool-false\n" }
+      }
+    )
   }
 }
 

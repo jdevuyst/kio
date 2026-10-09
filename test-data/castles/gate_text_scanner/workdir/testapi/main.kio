@@ -14,67 +14,67 @@ fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
 fn open_line() -> String {
   let mark = "O";
   cat5(
-    , "01 OPEN gate => cmd:"
-    , command_tag(0, 4)
-    , " target:"
-    , gate_target(5, 9)
-    , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "01 OPEN gate => cmd:"
+  , command_tag(0, 4)
+  , " target:"
+  , gate_target(5, 9)
+  , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn set_a_line() -> String {
   let mark = set_mark(14, 20);
   cat5(
-    , "02 SET mode=A => cmd:"
-    , command_tag(10, 13)
-    , " target:"
-    , token(14, 18)
-    , cat3(" flag:A class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "02 SET mode=A => cmd:"
+  , command_tag(10, 13)
+  , " target:"
+  , token(14, 18)
+  , cat3(" flag:A class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn ping_line() -> String {
   let mark = "P";
   cat5(
-    , "03 PING 007 => cmd:"
-    , command_tag(21, 25)
-    , " target:"
-    , token(26, 29)
-    , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "03 PING 007 => cmd:"
+  , command_tag(21, 25)
+  , " target:"
+  , token(26, 29)
+  , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn bad_line() -> String {
   let mark = "X";
   cat5(
-    , "04 BAD ?? => cmd:"
-    , command_tag(30, 33)
-    , " target:"
-    , token(34, 36)
-    , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "04 BAD ?? => cmd:"
+  , command_tag(30, 33)
+  , " target:"
+  , token(34, 36)
+  , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn lock_line() -> String {
   let mark = "L";
   cat5(
-    , "05 LOCK gate => cmd:"
-    , command_tag(37, 41)
-    , " target:"
-    , gate_target(42, 46)
-    , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "05 LOCK gate => cmd:"
+  , command_tag(37, 41)
+  , " target:"
+  , gate_target(42, 46)
+  , cat3(" class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn set_b_line() -> String {
   let mark = set_mark(51, 57);
   cat5(
-    , "06 SET mode=B => cmd:"
-    , command_tag(47, 50)
-    , " target:"
-    , token(51, 55)
-    , cat3(" flag:B class:", class_for(mark), cat3(" mark:", mark, "\n"))
-    )
+  , "06 SET mode=B => cmd:"
+  , command_tag(47, 50)
+  , " target:"
+  , token(51, 55)
+  , cat3(" flag:B class:", class_for(mark), cat3(" mark:", mark, "\n"))
+  )
 }
 
 fn summary_line() -> String {

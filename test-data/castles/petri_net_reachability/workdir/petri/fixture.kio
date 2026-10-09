@@ -19,11 +19,11 @@ pub fn locking() -> model.Net {
   let finish_right =
     transition("finish-right", [* 0, 0, 0, 0, 1, 0, 1, 0 *], [* 0, 0, 0, 0, 0, 1, 1, 1 *]);
   {
-    , model.initial = [* 1, 0, 0, 1, 0, 0, 1, 1 *]
-    , model.terminal = [* 0, 0, 1, 0, 0, 1, 1, 1 *]
-    , model.capacity = 1
-    , model.transitions = [* acquire_left, acquire_right, finish_left, finish_right *]
-    }
+  , model.initial = [* 1, 0, 0, 1, 0, 0, 1, 1 *]
+  , model.terminal = [* 0, 0, 1, 0, 0, 1, 1, 1 *]
+  , model.capacity = 1
+  , model.transitions = [* acquire_left, acquire_right, finish_left, finish_right *]
+  }
 }
 
 pub fn overflowing() -> model.Transition {

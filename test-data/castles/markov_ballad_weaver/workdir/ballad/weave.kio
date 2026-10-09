@@ -34,12 +34,12 @@ fn stopped_dry() -> Stop { {by_no_successor=}.>widen_sum!(Stop) }
 
 /// One recorded draw.
 pub labels Step = {
-  , step_state: I32
-  , step_from: String
-  , step_succs: List(Tally)
-  , step_roll: I32
-  , step_to: String
-  };
+, step_state: I32
+, step_from: String
+, step_succs: List(Tally)
+, step_roll: I32
+, step_to: String
+};
 
 pub labels Line = { line_words: List(String), line_stop: Stop, line_draws: List(Step) };
 
@@ -59,7 +59,7 @@ rec(loop) fn land(head: Tally, rest: List(Tally), r: I32, acc: I32) -> String {
   if! lt_i32(r, upto) {
     head.?{word}
   } else match! rest.>List.un_list {
-    (.(t: Tally, more: List(Tally)) { rec land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
+    (.(t: Tally, more: List(Tally)) { recur land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
   }
 }
 
@@ -71,19 +71,19 @@ fn draw(state: I32, from: String, head: Tally, rest: List(Tally)) -> Step {
   let stepped = next(state);
   let r = roll(stepped, total_weight(succs));
   {
-    , step_state = stepped
-    , step_from = from
-    , step_succs = succs
-    , step_roll = r
-    , step_to = land(head, rest, r, 0)
-    }
+  , step_state = stepped
+  , step_from = from
+  , step_succs = succs
+  , step_roll = r
+  , step_to = land(head, rest, r, 0)
+  }
 }
 
 fn finish(state: I32, stop: Stop, words: List(String), draws: List(Step)) -> Drawn {
   {
-    , drawn_line = {line_words = reverse(words), line_stop = stop, line_draws = reverse(draws)}
-    , drawn_state = state
-    }
+  , drawn_line = {line_words = reverse(words), line_stop = stop, line_draws = reverse(draws)}
+  , drawn_state = state
+  }
 }
 
 /// Extend a line one word at a time. An end word closes the line even when the
@@ -95,34 +95,34 @@ fn finish(state: I32, stop: Stop, words: List(String), draws: List(Step)) -> Dra
 /// in the corpus, so it has a chain row, and a phrase-final word is an end
 /// word that the check above already caught.
 rec(loop) fn extend(
-  , m: Model
-  , cap: I32
-  , state: I32
-  , cur: String
-  , n: I32
-  , words: List(String)
-  , draws: List(Step)
-  ) -> Drawn {
+, m: Model
+, cap: I32
+, state: I32
+, cur: String
+, n: I32
+, words: List(String)
+, draws: List(Step)
+) -> Drawn {
   if! is_end(m, cur) {
     finish(state, stopped_at_end(), words, draws)
   } else if! leq_i32(cap, n) {
     finish(state, stopped_at_cap(), words, draws)
   } else match! succs_of(m, cur).>List.un_list {
     (
-      , .(head: Tally, rest: List(Tally)) {
-          let d = draw(state, cur, head, rest);
-          rec extend(
-            , m
-            , cap
-            , d.?{step_state}
-            , d.?{step_to}
-            , add_i32(n, 1)
-            , cons(d.?{step_to}, words)
-            , cons(d, draws)
-            )
-        }
-      , .(_empty: .) { finish(state, stopped_dry(), words, draws) }
-      )
+    , .(head: Tally, rest: List(Tally)) {
+        let d = draw(state, cur, head, rest);
+        recur extend(
+        , m
+        , cap
+        , d.?{step_state}
+        , d.?{step_to}
+        , add_i32(n, 1)
+        , cons(d.?{step_to}, words)
+        , cons(d, draws)
+        )
+      }
+    , .(_empty: .) { finish(state, stopped_dry(), words, draws) }
+    )
   }
 }
 
@@ -131,12 +131,12 @@ rec(loop) fn extend(
 fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
   match! starts_of(m).>List.un_list {
     (
-      , .(head: Tally, rest: List(Tally)) {
-          let d = draw(state, start_label(), head, rest);
-          extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
-        }
-      , .(_empty: .) { finish(state, stopped_dry(), nil(String), nil(Step)) }
-      )
+    , .(head: Tally, rest: List(Tally)) {
+        let d = draw(state, start_label(), head, rest);
+        extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
+      }
+    , .(_empty: .) { finish(state, stopped_dry(), nil(String), nil(Step)) }
+    )
   }
 }
 
@@ -145,7 +145,7 @@ rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: Lis
     reverse(acc)
   } else {
     let d = open_line(m, cap, state);
-    rec weave_onto(m, cap, sub_i32(remaining, 1), d.?{drawn_state}, cons(d.?{drawn_line}, acc))
+    recur weave_onto(m, cap, sub_i32(remaining, 1), d.?{drawn_state}, cons(d.?{drawn_line}, acc))
   }
 }
 

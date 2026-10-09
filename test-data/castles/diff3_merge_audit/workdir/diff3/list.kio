@@ -48,7 +48,7 @@ pub fn tail[A](xs: List(A)) -> List(A) {
 /// single accumulator loop rather than one per operation.
 pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   match! xs.>List.unpack {
-    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+    (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -58,7 +58,7 @@ pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys
 
 rec(loop) fn len_from[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.unpack {
-    (.(_head: A, rest: List(A)) { rec len_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_head: A, rest: List(A)) { recur len_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -68,7 +68,7 @@ pub rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
   if! leq_i32(count, 0) {
     xs
   } else match! xs.>List.unpack {
-    (.(_head: A, rest: List(A)) { rec drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
+    (.(_head: A, rest: List(A)) { recur drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
   }
 }
 
@@ -77,9 +77,9 @@ rec(loop) fn take_onto[A](xs: List(A), count: I32, acc: List(A)) -> List(A) {
     reverse(acc)
   } else match! xs.>List.unpack {
     (
-      , .(head: A, rest: List(A)) { rec take_onto(rest, sub_i32(count, 1), cons(head, acc)) }
-      , .(_empty: .) { reverse(acc) }
-      )
+    , .(head: A, rest: List(A)) { recur take_onto(rest, sub_i32(count, 1), cons(head, acc)) }
+    , .(_empty: .) { reverse(acc) }
+    )
   }
 }
 
@@ -93,11 +93,7 @@ pub fn slice[A](xs: List(A), lo: I32, hi: I32) -> List(A) { take(drop(xs, lo), s
 pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
 
 rec(loop) fn zeros_onto(count: I32, acc: List(I32)) -> List(I32) {
-  if! leq_i32(count, 0) {
-    acc
-  } else {
-    rec zeros_onto(sub_i32(count, 1), cons(0, acc))
-  }
+  if! leq_i32(count, 0) { acc } else { recur zeros_onto(sub_i32(count, 1), cons(0, acc)) }
 }
 
 pub fn zeros(count: I32) -> List(I32) { zeros_onto(count, nil(_)) }

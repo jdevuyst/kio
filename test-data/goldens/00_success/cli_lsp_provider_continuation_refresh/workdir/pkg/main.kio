@@ -3,9 +3,5 @@ module pkg/main;
 import pkg/provider(choose);
 
 fn run() {
-  choose! {
-    ()
-  } fallback {
-    ()
-  }
+  choose! { () } fallback { () }
 }

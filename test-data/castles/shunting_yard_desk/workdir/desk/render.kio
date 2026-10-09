@@ -19,9 +19,9 @@ pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
 rec(loop) fn join_onto(parts: List(String), acc: String) -> String {
   match! parts.>List.un_list {
     (
-      , .(head: String, rest: List(String)) { rec join_onto(rest, cat(acc, cat(" ", head))) }
-      , .(_empty: .) { acc }
-      )
+    , .(head: String, rest: List(String)) { recur join_onto(rest, cat(acc, cat(" ", head))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

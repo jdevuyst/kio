@@ -16,9 +16,6 @@ equiv newtype_payload(x: T, y: T) {
 }
 
 equiv effect_inside_newtype(x: T) {
-  Box.mk_box(scope! {
-    effect(x);
-    x
-  });
+  Box.mk_box(scope! { effect(x); x });
   Box.mk_box(x)
 }

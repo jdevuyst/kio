@@ -102,9 +102,7 @@ accepts its value through a trailing block:
 
 ```kio {@identity_consumer}
 pure fn keep_block(value: .) {
-  identity_block! {
-    value
-  }
+  identity_block! { value }
 }
 ```
 
@@ -115,10 +113,7 @@ value, not a syntax tree. For example:
 
 ```kio {@identity_consumer}
 pure fn keep_pair(left: ., right: .) -> . & . {
-  identity_block! {
-    left;
-    right
-  }
+  identity_block! { left; right }
 }
 ```
 

@@ -2,4 +2,6 @@ module main;
 
 fn consume[A](seed: A, f: [X] (A & X) -> A) { () }
 
-fn invalid[A](seed: A) { consume(_, seed, .[A](left, right) { right }) }
+fn invalid[A](seed: A) {
+  consume(_, seed, .[A](left, right) { right })
+}

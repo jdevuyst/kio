@@ -3,8 +3,8 @@ module helper;
 import __comptime__;
 
 pub pure fn run[S][R](
-  , ct: __Comptime__
-  , fuel: __Type_arity__
-  , state: S
-  , step: (((__Type_arity__ & S) -> R) & __Type_arity__ & S) -> R
-  ) -> R { __structural_recur__(ct, __Type_arity__, S, R, fuel, state, step) }
+, ct: __Comptime__
+, fuel: __Type_arity__
+, state: S
+, step: (((__Type_arity__ & S) -> R) & __Type_arity__ & S) -> R
+) -> R { __structural_recur__(ct, __Type_arity__, S, R, fuel, state, step) }

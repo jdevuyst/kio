@@ -1107,6 +1107,19 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
             ret_type: "r".to_owned(),
             where_clause: format!("__cbret={}", java_sum_type(&["s", "r"])),
         },
+        HostFnBodyKind::LoopReentry => TraitMethod {
+            name: member(binding.leaf),
+            type_params: vec!["s".to_owned(), "r".to_owned()],
+            arg_types: vec![
+                java_function_type(
+                    &[&java_product_type(&[&java_function_type(&["s"], "r"), "s"])],
+                    &java_sum_type(&["s", "r"]),
+                ),
+                "s".to_owned(),
+            ],
+            ret_type: "r".to_owned(),
+            where_clause: String::new(),
+        },
         HostFnBodyKind::Array {
             operation,
             array,
@@ -2073,6 +2086,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         HostFnBodyKind::StringSlice { .. } => CanonicalKind::StringSlice,
         HostFnBodyKind::StringCodeAt { .. } => CanonicalKind::StringCodeAt,
         HostFnBodyKind::Loop => CanonicalKind::Loop,
+        HostFnBodyKind::LoopReentry => CanonicalKind::LoopReentry,
         HostFnBodyKind::NumericToString { value, .. } => CanonicalKind::NumericToString {
             kind: value.fixture.role().to_owned(),
         },
@@ -2380,6 +2394,9 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
         CanonicalKind::FloatArith { op, .. } => float_arith_body(op),
         CanonicalKind::Cmp { cmp, kind } => cmp_body(cmp, kind),
         CanonicalKind::Loop => render_loop_body(m),
+        CanonicalKind::LoopReentry => {
+            "class Driver {\n      r run(s state) {\n        while (true) {\n          switch (p0.apply(new Shapes.Product<>(this::run, state))) {\n            case Shapes.Left(var next) -> state = next;\n            case Shapes.Right(var result) -> { return result; }\n          }\n        }\n      }\n    }\n    return new Driver().run(p1);".to_owned()
+        }
         CanonicalKind::Array(_) => unreachable!("array bodies need their exact host declaration"),
         CanonicalKind::MakeScalar => {
             "java.util.Map<String, Object> s = new java.util.HashMap<>();\n    switch (p1) {\n      case \"I32\", \"Int\" -> { s.put(\"k\", \"i32\"); s.put(\"v\", Integer.parseInt(p0)); }\n      case \"F64\", \"F32\" -> { s.put(\"k\", \"f64\"); s.put(\"v\", Double.valueOf(p0)); }\n      case \"String\", \"Str\" -> { s.put(\"k\", \"str\"); s.put(\"v\", p0); }\n      case \"Bool\" -> { s.put(\"k\", \"bool\"); s.put(\"v\", p0.equals(\"t\")); }\n      default -> throw new RuntimeException(\"make_scalar: unknown representation key \" + p1);\n    }\n    return s;"

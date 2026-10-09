@@ -10,30 +10,18 @@ import testapi/arith(leq_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 
 pub fn not(b: Bool) -> Bool {
-  if! b {
-    .f
-  } else {
-    .t
-  }
+  if! b { .f } else { .t }
 }
 
 pub fn int_eq(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) {
-    leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
 }
 
 /// `base` raised to `e`, by repeated multiplication. The caller guarantees
 /// `e >= 0` — a negative exponent has no integer value, and the evaluator
 /// rejects it before reaching here rather than silently truncating it.
 rec(loop) fn pow_onto(base: I32, e: I32, acc: I32) -> I32 {
-  if! leq_i32(e, 0) {
-    acc
-  } else {
-    rec pow_onto(base, sub_i32(e, 1), mul_i32(acc, base))
-  }
+  if! leq_i32(e, 0) { acc } else { recur pow_onto(base, sub_i32(e, 1), mul_i32(acc, base)) }
 }
 
 pub fn pow(base: I32, e: I32) -> I32 { pow_onto(base, e, 1) }

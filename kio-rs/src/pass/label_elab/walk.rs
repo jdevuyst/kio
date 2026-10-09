@@ -71,6 +71,7 @@ pub trait DesugaredToLowered {
         plan: RecOrderPlan<Desugared>,
     ) -> Result<RecOrderPlan<Lowered>, Error> {
         let RecOrderPlan {
+            source_call,
             name,
             disposition,
             tail_continuation,
@@ -80,6 +81,7 @@ pub trait DesugaredToLowered {
             runtime_ty,
         } = plan;
         Ok(RecOrderPlan {
+            source_call,
             name,
             disposition,
             tail_continuation: tail_continuation

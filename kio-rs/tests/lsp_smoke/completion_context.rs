@@ -95,40 +95,40 @@ fn lsp_protocol_neutral_block_completion_tracks_lexical_scope() {
     for (body, expected, forbidden) in [
         (
             "sequence! bind { let local <- parent; |",
-            vec!["local", "parent", "rec"],
+            vec!["local", "parent", "recur"],
             vec!["run"],
         ),
         (
             "sequence! bind { parent; |",
-            vec!["parent", "rec"],
+            vec!["parent", "recur"],
             vec!["run"],
         ),
         (
-            "sequence! bind { let local <- parent; rec(|",
-            vec!["cont", "poly"],
+            "sequence! bind { let local <- parent; recur(|",
+            vec!["escape", "poly"],
             vec![],
         ),
-        ("sequence! bind { parent; rec |", vec!["run"], vec![]),
+        ("sequence! bind { parent; recur |", vec!["run"], vec![]),
         (
             "sequence! bind { let local = parent; |",
-            vec!["local", "parent", "rec"],
+            vec!["local", "parent", "recur"],
             vec!["run"],
         ),
         (
             "sequence! bind { let local <- |parent; local }",
-            vec!["parent", "rec"],
+            vec!["parent", "recur"],
             vec!["local", "run"],
         ),
         (
             "let prior = sequence! bind { let local <- parent; local }; |",
-            vec!["prior", "parent", "rec"],
+            vec!["prior", "parent", "recur"],
             vec!["local", "run"],
         ),
-        ("scope! { parent; |", vec!["parent", "rec"], vec!["run"]),
+        ("scope! { parent; |", vec!["parent", "recur"], vec!["run"]),
         (
             "sequence! bind { .() { |",
-            vec!["parent"],
-            vec!["rec", "run"],
+            vec!["parent", "recur"],
+            vec!["run"],
         ),
     ] {
         let marked = format!("module app; rec(loop) fn run[A](parent: .) {{ {body}");
@@ -328,7 +328,7 @@ fn lsp_protocol_completion_preserves_scope_and_recursive_identity_after_open_and
             vec!["run"],
         ),
         (
-            "module app; rec(loop) fn run(value: .) -> . { rec ru|n(value) }",
+            "module app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
             vec!["run"],
             vec!["value"],
         ),

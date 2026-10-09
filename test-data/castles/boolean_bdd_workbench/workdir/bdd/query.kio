@@ -24,12 +24,8 @@ pub rec(loop) fn evaluate(store: table.Store, root: table.Node_id, assignment: I
   match! table.lookup(store, root) {
     .(node: table.Node) {
       let child =
-        if! assignment(node.?{table.level}) {
-          node.?{table.high}
-        } else {
-          node.?{table.low}
-        };
-      rec evaluate(store, child, assignment)
+        if! assignment(node.?{table.level}) { node.?{table.high} } else { node.?{table.low} };
+      recur evaluate(store, child, assignment)
     };
     .() { table.truth(root) }
   }
@@ -41,13 +37,8 @@ rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment)
   } else match! table.lookup(store, root) {
     .(node: table.Node) {
       let high = table.same_id(node.?{table.low}, table.false_id());
-      let child =
-        if! high {
-          node.?{table.high}
-        } else {
-          node.?{table.low}
-        };
-      rec choose(store, child, lists.cons((node.?{table.level}, high), values))
+      let child = if! high { node.?{table.high} } else { node.?{table.low} };
+      recur choose(store, child, lists.cons((node.?{table.level}, high), values))
     };
     .() { values.>widen_sum! }
   }
@@ -58,23 +49,23 @@ pub fn satisfying_assignment(store: table.Store, root: table.Node_id) -> Assignm
 }
 
 rec(loop) fn collect(
-  , store: table.Store
-  , pending: lists.List(table.Node_id)
-  , seen: lists.List(table.Node_id)
-  ) -> lists.List(table.Node_id) {
+, store: table.Store
+, pending: lists.List(table.Node_id)
+, seen: lists.List(table.Node_id)
+) -> lists.List(table.Node_id) {
   match! lists.uncons(pending) {
     .(id: table.Node_id, tail: lists.List(table.Node_id)) {
       if! logic.or(table.terminal(id), walk.elem(table.same_id, id, seen)) {
-        rec collect(store, tail, seen)
+        recur collect(store, tail, seen)
       } else match! table.lookup(store, id) {
         .(node: table.Node) {
-          rec collect(
-            , store
-            , lists.cons(node.?{table.low}, lists.cons(node.?{table.high}, tail))
-            , lists.cons(id, seen)
-            )
+          recur collect(
+          , store
+          , lists.cons(node.?{table.low}, lists.cons(node.?{table.high}, tail))
+          , lists.cons(id, seen)
+          )
         };
-        .() { rec collect(store, tail, seen) }
+        .() { recur collect(store, tail, seen) }
       }
     };
     .() { seen }
@@ -96,32 +87,32 @@ fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {
 
 pub fn valid_store(store: table.Store) -> Bool {
   walk.foldl(
-    , .(valid: Bool, id: table.Node_id, node: table.Node) {
-        let distinct = logic.not(table.same_id(node.?{table.low}, node.?{table.high}));
-        let ordered =
-          logic.and(
-            , valid_child(store, node.?{table.level}, node.?{table.low})
-            , valid_child(store, node.?{table.level}, node.?{table.high})
-            );
-        let peers =
-          walk.filter(
-            , .(other_id: table.Node_id, other: table.Node) {
-                logic.and(
-                  , logic.not(table.same_id(id, other_id))
-                  , logic.and(
-                      , arith.eq_i32(node.?{table.level}, other.?{table.level})
-                      , logic.and(
-                          , table.same_id(node.?{table.low}, other.?{table.low})
-                          , table.same_id(node.?{table.high}, other.?{table.high})
-                          )
-                      )
-                  )
-              }
-            , store.?{table.nodes}
-            );
-        logic.and(valid, logic.and(distinct, logic.and(ordered, walk.null(peers))))
-      }
-    , .t
-    , store.?{table.nodes}
-    )
+  , .(valid: Bool, id: table.Node_id, node: table.Node) {
+      let distinct = logic.not(table.same_id(node.?{table.low}, node.?{table.high}));
+      let ordered =
+        logic.and(
+        , valid_child(store, node.?{table.level}, node.?{table.low})
+        , valid_child(store, node.?{table.level}, node.?{table.high})
+        );
+      let peers =
+        walk.filter(
+        , .(other_id: table.Node_id, other: table.Node) {
+            logic.and(
+            , logic.not(table.same_id(id, other_id))
+            , logic.and(
+              , arith.eq_i32(node.?{table.level}, other.?{table.level})
+              , logic.and(
+                , table.same_id(node.?{table.low}, other.?{table.low})
+                , table.same_id(node.?{table.high}, other.?{table.high})
+                )
+              )
+            )
+          }
+        , store.?{table.nodes}
+        );
+      logic.and(valid, logic.and(distinct, logic.and(ordered, walk.null(peers))))
+    }
+  , .t
+  , store.?{table.nodes}
+  )
 }

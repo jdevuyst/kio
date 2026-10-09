@@ -14,19 +14,19 @@ module automata/minimize;
 
 import automata/dfa as dfa;
 import automata/seq(
-  , Ints
-  , List
-  , append
-  , cons
-  , empty
-  , fold
-  , intern
-  , len
-  , nil
-  , nth_or
-  , positions
-  , reverse
-  );
+, Ints
+, List
+, append
+, cons
+, empty
+, fold
+, intern
+, len
+, nil
+, nth_or
+, positions
+, reverse
+);
 import automata/symbol(width);
 import elab/control(if);
 import elab/match(match);
@@ -43,12 +43,8 @@ rec(loop) fn initial(d: dfa.Dfa, s: I32, acc: Blocks) -> Blocks {
   if! leq_i32(dfa.count(d), s) {
     reverse(acc)
   } else {
-    let tag = if! dfa.is_accepting(d, s) {
-      1
-    } else {
-      0
-    };
-    rec initial(d, add_i32(s, 1), cons(tag, acc))
+    let tag = if! dfa.is_accepting(d, s) { 1 } else { 0 };
+    recur initial(d, add_i32(s, 1), cons(tag, acc))
   }
 }
 
@@ -56,7 +52,7 @@ rec(loop) fn row_blocks(d: dfa.Dfa, bs: Blocks, s: I32, sym: I32, acc: Ints) -> 
   if! leq_i32(width(), sym) {
     reverse(acc)
   } else {
-    rec row_blocks(d, bs, s, add_i32(sym, 1), cons(block_of(bs, dfa.step(d, s, sym)), acc))
+    recur row_blocks(d, bs, s, add_i32(sym, 1), cons(block_of(bs, dfa.step(d, s, sym)), acc))
   }
 }
 
@@ -75,7 +71,7 @@ rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Bloc
     (reverse(acc), len(seen))
   } else {
     let .(grown: List(Ints), id: I32) = intern(seen, signature(d, bs, s));
-    rec relabel(d, bs, add_i32(s, 1), grown, cons(id, acc))
+    recur relabel(d, bs, add_i32(s, 1), grown, cons(id, acc))
   }
 }
 
@@ -85,25 +81,17 @@ rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Bloc
 /// stable one.
 rec(loop) fn refine(d: dfa.Dfa, bs: Blocks, before: I32) -> Blocks & I32 {
   let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil(Ints), empty());
-  if! eq_i32(after, before) {
-    (next, after)
-  } else {
-    rec refine(d, next, after)
-  }
+  if! eq_i32(after, before) { (next, after) } else { recur refine(d, next, after) }
 }
 
 rec(loop) fn first_in(bs: Blocks, block: I32, at: I32) -> I32 {
   match! bs.>List.unpack {
     (
-      , .(x: I32, rest: Ints) {
-          if! eq_i32(x, block) {
-            at
-          } else {
-            rec first_in(rest, block, add_i32(at, 1))
-          }
-        }
-      , .(_empty: .) { 0 }
-      )
+    , .(x: I32, rest: Ints) {
+        if! eq_i32(x, block) { at } else { recur first_in(rest, block, add_i32(at, 1)) }
+      }
+    , .(_empty: .) { 0 }
+    )
   }
 }
 
@@ -113,7 +101,7 @@ rec(loop) fn reps(bs: Blocks, blocks: I32, block: I32, acc: Ints) -> Ints {
   if! leq_i32(blocks, block) {
     reverse(acc)
   } else {
-    rec reps(bs, blocks, add_i32(block, 1), cons(first_in(bs, block, 0), acc))
+    recur reps(bs, blocks, add_i32(block, 1), cons(first_in(bs, block, 0), acc))
   }
 }
 
@@ -126,9 +114,9 @@ pub fn minimize(d: dfa.Dfa) -> dfa.Dfa {
   let .(bs: Blocks, blocks: I32) = refine(d, initial(d, 0, empty()), 0);
   let chosen = reps(bs, blocks, 0, empty());
   dfa.make(
-    , blocks
-    , block_of(bs, dfa.start(d))
-    , positions(chosen, .(rep: I32) { dfa.is_accepting(d, rep) })
-    , quotient_rows(d, bs, chosen)
-    )
+  , blocks
+  , block_of(bs, dfa.start(d))
+  , positions(chosen, .(rep: I32) { dfa.is_accepting(d, rep) })
+  , quotient_rows(d, bs, chosen)
+  )
 }

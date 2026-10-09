@@ -26,7 +26,7 @@ rec(loop) fn digits_from(value: I32, count: I32, power: I32) -> I32 {
   if! lt_i32(value, power) {
     count
   } else {
-    rec digits_from(value, add_i32(count, 1), mul_i32(power, 10))
+    recur digits_from(value, add_i32(count, 1), mul_i32(power, 10))
   }
 }
 
@@ -35,11 +35,7 @@ rec(loop) fn digits_from(value: I32, count: I32, power: I32) -> I32 {
 fn digits(value: I32) -> I32 { digits_from(value, 1, 10) }
 
 rec(loop) fn repeat_onto(unit: String, times: I32, acc: String) -> String {
-  if! lt_i32(times, 1) {
-    acc
-  } else {
-    rec repeat_onto(unit, sub_i32(times, 1), cat(acc, unit))
-  }
+  if! lt_i32(times, 1) { acc } else { recur repeat_onto(unit, sub_i32(times, 1), cat(acc, unit)) }
 }
 
 pub fn repeat(unit: String, times: I32) -> String { repeat_onto(unit, times, "") }

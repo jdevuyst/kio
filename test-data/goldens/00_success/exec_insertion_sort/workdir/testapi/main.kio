@@ -74,7 +74,10 @@ fn sort_step(arr: Array(I32), i: I32) -> I32 | . {
 // In-place insertion sort over `arr`. Outer loop walks `i` from
 // `1` to `len(arr) - 1`; inner loop shifts and inserts. Returns
 // the (now-sorted) array handle for `main` to render.
-fn insertion_sort(arr: Array(I32)) -> Array(I32) { loop(.(i: I32) { sort_step(arr, i) }, 1); arr }
+fn insertion_sort(arr: Array(I32)) -> Array(I32) {
+  loop(.(i: I32) { sort_step(arr, i) }, 1);
+  arr
+}
 
 // Inner step of `render_csv`: emits one element per turn,
 // prepending "," to every cell but the first. State is `(acc, i)`.
@@ -94,15 +97,15 @@ fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String 
 // values, walking via array_get.
 fn render_csv(arr: Array(I32)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) { render_step(arr, acc, i) }
-        }
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) { render_step(arr, acc, i) }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 pub fn main() {

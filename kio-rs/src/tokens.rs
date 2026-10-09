@@ -1867,7 +1867,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             meta,
             ..
         } => {
-            if let Some(span) = find_ident_in_span(raw, meta.span, "rec") {
+            if let Some(span) = find_ident_in_span(raw, meta.span, "recur") {
                 overrides.insert(span.start, TokenKind::KeywordDeclaration);
             }
             for mode in modes {
@@ -2732,16 +2732,16 @@ mod tests {
 
     #[test]
     fn tooling_bridge_cached_recursive_call_annotations_match_native_roles() {
-        let source = "module app; rec(loop) fn run(poly: .) -> . { rec(poly, cont) run(poly) }";
+        let source = "module app; rec(loop) fn run(poly: .) -> . { recur(poly, cont) run(poly) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
         let probed = dump(source).unwrap();
         assert_eq!(cached, probed);
-        let call = source.find("rec(poly").unwrap() as u32;
+        let call = source.find("recur(poly").unwrap() as u32;
         for (start, expected) in [
             (call, TokenKind::KeywordDeclaration),
-            (call + 4, TokenKind::KeywordControl),
-            (call + 10, TokenKind::KeywordControl),
+            (call + 6, TokenKind::KeywordControl),
+            (call + 12, TokenKind::KeywordControl),
         ] {
             assert_eq!(
                 cached
@@ -3168,7 +3168,7 @@ mod tests {
             rec(loop) fn recursive(x: .) -> . { \
               let _ = call_target(x); \
               let _ = x.>ufcs_target; \
-              rec recursive(x) \
+              recur recursive(x) \
             }";
         let probe = crate::pass::parser::probe_tooling_source(source, None);
         assert!(
@@ -3238,7 +3238,7 @@ mod tests {
             rec(loop) fn recursive(x: .) -> . { \
               let _ = call_target(x); \
               let _ = x.>ufcs_target(); \
-              rec recursive(x) \
+              recur recursive(x) \
             }";
         let probe = crate::pass::parser::probe_tooling_source(source, None);
         assert!(
@@ -3610,8 +3610,8 @@ mod tests {
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { rec(cont) second(value) + value };\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  fn first(value: .) -> . { recur(cont) second(value) + value };\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let module = crate::pass::parser::parse(source).expect("operator-aware module parse");

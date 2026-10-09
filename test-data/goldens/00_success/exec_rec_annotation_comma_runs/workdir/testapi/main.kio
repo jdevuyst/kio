@@ -12,7 +12,7 @@ rec(iter.loop) fn answer(n: host.I32) -> host.I32 {
   if! (arith.leq_i32(n, 0)) {
     41
   } else {
-    let result = rec(,,, cont ,,,) answer(0);
+    let result = recur(,,, cont ,,,) answer(0);
     io.print("continued\n");
     result
   }

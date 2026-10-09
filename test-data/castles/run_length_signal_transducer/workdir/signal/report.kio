@@ -28,15 +28,11 @@ rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32)
       io.print(" boundary=");
       match! previous {
         .(old: I32) {
-          io.print(if! numbers.eq_i32(old, value) {
-            "split\n"
-          } else {
-            "change\n"
-          })
+          io.print(if! numbers.eq_i32(old, value) { "split\n" } else { "change\n" })
         };
         .() { io.print("start\n") }
       };
-      rec packets(tail, value.>widen_sum!(I32 | .), arith.add_i32(index, 1))
+      recur packets(tail, value.>widen_sum!(I32 | .), arith.add_i32(index, 1))
     };
     .() { () }
   }
@@ -69,21 +65,13 @@ rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index:
           integer(expected);
           io.print(" decoded=");
           integer(actual);
-          io.print(if! equal {
-            " ok\n"
-          } else {
-            " MISMATCH\n"
-          });
-          rec compare(
-            , original_tail
-            , decoded_tail
-            , arith.add_i32(index, 1)
-            , if! equal {
-                valid
-              } else {
-                .f
-              }
-            )
+          io.print(if! equal { " ok\n" } else { " MISMATCH\n" });
+          recur compare(
+          , original_tail
+          , decoded_tail
+          , arith.add_i32(index, 1)
+          , if! equal { valid } else { .f }
+          )
         };
         .() { io.print("decoded stream ended early\n"); .f }
       }
@@ -102,9 +90,5 @@ rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index:
 
 pub fn roundtrip(original: lists.List(I32), decoded: lists.List(I32)) {
   let valid = compare(original, decoded, 1, .t);
-  io.print(if! valid {
-    "roundtrip=ok\n"
-  } else {
-    "roundtrip=FAILED\n"
-  })
+  io.print(if! valid { "roundtrip=ok\n" } else { "roundtrip=FAILED\n" })
 }

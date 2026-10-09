@@ -26,20 +26,20 @@ fn canonical_checks(manager: engine.Manager) -> engine.Manager {
   report.fact("contradiction-is-false", table.same_id(impossible, table.false_id()));
   report.fact("tautology-is-true", table.same_id(certain, true_constant));
   report.fact(
-    , "recompilation-allocates-zero"
-    , arith.eq_i32(table.size(manager.?{engine.store}), table.size(e.?{engine.store}))
-    );
+  , "recompilation-allocates-zero"
+  , arith.eq_i32(table.size(manager.?{engine.store}), table.size(e.?{engine.store}))
+  );
   let .(f: engine.Manager, repeated: table.Node_id) =
     engine.apply(e, logic.conjunction_op(), factored, certain);
   let .(g: engine.Manager, repeated_again: table.Node_id) =
     engine.apply(f, logic.conjunction_op(), certain, factored);
   report.fact(
-    , "apply-reuses-commuted-key"
-    , logic.and(
-        , table.same_id(repeated, repeated_again)
-        , arith.eq_i32(g.?{engine.hits}, arith.add_i32(f.?{engine.hits}, 1))
-        )
-    );
+  , "apply-reuses-commuted-key"
+  , logic.and(
+    , table.same_id(repeated, repeated_again)
+    , arith.eq_i32(g.?{engine.hits}, arith.add_i32(f.?{engine.hits}, 1))
+    )
+  );
   g
 }
 
@@ -48,42 +48,34 @@ fn restrictions(manager: engine.Manager) -> table.Store {
   let .(store: table.Store, z_true: table.Node_id, memo_hits: I32) =
     restriction.restrict(a.?{engine.store}, shared, 2, .t);
   report.diagram(
-    , "shared | z=1"
-    , store
-    , z_true
-    , .(values: I32 -> Bool) {
-        expr.evaluate(
-          , fixtures.shared()
-          , .(variable: I32) {
-              if! arith.eq_i32(variable, 2) {
-                .t
-              } else {
-                values(variable)
-              }
-            }
-          )
-      }
-    );
+  , "shared | z=1"
+  , store
+  , z_true
+  , .(values: I32 -> Bool) {
+      expr.evaluate(
+      , fixtures.shared()
+      , .(variable: I32) {
+          if! arith.eq_i32(variable, 2) { .t } else { values(variable) }
+        }
+      )
+    }
+  );
   report.fact("restriction-reuses-shared-subgraph", arith.lt_i32(0, memo_hits));
   let .(store: table.Store, z_false: table.Node_id, _hits: I32) =
     restriction.restrict(store, shared, 2, .f);
   report.diagram(
-    , "shared | z=0"
-    , store
-    , z_false
-    , .(values: I32 -> Bool) {
-        expr.evaluate(
-          , fixtures.shared()
-          , .(variable: I32) {
-              if! arith.eq_i32(variable, 2) {
-                .f
-              } else {
-                values(variable)
-              }
-            }
-          )
-      }
-    );
+  , "shared | z=0"
+  , store
+  , z_false
+  , .(values: I32 -> Bool) {
+      expr.evaluate(
+      , fixtures.shared()
+      , .(variable: I32) {
+          if! arith.eq_i32(variable, 2) { .f } else { values(variable) }
+        }
+      )
+    }
+  );
   let .(b: engine.Manager, mux: table.Node_id) =
     compiler.compile(a.!{engine.store}, fixtures.mux());
   let .(store: table.Store, x_false: table.Node_id, _hits: I32) =

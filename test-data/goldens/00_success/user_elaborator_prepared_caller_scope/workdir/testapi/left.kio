@@ -18,14 +18,14 @@ pub rec(loop) fn reduce(value: Expr) -> Summary {
   let normalized = normalize(value);
   match! Expr.get(normalized) {
     (
-      , .(leaf: Leaf) { model.summary(Leaf.get(leaf)) }
-      , .(pair: Pair) {
-          match! Pair.get(pair) {
-            .(left: Expr, right: Expr) {
-              add_summary(rec(cont) reduce(left), rec(cont) reduce(right))
-            }
+    , .(leaf: Leaf) { model.summary(Leaf.get(leaf)) }
+    , .(pair: Pair) {
+        match! Pair.get(pair) {
+          .(left: Expr, right: Expr) {
+            add_summary(recur(cont) reduce(left), recur(cont) reduce(right))
           }
         }
-      )
+      }
+    )
   }
 }

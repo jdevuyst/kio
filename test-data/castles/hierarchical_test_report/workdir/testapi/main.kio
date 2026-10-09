@@ -11,7 +11,7 @@ import testapi/iter(loop);
 
 rec(loop) fn consume(state: model.State) -> model.State {
   match! io.read_ascii_line() {
-    .(tag: String) { rec consume(aggregate.accept(state, events.read(tag))) };
+    .(tag: String) { recur consume(aggregate.accept(state, events.read(tag))) };
     .(_eof: .) { aggregate.finish(state) }
   }
 }

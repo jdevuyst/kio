@@ -1,16 +1,16 @@
 module queue_backlog_sim/report;
 
 import queue_backlog_sim/model(
-  , State
-  , {arrived_count}
-  , {backlog_count}
-  , {completed_effort}
-  , {current_tick}
-  , {max_backlog}
-  , {next_ticket}
-  , {served_count}
-  , {total_wait}
-  );
+, State
+, {arrived_count}
+, {backlog_count}
+, {completed_effort}
+, {current_tick}
+, {max_backlog}
+, {next_ticket}
+, {served_count}
+, {total_wait}
+);
 import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
 import testapi/fmt(bool_to_string, int_to_string);

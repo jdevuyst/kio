@@ -313,6 +313,10 @@ pub enum RecLoopDiagnostic {
     Loop {
         selected_path: Span,
     },
+    Reentry {
+        selected_path: Span,
+        escape_call: Span,
+    },
     InitialStateResult,
 }
 
@@ -932,7 +936,7 @@ pub trait Phase: Sized {
         + Eq
         + serde::Serialize
         + serde::de::DeserializeOwned;
-    /// `rec <callee>(...)` is the mandatory marker for recursive calls
+    /// `recur <callee>(...)` is the mandatory marker for recursive calls
     /// inside a surface `rec(loop)` group. The desugar pass eliminates
     /// it while lowering the enclosing group to an ordinary `loop(...)`
     /// call. `Surface` admits it; every later phase rejects it.
@@ -2064,6 +2068,20 @@ impl RecCallAnnotation {
 }
 
 impl RecCallMode {
+    pub fn is_effective(modes: &[Self], mode: Self) -> bool {
+        modes.contains(&mode) || mode == Self::Cont && modes.contains(&Self::Escape)
+    }
+
+    pub fn canonical_modes(modes: &[Self]) -> Vec<Self> {
+        let mut canonical = modes.to_vec();
+        canonical.sort_by_key(|mode| mode.fmt_rank());
+        canonical.dedup();
+        if canonical.contains(&Self::Escape) {
+            canonical.retain(|mode| *mode != Self::Cont);
+        }
+        canonical
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             RecCallMode::Poly => "poly",
@@ -4643,10 +4661,23 @@ pub enum RecOrderDisposition {
 pub enum RecOrderTailRequirement {
     Required,
     Optional,
+    Escaping,
+}
+
+/// Authenticated source tokens used only to diagnose a deferred boundary.
+/// The containing surface carrier is consumed before Prime validation.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RecCallDiagnostic {
+    pub syntax: RecCallSyntax,
+    pub modes: Vec<RecCallMode>,
+    pub callee: Span,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RecOrderPlan<P: Phase = Surface> {
+    #[serde(default)]
+    pub source_call: Option<std::sync::Arc<RecCallDiagnostic>>,
     pub name: String,
     pub disposition: RecOrderDisposition,
     /// The exact outer continuation used to lift a deferred callback. Its
@@ -4809,7 +4840,7 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprResolved,
     },
-    /// `rec f(args)` / `rec(poly, cont) f(args)` — mandatory marked
+    /// `recur f(args)` / `recur(poly, cont) f(args)` — mandatory marked
     /// recursive call inside a surface `rec(loop)` group. The marker
     /// is not a value name and has no runtime meaning; desugar checks
     /// the call-site modes and lowers the call to the group's loop
@@ -7565,7 +7596,7 @@ mod tests {
     #[test]
     fn recursive_member_serde_rejects_purity() {
         use super::{FnDef, Item, RecGroup, Surface};
-        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { rec second(A, x) }; fn second[A](x: A) -> A { x } }";
+        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { recur second(A, x) }; fn second[A](x: A) -> A { x } }";
         let module = crate::pass::parser::parse(source).expect("recursive source");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("recursive group")
@@ -7640,6 +7671,10 @@ mod tests {
         for role in [
             RecLoopDiagnostic::Loop {
                 selected_path: span,
+            },
+            RecLoopDiagnostic::Reentry {
+                selected_path: span,
+                escape_call: span,
             },
             RecLoopDiagnostic::InitialStateResult,
         ] {

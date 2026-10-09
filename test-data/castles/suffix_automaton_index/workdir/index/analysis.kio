@@ -14,14 +14,14 @@ rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) {
     if! num.equal(item.?{sam.longest}, length) {
       let parent = a.array_get(states, item.?{sam.suffix});
       a.array_set(
-        , states
-        , item.?{sam.suffix}
-        , parent.!{sam.ends = n.add_i32(parent.?{sam.ends}, item.?{sam.ends})}
-        )
+      , states
+      , item.?{sam.suffix}
+      , parent.!{sam.ends = n.add_i32(parent.?{sam.ends}, item.?{sam.ends})}
+      )
     } else {
       ()
     };
-    rec collect_length(states, length, n.add_i32(state, 1))
+    recur collect_length(states, length, n.add_i32(state, 1))
   } else {
     ()
   }
@@ -31,7 +31,7 @@ rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) {
 rec(loop) fn descending_lengths(states: Array(sam.State), length: I32) {
   if! n.leq_i32(1, length) {
     collect_length(states, length, 1);
-    rec descending_lengths(states, n.sub_i32(length, 1))
+    recur descending_lengths(states, n.sub_i32(length, 1))
   } else {
     ()
   }
@@ -50,7 +50,7 @@ rec(loop) fn walk(states: Array(sam.State), query: Array(I32), state: I32, posit
     if! num.less(symbol, 0) {
       0
     } else if! num.less(symbol, 3) {
-      rec walk(states, query, sam.transition(states, state, symbol), n.add_i32(position, 1))
+      recur walk(states, query, sam.transition(states, state, symbol), n.add_i32(position, 1))
     } else {
       0
     }
@@ -71,11 +71,11 @@ rec(loop) fn distinct_from(states: Array(sam.State), state: I32, total: I32) -> 
   if! num.less(state, a.array_len(states)) {
     let item = a.array_get(states, state);
     let parent = a.array_get(states, item.?{sam.suffix});
-    rec distinct_from(
-      , states
-      , n.add_i32(state, 1)
-      , n.add_i32(total, n.sub_i32(item.?{sam.longest}, parent.?{sam.longest}))
-      )
+    recur distinct_from(
+    , states
+    , n.add_i32(state, 1)
+    , n.add_i32(total, n.sub_i32(item.?{sam.longest}, parent.?{sam.longest}))
+    )
   } else {
     total
   }
@@ -91,7 +91,7 @@ rec(loop) fn longest_from(states: Array(sam.State), state: I32, best: I32) -> I3
     } else {
       best
     };
-    rec longest_from(states, n.add_i32(state, 1), next)
+    recur longest_from(states, n.add_i32(state, 1), next)
   } else {
     best
   }
@@ -102,7 +102,7 @@ pub fn longest_repeated(index: sam.Index) -> I32 { longest_from(index.?{sam.stat
 rec(loop) fn rows_differ(states: Array(sam.State), left: I32, right: I32, symbol: I32) -> Bool {
   if! num.less(symbol, 3) {
     if! num.equal(sam.transition(states, left, symbol), sam.transition(states, right, symbol)) {
-      rec rows_differ(states, left, right, n.add_i32(symbol, 1))
+      recur rows_differ(states, left, right, n.add_i32(symbol, 1))
     } else {
       .t
     }
@@ -121,7 +121,7 @@ rec(loop) fn divergent_from(states: Array(sam.State), state: I32, total: I32) ->
     } else {
       0
     };
-    rec divergent_from(states, n.add_i32(state, 1), n.add_i32(total, extra))
+    recur divergent_from(states, n.add_i32(state, 1), n.add_i32(total, extra))
   } else {
     total
   }

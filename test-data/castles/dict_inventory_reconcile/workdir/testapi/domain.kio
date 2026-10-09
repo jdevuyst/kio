@@ -9,24 +9,24 @@ pub labels Count = { count_sku: I32, count_qty: I32 };
 pub labels Adjustment = { adjust_sku: I32, adjust_delta: I32, adjust_tag: String };
 
 pub labels Line = {
-  , line_name: String
-  , line_expected: I32
-  , line_actual: I32
-  , line_delta: I32
-  , line_status: String
-  };
+, line_name: String
+, line_expected: I32
+, line_actual: I32
+, line_delta: I32
+, line_status: String
+};
 
 pub labels Totals = { total_ok: I32, total_missing: I32, total_skewed: I32, total_unknown: I32 };
 
 pub labels Report = {
-  , report_bolt: Line
-  , report_gear: Line
-  , report_seal: Line
-  , report_panel: Line
-  , report_valve: Line
-  , report_unknown: Line
-  , report_totals: Totals
-  };
+, report_bolt: Line
+, report_gear: Line
+, report_seal: Line
+, report_panel: Line
+, report_valve: Line
+, report_unknown: Line
+, report_totals: Totals
+};
 
 pub fn item(sku: I32, name: String) -> Item { {item_sku = sku, item_name = name} }
 
@@ -50,12 +50,12 @@ pub fn adjustment_value(row: Adjustment) -> I32 { row.?{adjust_delta} }
 
 pub fn line(name: String, expected: I32, actual: I32, delta: I32, status: String) -> Line {
   {
-    , line_name = name
-    , line_expected = expected
-    , line_actual = actual
-    , line_delta = delta
-    , line_status = status
-    }
+  , line_name = name
+  , line_expected = expected
+  , line_actual = actual
+  , line_delta = delta
+  , line_status = status
+  }
 }
 
 pub fn line_name_of(row: Line) -> String { row.?{line_name} }
@@ -81,23 +81,23 @@ pub fn totals_skewed(row: Totals) -> I32 { row.?{total_skewed} }
 pub fn totals_unknown(row: Totals) -> I32 { row.?{total_unknown} }
 
 pub fn report(
-  , bolt: Line
-  , gear: Line
-  , seal: Line
-  , panel: Line
-  , valve: Line
-  , unknown: Line
-  , totals_value: Totals
-  ) -> Report {
+, bolt: Line
+, gear: Line
+, seal: Line
+, panel: Line
+, valve: Line
+, unknown: Line
+, totals_value: Totals
+) -> Report {
   {
-    , report_bolt = bolt
-    , report_gear = gear
-    , report_seal = seal
-    , report_panel = panel
-    , report_valve = valve
-    , report_unknown = unknown
-    , report_totals = totals_value
-    }
+  , report_bolt = bolt
+  , report_gear = gear
+  , report_seal = seal
+  , report_panel = panel
+  , report_valve = valve
+  , report_unknown = unknown
+  , report_totals = totals_value
+  }
 }
 
 pub fn report_bolt_of(row: Report) -> Line { row.?{report_bolt} }

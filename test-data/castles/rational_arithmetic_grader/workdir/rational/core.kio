@@ -40,11 +40,7 @@ pub fn denominator_of(value: Rational) -> I32 { value.>Rational.as_fraction.>wri
 fn negate(value: I32) -> I32 { arith.sub(0, value) }
 
 fn magnitude(value: I32) -> I32 {
-  if! arith.lt_i32(value, 0) {
-    negate(value)
-  } else {
-    value
-  }
+  if! arith.lt_i32(value, 0) { negate(value) } else { value }
 }
 
 /// Euclid's algorithm. Both arguments stay non-negative for the whole descent,
@@ -53,7 +49,7 @@ rec(loop) fn gcd_of_magnitudes(left: I32, right: I32) -> I32 {
   if! arith.eq_i32(right, 0) {
     left
   } else {
-    rec gcd_of_magnitudes(right, arith.mod(left, right))
+    recur gcd_of_magnitudes(right, arith.mod(left, right))
   }
 }
 
@@ -73,16 +69,8 @@ pub fn reduce(value: Fraction) -> Eval {
     widen_sum!({division_by_zero=})
   } else {
     let .(upright: Bool) = arith.lt_i32(0, written_den);
-    let num = if! upright {
-      written_num
-    } else {
-      negate(written_num)
-    };
-    let den = if! upright {
-      written_den
-    } else {
-      negate(written_den)
-    };
+    let num = if! upright { written_num } else { negate(written_num) };
+    let den = if! upright { written_den } else { negate(written_den) };
     let divisor = gcd(num, den);
     let reduced = fraction(arith.div(num, divisor), arith.div(den, divisor));
     widen_sum!(Rational.of_fraction(reduced), Eval)
@@ -104,9 +92,9 @@ pub fn equal(left: Rational, right: Rational) -> Bool {
 /// cannot flip its direction.
 pub fn less(left: Rational, right: Rational) -> Bool {
   arith.lt_i32(
-    , arith.mul(numerator_of(left), denominator_of(right))
-    , arith.mul(numerator_of(right), denominator_of(left))
-    )
+  , arith.mul(numerator_of(left), denominator_of(right))
+  , arith.mul(numerator_of(right), denominator_of(left))
+  )
 }
 
 /// Whether a fraction was already written in the form it reduces to — the test

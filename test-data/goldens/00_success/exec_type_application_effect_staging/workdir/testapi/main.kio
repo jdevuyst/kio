@@ -17,7 +17,10 @@ fn effect_after_a(_unit: .)[A] -> [B] B -> B {
   .[B](value: B) -> B { value }
 }
 
-fn produce_once(_unit: .) -> [A] A -> A { mark("produce\n"(String)); .[A](value: A) -> A { value } }
+fn produce_once(_unit: .) -> [A] A -> A {
+  mark("produce\n"(String));
+  .[A](value: A) -> A { value }
+}
 
 pub fn main() {
   mark("pair start\n"(String));
@@ -56,7 +59,11 @@ pub fn main() {
     combined(String, String, marked("value argument\n"(String), "combined"(String)));
   mark("combined done\n"(String));
   mark("unit start\n"(String));
-  let unit_stage = .[A]() -> A -> A { mark("unit value\n"(String)); .(value: A) -> A { value } };
+  let unit_stage =
+    .[A]() -> A -> A {
+      mark("unit value\n"(String));
+      .(value: A) -> A { value }
+    };
   mark("unit residual\n"(String));
   let unit_ready = unit_stage(String, marked("unit argument\n"(String), ()));
   mark("unit ready\n"(String));

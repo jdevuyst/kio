@@ -41,16 +41,12 @@ fn play_turn(g: state.Game, c: command.Command) -> state.Game {
 rec(loop) fn play(g: state.Game) -> state.Game {
   match! read_ascii_line() {
     (
-      , .(word: String) {
-          let next = play_turn(g, read_rest(word));
-          if! state.is_over(next) {
-            next
-          } else {
-            rec play(next)
-          }
-        }
-      , .(_eof: .) { g }
-      )
+    , .(word: String) {
+        let next = play_turn(g, read_rest(word));
+        if! state.is_over(next) { next } else { recur play(next) }
+      }
+    , .(_eof: .) { g }
+    )
   }
 }
 

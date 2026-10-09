@@ -18,22 +18,22 @@ import testapi/iter(loop);
 rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_breaks: List(I32)) -> List(I32) {
   match! rest.>List.unpack {
     (
-      , .(w: Word, tail: Words) {
-          let widened = add_i32(add_i32(used, 1), word_width(w));
-          if! leq_i32(widened, column) {
-            rec fit_onto(column, tail, add_i32(cursor, 1), widened, rev_breaks)
-          } else {
-            rec fit_onto(
-              , column
-              , tail
-              , add_i32(cursor, 1)
-              , word_width(w)
-              , list.cons(cursor, rev_breaks)
-              )
-          }
+    , .(w: Word, tail: Words) {
+        let widened = add_i32(add_i32(used, 1), word_width(w));
+        if! leq_i32(widened, column) {
+          recur fit_onto(column, tail, add_i32(cursor, 1), widened, rev_breaks)
+        } else {
+          recur fit_onto(
+          , column
+          , tail
+          , add_i32(cursor, 1)
+          , word_width(w)
+          , list.cons(cursor, rev_breaks)
+          )
         }
-      , .(_empty: .) { list.reverse(list.cons(cursor, rev_breaks)) }
-      )
+      }
+    , .(_empty: .) { list.reverse(list.cons(cursor, rev_breaks)) }
+    )
   }
 }
 

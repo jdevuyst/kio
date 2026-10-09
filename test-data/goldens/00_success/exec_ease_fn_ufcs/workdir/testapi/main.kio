@@ -22,7 +22,7 @@ fn use_narrow(f: A -> .) { f(A.mk_a("elided target ok\n")) }
 pub fn main() {
   // Explicit-target UFCS: parens carry the target type, parallel
   // to `r.>into!(T)`.
-  provider.>ease!(A -> .)(A.mk_a("explicit target ok\n"));
+  (provider.>ease!(A -> .))(A.mk_a("explicit target ok\n"));
   // Elided-target UFCS: drop the parens when the surrounding
   // context pins the target.
   use_narrow(provider.>ease!)

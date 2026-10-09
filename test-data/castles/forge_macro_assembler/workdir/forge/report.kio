@@ -31,17 +31,12 @@ pub fn nothing_done() -> Tally { (0, 0, 0) }
 rec(loop) fn joined(ws: Words, acc: String, first: Bool) -> String {
   match! l.un_cons(ws) {
     (
-      , .(w: I32, rest: Words) {
-          let next =
-            if! first {
-              t.num(w)
-            } else {
-              t.cat3(acc, " ", t.num(w))
-            };
-          rec joined(rest, next, .f)
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(w: I32, rest: Words) {
+        let next = if! first { t.num(w) } else { t.cat3(acc, " ", t.num(w)) };
+        recur joined(rest, next, .f)
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -57,20 +52,20 @@ fn reg_text(m: Vm, name: String, r: Reg) -> String {
 
 fn regs_text(m: Vm) -> String {
   t.cat3(
-    , t.cat3(reg_text(m, "a", i.ra()), " ", reg_text(m, "b", i.rb()))
-    , " "
-    , t.cat3(reg_text(m, "c", i.rc()), " ", reg_text(m, "d", i.rd()))
-    )
+  , t.cat3(reg_text(m, "a", i.ra()), " ", reg_text(m, "b", i.rb()))
+  , " "
+  , t.cat3(reg_text(m, "c", i.rc()), " ", reg_text(m, "d", i.rd()))
+  )
 }
 
 fn stop_text(m: Vm, why: Stop) -> String {
   match! why {
     (
-      , .(_x: Halted) { "halted" }
-      , .(_x: Ran_off) { "ran off the end" }
-      , .(_x: Out_of_fuel) { "out of fuel" }
-      , .(x: Faulted) { t.cat4("fault: ", x.?{vm.faulted}, " at ", t.addr(m.?{vm.pc})) }
-      )
+    , .(_x: Halted) { "halted" }
+    , .(_x: Ran_off) { "ran off the end" }
+    , .(_x: Out_of_fuel) { "out of fuel" }
+    , .(x: Faulted) { t.cat4("fault: ", x.?{vm.faulted}, " at ", t.addr(m.?{vm.pc})) }
+    )
   }
 }
 
@@ -78,10 +73,10 @@ fn stop_text(m: Vm, why: Stop) -> String {
 pub fn header(macros: Macros, programs: I32) {
   t.line("forge_macro_assembler: the FORGE-4 macro assembler and machine");
   t.line(t.cat3(
-    , t.cat("macros: ", t.num(l.len(macros)))
-    , t.cat("   programs: ", t.num(programs))
-    , t.cat3("   fuel: ", t.num(vm.budget()), " steps per program")
-    ))
+  , t.cat("macros: ", t.num(l.len(macros)))
+  , t.cat("   programs: ", t.num(programs))
+  , t.cat3("   fuel: ", t.num(vm.budget()), " steps per program")
+  ))
 }
 
 fn rejected(items: Items, why: String, tally: Tally) -> Tally {
@@ -96,10 +91,10 @@ fn accepted(items: Items, img: Image, tally: Tally) -> Tally {
   let code = img.?{p.code};
   let syms = img.?{p.syms};
   t.line(t.cat3(
-    , t.cat("items: ", t.num(l.len(items)))
-    , t.cat("   expanded: ", t.num(img.?{p.expanded}))
-    , t.cat("   instructions: ", t.num(l.len(code)))
-    ));
+  , t.cat("items: ", t.num(l.len(items)))
+  , t.cat("   expanded: ", t.num(img.?{p.expanded}))
+  , t.cat("   instructions: ", t.num(l.len(code)))
+  ));
   t.line(t.cat("symbols: ", d.symbols_text(syms)));
   t.line("listing:");
   d.listing(code, syms);
@@ -119,17 +114,17 @@ pub fn program(name: String, items: Items, macros: Macros, tally: Tally) -> Tall
   t.line(t.cat3("== ", name, " =="));
   match! asm.build(items, macros) {
     (
-      , .(img: Image) { accepted(items, img, tally) }
-      , .(e: Unknown_macro) {
-          rejected(items, t.cat("unknown macro ", t.quoted(e.?{p.unknown_macro})), tally)
-        }
-      , .(e: Undefined_label) {
-          rejected(items, t.cat("undefined label ", t.quoted(e.?{p.undefined_label})), tally)
-        }
-      , .(e: Duplicate_label) {
-          rejected(items, t.cat("duplicate label ", t.quoted(e.?{p.duplicate_label})), tally)
-        }
-      )
+    , .(img: Image) { accepted(items, img, tally) }
+    , .(e: Unknown_macro) {
+        rejected(items, t.cat("unknown macro ", t.quoted(e.?{p.unknown_macro})), tally)
+      }
+    , .(e: Undefined_label) {
+        rejected(items, t.cat("undefined label ", t.quoted(e.?{p.undefined_label})), tally)
+      }
+    , .(e: Duplicate_label) {
+        rejected(items, t.cat("duplicate label ", t.quoted(e.?{p.duplicate_label})), tally)
+      }
+    )
   }
 }
 
@@ -138,8 +133,8 @@ pub fn summary(tally: Tally) {
   let .(built: I32, turned_down: I32, spent: I32) = tally;
   t.line("");
   t.line(t.cat3(
-    , t.cat("summary: ", t.num(built))
-    , t.cat(" assembled, ", t.num(turned_down))
-    , t.cat3(" rejected, ", t.num(spent), " steps executed")
-    ))
+  , t.cat("summary: ", t.num(built))
+  , t.cat(" assembled, ", t.num(turned_down))
+  , t.cat3(" rejected, ", t.num(spent), " steps executed")
+  ))
 }

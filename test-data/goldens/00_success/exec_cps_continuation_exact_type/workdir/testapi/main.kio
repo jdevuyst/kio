@@ -13,11 +13,17 @@ fn boxed[A](value: A) -> Boxed(A) { Boxed.mk((value, ())) }
 
 fn named[U](_payload: U) -> String { "named\n"(String) }
 
-fn make_continuation(_unit: .) -> [U] U -> String { .[U](_payload: U) { "computed\n"(String) } }
+fn make_continuation(_unit: .) -> [U] U -> String {
+  .[U](_payload: U) { "computed\n"(String) }
+}
 
-fn direct() -> String { Pack.get(pack())(String, .[U](_payload: U) { "direct\n"(String) }) }
+fn direct() -> String {
+  Pack.get(pack())(String, .[U](_payload: U) { "direct\n"(String) })
+}
 
-fn untyped_payload() -> String { Pack.get(pack())(String, .[U](_payload) { "untyped\n"(String) }) }
+fn untyped_payload() -> String {
+  Pack.get(pack())(String, .[U](_payload) { "untyped\n"(String) })
+}
 
 fn named_value() -> String { Pack.get(pack())(String, named) }
 
@@ -28,15 +34,17 @@ fn outer_let() -> String {
 
 fn outer_let_function_result() {
   let continuation =
-    .[U](_payload: U) { .(left: String, right: String) { print(left); print(right) } };
+    .[U](_payload: U) {
+      .(left: String, right: String) { print(left); print(right) }
+    };
   Pack.get(pack())((String & String) -> ., continuation)((
-    , "outer-let-function-1-"(String)
-    , "result\n"(String)
-    ));
+  , "outer-let-function-1-"(String)
+  , "result\n"(String)
+  ));
   Pack.get(pack())((String & String) -> ., continuation)((
-    , "outer-let-function-2-"(String)
-    , "result\n"(String)
-    ))
+  , "outer-let-function-2-"(String)
+  , "result\n"(String)
+  ))
 }
 
 fn computed() -> String { Pack.get(pack())(String, make_continuation(())) }
@@ -47,20 +55,22 @@ fn collision[U](value: Boxed(U), fallback: U) -> U {
 
 fn function_result() {
   Pack.get(pack())(
-    , (String & String) -> .
-    , .[U](_payload: U) { .(left: String, right: String) { print(left); print(right) } }
-    )(("function-"(String), "result\n"(String)))
+  , (String & String) -> .
+  , .[U](_payload: U) {
+      .(left: String, right: String) { print(left); print(right) }
+    }
+  )(("function-"(String), "result\n"(String)))
 }
 
 fn function_result_ordering() {
   let returned =
     Pack.get(pack())(
-      , (String & String) -> .
-      , .[U](_payload: U) {
-          print("construct\n"(String));
-          .(left: String, right: String) { print(left); print(right) }
-        }
-      );
+    , (String & String) -> .
+    , .[U](_payload: U) {
+        print("construct\n"(String));
+        .(left: String, right: String) { print(left); print(right) }
+      }
+    );
   print("between\n"(String));
   returned(("invoke-"(String), "result\n"(String)))
 }

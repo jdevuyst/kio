@@ -1,0 +1,20 @@
+outer ready
+inner ready
+43
+43
+43
+partial ready
+result ready
+47
+47
+returned ready
+returned outer
+returned inner ready
+59
+59
+opaque
+mixed outer
+mixed outer
+mixed ready
+61
+61

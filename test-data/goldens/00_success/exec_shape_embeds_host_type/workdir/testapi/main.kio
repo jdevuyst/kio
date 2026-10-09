@@ -16,31 +16,31 @@ import testapi/text(string_concat);
 // the host array is reconstructed when read back via `array_get`.
 fn render_array(arr: Array(I32)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) {
-            if! leq_i32(i, sub_i32(array_len(arr), 1)) {
-              widen_sum!(
-                , if! leq_i32(i, 0) {
-                    (int_to_string(array_get(arr, i)), add_i32(i, 1))
-                  } else {
-                    (
-                      , string_concat(acc, string_concat(",", int_to_string(array_get(arr, i))))
-                      , add_i32(i, 1)
-                      )
-                  }
-                , (String & I32) | String
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) {
+          if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+            widen_sum!(
+            , if! leq_i32(i, 0) {
+                (int_to_string(array_get(arr, i)), add_i32(i, 1))
+              } else {
+                (
+                , string_concat(acc, string_concat(",", int_to_string(array_get(arr, i))))
+                , add_i32(i, 1)
                 )
-            } else {
-              widen_sum!(acc, (String & I32) | String)
-            }
+              }
+            , (String & I32) | String
+            )
+          } else {
+            widen_sum!(acc, (String & I32) | String)
           }
         }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 // --- Prod_ (binary product) with a host-type leaf: `Array(I32) & I32`.
@@ -73,12 +73,12 @@ pub fn show_triple(p: Array(I32) & I32 & String) -> String {
   match! p {
     .(a: Array(I32), n: I32, s: String) {
       string_concat(
-        , "["
-        , string_concat(
-            , render_array(a)
-            , string_concat("]/", string_concat(int_to_string(n), string_concat("/", s)))
-            )
+      , "["
+      , string_concat(
+        , render_array(a)
+        , string_concat("]/", string_concat(int_to_string(n), string_concat("/", s)))
         )
+      )
     }
   }
 }
@@ -88,9 +88,9 @@ pub fn show_triple(p: Array(I32) & I32 & String) -> String {
 fn show_arr_or_str(v: Array(I32) | String) -> String {
   match! v {
     (
-      , .(a: Array(I32)) { string_concat("arr[", string_concat(render_array(a), "]")) }
-      , .(s: String) { string_concat("str:", s) }
-      )
+    , .(a: Array(I32)) { string_concat("arr[", string_concat(render_array(a), "]")) }
+    , .(s: String) { string_concat("str:", s) }
+    )
   }
 }
 
@@ -99,9 +99,9 @@ fn show_arr_or_str(v: Array(I32) | String) -> String {
 fn show_int_or_str(v: I32 | String) -> String {
   match! v {
     (
-      , .(n: I32) { string_concat("int:", int_to_string(n)) }
-      , .(s: String) { string_concat("str:", s) }
-      )
+    , .(n: I32) { string_concat("int:", int_to_string(n)) }
+    , .(s: String) { string_concat("str:", s) }
+    )
   }
 }
 

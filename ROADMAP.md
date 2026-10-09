@@ -19,10 +19,6 @@ the host contract, for dynamic-language hosts.
 
 `kio repl` already evaluates expressions against a loaded package. REPL authoring extends this to incrementally enter, revise, and retract definitions in the session, with the session staying a valid module throughout.
 
-## Escaping recursive calls
-
-Adding a `rec(escape)` annotation for recursive calls captured by closures that can re-enter the same recursive group after the current loop step has returned, while preserving Kio' as a non-recursive core.
-
 ## Elaborator quoting
 
 Giving elaborators a quoting facility for producing generated Kio glue from ordinary term syntax, reducing the amount of hand-built term construction in elaborator code.

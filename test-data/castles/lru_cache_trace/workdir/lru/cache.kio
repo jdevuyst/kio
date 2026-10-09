@@ -5,22 +5,22 @@ import lru/text as text;
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
-  , array_get
-  , array_len
-  , array_make_empty
-  , array_make_filled
-  , array_push
-  , array_set
-  );
+, array_get
+, array_len
+, array_make_empty
+, array_make_filled
+, array_push
+, array_set
+);
 import testapi/iter(loop);
 
 pub labels Cache = {
-  , keys: Array(I32)
-  , values: Array(I32)
-  , ages: Array(I32)
-  , stats: Array(I32)
-  , victims: Array(I32)
-  };
+, keys: Array(I32)
+, values: Array(I32)
+, ages: Array(I32)
+, stats: Array(I32)
+, victims: Array(I32)
+};
 
 pub fn capacity() -> I32 { 3 }
 
@@ -49,11 +49,7 @@ fn victims_array(c: Cache) -> Array(I32) { c.?{victims} }
 fn next(n: I32) -> I32 { add_i32(n, 1) }
 
 pub fn eq_i32(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) {
-    leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
 }
 
 fn lt_i32(a: I32, b: I32) -> Bool { leq_i32(next(a), b) }
@@ -77,7 +73,7 @@ pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32
   } else if! eq_i32(array_get(keys, i), key) {
     i
   } else {
-    rec find_key(next(i), limit, key, keys)
+    recur find_key(next(i), limit, key, keys)
   }
 }
 
@@ -87,7 +83,7 @@ pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
   } else if! eq_i32(array_get(keys, i), missing_key()) {
     i
   } else {
-    rec find_empty_slot(next(i), limit, keys)
+    recur find_empty_slot(next(i), limit, keys)
   }
 }
 
@@ -95,9 +91,9 @@ pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array(I32)) 
   if! leq_i32(limit, i) {
     best
   } else if! lt_i32(array_get(ages, i), array_get(ages, best)) {
-    rec find_lru_slot(next(i), limit, i, ages)
+    recur find_lru_slot(next(i), limit, i, ages)
   } else {
-    rec find_lru_slot(next(i), limit, best, ages)
+    recur find_lru_slot(next(i), limit, best, ages)
   }
 }
 
@@ -110,41 +106,41 @@ fn write_slot(c: Cache, slot: I32, key: I32, value: I32, clock: I32) {
 fn render_get_hit(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
   let prefix =
     text.cat6(
-      , "op "
-      , text.int_text(step)
-      , " get key="
-      , text.int_text(key)
-      , " -> hit slot="
-      , text.int_text(slot)
-      );
+    , "op "
+    , text.int_text(step)
+    , " get key="
+    , text.int_text(key)
+    , " -> hit slot="
+    , text.int_text(slot)
+    );
   let suffix = text.cat5(" value=", text.int_text(value), " clock=", text.int_text(clock), "\n");
   text.cat2(prefix, suffix)
 }
 
 fn render_get_miss(step: I32, key: I32, clock: I32) -> String {
   text.cat2(
-    , text.cat6(
-        , "op "
-        , text.int_text(step)
-        , " get key="
-        , text.int_text(key)
-        , " -> miss clock="
-        , text.int_text(clock)
-        )
-    , "\n"
+  , text.cat6(
+    , "op "
+    , text.int_text(step)
+    , " get key="
+    , text.int_text(key)
+    , " -> miss clock="
+    , text.int_text(clock)
     )
+  , "\n"
+  )
 }
 
 fn render_put_insert(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
   let prefix =
     text.cat6(
-      , "op "
-      , text.int_text(step)
-      , " put key="
-      , text.int_text(key)
-      , " value="
-      , text.int_text(value)
-      );
+    , "op "
+    , text.int_text(step)
+    , " put key="
+    , text.int_text(key)
+    , " value="
+    , text.int_text(value)
+    );
   let suffix =
     text.cat5(" -> insert slot=", text.int_text(slot), " clock=", text.int_text(clock), "\n");
   text.cat2(prefix, suffix)
@@ -153,13 +149,13 @@ fn render_put_insert(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> 
 fn render_put_update(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> String {
   let prefix =
     text.cat6(
-      , "op "
-      , text.int_text(step)
-      , " put key="
-      , text.int_text(key)
-      , " value="
-      , text.int_text(value)
-      );
+    , "op "
+    , text.int_text(step)
+    , " put key="
+    , text.int_text(key)
+    , " value="
+    , text.int_text(value)
+    );
   let suffix =
     text.cat5(" -> update slot=", text.int_text(slot), " clock=", text.int_text(clock), "\n");
   text.cat2(prefix, suffix)
@@ -168,22 +164,22 @@ fn render_put_update(step: I32, key: I32, value: I32, slot: I32, clock: I32) -> 
 fn render_put_replace(step: I32, key: I32, value: I32, slot: I32, old_key: I32, clock: I32) -> String {
   let prefix =
     text.cat6(
-      , "op "
-      , text.int_text(step)
-      , " put key="
-      , text.int_text(key)
-      , " value="
-      , text.int_text(value)
-      );
+    , "op "
+    , text.int_text(step)
+    , " put key="
+    , text.int_text(key)
+    , " value="
+    , text.int_text(value)
+    );
   let middle =
     text.cat6(
-      , " -> replace slot="
-      , text.int_text(slot)
-      , " evicted="
-      , text.int_text(old_key)
-      , " clock="
-      , text.int_text(clock)
-      );
+    , " -> replace slot="
+    , text.int_text(slot)
+    , " evicted="
+    , text.int_text(old_key)
+    , " clock="
+    , text.int_text(clock)
+    );
   text.cat3(prefix, middle, "\n")
 }
 
@@ -194,12 +190,12 @@ pub fn new_cache() -> Cache {
   let stat_slots = array_make_filled(4, 0);
   let victim_slots = array_make_empty(I32, ());
   {
-    , keys = key_slots
-    , values = value_slots
-    , ages = age_slots
-    , stats = stat_slots
-    , victims = victim_slots
-    }
+  , keys = key_slots
+  , values = value_slots
+  , ages = age_slots
+  , stats = stat_slots
+  , victims = victim_slots
+  }
 }
 
 pub fn get(c: Cache, step: I32, key: I32) -> String {

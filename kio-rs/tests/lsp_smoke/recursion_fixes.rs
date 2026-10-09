@@ -44,14 +44,58 @@ fn assert_recursion_repair(body: &str, repaired_body: &str) {
 
 #[test]
 fn missing_tail_marker() {
-    assert_recursion_repair("again(x)", "rec again(x)");
+    assert_recursion_repair("again(x)", "recur again(x)");
+}
+
+#[test]
+fn old_call_marker_uses_the_parser_owned_replacement() {
+    assert_recursion_repair("rec again(x)", "recur again(x)");
+    assert_recursion_repair(
+        "let result = rec(cont) again(x); result",
+        "let result = recur(cont) again(x); result",
+    );
+}
+
+#[test]
+fn removing_escape_retains_required_continuation_through_native_action() {
+    let dir = TempDir::new("recursion-escape-cont-fix");
+    dir.write_pkg_root_package();
+    dir.write(
+        "pkg.kio",
+        "module pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n",
+    );
+    let source = "module pkg/main; import pkg as host; rec(host.drive) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n";
+    let repaired = source.replace("host.after(recur(escape)", "host.after(recur(cont)");
+    let file = dir.write("pkg/main.kio", source);
+    let uri = path_to_file_uri(&file);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+    );
+    let publish = wait_for_publish_version(&mut lsp, &uri, 1);
+    let diagnostics = publish["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1, "{publish}");
+    let response = send_code_action(&mut lsp, &uri, &diagnostics[0]);
+    let actions = response["result"].as_array().unwrap();
+    assert_eq!(actions.len(), 1, "{response}");
+    assert_eq!(actions[0]["title"], "Correct recursive call annotations");
+    let (edits, version) = action_edits_for_uri(&actions[0], &uri);
+    assert_eq!(version, Some(1), "{response}");
+    let applied = apply_lsp_text_edits(source, edits);
+    assert_eq!(applied, repaired, "{response}");
+    send_full_text_change(&mut lsp, &uri, 2, &applied);
+    let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
+    assert_eq!(cleared["diagnostics"], json!([]), "{cleared}");
+    assert_eq!(lsp.shutdown(), 0);
 }
 
 #[test]
 fn missing_marker_preserves_unicode_comments_and_tabs() {
     assert_recursion_repair(
         "// 😀 recursive call\n\tagain(x)",
-        "// 😀 recursive call\n\trec again(x)",
+        "// 😀 recursive call\n\trecur again(x)",
     );
 }
 
@@ -59,98 +103,106 @@ fn missing_marker_preserves_unicode_comments_and_tabs() {
 fn missing_non_tail_marker() {
     assert_recursion_repair(
         "let result = again(x); result",
-        "let result = rec(cont) again(x); result",
+        "let result = recur(cont) again(x); result",
     );
 }
 
 #[test]
 fn missing_polymorphic_marker() {
-    assert_recursion_repair("again(A & A, (x, x))", "rec(poly) again(A & A, (x, x))");
+    assert_recursion_repair("again(A & A, (x, x))", "recur(poly) again(A & A, (x, x))");
 }
 
 #[test]
 fn missing_polymorphic_non_tail_marker() {
     assert_recursion_repair(
         "let result = again(A & A, (x, x)); result",
-        "let result = rec(poly, cont) again(A & A, (x, x)); result",
+        "let result = recur(poly, cont) again(A & A, (x, x)); result",
     );
 }
 
 #[test]
 fn mode_missing_poly() {
-    assert_recursion_repair("rec again(A & A, (x, x))", "rec(poly) again(A & A, (x, x))");
+    assert_recursion_repair(
+        "recur again(A & A, (x, x))",
+        "recur(poly) again(A & A, (x, x))",
+    );
 }
 
 #[test]
 fn mode_missing_cont() {
     assert_recursion_repair(
-        "let result = rec again(x); result",
-        "let result = rec(cont) again(x); result",
+        "let result = recur again(x); result",
+        "let result = recur(cont) again(x); result",
     );
 }
 
 #[test]
 fn mode_redundant_poly() {
-    assert_recursion_repair("rec(poly) again(x)", "rec again(x)");
+    assert_recursion_repair("recur(poly) again(x)", "recur again(x)");
 }
 
 #[test]
 fn mode_redundant_cont() {
-    assert_recursion_repair("rec(cont) again(x)", "rec again(x)");
+    assert_recursion_repair("recur(cont) again(x)", "recur again(x)");
+}
+
+#[test]
+fn mode_redundant_escape() {
+    assert_recursion_repair("recur(escape) again(x)", "recur again(x)");
 }
 
 #[test]
 fn mode_replace_poly_with_cont_atomically() {
     assert_recursion_repair(
-        "let result = rec(poly) again(x); result",
-        "let result = rec(cont) again(x); result",
+        "let result = recur(poly) again(x); result",
+        "let result = recur(cont) again(x); result",
     );
 }
 
 #[test]
 fn mode_replace_cont_with_poly_atomically() {
     assert_recursion_repair(
-        "rec(cont) again(A & A, (x, x))",
-        "rec(poly) again(A & A, (x, x))",
+        "recur(cont) again(A & A, (x, x))",
+        "recur(poly) again(A & A, (x, x))",
     );
 }
 
 #[test]
 fn mode_repairs_preserve_unicode_comments_and_tabs() {
     assert_recursion_repair(
-        "// 😀 call\nrec(// keep 😀\n\tpoly// keep suffix\n) again(x)",
-        "// 😀 call\nrec// keep 😀\n\t// keep suffix\n again(x)",
+        "// 😀 call\nrecur(// keep 😀\n\tpoly// keep suffix\n) again(x)",
+        "// 😀 call\nrecur// keep 😀\n\t// keep suffix\n again(x)",
     );
     assert_recursion_repair(
-        "let result = rec(// keep 😀\n\tpoly) again(x); result",
-        "let result = rec(// keep 😀\n\tcont) again(x); result",
+        "let result = recur(// keep 😀\n\tpoly) again(x); result",
+        "let result = recur(// keep 😀\n\tcont) again(x); result",
     );
 }
 
 #[test]
 fn mode_removal_keeps_adjacent_keyword_and_callee_separate() {
-    assert_recursion_repair("rec(poly)again(x)", "rec again(x)");
+    assert_recursion_repair("recur(poly)again(x)", "recur again(x)");
 }
 
 #[test]
 fn mode_combined_annotations_are_repaired_without_losing_the_other_mode() {
     for (body, repaired) in [
         (
-            "let result = rec(cont) again(A & A, (x, x)); result",
-            "let result = rec(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur(cont) again(A & A, (x, x)); result",
+            "let result = recur(poly, cont) again(A & A, (x, x)); result",
         ),
         (
-            "let result = rec(poly) again(A & A, (x, x)); result",
-            "let result = rec(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur(poly) again(A & A, (x, x)); result",
+            "let result = recur(poly, cont) again(A & A, (x, x)); result",
         ),
         (
-            "let result = rec again(A & A, (x, x)); result",
-            "let result = rec(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur again(A & A, (x, x)); result",
+            "let result = recur(poly, cont) again(A & A, (x, x)); result",
         ),
-        ("rec(poly, cont) again(x)", "rec  again(x)"),
+        ("recur(poly, cont) again(x)", "recur  again(x)"),
         (
-            "rec(poly, cont) again(A & A, (x, x))",
-            "rec(poly, ) again(A & A, (x, x))",
+            "recur(poly, cont) again(A & A, (x, x))",
+            "recur(poly ) again(A & A, (x, x))",
         ),
     ] {
         assert_recursion_repair(body, repaired);
@@ -160,14 +212,17 @@ fn mode_combined_annotations_are_repaired_without_losing_the_other_mode() {
 #[test]
 fn mode_repairs_that_expose_other_errors_are_withheld() {
     for (capability, body) in [
-        ("host.drive", "rec(poly) again(())"),
-        ("absent", "rec(poly) again(x)"),
-        ("host.drive", "rec(poly) again(x); rec(poly) again(x)"),
+        ("host.drive", "recur(poly) again(())"),
+        ("absent", "recur(poly) again(x)"),
+        ("host.drive", "recur(poly) again(x); recur(poly) again(x)"),
         (
             "host.drive",
-            "let callback = .() -> . { rec(poly) again(x) }; callback()",
+            "let callback = .() -> . { recur(poly) again(x) }; callback()",
         ),
-        ("host.drive", "rec(escape) again(x)"),
+        (
+            "host.drive",
+            "let callback = .() -> . { recur(escape) again(x) }; callback()",
+        ),
     ] {
         let source = format!(
             "module pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
@@ -215,7 +270,10 @@ fn invalid_marker_repairs_are_withheld() {
             "host.drive",
             "let callback = .() -> . { again(x) }; callback()",
         ),
-        ("host.drive", "rec(escape) again(x)"),
+        (
+            "host.drive",
+            "let callback = .() -> . { recur(escape) again(x) }; callback()",
+        ),
     ] {
         let source = format!(
             "module pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
@@ -234,7 +292,7 @@ fn invalid_marker_repairs_are_withheld() {
 fn missing_definition_guidance_does_not_choose_a_capability() {
     for modifier in ["", "pure "] {
         let source =
-            format!("module pkg/main; pub {modifier}fn again(x: .) -> . {{ rec again(x) }}");
+            format!("module pkg/main; pub {modifier}fn again(x: .) -> . {{ recur again(x) }}");
         recursion_actions(&source, |diagnostic, response| {
             assert!(
                 diagnostic["data"]["help"]

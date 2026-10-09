@@ -16,7 +16,9 @@ fn passed(unpack: [R] ([U] U -> R) -> R) {
   unpack(.[U](_payload: U) { io.print("passed-second\n") })
 }
 
-fn direct(value: Pack) { Pack.unpack(value)(.[U](_payload: U) { io.print("direct\n") }) }
+fn direct(value: Pack) {
+  Pack.unpack(value)(.[U](_payload: U) { io.print("direct\n") })
+}
 
 fn stored() {
   let unpack = Pack.unpack(marked_pack());

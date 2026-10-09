@@ -11,19 +11,11 @@ import testapi(Bool, I32);
 import testapi/arith(leq_i32);
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 pub fn not(a: Bool) -> Bool {
-  if! a {
-    .f
-  } else {
-    .t
-  }
+  if! a { .f } else { .t }
 }
 
 /// Integer equality: `a <= b` and `b <= a`.

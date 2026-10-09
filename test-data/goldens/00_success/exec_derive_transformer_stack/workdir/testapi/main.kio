@@ -38,86 +38,90 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
   pub projector bind
   }
 
-fn maybe_pure() -> Pure(Maybe) { Pure.mk_pure(.[A](x) { Maybe.mk_maybe(__right__(., A, x)) }) }
+fn maybe_pure() -> Pure(Maybe) {
+  Pure.mk_pure(.[A](x) { Maybe.mk_maybe(__right__(., A, x)) })
+}
 
 fn maybe_monad() -> Monad(Maybe) {
   Monad.mk_monad(
-    , Maybe
-    , .[A][B](m, k) {
-        __either__(
-          , .
-          , A
-          , Maybe(B)
-          , Maybe.un_maybe(m)
-          , .(u) { Maybe.mk_maybe(__left__(., B, ())) }
-          , .(x) { k(x) }
-          )
-      }
-    )
+  , Maybe
+  , .[A][B](m, k) {
+      __either__(
+      , .
+      , A
+      , Maybe(B)
+      , Maybe.un_maybe(m)
+      , .(u) { Maybe.mk_maybe(__left__(., B, ())) }
+      , .(x) { k(x) }
+      )
+    }
+  )
 }
 
 fn maybe_t_pure[*M](inner: Pure(M)) -> Pure(Maybe_t(M)) {
   Pure.mk_pure(
-    , Maybe_t(M)
-    , .[A](x) { Maybe_t.mk_maybe_t(M, A, Pure.pure(inner)(__right__(., A, x))) }
-    )
+  , Maybe_t(M)
+  , .[A](x) { Maybe_t.mk_maybe_t(M, A, Pure.pure(inner)(__right__(., A, x))) }
+  )
 }
 
 fn maybe_t_monad[*M](inner: Monad(M), inner_pure: Pure(M)) -> Monad(Maybe_t(M)) {
   Monad.mk_monad(
-    , Maybe_t(M)
-    , .[A][B](m_val, k) {
-        let stepped =
-          Monad.bind(inner)(
-            , . | A
-            , . | B
-            , Maybe_t.run_maybe_t(M, A, m_val)
-            , .(opt) {
-                __either__(
-                  , .
-                  , A
-                  , M(. | B)
-                  , opt
-                  , .(u) { Pure.pure(inner_pure)(__left__(., B, ())) }
-                  , .(x) { Maybe_t.run_maybe_t(M, B, k(x)) }
-                  )
-              }
-            );
-        Maybe_t.mk_maybe_t(M, B, stepped)
-      }
-    )
+  , Maybe_t(M)
+  , .[A][B](m_val, k) {
+      let stepped =
+        Monad.bind(inner)(
+        , . | A
+        , . | B
+        , Maybe_t.run_maybe_t(M, A, m_val)
+        , .(opt) {
+            __either__(
+            , .
+            , A
+            , M(. | B)
+            , opt
+            , .(u) { Pure.pure(inner_pure)(__left__(., B, ())) }
+            , .(x) { Maybe_t.run_maybe_t(M, B, k(x)) }
+            )
+          }
+        );
+      Maybe_t.mk_maybe_t(M, B, stepped)
+    }
+  )
 }
 
 fn state_t_pure[S][*M](inner: Pure(M)) -> Pure(State_t(S, M)) {
   Pure.mk_pure(
-    , State_t(S, M)
-    , .[A](x) { State_t.mk_state_t(S, M, A, .(st) { Pure.pure(inner)(__pair__(S, A, st, x)) }) }
-    )
+  , State_t(S, M)
+  , .[A](x) {
+      State_t.mk_state_t(S, M, A, .(st) { Pure.pure(inner)(__pair__(S, A, st, x)) })
+    }
+  )
 }
 
 fn state_t_monad[S][*M](inner: Monad(M), inner_pure: Pure(M)) -> Monad(State_t(S, M)) {
   Monad.mk_monad(
-    , State_t(S, M)
-    , .[A][B](m_val, k) {
-        State_t.mk_state_t(
-          , S
-          , M
-          , B
-          , .(st) {
-              Monad.bind(inner)(
-                , S & A
-                , S & B
-                , State_t.run_state_t(S, M, A, m_val)(st)
-                , .(pair) {
-                    let st2 = __fst__(S, A, pair);
-                    let x = __snd__(S, A, pair);
-                    State_t.run_state_t(S, M, B, k(x))(st2)
-                  }
-                )
+  , State_t(S, M)
+  , .[A][B](m_val, k) {
+      State_t.mk_state_t(
+      , S
+      , M
+      , B
+      , .(st) {
+          Monad.bind(inner)(
+          , S & A
+          , S & B
+          , State_t.run_state_t(S, M, A, m_val)(st)
+          , .(pair) {
+              let st2 = __fst__(S, A, pair);
+              let x = __snd__(S, A, pair);
+              State_t.run_state_t(S, M, B, k(x))(st2)
             }
           )
-      }
-    )
+        }
+      )
+    }
+  )
 }
 
 // Derive the `Monad` and `Pure` instances for the three-level stack, lift
@@ -128,9 +132,9 @@ fn state_t_monad[S][*M](inner: Monad(M), inner_pure: Pure(M)) -> Monad(State_t(S
 fn run() -> String {
   let stack =
     derive!(
-      , (state_t_monad, maybe_t_monad, maybe_monad, state_t_pure, maybe_t_pure, maybe_pure)
-      , Monad(State_t(Int, Maybe_t(Maybe)))
-      );
+    , (state_t_monad, maybe_t_monad, maybe_monad, state_t_pure, maybe_t_pure, maybe_pure)
+    , Monad(State_t(Int, Maybe_t(Maybe)))
+    );
   let stack_pure =
     derive!((state_t_pure, maybe_t_pure, maybe_pure), Pure(State_t(Int, Maybe_t(Maybe))));
   let lifted = Pure.pure(stack_pure)("derive! stack: ok\n"(String));
@@ -140,22 +144,22 @@ fn run() -> String {
   let maybe_layer = Maybe_t.run_maybe_t(Maybe, Int & String, inner_action);
   let outer_opt = Maybe.un_maybe(maybe_layer);
   __either__(
-    , .
-    , . | (Int & String)
-    , String
-    , outer_opt
-    , .(u) { "empty outer\n"(String) }
-    , .(inner_opt) {
-        __either__(
-          , .
-          , Int & String
-          , String
-          , inner_opt
-          , .(u2) { "empty inner\n"(String) }
-          , .(pair) { __snd__(Int, String, pair) }
-          )
-      }
-    )
+  , .
+  , . | (Int & String)
+  , String
+  , outer_opt
+  , .(u) { "empty outer\n"(String) }
+  , .(inner_opt) {
+      __either__(
+      , .
+      , Int & String
+      , String
+      , inner_opt
+      , .(u2) { "empty inner\n"(String) }
+      , .(pair) { __snd__(Int, String, pair) }
+      )
+    }
+  )
 }
 
 pub fn main() { print(run()) }

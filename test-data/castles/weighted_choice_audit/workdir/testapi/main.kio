@@ -20,28 +20,28 @@ pub fn main() {
   report.integer_distribution("ready attack", ready.>choice.map(game.attack_score), scores);
   report.fraction("ready multiplicity=", choice.total(ready), choice.total(loadouts));
   report.distribution(
-    , "readiness"
-    , loadouts.>choice.map(game.ready)
-    , [* .f, .t *]
-    , report.bool_equal
-    , fmt.bool_to_string
-    );
+  , "readiness"
+  , loadouts.>choice.map(game.ready)
+  , [* .f, .t *]
+  , report.bool_equal
+  , fmt.bool_to_string
+  );
   report.integer_distribution(
-    , "guaranteed attack"
-    , game.guaranteed().>choice.map(game.attack_score)
-    , [* 3 *]
-    );
+  , "guaranteed attack"
+  , game.guaranteed().>choice.map(game.attack_score)
+  , [* 3 *]
+  );
   report.integer_distribution("empty attack", choice.empty(_), scores);
   report.count(
-    , "empty left total="
-    , choice.independent(choice.empty(_), game.charms(), game.equip).>choice.total
-    );
+  , "empty left total="
+  , choice.independent(choice.empty(_), game.charms(), game.equip).>choice.total
+  );
   report.count(
-    , "empty right total="
-    , choice.independent(game.loot(), choice.empty(_), game.equip).>choice.total
-    );
+  , "empty right total="
+  , choice.independent(game.loot(), choice.empty(_), game.equip).>choice.total
+  );
   report.count(
-    , "impossible condition total="
-    , attacks.>choice.condition(.(attack) { arith.lt_i32(9, attack) }).>choice.total
-    )
+  , "impossible condition total="
+  , attacks.>choice.condition(.(attack) { arith.lt_i32(9, attack) }).>choice.total
+  )
 }

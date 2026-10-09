@@ -2,15 +2,15 @@ module minesweeper_frontier/frontier;
 
 import elab/control(if);
 import minesweeper_frontier/model(
-  , cell_count
-  , cell_index
-  , eq_i32
-  , height
-  , last_index
-  , mine_at
-  , revealed_at
-  , width
-  );
+, cell_count
+, cell_index
+, eq_i32
+, height
+, last_index
+, mine_at
+, revealed_at
+, width
+);
 import testapi(Array, Bool, I32);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -52,40 +52,36 @@ fn classify_cell(mines: Array(Bool), revealed: Array(Bool), row: I32, col: I32) 
   if! revealed_at(revealed, row, col) {
     class_revealed()
   } else if! adjacent_to_revealed(revealed, row, col) {
-    if! mine_at(mines, row, col) {
-      class_mine_frontier()
-    } else {
-      class_safe_frontier()
-    }
+    if! mine_at(mines, row, col) { class_mine_frontier() } else { class_safe_frontier() }
   } else {
     class_remote()
   }
 }
 
 rec(loop) fn fill_class_cols(
-  , row: I32
-  , col: I32
-  , classes: Array(I32)
-  , mines: Array(Bool)
-  , revealed: Array(Bool)
-  ) -> Array(I32) {
+, row: I32
+, col: I32
+, classes: Array(I32)
+, mines: Array(Bool)
+, revealed: Array(Bool)
+) -> Array(I32) {
   if! arith.leq_i32(col, arith.sub_i32(width(), 1)) {
     array.array_set(classes, cell_index(row, col), classify_cell(mines, revealed, row, col));
-    rec fill_class_cols(row, arith.add_i32(col, 1), classes, mines, revealed)
+    recur fill_class_cols(row, arith.add_i32(col, 1), classes, mines, revealed)
   } else {
     classes
   }
 }
 
 rec(loop) fn fill_class_rows(
-  , row: I32
-  , classes: Array(I32)
-  , mines: Array(Bool)
-  , revealed: Array(Bool)
-  ) -> Array(I32) {
+, row: I32
+, classes: Array(I32)
+, mines: Array(Bool)
+, revealed: Array(Bool)
+) -> Array(I32) {
   if! arith.leq_i32(row, arith.sub_i32(height(), 1)) {
     let updated = fill_class_cols(row, 0, classes, mines, revealed);
-    rec fill_class_rows(arith.add_i32(row, 1), updated, mines, revealed)
+    recur fill_class_rows(arith.add_i32(row, 1), updated, mines, revealed)
   } else {
     classes
   }
@@ -99,9 +95,9 @@ pub fn build_classes(mines: Array(Bool), revealed: Array(Bool)) -> Array(I32) {
 pub rec(loop) fn count_class(i: I32, classes: Array(I32), wanted: I32, total: I32) -> I32 {
   if! arith.leq_i32(i, last_index()) {
     if! eq_i32(array.array_get(classes, i), wanted) {
-      rec count_class(arith.add_i32(i, 1), classes, wanted, arith.add_i32(total, 1))
+      recur count_class(arith.add_i32(i, 1), classes, wanted, arith.add_i32(total, 1))
     } else {
-      rec count_class(arith.add_i32(i, 1), classes, wanted, total)
+      recur count_class(arith.add_i32(i, 1), classes, wanted, total)
     }
   } else {
     total
@@ -112,9 +108,9 @@ pub rec(loop) fn collect_safe_frontier(i: I32, classes: Array(I32), picks: Array
   if! arith.leq_i32(i, last_index()) {
     if! eq_i32(array.array_get(classes, i), class_safe_frontier()) {
       array.array_push(picks, i);
-      rec collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
+      recur collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
     } else {
-      rec collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
+      recur collect_safe_frontier(arith.add_i32(i, 1), classes, picks)
     }
   } else {
     picks
@@ -136,22 +132,22 @@ pub fn rotate_recommendations(picks: Array(I32)) -> Array(I32) {
 }
 
 pub rec(loop) fn find_best_safe(
-  , i: I32
-  , classes: Array(I32)
-  , counts: Array(I32)
-  , best_index: I32
-  , best_count: I32
-  ) -> I32 & I32 {
+, i: I32
+, classes: Array(I32)
+, counts: Array(I32)
+, best_index: I32
+, best_count: I32
+) -> I32 & I32 {
   if! arith.leq_i32(i, last_index()) {
     if! eq_i32(array.array_get(classes, i), class_safe_frontier()) {
       let count = array.array_get(counts, i);
       if! arith.leq_i32(count, best_count) {
-        rec find_best_safe(arith.add_i32(i, 1), classes, counts, i, count)
+        recur find_best_safe(arith.add_i32(i, 1), classes, counts, i, count)
       } else {
-        rec find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
+        recur find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
       }
     } else {
-      rec find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
+      recur find_best_safe(arith.add_i32(i, 1), classes, counts, best_index, best_count)
     }
   } else {
     (best_index, best_count)

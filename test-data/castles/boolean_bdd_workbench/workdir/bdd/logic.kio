@@ -7,35 +7,19 @@ import testapi(Bool, I32);
 import testapi/arith as arith;
 
 pub fn not(a: Bool) -> Bool {
-  if! a {
-    .f
-  } else {
-    .t
-  }
+  if! a { .f } else { .t }
 }
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 pub fn or(a: Bool, b: Bool) -> Bool {
-  if! a {
-    .t
-  } else {
-    b
-  }
+  if! a { .t } else { b }
 }
 
 pub fn same(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    not(b)
-  }
+  if! a { b } else { not(b) }
 }
 
 pub labels Operation = { conjunction: . } | { disjunction: . } | { exclusive: . };

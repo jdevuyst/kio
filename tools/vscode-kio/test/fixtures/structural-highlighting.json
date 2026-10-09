@@ -93,12 +93,12 @@
   },
   {
     "name": "rec_callee_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec // shared trivia\n  again(value)\n}\n",
+    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur // shared trivia\n  again(value)\n}\n",
     "targets": [
       {
         "start": 108,
-        "end": 111,
-        "text": "rec",
+        "end": 113,
+        "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression",
@@ -146,12 +146,12 @@
   },
   {
     "name": "rec_arguments_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  rec again\n  (value)\n}\n",
+    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur again\n  (value)\n}\n",
     "targets": [
       {
         "start": 108,
-        "end": 111,
-        "text": "rec",
+        "end": 113,
+        "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression",

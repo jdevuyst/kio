@@ -36,7 +36,9 @@ fn use_call(s: String) -> . { print(s) }
 
 fn use_let_simple() -> . { let x = (); x }
 
-fn use_fn_simple() -> . { .(x) { print(x) }("hi"(String)) }
+fn use_fn_simple() -> . {
+  .(x) { print(x) }("hi"(String))
+}
 
 fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
 
@@ -87,7 +89,9 @@ fn use_call(s: String) -> . { print(s) }
 
 fn use_let_simple() -> . { let x = (); x }
 
-fn use_fn_simple() -> . { .(x) { print(x) }("hi"(String)) }
+fn use_fn_simple() -> . {
+  .(x) { print(x) }("hi"(String))
+}
 
 fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
 

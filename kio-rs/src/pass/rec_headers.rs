@@ -51,7 +51,7 @@ pub(crate) fn validate<P: Phase>(group: &RecGroup<P>) -> Result<(), Error> {
             )
             .with_help(
                 "mutual members share one public polymorphic interface; tail calls can \
-                 still choose a fresh instantiation with `rec name(T, ...)`",
+                 still choose a fresh instantiation with `recur name(T, ...)`",
             ));
         }
         if !type_shape_eq(first_ret, &member.ret) {

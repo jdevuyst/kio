@@ -4168,6 +4168,14 @@ impl<'a> Lowerer<'a> {
         if source_slots.is_empty() {
             return Some(Vec::new());
         }
+        if target_values.is_empty() && matches!(source_slots, [Type::Unit { .. }]) {
+            *changed = true;
+            return Some(vec![Expr::Unit {
+                source_trivia: Default::default(),
+                occurrence: Default::default(),
+                meta: Meta::new(span),
+            }]);
+        }
 
         if target_values.len() == source_slots.len()
             && target_values
@@ -12705,6 +12713,103 @@ pub fn keep_right(value: Shared) -> Shared { value }
             1,
             "same-module lookup must preserve the callee signature"
         );
+    }
+
+    #[test]
+    fn function_adapter_supplies_a_substituted_unit_slot() {
+        let span = Span::new(0, 0);
+        let ctx = LoweringCtx::default();
+        let lowerer = Lowerer {
+            bound: std::cell::RefCell::new(Vec::new()),
+            type_bound: std::cell::RefCell::new(Vec::new()),
+            ctx: &ctx,
+            module_path: "test".to_owned(),
+            module_ctx: ModuleCtx::default(),
+            host_env: HostEnvScope::default(),
+            next_call_callee_scope: Cell::new(0),
+            next_selected_abi_binder: Cell::new(0),
+        };
+        let unit = Type::Unit { meta: test_meta() };
+        let nullary = fn_ty(unit.clone(), path_ty("Result"), 0);
+        let unary = fn_ty(unit.clone(), path_ty("Result"), 1);
+        let adapter = lowerer
+            .function_value_adapter_at_depth(
+                low_bound_ref("callback", span),
+                &nullary,
+                &unary,
+                span,
+                0,
+            )
+            .expect("a nullary view supplies the generic callback's Unit slot");
+        let Expr::FnExpr { sig, body, .. } = adapter else {
+            panic!("the adapter must remain a delayed value stage")
+        };
+        assert!(sig.params.is_empty());
+        assert!(matches!(
+            sig.canonical_groups().as_slice(),
+            [SignatureGroupRef::Value(params)] if params.is_empty()
+        ));
+        assert!(
+            matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
+            if matches!(callee.as_ref(), Expr::LowBoundRef { name, .. } if name == "callback")
+            && matches!(args.as_slice(), [Expr::Unit { .. }]))
+        );
+
+        let reverse = lowerer
+            .function_value_adapter_at_depth(
+                low_bound_ref("callback", span),
+                &unary,
+                &nullary,
+                span,
+                0,
+            )
+            .expect("a generic Unit slot can invoke a nullary callback");
+        assert!(matches!(reverse, Expr::FnExpr { sig, body, .. }
+            if sig.params.len() == 1
+            && matches!(body.as_ref(), Expr::LowIndirectCall { args, .. } if args.is_empty())));
+
+        let producer = Expr::LowIndirectCall {
+            occurrence: Default::default(),
+            callee: Box::new(low_bound_ref("produce", span)),
+            type_args: Vec::new(),
+            args: Vec::new(),
+            meta: test_meta(),
+            ext: (),
+        };
+        let captured = lowerer
+            .function_value_adapter(producer.clone(), &nullary, &unary, span)
+            .expect("the computed callback needs the same adapter");
+        let Expr::Let {
+            name, value, body, ..
+        } = captured
+        else {
+            panic!("the callback producer must be evaluated once before capture")
+        };
+        assert_eq!(*value, producer);
+        assert!(matches!(body.as_ref(), Expr::FnExpr { body, .. }
+            if matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
+                if matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
+                    if callee_name == &name)
+                && matches!(args.as_slice(), [Expr::Unit { .. }]))));
+
+        for source in [
+            fn_ty(path_ty("Value"), path_ty("Result"), 1),
+            fn_ty(product_ty(unit.clone(), unit.clone()), path_ty("Result"), 1),
+            fn_ty(product_ty(unit, path_ty("Value")), path_ty("Result"), 2),
+        ] {
+            assert!(
+                lowerer
+                    .function_value_adapter_at_depth(
+                        low_bound_ref("callback", span),
+                        &nullary,
+                        &source,
+                        span,
+                        0,
+                    )
+                    .is_none(),
+                "the Unit adapter must not fabricate non-Unit or grouped arguments"
+            );
+        }
     }
 
     #[test]

@@ -20,11 +20,11 @@ fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
     .(remaining: List(A), output: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(x: A, rest: List(A)) {
-              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
-            }
-          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
-          )
+        , .(x: A, rest: List(A)) {
+            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+          }
+        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -49,14 +49,14 @@ fn map_rev_step[A][B](f: (A & I32) -> B, state: List(A) & I32 & List(B)) ->
         .(idx: I32, output: List(B)) {
           match! remaining.>List.un_list {
             (
-              , .(x: A, rest: List(A)) {
-                  widen_sum!(
-                    , (rest, (add_i32(idx, 1), push(f(x, idx), output)))
-                    , (List(A) & I32 & List(B)) | List(B)
-                    )
-                }
-              , .(_empty: .) { widen_sum!(output, (List(A) & I32 & List(B)) | List(B)) }
-              )
+            , .(x: A, rest: List(A)) {
+                widen_sum!(
+                , (rest, (add_i32(idx, 1), push(f(x, idx), output)))
+                , (List(A) & I32 & List(B)) | List(B)
+                )
+              }
+            , .(_empty: .) { widen_sum!(output, (List(A) & I32 & List(B)) | List(B)) }
+            )
           }
         }
       }
@@ -74,21 +74,18 @@ fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
     .(xs: List(I32), acc: String) {
       match! xs.>List.un_list {
         (
-          , .(x: I32, rest: List(I32)) {
-              let sep =
-                match! rest.>List.un_list {
-                  (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
-                };
-              widen_sum!(
-                , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
-                , (List(I32) & String) | .
-                )
-            }
-          , .(_empty: .) {
-              print(string_concat(acc, "\n"));
-              widen_sum!((), (List(I32) & String) | .)
-            }
-          )
+        , .(x: I32, rest: List(I32)) {
+            let sep =
+              match! rest.>List.un_list {
+                (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
+              };
+            widen_sum!(
+            , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
+            , (List(I32) & String) | .
+            )
+          }
+        , .(_empty: .) { print(string_concat(acc, "\n")); widen_sum!((), (List(I32) & String) | .) }
+        )
       }
     }
   }

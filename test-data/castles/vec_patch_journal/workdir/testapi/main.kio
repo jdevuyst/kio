@@ -28,13 +28,13 @@ fn value_or[A](default: A, result: A | .) -> A {
 labels Patch_vec = { count: I32, root: Tree(I32) };
 
 labels Journal_state = {
-  , data: Patch_vec
-  , checkpoints: Patch_vec
-  , reads: I32
-  , misses: I32
-  , checksum: I32
-  , step: I32
-  };
+, data: Patch_vec
+, checkpoints: Patch_vec
+, reads: I32
+, misses: I32
+, checksum: I32
+, step: I32
+};
 
 fn line(label: String, value: String) { print(value.>string_concat("\n").>>string_concat(label)) }
 
@@ -70,19 +70,11 @@ fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
 }
 
 fn in_bounds(index: I32, count: I32) -> Bool {
-  if! leq_i32(0, index) {
-    lt_i32(index, count)
-  } else {
-    .f
-  }
+  if! leq_i32(0, index) { lt_i32(index, count) } else { .f }
 }
 
 fn at_vec(v: Patch_vec, index: I32) -> I32 | . {
-  if! in_bounds(index, v.?{count}) {
-    leaf_at(v.?{root}, index)
-  } else {
-    absent(I32, ())
-  }
+  if! in_bounds(index, v.?{count}) { leaf_at(v.?{root}, index) } else { absent(I32, ()) }
 }
 
 fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
@@ -102,10 +94,10 @@ fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
 
 fn set_vec(v: Patch_vec, index: I32, value: I32) -> Patch_vec | . {
   fold_result(
-    , absent(Patch_vec, ())
-    , .(_old: I32) { present(mk_vec(v.?{count}, set_leaf(v.?{root}, index, value))) }
-    , at_vec(v, index)
-    )
+  , absent(Patch_vec, ())
+  , .(_old: I32) { present(mk_vec(v.?{count}, set_leaf(v.?{root}, index, value))) }
+  , at_vec(v, index)
+  )
 }
 
 fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
@@ -118,22 +110,22 @@ fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
 }
 
 fn mk_state(
-  , data: Patch_vec
-  , checkpoints: Patch_vec
-  , reads: I32
-  , misses: I32
-  , checksum: I32
-  , step: I32
-  ) -> Journal_state { {data, checkpoints, reads, misses, checksum, step} }
+, data: Patch_vec
+, checkpoints: Patch_vec
+, reads: I32
+, misses: I32
+, checksum: I32
+, step: I32
+) -> Journal_state { {data, checkpoints, reads, misses, checksum, step} }
 
 fn same_step(
-  , st: Journal_state
-  , data: Patch_vec
-  , checkpoints: Patch_vec
-  , reads: I32
-  , misses: I32
-  , checksum: I32
-  ) -> Journal_state { mk_state(data, checkpoints, reads, misses, checksum, st.?{step}) }
+, st: Journal_state
+, data: Patch_vec
+, checkpoints: Patch_vec
+, reads: I32
+, misses: I32
+, checksum: I32
+) -> Journal_state { mk_state(data, checkpoints, reads, misses, checksum, st.?{step}) }
 
 fn bump_miss(st: Journal_state, salt: I32) -> Journal_state {
   let .({data, checkpoints, reads, misses, checksum}) = st;
@@ -147,10 +139,10 @@ fn hit_read(st: Journal_state, value: I32) -> Journal_state {
 
 fn apply_read(st: Journal_state, index: I32) -> Journal_state {
   fold_result(
-    , bump_miss(st, index)
-    , .(value: I32) { hit_read(st, value) }
-    , at_vec(st.?{data}, index)
-    )
+  , bump_miss(st, index)
+  , .(value: I32) { hit_read(st, value) }
+  , at_vec(st.?{data}, index)
+  )
 }
 
 fn hit_set(st: Journal_state, data: Patch_vec, value: I32) -> Journal_state {
@@ -160,21 +152,21 @@ fn hit_set(st: Journal_state, data: Patch_vec, value: I32) -> Journal_state {
 
 fn apply_set(st: Journal_state, index: I32, value: I32) -> Journal_state {
   fold_result(
-    , bump_miss(st, index)
-    , .(data: Patch_vec) { hit_set(st, data, value) }
-    , set_vec(st.?{data}, index, value)
-    )
+  , bump_miss(st, index)
+  , .(data: Patch_vec) { hit_set(st, data, value) }
+  , set_vec(st.?{data}, index, value)
+  )
 }
 
 fn fold_checksum(acc: I32, value: I32) -> I32 { add_i32(mul_i32(acc, 17), value) }
 
 rec(loop) fn fold_from(index: I32, acc: I32, v: Patch_vec) -> I32 {
   if! lt_i32(index, v.?{count}) {
-    rec fold_from(
-      , add_i32(index, 1)
-      , fold_result(acc, .(value: I32) { fold_checksum(acc, value) }, at_vec(v, index))
-      , v
-      )
+    recur fold_from(
+    , add_i32(index, 1)
+    , fold_result(acc, .(value: I32) { fold_checksum(acc, value) }, at_vec(v, index))
+    , v
+    )
   } else {
     acc
   }
@@ -224,11 +216,7 @@ fn apply_step(st: Journal_state) -> Journal_state {
 }
 
 rec(loop) fn replay(st: Journal_state) -> Journal_state {
-  if! lt_i32(st.?{step}, 12) {
-    rec replay(advance(apply_step(st)))
-  } else {
-    st
-  }
+  if! lt_i32(st.?{step}, 12) { recur replay(advance(apply_step(st))) } else { st }
 }
 
 fn seed_vector() -> Patch_vec {
@@ -243,9 +231,9 @@ fn initial_state() -> Journal_state { mk_state(seed_vector(), empty_vec(), 0, 0,
 
 fn report_value(final_checksum: I32, checkpoint_checksum: I32, reads: I32, misses: I32) -> I32 {
   add_i32(
-    , add_i32(mul_i32(final_checksum, 3), mul_i32(checkpoint_checksum, 5))
-    , sub_i32(mul_i32(reads, 7), mul_i32(misses, 11))
-    )
+  , add_i32(mul_i32(final_checksum, 3), mul_i32(checkpoint_checksum, 5))
+  , sub_i32(mul_i32(reads, 7), mul_i32(misses, 11))
+  )
 }
 
 fn ok_counts(reads: I32, misses: I32) -> Bool { eq_i32(add_i32(reads, misses), 5) }

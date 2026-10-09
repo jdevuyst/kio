@@ -3,7 +3,7 @@ module testapi/rec_funcs;
 import testapi/iter(loop);
 
 rec(loop) {
-  fn local(value: .) { rec scoped(value) };
+  fn local(value: .) { recur scoped(value) };
   pub(testapi) fn scoped(value: .) { value }
 }
 

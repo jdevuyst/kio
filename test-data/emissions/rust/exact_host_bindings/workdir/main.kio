@@ -28,7 +28,9 @@ pub fn apply_text(step: Text -> Text, value: Text) -> Text { step(value) }
 
 pub fn apply_stored_text((step: Text -> Text, value: Text)) -> Text { step(value) }
 
-pub fn text_identity() -> Text -> Text { .(value: Text) { value } }
+pub fn text_identity() -> Text -> Text {
+  .(value: Text) { value }
+}
 
 pub fn keep_token(value: Token) -> Token { value }
 
@@ -39,60 +41,32 @@ pub fn owned_text_literal() -> Owned_text { "owned literal" }
 fn identity_flag(flag: Unused) -> Unused { flag }
 
 pub fn choose(flag: Unused, yes: Token, no: Token) -> Token {
-  if! flag {
-    yes
-  } else {
-    no
-  }
+  if! flag { yes } else { no }
 }
 
 pub fn choose_call(flag: Unused, yes: Token, no: Token) -> Token {
-  if! identity_flag(flag) {
-    yes
-  } else {
-    no
-  }
+  if! identity_flag(flag) { yes } else { no }
 }
 
 pub fn choose_host_call(flag: Unused, yes: Token, no: Token) -> Token {
-  if! host_identity_flag(flag) {
-    yes
-  } else {
-    no
-  }
+  if! host_identity_flag(flag) { yes } else { no }
 }
 
 pub fn choose_let(flag: Unused, yes: Token, no: Token) -> Token {
   let copied = flag;
-  if! copied {
-    yes
-  } else {
-    no
-  }
+  if! copied { yes } else { no }
 }
 
 pub fn choose_literal(yes: Token, no: Token) -> Token {
-  if! .t {
-    yes
-  } else {
-    no
-  }
+  if! .t { yes } else { no }
 }
 
 pub fn choose_closure(flag: Unused, yes: Token, no: Token) -> Token {
   .(condition: Unused) {
-    if! condition {
-      yes
-    } else {
-      no
-    }
+    if! condition { yes } else { no }
   }(flag)
 }
 
 pub fn choose_destructured((flag: Unused, yes: Token), no: Token) -> Token {
-  if! flag {
-    yes
-  } else {
-    no
-  }
+  if! flag { yes } else { no }
 }

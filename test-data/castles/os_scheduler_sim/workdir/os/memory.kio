@@ -26,11 +26,11 @@ pub fn new_mem() -> Mem {
   let pages = mul_i32(config.proc_count(), config.pages_per_proc());
   let frames = config.frame_count();
   {
-    , ptable = array_make_filled(pages, config.nothing())
-    , owner = array_make_filled(frames, config.nothing())
-    , vpage = array_make_filled(frames, config.nothing())
-    , refbit = array_make_filled(frames, .f)
-    }
+  , ptable = array_make_filled(pages, config.nothing())
+  , owner = array_make_filled(frames, config.nothing())
+  , vpage = array_make_filled(frames, config.nothing())
+  , refbit = array_make_filled(frames, .f)
+  }
 }
 
 fn page_slot(pid: I32, vp: I32) -> I32 { add_i32(mul_i32(pid, config.pages_per_proc()), vp) }
@@ -54,11 +54,7 @@ fn clear_ref(m: Mem, frame: I32) { array_set(m.?{refbit}, frame, .f) }
 /// so it wraps by comparison rather than by `mod`.
 fn advance(hand: I32) -> I32 {
   let next = add_i32(hand, 1);
-  if! num.geq(next, config.frame_count()) {
-    0
-  } else {
-    next
-  }
+  if! num.geq(next, config.frame_count()) { 0 } else { next }
 }
 
 /// Walk the hand to the frame CLOCK would evict: the first free frame, or the
@@ -76,7 +72,7 @@ rec(loop) fn clock_scan(m: Mem, hand: I32, steps: I32) -> I32 {
     hand
   } else if! refbit_of(m, hand) {
     clear_ref(m, hand);
-    rec clock_scan(m, advance(hand), sub_i32(steps, 1))
+    recur clock_scan(m, advance(hand), sub_i32(steps, 1))
   } else {
     hand
   }

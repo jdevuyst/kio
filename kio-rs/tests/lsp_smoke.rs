@@ -703,12 +703,15 @@ fn lsp_unrelated_package_keeps_current_diagnostic_and_its_quick_fix() {
         .as_array()
         .expect("code actions")
         .iter()
-        .find(|action| action["title"] == "Mark recursive call with `rec`")
+        .find(|action| action["title"] == "Mark recursive call with `recur`")
         .unwrap_or_else(|| panic!("missing native repair: {actions:?}"));
     let (edits, version) = action_edits_for_uri(action, &call_uri);
     assert_eq!(version, Some(1));
     let repaired = apply_lsp_text_edits(source, edits);
-    assert_eq!(repaired, source.replace("{ again(x) }", "{ rec again(x) }"));
+    assert_eq!(
+        repaired,
+        source.replace("{ again(x) }", "{ recur again(x) }")
+    );
     send_full_text_change(&mut lsp, &call_uri, 2, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &call_uri, 2);
     assert_eq!(cleared["diagnostics"], json!([]), "{cleared:?}");
@@ -3668,7 +3671,7 @@ fn lsp_document_symbol_selects_scoped_rec_member_name_from_lazy_overlay() {
     let overlay_source = concat!(
         "module pkg/main;\n",
         "rec(loop) {\n",
-        "  pub(pkg) fn pkg(value: .) -> . { let broken = ; rec pkg(value) }\n",
+        "  pub(pkg) fn pkg(value: .) -> . { let broken = ; recur pkg(value) }\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", disk_source);
@@ -7905,9 +7908,9 @@ fn assert_lsp_nested_rec_call_identity(tag: &str, source: &str) {
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
     let call_start = source
-        .find("rec(cont) second")
+        .find("recur(cont) second")
         .expect("mode-qualified recursive call")
-        + "rec(cont) ".len();
+        + "recur(cont) ".len();
     let declaration_start = source.find("fn second").expect("member declaration") + "fn ".len();
     let call_position = source_position(source, call_start + 1);
     let call_range = source_range(source, call_start, "second".len());
@@ -8004,8 +8007,8 @@ fn lsp_rec_call_inside_normal_operator_operand_keeps_member_identity() {
         "fn choose(left: ., right: .) -> . { left }\n",
         "op _ + _ { impl choose; };\n",
         "rec(loop) {\n",
-        "  fn first(value: .) -> . { rec(cont) second(value) + value };\n",
-        "  fn second(value: .) -> . { rec first(value) }\n",
+        "  fn first(value: .) -> . { recur(cont) second(value) + value };\n",
+        "  fn second(value: .) -> . { recur first(value) }\n",
         "}\n",
     );
     assert_lsp_nested_rec_call_identity("rec-normal-op", source);
@@ -8020,8 +8023,8 @@ fn lsp_rec_call_inside_variadic_operator_operand_keeps_member_identity() {
         "fn prepend(head: ., tail: .) -> . { head }\n",
         "varop [* *] { foldr prepend empty; };\n",
         "rec(loop) {\n",
-        "  fn first(value: .) -> . { [* rec(cont) second(value), value *] };\n",
-        "  fn second(value: .) -> . { rec first(value) }\n",
+        "  fn first(value: .) -> . { [* recur(cont) second(value), value *] };\n",
+        "  fn second(value: .) -> . { recur first(value) }\n",
         "}\n",
     );
     assert_lsp_nested_rec_call_identity("rec-variadic-op", source);
@@ -8056,7 +8059,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
         // needs. A single-param `rec` never produced the warning.
         "pub rec(loop) fn sum_to(index: I32, last: I32, total: I32) -> I32 {\n",
         "  if! leq_i32(index, last) {\n",
-        "    rec sum_to(add_i32(index, 1), last, add_i32(total, index))\n",
+        "    recur sum_to(add_i32(index, 1), last, add_i32(total, index))\n",
         "  } else {\n",
         "    total\n",
         "  }\n",
@@ -10291,7 +10294,7 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
         dir.write_pkg_root_package();
         let provider = format!("module pkg/provider;\n\n{signature}\n");
         let provider_path = dir.write("pkg/provider.kio", &provider);
-        let source = "module pkg/main;\nimport pkg/provider as p;\n\nrec(p.selected) fn again(value: .) { rec again(value) }\n";
+        let source = "module pkg/main;\nimport pkg/provider as p;\n\nrec(p.selected) fn again(value: .) { recur again(value) }\n";
         let main_path = dir.write("pkg/main.kio", source);
         let uri = path_to_file_uri(&main_path);
         let provider_uri = path_to_file_uri(&provider_path);

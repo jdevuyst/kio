@@ -29,15 +29,15 @@ newtype F : I32 { pub constructor mk_f; pub projector f }
 fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
   match! p {
     (
-      , .(x: A, y: C, z: E) { "ace\n" }
-      , .(x: A, y: C, z: F) { "acf\n" }
-      , .(x: A, y: D, z: E) { "ade\n" }
-      , .(x: A, y: D, z: F) { "adf\n" }
-      , .(x: B, y: C, z: E) { "bce\n" }
-      , .(x: B, y: C, z: F) { "bcf\n" }
-      , .(x: B, y: D, z: E) { "bde\n" }
-      , .(x: B, y: D, z: F) { "bdf\n" }
-      )
+    , .(x: A, y: C, z: E) { "ace\n" }
+    , .(x: A, y: C, z: F) { "acf\n" }
+    , .(x: A, y: D, z: E) { "ade\n" }
+    , .(x: A, y: D, z: F) { "adf\n" }
+    , .(x: B, y: C, z: E) { "bce\n" }
+    , .(x: B, y: C, z: F) { "bcf\n" }
+    , .(x: B, y: D, z: E) { "bde\n" }
+    , .(x: B, y: D, z: F) { "bdf\n" }
+    )
   }
 }
 

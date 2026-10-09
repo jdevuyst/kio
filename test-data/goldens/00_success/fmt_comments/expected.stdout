@@ -31,44 +31,44 @@ fn header_without_body_comments() -> . {
 
 fn empty_call() -> . {
   last(
-    // Inside the call.
-    )
+  // Inside the call.
+  )
 }
 
 fn empty_unit() -> . {
   (
-    // Inside Unit.
-    // Between empty components.
-    // Before Unit closes.
-    )
+  // Inside Unit.
+  // Between empty components.
+  // Before Unit closes.
+  )
 }
 
 fn empty_signature(
-  // First signature group.
-  )(
-  // Second signature group.
-  , x: .
-  ) -> . { x }
+// First signature group.
+)(
+// Second signature group.
+, x: .
+) -> . { x }
 
 type Pair[A][B] = .;
 
 fn parameter(
-  // Before the colon.
-  , x: Pair(
-      // Inside the parameter type.
-      , .
-      , .
-      )
-  ) -> . { x }
+// Before the colon.
+, x: Pair(
+  // Inside the parameter type.
+  , .
+  , .
+  )
+) -> . { x }
 
 fn return_order()
   // Before the arrow.
   // Before the return type.
   -> Pair(
-    // Inside the return type.
-    , .
-    , .
-    ) {
+  // Inside the return type.
+  , .
+  , .
+  ) {
   // Before the body.
 
   // Inside the body.
@@ -85,13 +85,13 @@ fn grouped() -> . {
 
 fn grouped_argument() -> . {
   id(
-    , .
-    , last(
-        // Inner call.
-        )
-    // Grouped argument.
-    // Outer call.
+  , .
+  , last(
+    // Inner call.
     )
+  // Grouped argument.
+  // Outer call.
+  )
 }
 
 fn computed_callee() -> . {
@@ -99,8 +99,8 @@ fn computed_callee() -> . {
     last
     // Grouped callee.
     )(
-    // Its empty argument list.
-    )
+  // Its empty argument list.
+  )
 }
 
 // Trailing item.
@@ -138,44 +138,44 @@ fn header_without_body_comments() -> . {
 
 fn empty_call() -> . {
   last(
-    // Inside the call.
-    )
+  // Inside the call.
+  )
 }
 
 fn empty_unit() -> . {
   (
-    // Inside Unit.
-    // Between empty components.
-    // Before Unit closes.
-    )
+  // Inside Unit.
+  // Between empty components.
+  // Before Unit closes.
+  )
 }
 
 fn empty_signature(
-  // First signature group.
-  )(
-  // Second signature group.
-  , x: .
-  ) -> . { x }
+// First signature group.
+)(
+// Second signature group.
+, x: .
+) -> . { x }
 
 type Pair[A][B] = .;
 
 fn parameter(
-  // Before the colon.
-  , x: Pair(
-      // Inside the parameter type.
-      , .
-      , .
-      )
-  ) -> . { x }
+// Before the colon.
+, x: Pair(
+  // Inside the parameter type.
+  , .
+  , .
+  )
+) -> . { x }
 
 fn return_order()
   // Before the arrow.
   // Before the return type.
   -> Pair(
-    // Inside the return type.
-    , .
-    , .
-    ) {
+  // Inside the return type.
+  , .
+  , .
+  ) {
   // Before the body.
 
   // Inside the body.
@@ -192,13 +192,13 @@ fn grouped() -> . {
 
 fn grouped_argument() -> . {
   id(
-    , .
-    , last(
-        // Inner call.
-        )
-    // Grouped argument.
-    // Outer call.
+  , .
+  , last(
+    // Inner call.
     )
+  // Grouped argument.
+  // Outer call.
+  )
 }
 
 fn computed_callee() -> . {
@@ -206,8 +206,8 @@ fn computed_callee() -> . {
     last
     // Grouped callee.
     )(
-    // Its empty argument list.
-    )
+  // Its empty argument list.
+  )
 }
 
 // Trailing item.

@@ -27,18 +27,14 @@ pub fn num(value: I32) -> String { int_to_string(value) }
 pub fn line(text: String) { print(cat(text, "\n")) }
 
 rec(loop) fn blanks(n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) {
-    acc
-  } else {
-    rec blanks(sub_i32(n, 1), cat(" ", acc))
-  }
+  if! leq_i32(n, 0) { acc } else { recur blanks(sub_i32(n, 1), cat(" ", acc)) }
 }
 
 rec(loop) fn digits_from(value: I32, limit: I32, acc: I32) -> I32 {
   if! lt_i32(value, limit) {
     acc
   } else {
-    rec digits_from(value, mul_i32(limit, 10), add_i32(acc, 1))
+    recur digits_from(value, mul_i32(limit, 10), add_i32(acc, 1))
   }
 }
 
@@ -54,17 +50,12 @@ pub fn cell(value: I32, slot: I32) -> String {
 rec(loop) fn set_body(xs: Ints, lead: Bool, acc: String) -> String {
   match! xs.>List.unpack {
     (
-      , .(x: I32, rest: Ints) {
-          let sep =
-            if! lead {
-              ""
-            } else {
-              ","
-            };
-          rec set_body(rest, .f, cat3(acc, sep, num(x)))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(x: I32, rest: Ints) {
+        let sep = if! lead { "" } else { "," };
+        recur set_body(rest, .f, cat3(acc, sep, num(x)))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -75,24 +66,20 @@ pub fn show_set(xs: Ints) -> String { cat3("{", set_body(xs, .t, ""), "}") }
 /// up under each other.
 pub fn show_word(word: Ints, slot: I32) -> String {
   cat(
-    , cat3("\"", fold(word, .(acc: String, sym: I32) { cat(acc, letter(sym)) }, ""), "\"")
-    , blanks(sub_i32(slot, add_i32(len(word), 2)), "")
-    )
+  , cat3("\"", fold(word, .(acc: String, sym: I32) { cat(acc, letter(sym)) }, ""), "\"")
+  , blanks(sub_i32(slot, add_i32(len(word), 2)), "")
+  )
 }
 
 pub fn verdict(ok: Bool) -> String {
-  if! ok {
-    "accept"
-  } else {
-    "reject"
-  }
+  if! ok { "accept" } else { "reject" }
 }
 
 rec(loop) fn header_from(sym: I32, acc: String) -> String {
   if! leq_i32(width(), sym) {
     acc
   } else {
-    rec header_from(add_i32(sym, 1), cat3(acc, blanks(5, ""), letter(sym)))
+    recur header_from(add_i32(sym, 1), cat3(acc, blanks(5, ""), letter(sym)))
   }
 }
 
@@ -104,24 +91,14 @@ rec(loop) fn row_cells(d: dfa.Dfa, state: I32, sym: I32, acc: String) -> String 
   if! leq_i32(width(), sym) {
     acc
   } else {
-    rec row_cells(d, state, add_i32(sym, 1), cat(acc, cell(dfa.step(d, state, sym), 6)))
+    recur row_cells(d, state, add_i32(sym, 1), cat(acc, cell(dfa.step(d, state, sym), 6)))
   }
 }
 
 /// `>` marks the start state and `*` an accepting one; a state can be both.
 fn marker(d: dfa.Dfa, state: I32) -> String {
-  let entry =
-    if! eq_i32(dfa.start(d), state) {
-      ">"
-    } else {
-      " "
-    };
-  let final =
-    if! dfa.is_accepting(d, state) {
-      "*"
-    } else {
-      " "
-    };
+  let entry = if! eq_i32(dfa.start(d), state) { ">" } else { " " };
+  let final = if! dfa.is_accepting(d, state) { "*" } else { " " };
   cat(entry, final)
 }
 

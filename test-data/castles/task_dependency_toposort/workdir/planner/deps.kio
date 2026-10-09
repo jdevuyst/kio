@@ -4,14 +4,14 @@ import elab/control(if);
 import planner/bool(both, invert);
 import planner/state(Plan_state, is_done);
 import planner/tasks(
-  , compile_core
-  , emit_js
-  , emit_rust
-  , fetch_sources
-  , inspect_schema
-  , package_bundle
-  , release_notes
-  );
+, compile_core
+, emit_js
+, emit_rust
+, fetch_sources
+, inspect_schema
+, package_bundle
+, release_notes
+);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 
@@ -37,9 +37,9 @@ fn ready_rust(plan: Plan_state) -> Bool {
 
 fn ready_bundle(plan: Plan_state) -> Bool {
   both(
-    , unfinished(plan, package_bundle())
-    , both(is_done(plan, emit_js()), is_done(plan, emit_rust()))
-    )
+  , unfinished(plan, package_bundle())
+  , both(is_done(plan, emit_js()), is_done(plan, emit_rust()))
+  )
 }
 
 fn ready_notes(plan: Plan_state) -> Bool {

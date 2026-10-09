@@ -1,2 +1,2 @@
-recursive call to `count` must be written as an annotated `rec count\(\.\.\.\)` call
-mark the call with `rec`; add `poly` when type arguments change and `cont` when the call is not in tail position
+recursive call to `count` must be written as an annotated `recur count\(\.\.\.\)` call
+mark the call with `recur`.*`escape` across a closure boundary

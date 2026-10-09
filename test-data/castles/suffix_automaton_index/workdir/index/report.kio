@@ -16,13 +16,9 @@ fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 
 rec(loop) fn show_symbols(symbols: Array(I32), position: I32) {
   if! num.less(position, a.array_len(symbols)) {
-    if! num.equal(position, 0) {
-      ()
-    } else {
-      io.print(" ")
-    };
+    if! num.equal(position, 0) { () } else { io.print(" ") };
     integer(a.array_get(symbols, position));
-    rec show_symbols(symbols, n.add_i32(position, 1))
+    recur show_symbols(symbols, n.add_i32(position, 1))
   } else {
     ()
   }

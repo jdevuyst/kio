@@ -19,32 +19,32 @@ fn blank_flags() -> Array(I32) { array_make_filled(geo.flag_count(), 0) }
 fn unseen(flags: Array(I32), slot: I32) -> Bool { num.is_zero(array_get(flags, slot)) }
 
 rec(loop) fn scan_units(
-  , cells: Array(I32)
-  , rows: Array(I32)
-  , cols: Array(I32)
-  , boxes: Array(I32)
-  , seen_row: Array(I32)
-  , seen_col: Array(I32)
-  , seen_box: Array(I32)
-  , cell: I32
-  ) -> Bool {
+, cells: Array(I32)
+, rows: Array(I32)
+, cols: Array(I32)
+, boxes: Array(I32)
+, seen_row: Array(I32)
+, seen_col: Array(I32)
+, seen_box: Array(I32)
+, cell: I32
+) -> Bool {
   if! leq_i32(cell, geo.last_cell()) {
     let digit = array_get(cells, cell);
     if! num.is_zero(digit) {
-      rec scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
+      recur scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
     } else {
       let row_slot = geo.flag_at(array_get(rows, cell), digit);
       let col_slot = geo.flag_at(array_get(cols, cell), digit);
       let box_slot = geo.flag_at(array_get(boxes, cell), digit);
       let fresh = num.and_bool(
-        , unseen(seen_row, row_slot)
-        , num.and_bool(unseen(seen_col, col_slot), unseen(seen_box, box_slot))
-        );
+      , unseen(seen_row, row_slot)
+      , num.and_bool(unseen(seen_col, col_slot), unseen(seen_box, box_slot))
+      );
       if! fresh {
         array_set(seen_row, row_slot, 1);
         array_set(seen_col, col_slot, 1);
         array_set(seen_box, box_slot, 1);
-        rec scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
+        recur scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
       } else {
         .f
       }
@@ -65,7 +65,7 @@ rec(loop) fn all_filled_from(cells: Array(I32), cell: I32) -> Bool {
   if! leq_i32(cell, geo.last_cell()) {
     let digit = array_get(cells, cell);
     if! num.and_bool(leq_i32(1, digit), leq_i32(digit, geo.last_digit())) {
-      rec all_filled_from(cells, add_i32(cell, 1))
+      recur all_filled_from(cells, add_i32(cell, 1))
     } else {
       .f
     }
@@ -78,19 +78,15 @@ rec(loop) fn all_filled_from(cells: Array(I32), cell: I32) -> Bool {
 /// digits drawn from 1..9 in a nine-cell unit is 1..9 exactly once, so the
 /// two halves together are the whole sudoku condition.
 pub fn is_solved(cells: Array(I32)) -> Bool {
-  if! all_filled_from(cells, 0) {
-    is_consistent(cells)
-  } else {
-    .f
-  }
+  if! all_filled_from(cells, 0) { is_consistent(cells) } else { .f }
 }
 
 rec(loop) fn count_from(cells: Array(I32), cell: I32, found: I32) -> I32 {
   if! leq_i32(cell, geo.last_cell()) {
     if! num.is_zero(array_get(cells, cell)) {
-      rec count_from(cells, add_i32(cell, 1), found)
+      recur count_from(cells, add_i32(cell, 1), found)
     } else {
-      rec count_from(cells, add_i32(cell, 1), add_i32(found, 1))
+      recur count_from(cells, add_i32(cell, 1), add_i32(found, 1))
     }
   } else {
     found
@@ -103,9 +99,9 @@ rec(loop) fn keeps_from(givens: Array(I32), cells: Array(I32), cell: I32) -> Boo
   if! leq_i32(cell, geo.last_cell()) {
     let given = array_get(givens, cell);
     if! num.is_zero(given) {
-      rec keeps_from(givens, cells, add_i32(cell, 1))
+      recur keeps_from(givens, cells, add_i32(cell, 1))
     } else if! num.eq_i32(given, array_get(cells, cell)) {
-      rec keeps_from(givens, cells, add_i32(cell, 1))
+      recur keeps_from(givens, cells, add_i32(cell, 1))
     } else {
       .f
     }
@@ -121,7 +117,7 @@ pub fn keeps_givens(givens: Array(I32), cells: Array(I32)) -> Bool { keeps_from(
 rec(loop) fn same_from(left: Array(I32), right: Array(I32), cell: I32) -> Bool {
   if! leq_i32(cell, geo.last_cell()) {
     if! num.eq_i32(array_get(left, cell), array_get(right, cell)) {
-      rec same_from(left, right, add_i32(cell, 1))
+      recur same_from(left, right, add_i32(cell, 1))
     } else {
       .f
     }

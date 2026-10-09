@@ -7,20 +7,10 @@ import stack/testapi/io as io;
 import stack/testapi/iter(loop);
 
 pub rec(loop) fn deep(n: I32) -> Bool {
-  if! arith.leq_i32(n, 0) {
-    .t
-  } else if! rec(cont) deep(arith.sub_i32(n, 1)) {
-    .t
-  } else {
-    .f
-  }
+  if! arith.leq_i32(n, 0) { .t } else if! recur(cont) deep(arith.sub_i32(n, 1)) { .t } else { .f }
 }
 
 pub fn main() {
   io.print("deep quotation\n");
-  if! deep(100000) {
-    io.print("done\n")
-  } else {
-    io.print("unexpected false\n")
-  }
+  if! deep(100000) { io.print("done\n") } else { io.print("unexpected false\n") }
 }

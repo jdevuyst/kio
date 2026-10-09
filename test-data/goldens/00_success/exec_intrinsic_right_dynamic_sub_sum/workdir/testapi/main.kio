@@ -15,22 +15,22 @@ fn widen_right(x: Int | Int) -> Int | Int | Int { __right__(Int, Int | Int, x) }
 
 fn show(s: Int | Int | Int) {
   __either__(
-    , Int
-    , Int | Int
-    , .
-    , s
-    , .(l: Int) -> . { print("L="(String)); print(int_to_string(l)) }
-    , .(r: Int | Int) -> . {
-        __either__(
-          , Int
-          , Int
-          , .
-          , r
-          , .(rl: Int) -> . { print("RL="(String)); print(int_to_string(rl)) }
-          , .(rr: Int) -> . { print("RR="(String)); print(int_to_string(rr)) }
-          )
-      }
-    );
+  , Int
+  , Int | Int
+  , .
+  , s
+  , .(l: Int) -> . { print("L="(String)); print(int_to_string(l)) }
+  , .(r: Int | Int) -> . {
+      __either__(
+      , Int
+      , Int
+      , .
+      , r
+      , .(rl: Int) -> . { print("RL="(String)); print(int_to_string(rl)) }
+      , .(rr: Int) -> . { print("RR="(String)); print(int_to_string(rr)) }
+      )
+    }
+  );
   print("\n"(String))
 }
 

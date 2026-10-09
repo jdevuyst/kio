@@ -18,20 +18,20 @@ pure fn call_marker_bool(ct: __Comptime__, fn_type: __Type__, value_fn: __Checke
 }
 
 pub pure fn marker_impl(
-  , ct: __Comptime__
-  , true_fn: __Checked_term__
-  , false_fn: __Checked_term__
-  , _source: __Type__
-  , _value: __Checked_term__
-  , needle: __Type__
-  ) -> __Checked_term__ {
+, ct: __Comptime__
+, true_fn: __Checked_term__
+, false_fn: __Checked_term__
+, _source: __Type__
+, _value: __Checked_term__
+, needle: __Type__
+) -> __Checked_term__ {
   let fn_type = marker_bool_fn_type(ct);
   choose_checked_term(
-    , ct
-    , __type_equal__(ct, needle, _source)
-    , call_marker_bool(ct, fn_type, true_fn)
-    , call_marker_bool(ct, fn_type, false_fn)
-    )
+  , ct
+  , __type_equal__(ct, needle, _source)
+  , call_marker_bool(ct, fn_type, true_fn)
+  , call_marker_bool(ct, fn_type, false_fn)
+  )
 }
 
 pub elab marker : [Source] Source -> [Needle] Marker_bool { captures (marker_true, marker_false); impl marker_impl }

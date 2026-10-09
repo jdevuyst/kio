@@ -30,9 +30,9 @@ fn field(name: String, value: String) -> String { cat3("  ", name, cat3(": ", va
 rec(loop) fn spaced(payload: alphabet.Bytes, gap: String, done: String) -> String {
   match! payload.>list.List.un_list {
     (
-      , .(byte: I32, rest: alphabet.Bytes) { rec spaced(rest, " ", cat3(done, gap, num(byte))) }
-      , .(_empty: .) { done }
-      )
+    , .(byte: I32, rest: alphabet.Bytes) { recur spaced(rest, " ", cat3(done, gap, num(byte))) }
+    , .(_empty: .) { done }
+    )
   }
 }
 
@@ -42,9 +42,9 @@ fn show_bytes(payload: alphabet.Bytes) -> String { spaced(payload, "", "") }
 rec(loop) fn fused(glyphs: alphabet.Glyphs, done: String) -> String {
   match! glyphs.>list.List.un_list {
     (
-      , .(glyph: String, rest: alphabet.Glyphs) { rec fused(rest, cat(done, glyph)) }
-      , .(_empty: .) { done }
-      )
+    , .(glyph: String, rest: alphabet.Glyphs) { recur fused(rest, cat(done, glyph)) }
+    , .(_empty: .) { done }
+    )
   }
 }
 
@@ -57,16 +57,16 @@ fn heading(index: I32, kind: String, size: I32, unit: String) -> String {
 
 fn accepted(recovered: alphabet.Bytes) -> String {
   field(
-    , "verdict"
-    , cat3("OK, round trip verified, ", num(list.length(recovered)), " bytes recovered")
-    )
+  , "verdict"
+  , cat3("OK, round trip verified, ", num(list.length(recovered)), " bytes recovered")
+  )
 }
 
 fn decoded_received(recovered: alphabet.Bytes) -> String {
   field(
-    , "verdict"
-    , cat3("OK, received transmission decoded, ", num(list.length(recovered)), " bytes recovered")
-    )
+  , "verdict"
+  , cat3("OK, received transmission decoded, ", num(list.length(recovered)), " bytes recovered")
+  )
 }
 
 fn refused(position: I32) -> String {
@@ -83,27 +83,27 @@ fn round_trip(index: I32, payload: alphabet.Bytes) -> Entry {
   let glyphs = encode(payload);
   let shown =
     cat3(
-      , heading(index, "payload", list.length(payload), "bytes")
-      , field("bytes", show_bytes(payload))
-      , field("encoded", show_glyphs(glyphs))
-      );
+    , heading(index, "payload", list.length(payload), "bytes")
+    , field("bytes", show_bytes(payload))
+    , field("encoded", show_glyphs(glyphs))
+    );
   match! decode(glyphs) {
     (
-      , .(good: Ok) {
-          let recovered = good.?{ok};
-          if! bytes_eq(recovered, payload) {
-            (cat3(shown, accepted(recovered), "\n"), 1, 0, list.length(recovered))
-          } else {
-            (
-              , cat3(shown, field("verdict", "MISMATCH, the round trip lost the payload"), "\n")
-              , 0
-              , 1
-              , 0
-              )
-          }
+    , .(good: Ok) {
+        let recovered = good.?{ok};
+        if! bytes_eq(recovered, payload) {
+          (cat3(shown, accepted(recovered), "\n"), 1, 0, list.length(recovered))
+        } else {
+          (
+          , cat3(shown, field("verdict", "MISMATCH, the round trip lost the payload"), "\n")
+          , 0
+          , 1
+          , 0
+          )
         }
-      , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
-      )
+      }
+    , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+    )
   }
 }
 
@@ -112,62 +112,62 @@ fn round_trip(index: I32, payload: alphabet.Bytes) -> Entry {
 fn as_received(index: I32, glyphs: alphabet.Glyphs) -> Entry {
   let shown =
     cat(
-      , heading(index, "received transmission", list.length(glyphs), "glyphs")
-      , field("received", show_glyphs(glyphs))
-      );
+    , heading(index, "received transmission", list.length(glyphs), "glyphs")
+    , field("received", show_glyphs(glyphs))
+    );
   match! decode(glyphs) {
     (
-      , .(good: Ok) {
-          (cat3(shown, decoded_received(good.?{ok}), "\n"), 1, 0, list.length(good.?{ok}))
-        }
-      , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
-      )
+    , .(good: Ok) {
+        (cat3(shown, decoded_received(good.?{ok}), "\n"), 1, 0, list.length(good.?{ok}))
+      }
+    , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+    )
   }
 }
 
 fn entry_for(index: I32, fixture: Fixture) -> Entry {
   match! fixture {
     (
-      , .(source: Payload) { round_trip(index, source.?{payload}) }
-      , .(wire: Received) { as_received(index, wire.?{received}) }
-      )
+    , .(source: Payload) { round_trip(index, source.?{payload}) }
+    , .(wire: Received) { as_received(index, wire.?{received}) }
+    )
   }
 }
 
 fn summary(ok: I32, refusals: I32, bytes: I32) -> String {
   cat3(
-    , cat3("summary: packets ok ", num(ok), ", packets rejected ")
-    , num(refusals)
-    , cat3(", bytes recovered ", num(bytes), "\n")
-    )
+  , cat3("summary: packets ok ", num(ok), ", packets rejected ")
+  , num(refusals)
+  , cat3(", bytes recovered ", num(bytes), "\n")
+  )
 }
 
 rec(loop) {
   /// Render every fixture in order, then the closing tally.
-  pub fn render(fixtures: list.List(Fixture)) -> String { rec walk(fixtures, 1, "", 0, 0, 0) };
+  pub fn render(fixtures: list.List(Fixture)) -> String { recur walk(fixtures, 1, "", 0, 0, 0) };
   fn walk(
-    , fixtures: list.List(Fixture)
-    , index: I32
-    , done: String
-    , ok: I32
-    , refusals: I32
-    , bytes: I32
-    ) -> String {
+  , fixtures: list.List(Fixture)
+  , index: I32
+  , done: String
+  , ok: I32
+  , refusals: I32
+  , bytes: I32
+  ) -> String {
     match! fixtures.>list.List.un_list {
       (
-        , .(fixture: Fixture, rest: list.List(Fixture)) {
-            let .(block: String, hit: I32, miss: I32, recovered: I32) = entry_for(index, fixture);
-            rec walk(
-              , rest
-              , add_i32(index, 1)
-              , cat(done, block)
-              , add_i32(ok, hit)
-              , add_i32(refusals, miss)
-              , add_i32(bytes, recovered)
-              )
-          }
-        , .(_empty: .) { cat(done, summary(ok, refusals, bytes)) }
-        )
+      , .(fixture: Fixture, rest: list.List(Fixture)) {
+          let .(block: String, hit: I32, miss: I32, recovered: I32) = entry_for(index, fixture);
+          recur walk(
+          , rest
+          , add_i32(index, 1)
+          , cat(done, block)
+          , add_i32(ok, hit)
+          , add_i32(refusals, miss)
+          , add_i32(bytes, recovered)
+          )
+        }
+      , .(_empty: .) { cat(done, summary(ok, refusals, bytes)) }
+      )
     }
   }
 }

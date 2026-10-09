@@ -16,7 +16,7 @@ rec(loop) fn go(n: I32) {
     print("base\n")
   } else {
     Box.unbox(do! bind {
-      let next = rec(cont) go(0);
+      let next = recur(cont) go(0);
       let printed = print("resume\n");
       Box.box(next)
     })

@@ -33,9 +33,9 @@ fn apply[T][U][E](rf: Result(T -> U, E), x: T) -> Result(U, E) {
 fn render(r: Result(I32, String)) -> String {
   match! r.>Result.un_result {
     (
-      , .(v: I32) { string_concat("ok(", string_concat(int_to_string(v), ")")) }
-      , .(m: String) { string_concat("err(\"", string_concat(m, "\")")) }
-      )
+    , .(v: I32) { string_concat("ok(", string_concat(int_to_string(v), ")")) }
+    , .(m: String) { string_concat("err(\"", string_concat(m, "\")")) }
+    )
   }
 }
 
@@ -51,7 +51,7 @@ pub fn main() {
   show("apply(ok(incr), 4)", render(apply(I32, I32, String, ok(I32 -> I32, String, incr), 4)));
   show("apply(ok(triple), 5)", render(apply(I32, I32, String, ok(I32 -> I32, String, triple), 5)));
   show(
-    , "apply(err(\"nope\"), 7)"
-    , render(apply(I32, I32, String, err(I32 -> I32, String, "nope"), 7))
-    )
+  , "apply(err(\"nope\"), 7)"
+  , render(apply(I32, I32, String, err(I32 -> I32, String, "nope"), 7))
+  )
 }

@@ -9,7 +9,9 @@ type Step = I32 -> I32;
 
 labels { pack <U> : Step & U };
 
-fn make_pack(n: I32) -> Pack { Pack.mk((.(x: I32) -> I32 { add_i32(x, 1) }, n)) }
+fn make_pack(n: I32) -> Pack {
+  Pack.mk((.(x: I32) -> I32 { add_i32(x, 1) }, n))
+}
 
 fn marked_pack(n: I32) -> Pack { print("R"(String)); make_pack(n) }
 

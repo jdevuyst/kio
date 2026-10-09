@@ -29,11 +29,11 @@ fn use_derived() -> String {
   let branded = Identity.mk_id("derive! functor"(String));
   let mapped =
     Functor.fmap(functor)(
-      , String
-      , String
-      , .(value) { string_concat(value, ": ok\n"(String)) }
-      , branded
-      );
+    , String
+    , String
+    , .(value) { string_concat(value, ": ok\n"(String)) }
+    , branded
+    );
   Identity.un_id(mapped)
 }
 

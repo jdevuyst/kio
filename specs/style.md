@@ -22,43 +22,37 @@ A divergence between two conformant implementations on the same input is a spec 
 
 ## Block bodies (`{ … }`)
 
-Named and anonymous function bodies use a **width-driven** block layout. This includes the anonymous functions supplied as `match!` clauses. The body stays inline if the whole construct fits in the 100-column budget:
+Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every elaborator trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
 
 ```kio
 fn id[A](x: A) -> A { x }
 ```
 
-If the construct overflows the budget — or the body itself contains an unconditional break (e.g., a nonempty block elaborator call or a comma-separated list that broke to A1) — the surrounding `{ … }` breaks too: the opener `{` stays on the head's line, the body sits at +2 indent on its own line(s), and the closer `}` returns to the surrounding column.
+When the block breaks, the opener `{` stays on the head's line, the body sits at +2 indent on its own line(s), and the closer `}` returns to the surrounding column. Nested constructs then choose their own layouts at their new output columns. Sibling blocks may remain compact together:
 
 ```kio
-fn longer_name() -> . {
-  call_with_long_name(arg_alpha, arg_beta, arg_gamma, arg_delta)
+fn choose() {
+  if! ready { run() } else { wait() }
 }
 ```
 
-**Block elaborator calls.** Every nonempty trailing block breaks: its entries sit at +2 indentation, separated by semicolons, and its closer returns to the surrounding column. An empty block is `{}`, preceded by one space. This layout applies to every elaborator head, without consulting its declaration or the block's exposure kind. A nonempty block consequently breaks any enclosing function body or comma-separated list.
+**Block elaborator calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every elaborator head and continuation label, without consulting declarations or exposure kinds. Thus a short `do! bind { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
 
 ```kio
-if! cond {
-  then_branch
+if! ready {
+  do! bind { run() }
 } else {
-  else_branch
+  wait()
 }
 ```
 
 **Final labelled-block elision.** When the final labelled block contains exactly one complete block elaborator call, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
 
 ```kio
-if! a {
-  x
-} else if! b {
-  y
-} else {
-  z
-}
+if! a { x } else if! b { y } else { z }
 ```
 
-The nested call owns all following labelled blocks. A non-final outer block keeps its braces, as does a block containing several expressions, a local binding, a non-block-call expression, or wrapper-attached comments. For example, the braces in `outer! x { a() } fallback { inner! y { b() } } cleanup { c() }` remain necessary: `cleanup` belongs to `outer`.
+The nested call owns all following labelled blocks and shares the enclosing chain's arm-layout decision. A non-final outer block keeps its braces, as does a block containing several expressions, a local binding, a non-block-call expression, or wrapper-attached comments. For example, the braces in `outer! x { a() } fallback { inner! y { b() } } cleanup { c() }` remain necessary: `cleanup` belongs to `outer`.
 
 **Block prefixes.** The formatter prefers a bare unary prefix when the printed expression is unambiguous, such as `if! condition { … }` or `outer! convert!(value) { … }`. Multiple prefix values use `form!(a, b) { … }`; one product uses `form!((a, b)) { … }`. One unit value is `form!() { … }`, distinct from zero prefix values in `form! { … }`. Brace-leading, operator-leading and complete nested block-call prefix expressions retain the parenthesized head. A signed numeric literal may be bare, as in `form! -1 { … }`.
 
@@ -94,32 +88,28 @@ The multi-line form puts a leading comma on every item, including the first:
 
 ```kio
 fn merge_sorted_runs[A](
-  , left_run: List(A)
-  , right_run: List(A)
-  , compare_elements: A -> A -> Bool
-  , size_limit: I32
-  ) -> List(A) { left_run }
+, left_run: List(A)
+, right_run: List(A)
+, compare_elements: A -> A -> Bool
+, size_limit: I32
+) -> List(A) { left_run }
 ```
 
 - The opener (`(`, `<`, `{`) is the **last token on the introducing line** — same line as the function name, type name, etc.
-- Items at **+2 indent** from the introducing line's base column, each prefixed with a comma and a space (including the first).
+- Commas at the introducing line's **inherited base column**, each followed by a space and the item (including the first). Choosing a broken structural layout does not itself add indentation.
 - **A multi-line item anchors at its content column.** The comma-and-space prefix acts as one +2 nesting level: an item that spans multiple lines lays out exactly as it would at the start of a line, translated to its content column (the comma column + 2). A lambda item's broken block body therefore sits at +2 from the lambda's own header and its closing `}` returns to the item's content column (the § Block bodies rule, anchored at the construct's head) — never level with the commas. A nested list item indents its own items from the item's content column the same way.
-- The closer (`)`, `}`) sits on its own line at the **same +2 indent column** as the items.
+- The closer (`)`, `}`) sits on its own line at the **same base column** as the commas.
 - The continuation after the closer (`-> R`, `{ … }`, `;`) follows on the closer's line.
 
 ```kio
 fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
   reverse(fold_list(
-    , xs
-    , nil(A, ())
-    , .(carry: List(A), x: A) -> List(A) {
-        if! keep(x) {
-          cons(x, carry)
-        } else {
-          carry
-        }
-      }
-    ))
+  , xs
+  , nil(A, ())
+  , .(carry: List(A), x: A) -> List(A) {
+      if! keep(x) { cons(x, carry) } else { carry }
+    }
+  ))
 }
 ```
 
@@ -238,18 +228,18 @@ own OPEN and CLOSE runs for every element count. The flat form has a space
 inside each delimiter (`[* a, b *]`), or one space between the delimiters when
 empty (`[* *]`), keeping symbol runs separate. Zero- and one-element literals
 stay flat under the ordinary list rule. A longer literal stays flat when it
-fits; otherwise OPEN ends the introducing line, every element occupies a +2
-line with a leading comma, and CLOSE occupies its own +2 line. Continuations
+fits; otherwise OPEN ends the introducing line, every element's leading comma
+and CLOSE occupy the introducing line's base column. Continuations
 within an element align with its content after the comma. Leading, repeated
 and trailing input commas collapse to this ordinary list layout.
 
 ```kio
 let values =
   [!
-    , first_value
-    , second_value
-    , third_value
-    !];
+  , first_value
+  , second_value
+  , third_value
+  !];
 ```
 
 ## UFCS chains
@@ -278,16 +268,18 @@ let r =
   receiver
     .>one(x)
     .>two(
-      , arg_one
-      , arg_two
-      , arg_three
-      )
+    , arg_one
+    , arg_two
+    , arg_three
+    )
     .>three(y);
 ```
 
 **Zero-arg segments** emit without parentheses in either layout — `r.>f` / `r.>>f` are the no-existing-arg spellings, and a `.>f` or `.>>f` segment inside a broken chain keeps the same form.
 
 Written empty UFCS tails are not formatter inputs: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are parse errors. To pass Unit in addition to the receiver, write it explicitly as `(())`; the formatter preserves that nonempty list.
+
+An ordinary call of a UFCS result keeps its grouping: `(vault.>Vault.open)()`, `(vault.>Vault.open)(())`, and `(vault.>Vault.open)(value)` call the recovered value. Their parentheses distinguish the outer call from arguments belonging to the splice.
 
 **Left-call splices** preserve their spelling. With no existing arguments, `f.<x` and `f.<<x` emit without an empty `()`; with existing arguments, `f(a).<x` and `f(a).<<x` keep the call on the left. If the inserted right-hand value is compound enough that dropping grouping would change the parse, `kio fmt` emits parentheses, for example `f.<(x.>g)`.
 
@@ -311,7 +303,7 @@ by exactly one space and the same path shape. Dot-separated segments have no
 surrounding spaces; slash-qualified paths and non-path expressions are not
 declaration syntax.
 
-**Recursive-call annotations.** `kio fmt` preserves the presence of each `rec` call annotation but canonicalizes their order to `poly`, `cont`, `escape`. For example, `rec(cont, poly) f(x)` emits as `rec(poly, cont) f(x)`.
+**Recursive-call annotations.** Recursive calls use `recur`; recursive declarations retain `rec`. Annotations use the order `poly`, `cont`, `escape`, with any implied annotation omitted. Since `escape` entails `cont`, `recur(escape, cont, poly) f(x)` emits as `recur(poly, escape) f(x)`; `recur(cont, poly) f(x)` emits as `recur(poly, cont) f(x)`.
 
 ## `op` patterns
 
@@ -374,17 +366,17 @@ grammars. Empty blocks are skipped.
 Selective imports always use parentheses, including for one item. The opening
 parenthesis immediately follows the module path on the introducing line; the
 flat form is `import module/path(First, second);`. A nonempty list breaks using
-the ordinary A1 rule: one item per +2 line with a leading comma, and its closer
-on a +2 line. The tag and full grammar form one operator selection; the two
+the ordinary A1 rule: one item per line with its leading comma at the inherited
+base column, and its closer at the same column. The tag and full grammar form one operator selection; the two
 delimiters of a `varop` head stay together on that line.
 
 ```kio
 import module/path(
-  , First
-  , op _ ? _ : ___
-  , second
-  , varop [% %]
-  );
+, First
+, op _ ? _ : ___
+, second
+, varop [% %]
+);
 ```
 
 Comments remain attached to their statement or selected item when sorting.

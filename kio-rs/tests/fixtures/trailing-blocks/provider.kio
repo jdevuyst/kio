@@ -23,21 +23,21 @@ pure fn first_checked(ct: __Comptime__, _values: __Checked_term__) -> __Checked_
 }
 
 pure fn enter_checked(
-  , ct: __Comptime__
-  , fills: __Fill_ctx__
-  , _result: __Type__
-  , body: __Checked_term__
-  ) -> __Checked_term__ & __Fill_ctx__ {
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _result: __Type__
+, body: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
   (__term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct)), fills)
 }
 
 pure fn sequence_checked(
-  , ct: __Comptime__
-  , _constructor: __Type__
-  , _result: __Type__
-  , receiver: __Checked_term__
-  , body: __Checked_term__
-  ) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, body), body, receiver) }
+, ct: __Comptime__
+, _constructor: __Type__
+, _result: __Type__
+, receiver: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, body), body, receiver) }
 
 pub elab packet : [A] A -> A { trailing product; impl identity_checked }
 

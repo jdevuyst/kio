@@ -7,11 +7,7 @@ import testapi/array as arrays;
 import testapi/iter(loop);
 
 pub fn equal(a: I32, b: I32) -> Bool {
-  if! arith.leq_i32(a, b) {
-    arith.leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! arith.leq_i32(a, b) { arith.leq_i32(b, a) } else { .f }
 }
 
 pub fn empty[A]() -> Array(A) { arrays.array_make_empty() }
@@ -25,7 +21,7 @@ rec(loop) fn reverse_range[A](items: Array(A), left: I32, right: I32) -> Array(A
     items
   } else {
     arrays.array_swap(items, left, right);
-    rec reverse_range(items, arith.add_i32(left, 1), arith.sub_i32(right, 1))
+    recur reverse_range(items, arith.add_i32(left, 1), arith.sub_i32(right, 1))
   }
 }
 

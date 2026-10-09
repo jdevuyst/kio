@@ -15,17 +15,19 @@ fn weighted_text[A](show: A -> String, outcome: A, weight: I32) -> String {
 }
 
 pub fn distribution[A](
-  , title: String
-  , choices: choice.Choice(A)
-  , support: lists.List(A)
-  , equal: (A & A) -> Bool
-  , show: A -> String
-  ) {
+, title: String
+, choices: choice.Choice(A)
+, support: lists.List(A)
+, equal: (A & A) -> Bool
+, show: A -> String
+) {
   let counts =
     traversal.map(
-      , .(outcome) { (outcome, choice.mass(choices, .(candidate) { equal(outcome, candidate) })) }
-      , support
-      );
+    , .(outcome) {
+        (outcome, choice.mass(choices, .(candidate) { equal(outcome, candidate) }))
+      }
+    , support
+    );
   let rendered =
     traversal.to_string(.(outcome, weight) { weighted_text(show, outcome, weight) }, counts);
   title
@@ -42,13 +44,7 @@ pub fn integer_distribution(title: String, choices: choice.Choice(I32), support:
 }
 
 pub fn bool_equal(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else if! right {
-    .f
-  } else {
-    .t
-  }
+  if! left { right } else if! right { .f } else { .t }
 }
 
 pub fn count(title: String, value: I32) {

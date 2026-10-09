@@ -57,26 +57,18 @@ fn no_expr() -> List(Placed) | . { widen_sum!((), List(Placed) | .) }
 rec(loop) fn gather(acc: List(Placed), n: I32) -> List(Placed) | . {
   match! read_ascii_line() {
     (
-      , .(line: String) {
-          if! string_eq(line, "") {
-            if! is_empty(acc) {
-              rec gather(acc, n)
-            } else {
-              some_expr(reverse(acc))
-            }
-          } else {
-            let spot = add_i32(n, 1);
-            rec gather(cons(place(classify(line), spot), acc), spot)
-          }
+    , .(line: String) {
+        if! string_eq(line, "") {
+          if! is_empty(acc) { recur gather(acc, n) } else { some_expr(reverse(acc)) }
+        } else {
+          let spot = add_i32(n, 1);
+          recur gather(cons(place(classify(line), spot), acc), spot)
         }
-      , .(_eof: .) {
-          if! is_empty(acc) {
-            no_expr()
-          } else {
-            some_expr(reverse(acc))
-          }
-        }
-      )
+      }
+    , .(_eof: .) {
+        if! is_empty(acc) { no_expr() } else { some_expr(reverse(acc)) }
+      }
+    )
   }
 }
 
@@ -87,13 +79,13 @@ fn say(text: String) { print(cat(text, "\n")) }
 fn report_answer(a: Answer, t: Tally) -> Tally {
   match! a {
     (
-      , .(v: Value) { say(cat("  value: ", show_int(v.?{value}))); note_ok(t) }
-      , .(f: Failed) {
-          let failure = f.?{failed};
-          say(cat("  error: ", show_fault(failure)));
-          note_fault(t, fault_of(failure))
-        }
-      )
+    , .(v: Value) { say(cat("  value: ", show_int(v.?{value}))); note_ok(t) }
+    , .(f: Failed) {
+        let failure = f.?{failed};
+        say(cat("  error: ", show_fault(failure)));
+        note_fault(t, fault_of(failure))
+      }
+    )
   }
 }
 
@@ -104,29 +96,29 @@ fn report_expr(index: I32, toks: List(Placed), t: Tally) -> Tally {
   say(cat("expr ", cat(show_int(index), cat(": ", show_infix(toks)))));
   match! to_rpn(toks) {
     (
-      , .(q: Rpn) {
-          let queue = q.?{rpn};
-          say(cat("  rpn: ", show_rpn(queue)));
-          report_answer(evaluate(queue, len(toks)), t)
-        }
-      , .(f: Rpn_failed) {
-          let failure = f.?{rpn_failed};
-          say(cat("  error: ", show_fault(failure)));
-          note_fault(t, fault_of(failure))
-        }
-      )
+    , .(q: Rpn) {
+        let queue = q.?{rpn};
+        say(cat("  rpn: ", show_rpn(queue)));
+        report_answer(evaluate(queue, len(toks)), t)
+      }
+    , .(f: Rpn_failed) {
+        let failure = f.?{rpn_failed};
+        say(cat("  error: ", show_fault(failure)));
+        note_fault(t, fault_of(failure))
+      }
+    )
   }
 }
 
 rec(loop) fn drive(index: I32, t: Tally) -> Tally {
   match! read_expr() {
     (
-      , .(toks: List(Placed)) {
-          let next = report_expr(index, toks, t);
-          rec drive(add_i32(index, 1), next)
-        }
-      , .(_end: .) { t }
-      )
+    , .(toks: List(Placed)) {
+        let next = report_expr(index, toks, t);
+        recur drive(add_i32(index, 1), next)
+      }
+    , .(_end: .) { t }
+    )
   }
 }
 

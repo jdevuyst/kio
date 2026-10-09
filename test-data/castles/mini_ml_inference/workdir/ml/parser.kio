@@ -28,7 +28,7 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
       } else if! text.string_eq(token, "lam") {
         match! lists.uncons(rest) {
           .(name: String, after: Tokens) {
-            match! rec(cont) expression(after) {
+            match! recur(cont) expression(after) {
               .(body: ast.Expr, remaining: Tokens) {
                 (ast.lambda_expr(name, body), remaining).>widen_sum!
               };
@@ -40,9 +40,9 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
       } else if! text.string_eq(token, "let") {
         match! lists.uncons(rest) {
           .(name: String, after: Tokens) {
-            match! rec(cont) expression(after) {
+            match! recur(cont) expression(after) {
               .(value: ast.Expr, middle: Tokens) {
-                match! rec(cont) expression(middle) {
+                match! recur(cont) expression(middle) {
                   .(body: ast.Expr, remaining: Tokens) {
                     (ast.binding_expr(name, value, body), remaining).>widen_sum!
                   };
@@ -55,15 +55,11 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
           .() { "missing let name".>widen_sum! }
         }
       } else {
-        let binary = if! text.string_eq(token, "app") {
-          .t
-        } else {
-          text.string_eq(token, "pair")
-        };
+        let binary = if! text.string_eq(token, "app") { .t } else { text.string_eq(token, "pair") };
         if! binary {
-          match! rec(cont) expression(rest) {
+          match! recur(cont) expression(rest) {
             .(left: ast.Expr, middle: Tokens) {
-              match! rec(cont) expression(middle) {
+              match! recur(cont) expression(middle) {
                 .(right: ast.Expr, remaining: Tokens) {
                   let result =
                     if! text.string_eq(token, "app") {

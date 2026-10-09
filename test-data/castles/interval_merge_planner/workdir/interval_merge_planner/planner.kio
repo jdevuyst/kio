@@ -10,18 +10,18 @@ import testapi/text as text;
 labels Window = { window_name: String, start_minute: I32, end_minute: I32 };
 
 labels Plan = {
-  , current_start: I32
-  , current_end: I32
-  , current_windows: I32
-  , closed_segments: I32
-  , covered_minutes: I32
-  , idle_gap_count: I32
-  , idle_minutes: I32
-  , merged_edges: I32
-  , touching_edges: I32
-  , conflict_count: I32
-  , conflict_minutes: I32
-  };
+, current_start: I32
+, current_end: I32
+, current_windows: I32
+, closed_segments: I32
+, covered_minutes: I32
+, idle_gap_count: I32
+, idle_minutes: I32
+, merged_edges: I32
+, touching_edges: I32
+, conflict_count: I32
+, conflict_minutes: I32
+};
 
 fn window(name: String, start: I32, end: I32) -> Window {
   {window_name = name, start_minute = start, end_minute = end}
@@ -42,43 +42,31 @@ fn audit_sync() -> Window { window("audit-sync", 360, 395) }
 fn duration(start: I32, end: I32) -> I32 { arith.sub_i32(end, start) }
 
 fn max_i32(left: I32, right: I32) -> I32 {
-  if! arith.lt_i32(left, right) {
-    right
-  } else {
-    left
-  }
+  if! arith.lt_i32(left, right) { right } else { left }
 }
 
 fn add_if(flag: Bool, base: I32, amount: I32) -> I32 {
-  if! flag {
-    arith.add_i32(base, amount)
-  } else {
-    base
-  }
+  if! flag { arith.add_i32(base, amount) } else { base }
 }
 
 fn overlap_minutes(active_end: I32, next_start: I32) -> I32 {
-  if! arith.lt_i32(next_start, active_end) {
-    arith.sub_i32(active_end, next_start)
-  } else {
-    0
-  }
+  if! arith.lt_i32(next_start, active_end) { arith.sub_i32(active_end, next_start) } else { 0 }
 }
 
 fn initial_plan(first: Window) -> Plan {
   {
-    , current_start = first.?{start_minute}
-    , current_end = first.?{end_minute}
-    , current_windows = 1
-    , closed_segments = 0
-    , covered_minutes = 0
-    , idle_gap_count = 0
-    , idle_minutes = 0
-    , merged_edges = 0
-    , touching_edges = 0
-    , conflict_count = 0
-    , conflict_minutes = 0
-    }
+  , current_start = first.?{start_minute}
+  , current_end = first.?{end_minute}
+  , current_windows = 1
+  , closed_segments = 0
+  , covered_minutes = 0
+  , idle_gap_count = 0
+  , idle_minutes = 0
+  , merged_edges = 0
+  , touching_edges = 0
+  , conflict_count = 0
+  , conflict_minutes = 0
+  }
 }
 
 fn merge_plan(plan: Plan, next: Window) -> Plan {
@@ -88,36 +76,36 @@ fn merge_plan(plan: Plan, next: Window) -> Plan {
   let has_conflict = arith.lt_i32(next_start, plan.?{current_end});
   let has_touch = arith.eq_i32(next_start, plan.?{current_end});
   {
-    , current_start = plan.?{current_start}
-    , current_end = max_i32(plan.?{current_end}, next_end)
-    , current_windows = arith.add_i32(plan.?{current_windows}, 1)
-    , closed_segments = plan.?{closed_segments}
-    , covered_minutes = plan.?{covered_minutes}
-    , idle_gap_count = plan.?{idle_gap_count}
-    , idle_minutes = plan.?{idle_minutes}
-    , merged_edges = arith.add_i32(plan.?{merged_edges}, 1)
-    , touching_edges = add_if(has_touch, plan.?{touching_edges}, 1)
-    , conflict_count = add_if(has_conflict, plan.?{conflict_count}, 1)
-    , conflict_minutes = arith.add_i32(plan.?{conflict_minutes}, overlap)
-    }
+  , current_start = plan.?{current_start}
+  , current_end = max_i32(plan.?{current_end}, next_end)
+  , current_windows = arith.add_i32(plan.?{current_windows}, 1)
+  , closed_segments = plan.?{closed_segments}
+  , covered_minutes = plan.?{covered_minutes}
+  , idle_gap_count = plan.?{idle_gap_count}
+  , idle_minutes = plan.?{idle_minutes}
+  , merged_edges = arith.add_i32(plan.?{merged_edges}, 1)
+  , touching_edges = add_if(has_touch, plan.?{touching_edges}, 1)
+  , conflict_count = add_if(has_conflict, plan.?{conflict_count}, 1)
+  , conflict_minutes = arith.add_i32(plan.?{conflict_minutes}, overlap)
+  }
 }
 
 fn close_and_start(plan: Plan, next: Window) -> Plan {
   let closed_duration = duration(plan.?{current_start}, plan.?{current_end});
   let gap = arith.sub_i32(next.?{start_minute}, plan.?{current_end});
   {
-    , current_start = next.?{start_minute}
-    , current_end = next.?{end_minute}
-    , current_windows = 1
-    , closed_segments = arith.add_i32(plan.?{closed_segments}, 1)
-    , covered_minutes = arith.add_i32(plan.?{covered_minutes}, closed_duration)
-    , idle_gap_count = arith.add_i32(plan.?{idle_gap_count}, 1)
-    , idle_minutes = arith.add_i32(plan.?{idle_minutes}, gap)
-    , merged_edges = plan.?{merged_edges}
-    , touching_edges = plan.?{touching_edges}
-    , conflict_count = plan.?{conflict_count}
-    , conflict_minutes = plan.?{conflict_minutes}
-    }
+  , current_start = next.?{start_minute}
+  , current_end = next.?{end_minute}
+  , current_windows = 1
+  , closed_segments = arith.add_i32(plan.?{closed_segments}, 1)
+  , covered_minutes = arith.add_i32(plan.?{covered_minutes}, closed_duration)
+  , idle_gap_count = arith.add_i32(plan.?{idle_gap_count}, 1)
+  , idle_minutes = arith.add_i32(plan.?{idle_minutes}, gap)
+  , merged_edges = plan.?{merged_edges}
+  , touching_edges = plan.?{touching_edges}
+  , conflict_count = plan.?{conflict_count}
+  , conflict_minutes = plan.?{conflict_minutes}
+  }
 }
 
 fn consume(plan: Plan, next: Window) -> Plan {
@@ -213,10 +201,10 @@ pub fn run() {
   line("merged_edges=", p6.?{merged_edges});
   line("touching_edges=", p6.?{touching_edges});
   io.print(cat3(
-    , "touch_backup_to_search="
-    , show_bool(arith.eq_i32(w1.?{end_minute}, w2.?{start_minute}))
-    , "\n"
-    ));
+  , "touch_backup_to_search="
+  , show_bool(arith.eq_i32(w1.?{end_minute}, w2.?{start_minute}))
+  , "\n"
+  ));
   line("conflicts=", p6.?{conflict_count});
   line("conflict_minutes=", p6.?{conflict_minutes})
 }

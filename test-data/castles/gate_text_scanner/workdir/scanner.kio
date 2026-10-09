@@ -9,11 +9,7 @@ pub fn script() -> String { "OPEN gate\nSET mode=A\nPING 007\nBAD ??\nLOCK gate\
 fn is_script_len(n: I32) -> Bool { string_eq(string_slice(script(), 0, n), script()) }
 
 pub fn script_len_tag() -> String {
-  if! is_script_len(string_len(script())) {
-    "script-58"
-  } else {
-    "script-mismatch"
-  }
+  if! is_script_len(string_len(script())) { "script-58" } else { "script-mismatch" }
 }
 
 pub fn token(start: I32, end: I32) -> String { string_slice(script(), start, end) }
@@ -38,11 +34,7 @@ pub fn command_tag(start: I32, end: I32) -> String {
 }
 
 pub fn gate_target(start: I32, end: I32) -> String {
-  if! eq_slice(start, end, "gate") {
-    "gate"
-  } else {
-    token(start, end)
-  }
+  if! eq_slice(start, end, "gate") { "gate" } else { token(start, end) }
 }
 
 pub fn class_for(mark: String) -> String {

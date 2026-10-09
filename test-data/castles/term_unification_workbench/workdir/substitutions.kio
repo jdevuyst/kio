@@ -31,20 +31,20 @@ rec(loop) {
     match! original.>term.Term.unwrap {
       .(v: term.Variable) {
         match! lookup(bindings, v.>term.Variable.get) {
-          .(replacement: term.Term) { rec ascend(bindings, replacement, parents) };
-          .(_missing: .) { rec ascend(bindings, original, parents) }
+          .(replacement: term.Term) { recur ascend(bindings, replacement, parents) };
+          .(_missing: .) { recur ascend(bindings, original, parents) }
         }
       };
       .(symbol: I32, arguments: lists.List(term.Term)) {
         match! lists.uncons(arguments) {
           .(first: term.Term, rest: lists.List(term.Term)) {
-            rec descend(
-              , bindings
-              , first
-              , lists.cons({symbol, completed = lists.nil(_), remaining = rest}, parents)
-              )
+            recur descend(
+            , bindings
+            , first
+            , lists.cons({symbol, completed = lists.nil(_), remaining = rest}, parents)
+            )
           };
-          .(_empty: .) { rec ascend(bindings, original, parents) }
+          .(_empty: .) { recur ascend(bindings, original, parents) }
         }
       }
     }
@@ -55,14 +55,14 @@ rec(loop) {
         let completed = lists.cons(value, frame.?{completed});
         match! lists.uncons(frame.?{remaining}) {
           .(first: term.Term, rest: lists.List(term.Term)) {
-            rec descend(
-              , bindings
-              , first
-              , lists.cons({symbol = frame.?{symbol}, completed, remaining = rest}, outer)
-              )
+            recur descend(
+            , bindings
+            , first
+            , lists.cons({symbol = frame.?{symbol}, completed, remaining = rest}, outer)
+            )
           };
           .(_empty: .) {
-            rec ascend(bindings, term.node(frame.?{symbol}, traversal.reverse(completed)), outer)
+            recur ascend(bindings, term.node(frame.?{symbol}, traversal.reverse(completed)), outer)
           }
         }
       };
@@ -80,20 +80,20 @@ pub fn extend(bindings: Substitution, id: I32, value: term.Term) -> Substitution
   let singleton = lists.singleton(binding);
   let composed =
     traversal.map(
-      , .(old) { {key = old.?{key}, replacement = apply(singleton, old.?{replacement})} }
-      , bindings
-      );
+    , .(old) { {key = old.?{key}, replacement = apply(singleton, old.?{replacement})} }
+    , bindings
+    );
   lists.cons(binding, composed)
 }
 
 fn show_binding(binding: Binding) -> String {
   string_concat(
-    , "v"
-    , string_concat(
-        , fmt.int_to_string(binding.?{key})
-        , string_concat("=", term.render(binding.?{replacement}))
-        )
+  , "v"
+  , string_concat(
+    , fmt.int_to_string(binding.?{key})
+    , string_concat("=", term.render(binding.?{replacement}))
     )
+  )
 }
 
 pub fn render(bindings: Substitution) -> String { traversal.to_string(show_binding, bindings) }

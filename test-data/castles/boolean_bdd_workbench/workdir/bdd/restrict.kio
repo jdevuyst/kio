@@ -20,9 +20,9 @@ fn remember(s: State, from: table.Node_id, to: table.Node_id) -> State & table.N
 
 rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> State & table.Node_id {
   match! walk.find(
-    , .(from: table.Node_id, _to: table.Node_id) { table.same_id(from, id) }
-    , s.?{cache}
-    ) {
+  , .(from: table.Node_id, _to: table.Node_id) { table.same_id(from, id) }
+  , s.?{cache}
+  ) {
     .(_from: table.Node_id, to: table.Node_id) {
       (s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod!(State), to)
     };
@@ -30,33 +30,29 @@ rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> S
       match! table.lookup(s.?{store}, id) {
         .(node: table.Node) {
           if! arith.eq_i32(node.?{table.level}, variable) {
-            let answer = if! value {
-              node.?{table.high}
-            } else {
-              node.?{table.low}
-            };
+            let answer = if! value { node.?{table.high} } else { node.?{table.low} };
             remember(s, id, answer)
           } else if! arith.lt_i32(variable, node.?{table.level}) {
             remember(s, id, id)
           } else {
-            let .(after_low: State, low: table.Node_id) = rec(cont) visit(
-              , s
-              , node.?{table.low}
-              , variable
-              , value
-              );
-            let .(after_high: State, high: table.Node_id) = rec(cont) visit(
-              , after_low
-              , node.?{table.high}
-              , variable
-              , value
-              );
+            let .(after_low: State, low: table.Node_id) = recur(cont) visit(
+            , s
+            , node.?{table.low}
+            , variable
+            , value
+            );
+            let .(after_high: State, high: table.Node_id) = recur(cont) visit(
+            , after_low
+            , node.?{table.high}
+            , variable
+            , value
+            );
             let .(store: table.Store, answer: table.Node_id) = table.intern(
-              , after_high.?{store}
-              , node.?{table.level}
-              , low
-              , high
-              );
+            , after_high.?{store}
+            , node.?{table.level}
+            , low
+            , high
+            );
             remember(after_high.!{store}, id, answer)
           }
         };

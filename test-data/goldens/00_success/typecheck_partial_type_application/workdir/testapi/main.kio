@@ -11,9 +11,13 @@ fn id[A](x: A) -> A { x }
 
 fn lift[*F][A](x: F(A)) -> F(A) { x }
 
-fn make_id[A]() -> A -> A { .(x: A) { x } }
+fn make_id[A]() -> A -> A {
+  .(x: A) { x }
+}
 
-fn make_hkt_id[*F][A]() -> F(A) -> F(A) { .(x: F(A)) { x } }
+fn make_hkt_id[*F][A]() -> F(A) -> F(A) {
+  .(x: F(A)) { x }
+}
 
 fn apply_token_id(f: Token -> Token, x: Token) -> Token { f(x) }
 

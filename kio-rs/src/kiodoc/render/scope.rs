@@ -332,7 +332,7 @@ mod tests {
              pub type {forward} = {field}; \
              pub op _ + _ { impl add; }; pub elab choose : . -> . { impl choose_impl; }; \
              host type Text role(str); host fn emit(value: Text) -> .; \
-             rec(loop) { pub fn first(x: .) -> . { rec second(x) }; fn second(x: .) -> . { rec first(x) } } \
+             rec(loop) { pub fn first(x: .) -> . { recur second(x) }; fn second(x: .) -> . { recur first(x) } } \
              rec { pub type Chain = Node; pub newtype Node : . | Chain { constructor wrap; projector unwrap; }; pub labels Markers = { mark: . }; }"
         ).unwrap();
         let refs = crate::kiodoc::refs::module_scope_from_surface_for_boundary(&module);
@@ -520,8 +520,8 @@ mod tests {
         let scope = ModuleScope::from_source(
             "module pkg/main;\n\
              rec(loop) {\n\
-               fn first(value: First) -> First { rec second(value) };\n\
-               fn second(value: Second) -> Second { rec first(value) }\n\
+               fn first(value: First) -> First { recur second(value) };\n\
+               fn second(value: Second) -> Second { recur first(value) }\n\
              }\n",
         )
         .unwrap();
@@ -657,9 +657,9 @@ mod tests {
                 "pkg/main",
                 "module pkg/main;\n\
                  rec(loop) {\n\
-                   fn local(value: .) -> . { rec exported(value) };\n\
-                   pub(pkg) fn scoped(value: .) -> . { rec local(value) };\n\
-                   pub fn exported(value: .) -> . { rec scoped(value) }\n\
+                   fn local(value: .) -> . { recur exported(value) };\n\
+                   pub(pkg) fn scoped(value: .) -> . { recur local(value) };\n\
+                   pub fn exported(value: .) -> . { recur scoped(value) }\n\
                  }\n",
             )),
         );

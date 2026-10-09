@@ -1139,6 +1139,32 @@ v(2) {
     }
 
     #[test]
+    fn generic_sum_boundaries_preserve_identity_and_required_callable_conversion() {
+        let emitted = render(
+            "module api; \
+             host fn choose[A][B](step: . -> (A | B)) -> A | B; \
+             fn roundtrip[A][B](step: . -> (A | B)) -> A | B { choose(A, B, step) } \
+             host fn thunks(value: (. -> .) | .) -> (. -> .) | .; \
+             fn converted(value: (. -> .) | .) -> (. -> .) | . { thunks(value) }",
+        )
+        .expect("render generic and callable sum boundaries");
+        let equation = |name: &str| {
+            let prefix = format!("{} _pkg", module_fn("api", name));
+            emitted
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .expect("module equation")
+        };
+        let unchanged = equation("roundtrip");
+        assert!(unchanged.contains("host__api__choose"), "{unchanged}");
+        assert!(!unchanged.contains("case"), "{unchanged}");
+        assert!(!unchanged.contains("__hfr"), "{unchanged}");
+        let converted = equation("converted");
+        assert!(converted.contains("case"), "{converted}");
+        assert!(converted.contains("__hfd"), "{converted}");
+    }
+
+    #[test]
     fn rank_n_prepared_callback_and_host_value_returns_use_exact_lifts() {
         let emitted = render(
             "module api; \
@@ -2101,8 +2127,14 @@ v(2) {
             .lines()
             .find(|line| line.starts_with("export__api__ordinary _pkg"))
             .expect("ordinary sum wrapper");
-        assert!(ordinary.contains("case "), "{ordinary}");
-        assert!(!ordinary.contains("either @"), "{ordinary}");
+        assert_eq!(
+            ordinary,
+            format!(
+                "{} _pkg arg0 = pure ({} _pkg arg0)",
+                export_wrapper("api", "ordinary"),
+                module_fn("api", "ordinary")
+            )
+        );
     }
 
     #[test]

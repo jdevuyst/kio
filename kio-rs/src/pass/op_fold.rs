@@ -3381,8 +3381,8 @@ mod tests {
         let consumer = p("module x; \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
-               fn hidden(a: A) -> A { rec other(a) }; \
-               fn other(a: A) -> A { rec hidden(a) } \
+               fn hidden(a: A) -> A { recur other(a) }; \
+               fn other(a: A) -> A { recur hidden(a) } \
              } \
              op + _ { impl hidden; };");
         validate_against_modules(&consumer, &[])
@@ -3394,8 +3394,8 @@ mod tests {
         let consumer = p("module x; \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
-               pub fn visible(a: A) -> A { rec hidden(a) }; \
-               fn hidden(a: A) -> A { rec visible(a) } \
+               pub fn visible(a: A) -> A { recur hidden(a) }; \
+               fn hidden(a: A) -> A { recur visible(a) } \
              } \
              op + _ { impl visible; };");
         validate_against_modules(&consumer, &[]).expect("public rec member is a callable target");

@@ -19,9 +19,9 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
 pub rec(loop) fn reverse_list[A](source: List(A), carry: List(A)) -> List(A) {
   match! uncons(source) {
     (
-      , .(head: A, tail: List(A)) { rec reverse_list(tail, cons(head, carry)) }
-      , .(_empty: .) { carry }
-      )
+    , .(head: A, tail: List(A)) { recur reverse_list(tail, cons(head, carry)) }
+    , .(_empty: .) { carry }
+    )
   }
 }
 
@@ -39,8 +39,8 @@ pub fn enqueue[A](x: A, q: Queue(A)) -> Queue(A) {
 pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
   let .(empty_result: (A & Queue(A)) | .) = absent(_);
   fold_result(
-    , empty_result
-    , .(pair: A & Queue(A)) { let .(x: A, rest: Queue(A)) = pair; present((x, canonical(rest))) }
-    , pop_front(q)
-    )
+  , empty_result
+  , .(pair: A & Queue(A)) { let .(x: A, rest: Queue(A)) = pair; present((x, canonical(rest))) }
+  , pop_front(q)
+  )
 }

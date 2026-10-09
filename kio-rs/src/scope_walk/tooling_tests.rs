@@ -276,39 +276,39 @@ fn names(entries: &[Candidate]) -> Vec<&str> {
 #[test]
 fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
     let mut failures = Vec::new();
-    for (prefix, eligible) in [
-        ("", true),
-        ("sequence! bind { ", true),
-        ("sequence! bind { let local = parent; ", true),
-        ("sequence! bind { let local <- ", true),
+    for (prefix, escaping) in [
+        ("", false),
+        ("sequence! bind { ", false),
+        ("sequence! bind { let local = parent; ", false),
+        ("sequence! bind { let local <- ", false),
         ("sequence! bind { let local <- parent; ", true),
-        ("sequence! bind { parent; ", true),
-        ("sequence! bind { parent; let local = parent; ", true),
+        ("sequence! bind { parent; ", false),
+        ("sequence! bind { parent; let local = parent; ", false),
         (
             "sequence! bind { let .(first, second) <- (parent, parent); ",
             true,
         ),
-        ("scope! { let local = parent; ", true),
-        ("scope! { parent; ", true),
+        ("scope! { let local = parent; ", false),
+        ("scope! { parent; ", false),
         (
             "let prior = sequence! bind { let local <- parent; local }; ",
-            true,
+            false,
         ),
         (
             "sequence! bind { let local = sequence! bind { let nested <- parent; nested }; ",
-            true,
+            false,
         ),
         (
             "sequence! bind { let local <- sequence! bind { let nested <- parent; nested }; ",
             true,
         ),
-        ("sequence! bind { .() { ", false),
+        ("sequence! bind { .() { ", true),
     ] {
         for (tail, slot) in [
             ("", CursorSlot::Value),
             ("identity(", CursorSlot::Argument),
-            ("rec(", CursorSlot::RecursiveAnnotation),
-            ("rec ", CursorSlot::RecursiveCallee),
+            ("recur(", CursorSlot::RecursiveAnnotation),
+            ("recur ", CursorSlot::RecursiveCallee),
         ] {
             let source = format!(
                 "module app; fn identity(value: .) {{ value }} rec(loop) fn run[A](parent: .) {{ {prefix}{tail}"
@@ -321,15 +321,20 @@ fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
             );
             let result = project(&probe);
             let matches_eligibility = match slot {
-                CursorSlot::RecursiveAnnotation => ["cont", "poly"]
-                    .iter()
-                    .all(|word| result.keywords.contains(word) == eligible),
-                CursorSlot::RecursiveCallee => names(&result.values).contains(&"run") == eligible,
-                _ => result.keywords.contains(&"rec") == eligible,
+                CursorSlot::RecursiveAnnotation => {
+                    result.keywords
+                        == if escaping {
+                            vec!["escape", "poly"]
+                        } else {
+                            vec!["cont", "poly"]
+                        }
+                }
+                CursorSlot::RecursiveCallee => names(&result.values).contains(&"run"),
+                _ => result.keywords.contains(&"recur"),
             };
             if result.slot != Some(slot) || !matches_eligibility {
                 failures.push(format!(
-                    "{source}: expected {slot:?}, eligible={eligible}, got {result:?}"
+                    "{source}: expected {slot:?}, escaping={escaping}, got {result:?}"
                 ));
             }
         }
@@ -361,7 +366,7 @@ fn neutral_block_completion_preserves_locals_and_preceding_positions() {
         let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
         let result = project(&probe);
         assert_eq!(names(&result.values), expected, "{marked}");
-        assert!(result.keywords.contains(&"rec"), "{marked}");
+        assert!(result.keywords.contains(&"recur"), "{marked}");
     }
 }
 
@@ -397,7 +402,7 @@ fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_b
         let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
         let result = project(&probe);
         assert_eq!(
-            result.keywords.contains(&"rec"),
+            result.keywords.contains(&"recur"),
             eligible,
             "{marked}: {result:?}"
         );

@@ -9,9 +9,5 @@ host fn a() -> .;
 host fn b() -> .;
 
 pub fn pick() {
-  if! .t {
-    a()
-  } else {
-    b()
-  }
+  if! .t { a() } else { b() }
 }

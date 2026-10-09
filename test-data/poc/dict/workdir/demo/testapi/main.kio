@@ -1,29 +1,29 @@
 module testapi/main;
 
 import library/dict(
-  , Dict
-  , Flag
-  , Ordering
-  , bool_select
-  , delete
-  , eq
-  , filter
-  , fold_asc
-  , get
-  , get_or
-  , gt
-  , insert
-  , intersection
-  , lt
-  , map_values
-  , member
-  , no
-  , op _ => _
-  , size
-  , union
-  , varop [% %]
-  , yes
-  );
+, Dict
+, Flag
+, Ordering
+, bool_select
+, delete
+, eq
+, filter
+, fold_asc
+, get
+, get_or
+, gt
+, insert
+, intersection
+, lt
+, map_values
+, member
+, no
+, op _ => _
+, size
+, union
+, varop [% %]
+, yes
+);
 import library/elab/control(if);
 import library/elab/match(match);
 import library/elab/spine_elaborators(widen_sum);
@@ -34,11 +34,7 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 fn host_bool(b: Bool) -> Flag {
-  if! b {
-    yes()
-  } else {
-    no()
-  }
+  if! b { yes() } else { no() }
 }
 
 fn cmp_i32(pair: I32 & I32) -> Ordering {
@@ -86,35 +82,34 @@ fn show(label: String, value: String) {
 
 fn show_lookup(label: String, result: I32 | .) {
   show(
-    , label
-    , match! result {
-        (
-          , .(n: I32) -> String { string_concat("present(", string_concat(int_to_string(n), ")")) }
-          , .(_absent: .) -> String { "absent" }
-          )
-      }
-    )
+  , label
+  , match! result {
+      (
+      , .(n: I32) -> String { string_concat("present(", string_concat(int_to_string(n), ")")) }
+      , .(_absent: .) -> String { "absent" }
+      )
+    }
+  )
 }
 
 fn show_entries(label: String, d: Dict(I32, I32)) {
   let folded =
     fold_asc(
-      , d
-      , (yes(), "")
-      , .(acc: Flag & String, key: I32, value: I32) -> Flag & String {
-          match! acc {
-            .(first: Flag, body: String) {
-              let entry =
-                string_concat(int_to_string(key), string_concat("=", int_to_string(value)));
-              bool_select(
-                , (no(), entry)
-                , (no(), string_concat(body, string_concat(", ", entry)))
-                , first
-                )
-            }
+    , d
+    , (yes(), "")
+    , .(acc: Flag & String, key: I32, value: I32) -> Flag & String {
+        match! acc {
+          .(first: Flag, body: String) {
+            let entry = string_concat(int_to_string(key), string_concat("=", int_to_string(value)));
+            bool_select(
+            , (no(), entry)
+            , (no(), string_concat(body, string_concat(", ", entry)))
+            , first
+            )
           }
         }
-      );
+      }
+    );
   match! folded {
     .(_first: Flag, body: String) { show(label, string_concat("[", string_concat(body, "]"))) }
   }
@@ -128,11 +123,11 @@ fn unit_dictionary() -> Dict(I32, .) { [% 1 => () %](cmp_i32) }
 
 fn show_lookup_value[A](label: String, result: A | ., format_present: A -> String) {
   show(
-    , label
-    , match! result {
-        (.(value: A) { format_present(value) }, .(_absent: .) { "absent" })
-      }
-    )
+  , label
+  , match! result {
+      (.(value: A) { format_present(value) }, .(_absent: .) { "absent" })
+    }
+  )
 }
 
 fn show_unit_lookup(label: String, result: . | .) {
@@ -145,17 +140,17 @@ fn sum_dictionary() -> Dict(I32, I32 | .) {
 
 fn show_sum_lookup(label: String, result: (I32 | .) | .) {
   show_lookup_value(
-    , label
-    , result
-    , .(present: I32 | .) {
-        match! present {
-          (
-            , .(n: I32) { string_concat("present-number(", string_concat(int_to_string(n), ")")) }
-            , .(_unit: .) { "present-unit" }
-            )
-        }
+  , label
+  , result
+  , .(present: I32 | .) {
+      match! present {
+        (
+        , .(n: I32) { string_concat("present-number(", string_concat(int_to_string(n), ")")) }
+        , .(_unit: .) { "present-unit" }
+        )
       }
-    )
+    }
+  )
 }
 
 pub fn main() {
@@ -183,9 +178,9 @@ pub fn main() {
   show_entries("repeated keys", [% 2 => 20, 1 => 10, 2 => 200, 1 => 100 %](cmp_i32));
   show_entries("descending comparator", [% 1 => 10, 3 => 30, 2 => 20 %](cmp_i32_desc));
   show_int(
-    , "empty fold carry"
-    , fold_asc(empty_literal(), 17, .(n: I32, _k: I32, _v: I32) { add(n, 1) })
-    );
+  , "empty fold carry"
+  , fold_asc(empty_literal(), 17, .(n: I32, _k: I32, _v: I32) { add(n, 1) })
+  );
   show_unit_lookup("unit present", get(cmp_i32, unit_dictionary(), 1));
   show_unit_lookup("unit absent", get(cmp_i32, unit_dictionary(), 2));
   show_sum_lookup("sum number", get(cmp_i32, sum_dictionary(), 1));

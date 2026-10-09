@@ -4,10 +4,7 @@ import elab/control(scope);
 import host(bar, foo);
 
 equiv passes() {
-  scope! {
-    let x = ();
-    x
-  };
+  scope! { let x = (); x };
   ()
 }
 

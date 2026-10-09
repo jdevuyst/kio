@@ -15,11 +15,7 @@ import testapi/iter(loop);
 
 fn choice(remaining: I32) -> Choice {
   let .(done: Bool) = leq_i32(remaining, 0);
-  if! done {
-    widen_sum!({done=}, Choice)
-  } else {
-    widen_sum!({again=}, Choice)
-  }
+  if! done { widen_sum!({done=}, Choice) } else { widen_sum!({again=}, Choice) }
 }
 
 fn report(value: I32) -> Report { {first = value, second = add_i32(value, 1)} }
@@ -28,15 +24,14 @@ fn advance(value: Report) -> Report { report(add_i32(value.?{second}, 1)) }
 
 pub rec(loop) fn descend(remaining: I32) -> Report {
   match! choice(remaining) {
-    (.(_again: Again) { rec descend(sub_i32(remaining, 1)) }, .(_done: Done) { report(remaining) })
+    (
+    , .(_again: Again) { recur descend(sub_i32(remaining, 1)) }
+    , .(_done: Done) { report(remaining) }
+    )
   }
 }
 
 pub rec(loop) fn descend_pending(remaining: I32) -> Report {
   let .(done: Bool) = leq_i32(remaining, 0);
-  if! done {
-    report(0)
-  } else {
-    advance(rec(cont) descend_pending(sub_i32(remaining, 1)))
-  }
+  if! done { report(0) } else { advance(recur(cont) descend_pending(sub_i32(remaining, 1))) }
 }

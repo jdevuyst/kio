@@ -3,39 +3,39 @@
 module book/report;
 
 import book/book(
-  , Book
-  , asks_of
-  , at
-  , best_price
-  , bids_of
-  , cancel_count
-  , cancelled_qty
-  , depth
-  , entered_qty
-  , is_empty
-  , reduced_qty
-  , resting_qty
-  , tape_len
-  , trade_at
-  , unfilled_qty
-  );
+, Book
+, asks_of
+, at
+, best_price
+, bids_of
+, cancel_count
+, cancelled_qty
+, depth
+, entered_qty
+, is_empty
+, reduced_qty
+, resting_qty
+, tape_len
+, trade_at
+, unfilled_qty
+);
 import book/num(int_eq);
 import book/order(
-  , Order
-  , Side
-  , Trade
-  , id_of
-  , price_of
-  , qty_of
-  , remaining_of
-  , seq_of
-  , side_of
-  , side_text
-  , trade_maker
-  , trade_price
-  , trade_qty
-  , trade_taker
-  );
+, Order
+, Side
+, Trade
+, id_of
+, price_of
+, qty_of
+, remaining_of
+, seq_of
+, side_of
+, side_text
+, trade_maker
+, trade_price
+, trade_qty
+, trade_taker
+);
 import book/text as text;
 import elab/control(if);
 import elab/match(match);
@@ -70,12 +70,12 @@ pub fn amend_header(step: I32, id: I32, qty: I32) -> String {
 fn trade_line(t: Trade) -> String {
   let who =
     text.cat5(
-      , "  trade taker "
-      , text.int_text(trade_taker(t))
-      , " maker "
-      , text.int_text(trade_maker(t))
-      , "  "
-      );
+    , "  trade taker "
+    , text.int_text(trade_taker(t))
+    , " maker "
+    , text.int_text(trade_maker(t))
+    , "  "
+    );
   let what =
     text.cat5("qty ", text.int_text(trade_qty(t)), " @ ", text.int_text(trade_price(t)), "\n");
   text.cat2(who, what)
@@ -88,7 +88,7 @@ pub rec(loop) fn print_trades(i: I32, b: Book) {
     ()
   } else {
     print(trade_line(trade_at(b, i)));
-    rec print_trades(add_i32(i, 1), b)
+    recur print_trades(add_i32(i, 1), b)
   }
 }
 
@@ -141,26 +141,26 @@ fn price_text(price: I32 | .) -> String {
 fn spread_text(b: Book) -> String {
   match! best_price(bids_of(b)) {
     (
-      , .(bid: I32) {
-          match! best_price(asks_of(b)) {
-            (.(ask: I32) { text.int_text(sub_i32(ask, bid)) }, .(_none: .) { text.missing() })
-          }
+    , .(bid: I32) {
+        match! best_price(asks_of(b)) {
+          (.(ask: I32) { text.int_text(sub_i32(ask, bid)) }, .(_none: .) { text.missing() })
         }
-      , .(_none: .) { text.missing() }
-      )
+      }
+    , .(_none: .) { text.missing() }
+    )
   }
 }
 
 pub fn book_line(b: Book) -> String {
   text.cat7(
-    , "  book: bid "
-    , price_text(best_price(bids_of(b)))
-    , "  ask "
-    , price_text(best_price(asks_of(b)))
-    , "  spread "
-    , spread_text(b)
-    , "\n"
-    )
+  , "  book: bid "
+  , price_text(best_price(bids_of(b)))
+  , "  ask "
+  , price_text(best_price(asks_of(b)))
+  , "  spread "
+  , spread_text(b)
+  , "\n"
+  )
 }
 
 fn order_line(o: Order) -> String {
@@ -172,14 +172,14 @@ fn order_line(o: Order) -> String {
 
 fn level_line(price: I32, qty: I32, orders: I32) -> String {
   text.cat7(
-    , "    price "
-    , text.int_text(price)
-    , "  qty "
-    , text.int_text(qty)
-    , "  orders "
-    , text.int_text(orders)
-    , "\n"
-    )
+  , "    price "
+  , text.int_text(price)
+  , "  qty "
+  , text.int_text(qty)
+  , "  orders "
+  , text.int_text(orders)
+  , "\n"
+  )
 }
 
 /// One past the last order of the level that starts before `i`. The queue
@@ -189,7 +189,7 @@ rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
   if! leq_i32(depth(orders), i) {
     i
   } else if! int_eq(price_of(at(orders, i)), price) {
-    rec level_end(add_i32(i, 1), price, orders)
+    recur level_end(add_i32(i, 1), price, orders)
   } else {
     i
   }
@@ -199,7 +199,7 @@ rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I3
   if! leq_i32(end, i) {
     total
   } else {
-    rec level_qty(add_i32(i, 1), end, add_i32(total, remaining_of(at(orders, i))), orders)
+    recur level_qty(add_i32(i, 1), end, add_i32(total, remaining_of(at(orders, i))), orders)
   }
 }
 
@@ -208,7 +208,7 @@ rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
     ()
   } else {
     print(order_line(at(orders, i)));
-    rec print_orders(add_i32(i, 1), end, orders)
+    recur print_orders(add_i32(i, 1), end, orders)
   }
 }
 
@@ -220,16 +220,12 @@ rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
     let end = level_end(add_i32(i, 1), price, orders);
     print(level_line(price, level_qty(i, end, 0, orders), sub_i32(end, i)));
     print_orders(i, end, orders);
-    rec print_levels(end, orders)
+    recur print_levels(end, orders)
   }
 }
 
 fn print_side(orders: Array(Order)) {
-  if! is_empty(orders) {
-    print("    (empty)\n")
-  } else {
-    print_levels(0, orders)
-  }
+  if! is_empty(orders) { print("    (empty)\n") } else { print_levels(0, orders) }
 }
 
 /// The queues print best price first, so the two sides read outwards from
@@ -250,7 +246,7 @@ rec(loop) fn sum_volume(i: I32, total: I32, b: Book) -> I32 {
   if! leq_i32(tape_len(b), i) {
     total
   } else {
-    rec sum_volume(add_i32(i, 1), add_i32(total, trade_qty(trade_at(b, i))), b)
+    recur sum_volume(add_i32(i, 1), add_i32(total, trade_qty(trade_at(b, i))), b)
   }
 }
 
@@ -261,7 +257,7 @@ rec(loop) fn sum_notional(i: I32, total: I32, b: Book) -> I32 {
     total
   } else {
     let t = trade_at(b, i);
-    rec sum_notional(add_i32(i, 1), add_i32(total, mul_i32(trade_price(t), trade_qty(t))), b)
+    recur sum_notional(add_i32(i, 1), add_i32(total, mul_i32(trade_price(t), trade_qty(t))), b)
   }
 }
 

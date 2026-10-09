@@ -2,27 +2,27 @@
 module library/vec;
 
 import library/core(
-  , Bounds
-  , Dir
-  , Frame
-  , Frames
-  , Tree
-  , branch
-  , build_frame
-  , descend_step
-  , frames_nil
-  , frames_push
-  , go_left
-  , go_right
-  , leaf
-  , leaf_value
-  , no_bnd
-  , rebuild_step
-  , select
-  , split_branch
-  , unframes
-  , yes_bnd
-  );
+, Bounds
+, Dir
+, Frame
+, Frames
+, Tree
+, branch
+, build_frame
+, descend_step
+, frames_nil
+, frames_push
+, go_left
+, go_right
+, leaf
+, leaf_value
+, no_bnd
+, rebuild_step
+, select
+, split_branch
+, unframes
+, yes_bnd
+);
 import library/elab/control(if);
 import library/elab/match(match);
 import library/elab/spine_elaborators(widen_sum);
@@ -87,30 +87,26 @@ fn vfull[A](count: I32, depth: I32, root: Tree(A)) -> Vec(A) {
 // `pow2(k)` = 2^k — the leaf capacity of a depth-`k` trie.
 fn pow2(k: I32) -> I32 {
   loop(
-    , .(state: I32 & I32) -> (I32 & I32) | I32 {
-        match! state {
-          .(remaining: I32, acc: I32) {
-            if! eq_i32(remaining, 0) {
-              widen_sum!(acc, (I32 & I32) | I32)
-            } else {
-              widen_sum!((sub(remaining, 1), mul(acc, 2)), (I32 & I32) | I32)
-            }
+  , .(state: I32 & I32) -> (I32 & I32) | I32 {
+      match! state {
+        .(remaining: I32, acc: I32) {
+          if! eq_i32(remaining, 0) {
+            widen_sum!(acc, (I32 & I32) | I32)
+          } else {
+            widen_sum!((sub(remaining, 1), mul(acc, 2)), (I32 & I32) | I32)
           }
         }
       }
-    , (k, 1)
-    )
+    }
+  , (k, 1)
+  )
 }
 
 // `bit_dir(i, level)` = the `Dir` for bit `level` of index `i`:
 // `(i / 2^level) mod 2`, 0 = left else right.
 fn bit_dir(i: I32, level: I32) -> Dir {
   let bit = mod(div(i, pow2(level)), 2);
-  if! eq_i32(bit, 0) {
-    widen_sum!(go_left(), Dir)
-  } else {
-    widen_sum!(go_right(), Dir)
-  }
+  if! eq_i32(bit, 0) { widen_sum!(go_left(), Dir) } else { widen_sum!(go_right(), Dir) }
 }
 
 // =====================================================================
@@ -121,21 +117,21 @@ fn bit_dir(i: I32, level: I32) -> Dir {
 // (`depth-1`) down to `0`, descending one node per level.
 fn at_tree[A](root: Tree(A), depth: I32, i: I32) -> A | . {
   leaf_value(loop(
-    , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
-        match! state {
-          .(remaining: I32, sub_t: Tree(A)) {
-            if! eq_i32(remaining, 0) {
-              widen_sum!(sub_t, (I32 & Tree(A)) | Tree(A))
-            } else {
-              let level = sub(remaining, 1);
-              let dir = bit_dir(i, level);
-              widen_sum!((level, descend_step(dir, sub_t)), (I32 & Tree(A)) | Tree(A))
-            }
+  , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
+      match! state {
+        .(remaining: I32, sub_t: Tree(A)) {
+          if! eq_i32(remaining, 0) {
+            widen_sum!(sub_t, (I32 & Tree(A)) | Tree(A))
+          } else {
+            let level = sub(remaining, 1);
+            let dir = bit_dir(i, level);
+            widen_sum!((level, descend_step(dir, sub_t)), (I32 & Tree(A)) | Tree(A))
           }
         }
       }
-    , (depth, root)
-    ))
+    }
+  , (depth, root)
+  ))
 }
 
 // =====================================================================
@@ -149,54 +145,54 @@ fn at_tree[A](root: Tree(A), depth: I32, i: I32) -> A | . {
 // are the core's pure `build_frame` / `rebuild_step`.
 fn descend_frames[A](root: Tree(A), depth: I32, i: I32) -> Tree(A) & Frames(A) {
   loop(
-    , .(state: I32 & Tree(A) & Frames(A)) -> (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)) {
-        match! state {
-          .(remaining: I32, sub_t: Tree(A), acc: Frames(A)) {
-            if! eq_i32(remaining, 0) {
-              widen_sum!((sub_t, acc), (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)))
-            } else {
-              let level = sub(remaining, 1);
-              let dir = bit_dir(i, level);
-              // The sibling is the child the path does *not* descend into;
-              // the chosen child becomes the next `sub_t`.
-              match! split_branch(dir, sub_t) {
-                .(chosen: Tree(A), sibling: Tree(A)) {
-                  widen_sum!(
-                    , (level, chosen, frames_push(build_frame(dir, sibling), acc))
-                    , (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A))
-                    )
-                }
+  , .(state: I32 & Tree(A) & Frames(A)) -> (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)) {
+      match! state {
+        .(remaining: I32, sub_t: Tree(A), acc: Frames(A)) {
+          if! eq_i32(remaining, 0) {
+            widen_sum!((sub_t, acc), (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A)))
+          } else {
+            let level = sub(remaining, 1);
+            let dir = bit_dir(i, level);
+            // The sibling is the child the path does *not* descend into;
+            // the chosen child becomes the next `sub_t`.
+            match! split_branch(dir, sub_t) {
+              .(chosen: Tree(A), sibling: Tree(A)) {
+                widen_sum!(
+                , (level, chosen, frames_push(build_frame(dir, sibling), acc))
+                , (I32 & Tree(A) & Frames(A)) | (Tree(A) & Frames(A))
+                )
               }
             }
           }
         }
       }
-    , (depth, root, frames_nil(A))
-    )
+    }
+  , (depth, root, frames_nil(A))
+  )
 }
 
 fn rebuild_frames[A](leaf_t: Tree(A), fs: Frames(A)) -> Tree(A) {
   loop(
-    , .(state: Tree(A) & Frames(A)) -> (Tree(A) & Frames(A)) | Tree(A) {
-        match! state {
-          .(built: Tree(A), rest: Frames(A)) {
-            match! unframes(rest) {
-              (
-                , .(cell: Frame(A) & Frames(A)) {
-                    match! cell {
-                      .(fr: Frame(A), tail: Frames(A)) {
-                        widen_sum!((rebuild_step(built, fr), tail), (Tree(A) & Frames(A)) | Tree(A))
-                      }
-                    }
+  , .(state: Tree(A) & Frames(A)) -> (Tree(A) & Frames(A)) | Tree(A) {
+      match! state {
+        .(built: Tree(A), rest: Frames(A)) {
+          match! unframes(rest) {
+            (
+            , .(cell: Frame(A) & Frames(A)) {
+                match! cell {
+                  .(fr: Frame(A), tail: Frames(A)) {
+                    widen_sum!((rebuild_step(built, fr), tail), (Tree(A) & Frames(A)) | Tree(A))
                   }
-                , .(_empty: .) { widen_sum!(built, (Tree(A) & Frames(A)) | Tree(A)) }
-                )
-            }
+                }
+              }
+            , .(_empty: .) { widen_sum!(built, (Tree(A) & Frames(A)) | Tree(A)) }
+            )
           }
         }
       }
-    , (leaf_t, fs)
-    )
+    }
+  , (leaf_t, fs)
+  )
 }
 
 fn set_tree[A](root: Tree(A), depth: I32, i: I32, m: A | .) -> Tree(A) {
@@ -209,19 +205,19 @@ fn set_tree[A](root: Tree(A), depth: I32, i: I32, m: A | .) -> Tree(A) {
 // the padding `push_back` grows into.
 fn perfect_absent[A](depth: I32) -> Tree(A) {
   loop(
-    , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
-        match! state {
-          .(remaining: I32, t: Tree(A)) {
-            if! eq_i32(remaining, 0) {
-              widen_sum!(t, (I32 & Tree(A)) | Tree(A))
-            } else {
-              widen_sum!((sub(remaining, 1), branch(t, t)), (I32 & Tree(A)) | Tree(A))
-            }
+  , .(state: I32 & Tree(A)) -> (I32 & Tree(A)) | Tree(A) {
+      match! state {
+        .(remaining: I32, t: Tree(A)) {
+          if! eq_i32(remaining, 0) {
+            widen_sum!(t, (I32 & Tree(A)) | Tree(A))
+          } else {
+            widen_sum!((sub(remaining, 1), branch(t, t)), (I32 & Tree(A)) | Tree(A))
           }
         }
       }
-    , (depth, leaf(absent(A)))
-    )
+    }
+  , (depth, leaf(absent(A)))
+  )
 }
 
 // =====================================================================
@@ -237,13 +233,13 @@ pub fn singleton[A](x: A) -> Vec(A) { vfull(1, 0, leaf(present(x))) }
 pub fn length[A](v: Vec(A)) -> I32 {
   match! v {
     (
-      , .(b: Vecbody(A)) {
-          match! Vecbody.get(b) {
-            .(count: I32, _d: I32, _r: Tree(A)) { count }
-          }
+    , .(b: Vecbody(A)) {
+        match! Vecbody.get(b) {
+          .(count: I32, _d: I32, _r: Tree(A)) { count }
         }
-      , .(_e: .) { 0 }
-      )
+      }
+    , .(_e: .) { 0 }
+    )
   }
 }
 
@@ -254,19 +250,11 @@ pub fn is_empty[A](v: Vec(A)) -> Bool { eq_i32(length(v), 0) }
 // Public API - random access
 // =====================================================================
 fn in_bounds_bool(i: I32, count: I32) -> Bool {
-  if! leq_i32(0, i) {
-    lt_i32(i, count)
-  } else {
-    .f
-  }
+  if! leq_i32(0, i) { lt_i32(i, count) } else { .f }
 }
 
 fn to_bounds(b: Bool) -> Bounds {
-  if! b {
-    widen_sum!(yes_bnd(), Bounds)
-  } else {
-    widen_sum!(no_bnd(), Bounds)
-  }
+  if! b { widen_sum!(yes_bnd(), Bounds) } else { widen_sum!(no_bnd(), Bounds) }
 }
 
 fn in_bounds(i: I32, count: I32) -> Bounds { to_bounds(in_bounds_bool(i, count)) }
@@ -276,15 +264,15 @@ fn in_bounds(i: I32, count: I32) -> Bounds { to_bounds(in_bounds_bool(i, count))
 pub fn at[A](v: Vec(A), i: I32) -> A | . {
   match! v {
     (
-      , .(b: Vecbody(A)) {
-          match! Vecbody.get(b) {
-            .(count: I32, depth: I32, root: Tree(A)) {
-              select(in_bounds(i, count), at_tree(root, depth, i), absent(A))
-            }
+    , .(b: Vecbody(A)) {
+        match! Vecbody.get(b) {
+          .(count: I32, depth: I32, root: Tree(A)) {
+            select(in_bounds(i, count), at_tree(root, depth, i), absent(A))
           }
         }
-      , .(_e: .) { absent(A) }
-      )
+      }
+    , .(_e: .) { absent(A) }
+    )
   }
 }
 
@@ -294,19 +282,19 @@ pub fn at[A](v: Vec(A), i: I32) -> A | . {
 pub fn update[A](v: Vec(A), i: I32, x: A) -> Vec(A) | . {
   match! v {
     (
-      , .(b: Vecbody(A)) {
-          match! Vecbody.get(b) {
-            .(count: I32, depth: I32, root: Tree(A)) {
-              select(
-                , in_bounds(i, count)
-                , present(vfull(count, depth, set_tree(root, depth, i, present(x))))
-                , absent(_)
-                )
-            }
+    , .(b: Vecbody(A)) {
+        match! Vecbody.get(b) {
+          .(count: I32, depth: I32, root: Tree(A)) {
+            select(
+            , in_bounds(i, count)
+            , present(vfull(count, depth, set_tree(root, depth, i, present(x))))
+            , absent(_)
+            )
           }
         }
-      , .(_e: .) { absent(Vec(A)) }
-      )
+      }
+    , .(_e: .) { absent(Vec(A)) }
+    )
   }
 }
 
@@ -315,10 +303,10 @@ pub fn update[A](v: Vec(A), i: I32, x: A) -> Vec(A) | . {
 // =====================================================================
 fn grow_if_full[A](count: I32, depth: I32, root: Tree(A)) -> I32 & Tree(A) {
   select(
-    , to_bounds(eq_i32(count, pow2(depth)))
-    , (add(depth, 1), branch(A, root, perfect_absent(depth)))
-    , (depth, root)
-    )
+  , to_bounds(eq_i32(count, pow2(depth)))
+  , (add(depth, 1), branch(A, root, perfect_absent(depth)))
+  , (depth, root)
+  )
 }
 
 /// Appends `x` at the end, returning the new vector.
@@ -328,19 +316,19 @@ fn grow_if_full[A](count: I32, depth: I32, root: Tree(A)) -> I32 & Tree(A) {
 pub fn push_back[A](v: Vec(A), x: A) -> Vec(A) {
   match! v {
     (
-      , .(b: Vecbody(A)) {
-          match! Vecbody.get(b) {
-            .(count: I32, depth: I32, root: Tree(A)) {
-              match! grow_if_full(count, depth, root) {
-                .(depth2: I32, root2: Tree(A)) {
-                  vfull(add(count, 1), depth2, set_tree(root2, depth2, count, present(x)))
-                }
+    , .(b: Vecbody(A)) {
+        match! Vecbody.get(b) {
+          .(count: I32, depth: I32, root: Tree(A)) {
+            match! grow_if_full(count, depth, root) {
+              .(depth2: I32, root2: Tree(A)) {
+                vfull(add(count, 1), depth2, set_tree(root2, depth2, count, present(x)))
               }
             }
           }
         }
-      , .(_e: .) { vfull(1, 0, leaf(present(x))) }
-      )
+      }
+    , .(_e: .) { vfull(1, 0, leaf(present(x))) }
+    )
   }
 }
 
@@ -351,21 +339,17 @@ pub fn push_back[A](v: Vec(A), x: A) -> Vec(A) {
 pub fn pop_back[A](v: Vec(A)) -> (A & Vec(A)) | . {
   match! v {
     (
-      , .(b: Vecbody(A)) {
-          match! Vecbody.get(b) {
-            .(count: I32, depth: I32, root: Tree(A)) {
-              let last = sub(count, 1);
-              let rest = vfull(last, depth, set_tree(root, depth, last, absent(A)));
-              fold_result(
-                , absent(_)
-                , .(x: A) -> (A & Vec(A)) | . { present((x, rest)) }
-                , at(v, last)
-                )
-            }
+    , .(b: Vecbody(A)) {
+        match! Vecbody.get(b) {
+          .(count: I32, depth: I32, root: Tree(A)) {
+            let last = sub(count, 1);
+            let rest = vfull(last, depth, set_tree(root, depth, last, absent(A)));
+            fold_result(absent(_), .(x: A) -> (A & Vec(A)) | . { present((x, rest)) }, at(v, last))
           }
         }
-      , .(_e: .) { absent(A & Vec(A)) }
-      )
+      }
+    , .(_e: .) { absent(A & Vec(A)) }
+    )
   }
 }
 
@@ -375,20 +359,20 @@ pub fn pop_back[A](v: Vec(A)) -> (A & Vec(A)) | . {
 fn fold_vec[A][Acc](f: (Acc & A) -> Acc, z: Acc, v: Vec(A)) -> Acc {
   let n = length(v);
   loop(
-    , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
-        match! state {
-          .(idx: I32, acc0: Acc) {
-            if! eq_i32(idx, n) {
-              widen_sum!(acc0, (I32 & Acc) | Acc)
-            } else {
-              let next = fold_result(acc0, .(x: A) -> Acc { f(acc0, x) }, at(v, idx));
-              widen_sum!((add(idx, 1), next), (I32 & Acc) | Acc)
-            }
+  , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
+      match! state {
+        .(idx: I32, acc0: Acc) {
+          if! eq_i32(idx, n) {
+            widen_sum!(acc0, (I32 & Acc) | Acc)
+          } else {
+            let next = fold_result(acc0, .(x: A) -> Acc { f(acc0, x) }, at(v, idx));
+            widen_sum!((add(idx, 1), next), (I32 & Acc) | Acc)
           }
         }
       }
-    , (0, z)
-    )
+    }
+  , (0, z)
+  )
 }
 
 /// Folds `f(acc, i)` over the half-open integer range `[lo, hi)`.
@@ -396,43 +380,43 @@ fn fold_vec[A][Acc](f: (Acc & A) -> Acc, z: Acc, v: Vec(A)) -> Acc {
 /// state from inlining a result-sum's arms.
 pub fn fold_range[Acc](lo: I32, hi: I32, f: (Acc & I32) -> Acc, z: Acc) -> Acc {
   loop(
-    , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
-        match! state {
-          .(idx: I32, acc0: Acc) {
-            if! eq_i32(idx, hi) {
-              widen_sum!(acc0, (I32 & Acc) | Acc)
-            } else {
-              widen_sum!((add(idx, 1), f(acc0, idx)), (I32 & Acc) | Acc)
-            }
+  , .(state: I32 & Acc) -> (I32 & Acc) | Acc {
+      match! state {
+        .(idx: I32, acc0: Acc) {
+          if! eq_i32(idx, hi) {
+            widen_sum!(acc0, (I32 & Acc) | Acc)
+          } else {
+            widen_sum!((add(idx, 1), f(acc0, idx)), (I32 & Acc) | Acc)
           }
         }
       }
-    , (lo, z)
-    )
+    }
+  , (lo, z)
+  )
 }
 
 fn fold_list[A][Acc](f: (Acc & A) -> Acc, z: Acc, xs: List(A)) -> Acc {
   loop(
-    , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-        match! state {
-          .(acc0: Acc, rest: List(A)) {
-            match! uncons(rest) {
-              (
-                , .(cell: A & List(A)) {
-                    match! cell {
-                      .(head: A, tail: List(A)) {
-                        widen_sum!((f(acc0, head), tail), (Acc & List(A)) | Acc)
-                      }
-                    }
+  , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
+      match! state {
+        .(acc0: Acc, rest: List(A)) {
+          match! uncons(rest) {
+            (
+            , .(cell: A & List(A)) {
+                match! cell {
+                  .(head: A, tail: List(A)) {
+                    widen_sum!((f(acc0, head), tail), (Acc & List(A)) | Acc)
                   }
-                , .(_empty: .) { widen_sum!(acc0, (Acc & List(A)) | Acc) }
-                )
-            }
+                }
+              }
+            , .(_empty: .) { widen_sum!(acc0, (Acc & List(A)) | Acc) }
+            )
           }
         }
       }
-    , (z, xs)
-    )
+    }
+  , (z, xs)
+  )
 }
 
 /// Strict left fold over the present elements, in index order.
@@ -456,20 +440,20 @@ pub fn map[A][B](f: A -> B, v: Vec(A)) -> Vec(B) {
 pub fn to_list[A](v: Vec(A)) -> List(A) {
   let n = length(v);
   loop(
-    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-        match! state {
-          .(idx: I32, acc: List(A)) {
-            if! lt_i32(idx, 0) {
-              widen_sum!(acc, (I32 & List(A)) | List(A))
-            } else {
-              let next = fold_result(acc, .(x: A) -> List(A) { cons(x, acc) }, at(v, idx));
-              widen_sum!((sub(idx, 1), next), (I32 & List(A)) | List(A))
-            }
+  , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+      match! state {
+        .(idx: I32, acc: List(A)) {
+          if! lt_i32(idx, 0) {
+            widen_sum!(acc, (I32 & List(A)) | List(A))
+          } else {
+            let next = fold_result(acc, .(x: A) -> List(A) { cons(x, acc) }, at(v, idx));
+            widen_sum!((sub(idx, 1), next), (I32 & List(A)) | List(A))
           }
         }
       }
-    , (sub(n, 1), nil(A))
-    )
+    }
+  , (sub(n, 1), nil(A))
+  )
 }
 
 /// Builds a vector by appending the list head-to-tail.
@@ -487,13 +471,13 @@ pub fn concat[A](v1: Vec(A), v2: Vec(A)) -> Vec(A) {
 /// leaves the accumulator unchanged.
 pub fn slice[A](v: Vec(A), lo: I32, hi: I32) -> Vec(A) {
   fold_range(
-    , lo
-    , hi
-    , .(acc: Vec(A), i: I32) -> Vec(A) {
-        fold_result(acc, .(x: A) -> Vec(A) { push_back(acc, x) }, at(v, i))
-      }
-    , empty(_)
-    )
+  , lo
+  , hi
+  , .(acc: Vec(A), i: I32) -> Vec(A) {
+      fold_result(acc, .(x: A) -> Vec(A) { push_back(acc, x) }, at(v, i))
+    }
+  , empty(_)
+  )
 }
 
 // =====================================================================

@@ -32,23 +32,23 @@ rec(loop) {
       .(v: Variable) { string_concat("v", fmt.int_to_string(v.?{variable})) };
       .(symbol: I32, arguments: lists.List(Term)) {
         string_concat(
-          , "f"
-          , string_concat(
-              , fmt.int_to_string(symbol)
-              , string_concat("(", string_concat(rec(cont) render_arguments(arguments), ")"))
-              )
+        , "f"
+        , string_concat(
+          , fmt.int_to_string(symbol)
+          , string_concat("(", string_concat(recur(cont) render_arguments(arguments), ")"))
           )
+        )
       }
     }
   };
   fn render_arguments(arguments: lists.List(Term)) -> String {
     match! lists.uncons(arguments) {
       .(first: Term, rest: lists.List(Term)) {
-        let shown = rec(cont) render(first);
+        let shown = recur(cont) render(first);
         if! traversal.null(rest) {
           shown
         } else {
-          string_concat(shown, string_concat(",", rec(cont) render_arguments(rest)))
+          string_concat(shown, string_concat(",", recur(cont) render_arguments(rest)))
         }
       };
       .(_empty: .) { "" }
@@ -61,14 +61,10 @@ rec(loop) fn occurs_in(id: I32, pending: lists.List(Term)) -> Bool {
     .(first: Term, rest: lists.List(Term)) {
       match! first.>Term.unwrap {
         .(v: Variable) {
-          if! arith.eq_i32(id, v.?{variable}) {
-            .t
-          } else {
-            rec occurs_in(id, rest)
-          }
+          if! arith.eq_i32(id, v.?{variable}) { .t } else { recur occurs_in(id, rest) }
         };
         .(_symbol: I32, arguments: lists.List(Term)) {
-          rec occurs_in(id, traversal.append(arguments, rest))
+          recur occurs_in(id, traversal.append(arguments, rest))
         }
       }
     };
@@ -92,7 +88,7 @@ rec(loop) {
           .(_v: Variable) { .f };
           .(other: I32, other_arguments: lists.List(Term)) {
             if! arith.eq_i32(symbol, other) {
-              rec equal_arguments(arguments, other_arguments)
+              recur equal_arguments(arguments, other_arguments)
             } else {
               .f
             }
@@ -106,11 +102,7 @@ rec(loop) {
       .(first: Term, rest: lists.List(Term)) {
         match! lists.uncons(right) {
           .(other: Term, others: lists.List(Term)) {
-            if! rec(cont) equal(first, other) {
-              rec equal_arguments(rest, others)
-            } else {
-              .f
-            }
+            if! recur(cont) equal(first, other) { recur equal_arguments(rest, others) } else { .f }
           };
           .(_empty: .) { .f }
         }

@@ -53,9 +53,9 @@ fn or_else[A](default: Option(A), o: Option(A)) -> Option(A) {
 fn print_option(o: Option(I32)) -> String {
   match! o.>Option.un_option {
     (
-      , .(v: I32) { string_concat("some(", string_concat(int_to_string(v), ")")) }
-      , .(_empty: .) { "none" }
-      )
+    , .(v: I32) { string_concat("some(", string_concat(int_to_string(v), ")")) }
+    , .(_empty: .) { "none" }
+    )
   }
 }
 
@@ -64,11 +64,7 @@ fn double(x: I32) -> I32 { mul_i32(x, 2) }
 // `x == 0` via the antisymmetric `<=` idiom; surfaces a `Bool`
 // the `if`/`else` condition needs.
 fn is_zero(x: I32) -> Bool {
-  if! leq_i32(x, 0) {
-    leq_i32(0, x)
-  } else {
-    .f
-  }
+  if! leq_i32(x, 0) { leq_i32(0, x) } else { .f }
 }
 
 // Partial application: `safe_div_by(d)` is `I32 -> Option(I32)`.
@@ -77,11 +73,7 @@ fn is_zero(x: I32) -> Bool {
 // surface the chaining behavior.
 fn safe_div_by(d: I32) -> I32 -> Option(I32) {
   .(v: I32) -> Option(I32) {
-    if! is_zero(d) {
-      none(I32, ())
-    } else {
-      some(div_i32(v, d))
-    }
+    if! is_zero(d) { none(I32, ()) } else { some(div_i32(v, d)) }
   }
 }
 

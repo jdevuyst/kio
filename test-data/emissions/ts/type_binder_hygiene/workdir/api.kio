@@ -10,12 +10,14 @@ pub fn callable[Demo_callable](value: Demo_callable) -> Demo_callable {
   use(value, .(unit: .) { unit })
 }
 
-pub fn control[A](value: A) -> A { use_control(value, .(unit: .) { unit }) }
+pub fn control[A](value: A) -> A {
+  use_control(value, .(unit: .) { unit })
+}
 
 pub fn nested[Demo_poly](
-  , value: Demo_poly
-  , transform: [Demo_callable] Demo_callable -> Demo_callable
-  ) -> Demo_poly { transform(value) }
+, value: Demo_poly
+, transform: [Demo_callable] Demo_callable -> Demo_callable
+) -> Demo_poly { transform(value) }
 
 pub fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda(Demo_apply)) -> Demo_type_lambda(Demo_apply) {
   value

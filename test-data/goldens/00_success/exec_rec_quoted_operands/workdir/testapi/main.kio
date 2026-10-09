@@ -14,12 +14,8 @@ rec(loop) {
   fn walk(n: I32) -> Bool {
     match! n {
       .(value: I32) {
-        if! rec(cont) positive(value) {
-          if! rec(cont) positive(value) {
-            rec walk(arith.sub_i32(value, 1))
-          } else {
-            .f
-          }
+        if! recur(cont) positive(value) {
+          if! recur(cont) positive(value) { recur walk(arith.sub_i32(value, 1)) } else { .f }
         } else {
           .t
         }
@@ -30,31 +26,26 @@ rec(loop) {
 
 rec(loop) {
   fn ignored() -> Bool { io.print("unexpected discarded input\n"); .f };
-  fn discarded() -> Bool { second!(rec(cont) ignored(), .t) }
+  fn discarded() -> Bool { second!(recur(cont) ignored(), .t) }
 }
 
 rec(loop) {
   fn left() -> Bool { io.print("left\n"); .f };
   fn right() -> Bool { io.print("right\n"); .t };
-  fn duplicated() -> Bool { let pair = duplicate!(rec(cont) left()); .t };
-  fn marked_duplicated() -> Bool { let pair = marked_duplicate!(rec(cont) left()); .t };
-  fn swapped() -> Bool { let pair = swap!(rec(cont) left(), rec(cont) right()); .t };
-  fn marked_swapped() -> Bool { let pair = marked_swap!(rec(cont) left(), rec(cont) right()); .t }
+  fn duplicated() -> Bool { let pair = duplicate!(recur(cont) left()); .t };
+  fn marked_duplicated() -> Bool { let pair = marked_duplicate!(recur(cont) left()); .t };
+  fn swapped() -> Bool { let pair = swap!(recur(cont) left(), recur(cont) right()); .t };
+  fn marked_swapped() -> Bool {
+    let pair = marked_swap!(recur(cont) left(), recur(cont) right());
+    .t
+  }
 }
 
 pub fn main() {
   io.print("nested conditions\n");
-  if! walk(2) {
-    io.print("done\n")
-  } else {
-    io.print("unexpected false\n")
-  };
+  if! walk(2) { io.print("done\n") } else { io.print("unexpected false\n") };
   io.print("discard\n");
-  if! discarded() {
-    io.print("done\n")
-  } else {
-    io.print("unexpected false\n")
-  };
+  if! discarded() { io.print("done\n") } else { io.print("unexpected false\n") };
   io.print("duplicate\n");
   let a = duplicated();
   io.print("marked duplicate\n");
@@ -64,10 +55,6 @@ pub fn main() {
   io.print("marked swap\n");
   let d = marked_swapped();
   io.print("deep quotation\n");
-  if! deep(100) {
-    io.print("done\n")
-  } else {
-    io.print("unexpected false\n")
-  };
+  if! deep(100) { io.print("done\n") } else { io.print("unexpected false\n") };
   io.print("done\n")
 }

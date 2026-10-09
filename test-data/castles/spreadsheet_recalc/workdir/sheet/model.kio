@@ -77,13 +77,10 @@ pub fn initial_sheet() -> Sheet {
 /// and a formula that closes a new cycle.
 pub fn edit_script() -> List(Edit) {
   cons(
-    , number_edit(a1(), 9)
-    , cons(
-        , formula_edit(d3(), add(cell_ref(b3()), lit_num(4)))
-        , cons(
-            , clear_edit(b4())
-            , cons(formula_edit(a3(), add(cell_ref(b3()), lit_num(1))), nil(Edit))
-            )
-        )
+  , number_edit(a1(), 9)
+  , cons(
+    , formula_edit(d3(), add(cell_ref(b3()), lit_num(4)))
+    , cons(clear_edit(b4()), cons(formula_edit(a3(), add(cell_ref(b3()), lit_num(1))), nil(Edit)))
     )
+  )
 }

@@ -25,11 +25,7 @@ fn cat(a: String, b: String) -> String { string_concat(a, b) }
 fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
 
 rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) {
-    acc
-  } else {
-    rec repeat_onto(unit, sub_i32(n, 1), cat(acc, unit))
-  }
+  if! leq_i32(n, 0) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat(acc, unit)) }
 }
 
 fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
@@ -42,7 +38,7 @@ rec(loop) fn decades(n: I32, bound: I32, acc: I32) -> I32 {
   } else if! leq_i32(9, acc) {
     acc
   } else {
-    rec decades(n, mul_i32(bound, 10), add_i32(acc, 1))
+    recur decades(n, mul_i32(bound, 10), add_i32(acc, 1))
   }
 }
 
@@ -60,29 +56,25 @@ fn pad_text(text: String, width: I32, field: I32) -> String {
 /// A break point with no predecessor, or a break point with no candidate starts
 /// to count. There is nothing there, and the table says so.
 fn pad_dash(n: I32, field: I32) -> String {
-  if! lt_i32(n, 0) {
-    cat(repeat(" ", sub_i32(field, 1)), "-")
-  } else {
-    pad_num(n, field)
-  }
+  if! lt_i32(n, 0) { cat(repeat(" ", sub_i32(field, 1)), "-") } else { pad_num(n, field) }
 }
 
 fn metric_row(index: I32, w: Word, field: I32) -> String {
   cat3(
-    , pad_num(index, 4)
-    , cat("  ", pad_text(word_text(w), word_width(w), field))
-    , cat3("  ", pad_num(word_width(w), 2), "\n")
-    )
+  , pad_num(index, 4)
+  , cat("  ", pad_text(word_text(w), word_width(w), field))
+  , cat3("  ", pad_num(word_width(w), 2), "\n")
+  )
 }
 
 rec(loop) fn metrics_onto(xs: Words, index: I32, field: I32, acc: String) -> String {
   match! xs.>List.unpack {
     (
-      , .(w: Word, rest: Words) {
-          rec metrics_onto(rest, add_i32(index, 1), field, cat(acc, metric_row(index, w, field)))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(w: Word, rest: Words) {
+        recur metrics_onto(rest, add_i32(index, 1), field, cat(acc, metric_row(index, w, field)))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -95,20 +87,16 @@ rec(loop) fn join_onto(xs: Words, cursor: I32, from: I32, to: I32, acc: String) 
     acc
   } else match! xs.>List.unpack {
     (
-      , .(w: Word, rest: Words) {
-          if! lt_i32(cursor, from) {
-            rec join_onto(rest, add_i32(cursor, 1), from, to, acc)
-          } else {
-            let sep = if! leq_i32(cursor, from) {
-              ""
-            } else {
-              " "
-            };
-            rec join_onto(rest, add_i32(cursor, 1), from, to, cat3(acc, sep, word_text(w)))
-          }
+    , .(w: Word, rest: Words) {
+        if! lt_i32(cursor, from) {
+          recur join_onto(rest, add_i32(cursor, 1), from, to, acc)
+        } else {
+          let sep = if! leq_i32(cursor, from) { "" } else { " " };
+          recur join_onto(rest, add_i32(cursor, 1), from, to, cat3(acc, sep, word_text(w)))
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -119,22 +107,22 @@ fn rule(column: I32) -> String { cat3("  +", repeat("-", column), "+\n") }
 
 fn line_row(xs: Words, l: Line) -> String {
   cat3(
-    , cat3("  |", join(xs, line_start(l), line_stop(l)), cat(repeat(" ", line_slack(l)), "|"))
-    , cat3(
-        , cat3("  words ", pad_num(line_start(l), 2), cat("..", pad_num(line_stop(l), 2)))
-        , cat3("  used ", pad_num(line_used(l), 2), cat("  slack ", pad_num(line_slack(l), 2)))
-        , cat("  badness ", pad_num(line_badness(l), 5))
-        )
-    , "\n"
+  , cat3("  |", join(xs, line_start(l), line_stop(l)), cat(repeat(" ", line_slack(l)), "|"))
+  , cat3(
+    , cat3("  words ", pad_num(line_start(l), 2), cat("..", pad_num(line_stop(l), 2)))
+    , cat3("  used ", pad_num(line_used(l), 2), cat("  slack ", pad_num(line_slack(l), 2)))
+    , cat("  badness ", pad_num(line_badness(l), 5))
     )
+  , "\n"
+  )
 }
 
 rec(loop) fn layout_onto(xs: Words, ls: List(Line), acc: String) -> String {
   match! ls.>List.unpack {
     (
-      , .(l: Line, rest: List(Line)) { rec layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, rest: List(Line)) { recur layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -147,9 +135,9 @@ pub fn layout(xs: Words, column: I32, ls: List(Line)) -> String {
 rec(loop) fn breaks_onto(bs: List(I32), sep: String, acc: String) -> String {
   match! bs.>List.unpack {
     (
-      , .(b: I32, rest: List(I32)) { rec breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
-      , .(_empty: .) { acc }
-      )
+    , .(b: I32, rest: List(I32)) { recur breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -162,12 +150,12 @@ fn table_row(j: I32, best: I32, back: I32, fits: I32) -> String {
 rec(loop) fn rows_onto(j: I32, best: List(I32), back: List(I32), fits: List(I32), acc: String) -> String {
   match! best.>List.unpack {
     (
-      , .(b: I32, rest: List(I32)) {
-          let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));
-          rec rows_onto(add_i32(j, 1), rest, list.tail_of(back), list.tail_of(fits), cat(acc, row))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(b: I32, rest: List(I32)) {
+        let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));
+        recur rows_onto(add_i32(j, 1), rest, list.tail_of(back), list.tail_of(fits), cat(acc, row))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -176,7 +164,7 @@ rec(loop) fn rows_onto(j: I32, best: List(I32), back: List(I32), fits: List(I32)
 /// at all.
 pub fn dp_table(t: Table) -> String {
   cat(
-    , "   j     best     back   fits\n"
-    , rows_onto(0, table_best(t), table_back(t), table_fits(t), "")
-    )
+  , "   j     best     back   fits\n"
+  , rows_onto(0, table_best(t), table_back(t), table_fits(t), "")
+  )
 }

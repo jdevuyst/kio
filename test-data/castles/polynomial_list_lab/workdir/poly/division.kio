@@ -19,12 +19,12 @@ pub labels Divmod = { divided: core.Poly & core.Poly } | { not_divisible: String
 
 fn inexact_step(lead_remainder: I32, lead_divisor: I32) -> String {
   string_concat(
-    , "leading coefficient "
-    , string_concat(
-        , int_to_string(lead_remainder)
-        , string_concat(" is not an exact multiple of ", int_to_string(lead_divisor))
-        )
+  , "leading coefficient "
+  , string_concat(
+    , int_to_string(lead_remainder)
+    , string_concat(" is not an exact multiple of ", int_to_string(lead_divisor))
     )
+  )
 }
 
 // One school-book step per turn: cancel the running remainder's leading term by
@@ -39,19 +39,19 @@ rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: cor
     let factor = integers.exact_div(core.leading(remainder), core.leading(divisor));
     match! factor {
       (
-        , .(k: I32) {
-            let term = core.monomial(k, sub_i32(core.deg(remainder), core.deg(divisor)));
-            rec long_divide(
-              , arith.add(quotient, term)
-              , arith.sub(remainder, arith.mul(term, divisor))
-              , divisor
-              )
-          }
-        , .(_inexact: .) {
-            let reason = inexact_step(core.leading(remainder), core.leading(divisor));
-            widen_sum!({not_divisible = reason})
-          }
-        )
+      , .(k: I32) {
+          let term = core.monomial(k, sub_i32(core.deg(remainder), core.deg(divisor)));
+          recur long_divide(
+          , arith.add(quotient, term)
+          , arith.sub(remainder, arith.mul(term, divisor))
+          , divisor
+          )
+        }
+      , .(_inexact: .) {
+          let reason = inexact_step(core.leading(remainder), core.leading(divisor));
+          widen_sum!({not_divisible = reason})
+        }
+      )
     }
   }
 }

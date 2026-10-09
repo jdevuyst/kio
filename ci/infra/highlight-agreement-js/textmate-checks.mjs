@@ -142,30 +142,44 @@ fixture("named target recovery after incomplete body", 'package app;\nbuild {\n 
 ]);
 
 const recursive = (body) => `module recursive;\nrec(loop) fn again(value: .) -> . {\n  ${body}\n}`;
-fixture("monomorphic recursive call", recursive("rec again(value)"), [["rec again", "rec", keyword]]);
-fixture("marked recursive callee", recursive("rec _again(value)"), [["rec _again", "rec", keyword]]);
-fixture("recursive argument opener on next line", recursive("rec again\n  (value)"), [["rec again", "rec", keyword]]);
-fixture("incomplete recursive call", recursive("rec again("), [["rec again", "rec", keyword]]);
+fixture("monomorphic recursive call", recursive("recur again(value)"), [["recur again", "recur", keyword]]);
+fixture("marked recursive callee", recursive("recur _again(value)"), [["recur _again", "recur", keyword]]);
+fixture("recursive argument opener on next line", recursive("recur again\n  (value)"), [["recur again", "recur", keyword]]);
+fixture("incomplete recursive call", recursive("recur again("), [["recur again", "recur", keyword]]);
 fixture("recursive spelling parameter", "module source;\nfn again(\n rec // parameter\n : .\n) -> . { other.rec }", [
   ["rec //", "rec", identifier], ["other.rec", "rec", identifier],
 ]);
 fixture("recursive declaration name and ordinary call", "module source;\nfn rec(value: .) -> . { value }\nfn caller(value: .) -> . { rec(value) }", [
   ["fn rec", "rec", functionName], ["{ rec(value)", "rec", functionName],
 ]);
-fixture("annotated recursive call", recursive("rec(poly, cont) again(value)"), [
-  ["rec(poly", "rec", keyword], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
+fixture("recursive call word declaration name and ordinary call", "module source;\nfn recur(value: .) -> . { value }\nfn caller(value: .) -> . { recur(value) }", [
+  ["fn recur", "recur", functionName], ["{ recur(value)", "recur", functionName],
 ]);
-fixture("incomplete recursive sibling", recursive("rec again(") + "\nfn sibling(\n rec\n : .\n) -> . { other.rec }", [
-  ["rec again", "rec", keyword], ["\n rec\n", "rec", identifier], ["other.rec", "rec", identifier],
+fixture("recursive call word parameter and value", "module source;\nfn caller(recur: .) { recur; other.recur }", [
+  ["recur:", "recur", identifier], ["{ recur;", "recur", identifier], ["other.recur", "recur", identifier],
 ]);
-fixture("qualified recursive callee rejected", recursive("rec other.again(value)"), [["rec other", "rec", keyword]]);
+fixture("recursive call word annotation-shaped arguments", "module source;\nfn caller(poly: ., cont: ., escape: .) { recur(poly, cont, escape) }", [
+  ["recur(poly", "recur", functionName], ["poly, cont", "poly", identifier],
+  ["cont, escape", "cont", identifier], ["escape) }", "escape", identifier],
+]);
+fixture("escaping recursive call annotations", recursive("recur(poly, cont, escape) again(value)"), [
+  ["recur(poly", "recur", keyword], ["poly,", "poly", "keyword.control.kio"],
+  ["cont,", "cont", "keyword.control.kio"], ["escape)", "escape", "keyword.control.kio"],
+]);
+fixture("annotated recursive call", recursive("recur(poly, cont) again(value)"), [
+  ["recur(poly", "recur", keyword], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
+]);
+fixture("incomplete recursive sibling", recursive("recur again(") + "\nfn sibling(\n rec\n : .\n) -> . { other.rec }", [
+  ["recur again", "recur", keyword], ["\n rec\n", "rec", identifier], ["other.rec", "rec", identifier],
+]);
+fixture("qualified recursive callee rejected", recursive("recur other.again(value)"), [["recur other", "recur", keyword]]);
 for (const comment of ["", " // shared trivia"]) {
-  const prefix = recursive(`rec${comment}`).slice(0, -2);
-  fixture(`recursive later-line keyword${comment}`, `${prefix}\n  again(value)\n}`, [[`rec${comment}\n  again`, "rec", null]]);
-  fixture(`recursive later-line ordinary${comment}`, `${prefix}\n}`, [[`rec${comment}\n}`, "rec", null]]);
+  const prefix = recursive(`recur${comment}`).slice(0, -2);
+  fixture(`recursive later-line keyword${comment}`, `${prefix}\n  again(value)\n}`, [[`recur${comment}\n  again`, "recur", null]]);
+  fixture(`recursive later-line ordinary${comment}`, `${prefix}\n}`, [[`recur${comment}\n}`, "recur", null]]);
 }
-fixture("multiline recursive annotations", recursive("rec(\n poly, // annotation\n cont,\n) again(value)"), [
-  ["rec(\n", "rec", null], ["poly,", "poly", null], ["cont,", "cont", null], ["again(value)", "again", functionName],
+fixture("multiline recursive annotations", recursive("recur(\n poly, // annotation\n cont,\n) again(value)"), [
+  ["recur(\n", "recur", null], ["poly,", "poly", null], ["cont,", "cont", null], ["again(value)", "again", functionName],
 ]);
 for (const body of ["rec", "rec; rec", "(rec)", "rec.field", "other.rec", "(other.rec)"]) {
   fixture(`ordinary recursive spelling value ${body}`, `module m; fn f(rec: .) { ${body} }`, [
@@ -179,57 +193,66 @@ fixture("ordinary recursive annotation names are arguments", "module m; fn f(pol
   ["rec(poly", "rec", functionName], ["poly, cont, escape)", "poly", identifier],
   ["cont, escape)", "cont", identifier], ["escape) }", "escape", identifier],
 ]);
-for (const fragment of ["rec(", "rec(poly)", "rec( // shared\n poly", "rec(\n poly,", "rec(value, poly)", "rec(value, poly"] ) {
+for (const fragment of ["recur(", "recur(poly)", "recur( // shared\n poly", "recur(\n poly,", "recur(value, poly)", "recur(value, poly"] ) {
   const prefix = `module m; fn f(poly: ., cont: .) {\n ${fragment}`;
   const close = fragment.endsWith(")") ? "" : fragment.endsWith(",") ? " cont)" : ")";
-  const target = fragment.includes("poly") ? "poly" : "rec";
+  const target = fragment.includes("poly") ? "poly" : "recur";
   const needle = fragment;
   fixture(`recursive annotation later-line owner ${fragment}`, `${prefix}\n ${close} again(()) }`, [[needle, target, null]]);
   fixture(`recursive annotation later-line ordinary ${fragment}`, `${prefix}\n ${close}; () }`, [[needle, target, null]]);
 }
-fixture("recursive annotation closer proves local modes", "module m; fn f() { rec(\n poly, cont) again(()) }", [
-  ["rec(\n", "rec", null], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
+fixture("recursive annotation closer proves local modes", "module m; fn f() { recur(\n poly, cont) again(()) }", [
+  ["recur(\n", "recur", null], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
 ]);
 fixture("ordinary recursive annotation closer proves arguments", "module m; fn f() { rec(\n poly, cont); () }", [
-  ["rec(\n", "rec", null], ["poly,", "poly", identifier], ["cont)", "cont", identifier],
+  ["rec(\n", "rec", functionName], ["poly,", "poly", identifier], ["cont)", "cont", identifier],
 ]);
 fixture("ordinary recursive spelling chained call", "module m; fn f() { rec(\n poly)(cont); () }", [
-  ["rec(\n", "rec", null], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
+  ["rec(\n", "rec", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
 ]);
 fixture("ordinary recursive spelling later chained call", "module m; fn f() { rec(\n poly)\n (cont); () }", [
-  ["rec(\n", "rec", null], ["poly)", "poly", null], ["cont)", "cont", identifier],
+  ["rec(\n", "rec", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("recursive callee after split annotation group", "module m; fn f() { rec // annotation\n (poly) again\n (()) }", [
-  ["rec //", "rec", null], ["poly)", "poly", "keyword.control.kio"], ["again\n", "again", functionName],
+fixture("ordinary recursive call word annotation closer proves arguments", "module m; fn f() { recur(\n poly, cont); () }", [
+  ["recur(\n", "recur", null], ["poly,", "poly", identifier], ["cont)", "cont", identifier],
+]);
+fixture("ordinary recursive call word chained call", "module m; fn f() { recur(\n poly)(cont); () }", [
+  ["recur(\n", "recur", null], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
+]);
+fixture("ordinary recursive call word later chained call", "module m; fn f() { recur(\n poly)\n (cont); () }", [
+  ["recur(\n", "recur", null], ["poly)", "poly", null], ["cont)", "cont", identifier],
+]);
+fixture("recursive callee after split annotation group", "module m; fn f() { recur // annotation\n (poly) again\n (()) }", [
+  ["recur //", "recur", null], ["poly)", "poly", "keyword.control.kio"], ["again\n", "again", functionName],
 ]);
 for (const lead of ["", "\n "]) {
   for (const tail of [") again() }", "\n ) again() }", ""]) {
-    fixture(`invalid recursive annotation name ${JSON.stringify([lead, tail])}`, `module m; fn f() { rec(${lead}value, poly${tail}`, [
+    fixture(`invalid recursive annotation name ${JSON.stringify([lead, tail])}`, `module m; fn f() { recur(${lead}value, poly${tail}`, [
       ["value,", "value", identifier], ["poly", "poly", tail.startsWith(")") ? "keyword.control.kio" : null],
       ...(tail ? [["again()", "again", functionName]] : []),
     ]);
   }
-  fixture(`valid recursive mode before invalid name ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, value, cont) again() }`, [
+  fixture(`valid recursive mode before invalid name ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}poly, value, cont) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["value,", "value", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
   fixture(`ordinary call with annotation-shaped names ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, value, cont); () }`, [
     ["poly,", "poly", identifier], ["value,", "value", identifier], ["cont)", "cont", identifier],
   ]);
-  fixture(`invalid recursive annotation nested tail ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}value(poly, (cont)), escape) again() }`, [
-    [`rec(${lead}`, "rec", lead ? null : keyword],
+  fixture(`invalid recursive annotation nested tail ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}value(poly, (cont)), escape) again() }`, [
+    [`recur(${lead}`, "recur", lead ? null : keyword],
   ]);
 }
-fixture("invalid recursive annotation comment continuation", "module m; fn f() { rec(\n value, // invalid mode\n poly, cont) again() }", [
+fixture("invalid recursive annotation comment continuation", "module m; fn f() { recur(\n value, // invalid mode\n poly, cont) again() }", [
   ["value,", "value", identifier], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
 ]);
-fixture("invalid recursive annotation unfinished parent", "module m; fn f() { rec(value, poly\nfn sibling(cont: .) { cont }", [
+fixture("invalid recursive annotation unfinished parent", "module m; fn f() { recur(value, poly\nfn sibling(cont: .) { cont }", [
   ["value,", "value", identifier], ["poly\n", "poly", null], ["cont:", "cont", identifier],
 ]);
 for (const lead of ["", "\n "]) {
   fixture(`ordinary recursive call unknown mode name ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}value, poly); () }`, [
     ["value,", "value", identifier], ["poly)", "poly", identifier],
   ]);
-  fixture(`recursive duplicate mode keeps syntactic roles ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, poly) again() }`, [
+  fixture(`recursive duplicate mode keeps syntactic roles ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}poly, poly) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["poly)", "poly", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
   fixture(`ordinary recursive call duplicate mode names ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, poly); () }`, [
@@ -245,11 +268,11 @@ for (const lead of ["", "\n "]) {
     if (content.includes("poly")) targets.push(["poly", "poly", content.startsWith("(") ? identifier : "keyword.control.kio"]);
     if (content.includes("cont") && !content.includes('"')) targets.push(["cont", "cont", identifier]);
     if (content.includes("escape")) targets.push(["escape", "escape", "keyword.control.kio"]);
-    fixture(`recursive balanced non-identifier annotation ${JSON.stringify([lead, content])}`, `module m; fn f() { rec(${lead}${content}) again() }`, targets);
+    fixture(`recursive balanced non-identifier annotation ${JSON.stringify([lead, content])}`, `module m; fn f() { recur(${lead}${content}) again() }`, targets);
   }
 }
 for (const lead of ["", "\n "]) {
-  fixture(`recursive annotation returns to parent slot ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}(poly), cont) again() }`, [
+  fixture(`recursive annotation returns to parent slot ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}(poly), cont) again() }`, [
     ["poly", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
   fixture(`ordinary recursive call parent slot inverse ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}(poly), cont); () }`, [
@@ -258,68 +281,75 @@ for (const lead of ["", "\n "]) {
   fixture(`ordinary recursive call nested group callee ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}(value(poly)), cont); () }`, [
     ["value(", "value", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
   ]);
-  fixture(`recursive annotation comma runs ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead},,poly,, cont,,) again() }`, [
+  fixture(`recursive annotation comma runs ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead},,poly,, cont,,) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["cont,", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
   fixture(`ordinary recursive call comma runs ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead},,poly,, cont,,); () }`, [
     ["poly,", "poly", identifier], ["cont,", "cont", identifier],
   ]);
-  fixture(`recursive comma-only annotation envelope ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead},,,) again() }`, [
+  fixture(`recursive comma-only annotation envelope ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead},,,) again() }`, [
     ["again()", "again", functionName],
   ]);
-  fixture(`recursive missing comma retains item boundary ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}value poly, cont) again() }`, [
+  fixture(`recursive missing comma retains item boundary ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}value poly, cont) again() }`, [
     ["value poly", "value", identifier], ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
 }
 for (const word of ["poly", "cont"]) {
   for (const tail of [") again() }", "); () }"]) {
-    fixture(`recursive comma runs later-line ${word} ${tail}`, `module m; fn f() { rec(\n ,,poly,, cont,, // shared\n ${tail}`, [
+    fixture(`recursive comma runs later-line ${word} ${tail}`, `module m; fn f() { recur(\n ,,poly,, cont,, // shared\n ${tail}`, [
       [`${word},`, word, null],
     ]);
   }
 }
-fixture("recursive item boundary survives comment newline", "module m; fn f() { rec(\n value // same item\n poly, cont) again() }", [
+fixture("recursive item boundary survives comment newline", "module m; fn f() { recur(\n value // same item\n poly, cont) again() }", [
   ["value //", "value", identifier], ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
 ]);
 for (const lead of ["", "\n "]) {
-  fixture(`recursive annotation variadic item ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}[* poly, poly *], cont) again() }`, [
+  fixture(`recursive annotation variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly *], cont) again() }`, [
     ["poly,", "poly", identifier], ["poly *]", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation nested variadic item ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}[* [% poly, cont %], escape *], poly) again() }`, [
+  fixture(`recursive annotation nested variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* [% poly, cont %], escape *], poly) again() }`, [
     ["poly,", "poly", identifier], ["cont %]", "cont", identifier], ["escape *]", "escape", identifier], ["poly)", "poly", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation unclosed variadic item ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}[* poly, poly, cont) again() }`, [
+  fixture(`recursive annotation unclosed variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly, cont) again() }`, [
     ["[* poly,", "poly", identifier], ["poly, cont", "poly", identifier], ["cont)", "cont", identifier], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation mismatched variadic item ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}[* poly, poly +], cont) again() }`, [
+  fixture(`recursive annotation mismatched variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly +], cont) again() }`, [
     ["poly,", "poly", identifier], ["poly +]", "poly", identifier], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation non-ASCII item boundary ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}\u00a0poly, cont) again() }`, [
+  fixture(`recursive annotation non-ASCII item boundary ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}\u00a0poly, cont) again() }`, [
     ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"],
   ]);
 }
 fixture("raw ordinary recursive spelling closed value", "rec;", [["rec;", "rec", identifier]]);
 fixture("raw ordinary recursive spelling closed call", "rec(poly);", [["rec(poly)", "rec", functionName], ["poly)", "poly", identifier]]);
-fixture("raw annotated recursive call", "rec(poly) again()", [["rec(poly)", "rec", keyword], ["poly)", "poly", "keyword.control.kio"]]);
+fixture("raw annotated recursive call", "recur(poly) again()", [["recur(poly)", "recur", keyword], ["poly)", "poly", "keyword.control.kio"]]);
 fixture("raw recursive declaration callable mode name", "rec(poly) fn again() { () }", [["rec(poly)", "rec", keyword], ["poly)", "poly", identifier], ["fn again", "fn", keyword]]);
 fixture("raw recursive declaration split callable", "rec(\n poly) fn again() { () }", [["rec(\n", "rec", null], ["poly)", "poly", identifier], ["fn again", "fn", keyword]]);
 fixture("raw ordinary recursive call terminator retains expression root", "rec(\n poly);\nfn later() { () }", [["rec(\n", "rec", null], ["poly)", "poly", identifier], ["fn later", "fn", identifier]]);
-fixture("raw split recursive keyword callee remains a name", "rec\n fn(())", [["rec\n", "rec", null], ["fn(())", "fn", functionName]]);
+fixture("raw split recursive keyword callee remains a name", "recur\n fn(())", [["recur\n", "recur", null], ["fn(())", "fn", functionName]]);
 fixture("raw split recursive type group", "rec\n { type A = B; type B = A; }", [["rec\n", "rec", null], ["type A", "type", keyword], ["type B", "type", keyword]]);
 for (const name of ["newtype", "labels"]) {
-  fixture(`raw split annotated recursive callee ${name}`, `rec(poly)\n ${name}(())`, [["poly)", "poly", null], [`${name}(())`, name, functionName]]);
-  fixture(`raw multiline annotated recursive callee ${name}`, `rec(\n poly) ${name}(())`, [["poly)", "poly", "keyword.control.kio"], [`${name}(())`, name, functionName]]);
+  fixture(`raw split annotated recursive callee ${name}`, `recur(poly)\n ${name}(())`, [["poly)", "poly", null], [`${name}(())`, name, functionName]]);
+  fixture(`raw multiline annotated recursive callee ${name}`, `recur(\n poly) ${name}(())`, [["poly)", "poly", "keyword.control.kio"], [`${name}(())`, name, functionName]]);
 }
 fixture("raw split recursive data declaration", "rec\n newtype N : . { constructor make; projector get; };", [["newtype N", "newtype", keyword], ["constructor make", "constructor", keyword]]);
-for (const source of ["rec(value, poly) again()", "rec(\n value, poly) again()", "rec(value,\n poly"]) {
+for (const source of ["recur(value, poly) again()", "recur(\n value, poly) again()", "recur(value,\n poly"]) {
   fixture(`raw invalid recursive annotation name ${source}`, source, [["value,", "value", identifier], ["poly", "poly", source.endsWith("poly") ? null : "keyword.control.kio"]]);
 }
 for (const prefix of ["rec", "rec(poly)", "rec(\n poly"]) {
   const suffix = prefix.endsWith("poly") ? ")" : "";
   const target = prefix.includes("poly") ? "poly" : "rec";
   const declaration = prefix === "rec" ? "newtype N : . { constructor make; projector get; };" : "fn again() { () }";
-  fixture(`raw recursion later-line declaration ${prefix}`, `${prefix}\n ${suffix} ${declaration}`, [[prefix, target, null]]);
-  fixture(`raw recursion later-line ordinary ${prefix}`, `${prefix}\n ${suffix};`, [[prefix, target, null]]);
+  const scope = target === "rec" ? null : identifier;
+  fixture(`raw recursion later-line declaration ${prefix}`, `${prefix}\n ${suffix} ${declaration}`, [[prefix, target, scope]]);
+  fixture(`raw recursion later-line ordinary ${prefix}`, `${prefix}\n ${suffix};`, [[prefix, target, scope]]);
+}
+for (const prefix of ["recur", "recur(poly)", "recur(\n poly"]) {
+  const suffix = prefix.endsWith("poly") ? ")" : "";
+  const target = prefix.includes("poly") ? "poly" : "recur";
+  fixture(`raw recursive call later-line owner ${prefix}`, `${prefix}\n ${suffix} again(())`, [[prefix, target, null]]);
+  fixture(`raw recursive call later-line ordinary ${prefix}`, `${prefix}\n ${suffix};`, [[prefix, target, null]]);
 }
 fixture("annotation inverse", "module m;\nfn f(poly: ., cont: .) -> . { poly(cont) }", [
   ["poly:", "poly", identifier], ["cont:", "cont", identifier], ["poly(cont)", "poly", functionName], ["(cont)", "cont", identifier],
@@ -355,12 +385,15 @@ fixture("wrong host role parent", "module h;\nhost type N { role };\nfn next(rol
   ["{ role };", "role", identifier], ["role:", "role", identifier], ["-> . { role }", "role", identifier],
 ]);
 fixture("member missing terminator", "module m;\nnewtype N : . { constructor make projector; };", [["make projector", "projector", identifier]]);
-fixture("multiline function name", "module m;\nfn // declaration\n again(value: .) -> . { rec again(value) }", [
-  ["again(value:", "again", functionName], ["rec again", "rec", keyword],
+fixture("multiline function name", "module m;\nfn // declaration\n again(value: .) -> . { recur again(value) }", [
+  ["again(value:", "again", functionName], ["recur again", "recur", keyword],
 ]);
 fixture("multiline host head", "module m;\nhost // declaration\n type Number role(i32);", [["role(i32)", "role", keyword]]);
 fixture("recursive name in member path", "module m;\nfn f() -> . { other.rec again(); other.\n rec again() }", [
   ["other.rec", "rec", identifier], ["\n rec again", "rec", identifier],
+]);
+fixture("recursive call word in member path", "module m;\nfn f() -> . { other.recur again(); other.\n recur again() }", [
+  ["other.recur", "recur", identifier], ["\n recur again", "recur", identifier],
 ]);
 fixture("newtype missing payload", "module m;\nnewtype N { constructor make; };", [["constructor make", "constructor", identifier]]);
 fixture("newtype empty payload", "module m;\nnewtype N : { projector get; };", [["projector get", "projector", identifier]]);
@@ -387,7 +420,7 @@ for (const [sibling, targets] of [
   ["op _ + _ { impl add; };", [["op _", "op", keyword], ["impl add", "impl", keyword]]],
   ["import app as local;", [["import app", "import", keyword]]],
   ["equiv same() { (); () }", [["equiv same", "equiv", keyword], ["same()", "same", functionName]]],
-  ["rec(loop) fn again() { rec again() }", [["rec(loop)", "rec", keyword], ["rec again", "rec", keyword]]],
+  ["rec(loop) fn again() { recur again() }", [["rec(loop)", "rec", keyword], ["recur again", "recur", keyword]]],
 ]) {
   fixture(`invalid newtype sibling ${sibling}`, `module m;\nnewtype N : Box({field}) { constructor make; };\n${sibling}`, [
     ["constructor make", "constructor", identifier], ...targets,
@@ -447,8 +480,8 @@ fixture("else if chain", "module m;\nfn f() -> . { if! .t { () } else if! .f { (
 fixture("conditional lambda condition", "module m;\nfn f() -> . { if!(.(if: .) { if }) { () } else { () } }", [
   ["if:", "if", identifier], ["{ if }", "if", identifier], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("recursive conditional condition", "module m;\nfn f() -> . { if! rec again() { () } else { () } }", [
-  ["rec again", "rec", keyword], ["else {", "else", "keyword.control.kio"],
+fixture("recursive conditional condition", "module m;\nfn f() -> . { if! recur again() { () } else { () } }", [
+  ["recur again", "recur", keyword], ["else {", "else", "keyword.control.kio"],
 ]);
 fixture("elaborator conditional condition", "module m;\nfn f() -> . { if! pred!() { () } else { () } }", [
   ["pred!", "pred!", "entity.name.function.macro.elaborator.kio"], ["else {", "else", "keyword.control.kio"],

@@ -82,11 +82,7 @@ pub fn cat(left: String, right: String) -> String { string_concat(left, right) }
 pub fn istr(value: I32) -> String { int_to_string(value) }
 
 pub fn pad2(value: I32) -> String {
-  if! lt_i32(value, 10) {
-    "0".>cat(istr(value))
-  } else {
-    istr(value)
-  }
+  if! lt_i32(value, 10) { "0".>cat(istr(value)) } else { istr(value) }
 }
 
 pub fn pad3(value: I32) -> String {

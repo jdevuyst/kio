@@ -15,9 +15,9 @@ rec(loop) fn frames(recovered: I32, rejected: I32) {
   match! input.next() {
     .(item: input.Loaded) {
       if! report.run(item.?{input.loaded}) {
-        rec frames(a.add_i32(recovered, 1), rejected)
+        recur frames(a.add_i32(recovered, 1), rejected)
       } else {
-        rec frames(recovered, a.add_i32(rejected, 1))
+        recur frames(recovered, a.add_i32(rejected, 1))
       }
     };
     .(error: input.Error) {

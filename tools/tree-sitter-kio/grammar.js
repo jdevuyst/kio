@@ -105,8 +105,8 @@ module.exports = grammar({
     [$.binding_pattern, $._type],
     [$.local_binding_pattern, $._type],
     [$.expression_path, $.call_callee, $.label_path],
-    [$._token, $.recursive_function_definition, $.recursive_function_group,
-      $.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
+    [$._token, $.recursive_function_definition, $.recursive_function_group, $.call_callee],
+    [$._token, $.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
     [$.expression_path, $.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
     [$.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
     [$.recursive_call_annotation, $._recursive_annotation_tail],
@@ -393,7 +393,7 @@ module.exports = grammar({
     _value_identifier_like: ($) =>
       choice(
         $.keyword_varop,
-        $.keyword_let, $.keyword_rec,
+        $.keyword_let, $.keyword_rec, $.keyword_recur,
         "poly", "cont", "escape",
         $.identifier,
         $.keyword_declaration,
@@ -790,16 +790,16 @@ module.exports = grammar({
 
     recursive_call_expression: ($) =>
       prec.dynamic(10, seq(
-        $.keyword_rec,
+        $.keyword_recur,
         optional($.recursive_call_annotations),
         alias($._expression_name, $.entity_name_function),
         $.expression_arguments,
       )),
 
     incomplete_recursive_call_expression: ($) => prec.dynamic(5, prec.right(choice(
-      seq($.keyword_rec, optional($.recursive_call_annotations),
+      seq($.keyword_recur, optional($.recursive_call_annotations),
         alias($._expression_name, $.entity_name_function)),
-      seq($.keyword_rec, $.bracket_lparen, optional($._recursive_call_annotation_sequence),
+      seq($.keyword_recur, $.bracket_lparen, optional($._recursive_call_annotation_sequence),
         $._editor_block_boundary),
     ))),
 
@@ -1058,6 +1058,7 @@ module.exports = grammar({
     keyword_pub: ($) => kw("pub"),
     keyword_fn: ($) => kw("fn"),
     keyword_rec: ($) => kw("rec"),
+    keyword_recur: ($) => kw("recur"),
     keyword_newtype: ($) => kw("newtype"),
     keyword_labels: ($) => kw("labels"),
     keyword_equiv: ($) => kw("equiv"),

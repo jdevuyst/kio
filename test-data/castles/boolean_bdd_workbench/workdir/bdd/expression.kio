@@ -32,11 +32,11 @@ pub rec(loop) fn evaluate(expr: Expression, assignment: I32 -> Bool) -> Bool {
   match! expr {
     .(c: Constant) { c.?{constant} };
     .(v: Variable) { assignment(v.?{variable}) };
-    .(n: Negation) { logic.not(rec(cont) evaluate(n.?{negation}, assignment)) };
+    .(n: Negation) { logic.not(recur(cont) evaluate(n.?{negation}, assignment)) };
     .(b: Binary) {
       let .(op: logic.Operation, left: Expression, right: Expression) = b.?{binary};
-      let a = rec(cont) evaluate(left, assignment);
-      let b = rec(cont) evaluate(right, assignment);
+      let a = recur(cont) evaluate(left, assignment);
+      let b = recur(cont) evaluate(right, assignment);
       logic.operate(op, a, b)
     }
   }

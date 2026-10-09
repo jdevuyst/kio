@@ -5032,8 +5032,8 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
             "pkg/a",
             "module pkg/a;\n\
              rec(loop) {\n\
-               fn first(value: .) -> . { rec second(value) };\n\
-               pub fn second(value: .) -> . { rec first(value) }\n\
+               fn first(value: .) -> . { recur second(value) };\n\
+               pub fn second(value: .) -> . { recur first(value) }\n\
              }\n",
         )]);
 
@@ -5052,7 +5052,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
             "got:\n{verbose}"
         );
         assert!(!verbose.contains("rec(loop)"), "got:\n{verbose}");
-        assert!(!verbose.contains("rec second(value)"), "got:\n{verbose}");
+        assert!(!verbose.contains("recur second(value)"), "got:\n{verbose}");
     }
 
     #[test]
@@ -5635,8 +5635,8 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
             "pkg/a",
             "module pkg/a;\n\
              rec(loop) {\n\
-               fn first(value: .) -> . { rec second(value) };\n\
-               fn second(value: .) -> . { rec first(value) }\n\
+               fn first(value: .) -> . { recur second(value) };\n\
+               fn second(value: .) -> . { recur first(value) }\n\
              }\n",
         )]);
         let out = cmd_doc(&s, "pkg/a", Palette::plain());
@@ -5862,12 +5862,12 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
     fn enclosing_item_label_picks_recursive_member() {
         let source = "module pkg/a;\n\
                       rec(loop) {\n\
-                        fn first(value: .) -> . { rec second(value) };\n\
-                        fn second(value: .) -> . { rec first(value) }\n\
+                        fn first(value: .) -> . { recur second(value) };\n\
+                        fn second(value: .) -> . { recur first(value) }\n\
                       }\n";
         let module = crate::pass::parser::parse(source).expect("parses");
-        let first_call = source.find("rec second").expect("first body") as u32;
-        let second_call = source.find("rec first").expect("second body") as u32;
+        let first_call = source.find("recur second").expect("first body") as u32;
+        let second_call = source.find("recur first").expect("second body") as u32;
         assert_eq!(
             enclosing_item_label(&module, "pkg/a", first_call),
             "in fn first"

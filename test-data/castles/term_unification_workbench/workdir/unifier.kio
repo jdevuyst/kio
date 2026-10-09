@@ -20,21 +20,21 @@ pub labels Outcome =
   | { arity: I32 & I32 };
 
 rec(loop) fn pair_arguments(
-  , lefts: lists.List(term.Term)
-  , rights: lists.List(term.Term)
-  , paired: lists.List(Equation)
-  , pending: lists.List(Equation)
-  ) -> lists.List(Equation) | Arity {
+, lefts: lists.List(term.Term)
+, rights: lists.List(term.Term)
+, paired: lists.List(Equation)
+, pending: lists.List(Equation)
+) -> lists.List(Equation) | Arity {
   match! lists.uncons(lefts) {
     .(first: term.Term, rest: lists.List(term.Term)) {
       match! lists.uncons(rights) {
         .(other: term.Term, others: lists.List(term.Term)) {
-          rec pair_arguments(
-            , rest
-            , others
-            , lists.cons({left = first, right = other}, paired)
-            , pending
-            )
+          recur pair_arguments(
+          , rest
+          , others
+          , lists.cons({left = first, right = other}, paired)
+          , pending
+          )
         };
         .(_empty: .) { {arity = (traversal.length(lefts), 0)}.>widen_sum! }
       }
@@ -52,11 +52,11 @@ rec(loop) fn pair_arguments(
 rec(loop) {
   fn bind(id: I32, value: term.Term, pending: lists.List(Equation), bindings: subst.Substitution) -> Outcome {
     if! term.equal(term.variable(id), value) {
-      rec solve_work(pending, bindings)
+      recur solve_work(pending, bindings)
     } else if! term.occurs(id, value) {
       {occurs = id}.>widen_sum!
     } else {
-      rec solve_work(pending, subst.extend(bindings, id, value))
+      recur solve_work(pending, subst.extend(bindings, id, value))
     }
   };
   fn solve_work(pending: lists.List(Equation), bindings: subst.Substitution) -> Outcome {
@@ -65,14 +65,14 @@ rec(loop) {
         let left = subst.apply(bindings, equation.?{left});
         let right = subst.apply(bindings, equation.?{right});
         match! left.>term.Term.unwrap {
-          .(v: term.Variable) { rec bind(v.>term.Variable.get, right, rest, bindings) };
+          .(v: term.Variable) { recur bind(v.>term.Variable.get, right, rest, bindings) };
           .(symbol: I32, arguments: lists.List(term.Term)) {
             match! right.>term.Term.unwrap {
-              .(v: term.Variable) { rec bind(v.>term.Variable.get, left, rest, bindings) };
+              .(v: term.Variable) { recur bind(v.>term.Variable.get, left, rest, bindings) };
               .(other: I32, other_arguments: lists.List(term.Term)) {
                 if! arith.eq_i32(symbol, other) {
                   match! pair_arguments(arguments, other_arguments, lists.nil(_), rest) {
-                    .(next: lists.List(Equation)) { rec solve_work(next, bindings) };
+                    .(next: lists.List(Equation)) { recur solve_work(next, bindings) };
                     .(_mismatch: Arity) {
                       {arity = (traversal.length(arguments), traversal.length(other_arguments))}
                         .>widen_sum!

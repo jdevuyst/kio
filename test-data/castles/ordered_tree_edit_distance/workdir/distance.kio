@@ -8,13 +8,13 @@ import testapi/array as array;
 import testapi/iter(loop);
 
 labels Problem = {
-  , source: forest.Tree
-  , target: forest.Tree
-  , left_width: I32
-  , right_width: I32
-  , memo: Array(I32)
-  , choice: Array(I32)
-  };
+, source: forest.Tree
+, target: forest.Tree
+, left_width: I32
+, right_width: I32
+, memo: Array(I32)
+, choice: Array(I32)
+};
 
 pub labels Solution = { cost: I32, mapping: Array(I32) };
 
@@ -38,37 +38,33 @@ rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32)
       arith.sub_i32(stop_a, a)
     } else {
       let deleted = arith.add_i32(
-        , 1
-        , rec(cont) forests(problem, arith.add_i32(a, 1), stop_a, b, stop_b)
-        );
+      , 1
+      , recur(cont) forests(problem, arith.add_i32(a, 1), stop_a, b, stop_b)
+      );
       let inserted = arith.add_i32(
-        , 1
-        , rec(cont) forests(problem, a, stop_a, arith.add_i32(b, 1), stop_b)
-        );
+      , 1
+      , recur(cont) forests(problem, a, stop_a, arith.add_i32(b, 1), stop_b)
+      );
       let after_a = forest.after(problem.?{source}, a);
       let after_b = forest.after(problem.?{target}, b);
-      let children = rec(cont) forests(
-        , problem
-        , arith.add_i32(a, 1)
-        , after_a
-        , arith.add_i32(b, 1)
-        , after_b
-        );
-      let siblings = rec(cont) forests(problem, after_a, stop_a, after_b, stop_b);
+      let children = recur(cont) forests(
+      , problem
+      , arith.add_i32(a, 1)
+      , after_a
+      , arith.add_i32(b, 1)
+      , after_b
+      );
+      let siblings = recur(cont) forests(problem, after_a, stop_a, after_b, stop_b);
       let rename = if! forest.equal(
-        , forest.symbol(problem.?{source}, a)
-        , forest.symbol(problem.?{target}, b)
-        ) {
+      , forest.symbol(problem.?{source}, a)
+      , forest.symbol(problem.?{target}, b)
+      ) {
         0
       } else {
         1
       };
       let paired = arith.add_i32(rename, arith.add_i32(children, siblings));
-      let best_other = if! arith.leq_i32(deleted, inserted) {
-        deleted
-      } else {
-        inserted
-      };
+      let best_other = if! arith.leq_i32(deleted, inserted) { deleted } else { inserted };
       if! arith.leq_i32(paired, best_other) {
         array.array_set(problem.?{choice}, slot, 0);
         paired
@@ -86,13 +82,13 @@ rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32)
 }
 
 rec(loop) fn traceback(
-  , problem: Problem
-  , mapping: Array(I32)
-  , a: I32
-  , stop_a: I32
-  , b: I32
-  , stop_b: I32
-  ) {
+, problem: Problem
+, mapping: Array(I32)
+, a: I32
+, stop_a: I32
+, b: I32
+, stop_b: I32
+) {
   if! forest.less(a, stop_a) {
     if! forest.less(b, stop_b) {
       let choice = array.array_get(problem.?{choice}, index(problem, a, stop_a, b, stop_b));
@@ -100,19 +96,19 @@ rec(loop) fn traceback(
         array.array_set(mapping, a, b);
         let after_a = forest.after(problem.?{source}, a);
         let after_b = forest.after(problem.?{target}, b);
-        rec(cont) traceback(
-          , problem
-          , mapping
-          , arith.add_i32(a, 1)
-          , after_a
-          , arith.add_i32(b, 1)
-          , after_b
-          );
-        rec traceback(problem, mapping, after_a, stop_a, after_b, stop_b)
+        recur(cont) traceback(
+        , problem
+        , mapping
+        , arith.add_i32(a, 1)
+        , after_a
+        , arith.add_i32(b, 1)
+        , after_b
+        );
+        recur traceback(problem, mapping, after_a, stop_a, after_b, stop_b)
       } else if! forest.equal(choice, 1) {
-        rec traceback(problem, mapping, arith.add_i32(a, 1), stop_a, b, stop_b)
+        recur traceback(problem, mapping, arith.add_i32(a, 1), stop_a, b, stop_b)
       } else {
-        rec traceback(problem, mapping, a, stop_a, arith.add_i32(b, 1), stop_b)
+        recur traceback(problem, mapping, a, stop_a, arith.add_i32(b, 1), stop_b)
       }
     } else {
       ()
@@ -129,13 +125,13 @@ pub fn solve(source: forest.Tree, target: forest.Tree) -> Solution {
   let slots = arith.mul_i32(area, area);
   let problem =
     {
-      , source
-      , target
-      , left_width
-      , right_width
-      , memo = array.array_make_filled(slots, -1)
-      , choice = array.array_make_filled(slots, -1)
-      };
+    , source
+    , target
+    , left_width
+    , right_width
+    , memo = array.array_make_filled(slots, -1)
+    , choice = array.array_make_filled(slots, -1)
+    };
   let cost = forests(problem, 0, forest.size(source), 0, forest.size(target));
   let mapping = array.array_make_filled(forest.size(source), -1);
   traceback(problem, mapping, 0, forest.size(source), 0, forest.size(target));

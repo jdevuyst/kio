@@ -27,7 +27,7 @@ pub fn of1[A](a: A) -> List(A) { cons(a, nil(A)) }
 /// rather than a quadratic append.
 pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+    (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -35,7 +35,7 @@ pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A)) }
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
-    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_head: A, rest: List(A)) { recur len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 

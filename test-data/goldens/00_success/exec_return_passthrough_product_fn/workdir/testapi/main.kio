@@ -11,14 +11,16 @@ fn make() -> (String & String) -> String {
 }
 
 fn make_iife() -> (String & String) -> String {
-  .() { id((String & String) -> String, .(left: String, right: String) -> String { left }) }()
+  .() {
+    id((String & String) -> String, .(left: String, right: String) -> String { left })
+  }()
 }
 
 pub fn main() {
   let f = make();
   let g = make_iife();
   print(string_concat(
-    , f(("left\n"(String), "right"(String)))
-    , g(("wrapped\n"(String), "right"(String)))
-    ))
+  , f(("left\n"(String), "right"(String)))
+  , g(("wrapped\n"(String), "right"(String)))
+  ))
 }

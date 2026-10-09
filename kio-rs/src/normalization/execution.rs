@@ -1351,11 +1351,12 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     return Control::Return;
                 }
             };
-            let measure = fuel_measure(&fuel, self.ctx);
-            if let Some(next) = measure
-                && next < current_measure
-                && next < root_measure
-            {
+            if let Some(next) = structural_recursion::descending_fuel_measure(
+                &fuel,
+                current_measure,
+                root_measure,
+                self.ctx,
+            ) {
                 let recur = Value::StructuralRecur {
                     root_measure,
                     current_measure: next,

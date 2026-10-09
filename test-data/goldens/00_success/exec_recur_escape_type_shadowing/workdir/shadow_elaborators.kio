@@ -1,0 +1,15 @@
+module shadow_elaborators;
+
+import __comptime__;
+
+pure fn invoke_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _result: __Type__
+, callback: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let specialized = __term_type_app__(ct, callback, __type_unit__(ct));
+  (__term_call__(ct, __term_type__(ct, specialized), specialized, __term_unit__(ct)), fills)
+}
+
+pub elab invoke : [Result] ([T] T -> Result) -> Result { impl(fills) invoke_impl }

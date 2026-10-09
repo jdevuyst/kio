@@ -90,23 +90,23 @@ fn outranks(held: Op, incoming: Binop) -> Bool {
 rec(loop) fn pop_greater(incoming: Binop, out: List(Step), stack: List(Frame)) -> Carry {
   match! stack.>List.un_list {
     (
-      , .(top: Frame, rest: List(Frame)) {
-          match! top {
-            (
-              , .(o: Operator) {
-                  let held = o.?{operator};
-                  if! outranks(held.?{pend_op}, incoming) {
-                    rec pop_greater(incoming, cons(frame_step(held), out), rest)
-                  } else {
-                    carry(out, stack)
-                  }
-                }
-              , .(_barrier: Open_paren) { carry(out, stack) }
-              )
-          }
+    , .(top: Frame, rest: List(Frame)) {
+        match! top {
+          (
+          , .(o: Operator) {
+              let held = o.?{operator};
+              if! outranks(held.?{pend_op}, incoming) {
+                recur pop_greater(incoming, cons(frame_step(held), out), rest)
+              } else {
+                carry(out, stack)
+              }
+            }
+          , .(_barrier: Open_paren) { carry(out, stack) }
+          )
         }
-      , .(_empty: .) { carry(out, stack) }
-      )
+      }
+    , .(_empty: .) { carry(out, stack) }
+    )
   }
 }
 
@@ -115,18 +115,16 @@ rec(loop) fn pop_greater(incoming: Binop, out: List(Step), stack: List(Frame)) -
 rec(loop) fn pop_to_paren(spot: I32, out: List(Step), stack: List(Frame)) -> Close {
   match! stack.>List.un_list {
     (
-      , .(top: Frame, rest: List(Frame)) {
-          match! top {
-            (
-              , .(o: Operator) {
-                  rec pop_to_paren(spot, cons(frame_step(o.?{operator}), out), rest)
-                }
-              , .(_barrier: Open_paren) { close_ok(carry(out, rest)) }
-              )
-          }
+    , .(top: Frame, rest: List(Frame)) {
+        match! top {
+          (
+          , .(o: Operator) { recur pop_to_paren(spot, cons(frame_step(o.?{operator}), out), rest) }
+          , .(_barrier: Open_paren) { close_ok(carry(out, rest)) }
+          )
         }
-      , .(_empty: .) { close_fail(fault_at(unmatched_close_fault(), spot)) }
-      )
+      }
+    , .(_empty: .) { close_fail(fault_at(unmatched_close_fault(), spot)) }
+    )
   }
 }
 
@@ -135,16 +133,16 @@ rec(loop) fn pop_to_paren(spot: I32, out: List(Step), stack: List(Frame)) -> Clo
 rec(loop) fn drain(out: List(Step), stack: List(Frame)) -> Built {
   match! stack.>List.un_list {
     (
-      , .(top: Frame, rest: List(Frame)) {
-          match! top {
-            (
-              , .(o: Operator) { rec drain(cons(frame_step(o.?{operator}), out), rest) }
-              , .(b: Open_paren) { fail_built(fault_at(unclosed_open_fault(), b.?{open_paren})) }
-              )
-          }
+    , .(top: Frame, rest: List(Frame)) {
+        match! top {
+          (
+          , .(o: Operator) { recur drain(cons(frame_step(o.?{operator}), out), rest) }
+          , .(b: Open_paren) { fail_built(fault_at(unclosed_open_fault(), b.?{open_paren})) }
+          )
         }
-      , .(_empty: .) { ok_built(reverse(out)) }
-      )
+      }
+    , .(_empty: .) { ok_built(reverse(out)) }
+    )
   }
 }
 
@@ -157,12 +155,12 @@ fn close_prog(c: Close) -> Prog {
 fn feed_op(op: Op, spot: I32, out: List(Step), stack: List(Frame)) -> Prog {
   match! op {
     (
-      , .(_prefix: Unary) { going(carry(out, cons(op_frame(op, spot), stack))) }
-      , .(b: Binary) {
-          let popped = pop_greater(b.?{binary}, out, stack);
-          going(carry(popped.?{c_out}, cons(op_frame(op, spot), popped.?{c_stack})))
-        }
-      )
+    , .(_prefix: Unary) { going(carry(out, cons(op_frame(op, spot), stack))) }
+    , .(b: Binary) {
+        let popped = pop_greater(b.?{binary}, out, stack);
+        going(carry(popped.?{c_out}, cons(op_frame(op, spot), popped.?{c_stack})))
+      }
+    )
   }
 }
 
@@ -171,31 +169,28 @@ fn feed(p: Placed, out: List(Step), stack: List(Frame)) -> Prog {
   let spot = at_of(p);
   match! tok_of(p) {
     (
-      , .(n: Num) { going(carry(cons(lit_step(n.?{num}, spot), out), stack)) }
-      , .(o: Oper) { feed_op(o.?{oper}, spot, out, stack) }
-      , .(_open: Lparen) { going(carry(out, cons(open_frame(spot), stack))) }
-      , .(_close: Rparen) { close_prog(pop_to_paren(spot, out, stack)) }
-      , .(_junk: Bad) { stopped(fault_at(bad_token_fault(), spot)) }
-      )
+    , .(n: Num) { going(carry(cons(lit_step(n.?{num}, spot), out), stack)) }
+    , .(o: Oper) { feed_op(o.?{oper}, spot, out, stack) }
+    , .(_open: Lparen) { going(carry(out, cons(open_frame(spot), stack))) }
+    , .(_close: Rparen) { close_prog(pop_to_paren(spot, out, stack)) }
+    , .(_junk: Bad) { stopped(fault_at(bad_token_fault(), spot)) }
+    )
   }
 }
 
 rec(loop) fn shunt(toks: List(Placed), out: List(Step), stack: List(Frame)) -> Built {
   match! toks.>List.un_list {
     (
-      , .(p: Placed, rest: List(Placed)) {
-          match! feed(p, out, stack) {
-            (
-              , .(g: Going) {
-                  let next = g.?{going};
-                  rec shunt(rest, next.?{c_out}, next.?{c_stack})
-                }
-              , .(s: Stopped) { fail_built(s.?{stopped}) }
-              )
-          }
+    , .(p: Placed, rest: List(Placed)) {
+        match! feed(p, out, stack) {
+          (
+          , .(g: Going) { let next = g.?{going}; recur shunt(rest, next.?{c_out}, next.?{c_stack}) }
+          , .(s: Stopped) { fail_built(s.?{stopped}) }
+          )
         }
-      , .(_empty: .) { drain(out, stack) }
-      )
+      }
+    , .(_empty: .) { drain(out, stack) }
+    )
   }
 }
 

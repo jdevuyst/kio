@@ -158,7 +158,7 @@ host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
   if! leq_i32(i, 2) {
     array_set(scores, i, add_i32(i, 10));
-    rec fill_scores(add_i32(i, 1), scores)
+    recur fill_scores(add_i32(i, 1), scores)
   } else {
     scores
   }

@@ -40,7 +40,7 @@ rec(loop) fn solve(equations: Equations, substitutions: types.Substitution) -> R
       match! a {
         .(v: types.Variable) {
           match! bind(types.Variable.get(v), b, substitutions) {
-            .(next: types.Substitution) { rec solve(rest, next) };
+            .(next: types.Substitution) { recur solve(rest, next) };
             .(error: String) { error.>widen_sum! }
           }
         };
@@ -48,23 +48,23 @@ rec(loop) fn solve(equations: Equations, substitutions: types.Substitution) -> R
           match! b {
             .(v: types.Variable) {
               match! bind(types.Variable.get(v), a, substitutions) {
-                .(next: types.Substitution) { rec solve(rest, next) };
+                .(next: types.Substitution) { recur solve(rest, next) };
                 .(error: String) { error.>widen_sum! }
               }
             };
             .() {
               match!((a, b)) {
-                .(_a: types.Integer, _b: types.Integer) { rec solve(rest, substitutions) };
-                .(_a: types.Boolean, _b: types.Boolean) { rec solve(rest, substitutions) };
+                .(_a: types.Integer, _b: types.Integer) { recur solve(rest, substitutions) };
+                .(_a: types.Boolean, _b: types.Boolean) { recur solve(rest, substitutions) };
                 .(a: types.Arrow, b: types.Arrow) {
                   let .(a1: types.Ty, a2: types.Ty) = types.Arrow.get(a);
                   let .(b1: types.Ty, b2: types.Ty) = types.Arrow.get(b);
-                  rec solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
+                  recur solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
                 };
                 .(a: types.Pair, b: types.Pair) {
                   let .(a1: types.Ty, a2: types.Ty) = types.Pair.get(a);
                   let .(b1: types.Ty, b2: types.Ty) = types.Pair.get(b);
-                  rec solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
+                  recur solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
                 };
                 .() { "incompatible types".>widen_sum! }
               }

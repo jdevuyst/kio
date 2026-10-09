@@ -56,12 +56,8 @@ rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I
   } else {
     array_set(cells, i, value);
     let stepped = add_i32(value, 9);
-    let wrapped = if! leq_i32(30, stepped) {
-      sub_i32(stepped, 37)
-    } else {
-      stepped
-    };
-    rec fill_from(cells, add_i32(i, 1), n, wrapped)
+    let wrapped = if! leq_i32(30, stepped) { sub_i32(stepped, 37) } else { stepped };
+    recur fill_from(cells, add_i32(i, 1), n, wrapped)
   }
 }
 

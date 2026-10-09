@@ -55,12 +55,12 @@ pub fn value_width(v: Value) -> I32 {
 pub fn value_cell(v: Value, width: I32) -> String {
   match! v {
     (
-      , .(n: V_int) {
-          let shown = int_to_string(n.?{v_int});
-          text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
-        }
-      , .(s: V_text, w: V_width) { text.pad_right(s.?{v_text}, sub_i32(width, w.?{v_width})) }
-      )
+    , .(n: V_int) {
+        let shown = int_to_string(n.?{v_int});
+        text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+      }
+    , .(s: V_text, w: V_width) { text.pad_right(s.?{v_text}, sub_i32(width, w.?{v_width})) }
+    )
   }
 }
 
@@ -70,11 +70,11 @@ pub fn value_cell(v: Value, width: I32) -> String {
 pub fn value_tail(v: Value, width: I32) -> String {
   match! v {
     (
-      , .(n: V_int) {
-          let shown = int_to_string(n.?{v_int});
-          text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
-        }
-      , .(s: V_text, _w: V_width) { s.?{v_text} }
-      )
+    , .(n: V_int) {
+        let shown = int_to_string(n.?{v_int});
+        text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+      }
+    , .(s: V_text, _w: V_width) { s.?{v_text} }
+    )
   }
 }

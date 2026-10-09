@@ -30,4 +30,6 @@ pub fn callback[A][T](step: Box(A & T) -> Box(A & T), value: Box(A & T)) -> Box(
   step(value)
 }
 
-pub fn returned[A][T](value: Box(A & T)) -> . -> Box(A & T) { .() { value } }
+pub fn returned[A][T](value: Box(A & T)) -> . -> Box(A & T) {
+  .() { value }
+}

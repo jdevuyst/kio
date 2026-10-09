@@ -36,11 +36,11 @@ fn wide_args_in_segment() -> . {
     receiver
       .>one(x)
       .>two(
-        , arg_one_with_a_long_name
-        , arg_two_with_a_long_name
-        , arg_three_with_a_long_name
-        , arg_four_with_a_long_name
-        )
+      , arg_one_with_a_long_name
+      , arg_two_with_a_long_name
+      , arg_three_with_a_long_name
+      , arg_four_with_a_long_name
+      )
       .>three(y);
   r
 }
@@ -82,11 +82,11 @@ fn wide_args_in_segment() -> . {
     receiver
       .>one(x)
       .>two(
-        , arg_one_with_a_long_name
-        , arg_two_with_a_long_name
-        , arg_three_with_a_long_name
-        , arg_four_with_a_long_name
-        )
+      , arg_one_with_a_long_name
+      , arg_two_with_a_long_name
+      , arg_three_with_a_long_name
+      , arg_four_with_a_long_name
+      )
       .>three(y);
   r
 }

@@ -21,14 +21,9 @@ pub fn main() {
   // Pick out the I32 and Bool slots and stringify.
   let n = one_prod!(r, I32);
   let b = one_prod!(r, Bool);
-  let bs =
-    if! b {
-      "true"
-    } else {
-      "false"
-    };
+  let bs = if! b { "true" } else { "false" };
   print(string_concat(
-    , "fit nested: "
-    , string_concat(int_to_string(n), string_concat(" ", string_concat(bs, "\n")))
-    ))
+  , "fit nested: "
+  , string_concat(int_to_string(n), string_concat(" ", string_concat(bs, "\n")))
+  ))
 }

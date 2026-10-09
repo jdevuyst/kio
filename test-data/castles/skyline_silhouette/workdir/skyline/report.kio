@@ -39,11 +39,7 @@ fn num(n: I32) -> String { int_to_string(n) }
 /// columns up — the host surface carries no string-length primitive to pad
 /// with, and none is needed.
 fn num2(n: I32) -> String {
-  if! leq_i32(n, 9) {
-    " " ++ num(n)
-  } else {
-    num(n)
-  }
+  if! leq_i32(n, 9) { " " ++ num(n) } else { num(n) }
 }
 
 pub fn print_header() { line("skyline_silhouette v1") }
@@ -56,12 +52,12 @@ fn building_row(b: city.Building) -> String {
 rec(loop) fn each_building(bs: lst.List(city.Building)) {
   match! bs.>lst.List.un_list {
     (
-      , .(b: city.Building, rest: lst.List(city.Building)) {
-          line(building_row(b));
-          rec each_building(rest)
-        }
-      , .(_empty: .) { () }
-      )
+    , .(b: city.Building, rest: lst.List(city.Building)) {
+        line(building_row(b));
+        recur each_building(rest)
+      }
+    , .(_empty: .) { () }
+    )
   }
 }
 
@@ -79,12 +75,12 @@ fn event_row(e: events.Event) -> String {
 rec(loop) fn each_event(es: lst.List(events.Event)) {
   match! es.>lst.List.un_list {
     (
-      , .(e: events.Event, rest: lst.List(events.Event)) {
-          line(event_row(e));
-          rec each_event(rest)
-        }
-      , .(_empty: .) { () }
-      )
+    , .(e: events.Event, rest: lst.List(events.Event)) {
+        line(event_row(e));
+        recur each_event(rest)
+      }
+    , .(_empty: .) { () }
+    )
   }
 }
 
@@ -98,28 +94,19 @@ pub fn print_events(es: lst.List(events.Event)) {
 rec(loop) fn each_height(xs: ms.Active, acc: String, first: Bool) -> String {
   match! xs.>lst.List.un_list {
     (
-      , .(h: I32, rest: ms.Active) {
-          let .(gap: String) =
-            if! first {
-              ""
-            } else {
-              ","
-            };
-          rec each_height(rest, acc ++ gap ++ num(h), .f)
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(h: I32, rest: ms.Active) {
+        let .(gap: String) = if! first { "" } else { "," };
+        recur each_height(rest, acc ++ gap ++ num(h), .f)
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 fn show_held(xs: ms.Active) -> String { "[" ++ each_height(xs, "", .t) ++ "]" }
 
 fn mark(emitted: Bool) -> String {
-  if! emitted {
-    "key"
-  } else {
-    "---"
-  }
+  if! emitted { "key" } else { "---" }
 }
 
 fn step_row(s: sweep.Step) -> String {
@@ -131,9 +118,9 @@ fn step_row(s: sweep.Step) -> String {
 rec(loop) fn each_step(steps: lst.List(sweep.Step)) {
   match! steps.>lst.List.un_list {
     (
-      , .(s: sweep.Step, rest: lst.List(sweep.Step)) { line(step_row(s)); rec each_step(rest) }
-      , .(_empty: .) { () }
-      )
+    , .(s: sweep.Step, rest: lst.List(sweep.Step)) { line(step_row(s)); recur each_step(rest) }
+    , .(_empty: .) { () }
+    )
   }
 }
 
@@ -150,17 +137,12 @@ fn show_point(p: sweep.Point) -> String {
 rec(loop) fn each_point(ps: lst.List(sweep.Point), acc: String, first: Bool) -> String {
   match! ps.>lst.List.un_list {
     (
-      , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
-          let .(gap: String) =
-            if! first {
-              ""
-            } else {
-              " "
-            };
-          rec each_point(rest, acc ++ gap ++ show_point(p), .f)
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+        let .(gap: String) = if! first { "" } else { " " };
+        recur each_point(rest, acc ++ gap ++ show_point(p), .f)
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -174,7 +156,7 @@ rec(loop) fn each_column(grid: Array(I32), col: I32, acc: String) -> String {
   if! leq_i32(array_len(grid), col) {
     acc
   } else {
-    rec each_column(grid, add_i32(col, 1), acc ++ " " ++ num(array_get(grid, col)))
+    recur each_column(grid, add_i32(col, 1), acc ++ " " ++ num(array_get(grid, col)))
   }
 }
 

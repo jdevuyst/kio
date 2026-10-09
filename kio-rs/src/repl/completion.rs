@@ -493,6 +493,19 @@ mod tests {
     }
 
     #[test]
+    fn recursive_annotations_have_no_owner_in_terminal_prompts() {
+        let mut completer = completer_with(NameSet::default());
+        for input in [
+            "recur(",
+            "recur(cont, ",
+            ".() { recur(",
+            ":normalize recur(",
+        ] {
+            assert!(completer.complete(input, input.len()).is_empty(), "{input}");
+        }
+    }
+
+    #[test]
     fn numbered_binding_completion_shadows_the_entire_earlier_family() {
         let mut completer = completer_with(NameSet::default());
         for prefix in ["", ":normalize "] {

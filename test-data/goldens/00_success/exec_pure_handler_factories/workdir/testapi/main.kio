@@ -20,9 +20,9 @@ pub fn main() {
   io.print(__either__(., ., String, __left__(., ., ()), factories.first(), second()));
   io.print(__either__(., ., String, __right__(., ., ()), factories.first(), second()));
   io.print(__if_then_else__(
-    , String
-    , condition(.t(Bool))
-    , factories.first()
-    , factories.relay(unknown_factory)
-    ))
+  , String
+  , condition(.t(Bool))
+  , factories.first()
+  , factories.relay(unknown_factory)
+  ))
 }

@@ -74,11 +74,7 @@ A pattern can contain several symbols and operands:
 
 ```kio {@module}
 fn cond[A](c: Bool, t: A, e: A) -> A {
-  if! c {
-    t
-  } else {
-    e
-  }
+  if! c { t } else { e }
 }
 
 op _ ? _ : __ { impl cond }

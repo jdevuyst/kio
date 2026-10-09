@@ -11,19 +11,19 @@ module cpu/report;
 
 import cpu/isa(Instr, instr_text, reg_text, slot_text);
 import cpu/machine(
-  , {bubbles}
-  , {cycle}
-  , {flushes}
-  , {fwd_ex_mem}
-  , {fwd_mem_wb}
-  , {retired}
-  , {st_ex}
-  , {st_id}
-  , {st_if}
-  , {st_mem}
-  , {st_wb}
-  , {stalls}
-  );
+, {bubbles}
+, {cycle}
+, {flushes}
+, {fwd_ex_mem}
+, {fwd_mem_wb}
+, {retired}
+, {st_ex}
+, {st_id}
+, {st_if}
+, {st_mem}
+, {st_wb}
+, {stalls}
+);
 import cpu/machine(Machine, stage_empty);
 import cpu/num(cat, cat3, digits, div, int_eq, int_lt, left, right, spaces);
 import elab/control(if);
@@ -58,20 +58,12 @@ pub fn labeled(label: String, value: String) { line(cat3(label, ": ", value)) }
 fn counted(label: String, value: I32) { labeled(label, num(value)) }
 
 pub fn yes_no(flag: Bool) -> String {
-  if! flag {
-    "yes"
-  } else {
-    "no"
-  }
+  if! flag { "yes" } else { "no" }
 }
 
 /// One stage column: the instruction's index, or `--` for an empty stage.
 fn cell(slot: I32) -> String {
-  if! stage_empty(slot) {
-    " --"
-  } else {
-    cat(spaces(sub_i32(2, digits(slot))), slot_text(slot))
-  }
+  if! stage_empty(slot) { " --" } else { cat(spaces(sub_i32(2, digits(slot))), slot_text(slot)) }
 }
 
 pub fn pipeline_header() { line("cyc |  IF  ID  EX MEM  WB | event") }
@@ -79,10 +71,10 @@ pub fn pipeline_header() { line("cyc |  IF  ID  EX MEM  WB | event") }
 pub fn pipeline_row(m: Machine, event: Event) {
   let stages =
     cat3(
-      , cat(cell(m.?{st_if}), " ")
-      , cat(cell(m.?{st_id}), " ")
-      , cat3(cat(cell(m.?{st_ex}), " "), cat(cell(m.?{st_mem}), " "), cell(m.?{st_wb}))
-      );
+    , cat(cell(m.?{st_if}), " ")
+    , cat(cell(m.?{st_id}), " ")
+    , cat3(cat(cell(m.?{st_ex}), " "), cat(cell(m.?{st_mem}), " "), cell(m.?{st_wb}))
+    );
   let row = cat(cat(right(m.?{cycle}, 3), " | "), stages);
   match! event {
     (.(note: String) { line(cat3(row, " | ", note)) }, .(_nothing: .) { line(cat(row, " |")) })
@@ -92,10 +84,10 @@ pub fn pipeline_row(m: Machine, event: Event) {
 rec(loop) fn listing_walk(code: Array(Instr), index: I32) {
   if! int_lt(index, array_len(code)) {
     line(cat(
-      , left(slot_text(index), add_i32(1, digits(index)), 6)
-      , instr_text(array_get(code, index))
-      ));
-    rec listing_walk(code, add_i32(index, 1))
+    , left(slot_text(index), add_i32(1, digits(index)), 6)
+    , instr_text(array_get(code, index))
+    ));
+    recur listing_walk(code, add_i32(index, 1))
   } else {
     ()
   }
@@ -111,10 +103,10 @@ fn ipc_permille(m: Machine) -> I32 { div(mul_i32(m.?{retired}, 1000), m.?{cycle}
 fn forwards_text(m: Machine) -> String {
   let total = add_i32(m.?{fwd_ex_mem}, m.?{fwd_mem_wb});
   cat3(
-    , cat(num(total), " (EX/MEM ")
-    , cat(num(m.?{fwd_ex_mem}), ", MEM/WB ")
-    , cat(num(m.?{fwd_mem_wb}), ")")
-    )
+  , cat(num(total), " (EX/MEM ")
+  , cat(num(m.?{fwd_ex_mem}), ", MEM/WB ")
+  , cat(num(m.?{fwd_mem_wb}), ")")
+  )
 }
 
 /// Every cycle the EX stage either holds an instruction that will go on
@@ -138,13 +130,9 @@ pub fn counters(m: Machine) {
 
 rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
   if! int_lt(index, array_len(regs)) {
-    let separator = if! int_eq(index, 0) {
-      ""
-    } else {
-      " "
-    };
+    let separator = if! int_eq(index, 0) { "" } else { " " };
     let entry = cat3(reg_text(index), "=", num(array_get(regs, index)));
-    rec reg_walk(regs, add_i32(index, 1), cat3(text, separator, entry))
+    recur reg_walk(regs, add_i32(index, 1), cat3(text, separator, entry))
   } else {
     text
   }
@@ -152,13 +140,9 @@ rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
 
 rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
   if! int_lt(index, array_len(mem)) {
-    let separator = if! int_eq(index, 0) {
-      ""
-    } else {
-      " "
-    };
+    let separator = if! int_eq(index, 0) { "" } else { " " };
     let entry = cat(cat3("[", num(index), "]="), num(array_get(mem, index)));
-    rec mem_walk(mem, add_i32(index, 1), cat3(text, separator, entry))
+    recur mem_walk(mem, add_i32(index, 1), cat3(text, separator, entry))
   } else {
     text
   }

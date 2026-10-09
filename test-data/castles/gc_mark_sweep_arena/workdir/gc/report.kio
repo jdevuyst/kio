@@ -19,15 +19,15 @@ import gc/slot({imm}, {ptr});
 import gc/sweep(Census);
 import gc/sweep({dead_cells}, {dead_objects}, {live_cells}, {live_objects});
 import gc/verify(
-  , {arena_objects}
-  , {broken}
-  , {checked_pointers}
-  , {checked_roots}
-  , {dangling}
-  , {expected_live}
-  , {reachable}
-  , {verified}
-  );
+, {arena_objects}
+, {broken}
+, {checked_pointers}
+, {checked_roots}
+, {dangling}
+, {expected_live}
+, {reachable}
+, {verified}
+);
 import gc/verify(Audit, Broken, Verdict, Verified);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
@@ -56,12 +56,7 @@ fn counted(label: String, value: I32) { labeled(label, num(value)) }
 /// index, so the list carries whether anything has been appended yet.
 fn append(list: Bool & String, separator: String, item: String) -> Bool & String {
   let .(empty: Bool, text: String) = list;
-  let lead =
-    if! empty {
-      ""
-    } else {
-      separator
-    };
+  let lead = if! empty { "" } else { separator };
   (.f, text.>cat(lead).>cat(item))
 }
 
@@ -69,17 +64,17 @@ fn list_text(list: Bool & String) -> String { let .(_empty: Bool, text: String) 
 
 fn fields_text(cells: Array(I32), addr: I32) -> String {
   list_text(fold_fields(
-    , cells
-    , addr
-    , .(list, index) {
-        let field =
-          match! field_slot(cells, addr, index) {
-            (.(p: Ptr) { cat("*", num(p.?{ptr})) }, .(v: Imm) { num(v.?{imm}) })
-          };
-        append(list, ", ", field)
-      }
-    , (.t, "")
-    ))
+  , cells
+  , addr
+  , .(list, index) {
+      let field =
+        match! field_slot(cells, addr, index) {
+          (.(p: Ptr) { cat("*", num(p.?{ptr})) }, .(v: Imm) { num(v.?{imm}) })
+        };
+      append(list, ", ", field)
+    }
+  , (.t, "")
+  ))
 }
 
 fn object_text(cells: Array(I32), addr: I32) -> String {
@@ -105,12 +100,12 @@ pub fn print_heap(title: String, cells: Array(I32)) {
 
 rec(loop) fn addrs_text(addrs: Array(I32), index: I32, text: String) -> String {
   if! int_lt(index, array_len(addrs)) {
-    let separator = if! int_eq(index, 0) {
-      ""
-    } else {
-      " "
-    };
-    rec addrs_text(addrs, add_i32(index, 1), text.>cat(separator).>cat(at(array_get(addrs, index))))
+    let separator = if! int_eq(index, 0) { "" } else { " " };
+    recur addrs_text(
+    , addrs
+    , add_i32(index, 1)
+    , text.>cat(separator).>cat(at(array_get(addrs, index)))
+    )
   } else {
     text
   }
@@ -122,16 +117,12 @@ pub fn addr_list(addrs: Array(I32)) -> String { addrs_text(addrs, 0, "") }
 /// set for `.t`, the garbage for `.f`.
 fn marked_list(cells: Array(I32), marks: Array(Bool), wanted: Bool) -> String {
   list_text(fold_objects(
-    , cells
-    , .(list, addr) {
-        if! bool_eq(array_get(marks, addr), wanted) {
-          append(list, " ", at(addr))
-        } else {
-          list
-        }
-      }
-    , (.t, "")
-    ))
+  , cells
+  , .(list, addr) {
+      if! bool_eq(array_get(marks, addr), wanted) { append(list, " ", at(addr)) } else { list }
+    }
+  , (.t, "")
+  ))
 }
 
 fn tally(label: String, count: I32, addrs: String) {
@@ -162,16 +153,16 @@ pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) {
   line("forwarding table (old -> new)");
   let forward = layout.?{forward_table};
   fold_objects(
-    , cells
-    , .(_unit, addr) {
-        if! array_get(marks, addr) {
-          line("  ".>cat(at(addr)).>cat(" -> ").>cat(at(array_get(forward, addr))))
-        } else {
-          ()
-        }
+  , cells
+  , .(_unit, addr) {
+      if! array_get(marks, addr) {
+        line("  ".>cat(at(addr)).>cat(" -> ").>cat(at(array_get(forward, addr))))
+      } else {
+        ()
       }
-    , ()
-    )
+    }
+  , ()
+  )
 }
 
 pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) {
@@ -184,9 +175,9 @@ fn reached_text(report: Audit) -> String {
   let reachable = report.?{reachable};
   match! reachable {
     (
-      , .(count: I32) { num(count).>cat(" of ").>cat(num(report.?{expected_live})) }
-      , .(_untraversed: .) { "not traversed (unsound pointers)" }
-      )
+    , .(count: I32) { num(count).>cat(" of ").>cat(num(report.?{expected_live})) }
+    , .(_untraversed: .) { "not traversed (unsound pointers)" }
+    )
   }
 }
 
@@ -202,8 +193,8 @@ pub fn print_verify(verdict: Verdict) {
   line("-- verify --");
   match! verdict {
     (
-      , .(sound: Verified) { print_audit(sound.?{verified}); labeled("verdict", "heap verified") }
-      , .(damaged: Broken) { print_audit(damaged.?{broken}); labeled("verdict", "heap broken") }
-      )
+    , .(sound: Verified) { print_audit(sound.?{verified}); labeled("verdict", "heap verified") }
+    , .(damaged: Broken) { print_audit(damaged.?{broken}); labeled("verdict", "heap broken") }
+    )
   }
 }

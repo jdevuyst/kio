@@ -3,24 +3,24 @@ module minesweeper_frontier/report;
 import elab/control(if);
 import minesweeper_frontier/counts(build_counts, sum_revealed_counts);
 import minesweeper_frontier/frontier(
-  , build_classes
-  , class_mine_frontier
-  , class_remote
-  , class_revealed
-  , class_safe_frontier
-  , count_class
-  , find_best_safe
-  , rotate_recommendations
-  , safe_frontier_indices
-  );
+, build_classes
+, class_mine_frontier
+, class_remote
+, class_revealed
+, class_safe_frontier
+, count_class
+, find_best_safe
+, rotate_recommendations
+, safe_frontier_indices
+);
 import minesweeper_frontier/model(
-  , build_mines
-  , build_revealed
-  , cell_count
-  , last_index
-  , mine_total
-  , revealed_total
-  );
+, build_mines
+, build_revealed
+, cell_count
+, last_index
+, mine_total
+, revealed_total
+);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;

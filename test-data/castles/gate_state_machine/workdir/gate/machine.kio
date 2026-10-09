@@ -9,23 +9,19 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 labels Machine = {
-  , tick: I32
-  , phase: I32
-  , attempts: I32
-  , denied: I32
-  , open_count: I32
-  , alarm_count: I32
-  , lockout: I32
-  , energy: I32
-  , log: String
-  };
+, tick: I32
+, phase: I32
+, attempts: I32
+, denied: I32
+, open_count: I32
+, alarm_count: I32
+, lockout: I32
+, energy: I32
+, log: String
+};
 
 fn bool_and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 fn join2(a: String, b: String) -> String { string_concat(a, b) }
@@ -53,41 +49,41 @@ fn phase_name(phase: I32) -> String {
 }
 
 fn make_machine(
-  , tick: I32
-  , phase: I32
-  , attempts: I32
-  , denied: I32
-  , open_count: I32
-  , alarm_count: I32
-  , lockout: I32
-  , energy: I32
-  , log: String
-  ) -> Machine { {tick, phase, attempts, denied, open_count, alarm_count, lockout, energy, log} }
+, tick: I32
+, phase: I32
+, attempts: I32
+, denied: I32
+, open_count: I32
+, alarm_count: I32
+, lockout: I32
+, energy: I32
+, log: String
+) -> Machine { {tick, phase, attempts, denied, open_count, alarm_count, lockout, energy, log} }
 
 fn initial() -> Machine { make_machine(0, 0, 0, 0, 0, 0, 0, 0, "") }
 
 fn next_state(
-  , machine: Machine
-  , event: String
-  , phase: I32
-  , attempts_delta: I32
-  , denied_delta: I32
-  , open_delta: I32
-  , alarm_delta: I32
-  , lockout: I32
-  , energy_delta: I32
-  ) -> Machine {
+, machine: Machine
+, event: String
+, phase: I32
+, attempts_delta: I32
+, denied_delta: I32
+, open_delta: I32
+, alarm_delta: I32
+, lockout: I32
+, energy_delta: I32
+) -> Machine {
   make_machine(
-    , add_i32(machine.?{tick}, 1)
-    , phase
-    , add_i32(machine.?{attempts}, attempts_delta)
-    , add_i32(machine.?{denied}, denied_delta)
-    , add_i32(machine.?{open_count}, open_delta)
-    , add_i32(machine.?{alarm_count}, alarm_delta)
-    , lockout
-    , add_i32(machine.?{energy}, energy_delta)
-    , string_concat(machine.?{log}, event)
-    )
+  , add_i32(machine.?{tick}, 1)
+  , phase
+  , add_i32(machine.?{attempts}, attempts_delta)
+  , add_i32(machine.?{denied}, denied_delta)
+  , add_i32(machine.?{open_count}, open_delta)
+  , add_i32(machine.?{alarm_count}, alarm_delta)
+  , lockout
+  , add_i32(machine.?{energy}, energy_delta)
+  , string_concat(machine.?{log}, event)
+  )
 }
 
 fn step(machine: Machine) -> Machine {
@@ -120,30 +116,26 @@ fn step(machine: Machine) -> Machine {
 }
 
 rec(loop) fn drive(machine: Machine) -> Machine {
-  if! lt_i32(machine.?{tick}, 12) {
-    rec drive(step(machine))
-  } else {
-    machine
-  }
+  if! lt_i32(machine.?{tick}, 12) { recur drive(step(machine)) } else { machine }
 }
 
 fn invariant(machine: Machine) -> Bool {
   bool_and(
-    , leq_i32(machine.?{denied}, machine.?{attempts})
-    , leq_i32(machine.?{open_count}, machine.?{tick})
-    )
+  , leq_i32(machine.?{denied}, machine.?{attempts})
+  , leq_i32(machine.?{open_count}, machine.?{tick})
+  )
 }
 
 fn print_summary(machine: Machine) {
   print("gate_state_machine\n");
   print(join3("transcript=", machine.?{log}, "\n"));
   print(join5(
-    , "final="
-    , phase_name(machine.?{phase})
-    , " tick="
-    , int_to_string(machine.?{tick})
-    , " attempts="
-    ));
+  , "final="
+  , phase_name(machine.?{phase})
+  , " tick="
+  , int_to_string(machine.?{tick})
+  , " attempts="
+  ));
   print(join3(int_to_string(machine.?{attempts}), " denied=", int_to_string(machine.?{denied})));
   print(join3(" opens=", int_to_string(machine.?{open_count}), " alarms="));
   print(join3(int_to_string(machine.?{alarm_count}), " lockout=", int_to_string(machine.?{lockout})));

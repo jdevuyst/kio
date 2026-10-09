@@ -20,16 +20,16 @@ fn unit_kg() -> Expr { model.unit_expr(model.unit_kilogram()) }
 
 fn gear_ratio() -> Expr {
   model.product(
-    , model.product(model.power(unit_m(), 2), model.power(unit_s(), neg(1)))
-    , model.product(model.quotient(model.power(unit_s(), 3), unit_m()), model.power(unit_kg(), 2))
-    )
+  , model.product(model.power(unit_m(), 2), model.power(unit_s(), neg(1)))
+  , model.product(model.quotient(model.power(unit_s(), 3), unit_m()), model.power(unit_kg(), 2))
+  )
 }
 
 fn density_flux() -> Expr {
   model.product(
-    , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
-    , model.quotient(unit_s(), model.power(unit_m(), 2))
-    )
+  , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
+  , model.quotient(unit_s(), model.power(unit_m(), 2))
+  )
 }
 
 fn cancel_all() -> Expr {
@@ -38,9 +38,9 @@ fn cancel_all() -> Expr {
 
 fn inertial_step() -> Expr {
   model.product(
-    , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
-    , unit_m()
-    )
+  , model.quotient(model.product(unit_kg(), unit_m()), model.power(unit_s(), 2))
+  , unit_m()
+  )
 }
 
 fn print_summary(summary: Summary) {

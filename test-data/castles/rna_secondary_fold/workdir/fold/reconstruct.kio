@@ -12,11 +12,7 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 fn enqueue(stack: Array(plan.Interval), i: I32, j: I32) {
-  if! numbers.less(i, j) {
-    array.array_push(stack, {lo = i, hi = j})
-  } else {
-    ()
-  }
+  if! numbers.less(i, j) { array.array_push(stack, {lo = i, hi = j}) } else { () }
 }
 
 rec(loop) fn trace(program: plan.Program, stack: Array(plan.Interval), partners: Array(I32)) -> Array(I32) {
@@ -34,7 +30,7 @@ rec(loop) fn trace(program: plan.Program, stack: Array(plan.Interval), partners:
           enqueue(stack, arith.add_i32(i, 1), arith.sub_i32(k, 1))
         }
       };
-      rec trace(program, stack, partners)
+      recur trace(program, stack, partners)
     };
     .(_empty: .) { partners }
   }
@@ -49,14 +45,8 @@ pub fn partners(program: plan.Program) -> Array(I32) {
 rec(loop) fn render(partners: Array(I32), i: I32, out: String) -> String {
   if! numbers.less(i, array.array_len(partners)) {
     let k = array.array_get(partners, i);
-    let symbol = if! numbers.less(k, 0) {
-      "."
-    } else if! numbers.less(i, k) {
-      "("
-    } else {
-      ")"
-    };
-    rec render(partners, arith.add_i32(i, 1), text.string_concat(out, symbol))
+    let symbol = if! numbers.less(k, 0) { "." } else if! numbers.less(i, k) { "(" } else { ")" };
+    recur render(partners, arith.add_i32(i, 1), text.string_concat(out, symbol))
   } else {
     out
   }

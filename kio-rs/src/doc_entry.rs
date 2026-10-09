@@ -470,8 +470,8 @@ mod tests {
         let module = crate::pass::parser::parse(
             "module pkg/main; \
              rec(loop) { \
-               fn local(value: .) -> . { rec exported(value) }; \
-               pub fn exported(value: .) -> . { rec local(value) } \
+               fn local(value: .) -> . { recur exported(value) }; \
+               pub fn exported(value: .) -> . { recur local(value) } \
              }",
         )
         .expect("fixture parses");

@@ -3,30 +3,30 @@ module river_bytecode_vm/report;
 import elab/control(if);
 import river_bytecode_vm/constants as c;
 import river_bytecode_vm/model(
-  , Alerts
-  , Cabbage
-  , Checksum
-  , Farmer
-  , Goat
-  , Halt_code
-  , Moves
-  , Pc
-  , Snapshot
-  , Ticks
-  , Waits
-  , Wolf
-  , {alerts}
-  , {cabbage}
-  , {checksum}
-  , {farmer}
-  , {goat}
-  , {halt_code}
-  , {moves}
-  , {pc}
-  , {ticks}
-  , {waits}
-  , {wolf}
-  );
+, Alerts
+, Cabbage
+, Checksum
+, Farmer
+, Goat
+, Halt_code
+, Moves
+, Pc
+, Snapshot
+, Ticks
+, Waits
+, Wolf
+, {alerts}
+, {cabbage}
+, {checksum}
+, {farmer}
+, {goat}
+, {halt_code}
+, {moves}
+, {pc}
+, {ticks}
+, {waits}
+, {wolf}
+);
 import river_bytecode_vm/util as util;
 import river_bytecode_vm/vm as vm;
 import testapi(Bool, I32, String);
@@ -59,72 +59,64 @@ fn bool_pair(left_label: String, left_value: Bool, right_label: String, right_va
 pub fn render() -> String {
   let final_state = vm.run();
   let .({
-    , pc as pc_value
-    , farmer as farmer_side
-    , wolf as wolf_side
-    , goat as goat_side
-    , cabbage as cabbage_side
-    , moves as move_count
-    , waits as wait_count
-    , alerts as alert_count
-    , ticks as tick_count
-    , checksum as checksum_value
-    , halt_code as halt_value
-    }) = final_state;
+  , pc as pc_value
+  , farmer as farmer_side
+  , wolf as wolf_side
+  , goat as goat_side
+  , cabbage as cabbage_side
+  , moves as move_count
+  , waits as wait_count
+  , alerts as alert_count
+  , ticks as tick_count
+  , checksum as checksum_value
+  , halt_code as halt_value
+  }) = final_state;
   string_concat(
-    , "river_bytecode_vm: v1\n"
+  , "river_bytecode_vm: v1\n"
+  , string_concat(
+    , util.line("script: ", "wait goat back wolf goat cabbage back goat")
     , string_concat(
-        , util.line("script: ", "wait goat back wolf goat cabbage back goat")
+      , util.line("halt: ", status(halt_value))
+      , string_concat(
+        , actor_line("farmer: ", farmer_side)
         , string_concat(
-            , util.line("halt: ", status(halt_value))
+          , actor_line("wolf: ", wolf_side)
+          , string_concat(
+            , actor_line("goat: ", goat_side)
             , string_concat(
-                , actor_line("farmer: ", farmer_side)
+              , actor_line("cabbage: ", cabbage_side)
+              , string_concat(
+                , counter_pair("moves: ", move_count, " waits: ", wait_count)
                 , string_concat(
-                    , actor_line("wolf: ", wolf_side)
+                  , "\n"
+                  , string_concat(
+                    , counter_pair("alerts: ", alert_count, " ticks: ", tick_count)
                     , string_concat(
-                        , actor_line("goat: ", goat_side)
+                      , "\n"
+                      , string_concat(
+                        , util.line("pc: ", int_to_string(pc_value))
                         , string_concat(
-                            , actor_line("cabbage: ", cabbage_side)
-                            , string_concat(
-                                , counter_pair("moves: ", move_count, " waits: ", wait_count)
-                                , string_concat(
-                                    , "\n"
-                                    , string_concat(
-                                        , counter_pair(
-                                            , "alerts: "
-                                            , alert_count
-                                            , " ticks: "
-                                            , tick_count
-                                            )
-                                        , string_concat(
-                                            , "\n"
-                                            , string_concat(
-                                                , util.line("pc: ", int_to_string(pc_value))
-                                                , string_concat(
-                                                    , util.line(
-                                                        , "checksum: "
-                                                        , int_to_string(checksum_value)
-                                                        )
-                                                    , util.line(
-                                                        , "invariants: "
-                                                        , bool_pair(
-                                                            , "safe="
-                                                            , vm.safe(final_state)
-                                                            , " done="
-                                                            , vm.done(final_state)
-                                                            )
-                                                        )
-                                                    )
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
+                          , util.line("checksum: ", int_to_string(checksum_value))
+                          , util.line(
+                            , "invariants: "
+                            , bool_pair(
+                              , "safe="
+                              , vm.safe(final_state)
+                              , " done="
+                              , vm.done(final_state)
+                              )
                             )
+                          )
                         )
+                      )
                     )
+                  )
                 )
+              )
             )
+          )
         )
+      )
     )
+  )
 }

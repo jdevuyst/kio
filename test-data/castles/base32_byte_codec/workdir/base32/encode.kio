@@ -23,7 +23,7 @@ fn pad_needed(emitted: I32) -> I32 {
 
 rec(loop) fn pad_out(count: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
   if! lt_i32(0, count) {
-    rec pad_out(sub_i32(count, 1), list.cons(alphabet.pad(), done))
+    recur pad_out(sub_i32(count, 1), list.cons(alphabet.pad(), done))
   } else {
     done
   }
@@ -37,9 +37,9 @@ fn close(acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
   let tail =
     if! lt_i32(0, held) {
       let value = bits.low_bits(
-        , bits.shift_up(acc, sub_i32(alphabet.group_bits(), held))
-        , alphabet.group_bits()
-        );
+      , bits.shift_up(acc, sub_i32(alphabet.group_bits(), held))
+      , alphabet.group_bits()
+      );
       list.cons(alphabet.glyph_of(value), done)
     } else {
       done
@@ -50,33 +50,38 @@ fn close(acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
 rec(loop) {
   /// Encode a payload into the glyphs that carry it.
   pub fn encode(payload: alphabet.Bytes) -> alphabet.Glyphs {
-    rec feed(payload, 0, 0, list.nil(String))
+    recur feed(payload, 0, 0, list.nil(String))
   };
   /// Take the next byte into the accumulator, eight bits at a time.
   fn feed(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
     match! payload.>list.List.un_list {
       (
-        , .(byte: I32, rest: alphabet.Bytes) {
-            rec drain(
-              , rest
-              , add_i32(bits.shift_up(acc, alphabet.byte_bits()), byte)
-              , add_i32(held, alphabet.byte_bits())
-              , done
-              )
-          }
-        , .(_empty: .) { close(acc, held, done) }
-        )
+      , .(byte: I32, rest: alphabet.Bytes) {
+          recur drain(
+          , rest
+          , add_i32(bits.shift_up(acc, alphabet.byte_bits()), byte)
+          , add_i32(held, alphabet.byte_bits())
+          , done
+          )
+        }
+      , .(_empty: .) { close(acc, held, done) }
+      )
     }
   };
   /// Draw off every whole group the accumulator now holds, high bits
   /// first, and keep only the leftover bits behind.
   fn drain(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
     if! lt_i32(held, alphabet.group_bits()) {
-      rec feed(payload, acc, held, done)
+      recur feed(payload, acc, held, done)
     } else {
       let left = sub_i32(held, alphabet.group_bits());
       let value = bits.low_bits(bits.shift_down(acc, left), alphabet.group_bits());
-      rec drain(payload, bits.low_bits(acc, left), left, list.cons(alphabet.glyph_of(value), done))
+      recur drain(
+      , payload
+      , bits.low_bits(acc, left)
+      , left
+      , list.cons(alphabet.glyph_of(value), done)
+      )
     }
   }
 }

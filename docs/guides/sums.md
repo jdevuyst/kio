@@ -266,12 +266,10 @@ fn text_clauses() -> (String -> String) & (Int -> String) {
 fn describe_extended(v: String | Int | .) -> String {
   let clauses =
     concat!(
-      , (text_clauses(), .(_unit: .) { "unit" })
-      , (String -> String) & (Int -> String) & (. -> String)
-      );
-  match! v {
-    clauses
-  }
+    , (text_clauses(), .(_unit: .) { "unit" })
+    , (String -> String) & (Int -> String) & (. -> String)
+    );
+  match! v { clauses }
 }
 ```
 

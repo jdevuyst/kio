@@ -56,15 +56,15 @@ rec(loop) {
   /// The rightmost edge standing anywhere in the city. The raster needs one
   /// unit column per interval `[c, c + 1)` below it, so this is also the
   /// column count.
-  pub fn max_right(bs: lst.List(Building)) -> I32 { rec widest(bs, 0) };
+  pub fn max_right(bs: lst.List(Building)) -> I32 { recur widest(bs, 0) };
   fn widest(bs: lst.List(Building), best: I32) -> I32 {
     match! bs.>lst.List.un_list {
       (
-        , .(b: Building, rest: lst.List(Building)) {
-            rec widest(rest, logic.max(best, right_of(b)))
-          }
-        , .(_empty: .) { best }
-        )
+      , .(b: Building, rest: lst.List(Building)) {
+          recur widest(rest, logic.max(best, right_of(b)))
+        }
+      , .(_empty: .) { best }
+      )
     }
   }
 }

@@ -15,18 +15,18 @@ fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> (A | T),
    { read(pack(value)) }
 
 pub fn concrete_product_roundtrip(
-  , pack: (String & String & String) -> Crate(String & String & String)
-  , read: Crate(String & String & String) -> (String & String & String)
-  , value: String & String & String
-  ) -> String & String & String {
+, pack: (String & String & String) -> Crate(String & String & String)
+, read: Crate(String & String & String) -> (String & String & String)
+, value: String & String & String
+) -> String & String & String {
   product_roundtrip(Crate, String, String & String, pack, read, value)
 }
 
 pub fn concrete_sum_roundtrip(
-  , pack: (String | String | String) -> Crate(String | String | String)
-  , read: Crate(String | String | String) -> (String | String | String)
-  , value: String | String | String
-  ) -> String | String | String { sum_roundtrip(Crate, String, String | String, pack, read, value) }
+, pack: (String | String | String) -> Crate(String | String | String)
+, read: Crate(String | String | String) -> (String | String | String)
+, value: String | String | String
+) -> String | String | String { sum_roundtrip(Crate, String, String | String, pack, read, value) }
 
 pub fn whole_crate[T](value: Crate(T)) -> Crate(T) { value }
 
@@ -65,7 +65,9 @@ host fn round_hkt[*F](value: F(String)) -> F(String);
 
 host fn round_functor(value: Functor(Box)) -> Functor(Box);
 
-pub fn poly() -> String { apply_poly(.[T](value: T) { value }) }
+pub fn poly() -> String {
+  apply_poly(.[T](value: T) { value })
+}
 
 pub fn shadow(value: Shadow(Box(String))) -> Shadow(Box(String)) { round_shadow(value) }
 

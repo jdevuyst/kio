@@ -23,29 +23,24 @@ fn stages(value: Bool) -> Bool -> Bool {
 
 rec(loop) {
   fn left() -> Bool { print("left\n"); .f };
-  fn ufcs_source() -> Bool { let value = duplicate!(rec(cont) left().>pass); .t };
-  fn field_source() -> Bool { let value = duplicate!({flag = rec(cont) left()}.?{flag}); .t };
-  fn flat_source() -> Bool { let value = duplicate!(stages(.t, rec(cont) left())); .t };
+  fn ufcs_source() -> Bool { let value = duplicate!(recur(cont) left().>pass); .t };
+  fn field_source() -> Bool { let value = duplicate!({flag = recur(cont) left()}.?{flag}); .t };
+  fn flat_source() -> Bool { let value = duplicate!(stages(.t, recur(cont) left())); .t };
   fn update_source() -> Bool {
-    let value = duplicate!(row().!{flag = rec(cont) left()}.?{flag});
+    let value = duplicate!(row().!{flag = recur(cont) left()}.?{flag});
     .t
   };
-  fn nested_source() -> Bool { let value = duplicate!(duplicate!(rec(cont) left())); .t };
-  fn ufcs_order() -> Bool { let value = duplicate!(rec(cont) left().>stages(later())); .t };
+  fn nested_source() -> Bool { let value = duplicate!(duplicate!(recur(cont) left())); .t };
+  fn ufcs_order() -> Bool { let value = duplicate!(recur(cont) left().>stages(later())); .t };
   fn scoped_source() -> Bool {
-    let value =
-      duplicate!(scope! {
-        let saved = rec(cont) left();
-        print("scope body\n");
-        saved
-      });
+    let value = duplicate!(scope! { let saved = recur(cont) left(); print("scope body\n"); saved });
     print("outer continuation\n");
     .t
   };
   fn pattern_source() -> Bool {
     let value =
       duplicate!(scope! {
-        let .(saved, other) = (rec(cont) left(), later());
+        let .(saved, other) = (recur(cont) left(), later());
         print("pattern body\n");
         saved
       });
@@ -54,7 +49,7 @@ rec(loop) {
   fn row_let_source() -> Bool {
     let value =
       duplicate!(scope! {
-        let .({flag as saved}) = {flag = rec(cont) left()};
+        let .({flag as saved}) = {flag = recur(cont) left()};
         print("row let body\n");
         saved
       });
@@ -65,11 +60,11 @@ rec(loop) {
 rec(loop) {
   fn generic_left[A](value: A) -> A { print("generic left\n"); value };
   fn generic_source[A](value: A) -> A {
-    let pair = duplicate!(identity(A, rec(cont) generic_left(value)));
+    let pair = duplicate!(identity(A, recur(cont) generic_left(value)));
     value
   };
   fn generic_ufcs[A](value: A) -> A {
-    let pair = duplicate!(rec(cont) generic_left(value).>identity(A));
+    let pair = duplicate!(recur(cont) generic_left(value).>identity(A));
     value
   }
 }

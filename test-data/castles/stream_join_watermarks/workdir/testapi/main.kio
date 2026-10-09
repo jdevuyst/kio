@@ -16,35 +16,35 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
   match! input.next() {
     .(command: input.Begin) {
       io.print(command.?{input.begin}.>text.string_concat("\n").>>text.string_concat("session "));
-      rec replay(engine.empty(), previous)
+      recur replay(engine.empty(), previous)
     };
     .(command: input.Left_event) {
       let event = command.?{input.left_event};
       let next = engine.event(state, event, .t);
       report.admission("left", event, state, next);
-      rec replay(next, previous)
+      recur replay(next, previous)
     };
     .(command: input.Right_event) {
       let event = command.?{input.right_event};
       let next = engine.event(state, event, .f);
       report.admission("right", event, state, next);
-      rec replay(next, previous)
+      recur replay(next, previous)
     };
     .(command: input.Left_watermark) {
       let value = command.?{input.left_watermark};
       let next = engine.watermark(state, value, .t);
       report.watermark("left", value, state, next);
-      rec replay(next, previous)
+      recur replay(next, previous)
     };
     .(command: input.Right_watermark) {
       let value = command.?{input.right_watermark};
       let next = engine.watermark(state, value, .f);
       report.watermark("right", value, state, next);
-      rec replay(next, previous)
+      recur replay(next, previous)
     };
     .(command: input.Checkpoint) {
       report.checkpoint(command.?{input.checkpoint}, state);
-      rec replay(state, previous)
+      recur replay(state, previous)
     };
     .(_command: input.End) {
       report.finish(state);
@@ -59,7 +59,7 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
         };
         .() { () }
       };
-      rec replay(state, signature.>widen_sum!(String | .))
+      recur replay(state, signature.>widen_sum!(String | .))
     };
     .() { () }
   }

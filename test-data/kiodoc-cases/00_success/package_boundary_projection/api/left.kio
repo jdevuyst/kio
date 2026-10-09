@@ -44,8 +44,8 @@ host type Text role(str);
 host fn emit(value: Text) -> .;
 
 rec(loop) {
-  pub fn first(value: .) { rec second(value) };
-  fn second(value: .) { rec first(value) }
+  pub fn first(value: .) { recur second(value) };
+  fn second(value: .) { recur first(value) }
 }
 
 rec {

@@ -712,8 +712,8 @@ mod tests {
 
     #[test]
     fn tooling_complete_rec_names_survive_a_member_body_error() {
-        let source = "module app; rec(loop) { fn first(value: .) { rec second(value); ? } fn second(x: .) { x } }";
-        let cursor = source.find("rec second").unwrap() as u32 + 6;
+        let source = "module app; rec(loop) { fn first(value: .) { recur second(value); ? } fn second(x: .) { x } }";
+        let cursor = source.find("recur second").unwrap() as u32 + 6;
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -902,7 +902,7 @@ mod tests {
         for marked in [
             "value.>identity(I|",
             "choose!(I|",
-            "rec(poly) again(I|",
+            "recur(poly) again(I|",
             "identity(I|).< value",
             "outer(.(x: I|) { x })",
             "outer((I|))",
@@ -1024,7 +1024,10 @@ mod tests {
                 "module app; varop [* *] { foldl step init; ",
                 vec!["finalize"],
             ),
-            ("module app; fn run() { rec(poly, ", vec!["cont"]),
+            (
+                "module app; fn run() { recur(poly, ",
+                vec!["cont", "escape"],
+            ),
         ] {
             let probe = probe_tooling(
                 source,
@@ -1502,8 +1505,8 @@ mod tests {
 
     #[test]
     fn tooling_complete_recursive_shorthand_retains_its_written_member() {
-        let source = "module app; rec(loop) fn run(value: .) { rec run(value) }";
-        let cursor = source.find("rec run").unwrap() as u32 + 6;
+        let source = "module app; rec(loop) fn run(value: .) { recur run(value) }";
+        let cursor = source.find("recur run").unwrap() as u32 + 6;
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -1633,8 +1636,8 @@ mod tests {
     fn tooling_complete_refactored_roots_preserve_ordinary_ast_and_errors() {
         for source in [
             "module app; fn run[A](value: A) -> A { value }",
-            "module app; rec(loop) fn run(value: .) { rec run(value) }",
-            "module app; rec(loop) { fn first(value: .) { rec second(value) } fn second(value: .) { value } }",
+            "module app; rec(loop) fn run(value: .) { recur run(value) }",
+            "module app; rec(loop) { fn first(value: .) { recur second(value) } fn second(value: .) { value } }",
             "module app; equiv same[A](value: A) { value; value }",
             "module app; equiv same[A](value: A) { value; f([B] ) }",
             "module app; host fn run[A](value: A) -> A;",
@@ -1785,14 +1788,19 @@ mod tests {
     #[test]
     fn tooling_context_revision_control_roles_follow_their_production() {
         use crate::ast::KioFileKind;
-        let source = "module app; rec(loop) { fn run(x: .) { let local = x; rec run(local) } }";
+        let source = "module app; rec(loop) { fn run(x: .) { let local = x; recur run(local) } }";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none());
         let recs: Vec<_> = probe
             .facts
             .keywords
             .iter()
-            .filter(|fact| &source[fact.span.start as usize..fact.span.end as usize] == "rec")
+            .filter(|fact| {
+                matches!(
+                    &source[fact.span.start as usize..fact.span.end as usize],
+                    "rec" | "recur"
+                )
+            })
             .collect();
         assert_eq!(recs[0].role, core::KeywordRole::Declaration);
         assert_eq!(recs[1].role, core::KeywordRole::Declaration);
@@ -2527,7 +2535,7 @@ mod tests {
     #[test]
     fn tooling_recursive_calls_and_ordinary_parameters_keep_separate_roles() {
         use crate::ast::KioFileKind;
-        let source = "module app; fn ordinary(rec: .) -> . { () } rec(loop) fn run() -> . { rec\n run\n () }";
+        let source = "module app; fn ordinary(rec: .) -> . { () } rec(loop) fn run() -> . { recur\n run\n () }";
         parse(source).expect("multiline recursive call");
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
@@ -2539,7 +2547,7 @@ mod tests {
                 .iter()
                 .all(|fact| fact.span.start != parameter)
         );
-        let call = source.find("rec\n").unwrap() as u32;
+        let call = source.find("recur\n").unwrap() as u32;
         assert!(
             probe
                 .facts
@@ -3050,9 +3058,9 @@ mod tests {
     #[test]
     fn contextual_rec_real_calls_and_incomplete_prefixes_keep_their_roles() {
         for expression in [
-            "rec again(value)",
-            "rec(poly) again(value)",
-            "rec(cont, poly) again(value)",
+            "recur again(value)",
+            "recur(poly) again(value)",
+            "recur(cont, poly) again(value)",
         ] {
             let module = p(&format!("module app; fn use() {{ {expression} }}"));
             let Item::FnDef(def) = &module.items[0] else {
@@ -3061,12 +3069,12 @@ mod tests {
             assert!(matches!(&def.body, Expr::RecCall { callee, .. } if callee.name == "again"));
         }
         for (tail, slot) in [
-            ("rec |", CursorSlot::RecursiveCallee),
-            ("rec(|", CursorSlot::RecursiveAnnotation),
-            ("rec(po|", CursorSlot::RecursiveAnnotation),
-            ("rec(cont, |", CursorSlot::RecursiveAnnotation),
-            ("rec(cont) |", CursorSlot::RecursiveCallee),
-            ("rec ag|ain(value)", CursorSlot::RecursiveCallee),
+            ("recur |", CursorSlot::RecursiveCallee),
+            ("recur(|", CursorSlot::RecursiveAnnotation),
+            ("recur(po|", CursorSlot::RecursiveAnnotation),
+            ("recur(cont, |", CursorSlot::RecursiveAnnotation),
+            ("recur(cont) |", CursorSlot::RecursiveCallee),
+            ("recur ag|ain(value)", CursorSlot::RecursiveCallee),
         ] {
             let marked = format!("module app; rec(loop) fn again[A](value: A) {{ {tail}");
             let cursor = marked.find('|').unwrap();
@@ -3082,9 +3090,190 @@ mod tests {
     }
 
     #[test]
+    fn contextual_recur_preserves_ordinary_identifier_uses() {
+        for expression in [
+            "recur",
+            "recur()",
+            "recur(value)",
+            "recur(poly, cont, escape)",
+            "other.recur(value)",
+        ] {
+            let source = format!("module app; fn run(recur: .) {{ {expression} }}");
+            let module = p(&source);
+            let Item::FnDef(def) = &module.items[0] else {
+                panic!("function")
+            };
+            assert!(!matches!(def.body, Expr::RecCall { .. }), "{source}");
+            let probe = probe_tooling_source(&source, None);
+            assert!(
+                !probe.facts.keywords.iter().any(|fact| &source
+                    [fact.span.start as usize..fact.span.end as usize]
+                    == "recur"),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn recursive_annotation_completion_tracks_closures_and_implications() {
+        for (body, mut expected) in [
+            ("recur(|", vec!["poly", "cont"]),
+            (".() { recur(|", vec!["poly", "escape"]),
+            (".arg. { recur(|", vec!["poly", "escape"]),
+            (
+                "sequence! bind { let value <- x; recur(|",
+                vec!["poly", "escape"],
+            ),
+            (
+                "sequence! bind { let value = x; recur(|",
+                vec!["poly", "cont"],
+            ),
+            (".() { recur(cont, |", vec!["poly", "escape"]),
+            (".() { recur(escape, |", vec!["poly"]),
+            (".() { recur(poly, escape, |", vec![]),
+            (".() { recur(|, escape) again(x) }", vec!["poly"]),
+        ] {
+            let marked = format!("module app; rec(loop) fn again[A](x: A) {{ {body}");
+            let cursor = marked.find('|').unwrap();
+            let source = marked.replacen('|', "", 1);
+            let probe = probe_tooling_source(&source, Some(cursor as u32));
+            expected.sort_unstable();
+            assert_eq!(
+                crate::scope_walk::tooling_keywords(&probe),
+                expected,
+                "{marked}"
+            );
+        }
+        let marked = "module app; rec(loop) fn again(x: .) { .() { recur(|";
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        let probe = probe_tooling_source(&source, Some(cursor as u32));
+        assert_eq!(crate::scope_walk::tooling_keywords(&probe), ["escape"]);
+    }
+
+    #[test]
+    fn recursive_annotation_completion_edits_preserve_comments_and_canonical_modes() {
+        for (written, selected, expected) in [
+            ("cont, es|capex", "escape", "escape"),
+            ("cont, poly, |", "escape", "poly, escape"),
+            ("es|cape, poly", "escape", "poly, escape"),
+            ("escape, po|ly", "poly", "poly, escape"),
+            ("cont,\n |", "escape", "\n escape"),
+            ("|,\n escape", "poly", "poly, escape\n "),
+            ("poly,\n cont,|", "escape", "\n poly, escape"),
+            (
+                "cont, // 😀 keep\n es|cape",
+                "escape",
+                " // 😀 keep\n escape",
+            ),
+        ] {
+            let marked = format!(
+                "module app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
+            );
+            let cursor = marked.find('|').unwrap();
+            let source = marked.replacen('|', "", 1);
+            let probe = probe_tooling_source(&source, Some(cursor as u32));
+            let context = probe.facts.cursor.as_ref().unwrap();
+            assert_eq!(context.slot, CursorSlot::RecursiveAnnotation, "{marked}");
+            let (span, text, additional) = context.keyword_edit(&source, selected);
+            assert!(!source[span.start as usize..span.end as usize].contains(['\n', '\r']));
+            let mut edits = additional
+                .into_iter()
+                .map(|span| (span, String::new()))
+                .collect::<Vec<_>>();
+            edits.push((span, text));
+            edits.sort_by_key(|(span, _)| (span.start, span.end));
+            assert!(
+                edits
+                    .windows(2)
+                    .all(|pair| pair[0].0.end <= pair[1].0.start)
+            );
+            let mut applied = source.clone();
+            for (span, text) in edits.into_iter().rev() {
+                applied.replace_range(span.start as usize..span.end as usize, &text);
+            }
+            assert_eq!(applied, marked.replace(written, expected));
+            parse(&applied).expect("completion must preserve parser ownership");
+        }
+    }
+
+    #[test]
+    fn recursive_annotation_completion_survives_lambda_argument_recovery() {
+        for written in ["|", "cont, |", "es|capex"] {
+            let marked = format!(
+                "module app; rec(loop) {{ fn again[A](x: A) -> . {{ recur again(x) }}; fn capture[A](x: A) -> . {{ retain(.() -> . {{ recur({written}) again(x) }}) }} }}"
+            );
+            let cursor = marked.find('|').unwrap();
+            let source = marked.replacen('|', "", 1);
+            let probe = probe_tooling_source(&source, Some(cursor as u32));
+            let context = probe.facts.cursor.as_ref().expect(&marked);
+            assert_eq!(context.slot, CursorSlot::RecursiveAnnotation, "{marked}");
+            if written != "cont, |" {
+                let (span, message) = probe.parse_error.as_ref().expect(&marked).diag();
+                assert!(message.contains("annotation"), "{message}");
+                assert!(span.start <= cursor as u32 && cursor as u32 <= span.end);
+            }
+            assert!(
+                crate::scope_walk::tooling_keywords(&probe).contains(&"escape"),
+                "{marked}"
+            );
+            let (span, text, additional) = context.keyword_edit(&source, "escape");
+            assert!(additional.is_empty());
+            let mut applied = source;
+            applied.replace_range(span.start as usize..span.end as usize, &text);
+            parse(&applied).expect("a repaired lambda argument must parse as a value");
+        }
+        let module = p("module app; fn run() { consume(., . -> ., ()) }");
+        let Item::FnDef(def) = &module.items[0] else {
+            panic!("function")
+        };
+        let Expr::Call { args, .. } = &def.body else {
+            panic!("call")
+        };
+        assert!(matches!(args[0], CallArg::Type(Type::Unit { .. })));
+        assert!(matches!(args[1], CallArg::Type(Type::Function { .. })));
+        assert!(matches!(args[2], CallArg::Value(Expr::Unit { .. })));
+    }
+
+    #[test]
+    fn recursive_annotation_completion_refuses_unrelated_invalid_items() {
+        for written in [
+            "es|capex, unknown",
+            "es|capex, // keep\n unknown",
+            "unknown, es|cape",
+            "es|capex, poly, poly",
+        ] {
+            let marked = format!(
+                "module app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
+            );
+            let cursor = marked.find('|').unwrap();
+            let source = marked.replacen('|', "", 1);
+            let probe = probe_tooling_source(&source, Some(cursor as u32));
+            assert_eq!(
+                probe.facts.cursor.as_ref().unwrap().slot,
+                CursorSlot::RecursiveAnnotation
+            );
+            assert!(
+                crate::scope_walk::tooling_keywords(&probe).is_empty(),
+                "{marked}"
+            );
+        }
+    }
+
+    #[test]
+    fn recursive_call_old_marker_is_rejected_with_source_owned_replacement() {
+        for call in ["rec again(x)", "rec(cont) again(x)"] {
+            let source = format!("module app; rec(loop) fn again(x: .) {{ {call} }}");
+            let error = parse(&source).unwrap_err();
+            assert!(error.diag().1.contains("recursive calls use `recur`"));
+            let span = error.diag().0;
+            assert_eq!(&source[span.start as usize..span.end as usize], "rec");
+        }
+    }
+
+    #[test]
     fn recursive_call_annotation_spans_are_exact_source_tokens() {
-        let source =
-            "module app; fn use() { rec // 😀 keyword\n(, poly, // 😀 mode\n,cont,) again(value) }";
+        let source = "module app; fn use() { recur // 😀 keyword\n(, poly, // 😀 mode\n,cont,) again(value) }";
         let module = p(source);
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
@@ -3093,7 +3282,7 @@ mod tests {
             panic!("recursive call")
         };
         let slice = |span: crate::span::Span| &source[span.start as usize..span.end as usize];
-        assert_eq!(slice(ext.keyword), "rec");
+        assert_eq!(slice(ext.keyword), "recur");
         assert_eq!(
             ext.annotations
                 .iter()
@@ -3134,11 +3323,11 @@ mod tests {
 
     #[test]
     fn contextual_rec_duplicate_annotations_keep_parser_envelope_roles() {
-        for mode in ["poly", "cont"] {
-            let source = format!("module app; fn run() {{ rec({mode}, {mode}) again() }}");
+        for mode in ["poly", "cont", "escape"] {
+            let source = format!("module app; fn run() {{ recur({mode}, {mode}) again() }}");
             let duplicate = source.rfind(mode).unwrap() as u32;
             let expected_span = Span::new(duplicate, duplicate + mode.len() as u32);
-            let expected_message = format!("duplicate `rec` call annotation `{mode}`");
+            let expected_message = format!("duplicate `recur` call annotation `{mode}`");
             let error = parse(&source).unwrap_err();
             assert_eq!(error.diag(), (expected_span, expected_message.as_str()));
             let probe = probe_tooling_source(&source, None);
@@ -3166,7 +3355,7 @@ mod tests {
 
     #[test]
     fn contextual_rec_duplicate_annotations_keep_public_token_roles() {
-        let source = "module app; fn run() { rec(poly, poly) again() }";
+        let source = "module app; fn run() { recur(poly, poly) again() }";
         let tokens = crate::tokens::dump(source).unwrap();
         let kinds = |name: &str| {
             tokens
@@ -3190,26 +3379,26 @@ mod tests {
         for (annotations, message, marker) in [
             (
                 "value, poly",
-                "unknown `rec` call annotation `value`",
+                "unknown `recur` call annotation `value`",
                 "value",
             ),
             (
                 "value, poly, poly",
-                "unknown `rec` call annotation `value`",
+                "unknown `recur` call annotation `value`",
                 "value",
             ),
             (
                 "poly, poly, value",
-                "duplicate `rec` call annotation `poly`",
+                "duplicate `recur` call annotation `poly`",
                 "poly, value",
             ),
             (
                 "value, other, poly",
-                "unknown `rec` call annotation `value`",
+                "unknown `recur` call annotation `value`",
                 "value",
             ),
         ] {
-            let source = format!("module app; fn run() {{ rec({annotations}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
             let offset = source.find(marker).unwrap() as u32;
             let width = marker.split(',').next().unwrap().len() as u32;
             let probe = probe_tooling_source(&source, None);
@@ -3252,7 +3441,7 @@ mod tests {
 
     #[test]
     fn contextual_rec_unknown_annotations_keep_public_token_roles() {
-        let source = "module app; fn run() { rec(value, poly) again() }";
+        let source = "module app; fn run() { recur(value, poly) again() }";
         let tokens = crate::tokens::dump(source).unwrap();
         for (name, expected) in [
             ("value", crate::tokens::TokenKind::Identifier),
@@ -3292,14 +3481,14 @@ mod tests {
         }
         for (tail, message, has_callee) in [
             (
-                "rec(poly] again()",
-                "expected `)` closing `rec` call annotations",
+                "recur(poly] again()",
+                "expected `)` closing `recur` call annotations",
                 false,
             ),
-            ("rec(poly, 123) again()", "expected identifier", true),
+            ("recur(poly, 123) again()", "expected identifier", true),
             (
-                "rec(unknown, 123) again()",
-                "unknown `rec` call annotation `unknown`",
+                "recur(unknown, 123) again()",
+                "unknown `recur` call annotation `unknown`",
                 true,
             ),
         ] {
@@ -3331,32 +3520,32 @@ mod tests {
             (
                 "poly(), cont",
                 "()",
-                "expected `)` closing `rec` call annotations",
+                "expected `)` closing `recur` call annotations",
             ),
             (
                 "value, (poly), cont",
                 "value",
-                "unknown `rec` call annotation `value`",
+                "unknown `recur` call annotation `value`",
             ),
             (
                 "value poly, cont",
                 "value",
-                "unknown `rec` call annotation `value`",
+                "unknown `recur` call annotation `value`",
             ),
             (
                 "poly, poly, (poly), cont",
                 "poly, (",
-                "duplicate `rec` call annotation `poly`",
+                "duplicate `recur` call annotation `poly`",
             ),
         ] {
-            let source = format!("module app; fn run() {{ rec({annotations}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
             let probe = probe_tooling_source(&source, None);
             let error = probe.parse_error.as_ref().unwrap();
             assert!(probe.syntax.is_none());
             assert_eq!(error.diag().1, message, "{source}");
             assert_eq!(
                 error.diag().0.start as usize,
-                source.find("rec(").unwrap() + 4 + annotations.find(marker).unwrap()
+                source.find("recur(").unwrap() + 6 + annotations.find(marker).unwrap()
             );
             assert_eq!(parse(&source).unwrap_err().diag(), error.diag());
             let cont = source.rfind("cont").unwrap() as u32;
@@ -3368,7 +3557,7 @@ mod tests {
                 probe.facts.keywords
             );
             if let Some(nested) = annotations.find("(poly") {
-                let nested = source.find("rec(").unwrap() + 4 + nested;
+                let nested = source.find("recur(").unwrap() + 6 + nested;
                 assert!(
                     probe
                         .facts
@@ -3385,10 +3574,13 @@ mod tests {
     fn contextual_rec_invalid_items_keep_public_sibling_tokens() {
         for (source, poly_count) in [
             (
-                "module app; fn run() { rec((poly, poly), cont) again() }",
+                "module app; fn run() { recur((poly, poly), cont) again() }",
                 2,
             ),
-            ("module app; fn run() { rec(value poly, cont) again() }", 1),
+            (
+                "module app; fn run() { recur(value poly, cont) again() }",
+                1,
+            ),
         ] {
             let tokens = crate::tokens::dump(source).unwrap();
             for (name, expected, count) in [
@@ -3421,7 +3613,7 @@ mod tests {
             ("[* poly, poly !], cont", false),
             ("[* poly, poly, cont", false),
         ] {
-            let source = format!("module app; fn run() {{ rec({annotations}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.syntax.is_none());
             let error = probe.parse_error.as_ref().unwrap();
@@ -3471,14 +3663,14 @@ mod tests {
 
     #[test]
     fn contextual_rec_annotation_comma_runs_preserve_modes_and_format() {
-        let canonical = p("module app; fn run() { rec(cont, poly) again() }");
+        let canonical = p("module app; fn run() { recur(cont, poly) again() }");
         for annotations in [
             ",cont,poly",
             "cont,,,poly",
             "cont,poly,,,",
             ",,,cont,,,poly,,,",
         ] {
-            let source = format!("module app; fn run() {{ rec({annotations}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
             let module = p(&source);
             assert_eq!(
                 crate::pretty::pretty_module(&module),
@@ -3495,9 +3687,9 @@ mod tests {
     #[test]
     fn contextual_rec_annotation_comma_prefixes_and_empty_controls() {
         for (tail, slot) in [
-            ("rec(,,, |", CursorSlot::RecursiveAnnotation),
-            ("rec(cont,,, |", CursorSlot::RecursiveAnnotation),
-            ("rec(,,,cont,,,poly,,,) |", CursorSlot::RecursiveCallee),
+            ("recur(,,, |", CursorSlot::RecursiveAnnotation),
+            ("recur(cont,,, |", CursorSlot::RecursiveAnnotation),
+            ("recur(,,,cont,,,poly,,,) |", CursorSlot::RecursiveCallee),
         ] {
             let marked = format!("module app; rec(loop) fn again[A](value: A) {{ {tail}");
             let cursor = marked.find('|').unwrap();
@@ -3510,10 +3702,10 @@ mod tests {
             );
         }
         for annotations in ["", ",", ",,,"] {
-            let source = format!("module app; fn run() {{ rec({annotations}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
             assert_eq!(
                 parse(&source).unwrap_err().diag().1,
-                "`rec` call annotation list cannot be empty"
+                "`recur` call annotation list cannot be empty"
             );
         }
         for expression in ["rec((poly), cont)", "rec(,,,cont,,,poly,,,)", "rec(,,,)"] {
@@ -3534,7 +3726,7 @@ mod tests {
     #[test]
     fn contextual_rec_outer_envelope_keeps_callee_after_invalid_annotation_groups() {
         for annotation in ["", "()", "(poly)", "helper(helper(helper(value)))", "123"] {
-            let source = format!("module app; fn run() {{ rec({annotation}) again() }}");
+            let source = format!("module app; fn run() {{ recur({annotation}) again() }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.parse_error.is_some());
             assert!(probe.syntax.is_none());
@@ -3566,9 +3758,9 @@ mod tests {
             );
         }
         for (source, target) in [
-            ("module app; fn run() { rec(poly, 123) Again() }", "Again"),
-            ("module app; fn run() { rec(poly, 123) _() }", "_"),
-            ("module app; fn run() { rec(poly, again()", "again"),
+            ("module app; fn run() { recur(poly, 123) Again() }", "Again"),
+            ("module app; fn run() { recur(poly, 123) _() }", "_"),
+            ("module app; fn run() { recur(poly, again()", "again"),
         ] {
             let probe = probe_tooling_source(source, None);
             assert!(probe.parse_error.is_some());
@@ -4848,7 +5040,7 @@ fn ok() -> . { () }
 
     #[test]
     fn rec_single_fn_shorthand_parses() {
-        let m = p("module x; rec(loop) pub fn f[A](x: A) -> A { rec f(String, x) }");
+        let m = p("module x; rec(loop) pub fn f[A](x: A) -> A { recur f(String, x) }");
         let Item::RecGroup(group, _) = &m.items[0] else {
             panic!("expected RecGroup, got {:?}", m.items[0]);
         };
@@ -4977,7 +5169,7 @@ fn ok() -> . { () }
     #[test]
     fn rec_mutual_group_parses_member_visibility() {
         let m = p(
-            "module x; rec(loop) { pub fn even(n: Bool) -> Bool { rec odd(n) }; fn odd(n: Bool) -> Bool { rec even(n) } }",
+            "module x; rec(loop) { pub fn even(n: Bool) -> Bool { recur odd(n) }; fn odd(n: Bool) -> Bool { recur even(n) } }",
         );
         let Item::RecGroup(group, _) = &m.items[0] else {
             panic!("expected RecGroup, got {:?}", m.items[0]);
@@ -4992,8 +5184,8 @@ fn ok() -> . { () }
     #[test]
     fn recursive_members_are_impure_across_eager_lazy_and_tooling_parses() {
         for source in [
-            "module x; pub rec(loop) fn f[A](x: A) -> A { rec f(A, x) }",
-            "module x; rec(loop) { pub fn f(x: .) { rec g(x) }; fn g(x: .) { x } }",
+            "module x; pub rec(loop) fn f[A](x: A) -> A { recur f(A, x) }",
+            "module x; rec(loop) { pub fn f(x: .) { recur g(x) }; fn g(x: .) { x } }",
         ] {
             let eager = parse(source).expect("recursive declaration");
             let lazy = parse_lazy(source).expect("deferred recursive declaration");

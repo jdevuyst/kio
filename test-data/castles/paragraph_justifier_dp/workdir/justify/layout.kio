@@ -37,27 +37,27 @@ pub fn line_badness(l: Line) -> I32 { l.?{badness} }
 fn make_line(xs: Words, column: I32, from: I32, to: I32, n: I32) -> Line {
   let used = span_used(xs, from, to);
   {
-    , start = from
-    , stop = to
-    , used
-    , slack = sub_i32(column, used)
-    , badness = cost.badness(used, column, eq_i32(to, n))
-    }
+  , start = from
+  , stop = to
+  , used
+  , slack = sub_i32(column, used)
+  , badness = cost.badness(used, column, eq_i32(to, n))
+  }
 }
 
 rec(loop) fn lines_onto(xs: Words, column: I32, n: I32, breaks: List(I32), acc: List(Line)) -> List(Line) {
   match! breaks.>List.unpack {
     (
-      , .(from: I32, rest: List(I32)) {
-          if! list.is_empty(rest) {
-            list.reverse(acc)
-          } else {
-            let to = list.head_or(rest, from);
-            rec lines_onto(xs, column, n, rest, list.cons(make_line(xs, column, from, to, n), acc))
-          }
+    , .(from: I32, rest: List(I32)) {
+        if! list.is_empty(rest) {
+          list.reverse(acc)
+        } else {
+          let to = list.head_or(rest, from);
+          recur lines_onto(xs, column, n, rest, list.cons(make_line(xs, column, from, to, n), acc))
         }
-      , .(_empty: .) { list.reverse(acc) }
-      )
+      }
+    , .(_empty: .) { list.reverse(acc) }
+    )
   }
 }
 
@@ -70,9 +70,9 @@ pub fn lines_of(xs: Words, column: I32, breaks: List(I32), n: I32) -> List(Line)
 rec(loop) fn total_onto(ls: List(Line), acc: I32) -> I32 {
   match! ls.>List.unpack {
     (
-      , .(l: Line, rest: List(Line)) { rec total_onto(rest, cost.sat_add(acc, line_badness(l))) }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, rest: List(Line)) { recur total_onto(rest, cost.sat_add(acc, line_badness(l))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -83,7 +83,7 @@ rec(loop) fn walk_back(back: List(I32), j: I32, acc: List(I32)) -> List(I32) {
   if! leq_i32(j, 0) {
     list.cons(0, acc)
   } else {
-    rec walk_back(back, list.at(back, j, 0), list.cons(j, acc))
+    recur walk_back(back, list.at(back, j, 0), list.cons(j, acc))
   }
 }
 

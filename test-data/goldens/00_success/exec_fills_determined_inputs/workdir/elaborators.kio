@@ -13,20 +13,20 @@ pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, target: __Type__, _valu
 pub elab fill : [A] Box(A) -> A { impl(fills) fill_impl }
 
 pure fn inspect_impl(
-  , ct: __Comptime__
-  , fills: __Fill_ctx__
-  , _type: __Type__
-  , _value: __Checked_term__
-  ) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _type: __Type__
+, _value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
 
 pub elab inspect : [T] T -> . { impl(fills) inspect_impl }
 
 pure fn with_sibling_impl(
-  , ct: __Comptime__
-  , fills: __Fill_ctx__
-  , _target: __Type__
-  , _value: __Checked_term__
-  , _sibling: __Checked_term__
-  ) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _target: __Type__
+, _value: __Checked_term__
+, _sibling: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
 
 pub elab with_sibling : [A] Box(A) -> A -> A { impl(fills) with_sibling_impl }

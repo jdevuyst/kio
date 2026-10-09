@@ -35,14 +35,10 @@ pub fn extend(s: Subst, v: I32, code: I32) -> Subst { list.cons({b_var = v, b_co
 pub rec(loop) fn lookup(s: Subst, v: I32) -> Maybe_const {
   match! s.>list.List.un_list {
     (
-      , .(b: Bind, rest: Subst) {
-          if! eq_i32(b.?{b_var}, v) {
-            some_const(b.?{b_const})
-          } else {
-            rec lookup(rest, v)
-          }
-        }
-      , .(_empty: .) { no_const() }
-      )
+    , .(b: Bind, rest: Subst) {
+        if! eq_i32(b.?{b_var}, v) { some_const(b.?{b_const}) } else { recur lookup(rest, v) }
+      }
+    , .(_empty: .) { no_const() }
+    )
   }
 }

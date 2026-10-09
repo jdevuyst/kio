@@ -6,6 +6,8 @@ import testapi/io(print);
 
 labels { pack[A] <U> : A & U };
 
-fn unwrap_a[A](v: Pack(A)) -> A { Pack.get(A, v)(.[U](pair: A & U) { pair.>one_prod!(A) }) }
+fn unwrap_a[A](v: Pack(A)) -> A {
+  Pack.get(A, v)(.[U](pair: A & U) { pair.>one_prod!(A) })
+}
 
 pub fn main() { let s = "ok\n"(String); let v = Pack.mk((s, s)); print(unwrap_a(v)) }

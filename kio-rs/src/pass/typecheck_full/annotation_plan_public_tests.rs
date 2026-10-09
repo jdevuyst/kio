@@ -380,7 +380,7 @@ fn recursive_alias_partial_let_rejects_once_with_source_provenance() {
         newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn choose_box[A](_tag: I32, value: Box(A)) -> Box(A) { value }
         rec(loop) fn recursive(value: I32) -> Box(Wrap(.)) {
-          let .(box: Box(Wrap(_))) = choose_box(value, rec(cont) recursive(value));
+          let .(box: Box(Wrap(_))) = choose_box(value, recur(cont) recursive(value));
           box
         }"#;
     assert_annotation_local_forall_hole(

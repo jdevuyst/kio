@@ -30,7 +30,7 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 /// `reverse` and `append` are both this one accumulator loop.
 pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   match! xs.>List.unpack {
-    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+    (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -40,7 +40,7 @@ pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.unpack {
-    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_head: A, rest: List(A)) { recur len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -49,15 +49,15 @@ pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
 rec(loop) fn filter_onto[A](xs: List(A), keep: A -> Bool, acc: List(A)) -> List(A) {
   match! xs.>List.unpack {
     (
-      , .(head: A, rest: List(A)) {
-          if! keep(head) {
-            rec filter_onto(rest, keep, cons(head, acc))
-          } else {
-            rec filter_onto(rest, keep, acc)
-          }
+    , .(head: A, rest: List(A)) {
+        if! keep(head) {
+          recur filter_onto(rest, keep, cons(head, acc))
+        } else {
+          recur filter_onto(rest, keep, acc)
         }
-      , .(_empty: .) { reverse(acc) }
-      )
+      }
+    , .(_empty: .) { reverse(acc) }
+    )
   }
 }
 

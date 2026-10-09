@@ -23,11 +23,7 @@ pub fn join(parts: lc.List(String)) -> String {
 // wears an infix ` + ` or ` - ` around its positive magnitude.
 fn sign_text(c: I32, leading: Bool) -> String {
   if! leading {
-    if! lt_i32(c, 0) {
-      "-"
-    } else {
-      ""
-    }
+    if! lt_i32(c, 0) { "-" } else { "" }
   } else if! lt_i32(c, 0) {
     " - "
   } else {
@@ -36,11 +32,7 @@ fn sign_text(c: I32, leading: Bool) -> String {
 }
 
 fn power_text(i: I32) -> String {
-  if! eq_i32(i, 1) {
-    "x"
-  } else {
-    string_concat("x^", int_to_string(i))
-  }
+  if! eq_i32(i, 1) { "x" } else { string_concat("x^", int_to_string(i)) }
 }
 
 // A unit coefficient loses its `1` above degree 0 (`x^2`, not `1x^2`) but keeps
@@ -68,9 +60,9 @@ rec(loop) fn terms_from(acc: String, leading: Bool, i: I32, p: core.Poly) -> Str
   } else {
     let c = core.coeff_at(p, i);
     if! eq_i32(c, 0) {
-      rec terms_from(acc, leading, sub_i32(i, 1), p)
+      recur terms_from(acc, leading, sub_i32(i, 1), p)
     } else {
-      rec terms_from(string_concat(acc, term_text(c, i, leading)), .f, sub_i32(i, 1), p)
+      recur terms_from(string_concat(acc, term_text(c, i, leading)), .f, sub_i32(i, 1), p)
     }
   }
 }
@@ -79,11 +71,7 @@ rec(loop) fn terms_from(acc: String, leading: Bool, i: I32, p: core.Poly) -> Str
 /// `[-4, 0, 1]` prints as `x^2 - 4`, and the zero polynomial — whose vector is
 /// empty, so there is no term to lead with — prints as `0`.
 pub fn show(p: core.Poly) -> String {
-  if! core.is_zero(p) {
-    "0"
-  } else {
-    terms_from("", .t, core.deg(p), p)
-  }
+  if! core.is_zero(p) { "0" } else { terms_from("", .t, core.deg(p), p) }
 }
 
 /// The underlying coefficient vector, low degree first, rendered by the list

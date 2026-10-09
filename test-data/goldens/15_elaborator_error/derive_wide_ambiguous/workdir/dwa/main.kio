@@ -36,18 +36,18 @@ fn render_wanted_b() -> Render(Wanted) { Render.mk_render(Wanted, ()) }
 
 fn bad() -> Render(Wanted) {
   derive!(
-    , (
-        , render_atom0
-        , render_atom1
-        , render_wanted_a
-        , render_atom2
-        , render_atom3
-        , render_wanted_b
-        , render_atom4
-        , render_atom5
-        )
-    , Render(Wanted)
+  , (
+    , render_atom0
+    , render_atom1
+    , render_wanted_a
+    , render_atom2
+    , render_atom3
+    , render_wanted_b
+    , render_atom4
+    , render_atom5
     )
+  , Render(Wanted)
+  )
 }
 
 pub fn main() { () }

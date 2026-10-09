@@ -43,7 +43,7 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 
 rec(loop) fn length_from[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
-    (.(_x: A, rest: List(A)) { rec length_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_x: A, rest: List(A)) { recur length_from(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -53,7 +53,7 @@ pub fn length[A](xs: List(A)) -> I32 { length_from(xs, 0) }
 /// out rather than on the way in, so its recursive call is a `cont`.
 pub rec(loop) fn append[A](xs: List(A), ys: List(A)) -> List(A) {
   match! xs.>List.un_list {
-    (.(x: A, rest: List(A)) { cons(x, rec(cont) append(rest, ys)) }, .(_empty: .) { ys })
+    (.(x: A, rest: List(A)) { cons(x, recur(cont) append(rest, ys)) }, .(_empty: .) { ys })
   }
 }
 
@@ -64,8 +64,8 @@ pub rec(loop) fn take[A](n: I32, xs: List(A)) -> List(A) {
     nil(A)
   } else match! xs.>List.un_list {
     (
-      , .(x: A, rest: List(A)) { cons(x, rec(cont) take(sub_i32(n, 1), rest)) }
-      , .(_empty: .) { nil(A) }
-      )
+    , .(x: A, rest: List(A)) { cons(x, recur(cont) take(sub_i32(n, 1), rest)) }
+    , .(_empty: .) { nil(A) }
+    )
   }
 }

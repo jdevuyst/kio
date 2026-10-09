@@ -25,13 +25,13 @@ rec(loop) {
     match! lists.uncons(tokens) {
       .(token: String, rest: lists.List(String)) {
         if! text.string_eq(token, "add") {
-          rec binary(rest, ast.add)
+          recur binary(rest, ast.add)
         } else if! text.string_eq(token, "app") {
-          rec binary(rest, ast.apply)
+          recur binary(rest, ast.apply)
         } else if! text.string_eq(token, "fn") {
           match! lists.uncons(rest) {
             .(name: String, body_tokens: lists.List(String)) {
-              let body = rec(cont) expression(body_tokens);
+              let body = recur(cont) expression(body_tokens);
               match! body {
                 .(parsed_body: Parsed) {
                   let .(expr, remaining) = parsed_body.?{parsed};
@@ -45,10 +45,10 @@ rec(loop) {
         } else if! text.string_eq(token, "let") {
           match! lists.uncons(rest) {
             .(name: String, body_tokens: lists.List(String)) {
-              rec binary(
-                , body_tokens
-                , .(value: ast.Expr, body: ast.Expr) { ast.bind(name, value, body) }
-                )
+              recur binary(
+              , body_tokens
+              , .(value: ast.Expr, body: ast.Expr) { ast.bind(name, value, body) }
+              )
             };
             .() { failure("expected binding name") }
           }
@@ -68,11 +68,11 @@ rec(loop) {
     }
   };
   fn binary(tokens: lists.List(String), construct: (ast.Expr & ast.Expr) -> ast.Expr) -> Result {
-    let first = rec(cont) expression(tokens);
+    let first = recur(cont) expression(tokens);
     match! first {
       .(left: Parsed) {
         let .(left_expr, rest) = left.?{parsed};
-        let second = rec(cont) expression(rest);
+        let second = recur(cont) expression(rest);
         match! second {
           .(right: Parsed) {
             let .(right_expr, remaining) = right.?{parsed};

@@ -21,16 +21,16 @@ fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> (A | T),
    { read(pack(value)) }
 
 pub fn concrete_product_roundtrip(
-  , pack: (Atom & Atom & Atom) -> Box(Atom & Atom & Atom)
-  , read: Box(Atom & Atom & Atom) -> (Atom & Atom & Atom)
-  , value: Atom & Atom & Atom
-  ) -> Atom & Atom & Atom { product_roundtrip(Box, Atom, Atom & Atom, pack, read, value) }
+, pack: (Atom & Atom & Atom) -> Box(Atom & Atom & Atom)
+, read: Box(Atom & Atom & Atom) -> (Atom & Atom & Atom)
+, value: Atom & Atom & Atom
+) -> Atom & Atom & Atom { product_roundtrip(Box, Atom, Atom & Atom, pack, read, value) }
 
 pub fn concrete_sum_roundtrip(
-  , pack: (Atom | Atom | Atom) -> Box(Atom | Atom | Atom)
-  , read: Box(Atom | Atom | Atom) -> (Atom | Atom | Atom)
-  , value: Atom | Atom | Atom
-  ) -> Atom | Atom | Atom { sum_roundtrip(Box, Atom, Atom | Atom, pack, read, value) }
+, pack: (Atom | Atom | Atom) -> Box(Atom | Atom | Atom)
+, read: Box(Atom | Atom | Atom) -> (Atom | Atom | Atom)
+, value: Atom | Atom | Atom
+) -> Atom | Atom | Atom { sum_roundtrip(Box, Atom, Atom | Atom, pack, read, value) }
 
 pub fn whole_box[T](value: Box(T)) -> Box(T) { value }
 
@@ -54,6 +54,8 @@ pub fn abstract_box[*F][T](value: F(T)) -> F(T) { value }
 
 pub fn opaque[A][B](a: A, b: B) -> Opaque(A, B) { Opaque.make((a, b)) }
 
-pub fn partial() -> Using(Both(.)) { Using.make(.[A](x) { x }) }
+pub fn partial() -> Using(Both(.)) {
+  Using.make(.[A](x) { x })
+}
 
 pub fn echo_native[A][B](x: Native(A, B)) -> Native(A, B) { x }

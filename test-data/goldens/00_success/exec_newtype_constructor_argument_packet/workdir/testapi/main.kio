@@ -5,7 +5,10 @@ import testapi/io as io;
 
 newtype Pack <A> : (A -> String) & A { constructor make; projector open }
 
-fn printer() -> String -> String { io.print("function;"); .(text: String) { text } }
+fn printer() -> String -> String {
+  io.print("function;");
+  .(text: String) { text }
+}
 
 fn value() -> String { io.print("value;"); "packed" }
 

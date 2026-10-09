@@ -7,9 +7,13 @@ import testapi/io(print);
 // `String -> String -> String`. The closure carries two value
 // groups, so applying it one group at a time — `pick(x)(y)` — must
 // curry: each group is a separate callable layer.
-fn make_first() -> String -> String -> String { .(a: String)(b: String) -> String { a } }
+fn make_first() -> String -> String -> String {
+  .(a: String)(b: String) -> String { a }
+}
 
-fn make_second() -> String -> String -> String { .(a: String)(b: String) -> String { b } }
+fn make_second() -> String -> String -> String {
+  .(a: String)(b: String) -> String { b }
+}
 
 pub fn main() {
   // Full per-group application of a multi-group closure value.

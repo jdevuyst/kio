@@ -9,11 +9,7 @@ import testapi/io as io;
 fn choose(condition: Bool, value: String | .) -> String {
   match! value {
     .(line: String) {
-      if! condition {
-        line
-      } else {
-        "else\n"
-      }
+      if! condition { line } else { "else\n" }
     };
     .(_empty: .) -> String { "empty\n" }
   }

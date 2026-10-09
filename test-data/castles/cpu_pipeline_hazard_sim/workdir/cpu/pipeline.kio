@@ -22,54 +22,54 @@
 module cpu/pipeline;
 
 import cpu/hazard(
-  , Load_use_stall
-  , Proceed
-  , Raw_stall
-  , Read
-  , hazard
-  , read_source
-  , {hit_ex_mem}
-  , {hit_mem_wb}
-  , {load_use_stall}
-  , {raw_stall}
-  , {value}
-  );
+, Load_use_stall
+, Proceed
+, Raw_stall
+, Read
+, hazard
+, read_source
+, {hit_ex_mem}
+, {hit_mem_wb}
+, {load_use_stall}
+, {raw_stall}
+, {value}
+);
 import cpu/isa(
-  , Instr
-  , dest_of
-  , is_halt
-  , is_load
-  , is_store
-  , reg_text
-  , slot_text
-  , {code}
-  , {imm}
-  , {rs}
-  , {rt}
-  );
+, Instr
+, dest_of
+, is_halt
+, is_load
+, is_store
+, reg_text
+, slot_text
+, {code}
+, {imm}
+, {rs}
+, {rt}
+);
 import cpu/isa(Add, Beq, Halt, Load, Loadi, Mul, Nop, Store, Sub);
 import cpu/machine(
-  , {bubbles}
-  , {cycle}
-  , {ex_mem}
-  , {flushes}
-  , {forwarding}
-  , {fwd_ex_mem}
-  , {fwd_mem_wb}
-  , {mem_wb}
-  , {mem}
-  , {pc}
-  , {prog}
-  , {regs}
-  , {retired}
-  , {sealed}
-  , {st_ex}
-  , {st_id}
-  , {st_if}
-  , {st_mem}
-  , {st_wb}
-  , {stalls}
-  );
+, {bubbles}
+, {cycle}
+, {ex_mem}
+, {flushes}
+, {forwarding}
+, {fwd_ex_mem}
+, {fwd_mem_wb}
+, {mem_wb}
+, {mem}
+, {pc}
+, {prog}
+, {regs}
+, {retired}
+, {sealed}
+, {st_ex}
+, {st_id}
+, {st_if}
+, {st_mem}
+, {st_wb}
+, {stalls}
+);
 import cpu/machine(Cpu, Machine, empty_stage, pipeline_empty, stage_empty, stage_filled);
 import cpu/num(cat, cat3, int_eq);
 import cpu/report(Event, noted, pipeline_row, quiet);
@@ -106,11 +106,11 @@ fn ex_quiet(value_now: I32) -> Ex_out { ex_out(value_now, 0, 0, straight()) }
 
 fn ex_reads(a: Read, b: Read, value_now: I32, decision: Redirect) -> Ex_out {
   ex_out(
-    , value_now
-    , add_i32(a.?{hit_ex_mem}, b.?{hit_ex_mem})
-    , add_i32(a.?{hit_mem_wb}, b.?{hit_mem_wb})
-    , decision
-    )
+  , value_now
+  , add_i32(a.?{hit_ex_mem}, b.?{hit_ex_mem})
+  , add_i32(a.?{hit_mem_wb}, b.?{hit_mem_wb})
+  , decision
+  )
 }
 
 fn ex_alu(cpu: Cpu, m: Machine, inst: Instr, combine: (I32 & I32) -> I32) -> Ex_out {
@@ -154,16 +154,22 @@ fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
   let code = inst.?{code};
   match! code {
     (
-      , .(_a: Add) { ex_alu(cpu, m, inst, .(x, y) { add_i32(x, y) }) }
-      , .(_s: Sub) { ex_alu(cpu, m, inst, .(x, y) { sub_i32(x, y) }) }
-      , .(_m: Mul) { ex_alu(cpu, m, inst, .(x, y) { mul_i32(x, y) }) }
-      , .(_li: Loadi) { ex_quiet(inst.?{imm}) }
-      , .(_ld: Load) { ex_quiet(inst.?{imm}) }
-      , .(_st: Store) { ex_store(cpu, m, inst) }
-      , .(_b: Beq) { ex_branch(cpu, m, inst) }
-      , .(_n: Nop) { ex_quiet(0) }
-      , .(_h: Halt) { ex_quiet(0) }
-      )
+    , .(_a: Add) {
+        ex_alu(cpu, m, inst, .(x, y) { add_i32(x, y) })
+      }
+    , .(_s: Sub) {
+        ex_alu(cpu, m, inst, .(x, y) { sub_i32(x, y) })
+      }
+    , .(_m: Mul) {
+        ex_alu(cpu, m, inst, .(x, y) { mul_i32(x, y) })
+      }
+    , .(_li: Loadi) { ex_quiet(inst.?{imm}) }
+    , .(_ld: Load) { ex_quiet(inst.?{imm}) }
+    , .(_st: Store) { ex_store(cpu, m, inst) }
+    , .(_b: Beq) { ex_branch(cpu, m, inst) }
+    , .(_n: Nop) { ex_quiet(0) }
+    , .(_h: Halt) { ex_quiet(0) }
+    )
   }
 }
 
@@ -208,46 +214,28 @@ fn write_back(cpu: Cpu, m: Machine) {
 /// cycle's counters are settled. The three endings then differ only in
 /// what they do to the *front* of the pipeline.
 fn carried(m: Machine, ex: Ex_out, latched: I32) -> Machine {
-  let done =
-    if! stage_filled(m.?{st_wb}) {
-      add_i32(m.?{retired}, 1)
-    } else {
-      m.?{retired}
-    };
-  let idle =
-    if! stage_empty(m.?{st_ex}) {
-      add_i32(m.?{bubbles}, 1)
-    } else {
-      m.?{bubbles}
-    };
+  let done = if! stage_filled(m.?{st_wb}) { add_i32(m.?{retired}, 1) } else { m.?{retired} };
+  let idle = if! stage_empty(m.?{st_ex}) { add_i32(m.?{bubbles}, 1) } else { m.?{bubbles} };
   m.!{
-    , st_mem = m.?{st_ex}
-    , st_wb = m.?{st_mem}
-    , ex_mem = ex.?{ex_value}
-    , mem_wb = latched
-    , retired = done
-    , bubbles = idle
-    , fwd_ex_mem = add_i32(m.?{fwd_ex_mem}, ex.?{ex_hits})
-    , fwd_mem_wb = add_i32(m.?{fwd_mem_wb}, ex.?{mem_hits})
-    }
+  , st_mem = m.?{st_ex}
+  , st_wb = m.?{st_mem}
+  , ex_mem = ex.?{ex_value}
+  , mem_wb = latched
+  , retired = done
+  , bubbles = idle
+  , fwd_ex_mem = add_i32(m.?{fwd_ex_mem}, ex.?{ex_hits})
+  , fwd_mem_wb = add_i32(m.?{fwd_mem_wb}, ex.?{mem_hits})
+  }
 }
 
 fn step(state: Machine, note: Event) -> Step { {next = state, note} }
 
 fn killed(slot: I32) -> I32 {
-  if! stage_filled(slot) {
-    1
-  } else {
-    0
-  }
+  if! stage_filled(slot) { 1 } else { 0 }
 }
 
 fn squashed_text(slot: I32) -> String {
-  if! stage_empty(slot) {
-    ""
-  } else {
-    cat(" ", slot_text(slot))
-  }
+  if! stage_empty(slot) { "" } else { cat(" ", slot_text(slot)) }
 }
 
 /// A taken branch. The two instructions behind it were fetched from the
@@ -258,20 +246,20 @@ fn squashed_text(slot: I32) -> String {
 fn squash_step(base: Machine, target: I32) -> Step {
   let wrong_path = add_i32(killed(base.?{st_id}), killed(base.?{st_if}));
   step(
-    , base.!{
-        , pc = target
-        , st_if = empty_stage()
-        , st_id = empty_stage()
-        , st_ex = empty_stage()
-        , sealed = .f
-        , flushes = add_i32(base.?{flushes}, wrong_path)
-        }
-    , noted(cat3(
-        , cat("branch taken -> ", slot_text(target))
-        , ", squash"
-        , cat(squashed_text(base.?{st_id}), squashed_text(base.?{st_if}))
-        ))
-    )
+  , base.!{
+    , pc = target
+    , st_if = empty_stage()
+    , st_id = empty_stage()
+    , st_ex = empty_stage()
+    , sealed = .f
+    , flushes = add_i32(base.?{flushes}, wrong_path)
+    }
+  , noted(cat3(
+    , cat("branch taken -> ", slot_text(target))
+    , ", squash"
+    , cat(squashed_text(base.?{st_id}), squashed_text(base.?{st_if}))
+    ))
+  )
 }
 
 /// A stall. IF and ID hold what they have, the program counter freezes
@@ -284,34 +272,19 @@ fn stall_step(base: Machine, note: Event) -> Step {
 /// fetches, unless a HALT has already sealed it.
 fn issue_step(cpu: Cpu, base: Machine) -> Step {
   let shut = base.?{sealed};
-  let fetched =
-    if! shut {
-      empty_stage()
-    } else {
-      base.?{pc}
-    };
-  let pc_next =
-    if! shut {
-      base.?{pc}
-    } else {
-      add_i32(base.?{pc}, 1)
-    };
-  let sealed_next =
-    if! shut {
-      .t
-    } else {
-      is_halt(array_get(cpu.?{prog}, base.?{pc}))
-    };
+  let fetched = if! shut { empty_stage() } else { base.?{pc} };
+  let pc_next = if! shut { base.?{pc} } else { add_i32(base.?{pc}, 1) };
+  let sealed_next = if! shut { .t } else { is_halt(array_get(cpu.?{prog}, base.?{pc})) };
   step(
-    , base.!{
-        , pc = pc_next
-        , st_if = fetched
-        , st_id = base.?{st_if}
-        , st_ex = base.?{st_id}
-        , sealed = sealed_next
-        }
-    , quiet()
-    )
+  , base.!{
+    , pc = pc_next
+    , st_if = fetched
+    , st_id = base.?{st_if}
+    , st_ex = base.?{st_id}
+    , sealed = sealed_next
+    }
+  , quiet()
+  )
 }
 
 /// One cycle. The hazard unit is asked about `m` -- the stage occupancy
@@ -331,24 +304,21 @@ fn advance(cpu: Cpu, m: Machine) -> Step {
   let decision = ex.?{decision};
   match! decision {
     (
-      , .(taken: Jump) { squash_step(base, taken.?{jump}) }
-      , .(_fell_through: Straight) {
-          match! hazard(cpu, m) {
-            (
-              , .(_go: Proceed) { issue_step(cpu, base) }
-              , .(held: Raw_stall) {
-                  stall_step(base, noted(cat("stall: RAW on ", reg_text(held.?{raw_stall}))))
-                }
-              , .(held: Load_use_stall) {
-                  stall_step(
-                    , base
-                    , noted(cat("stall: load-use on ", reg_text(held.?{load_use_stall})))
-                    )
-                }
-              )
-          }
+    , .(taken: Jump) { squash_step(base, taken.?{jump}) }
+    , .(_fell_through: Straight) {
+        match! hazard(cpu, m) {
+          (
+          , .(_go: Proceed) { issue_step(cpu, base) }
+          , .(held: Raw_stall) {
+              stall_step(base, noted(cat("stall: RAW on ", reg_text(held.?{raw_stall}))))
+            }
+          , .(held: Load_use_stall) {
+              stall_step(base, noted(cat("stall: load-use on ", reg_text(held.?{load_use_stall}))))
+            }
+          )
         }
-      )
+      }
+    )
   }
 }
 
@@ -369,6 +339,6 @@ pub rec(loop) fn run(cpu: Cpu, m: Machine) -> Machine {
   if! pipeline_empty(next) {
     next
   } else {
-    rec run(cpu, with_cycle(next, add_i32(m.?{cycle}, 1)))
+    recur run(cpu, with_cycle(next, add_i32(m.?{cycle}, 1)))
   }
 }

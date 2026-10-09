@@ -18,11 +18,7 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 fn bit(b: Bool) -> String {
-  if! b {
-    "1"
-  } else {
-    "0"
-  }
+  if! b { "1" } else { "0" }
 }
 
 // Assignment order is binary xyz: x changes every four rows, z every row.
@@ -33,43 +29,36 @@ pub fn assignment(row: I32, variable: I32) -> Bool {
     logic.or(logic.and(arith.leq_i32(2, row), arith.lt_i32(row, 4)), arith.leq_i32(6, row))
   } else {
     logic.or(
-      , logic.or(arith.eq_i32(row, 1), arith.eq_i32(row, 3))
-      , logic.or(arith.eq_i32(row, 5), arith.eq_i32(row, 7))
-      )
+    , logic.or(arith.eq_i32(row, 1), arith.eq_i32(row, 3))
+    , logic.or(arith.eq_i32(row, 5), arith.eq_i32(row, 7))
+    )
   }
 }
 
 rec(loop) fn truth_rows(
-  , store: table.Store
-  , root: table.Node_id
-  , expected: (I32 -> Bool) -> Bool
-  , row: I32
-  , bits: String
-  , models: I32
-  , agree: Bool
-  ) -> String & I32 & Bool {
+, store: table.Store
+, root: table.Node_id
+, expected: (I32 -> Bool) -> Bool
+, row: I32
+, bits: String
+, models: I32
+, agree: Bool
+) -> String & I32 & Bool {
   if! arith.eq_i32(row, 8) {
     (bits, models, agree)
   } else {
     let values = .(variable: I32) { assignment(row, variable) };
     let actual = query.evaluate(store, root, values);
     let reference = expected(values);
-    rec truth_rows(
-      , store
-      , root
-      , expected
-      , arith.add_i32(row, 1)
-      , text.string_concat(bits, bit(actual))
-      , arith.add_i32(
-          , models
-          , if! actual {
-              1
-            } else {
-              0
-            }
-          )
-      , logic.and(agree, logic.same(actual, reference))
-      )
+    recur truth_rows(
+    , store
+    , root
+    , expected
+    , arith.add_i32(row, 1)
+    , text.string_concat(bits, bit(actual))
+    , arith.add_i32(models, if! actual { 1 } else { 0 })
+    , logic.and(agree, logic.same(actual, reference))
+    )
   }
 }
 
@@ -88,11 +77,11 @@ fn witness(store: table.Store, root: table.Node_id, expected: (I32 -> Bool) -> B
 }
 
 pub fn diagram(
-  , name: String
-  , store: table.Store
-  , root: table.Node_id
-  , expected: (I32 -> Bool) -> Bool
-  ) {
+, name: String
+, store: table.Store
+, root: table.Node_id
+, expected: (I32 -> Bool) -> Bool
+) {
   let .(bits: String, models: I32, agree: Bool) = truth_rows(store, root, expected, 0, "", 0, .t);
   let .(sample: String, valid: Bool) = witness(store, root, expected);
   io.print(name);
@@ -106,19 +95,19 @@ pub fn diagram(
 
 pub fn formulas(fixtures: lists.List(String & expr.Expression)) -> engine.Manager {
   walk.foldl(
-    , .(manager: engine.Manager, name: String, expression: expr.Expression) {
-        let .(next: engine.Manager, root: table.Node_id) = compiler.compile(manager, expression);
-        diagram(
-          , name
-          , next.?{engine.store}
-          , root
-          , .(values: I32 -> Bool) { expr.evaluate(expression, values) }
-          );
-        next
-      }
-    , engine.empty()
-    , fixtures
-    )
+  , .(manager: engine.Manager, name: String, expression: expr.Expression) {
+      let .(next: engine.Manager, root: table.Node_id) = compiler.compile(manager, expression);
+      diagram(
+      , name
+      , next.?{engine.store}
+      , root
+      , .(values: I32 -> Bool) { expr.evaluate(expression, values) }
+      );
+      next
+    }
+  , engine.empty()
+  , fixtures
+  )
 }
 
 pub fn fact(name: String, value: Bool) {

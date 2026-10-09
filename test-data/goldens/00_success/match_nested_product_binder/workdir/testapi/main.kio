@@ -29,13 +29,13 @@ fn zcons[A](k: I32, v: A, sib: I32, rest: Z(A)) -> Z(A) {
 fn head_key[A](z: Z(A)) -> I32 {
   match! z.>Z.un_z {
     (
-      , .((hd: I32 & A, _sib: I32), _rest: Z(A)) {
-          match! hd {
-            .(k: I32, _v: A) { k }
-          }
+    , .((hd: I32 & A, _sib: I32), _rest: Z(A)) {
+        match! hd {
+          .(k: I32, _v: A) { k }
         }
-      , .(_empty: .) { 0 }
-      )
+      }
+    , .(_empty: .) { 0 }
+    )
   }
 }
 

@@ -13,47 +13,31 @@ fn prefer_builder[A](preferred: A, _fallback: A) -> A { preferred }
 fn late_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
   let build =
     prefer_builder(
-      , .() {
-          if! is_error {
-            widen_sum!({div_by_zero=})
-          } else {
-            widen_sum!(value)
-          }
-        }
-      , .() -> I32 | Div_by_zero { widen_sum!(value) }
-      );
+    , .() {
+        if! is_error { widen_sum!({div_by_zero=}) } else { widen_sum!(value) }
+      }
+    , .() -> I32 | Div_by_zero { widen_sum!(value) }
+    );
   build()
 }
 
 fn late_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
   let build =
     prefer_builder(
-      , .() {
-          if! has_value {
-            widen_sum!(value)
-          } else {
-            widen_sum!({div_by_zero=})
-          }
-        }
-      , .() -> I32 | Div_by_zero { widen_sum!(value) }
-      );
+    , .() {
+        if! has_value { widen_sum!(value) } else { widen_sum!({div_by_zero=}) }
+      }
+    , .() -> I32 | Div_by_zero { widen_sum!(value) }
+    );
   build()
 }
 
 fn explicit_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
-  if! is_error {
-    widen_sum!({div_by_zero=})
-  } else {
-    widen_sum!(value)
-  }
+  if! is_error { widen_sum!({div_by_zero=}) } else { widen_sum!(value) }
 }
 
 fn explicit_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
-  if! has_value {
-    widen_sum!(value)
-  } else {
-    widen_sum!({div_by_zero=})
-  }
+  if! has_value { widen_sum!(value) } else { widen_sum!({div_by_zero=}) }
 }
 
 fn render(result: I32 | Div_by_zero) -> String {

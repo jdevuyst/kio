@@ -57,10 +57,10 @@ pub fn table_fits(t: Table) -> List(I32) {
 /// The table grows head-first, which is exactly the order `scan` reads it in.
 fn push_cell(t: Table, c: Cell) -> Table {
   make_table(
-    , list.cons(cell_score(c), table_best(t))
-    , list.cons(cell_back(c), table_back(t))
-    , list.cons(cell_fits(c), table_fits(t))
-    )
+  , list.cons(cell_score(c), table_best(t))
+  , list.cons(cell_back(c), table_back(t))
+  , list.cons(cell_fits(c), table_fits(t))
+  )
 }
 
 /// Only the finished table is flipped back into break-point order.
@@ -69,12 +69,7 @@ fn flip(t: Table) -> Table {
 }
 
 fn improve(acc: Cell, candidate: I32, start: I32, fitted: Bool) -> Cell {
-  let counted =
-    if! fitted {
-      add_i32(cell_fits(acc), 1)
-    } else {
-      cell_fits(acc)
-    };
+  let counted = if! fitted { add_i32(cell_fits(acc), 1) } else { cell_fits(acc) };
   if! lt_i32(candidate, cell_score(acc)) {
     make_cell(candidate, start, counted)
   } else {
@@ -93,25 +88,25 @@ fn improve(acc: Cell, candidate: I32, start: I32, fitted: Bool) -> Cell {
 /// A candidate has to be *strictly* better to win, and the walk goes downward,
 /// so a tie keeps the largest start — the shortest last line of the two.
 rec(loop) fn scan(
-  , start: I32
-  , column: I32
-  , last: Bool
-  , used: I32
-  , rev_words: Words
-  , rev_best: List(I32)
-  , acc: Cell
-  ) -> Cell {
+, start: I32
+, column: I32
+, last: Bool
+, used: I32
+, rev_words: Words
+, rev_best: List(I32)
+, acc: Cell
+) -> Cell {
   match! rev_words.>List.unpack {
     (
-      , .(w: Word, rest: Words) {
-          let next_used = add_i32(add_i32(used, 1), word_width(w));
-          let prefix = list.head_or(rev_best, cost.infinite());
-          let here = cost.badness(next_used, column, last);
-          let next = improve(acc, cost.sat_add(prefix, here), start, cost.fits(next_used, column));
-          rec scan(sub_i32(start, 1), column, last, next_used, rest, list.tail_of(rev_best), next)
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(w: Word, rest: Words) {
+        let next_used = add_i32(add_i32(used, 1), word_width(w));
+        let prefix = list.head_or(rev_best, cost.infinite());
+        let here = cost.badness(next_used, column, last);
+        let next = improve(acc, cost.sat_add(prefix, here), start, cost.fits(next_used, column));
+        recur scan(sub_i32(start, 1), column, last, next_used, rest, list.tail_of(rev_best), next)
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -121,14 +116,14 @@ rec(loop) fn fill(j: I32, n: I32, column: I32, rest: Words, rev_words: Words, ac
   } else {
     let seed = make_cell(cost.infinite(), -1, 0);
     let cell = scan(sub_i32(j, 1), column, eq_i32(j, n), -1, rev_words, table_best(acc), seed);
-    rec fill(
-      , add_i32(j, 1)
-      , n
-      , column
-      , list.tail_of(rest)
-      , list.push_head(rest, rev_words)
-      , push_cell(acc, cell)
-      )
+    recur fill(
+    , add_i32(j, 1)
+    , n
+    , column
+    , list.tail_of(rest)
+    , list.push_head(rest, rev_words)
+    , push_cell(acc, cell)
+    )
   }
 }
 

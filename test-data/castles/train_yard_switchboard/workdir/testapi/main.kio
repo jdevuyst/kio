@@ -4,14 +4,14 @@ import elab/control(if);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(
-  , array_clone
-  , array_get
-  , array_len
-  , array_make_empty
-  , array_push
-  , array_set
-  , array_swap
-  );
+, array_clone
+, array_get
+, array_len
+, array_make_empty
+, array_push
+, array_set
+, array_swap
+);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
@@ -32,9 +32,9 @@ fn is_empty(slot: String) -> Bool { string_eq(slot, "empty") }
 rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I32) -> I32 {
   if! leq_i32(index, last) {
     if! is_empty(array_get(yard, index)) {
-      rec occupied_count(yard, add_i32(index, 1), last, count)
+      recur occupied_count(yard, add_i32(index, 1), last, count)
     } else {
-      rec occupied_count(yard, add_i32(index, 1), last, add_i32(count, 1))
+      recur occupied_count(yard, add_i32(index, 1), last, add_i32(count, 1))
     }
   } else {
     count
@@ -43,24 +43,24 @@ rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I
 
 fn render(yard: Array(String)) -> String {
   string_concat(
-    , array_get(yard, 0)
+  , array_get(yard, 0)
+  , string_concat(
+    , "|"
     , string_concat(
+      , array_get(yard, 1)
+      , string_concat(
         , "|"
         , string_concat(
-            , array_get(yard, 1)
-            , string_concat(
-                , "|"
-                , string_concat(
-                    , array_get(yard, 2)
-                    , string_concat(
-                        , "|"
-                        , string_concat(array_get(yard, 3), string_concat("|", array_get(yard, 4)))
-                        )
-                    )
-                )
+          , array_get(yard, 2)
+          , string_concat(
+            , "|"
+            , string_concat(array_get(yard, 3), string_concat("|", array_get(yard, 4)))
             )
+          )
         )
+      )
     )
+  )
 }
 
 fn safe(yard: Array(String)) -> Bool { is_empty(array_get(yard, 0)) }

@@ -55,7 +55,7 @@ rec(loop) fn values(remaining: I32, reversed: m.Row) -> m.Row | String {
       } else if! a.lt_i32(8, n) {
         "entries must be between -8 and 8".>widen_sum!
       } else {
-        rec values(a.sub_i32(remaining, 1), c.cons(q.integer(n), reversed))
+        recur values(a.sub_i32(remaining, 1), c.cons(q.integer(n), reversed))
       }
     };
     .(error: String) { error.>widen_sum! }
@@ -66,7 +66,7 @@ rec(loop) fn rows(flat: m.Row, width: I32, reversed: m.Matrix) -> m.Matrix {
   if! l.null(flat) {
     l.reverse(reversed)
   } else {
-    rec rows(l.drop(width, flat), width, c.cons(l.take(width, flat), reversed))
+    recur rows(l.drop(width, flat), width, c.cons(l.take(width, flat), reversed))
   }
 }
 
@@ -95,11 +95,7 @@ fn dimensions(name: String) -> Read_result {
 pub fn next() -> Read_result {
   match! io.read_ascii_line() {
     .(name: String) {
-      if! text.string_eq(name, "END") {
-        {finished=}.>widen_sum!
-      } else {
-        dimensions(name)
-      }
+      if! text.string_eq(name, "END") { {finished=}.>widen_sum! } else { dimensions(name) }
     };
     .() { {input_error = "missing END marker"}.>widen_sum! }
   }

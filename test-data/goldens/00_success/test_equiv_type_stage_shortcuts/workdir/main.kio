@@ -8,13 +8,18 @@ fn choose[A][B](condition: Bool)(yes: . -> A)(no: . -> A) -> A {
   __if_then_else__(condition, yes, no)
 }
 
-fn run_conditional_local() { let saved = choose; saved(., ., .t(Bool))(.() { () })(.() { () }) }
+fn run_conditional_local() {
+  let saved = choose;
+  saved(., ., .t(Bool))(.() { () })(.() { () })
+}
 
 fn choose_either[A][B](decision: . | .)(yes: . -> A)(no: . -> A) -> A {
   __either__(., ., A, decision, .(_left: .) { yes() }, .(_right: .) { no() })
 }
 
-fn run_either_direct(decision: . | .) { choose_either(., ., decision)(.() { () })(.() { () }) }
+fn run_either_direct(decision: . | .) {
+  choose_either(., ., decision)(.() { () })(.() { () })
+}
 
 fn run_either_local(decision: . | .) {
   let saved = choose_either;

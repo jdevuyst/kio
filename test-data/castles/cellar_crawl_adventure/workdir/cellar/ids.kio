@@ -19,19 +19,11 @@ import testapi/text(string_eq);
 pub fn int_eq(a: I32, b: I32) -> Bool { string_eq(int_to_string(a), int_to_string(b)) }
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 pub fn not(a: Bool) -> Bool {
-  if! a {
-    .f
-  } else {
-    .t
-  }
+  if! a { .f } else { .t }
 }
 
 pub newtype Room_id : I32 { constructor of_index; projector index }

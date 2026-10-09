@@ -10,11 +10,7 @@ newtype Stored[A] : Cell(A) { constructor pack; projector unpack }
 
 pub fn choose[A](condition: Bool, first: A, second: A) -> A {
   let stored =
-    if! condition {
-      Stored.pack(Cell.pack(first))
-    } else {
-      Stored.pack(Cell.pack(second))
-    };
+    if! condition { Stored.pack(Cell.pack(first)) } else { Stored.pack(Cell.pack(second)) };
   stored.>Stored.unpack.>Cell.unpack
 }
 

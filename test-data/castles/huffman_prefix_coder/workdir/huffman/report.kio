@@ -27,7 +27,7 @@ rec(loop) fn divide(n: I32, d: I32) -> Divided {
   if! lt_i32(n, d) {
     divided(0, n)
   } else {
-    let half = rec(cont) divide(n, mul_i32(d, 2));
+    let half = recur(cont) divide(n, mul_i32(d, 2));
     let doubled = mul_i32(half.?{quotient}, 2);
     let rest = half.?{remainder};
     if! leq_i32(d, rest) {
@@ -41,19 +41,11 @@ rec(loop) fn divide(n: I32, d: I32) -> Divided {
 /// `n / d` rounded down. A non-positive divisor has no answer to give, so it
 /// reports zero rather than diverging on a divisor that can never reach `n`.
 fn div_floor(n: I32, d: I32) -> I32 {
-  if! leq_i32(d, 0) {
-    0
-  } else {
-    divide(n, d).?{quotient}
-  }
+  if! leq_i32(d, 0) { 0 } else { divide(n, d).?{quotient} }
 }
 
 rec(loop) fn pow2_from(exponent: I32, acc: I32) -> I32 {
-  if! leq_i32(exponent, 0) {
-    acc
-  } else {
-    rec pow2_from(sub_i32(exponent, 1), mul_i32(acc, 2))
-  }
+  if! leq_i32(exponent, 0) { acc } else { recur pow2_from(sub_i32(exponent, 1), mul_i32(acc, 2)) }
 }
 
 pub fn pow2(exponent: I32) -> I32 { pow2_from(exponent, 1) }
@@ -62,7 +54,7 @@ rec(loop) fn ceil_log2_from(value: I32, width: I32, reach: I32) -> I32 {
   if! leq_i32(value, reach) {
     width
   } else {
-    rec ceil_log2_from(value, add_i32(width, 1), mul_i32(reach, 2))
+    recur ceil_log2_from(value, add_i32(width, 1), mul_i32(reach, 2))
   }
 }
 
@@ -71,17 +63,13 @@ fn ceil_log2(value: I32) -> I32 { ceil_log2_from(value, 0, 1) }
 
 pub fn longest_code(rows: List(Entry)) -> I32 {
   fold(
-    , rows
-    , .(best: I32, row: Entry) {
-        let width = row.?{entry_len};
-        if! lt_i32(best, width) {
-          width
-        } else {
-          best
-        }
-      }
-    , 0
-    )
+  , rows
+  , .(best: I32, row: Entry) {
+      let width = row.?{entry_len};
+      if! lt_i32(best, width) { width } else { best }
+    }
+  , 0
+  )
 }
 
 /// Kraft's sum, `sum of 2^-length`, cleared of fractions by scaling every term
@@ -98,15 +86,15 @@ pub fn kraft_holds(rows: List(Entry), longest: I32) -> Bool {
 }
 
 pub labels Savings = {
-  , symbol_count: I32
-  , alphabet: I32
-  , fixed_width: I32
-  , baseline_bits: I32
-  , coded_bits: I32
-  , saved_bits: I32
-  , saved_permille: I32
-  , milli_bits_each: I32
-  };
+, symbol_count: I32
+, alphabet: I32
+, fixed_width: I32
+, baseline_bits: I32
+, coded_bits: I32
+, saved_bits: I32
+, saved_permille: I32
+, milli_bits_each: I32
+};
 
 /// The baseline is what a fixed-width code would have cost: every symbol spends
 /// `ceil(log2(alphabet))` bits whatever its frequency. The saving is reported in
@@ -118,13 +106,13 @@ pub fn savings(symbols: List(I32), alphabet: I32, coded_bits: I32) -> Savings {
   let baseline_bits = mul_i32(symbol_count, fixed_width);
   let saved_bits = sub_i32(baseline_bits, coded_bits);
   {
-    , symbol_count
-    , alphabet
-    , fixed_width
-    , baseline_bits
-    , coded_bits
-    , saved_bits
-    , saved_permille = div_floor(mul_i32(saved_bits, 1000), baseline_bits)
-    , milli_bits_each = div_floor(mul_i32(coded_bits, 1000), symbol_count)
-    }
+  , symbol_count
+  , alphabet
+  , fixed_width
+  , baseline_bits
+  , coded_bits
+  , saved_bits
+  , saved_permille = div_floor(mul_i32(saved_bits, 1000), baseline_bits)
+  , milli_bits_each = div_floor(mul_i32(coded_bits, 1000), symbol_count)
+  }
 }

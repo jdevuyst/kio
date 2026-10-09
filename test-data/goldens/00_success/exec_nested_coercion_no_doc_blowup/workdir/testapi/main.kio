@@ -43,73 +43,71 @@ fn uncons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(xs) }
 // and the innermost spine `uncons`.
 fn drop3[A](n: I32, xs: List(A)) -> List(A) {
   loop(
-    , I32 & List(A)
-    , List(A)
-    , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-        match! state {
-          .(k: I32, rest: List(A)) {
-            if! lt_i32(0, k) {
-              if! lt_i32(1, k) {
-                match! uncons(rest) {
-                  (
-                    , .(pair: A & List(A)) {
-                        match! pair {
-                          .(_h: A, tl: List(A)) {
-                            widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
-                          }
-                        }
-                      }
-                    , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
-                    )
-                }
-              } else match! uncons(rest) {
+  , I32 & List(A)
+  , List(A)
+  , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
+      match! state {
+        .(k: I32, rest: List(A)) {
+          if! lt_i32(0, k) {
+            if! lt_i32(1, k) {
+              match! uncons(rest) {
                 (
-                  , .(pair: A & List(A)) {
-                      match! pair {
-                        .(_h: A, tl: List(A)) {
-                          widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
-                        }
+                , .(pair: A & List(A)) {
+                    match! pair {
+                      .(_h: A, tl: List(A)) {
+                        widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
                       }
                     }
-                  , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
-                  )
+                  }
+                , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+                )
               }
-            } else {
-              widen_sum!(rest, (I32 & List(A)) | List(A))
+            } else match! uncons(rest) {
+              (
+              , .(pair: A & List(A)) {
+                  match! pair {
+                    .(_h: A, tl: List(A)) {
+                      widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
+                    }
+                  }
+                }
+              , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+              )
             }
+          } else {
+            widen_sum!(rest, (I32 & List(A)) | List(A))
           }
         }
       }
-    , (n, xs)
-    )
+    }
+  , (n, xs)
+  )
 }
 
 // `length(xs)` counts the spine via a `loop`. State is `count & rest`;
 // each step uncons-es one cell or stops.
 fn length[A](xs: List(A)) -> I32 {
   loop(
-    , I32 & List(A)
-    , I32
-    , .(state: I32 & List(A)) -> (I32 & List(A)) | I32 {
-        match! state {
-          .(acc: I32, rest: List(A)) {
-            match! uncons(rest) {
-              (
-                , .(pair: A & List(A)) {
-                    match! pair {
-                      .(_h: A, tl: List(A)) {
-                        widen_sum!((add_i32(acc, 1), tl), (I32 & List(A)) | I32)
-                      }
-                    }
-                  }
-                , .(_e: .) { widen_sum!(acc, (I32 & List(A)) | I32) }
-                )
-            }
+  , I32 & List(A)
+  , I32
+  , .(state: I32 & List(A)) -> (I32 & List(A)) | I32 {
+      match! state {
+        .(acc: I32, rest: List(A)) {
+          match! uncons(rest) {
+            (
+            , .(pair: A & List(A)) {
+                match! pair {
+                  .(_h: A, tl: List(A)) { widen_sum!((add_i32(acc, 1), tl), (I32 & List(A)) | I32) }
+                }
+              }
+            , .(_e: .) { widen_sum!(acc, (I32 & List(A)) | I32) }
+            )
           }
         }
       }
-    , (0, xs)
-    )
+    }
+  , (0, xs)
+  )
 }
 
 fn demo() -> List(I32) { cons(1, cons(2, cons(3, cons(4, cons(5, nil(I32, ())))))) }

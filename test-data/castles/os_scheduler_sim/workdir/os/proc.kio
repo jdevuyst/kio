@@ -27,20 +27,16 @@ pub fn touch_phase(vp: I32) -> Phase { {touch = vp}.>widen_sum!(Phase) }
 pub fn phase_text(p: Phase) -> String {
   match! p {
     (
-      , .(c: Compute) { text.cat("cpu", text.num_text(c.?{compute})) }
-      , .(t: Touch) { text.cat("read", text.num_text(t.?{touch})) }
-      )
+    , .(c: Compute) { text.cat("cpu", text.num_text(c.?{compute})) }
+    , .(t: Touch) { text.cat("read", text.num_text(t.?{touch})) }
+    )
   }
 }
 
 /// How the trace and the tables name a process. An idle CPU has no pid, and
 /// prints as `--`; every tag is two characters wide, so the columns line up.
 pub fn pid_tag(pid: I32) -> String {
-  if! num.lt(pid, 0) {
-    "--"
-  } else {
-    text.cat("p", text.num_text(pid))
-  }
+  if! num.lt(pid, 0) { "--" } else { text.cat("p", text.num_text(pid)) }
 }
 
 /// The process control block: one column per field, indexed by pid.
@@ -51,32 +47,32 @@ pub fn pid_tag(pid: I32) -> String {
 /// the times it was switched onto the CPU, trapped, and found its page
 /// resident.
 pub labels Pcb = {
-  , arrive: Array(I32)
-  , pc: Array(I32)
-  , rem: Array(I32)
-  , finish: Array(I32)
-  , cpu_ticks: Array(I32)
-  , wait_ticks: Array(I32)
-  , block_ticks: Array(I32)
-  , switches: Array(I32)
-  , faults: Array(I32)
-  , hits: Array(I32)
-  };
+, arrive: Array(I32)
+, pc: Array(I32)
+, rem: Array(I32)
+, finish: Array(I32)
+, cpu_ticks: Array(I32)
+, wait_ticks: Array(I32)
+, block_ticks: Array(I32)
+, switches: Array(I32)
+, faults: Array(I32)
+, hits: Array(I32)
+};
 
 pub fn new_pcb(arrive: Array(I32)) -> Pcb {
   let n = config.proc_count();
   {
-    , arrive
-    , pc = array_make_filled(n, 0)
-    , rem = array_make_filled(n, 0)
-    , finish = array_make_filled(n, config.nothing())
-    , cpu_ticks = array_make_filled(n, 0)
-    , wait_ticks = array_make_filled(n, 0)
-    , block_ticks = array_make_filled(n, 0)
-    , switches = array_make_filled(n, 0)
-    , faults = array_make_filled(n, 0)
-    , hits = array_make_filled(n, 0)
-    }
+  , arrive
+  , pc = array_make_filled(n, 0)
+  , rem = array_make_filled(n, 0)
+  , finish = array_make_filled(n, config.nothing())
+  , cpu_ticks = array_make_filled(n, 0)
+  , wait_ticks = array_make_filled(n, 0)
+  , block_ticks = array_make_filled(n, 0)
+  , switches = array_make_filled(n, 0)
+  , faults = array_make_filled(n, 0)
+  , hits = array_make_filled(n, 0)
+  }
 }
 
 fn bump(column: Array(I32), pid: I32) { array_set(column, pid, add_i32(array_get(column, pid), 1)) }
@@ -140,6 +136,6 @@ pub rec(loop) fn column_total(column: Array(I32), i: I32, acc: I32) -> I32 {
   if! num.geq(i, array_len(column)) {
     acc
   } else {
-    rec column_total(column, add_i32(i, 1), add_i32(acc, array_get(column, i)))
+    recur column_total(column, add_i32(i, 1), add_i32(acc, array_get(column, i)))
   }
 }

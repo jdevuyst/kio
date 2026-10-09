@@ -50,43 +50,43 @@ fn print_product(value: api.I32 & api.I32 & api.String) {
 fn print_choice(value: Choice) {
   match! value {
     (
-      , .(first: First) { io.print("first:"); print_number(first.>First.get); io.print("\n") }
-      , .(second: Second) { io.print("second:"); print_number(second.>Second.get); io.print("\n") }
-      , .(last: Last) { io.print("last:"); io.print(last.>Last.get); io.print("\n") }
-      )
+    , .(first: First) { io.print("first:"); print_number(first.>First.get); io.print("\n") }
+    , .(second: Second) { io.print("second:"); print_number(second.>Second.get); io.print("\n") }
+    , .(last: Last) { io.print("last:"); io.print(last.>Last.get); io.print("\n") }
+    )
   }
 }
 
 pub fn main() {
   print_product(boxes.box_get(keep(boxes.box_make((11, 22, "whole")))));
   print_pair(product_tail(
-    , api.I32
-    , api.I32 & api.String
-    , relay(api.Box, api.I32, api.I32 & api.String, boxes.box_make((11, 22, "tail")))
-    ));
+  , api.I32
+  , api.I32 & api.String
+  , relay(api.Box, api.I32, api.I32 & api.String, boxes.box_make((11, 22, "tail")))
+  ));
   print_product(boxes.box_get(product_box(api.I32, api.I32 & api.String, 11, (33, "back"))));
   print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({first = 11}, Choice)))));
   print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({second = 22}, Choice)))));
   print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({last = "whole"}, Choice)))));
   let fallback = widen_sum!({second = 99}, Second | Last);
   print_choice(widen_sum!(
-    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({first = 11}, Choice)), fallback)
-    , Choice
-    ));
+  , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({first = 11}, Choice)), fallback)
+  , Choice
+  ));
   print_choice(widen_sum!(
-    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({second = 22}, Choice)), fallback)
-    , Choice
-    ));
+  , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({second = 22}, Choice)), fallback)
+  , Choice
+  ));
   print_choice(widen_sum!(
-    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({last = "tail"}, Choice)), fallback)
-    , Choice
-    ));
+  , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({last = "tail"}, Choice)), fallback)
+  , Choice
+  ));
   print_choice(boxes.box_get(sum_box(First, Second | Last, widen_sum!({second = 33}, Second | Last))));
   print_choice(boxes.box_get(sum_box(
-    , First
-    , Second | Last
-    , widen_sum!({last = "back"}, Second | Last)
-    )));
+  , First
+  , Second | Last
+  , widen_sum!({last = "back"}, Second | Last)
+  )));
   io.print(boxes.box_get(boxes.box_get(keep(boxes.box_make(boxes.box_make("nested"))))));
   io.print("\n");
   let nominal = product_tail(api.I32, Last, boxes.box_make((11, {last = "nominal"})));

@@ -16,13 +16,13 @@ fn render_line(line: String | .) -> String {
 fn render_int_line(line: String | .) -> String {
   match! line {
     (
-      , .(s: String) {
-          match! string_to_int(s) {
-            (.(n: Int) { int_to_string(add(n, 1)) }, .(_bad: .) { "bad-int" })
-          }
+    , .(s: String) {
+        match! string_to_int(s) {
+          (.(n: Int) { int_to_string(add(n, 1)) }, .(_bad: .) { "bad-int" })
         }
-      , .(_eof: .) { "<eof>" }
-      )
+      }
+    , .(_eof: .) { "<eof>" }
+    )
   }
 }
 

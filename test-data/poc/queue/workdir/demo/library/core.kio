@@ -65,7 +65,9 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   }
 }
 
-fn has_value[A](result: A | .) -> Bool { fold_result(no(), .(_value: A) -> Bool { yes() }, result) }
+fn has_value[A](result: A | .) -> Bool {
+  fold_result(no(), .(_value: A) -> Bool { yes() }, result)
+}
 
 fn list_is_empty[A](xs: List(A)) -> Bool {
   match! uncons(xs) {
@@ -174,13 +176,13 @@ pub fn pop_front[A](q: Queue(A)) -> (A & Queue(A)) | . {
     .(f: List(A), b: List(A)) {
       match! uncons(f) {
         (
-          , .(pair: A & List(A)) {
-              match! pair {
-                .(h: A, t: List(A)) { present((h, Queue.mk_unchecked((t, b)))) }
-              }
+        , .(pair: A & List(A)) {
+            match! pair {
+              .(h: A, t: List(A)) { present((h, Queue.mk_unchecked((t, b)))) }
             }
-          , .(_empty: .) { absent(A & Queue(A)) }
-          )
+          }
+        , .(_empty: .) { absent(A & Queue(A)) }
+        )
       }
     }
   }

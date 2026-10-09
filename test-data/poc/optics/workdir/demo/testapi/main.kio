@@ -3,31 +3,31 @@ module testapi/main;
 import library/elab/match(match);
 import library/elab/spine_elaborators(narrow_prod, widen_sum);
 import library/optics(
-  , Iso
-  , Lens
-  , Prism
-  , assoc_iso
-  , compose_iso
-  , compose_lens
-  , compose_prism
-  , fst_lens
-  , id_lens
-  , iso_to_lens
-  , iso_to_prism
-  , left_prism
-  , over
-  , over_iso
-  , over_prism
-  , preview
-  , review
-  , review_iso
-  , right_prism
-  , set
-  , snd_lens
-  , swap_iso
-  , view
-  , view_iso
-  );
+, Iso
+, Lens
+, Prism
+, assoc_iso
+, compose_iso
+, compose_lens
+, compose_prism
+, fst_lens
+, id_lens
+, iso_to_lens
+, iso_to_prism
+, left_prism
+, over
+, over_iso
+, over_prism
+, preview
+, review
+, review_iso
+, right_prism
+, set
+, snd_lens
+, swap_iso
+, view
+, view_iso
+);
 import testapi(I32, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
@@ -222,14 +222,14 @@ fn tour() {
   // the original side via l_snd (post-swap → pre-swap).
   let bumped_via_iso =
     over_iso(
-      , si
-      , .(q: String & I32) -> String & I32 {
-          match! q {
-            .(s: String, n: I32) { (s, inc(n)) }
-          }
+    , si
+    , .(q: String & I32) -> String & I32 {
+        match! q {
+          .(s: String, n: I32) { (s, inc(n)) }
         }
-      , p
-      );
+      }
+    , p
+    );
   print(int_to_string(view(l_fst, bumped_via_iso)));
   print(", ");
   say_str(view(l_snd, bumped_via_iso));

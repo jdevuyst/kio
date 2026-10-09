@@ -24,28 +24,16 @@ pub fn num_text(n: I32) -> String { int_to_string(n) }
 pub fn bool_text(b: Bool) -> String { bool_to_string(b) }
 
 rec(loop) fn digit_count(n: I32, acc: I32) -> I32 {
-  if! leq_i32(n, 9) {
-    acc
-  } else {
-    rec digit_count(num.div(n, 10), add_i32(acc, 1))
-  }
+  if! leq_i32(n, 9) { acc } else { recur digit_count(num.div(n, 10), add_i32(acc, 1)) }
 }
 
 /// Characters `int_to_string` will produce for `n`, counting a leading sign.
 fn width_of(n: I32) -> I32 {
-  if! num.lt(n, 0) {
-    add_i32(1, digit_count(sub_i32(0, n), 1))
-  } else {
-    digit_count(n, 1)
-  }
+  if! num.lt(n, 0) { add_i32(1, digit_count(sub_i32(0, n), 1)) } else { digit_count(n, 1) }
 }
 
 rec(loop) fn blanks(k: I32, acc: String) -> String {
-  if! leq_i32(k, 0) {
-    acc
-  } else {
-    rec blanks(sub_i32(k, 1), cat(" ", acc))
-  }
+  if! leq_i32(k, 0) { acc } else { recur blanks(sub_i32(k, 1), cat(" ", acc)) }
 }
 
 /// Right-align `n` in a column `width` characters wide.

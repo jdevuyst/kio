@@ -33,16 +33,16 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // `Either.mk_either`.
 fn either_string_monad() -> Monad(Either(String)) {
   Monad.mk_monad(
-    , Either(String)
-    , .[A][B](m, k) {
-        match! Either.un_either(String, A, m) {
-          (
-            , .(e: String) { Either.mk_either(String, B, widen_sum!(e, String | B)) }
-            , .(av: A) { k(av) }
-            )
-        }
+  , Either(String)
+  , .[A][B](m, k) {
+      match! Either.un_either(String, A, m) {
+        (
+        , .(e: String) { Either.mk_either(String, B, widen_sum!(e, String | B)) }
+        , .(av: A) { k(av) }
+        )
       }
-    )
+    }
+  )
 }
 
 // The success payload is wrapped in a distinct `Ok` newtype, so an

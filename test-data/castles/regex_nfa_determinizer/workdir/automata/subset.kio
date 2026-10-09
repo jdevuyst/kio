@@ -11,22 +11,22 @@ module automata/subset;
 import automata/dfa as dfa;
 import automata/nfa as nfa;
 import automata/seq(
-  , Ints
-  , List
-  , append
-  , cons
-  , empty
-  , fold
-  , insert
-  , intern
-  , len
-  , member
-  , nth_or
-  , one
-  , positions
-  , reverse
-  , singleton
-  );
+, Ints
+, List
+, append
+, cons
+, empty
+, fold
+, insert
+, intern
+, len
+, member
+, nth_or
+, one
+, positions
+, reverse
+, singleton
+);
 import automata/symbol(epsilon, width);
 import elab/control(if);
 import elab/match(match);
@@ -39,44 +39,32 @@ import testapi/iter(loop);
 pub type Sets = List(Ints);
 
 fn hits(e: nfa.Edge, src: I32, sym: I32) -> Bool {
-  if! eq_i32(nfa.edge_src(e), src) {
-    eq_i32(nfa.edge_sym(e), sym)
-  } else {
-    .f
-  }
+  if! eq_i32(nfa.edge_src(e), src) { eq_i32(nfa.edge_sym(e), sym) } else { .f }
 }
 
 /// Everything `states` reaches on one symbol, unioned into `acc`. With
 /// `sym = epsilon()` this is one epsilon step; with a letter it is `move`.
 fn advance(es: nfa.Edges, states: Ints, sym: I32, acc: Ints) -> Ints {
   fold(
-    , states
-    , .(outer: Ints, s: I32) {
-        fold(
-          , es
-          , .(inner: Ints, e: nfa.Edge) {
-              if! hits(e, s, sym) {
-                insert(nfa.edge_dst(e), inner)
-              } else {
-                inner
-              }
-            }
-          , outer
-          )
-      }
-    , acc
-    )
+  , states
+  , .(outer: Ints, s: I32) {
+      fold(
+      , es
+      , .(inner: Ints, e: nfa.Edge) {
+          if! hits(e, s, sym) { insert(nfa.edge_dst(e), inner) } else { inner }
+        }
+      , outer
+      )
+    }
+  , acc
+  )
 }
 
 /// Epsilon closure as a fixpoint: keep folding epsilon targets back in until
 /// the set stops growing. Sets carry no duplicates, so the size is the test.
 rec(loop) fn saturate(es: nfa.Edges, seen: Ints) -> Ints {
   let grown = advance(es, seen, epsilon(), seen);
-  if! eq_i32(len(grown), len(seen)) {
-    seen
-  } else {
-    rec saturate(es, grown)
-  }
+  if! eq_i32(len(grown), len(seen)) { seen } else { recur saturate(es, grown) }
 }
 
 pub fn closure(es: nfa.Edges, states: Ints) -> Ints { saturate(es, states) }
@@ -92,7 +80,7 @@ rec(loop) fn row_of(es: nfa.Edges, sets: Sets, src: Ints, sym: I32, row: Ints) -
     (sets, reverse(row))
   } else {
     let .(grown: Sets, id: I32) = transition(es, sets, src, sym);
-    rec row_of(es, grown, src, add_i32(sym, 1), cons(id, row))
+    recur row_of(es, grown, src, add_i32(sym, 1), cons(id, row))
   }
 }
 
@@ -103,7 +91,7 @@ rec(loop) fn drive(es: nfa.Edges, sets: Sets, at: I32, table: Ints) -> Sets & In
     (sets, table)
   } else {
     let .(grown: Sets, row: Ints) = row_of(es, sets, nth_or(sets, at, empty()), 0, empty());
-    rec drive(es, grown, add_i32(at, 1), append(table, row))
+    recur drive(es, grown, add_i32(at, 1), append(table, row))
   }
 }
 

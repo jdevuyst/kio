@@ -19,33 +19,25 @@ import turtle/text as text;
 fn line(indent: String, body: String) { print(text.cat3(indent, body, "\n")) }
 
 fn pen_text(down: Bool) -> String {
-  if! down {
-    "pen down"
-  } else {
-    "pen up"
-  }
+  if! down { "pen down" } else { "pen up" }
 }
 
 fn turn_text(right: Bool) -> String {
-  if! right {
-    "turn right"
-  } else {
-    "turn left"
-  }
+  if! right { "turn right" } else { "turn left" }
 }
 
 rec(loop) {
   /// Print every command of `b`, indented `depth` levels deep.
-  pub fn echo_block(b: list.List(cmd.Command), depth: I32) { rec walk(b, depth) };
+  pub fn echo_block(b: list.List(cmd.Command), depth: I32) { recur walk(b, depth) };
   fn walk(b: list.List(cmd.Command), depth: I32) {
     match! list.uncons(b) {
       (
-        , .(c: cmd.Command, rest: list.List(cmd.Command)) {
-            rec(cont) emit(c, depth);
-            rec walk(rest, depth)
-          }
-        , .(_empty: .) { () }
-        )
+      , .(c: cmd.Command, rest: list.List(cmd.Command)) {
+          recur(cont) emit(c, depth);
+          recur walk(rest, depth)
+        }
+      , .(_empty: .) { () }
+      )
     }
   };
   /// One command and, when it is a `repeat`, everything under it.
@@ -53,22 +45,22 @@ rec(loop) {
     let indent = text.spaces(mul_i32(depth, 2));
     match! cmd.un_command(c) {
       (
-        , .(p: cmd.Pen_cmd) { line(indent, pen_text(p.?{cmd.pen_cmd})) }
-        , .(m: cmd.Move_cmd) { line(indent, text.cat2("move ", text.num(m.?{cmd.move_cmd}))) }
-        , .(t: cmd.Turn_cmd) { line(indent, turn_text(t.?{cmd.turn_cmd})) }
-        , .(g: cmd.Goto_cmd) {
-            let .(x: I32, y: I32) = g.?{cmd.goto_cmd};
-            line(indent, text.cat4("goto ", text.num(x), " ", text.num(y)))
-          }
-        , .(k: cmd.Mark_cmd) { line(indent, text.cat2("mark ", text.num(k.?{cmd.mark_cmd}))) }
-        , .(r: cmd.Repeat_cmd) {
-            let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
-            line(indent, text.cat2("repeat ", text.num(n)));
-            rec(cont) walk(body, add_i32(depth, 1));
-            line(indent, "end")
-          }
-        , .(u: cmd.Unknown_cmd) { line(indent, text.cat2("unknown ", u.?{cmd.unknown_cmd})) }
-        )
+      , .(p: cmd.Pen_cmd) { line(indent, pen_text(p.?{cmd.pen_cmd})) }
+      , .(m: cmd.Move_cmd) { line(indent, text.cat2("move ", text.num(m.?{cmd.move_cmd}))) }
+      , .(t: cmd.Turn_cmd) { line(indent, turn_text(t.?{cmd.turn_cmd})) }
+      , .(g: cmd.Goto_cmd) {
+          let .(x: I32, y: I32) = g.?{cmd.goto_cmd};
+          line(indent, text.cat4("goto ", text.num(x), " ", text.num(y)))
+        }
+      , .(k: cmd.Mark_cmd) { line(indent, text.cat2("mark ", text.num(k.?{cmd.mark_cmd}))) }
+      , .(r: cmd.Repeat_cmd) {
+          let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
+          line(indent, text.cat2("repeat ", text.num(n)));
+          recur(cont) walk(body, add_i32(depth, 1));
+          line(indent, "end")
+        }
+      , .(u: cmd.Unknown_cmd) { line(indent, text.cat2("unknown ", u.?{cmd.unknown_cmd})) }
+      )
     }
   }
 }

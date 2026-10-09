@@ -11,8 +11,5 @@ fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(
 host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
 
 fn partial() -> Box(.) {
-  do! box_bind {
-    let .(function: [Do_bound] _) <- boxed_polymorphic(());
-    box_pure(())
-  }
+  do! box_bind { let .(function: [Do_bound] _) <- boxed_polymorphic(()); box_pure(()) }
 }

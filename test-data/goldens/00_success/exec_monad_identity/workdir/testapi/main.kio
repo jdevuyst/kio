@@ -26,7 +26,9 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // payload to the continuation, which returns an already-branded
 // value. No re-injection step is needed in the body — `k`'s
 // return type matches the `bind` return type directly.
-fn identity_monad() -> Monad(Identity) { Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) }) }
+fn identity_monad() -> Monad(Identity) {
+  Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) })
+}
 
 // A `do`-block over `Monad.bind(Identity, monad)`. Two binds
 // thread a `String` payload, with a pure-let middle step. The

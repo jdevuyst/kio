@@ -21,7 +21,7 @@ pub fn night_bus_fare() -> I64 { add_i64(night_distance_cents(), 40) }
 
 pub fn route_fare_total() -> I64 {
   add_i64(
-    , add_i64(local_connector_fare(), airport_express_fare())
-    , add_i64(harbor_freight_fare(), night_bus_fare())
-    )
+  , add_i64(local_connector_fare(), airport_express_fare())
+  , add_i64(harbor_freight_fare(), night_bus_fare())
+  )
 }

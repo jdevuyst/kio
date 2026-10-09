@@ -29,15 +29,11 @@ pub newtype Poly : Coeffs { constructor mk; projector un }
 rec(loop) fn drop_zero_head(cs: Coeffs) -> Coeffs {
   match! lc.uncons(cs) {
     (
-      , .(c: I32, rest: Coeffs) {
-          if! eq_i32(c, 0) {
-            rec drop_zero_head(rest)
-          } else {
-            cs
-          }
-        }
-      , .(_empty: .) { cs }
-      )
+    , .(c: I32, rest: Coeffs) {
+        if! eq_i32(c, 0) { recur drop_zero_head(rest) } else { cs }
+      }
+    , .(_empty: .) { cs }
+    )
   }
 }
 
@@ -77,17 +73,17 @@ pub fn leading(p: Poly) -> I32 { value_or(0, ll.last(coeffs(p))) }
 rec(loop) fn coeffs_equal(xs: Coeffs, ys: Coeffs) -> Bool {
   match! lc.uncons(xs) {
     (
-      , .(x: I32, rest: Coeffs) {
-          if! ll.null(ys) {
-            .f
-          } else if! eq_i32(x, head_or_zero(ys)) {
-            rec coeffs_equal(rest, lc.tail(ys))
-          } else {
-            .f
-          }
+    , .(x: I32, rest: Coeffs) {
+        if! ll.null(ys) {
+          .f
+        } else if! eq_i32(x, head_or_zero(ys)) {
+          recur coeffs_equal(rest, lc.tail(ys))
+        } else {
+          .f
         }
-      , .(_empty: .) { ll.null(ys) }
-      )
+      }
+    , .(_empty: .) { ll.null(ys) }
+    )
   }
 }
 

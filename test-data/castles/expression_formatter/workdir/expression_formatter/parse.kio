@@ -2,77 +2,73 @@ module expression_formatter/parse;
 
 import elab/control(if);
 import expression_formatter/types(
-  , Add_token
-  , Assignment_name
-  , Binding_count
-  , Binding_token
-  , Close_token
-  , Eq_token
-  , Factor_text
-  , Group_token
-  , Grouped_term
-  , Left_term
-  , Left_token
-  , Literal_token
-  , Max_depth
-  , Mul_token
-  , Normalized_expr
-  , Open_token
-  , Shape_name
-  , Source_text
-  , Token_count
-  , Token_text
-  , Valid_shape
-  );
+, Add_token
+, Assignment_name
+, Binding_count
+, Binding_token
+, Close_token
+, Eq_token
+, Factor_text
+, Group_token
+, Grouped_term
+, Left_term
+, Left_token
+, Literal_token
+, Max_depth
+, Mul_token
+, Normalized_expr
+, Open_token
+, Shape_name
+, Source_text
+, Token_count
+, Token_text
+, Valid_shape
+);
 import expression_formatter/types(
-  , {add_token}
-  , {assignment_name}
-  , {binding_count}
-  , {binding_token}
-  , {close_token}
-  , {eq_token}
-  , {factor_text}
-  , {group_token}
-  , {grouped_term}
-  , {left_term}
-  , {left_token}
-  , {literal_token}
-  , {max_depth}
-  , {mul_token}
-  , {normalized_expr}
-  , {open_token}
-  , {shape_name}
-  , {source_text}
-  , {token_count}
-  , {token_text}
-  , {valid_shape}
-  );
+, {add_token}
+, {assignment_name}
+, {binding_count}
+, {binding_token}
+, {close_token}
+, {eq_token}
+, {factor_text}
+, {group_token}
+, {grouped_term}
+, {left_term}
+, {left_token}
+, {literal_token}
+, {max_depth}
+, {mul_token}
+, {normalized_expr}
+, {open_token}
+, {shape_name}
+, {source_text}
+, {token_count}
+, {token_text}
+, {valid_shape}
+);
 import testapi(Bool, Int, String);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat, string_eq, string_len);
 
 fn and_bool(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 fn normalize(name: String, left: String, grouped: String, factor: String) -> String {
   string_concat(
-    , name
+  , name
+  , string_concat(
+    , " = "
     , string_concat(
-        , " = "
-        , string_concat(
-            , left
-            , string_concat(
-                , " + ("
-                , string_concat(grouped, string_concat(" * ", string_concat(factor, ")")))
-                )
-            )
+      , left
+      , string_concat(
+        , " + ("
+        , string_concat(grouped, string_concat(" * ", string_concat(factor, ")")))
         )
+      )
     )
+  )
 }
 
 fn valid_stream(stream: & Source_text
@@ -106,24 +102,24 @@ fn valid_stream(stream: & Source_text
   let literal_ok = string_eq(literal.?{token_text}, "3");
   let close_ok = string_eq(close.?{token_text}, ")");
   and_bool(
-    , source_ok
+  , source_ok
+  , and_bool(
+    , binding_ok
     , and_bool(
-        , binding_ok
+      , eq_ok
+      , and_bool(
+        , left_ok
         , and_bool(
-            , eq_ok
-            , and_bool(
-                , left_ok
-                , and_bool(
-                    , add_ok
-                    , and_bool(
-                        , open_ok
-                        , and_bool(grouped_ok, and_bool(mul_ok, and_bool(literal_ok, close_ok)))
-                        )
-                    )
-                )
+          , add_ok
+          , and_bool(
+            , open_ok
+            , and_bool(grouped_ok, and_bool(mul_ok, and_bool(literal_ok, close_ok)))
             )
+          )
         )
+      )
     )
+  )
 }
 
 pub fn parse(stream: & Source_text
@@ -156,15 +152,15 @@ pub fn parse(stream: & Source_text
   let grouped_name = grouped.?{token_text};
   let factor = literal.?{token_text};
   {
-    , assignment_name = name
-    , left_term = left_name
-    , grouped_term = grouped_name
-    , factor_text = factor
-    , normalized_expr = normalize(name, left_name, grouped_name, factor)
-    , shape_name = "assign:add(grouped-mul)"
-    , valid_shape = valid_stream(stream)
-    , token_count = 9
-    , max_depth = 1
-    , binding_count = 1
-    }
+  , assignment_name = name
+  , left_term = left_name
+  , grouped_term = grouped_name
+  , factor_text = factor
+  , normalized_expr = normalize(name, left_name, grouped_name, factor)
+  , shape_name = "assign:add(grouped-mul)"
+  , valid_shape = valid_stream(stream)
+  , token_count = 9
+  , max_depth = 1
+  , binding_count = 1
+  }
 }

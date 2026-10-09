@@ -20,24 +20,20 @@ rec(loop) fn pairs(partners: Array(I32), person: I32) {
   if! market.less(person, array.array_len(partners)) {
     io.print(text.string_concat("  L", fmt.int_to_string(person)));
     number("-R", array.array_get(partners, person));
-    rec pairs(partners, arith.add_i32(person, 1))
+    recur pairs(partners, arith.add_i32(person, 1))
   } else {
     ()
   }
 }
 
 pub fn certificate_report(
-  , left: market.Preferences
-  , right: market.Preferences
-  , partner: Array(I32)
-  , holder: Array(I32)
-  ) {
+, left: market.Preferences
+, right: market.Preferences
+, partner: Array(I32)
+, holder: Array(I32)
+) {
   let valid = certificate.valid(partner, holder);
-  io.print(if! valid {
-    "valid matching: yes\n"
-  } else {
-    "valid matching: no\n"
-  });
+  io.print(if! valid { "valid matching: yes\n" } else { "valid matching: no\n" });
   if! valid {
     number("blocking pairs: ", certificate.blocking_pairs(left, right, partner, holder));
     number("left rank total: ", certificate.rank_total(left, partner));
@@ -48,28 +44,19 @@ pub fn certificate_report(
 }
 
 pub fn outcome(
-  , label: String
-  , left: market.Preferences
-  , right: market.Preferences
-  , result: deferred.Outcome
-  , right_proposes: Bool
-  ) {
+, label: String
+, left: market.Preferences
+, right: market.Preferences
+, result: deferred.Outcome
+, right_proposes: Bool
+) {
   io.print(text.string_concat(label, "\n"));
   number("proposals: ", result.?{deferred.proposals});
   number("recipient switches: ", result.?{deferred.switches});
   number("rejected proposals: ", result.?{deferred.rejections});
   let partner =
-    if! right_proposes {
-      result.?{deferred.holder}
-    } else {
-      result.?{deferred.partner}
-    };
-  let holder =
-    if! right_proposes {
-      result.?{deferred.partner}
-    } else {
-      result.?{deferred.holder}
-    };
+    if! right_proposes { result.?{deferred.holder} } else { result.?{deferred.partner} };
+  let holder = if! right_proposes { result.?{deferred.partner} } else { result.?{deferred.holder} };
   pairs(partner, 0);
   certificate_report(left, right, partner, holder)
 }

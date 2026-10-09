@@ -33,7 +33,7 @@ pub fn run() {
   render.print_string_metric("classification=", classification);
   render.print_bool_metric("within_review_budget=", arith.leq_i32(distance, 3));
   render.print_bool_metric(
-    , "classification_expected="
-    , text.string_eq(classification, "minor drift")
-    )
+  , "classification_expected="
+  , text.string_eq(classification, "minor drift")
+  )
 }

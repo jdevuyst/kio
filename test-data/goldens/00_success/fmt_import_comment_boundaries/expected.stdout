@@ -3,10 +3,10 @@ module fmt_import_comment_boundaries;
 import a as a;
 // statement
 import z(
-  // alpha
-  , alpha
-  // opening selection
-  // zebra
-  , zebra
-  // closing
-  );
+// alpha
+, alpha
+// opening selection
+// zebra
+, zebra
+// closing
+);

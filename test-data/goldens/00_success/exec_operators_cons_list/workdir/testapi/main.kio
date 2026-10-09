@@ -24,19 +24,19 @@ op _ :: __ { impl push }
 fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
   match! ys.>List.un_list {
     (
-      , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
-      , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
-      )
+    , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
+    , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+    )
   }
 }
 
 fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
   loop(
-    , B & List(A)
-    , B
-    , .((acc: B, ys: List(A))) -> (B & List(A)) | B { step(f, acc, ys) }
-    , (seed, xs)
-    )
+  , B & List(A)
+  , B
+  , .((acc: B, ys: List(A))) -> (B & List(A)) | B { step(f, acc, ys) }
+  , (seed, xs)
+  )
 }
 
 pub fn main() {

@@ -11,7 +11,7 @@ fn consume_pair[B](first: I32 & B, tail: I32) -> I32 { tail }
 fn stable_slot[A](maker: [X] String -> (X & A)) -> I32 { consume_pair(maker("stable"), 0) }
 
 rec(loop) fn stale_slot[A](maker: [X] String -> (X & A), n: I32) -> I32 {
-  consume_pair(maker("stale"), rec(cont) stale_slot(maker, n))
+  consume_pair(maker("stale"), recur(cont) stale_slot(maker, n))
 }
 
 pub fn main() { () }

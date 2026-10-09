@@ -50,13 +50,13 @@ fn no_i32() -> Maybe_i32 { {no_i32=}.>widen_sum!(Maybe_i32) }
 fn as_const(e: Expr) -> Maybe_i32 {
   match! e.>Expr.un_expr {
     (
-      , .(n: Lit) { some_i32(n.?{lit}) }
-      , .(_x: Var_x) { no_i32() }
-      , .(_y: Var_y) { no_i32() }
-      , .(_z: Var_z) { no_i32() }
-      , .(_left: Add_left, _right: Add_right) { no_i32() }
-      , .(_left: Mul_left, _right: Mul_right) { no_i32() }
-      )
+    , .(n: Lit) { some_i32(n.?{lit}) }
+    , .(_x: Var_x) { no_i32() }
+    , .(_y: Var_y) { no_i32() }
+    , .(_z: Var_z) { no_i32() }
+    , .(_left: Add_left, _right: Add_right) { no_i32() }
+    , .(_left: Mul_left, _right: Mul_right) { no_i32() }
+    )
   }
 }
 
@@ -69,32 +69,32 @@ fn is_const(e: Expr, value: I32) -> Bool {
 fn fold_add(left: Expr, right: Expr) -> Expr {
   match! as_const(left) {
     (
-      , .(ln: Some_i32) {
-          match! as_const(right) {
-            (
-              , .(rn: Some_i32) { lit(add_i32(ln.?{some_i32}, rn.?{some_i32})) }
-              , .(_rn: No_i32) { add(left, right) }
-              )
-          }
+    , .(ln: Some_i32) {
+        match! as_const(right) {
+          (
+          , .(rn: Some_i32) { lit(add_i32(ln.?{some_i32}, rn.?{some_i32})) }
+          , .(_rn: No_i32) { add(left, right) }
+          )
         }
-      , .(_ln: No_i32) { add(left, right) }
-      )
+      }
+    , .(_ln: No_i32) { add(left, right) }
+    )
   }
 }
 
 fn fold_mul(left: Expr, right: Expr) -> Expr {
   match! as_const(left) {
     (
-      , .(ln: Some_i32) {
-          match! as_const(right) {
-            (
-              , .(rn: Some_i32) { lit(mul_i32(ln.?{some_i32}, rn.?{some_i32})) }
-              , .(_rn: No_i32) { mul(left, right) }
-              )
-          }
+    , .(ln: Some_i32) {
+        match! as_const(right) {
+          (
+          , .(rn: Some_i32) { lit(mul_i32(ln.?{some_i32}, rn.?{some_i32})) }
+          , .(_rn: No_i32) { mul(left, right) }
+          )
         }
-      , .(_ln: No_i32) { mul(left, right) }
-      )
+      }
+    , .(_ln: No_i32) { mul(left, right) }
+    )
   }
 }
 
@@ -125,59 +125,65 @@ fn simplify_mul(left: Expr, right: Expr) -> Expr {
 rec(loop) fn simplify(e: Expr) -> Expr {
   match! e.>Expr.un_expr {
     (
-      , .(n: Lit) { lit(n.?{lit}) }
-      , .(_x: Var_x) { var_x() }
-      , .(_y: Var_y) { var_y() }
-      , .(_z: Var_z) { var_z() }
-      , .(left: Add_left, right: Add_right) {
-          simplify_add(rec(cont) simplify(left.?{add_left}), rec(cont) simplify(right.?{add_right}))
-        }
-      , .(left: Mul_left, right: Mul_right) {
-          simplify_mul(rec(cont) simplify(left.?{mul_left}), rec(cont) simplify(right.?{mul_right}))
-        }
-      )
+    , .(n: Lit) { lit(n.?{lit}) }
+    , .(_x: Var_x) { var_x() }
+    , .(_y: Var_y) { var_y() }
+    , .(_z: Var_z) { var_z() }
+    , .(left: Add_left, right: Add_right) {
+        simplify_add(
+        , recur(cont) simplify(left.?{add_left})
+        , recur(cont) simplify(right.?{add_right})
+        )
+      }
+    , .(left: Mul_left, right: Mul_right) {
+        simplify_mul(
+        , recur(cont) simplify(left.?{mul_left})
+        , recur(cont) simplify(right.?{mul_right})
+        )
+      }
+    )
   }
 }
 
 rec(loop) fn eval(e: Expr) -> I32 {
   match! e.>Expr.un_expr {
     (
-      , .(n: Lit) { n.?{lit} }
-      , .(_x: Var_x) { 7 }
-      , .(_y: Var_y) { 4 }
-      , .(_z: Var_z) { 9 }
-      , .(left: Add_left, right: Add_right) {
-          add_i32(rec(cont) eval(left.?{add_left}), rec(cont) eval(right.?{add_right}))
-        }
-      , .(left: Mul_left, right: Mul_right) {
-          mul_i32(rec(cont) eval(left.?{mul_left}), rec(cont) eval(right.?{mul_right}))
-        }
-      )
+    , .(n: Lit) { n.?{lit} }
+    , .(_x: Var_x) { 7 }
+    , .(_y: Var_y) { 4 }
+    , .(_z: Var_z) { 9 }
+    , .(left: Add_left, right: Add_right) {
+        add_i32(recur(cont) eval(left.?{add_left}), recur(cont) eval(right.?{add_right}))
+      }
+    , .(left: Mul_left, right: Mul_right) {
+        mul_i32(recur(cont) eval(left.?{mul_left}), recur(cont) eval(right.?{mul_right}))
+      }
+    )
   }
 }
 
 rec(loop) fn render(e: Expr) -> String {
   match! e.>Expr.un_expr {
     (
-      , .(n: Lit) { int_to_string(n.?{lit}) }
-      , .(_x: Var_x) { "x" }
-      , .(_y: Var_y) { "y" }
-      , .(_z: Var_z) { "z" }
-      , .(left: Add_left, right: Add_right) {
-          cat3(
-            , cat3("(", rec(cont) render(left.?{add_left}), " + ")
-            , rec(cont) render(right.?{add_right})
-            , ")"
-            )
-        }
-      , .(left: Mul_left, right: Mul_right) {
-          cat3(
-            , cat3("(", rec(cont) render(left.?{mul_left}), " * ")
-            , rec(cont) render(right.?{mul_right})
-            , ")"
-            )
-        }
-      )
+    , .(n: Lit) { int_to_string(n.?{lit}) }
+    , .(_x: Var_x) { "x" }
+    , .(_y: Var_y) { "y" }
+    , .(_z: Var_z) { "z" }
+    , .(left: Add_left, right: Add_right) {
+        cat3(
+        , cat3("(", recur(cont) render(left.?{add_left}), " + ")
+        , recur(cont) render(right.?{add_right})
+        , ")"
+        )
+      }
+    , .(left: Mul_left, right: Mul_right) {
+        cat3(
+        , cat3("(", recur(cont) render(left.?{mul_left}), " * ")
+        , recur(cont) render(right.?{mul_right})
+        , ")"
+        )
+      }
+    )
   }
 }
 

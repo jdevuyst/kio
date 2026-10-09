@@ -36,11 +36,11 @@ pub type Col_list = list.List(Col);
 /// is what tells the report writer to set the heading over the right-hand
 /// edge of the column, where the digits will land.
 pub labels Col_meta = {
-  , meta_code: I32
-  , meta_title: value.Value
-  , meta_width: I32
-  , meta_numeric: Bool
-  };
+, meta_code: I32
+, meta_title: value.Value
+, meta_width: I32
+, meta_numeric: Bool
+};
 
 pub labels Table_id = { t_ships: . } | { t_berths: . } | { t_manifests: . };
 
@@ -80,11 +80,11 @@ pub fn manifests_table() -> Table_id { {t_manifests=}.>widen_sum!(Table_id) }
 
 fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -> Col_meta {
   {
-    , meta_code = code
-    , meta_title = value.text_val(title, title_width)
-    , meta_width = width
-    , meta_numeric = numeric
-    }
+  , meta_code = code
+  , meta_title = value.text_val(title, title_width)
+  , meta_width = width
+  , meta_numeric = numeric
+  }
 }
 
 /// The catalog itself. The declared width of a column is at least its
@@ -93,21 +93,21 @@ fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -
 pub fn col_meta(c: Col) -> Col_meta {
   match! c {
     (
-      , .(_c: C_ship_id) { meta(1, "s.id", 4, 4, .t) }
-      , .(_c: C_ship_name) { meta(2, "ship", 4, 9, .f) }
-      , .(_c: C_ship_flag) { meta(3, "flag", 4, 4, .f) }
-      , .(_c: C_ship_draft) { meta(4, "draft", 5, 5, .t) }
-      , .(_c: C_ship_berth) { meta(5, "s.berth", 7, 7, .t) }
-      , .(_c: C_berth_id) { meta(6, "b.id", 4, 4, .t) }
-      , .(_c: C_berth_depth) { meta(7, "depth", 5, 5, .t) }
-      , .(_c: C_berth_zone) { meta(8, "zone", 4, 6, .f) }
-      , .(_c: C_berth_zone_id) { meta(9, "b.zone", 6, 6, .t) }
-      , .(_c: C_mf_ship) { meta(10, "m.ship", 6, 6, .t) }
-      , .(_c: C_mf_cargo) { meta(11, "cargo", 5, 6, .f) }
-      , .(_c: C_mf_tons) { meta(12, "tons", 4, 5, .t) }
-      , .(_c: C_total) { meta(13, "total", 5, 6, .t) }
-      , .(_c: C_count) { meta(14, "count", 5, 5, .t) }
-      )
+    , .(_c: C_ship_id) { meta(1, "s.id", 4, 4, .t) }
+    , .(_c: C_ship_name) { meta(2, "ship", 4, 9, .f) }
+    , .(_c: C_ship_flag) { meta(3, "flag", 4, 4, .f) }
+    , .(_c: C_ship_draft) { meta(4, "draft", 5, 5, .t) }
+    , .(_c: C_ship_berth) { meta(5, "s.berth", 7, 7, .t) }
+    , .(_c: C_berth_id) { meta(6, "b.id", 4, 4, .t) }
+    , .(_c: C_berth_depth) { meta(7, "depth", 5, 5, .t) }
+    , .(_c: C_berth_zone) { meta(8, "zone", 4, 6, .f) }
+    , .(_c: C_berth_zone_id) { meta(9, "b.zone", 6, 6, .t) }
+    , .(_c: C_mf_ship) { meta(10, "m.ship", 6, 6, .t) }
+    , .(_c: C_mf_cargo) { meta(11, "cargo", 5, 6, .f) }
+    , .(_c: C_mf_tons) { meta(12, "tons", 4, 5, .t) }
+    , .(_c: C_total) { meta(13, "total", 5, 6, .t) }
+    , .(_c: C_count) { meta(14, "count", 5, 5, .t) }
+    )
   }
 }
 
@@ -127,10 +127,10 @@ pub fn col_eq(a: Col, b: Col) -> Bool { eq_i32(col_code(a), col_code(b)) }
 pub fn table_cols(t: Table_id) -> Col_list {
   match! t {
     (
-      , .(_t: T_ships) { list.of5(ship_id(), ship_name(), ship_flag(), ship_draft(), ship_berth()) }
-      , .(_t: T_berths) { list.of4(berth_id(), berth_depth(), berth_zone(), berth_zone_id()) }
-      , .(_t: T_manifests) { list.of3(mf_ship(), mf_cargo(), mf_tons()) }
-      )
+    , .(_t: T_ships) { list.of5(ship_id(), ship_name(), ship_flag(), ship_draft(), ship_berth()) }
+    , .(_t: T_berths) { list.of4(berth_id(), berth_depth(), berth_zone(), berth_zone_id()) }
+    , .(_t: T_manifests) { list.of3(mf_ship(), mf_cargo(), mf_tons()) }
+    )
   }
 }
 

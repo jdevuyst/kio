@@ -28,7 +28,7 @@ rec(loop) fn scale_by_degree(acc: Coeffs, i: I32, cs: Coeffs) -> Coeffs {
     acc
   } else {
     let term = mul_i32(i, core.head_or_zero(cs));
-    rec scale_by_degree(lc.cons(term, acc), add_i32(i, 1), lc.tail(cs))
+    recur scale_by_degree(lc.cons(term, acc), add_i32(i, 1), lc.tail(cs))
   }
 }
 

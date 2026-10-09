@@ -10,30 +10,26 @@ import testapi/io as io;
 import testapi/text as text;
 
 fn both(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    .f
-  }
+  if! left { right } else { .f }
 }
 
 fn all_layouts_ok() -> Bool {
   both(
-    , scanner.has_expected_layout(fixtures.line0800())
+  , scanner.has_expected_layout(fixtures.line0800())
+  , both(
+    , scanner.has_expected_layout(fixtures.line0805())
     , both(
-        , scanner.has_expected_layout(fixtures.line0805())
+      , scanner.has_expected_layout(fixtures.line0810())
+      , both(
+        , scanner.has_expected_layout(fixtures.line0815())
         , both(
-            , scanner.has_expected_layout(fixtures.line0810())
-            , both(
-                , scanner.has_expected_layout(fixtures.line0815())
-                , both(
-                    , scanner.has_expected_layout(fixtures.line0820())
-                    , scanner.has_expected_layout(fixtures.line0825())
-                    )
-                )
-            )
+          , scanner.has_expected_layout(fixtures.line0820())
+          , scanner.has_expected_layout(fixtures.line0825())
+          )
         )
+      )
     )
+  )
 }
 
 fn print_north_window(north_first: scanner.Reading, north_second: scanner.Reading) {

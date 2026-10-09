@@ -1,0 +1,9 @@
+module main;
+
+host fn drive[S][R](step: S -> (S | R), state: S) -> R;
+
+host fn retain(callback: . -> .) -> .;
+
+pub rec(drive) fn again(value: .) -> . {
+  retain(.() { recur(escape) again(value) })
+}

@@ -28,10 +28,10 @@ fn wrap(node: Meter | Second | Kilogram | Product | Quotient | Pow) -> Expr { {e
 pub fn unit_expr(unit_value: Unit) -> Expr {
   match! unit_value {
     (
-      , .(m: Meter) { wrap(m.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
-      , .(s: Second) { wrap(s.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
-      , .(k: Kilogram) { wrap(k.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
-      )
+    , .(m: Meter) { wrap(m.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+    , .(s: Second) { wrap(s.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+    , .(k: Kilogram) { wrap(k.>widen_sum!(Meter | Second | Kilogram | Product | Quotient | Pow)) }
+    )
   }
 }
 

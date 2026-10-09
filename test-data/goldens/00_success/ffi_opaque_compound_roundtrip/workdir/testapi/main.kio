@@ -25,6 +25,8 @@ pub fn make_sum() -> t.Box(t.I32 | .) { a.box_make(widen_sum!(23(t.I32), t.I32 |
 
 pub fn make_empty() -> t.Box(t.I32 | .) { a.box_make(widen_sum!((), t.I32 | .)) }
 
-pub fn make_callable() -> t.Box(t.I32 -> t.I32) { a.box_make(.(number: t.I32) { number }) }
+pub fn make_callable() -> t.Box(t.I32 -> t.I32) {
+  a.box_make(.(number: t.I32) { number })
+}
 
 pub fn make_nominal() -> t.Box(Wrapped) { a.box_make(Wrapped.mk_wrapped((53(t.I32), 59(t.I32)))) }

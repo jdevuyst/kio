@@ -17,15 +17,12 @@ fn render(w: String & String & String & String) -> String {
   let third = __fst__(String, String, tail2);
   let fourth = __snd__(String, String, tail2);
   string_concat(
-    , first
-    , string_concat(
-        , " "
-        , string_concat(
-            , second
-            , string_concat(" ", string_concat(third, string_concat(" ", fourth)))
-            )
-        )
+  , first
+  , string_concat(
+    , " "
+    , string_concat(second, string_concat(" ", string_concat(third, string_concat(" ", fourth))))
     )
+  )
 }
 
 pub fn main() {

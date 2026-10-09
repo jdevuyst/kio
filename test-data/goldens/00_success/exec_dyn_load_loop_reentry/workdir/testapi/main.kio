@@ -61,20 +61,20 @@ fn guest_image() -> String {
 fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> . | I32 {
   match! surf.?{lookup}(name) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
-            (
-              , .(r: P) {
-                  match! surf.?{i32_out}(r) {
-                    (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
-                  }
-                }
-              , .(_d: Diag) { widen_sum!((), . | I32) }
-              )
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+          (
+          , .(r: P) {
+              match! surf.?{i32_out}(r) {
+                (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
+              }
+            }
+          , .(_d: Diag) { widen_sum!((), . | I32) }
+          )
         }
-      , .(_d: Diag) { widen_sum!((), . | I32) }
-      )
+      }
+    , .(_d: Diag) { widen_sum!((), . | I32) }
+    )
   }
 }
 
@@ -87,34 +87,34 @@ fn call_i32(handle: Loaded, name: String, arg: I32) -> . | I32 {
 fn loaded_i32(name: String, arg: I32) -> . | I32 {
   match! un_load_outcome(load_package(guest_image())) {
     (
-      , .(im: Lr_image) {
-          match! un_inst(instantiate_default(Lr_image.get(im))) {
-            (
-              , .(handle: Loaded) { call_i32(handle, name, arg) }
-              , .(_d: Diag) { widen_sum!((), . | I32) }
-              )
-          }
+    , .(im: Lr_image) {
+        match! un_inst(instantiate_default(Lr_image.get(im))) {
+          (
+          , .(handle: Loaded) { call_i32(handle, name, arg) }
+          , .(_d: Diag) { widen_sum!((), . | I32) }
+          )
         }
-      , .(_d: Lr_diag) { widen_sum!((), . | I32) }
-      )
+      }
+    , .(_d: Lr_diag) { widen_sum!((), . | I32) }
+    )
   }
 }
 
 fn assert_i32(label: String, expected: I32, actual: . | I32) -> String {
   match! actual {
     (
-      , .(n: I32) {
-          if! string_eq(int_to_string(n), int_to_string(expected)) {
-            string_concat(label, "PASS\n"(String))
-          } else {
-            string_concat(
-              , label
-              , string_concat("FAIL (got "(String), string_concat(int_to_string(n), ")\n"(String)))
-              )
-          }
+    , .(n: I32) {
+        if! string_eq(int_to_string(n), int_to_string(expected)) {
+          string_concat(label, "PASS\n"(String))
+        } else {
+          string_concat(
+          , label
+          , string_concat("FAIL (got "(String), string_concat(int_to_string(n), ")\n"(String)))
+          )
         }
-      , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
-      )
+      }
+    , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
+    )
   }
 }
 

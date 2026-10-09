@@ -86,7 +86,9 @@ pub fn apply[A][B](mf: Option(A -> B), m: Option(A)) -> Option(B) {
 /// `then` sequences two options, keeping the second when the first is
 /// present (monadic `>>` - the first option's payload is discarded but
 /// its presence still gates the result).
-pub fn then[A][B](m: Option(A), n: Option(B)) -> Option(B) { bind(m, .(_x: A) -> Option(B) { n }) }
+pub fn then[A][B](m: Option(A), n: Option(B)) -> Option(B) {
+  bind(m, .(_x: A) -> Option(B) { n })
+}
 
 // =====================================================================
 // Combinators

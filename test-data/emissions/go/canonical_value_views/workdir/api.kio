@@ -48,7 +48,10 @@ pub fn relay[A](value: A) -> A { value }
 
 pub fn ignore[A](value: A) { () }
 
-pub fn stage() -> [A] . { created(); .[A] { tick() } }
+pub fn stage() -> [A] . {
+  created();
+  .[A] { tick() }
+}
 
 pub fn relay_box[*F][A](value: F(A)) -> F(A) { value }
 
@@ -56,7 +59,9 @@ pub fn use_callback(value: Box(Number -> Count), number: Number) -> Count {
   inspect(extract(value)(number))
 }
 
-pub fn own_callback() -> Box(Number -> Count) { store(.(number: Number) { 7(Count) }) }
+pub fn own_callback() -> Box(Number -> Count) {
+  store(.(number: Number) { 7(Count) })
+}
 
 pub fn echo_token(value: Token) -> Token { value }
 

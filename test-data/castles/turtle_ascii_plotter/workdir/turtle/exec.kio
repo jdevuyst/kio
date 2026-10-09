@@ -35,11 +35,7 @@ fn put(s: st.State, x: I32, y: I32, code: I32) -> st.State {
 /// a `touch`, which is what makes "the turtle's cell carries ink while the pen
 /// is down" true after every command instead of only after a `move`.
 fn touch(s: st.State) -> st.State {
-  if! st.down_of(s) {
-    put(s, st.tx_of(s), st.ty_of(s), glyph.stroke_code())
-  } else {
-    s
-  }
+  if! st.down_of(s) { put(s, st.tx_of(s), st.ty_of(s), glyph.stroke_code()) } else { s }
 }
 
 /// Lowering the pen puts it on the paper where the turtle already stands.
@@ -71,7 +67,7 @@ rec(loop) fn do_move(s: st.State, n: I32) -> st.State {
     let f = st.heading_of(s);
     let nx = add_i32(st.tx_of(s), st.facing_dx(f));
     let ny = add_i32(st.ty_of(s), st.facing_dy(f));
-    rec do_move(touch(st.with_pos(s, nx, ny)), sub_i32(n, 1))
+    recur do_move(touch(st.with_pos(s, nx, ny)), sub_i32(n, 1))
   }
 }
 
@@ -80,12 +76,12 @@ rec(loop) {
   pub fn run_block(b: list.List(cmd.Command), s: st.State) -> st.State {
     match! list.uncons(b) {
       (
-        , .(c: cmd.Command, rest: list.List(cmd.Command)) {
-            let next = rec(cont) run_command(c, s);
-            rec run_block(rest, next)
-          }
-        , .(_empty: .) { s }
-        )
+      , .(c: cmd.Command, rest: list.List(cmd.Command)) {
+          let next = recur(cont) run_command(c, s);
+          recur run_block(rest, next)
+        }
+      , .(_empty: .) { s }
+      )
     }
   };
   /// One command. Each arm `tick`s the executed-command counter except
@@ -94,20 +90,17 @@ rec(loop) {
   fn run_command(c: cmd.Command, s: st.State) -> st.State {
     match! cmd.un_command(c) {
       (
-        , .(p: cmd.Pen_cmd) { do_pen(st.tick(s), p.?{cmd.pen_cmd}) }
-        , .(m: cmd.Move_cmd) { do_move(st.tick(s), m.?{cmd.move_cmd}) }
-        , .(t: cmd.Turn_cmd) { do_turn(st.tick(s), t.?{cmd.turn_cmd}) }
-        , .(g: cmd.Goto_cmd) {
-            let .(x: I32, y: I32) = g.?{cmd.goto_cmd};
-            do_goto(st.tick(s), x, y)
-          }
-        , .(k: cmd.Mark_cmd) { do_mark(st.tick(s), k.?{cmd.mark_cmd}) }
-        , .(r: cmd.Repeat_cmd) {
-            let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
-            rec run_repeat(n, body, s)
-          }
-        , .(_u: cmd.Unknown_cmd) { st.tick(s) }
-        )
+      , .(p: cmd.Pen_cmd) { do_pen(st.tick(s), p.?{cmd.pen_cmd}) }
+      , .(m: cmd.Move_cmd) { do_move(st.tick(s), m.?{cmd.move_cmd}) }
+      , .(t: cmd.Turn_cmd) { do_turn(st.tick(s), t.?{cmd.turn_cmd}) }
+      , .(g: cmd.Goto_cmd) { let .(x: I32, y: I32) = g.?{cmd.goto_cmd}; do_goto(st.tick(s), x, y) }
+      , .(k: cmd.Mark_cmd) { do_mark(st.tick(s), k.?{cmd.mark_cmd}) }
+      , .(r: cmd.Repeat_cmd) {
+          let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
+          recur run_repeat(n, body, s)
+        }
+      , .(_u: cmd.Unknown_cmd) { st.tick(s) }
+      )
     }
   };
   /// Run `body` `n` times, threading the state through each pass. A count of
@@ -116,8 +109,8 @@ rec(loop) {
     if! leq_i32(n, 0) {
       s
     } else {
-      let next = rec(cont) run_block(body, s);
-      rec run_repeat(sub_i32(n, 1), body, next)
+      let next = recur(cont) run_block(body, s);
+      recur run_repeat(sub_i32(n, 1), body, next)
     }
   }
 }

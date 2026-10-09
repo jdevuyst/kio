@@ -12,20 +12,20 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 pub fn window_line(window: Window) -> String {
   cat3(
-    , window.?{name}
-    , cat3(" score=", fmt.int_to_string(scoring.score(window)), " status=")
-    , cat3(scoring.status(window), "", "\n")
-    )
+  , window.?{name}
+  , cat3(" score=", fmt.int_to_string(scoring.score(window)), " status=")
+  , cat3(scoring.status(window), "", "\n")
+  )
 }
 
 pub fn winner_line(window: Window) -> String {
   cat3(
-    , "winner="
-    , window.?{name}
-    , cat3(
-        , " score="
-        , fmt.int_to_string(scoring.score(window))
-        , cat3(" support-load=", fmt.int_to_string(window.?{support_load}), "\n")
-        )
+  , "winner="
+  , window.?{name}
+  , cat3(
+    , " score="
+    , fmt.int_to_string(scoring.score(window))
+    , cat3(" support-load=", fmt.int_to_string(window.?{support_load}), "\n")
     )
+  )
 }

@@ -4,26 +4,26 @@ import library/elab/control(if);
 import library/elab/match(match);
 import library/elab/spine_elaborators(widen_sum);
 import library/vec(
-  , Vec
-  , at
-  , concat
-  , empty
-  , fold
-  , fold_range
-  , from_list
-  , is_empty
-  , length
-  , map
-  , op _ <@> _
-  , op _ <| __ |>
-  , op _ ~~ _
-  , op __ +> _
-  , pop_back
-  , push_back
-  , slice
-  , to_list
-  , update
-  );
+, Vec
+, at
+, concat
+, empty
+, fold
+, fold_range
+, from_list
+, is_empty
+, length
+, map
+, op _ <@> _
+, op _ <| __ |>
+, op _ ~~ _
+, op __ +> _
+, pop_back
+, push_back
+, slice
+, to_list
+, update
+);
 import list/core(List);
 import list/list as lists;
 import list/list(varop [* *]);
@@ -45,13 +45,13 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
 
 fn show_result[A](label: String, result: A | ., render: A -> String) {
   show(
-    , label
-    , fold_result(
-        , "none"
-        , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
-        , result
-        )
+  , label
+  , fold_result(
+    , "none"
+    , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
+    , result
     )
+  )
 }
 
 fn value_or[A](default: A, result: A | .) -> A {
@@ -71,17 +71,13 @@ fn string_is_empty(s: String) -> Bool { string_eq(s, "") }
 fn vec_to_string(v: Vec(I32)) -> String {
   let body =
     fold(
-      , .(acc: String, n: I32) -> String {
-          let piece = int_to_string(n);
-          if! string_is_empty(acc) {
-            piece
-          } else {
-            string_concat(acc, string_concat(", ", piece))
-          }
-        }
-      , ""
-      , v
-      );
+    , .(acc: String, n: I32) -> String {
+        let piece = int_to_string(n);
+        if! string_is_empty(acc) { piece } else { string_concat(acc, string_concat(", ", piece)) }
+      }
+    , ""
+    , v
+    );
   string_concat("[", string_concat(body, "]"))
 }
 
@@ -109,30 +105,27 @@ pub fn main() {
   show("length(v +> 200)", int_to_string(length(v4)));
   show_result_i32("at(v +> 200, 20)", at(v4, 20));
   show(
-    , "pop_back(v4) drops 200"
-    , fold_result(
-        , "none"
-        , .(p: I32 & Vec(I32)) -> String {
-            match! p {
-              .(x: I32, rest: Vec(I32)) {
-                string_concat(
-                  , "popped "
-                  , string_concat(
-                      , int_to_string(x)
-                      , string_concat(", len ", int_to_string(length(rest)))
-                      )
-                  )
-              }
-            }
+  , "pop_back(v4) drops 200"
+  , fold_result(
+    , "none"
+    , .(p: I32 & Vec(I32)) -> String {
+        match! p {
+          .(x: I32, rest: Vec(I32)) {
+            string_concat(
+            , "popped "
+            , string_concat(int_to_string(x), string_concat(", len ", int_to_string(length(rest))))
+            )
           }
-        , pop_back(v4)
-        )
-    );
+        }
+      }
+    , pop_back(v4)
+    )
+  );
   show("to_list(slice(v, 0, 5))", vec_to_string(from_list(to_list(slice(v, 0, 5)))));
   show(
-    , "map(+1, slice(v, 0, 5))"
-    , vec_to_string(map(.(n: I32) -> I32 { add(n, 1) }, slice(v, 0, 5)))
-    );
+  , "map(+1, slice(v, 0, 5))"
+  , vec_to_string(map(.(n: I32) -> I32 { add(n, 1) }, slice(v, 0, 5)))
+  );
   let double = .(n: I32) -> I32 { mul(n, 2) };
   show("v <@> *2 (first 5)", vec_to_string(slice(v <@> double, 0, 5)));
   show("fold(+, 0, slice(v, 0, 5))", int_to_string(fold(add, 0, slice(v, 0, 5))));

@@ -955,7 +955,7 @@ mod tests {
         for container in [
             "((), INNER)",
             "build!(INNER)",
-            "rec loop(INNER)",
+            "recur loop(INNER)",
             "scope! { INNER }",
             ".x. { let _ = x1; INNER }",
             "{ field = INNER }",
@@ -1064,10 +1064,10 @@ mod tests {
     fn current_rec_members_are_not_ordinary_values_in_member_bodies() {
         let src = "module pkg/main;\n\
 rec(loop) {\n\
-  fn first(x: .) -> . { rec second(x) };\n\
-  fn second(y: .) -> . { rec first(y) }\n\
+  fn first(x: .) -> . { recur second(x) };\n\
+  fn second(y: .) -> . { recur first(y) }\n\
 }\n";
-        let candidates = in_scope_candidates(&parse(src), offset_after(src, "rec first("));
+        let candidates = in_scope_candidates(&parse(src), offset_after(src, "recur first("));
         let names = labels(&candidates);
         assert!(!names.contains(&"first"), "got: {names:?}");
         assert!(!names.contains(&"second"), "got: {names:?}");
@@ -1078,7 +1078,7 @@ rec(loop) {\n\
     fn rec_members_are_ordinary_module_values_outside_their_group() {
         let src = "module pkg/main;\n\
 rec(loop) {\n\
-  fn first(x: .) -> . { rec first(x) }\n\
+  fn first(x: .) -> . { recur first(x) }\n\
 }\n\
 fn caller(value: .) -> . { first(value) }\n";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "first(value"));

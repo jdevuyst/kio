@@ -17,11 +17,7 @@ pub labels Relation = { same: . } | { before: . } | { after: . } | { concurrent:
 pub fn zero() -> Clock { {a = 0, b = 0, c = 0} }
 
 fn maximum(x: I32, y: I32) -> I32 {
-  if! arith.lt_i32(x, y) {
-    y
-  } else {
-    x
-  }
+  if! arith.lt_i32(x, y) { y } else { x }
 }
 
 pub fn join(x: Clock, y: Clock) -> Clock {
@@ -38,11 +34,7 @@ pub fn tick(node: Node, clock: Clock) -> Clock {
 
 pub fn leq(x: Clock, y: Clock) -> Bool {
   if! arith.leq_i32(x.?{a}, y.?{a}) {
-    if! arith.leq_i32(x.?{b}, y.?{b}) {
-      arith.leq_i32(x.?{c}, y.?{c})
-    } else {
-      .f
-    }
+    if! arith.leq_i32(x.?{b}, y.?{b}) { arith.leq_i32(x.?{c}, y.?{c}) } else { .f }
   } else {
     .f
   }
@@ -50,11 +42,7 @@ pub fn leq(x: Clock, y: Clock) -> Bool {
 
 pub fn compare(x: Clock, y: Clock) -> Relation {
   if! leq(x, y) {
-    if! leq(y, x) {
-      {same=}.>widen_sum!
-    } else {
-      {before=}.>widen_sum!
-    }
+    if! leq(y, x) { {same=}.>widen_sum! } else { {before=}.>widen_sum! }
   } else if! leq(y, x) {
     {after=}.>widen_sum!
   } else {
@@ -63,11 +51,7 @@ pub fn compare(x: Clock, y: Clock) -> Relation {
 }
 
 pub fn equal(x: Clock, y: Clock) -> Bool {
-  if! leq(x, y) {
-    leq(y, x)
-  } else {
-    .f
-  }
+  if! leq(x, y) { leq(y, x) } else { .f }
 }
 
 pub fn lexical_before(x: Clock, y: Clock) -> Bool {

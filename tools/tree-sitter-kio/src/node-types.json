@@ -2780,7 +2780,7 @@
           "named": true
         },
         {
-          "type": "keyword_rec",
+          "type": "keyword_recur",
           "named": true
         },
         {
@@ -4670,7 +4670,7 @@
           "named": true
         },
         {
-          "type": "keyword_rec",
+          "type": "keyword_recur",
           "named": true
         },
         {
@@ -7164,6 +7164,10 @@
   },
   {
     "type": "keyword_rec",
+    "named": true
+  },
+  {
+    "type": "keyword_recur",
     "named": true
   },
   {

@@ -12,23 +12,23 @@ import testapi/arith as arith;
 pub labels Run = { sample: I32, count: I32 };
 
 pub labels Encoder = {
-  , pending: Run | .
-  , packets_rev: lists.List(Run)
-  , samples: I32
-  , transitions: I32
-  , splits: I32
-  };
+, pending: Run | .
+, packets_rev: lists.List(Run)
+, samples: I32
+, transitions: I32
+, splits: I32
+};
 
 pub fn cap() -> I32 { 4 }
 
 pub fn empty() -> Encoder {
   {
-    , pending = ().>widen_sum!(Run | .)
-    , packets_rev = lists.nil(Run)
-    , samples = 0
-    , transitions = 0
-    , splits = 0
-    }
+  , pending = ().>widen_sum!(Run | .)
+  , packets_rev = lists.nil(Run)
+  , samples = 0
+  , transitions = 0
+  , splits = 0
+  }
 }
 
 pub fn accept(state: Encoder, value: I32) -> Encoder {
@@ -42,19 +42,19 @@ pub fn accept(state: Encoder, value: I32) -> Encoder {
           state.!{pending = extended.>widen_sum!(Run | .), samples = total}
         } else {
           state.!{
-            , pending = next
-            , packets_rev = lists.cons(run, state.?{packets_rev})
-            , samples = total
-            , splits = arith.add_i32(state.?{splits}, 1)
-            }
-        }
-      } else {
-        state.!{
           , pending = next
           , packets_rev = lists.cons(run, state.?{packets_rev})
           , samples = total
-          , transitions = arith.add_i32(state.?{transitions}, 1)
+          , splits = arith.add_i32(state.?{splits}, 1)
           }
+        }
+      } else {
+        state.!{
+        , pending = next
+        , packets_rev = lists.cons(run, state.?{packets_rev})
+        , samples = total
+        , transitions = arith.add_i32(state.?{transitions}, 1)
+        }
       }
     };
     .() { state.!{pending = next, samples = total} }

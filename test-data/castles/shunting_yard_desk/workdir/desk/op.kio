@@ -58,13 +58,13 @@ labels Facts = { rank: I32, sym: String };
 fn binop_facts(b: Binop) -> Facts {
   match! b {
     (
-      , .(_p: Plus) { {rank = 1, sym = "+"} }
-      , .(_m: Minus) { {rank = 1, sym = "-"} }
-      , .(_t: Times) { {rank = 2, sym = "*"} }
-      , .(_d: Divide) { {rank = 2, sym = "/"} }
-      , .(_o: Modulo) { {rank = 2, sym = "%"} }
-      , .(_w: Power) { {rank = 4, sym = "^"} }
-      )
+    , .(_p: Plus) { {rank = 1, sym = "+"} }
+    , .(_m: Minus) { {rank = 1, sym = "-"} }
+    , .(_t: Times) { {rank = 2, sym = "*"} }
+    , .(_d: Divide) { {rank = 2, sym = "/"} }
+    , .(_o: Modulo) { {rank = 2, sym = "%"} }
+    , .(_w: Power) { {rank = 4, sym = "^"} }
+    )
   }
 }
 
@@ -94,12 +94,12 @@ pub fn symbol(op: Op) -> String { facts(op).?{sym} }
 pub fn binop_right_assoc(b: Binop) -> Bool {
   match! b {
     (
-      , .(_p: Plus) { .f }
-      , .(_m: Minus) { .f }
-      , .(_t: Times) { .f }
-      , .(_d: Divide) { .f }
-      , .(_o: Modulo) { .f }
-      , .(_w: Power) { .t }
-      )
+    , .(_p: Plus) { .f }
+    , .(_m: Minus) { .f }
+    , .(_t: Times) { .f }
+    , .(_d: Divide) { .f }
+    , .(_o: Modulo) { .f }
+    , .(_w: Power) { .t }
+    )
   }
 }

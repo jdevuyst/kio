@@ -8796,7 +8796,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     Self::begin_rec_order_flow(plan, flow, frontier, tcx)?
                 }
                 RecOrderDisposition::DeferredTail {
-                    requirement: RecOrderTailRequirement::Optional,
+                    requirement:
+                        RecOrderTailRequirement::Optional | RecOrderTailRequirement::Escaping,
                     ..
                 } => RecOrderContinuation::OrdinaryBypass(Self::begin_rec_order_bypass(
                     plan,
@@ -8806,6 +8807,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 )?),
                 RecOrderDisposition::DeferredTail { .. } => {
                     return Err(crate::pass::typecheck_full::deferred_rec_tail_error(
+                        plan.source_call.as_deref(),
                         source.span(),
                     ));
                 }
@@ -9275,7 +9277,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             matches!(
                 plan.disposition,
                 RecOrderDisposition::DeferredTail {
-                    requirement: RecOrderTailRequirement::Optional,
+                    requirement: RecOrderTailRequirement::Optional
+                        | RecOrderTailRequirement::Escaping,
                     ..
                 }
             ),
@@ -21718,7 +21721,7 @@ mod tests {
     fn rec_loop_diagnostic_does_not_add_ordinary_planning_work() {
         let package = resolved_lowered_test_package(
             "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(drive) fn again(x: .) { rec again(x) }",
+             rec(drive) fn again(x: .) { recur again(x) }",
         );
         let module = &package.module("main").unwrap().module;
         let function = module
@@ -21759,7 +21762,7 @@ mod tests {
         let package = resolved_lowered_test_package(
             "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
              host fn phantom[T](value: .) -> .; \
-             rec(drive) fn again(value: .) { rec again(value) } \
+             rec(drive) fn again(value: .) { recur again(value) } \
              fn good(value: .) { value } fn bad(value: .) { phantom(value) }",
         );
         let module = &package.module("main").unwrap().module;
@@ -21850,7 +21853,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<OrdinaryDriverFrame<'_>>(), 224);
         assert_eq!(
             std::mem::size_of::<crate::ast::RecOrderPlan<Lowered>>(),
-            200
+            208
         );
         assert_eq!(
             std::mem::size_of::<UserElaboratorTerminalTypeLayerCapability>(),
@@ -21882,6 +21885,7 @@ mod tests {
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
         let mut plan = crate::ast::RecOrderPlan {
+            source_call: None,
             name: "result".to_owned(),
             disposition: RecOrderDisposition::DeferredTail {
                 requirement: crate::ast::RecOrderTailRequirement::Required,
@@ -22134,6 +22138,7 @@ mod tests {
         Expr::RecOrder {
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: name.to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -22824,6 +22829,7 @@ mod tests {
         let carrier = Expr::RecOrder {
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "pending".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -30922,6 +30928,7 @@ mod tests {
         let expected_body_rec_order = Expr::RecOrder {
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: rec_local.to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -31126,6 +31133,7 @@ mod tests {
         let carrier = Expr::RecOrder {
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "pending".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -31207,6 +31215,7 @@ mod tests {
         let carrier = Expr::RecOrder {
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "pending".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(

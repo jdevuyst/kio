@@ -28,63 +28,59 @@ import testapi/iter(loop);
 /// `reachable` is absent exactly when the pointer check failed and the
 /// re-walk was refused.
 pub labels Audit = {
-  , arena_objects: I32
-  , checked_roots: I32
-  , checked_pointers: I32
-  , reachable: I32 | .
-  , expected_live: I32
-  , dangling: I32
-  };
+, arena_objects: I32
+, checked_roots: I32
+, checked_pointers: I32
+, reachable: I32 | .
+, expected_live: I32
+, dangling: I32
+};
 
 pub labels Verdict = { verified: Audit } | { broken: Audit };
 
 /// In range is not enough: the address has to start an object.
 fn lands_on_header(cells: Array(I32), headers: Array(Bool), addr: I32) -> Bool {
-  if! in_arena(cells, addr) {
-    array_get(headers, addr)
-  } else {
-    .f
-  }
+  if! in_arena(cells, addr) { array_get(headers, addr) } else { .f }
 }
 
 /// Count one object's pointer fields and how many of them are unsound.
 fn check_fields(cells: Array(I32), headers: Array(Bool), addr: I32, seen: I32 & I32) -> I32 & I32 {
   fold_fields(
-    , cells
-    , addr
-    , .(counts, index) {
-        let .(pointers: I32, bad: I32) = counts;
-        match! field_slot(cells, addr, index) {
-          (
-            , .(p: Ptr) {
-                if! lands_on_header(cells, headers, p.?{ptr}) {
-                  (add_i32(pointers, 1), bad)
-                } else {
-                  (add_i32(pointers, 1), add_i32(bad, 1))
-                }
-              }
-            , .(_immediate: Imm) { (pointers, bad) }
-            )
-        }
+  , cells
+  , addr
+  , .(counts, index) {
+      let .(pointers: I32, bad: I32) = counts;
+      match! field_slot(cells, addr, index) {
+        (
+        , .(p: Ptr) {
+            if! lands_on_header(cells, headers, p.?{ptr}) {
+              (add_i32(pointers, 1), bad)
+            } else {
+              (add_i32(pointers, 1), add_i32(bad, 1))
+            }
+          }
+        , .(_immediate: Imm) { (pointers, bad) }
+        )
       }
-    , seen
-    )
+    }
+  , seen
+  )
 }
 
 rec(loop) fn check_roots(
-  , cells: Array(I32)
-  , headers: Array(Bool)
-  , roots: Array(I32)
-  , index: I32
-  , bad: I32
-  ) -> I32 {
+, cells: Array(I32)
+, headers: Array(Bool)
+, roots: Array(I32)
+, index: I32
+, bad: I32
+) -> I32 {
   if! int_lt(index, array_len(roots)) {
     let next_bad = if! lands_on_header(cells, headers, array_get(roots, index)) {
       bad
     } else {
       add_i32(bad, 1)
     };
-    rec check_roots(cells, headers, roots, add_i32(index, 1), next_bad)
+    recur check_roots(cells, headers, roots, add_i32(index, 1), next_bad)
   } else {
     bad
   }
@@ -101,14 +97,14 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
   let headers = header_map(cells);
   let .(objects: I32, pointers: I32, field_bad: I32) =
     fold_objects(
-      , cells
-      , .(totals, addr) {
-          let .(seen: I32, ptrs: I32, bad: I32) = totals;
-          let .(next_ptrs: I32, next_bad: I32) = check_fields(cells, headers, addr, (ptrs, bad));
-          (add_i32(seen, 1), next_ptrs, next_bad)
-        }
-      , (0, 0, 0)
-      );
+    , cells
+    , .(totals, addr) {
+        let .(seen: I32, ptrs: I32, bad: I32) = totals;
+        let .(next_ptrs: I32, next_bad: I32) = check_fields(cells, headers, addr, (ptrs, bad));
+        (add_i32(seen, 1), next_ptrs, next_bad)
+      }
+    , (0, 0, 0)
+    );
   let bad = check_roots(cells, headers, roots, 0, field_bad);
   let sound = int_eq(bad, 0);
   let reached =
@@ -119,13 +115,13 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
     };
   let report =
     {
-      , arena_objects = objects
-      , checked_roots = array_len(roots)
-      , checked_pointers = pointers
-      , reachable = reached
-      , expected_live = expected
-      , dangling = bad
-      };
+    , arena_objects = objects
+    , checked_roots = array_len(roots)
+    , checked_pointers = pointers
+    , reachable = reached
+    , expected_live = expected
+    , dangling = bad
+    };
   let intact =
     match! reached {
       (.(count: I32) { int_eq(count, expected) }, .(_untraversed: .) { .f })

@@ -59,9 +59,9 @@ rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr))
   if! lt_i32(row, row_of(lo)) {
     acc
   } else if! lt_i32(col, col_of(lo)) {
-    rec block_onto(lo, hi, sub_i32(row, 1), col_of(hi), acc)
+    recur block_onto(lo, hi, sub_i32(row, 1), col_of(hi), acc)
   } else {
-    rec block_onto(lo, hi, row, sub_i32(col, 1), cons(make_addr(row, col), acc))
+    recur block_onto(lo, hi, row, sub_i32(col, 1), cons(make_addr(row, col), acc))
   }
 }
 
@@ -75,28 +75,28 @@ pub fn range_cells(lo: Addr, hi: Addr) -> List(Addr) {
 pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
   match! e.>Expr.un_expr {
     (
-      , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
-      , .(_n: Lit) { acc }
-      , .(left: Add_l, right: Add_r) {
-          let seen = rec(cont) precedents_onto(left.?{add_l}, acc);
-          rec precedents_onto(right.?{add_r}, seen)
-        }
-      , .(left: Sub_l, right: Sub_r) {
-          let seen = rec(cont) precedents_onto(left.?{sub_l}, acc);
-          rec precedents_onto(right.?{sub_r}, seen)
-        }
-      , .(left: Mul_l, right: Mul_r) {
-          let seen = rec(cont) precedents_onto(left.?{mul_l}, acc);
-          rec precedents_onto(right.?{mul_r}, seen)
-        }
-      , .(lo: Sum_lo, hi: Sum_hi) { add_all(acc, range_cells(lo.?{sum_lo}, hi.?{sum_hi})) }
-      , .(lo: Max_lo, hi: Max_hi) { add_all(acc, range_cells(lo.?{max_lo}, hi.?{max_hi})) }
-      , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
-          let after_cond = rec(cont) precedents_onto(cond.?{if_c}, acc);
-          let after_then = rec(cont) precedents_onto(then_arm.?{if_t}, after_cond);
-          rec precedents_onto(else_arm.?{if_e}, after_then)
-        }
-      )
+    , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
+    , .(_n: Lit) { acc }
+    , .(left: Add_l, right: Add_r) {
+        let seen = recur(cont) precedents_onto(left.?{add_l}, acc);
+        recur precedents_onto(right.?{add_r}, seen)
+      }
+    , .(left: Sub_l, right: Sub_r) {
+        let seen = recur(cont) precedents_onto(left.?{sub_l}, acc);
+        recur precedents_onto(right.?{sub_r}, seen)
+      }
+    , .(left: Mul_l, right: Mul_r) {
+        let seen = recur(cont) precedents_onto(left.?{mul_l}, acc);
+        recur precedents_onto(right.?{mul_r}, seen)
+      }
+    , .(lo: Sum_lo, hi: Sum_hi) { add_all(acc, range_cells(lo.?{sum_lo}, hi.?{sum_hi})) }
+    , .(lo: Max_lo, hi: Max_hi) { add_all(acc, range_cells(lo.?{max_lo}, hi.?{max_hi})) }
+    , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
+        let after_cond = recur(cont) precedents_onto(cond.?{if_c}, acc);
+        let after_then = recur(cont) precedents_onto(then_arm.?{if_t}, after_cond);
+        recur precedents_onto(else_arm.?{if_e}, after_then)
+      }
+    )
   }
 }
 
@@ -116,34 +116,46 @@ fn aggregate(name: String, lo: Addr, hi: Addr) -> String {
 pub rec(loop) fn render_expr(e: Expr) -> String {
   match! e.>Expr.un_expr {
     (
-      , .(r: Ref_at) { addr_name(r.?{ref_at}) }
-      , .(n: Lit) { int_to_string(n.?{lit}) }
-      , .(left: Add_l, right: Add_r) {
-          infix(rec(cont) render_expr(left.?{add_l}), " + ", rec(cont) render_expr(right.?{add_r}))
-        }
-      , .(left: Sub_l, right: Sub_r) {
-          infix(rec(cont) render_expr(left.?{sub_l}), " - ", rec(cont) render_expr(right.?{sub_r}))
-        }
-      , .(left: Mul_l, right: Mul_r) {
-          infix(rec(cont) render_expr(left.?{mul_l}), " * ", rec(cont) render_expr(right.?{mul_r}))
-        }
-      , .(lo: Sum_lo, hi: Sum_hi) { aggregate("SUM", lo.?{sum_lo}, hi.?{sum_hi}) }
-      , .(lo: Max_lo, hi: Max_hi) { aggregate("MAX", lo.?{max_lo}, hi.?{max_hi}) }
-      , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
-          cat3(
-            , "IF("
-            , cat3(
-                , rec(cont) render_expr(cond.?{if_c})
-                , ", "
-                , cat3(
-                    , rec(cont) render_expr(then_arm.?{if_t})
-                    , ", "
-                    , rec(cont) render_expr(else_arm.?{if_e})
-                    )
-                )
-            , ")"
+    , .(r: Ref_at) { addr_name(r.?{ref_at}) }
+    , .(n: Lit) { int_to_string(n.?{lit}) }
+    , .(left: Add_l, right: Add_r) {
+        infix(
+        , recur(cont) render_expr(left.?{add_l})
+        , " + "
+        , recur(cont) render_expr(right.?{add_r})
+        )
+      }
+    , .(left: Sub_l, right: Sub_r) {
+        infix(
+        , recur(cont) render_expr(left.?{sub_l})
+        , " - "
+        , recur(cont) render_expr(right.?{sub_r})
+        )
+      }
+    , .(left: Mul_l, right: Mul_r) {
+        infix(
+        , recur(cont) render_expr(left.?{mul_l})
+        , " * "
+        , recur(cont) render_expr(right.?{mul_r})
+        )
+      }
+    , .(lo: Sum_lo, hi: Sum_hi) { aggregate("SUM", lo.?{sum_lo}, hi.?{sum_hi}) }
+    , .(lo: Max_lo, hi: Max_hi) { aggregate("MAX", lo.?{max_lo}, hi.?{max_hi}) }
+    , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
+        cat3(
+        , "IF("
+        , cat3(
+          , recur(cont) render_expr(cond.?{if_c})
+          , ", "
+          , cat3(
+            , recur(cont) render_expr(then_arm.?{if_t})
+            , ", "
+            , recur(cont) render_expr(else_arm.?{if_e})
             )
-        }
-      )
+          )
+        , ")"
+        )
+      }
+    )
   }
 }

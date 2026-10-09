@@ -12,18 +12,10 @@ fn make_bind[*M](operation: [A][B] (M(A) & (A -> M(B))) -> M(B)) -> [A][B] (M(A)
 }
 
 pub fn main() {
-  let explicit =
-    do! make_bind(Box, bind) {
-      let value <- Box.box(());
-      Box.box(value)
-    };
+  let explicit = do! make_bind(Box, bind) { let value <- Box.box(()); Box.box(value) };
   Box.unbox(explicit);
   io.print("explicit\n");
-  let inferred =
-    do! make_bind(bind) {
-      let value <- Box.box(());
-      Box.box(value)
-    };
+  let inferred = do! make_bind(bind) { let value <- Box.box(()); Box.box(value) };
   Box.unbox(inferred);
   io.print("inferred\n")
 }

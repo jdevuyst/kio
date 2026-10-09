@@ -24,11 +24,7 @@ fn imm_slot(value: I32) -> Slot { {imm = value}.>widen_sum!(Slot) }
 
 /// Decode one raw field cell.
 pub fn slot_of(cell: I32) -> Slot {
-  if! leq_i32(ptr_base, cell) {
-    ptr_slot(sub_i32(cell, ptr_base))
-  } else {
-    imm_slot(cell)
-  }
+  if! leq_i32(ptr_base, cell) { ptr_slot(sub_i32(cell, ptr_base)) } else { imm_slot(cell) }
 }
 
 /// Encode a slot back into the raw cell the arena stores.

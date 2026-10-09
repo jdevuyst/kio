@@ -33,7 +33,7 @@ pub fn un_cons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(A, xs) }
 /// is the module's one traversal primitive.
 rec(loop) fn rev_append[A](xs: List(A), acc: List(A)) -> List(A) {
   match! un_cons(xs) {
-    (.(x: A, rest: List(A)) { rec rev_append(rest, cons(x, acc)) }, .(_empty: .) { acc })
+    (.(x: A, rest: List(A)) { recur rev_append(rest, cons(x, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -42,10 +42,10 @@ pub fn reverse[A](xs: List(A)) -> List(A) { rev_append(xs, nil(A)) }
 
 rec(loop) {
   /// How many elements `xs` holds.
-  pub fn len[A](xs: List(A)) -> I32 { rec count(xs, 0) };
+  pub fn len[A](xs: List(A)) -> I32 { recur count(xs, 0) };
   fn count[A](xs: List(A), acc: I32) -> I32 {
     match! un_cons(xs) {
-      (.(_x: A, rest: List(A)) { rec count(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+      (.(_x: A, rest: List(A)) { recur count(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
     }
   }
 }
@@ -57,6 +57,6 @@ pub rec(loop) fn drop[A](xs: List(A), n: I32) -> List(A) {
   if! leq_i32(n, 0) {
     xs
   } else match! un_cons(xs) {
-    (.(_x: A, rest: List(A)) { rec drop(rest, sub_i32(n, 1)) }, .(_empty: .) { xs })
+    (.(_x: A, rest: List(A)) { recur drop(rest, sub_i32(n, 1)) }, .(_empty: .) { xs })
   }
 }

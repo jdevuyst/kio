@@ -26,11 +26,7 @@ pub fn increment() -> I32 { 12345 }
 /// Reduce the fixture's seed into the generator's state space.
 pub fn seed_state(seed: I32) -> I32 {
   let reduced = mod_i32(seed, modulus());
-  if! lt_i32(reduced, 0) {
-    add_i32(reduced, modulus())
-  } else {
-    reduced
-  }
+  if! lt_i32(reduced, 0) { add_i32(reduced, modulus()) } else { reduced }
 }
 
 /// One step of the recurrence: `next = (multiplier * state + increment) mod modulus`.
@@ -48,7 +44,7 @@ rec(loop) fn take_onto(state: I32, n: I32, acc: List(I32)) -> List(I32) {
     reverse(acc)
   } else {
     let stepped = next(state);
-    rec take_onto(stepped, sub_i32(n, 1), cons(stepped, acc))
+    recur take_onto(stepped, sub_i32(n, 1), cons(stepped, acc))
   }
 }
 

@@ -50,13 +50,13 @@ fn report(index: I32, e: Edit, st: Step) {
 rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) {
   match! script.>List.unpack {
     (
-      , .(e: Edit, rest: List(Edit)) {
-          let st = recalc(s, vals, e);
-          report(index, e, st);
-          rec run_edits(step_sheet(st), step_values(st), rest, add_i32(index, 1))
-        }
-      , .(_empty: .) { () }
-      )
+    , .(e: Edit, rest: List(Edit)) {
+        let st = recalc(s, vals, e);
+        report(index, e, st);
+        recur run_edits(step_sheet(st), step_values(st), rest, add_i32(index, 1))
+      }
+    , .(_empty: .) { () }
+    )
   }
 }
 
@@ -66,13 +66,9 @@ pub fn main() {
   let vals = full_eval(s, p);
   print("spreadsheet_recalc v1\n");
   line(
-    , "sheet"
-    , cat3(
-        , num(cols())
-        , " columns x "
-        , cat3(num(rows()), " rows, ", cat(num(cell_count()), " cells"))
-        )
-    );
+  , "sheet"
+  , cat3(num(cols()), " columns x ", cat3(num(rows()), " rows, ", cat(num(cell_count()), " cells")))
+  );
   print("\ncells:\n");
   print(cell_listing(s));
   print("\ngrid:\n");

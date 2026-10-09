@@ -56,15 +56,13 @@ fn degree_of_product(claim: String, a: core.Poly, b: core.Poly) -> Check {
 fn division_identity(claim: String, p: core.Poly, divisor: core.Poly) -> Check {
   match! division.divmod(p, divisor) {
     (
-      , .(result: Divided) {
-          let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
-          let rebuilt = arith.add(arith.mul(quotient, divisor), remainder);
-          check("division identity", claim, render.show(rebuilt), core.equal(rebuilt, p))
-        }
-      , .(refused: Not_divisible) {
-          check("division identity", claim, refused.?{not_divisible}, .f)
-        }
-      )
+    , .(result: Divided) {
+        let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
+        let rebuilt = arith.add(arith.mul(quotient, divisor), remainder);
+        check("division identity", claim, render.show(rebuilt), core.equal(rebuilt, p))
+      }
+    , .(refused: Not_divisible) { check("division identity", claim, refused.?{not_divisible}, .f) }
+    )
   }
 }
 
@@ -89,30 +87,26 @@ fn eval_homomorphism(claim: String, a: core.Poly, b: core.Poly, x: I32) -> Check
 /// Every fixed law instance the workbench checks, in report order.
 pub fn all_checks() -> lc.List(Check) {
   [*
-    , additive_inverse("(p + q) - q == p", fx.p(), fx.q())
-    , additive_inverse("(s + e) - e == s", fx.s(), fx.e())
-    , degree_of_product("deg(p * q) == deg p + deg q", fx.p(), fx.q())
-    , degree_of_product("deg(d * e) == deg d + deg e", fx.d(), fx.e())
-    , division_identity("quotient * d + remainder == p", fx.p(), fx.d())
-    , division_identity("quotient * e + remainder == s", fx.s(), fx.e())
-    , product_rule("(p * q)' == p' * q + p * q'", fx.p(), fx.q())
-    , product_rule("(d * s)' == d' * s + d * s'", fx.d(), fx.s())
-    , eval_homomorphism("(p * q)(-1) == p(-1) * q(-1)", fx.p(), fx.q(), -1)
-    , eval_homomorphism("(p * q)(2) == p(2) * q(2)", fx.p(), fx.q(), 2)
-    , eval_homomorphism("(p * q)(3) == p(3) * q(3)", fx.p(), fx.q(), 3)
-    *]
+  , additive_inverse("(p + q) - q == p", fx.p(), fx.q())
+  , additive_inverse("(s + e) - e == s", fx.s(), fx.e())
+  , degree_of_product("deg(p * q) == deg p + deg q", fx.p(), fx.q())
+  , degree_of_product("deg(d * e) == deg d + deg e", fx.d(), fx.e())
+  , division_identity("quotient * d + remainder == p", fx.p(), fx.d())
+  , division_identity("quotient * e + remainder == s", fx.s(), fx.e())
+  , product_rule("(p * q)' == p' * q + p * q'", fx.p(), fx.q())
+  , product_rule("(d * s)' == d' * s + d * s'", fx.d(), fx.s())
+  , eval_homomorphism("(p * q)(-1) == p(-1) * q(-1)", fx.p(), fx.q(), -1)
+  , eval_homomorphism("(p * q)(2) == p(2) * q(2)", fx.p(), fx.q(), 2)
+  , eval_homomorphism("(p * q)(3) == p(3) * q(3)", fx.p(), fx.q(), 3)
+  *]
 }
 
 pub fn passes(checks: lc.List(Check)) -> I32 {
   ll.foldl(
-    , .(count: I32, c: Check) -> I32 {
-        if! c.?{holds} {
-          add_i32(count, 1)
-        } else {
-          count
-        }
-      }
-    , 0
-    , checks
-    )
+  , .(count: I32, c: Check) -> I32 {
+      if! c.?{holds} { add_i32(count, 1) } else { count }
+    }
+  , 0
+  , checks
+  )
 }

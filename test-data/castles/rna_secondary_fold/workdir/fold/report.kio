@@ -44,12 +44,12 @@ pub fn run(name: String, sequence: Array(String), min_loop: I32, expected_score:
 }
 
 pub fn inspect(
-  , name: String
-  , sequence: Array(String)
-  , partners: Array(I32)
-  , min_loop: I32
-  , claimed_score: I32
-  ) {
+, name: String
+, sequence: Array(String)
+, partners: Array(I32)
+, min_loop: I32
+, claimed_score: I32
+) {
   io.print("audit ");
   io.print(name);
   report_audit(validate.audit(sequence, partners, min_loop, claimed_score))

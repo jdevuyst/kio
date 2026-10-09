@@ -2741,6 +2741,7 @@ mod tests {
         let carrier = |node_id| Expr::<Lowered>::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "same".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -2850,6 +2851,7 @@ mod tests {
         let original = Expr::<Lowered>::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "same".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(

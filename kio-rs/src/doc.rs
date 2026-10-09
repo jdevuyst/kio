@@ -70,7 +70,7 @@ pub enum Doc {
     /// breaks. The fits-check uses the flat (first) sub-doc — so
     /// this is the right primitive for "structurally different
     /// flat vs broken layouts," like the leading-comma A1 layout
-    /// that's `(a, b, c)` flat but `(\n  , a\n  , b\n  )` broken.
+    /// that's `(a, b, c)` flat but `(\n, a\n, b\n)` broken.
     FlatAlt(Rc<Doc>, Rc<Doc>),
     /// Increase the indent level by `n` for inner [`Doc::Line`]
     /// emissions. Doesn't emit anything itself.
@@ -84,6 +84,9 @@ pub enum Doc {
     /// width plus the current column exceeds the renderer's width
     /// budget, break instead.
     Group(Rc<Doc>),
+    /// An executable braced block. Flat candidates may contain sibling
+    /// blocks, but never an executable block inside another one.
+    ExecutableBlock(Rc<Doc>),
     /// Several docs side by side. Behind an [`Rc`] so cloning the
     /// concatenation shares the slice instead of copying every part.
     Concat(Rc<Vec<Doc>>),
@@ -150,10 +153,15 @@ pub fn group(inner: Doc) -> Doc {
     Doc::Group(Rc::new(inner))
 }
 
+/// Mark executable braces without classifying literal text or AST spellings.
+pub fn executable_block(inner: Doc) -> Doc {
+    Doc::ExecutableBlock(Rc::new(inner))
+}
+
 /// Layout alternative: pick `flat` when the enclosing group fits and
 /// `broken` when it doesn't. Use this when the two layouts are
 /// structurally different (e.g., the leading-comma A1 list shape
-/// where flat `(a, b, c)` and broken `(\n  , a\n  , b\n  )` aren't
+/// where flat `(a, b, c)` and broken `(\n, a\n, b\n)` aren't
 /// related by line-substitution).
 pub fn flat_alt(flat: Doc, broken: Doc) -> Doc {
     Doc::FlatAlt(Rc::new(flat), Rc::new(broken))
@@ -222,10 +230,10 @@ pub fn join<I: IntoIterator<Item = Doc>>(sep: Doc, parts: I) -> Doc {
 ///
 /// ```text
 /// (
-///   , a
-///   , b
-///   , c
-///   )
+/// , a
+/// , b
+/// , c
+/// )
 /// ```
 ///
 /// `open` and `close` are the opener/closer texts (typically `"("`
@@ -267,25 +275,34 @@ pub fn comma_list_with_padding<I: IntoIterator<Item = Doc>>(
         return flat;
     }
 
-    // Broken layout: `open` + nest(2, hardline + `, item` + hardline
-    // + `, item` + ... + hardline + `close`). The trailing hardline
-    // and the closer sit inside the same nest scope so the closer
-    // ends up at the items' +2 indent column, per A1. Each item gets
-    // a further nest(2) mirroring the `", "` prefix: the prefix
-    // advances the column without moving the indent level, so without
-    // the nest a multi-line item's continuation lines would anchor at
-    // the comma column, two columns left of the item's own start.
-    let mut broken_inner = Doc::Empty;
-    for item in &items {
-        broken_inner = concat(
-            broken_inner,
-            concat(hardline(), concat(text(", "), nest(2, item.clone()))),
-        );
-    }
-    broken_inner = concat(broken_inner, hardline());
-    let broken = concat(open, nest(2, concat(broken_inner, close)));
+    let broken = broken_comma_list(
+        open,
+        items.into_iter().map(|item| (empty(), item)),
+        empty(),
+        close,
+    );
 
     group(flat_alt(flat, broken))
+}
+
+/// A1's comma rail and closer inherit the introducing line's base. Only
+/// item content nests, to account for its comma-and-space prefix. Leading
+/// and closing comments occupy the same rail as their owned boundary.
+pub fn broken_comma_list(
+    open: Doc,
+    items: impl IntoIterator<Item = (Doc, Doc)>,
+    trailing: Doc,
+    close: Doc,
+) -> Doc {
+    let mut parts = vec![open];
+    for (leading, item) in items {
+        parts.extend([hardline(), leading, text(", "), nest(2, item)]);
+    }
+    if !matches!(trailing, Doc::Empty) {
+        parts.extend([hardline(), trailing]);
+    }
+    parts.extend([hardline(), close]);
+    concat_all(parts)
 }
 
 // ---- rendering -----------------------------------------------------------
@@ -373,6 +390,7 @@ fn render_doc(doc: &Doc, mode: &Mode, indent: usize, width: usize, cursor: &mut 
         },
         Doc::Nest(n, inner) => render_doc(inner, mode, indent + n, width, cursor),
         Doc::Align(inner) => render_doc(inner, mode, cursor.col, width, cursor),
+        Doc::ExecutableBlock(inner) => render_doc(inner, mode, indent, width, cursor),
         Doc::Group(inner) => {
             // Try flat mode first if this group has any soft/non-hard
             // breaks that could even flatten. Then check whether the
@@ -395,13 +413,15 @@ fn render_doc(doc: &Doc, mode: &Mode, indent: usize, width: usize, cursor: &mut 
 /// is conservative — it sums up text widths assuming every
 /// non-`hard` `Doc::Line` becomes its `flat` form, and bails as soon
 /// as the running total exceeds `remaining`. A `hard` line forces a
-/// negative answer (the group can't flatten through a hard break).
+/// negative answer (the group can't flatten through a hard break). A flat
+/// candidate also rejects executable blocks nested inside executable blocks;
+/// concatenated siblings retain the same depth.
 fn fits(doc: &Doc, remaining: usize) -> bool {
     let mut budget = remaining as isize;
-    fits_inner(doc, &mut budget)
+    fits_inner(doc, &mut budget, 0)
 }
 
-fn fits_inner(doc: &Doc, budget: &mut isize) -> bool {
+fn fits_inner(doc: &Doc, budget: &mut isize, block_depth: usize) -> bool {
     if *budget < 0 {
         return false;
     }
@@ -422,11 +442,14 @@ fn fits_inner(doc: &Doc, budget: &mut isize) -> bool {
         // The fits-check measures the flat (first) sub-doc; the
         // broken alternative is consulted only at render time when
         // the enclosing group has chosen to break.
-        Doc::FlatAlt(flat, _) => fits_inner(flat, budget),
-        Doc::Nest(_, inner) => fits_inner(inner, budget),
-        Doc::Align(inner) => fits_inner(inner, budget),
-        Doc::Group(inner) => fits_inner(inner, budget),
-        Doc::Concat(parts) => parts.iter().all(|p| fits_inner(p, budget)),
+        Doc::FlatAlt(flat, _) => fits_inner(flat, budget, block_depth),
+        Doc::Nest(_, inner) | Doc::Align(inner) | Doc::Group(inner) => {
+            fits_inner(inner, budget, block_depth)
+        }
+        Doc::ExecutableBlock(inner) => {
+            block_depth == 0 && fits_inner(inner, budget, block_depth + 1)
+        }
+        Doc::Concat(parts) => parts.iter().all(|p| fits_inner(p, budget, block_depth)),
     }
 }
 
@@ -570,7 +593,37 @@ mod tests {
             vec![text("xxxx"), text("yyyy"), text("zzzz")],
             text(")"),
         );
-        assert_eq!(render(&d, 10), "(\n  , xxxx\n  , yyyy\n  , zzzz\n  )");
+        assert_eq!(render(&d, 10), "(\n, xxxx\n, yyyy\n, zzzz\n)");
+    }
+
+    #[test]
+    fn nested_comma_lists_inherit_item_content_base() {
+        let inner = comma_list(text("inner("), [text("first"), text("second")], text(")"));
+        let outer = comma_list(text("outer("), [text("a"), inner], text(")"));
+        assert_eq!(
+            render(&outer, 12),
+            "outer(\n, a\n, inner(\n  , first\n  , second\n  )\n)"
+        );
+        assert_eq!(render(&outer, 24), "outer(\n, a\n, inner(first, second)\n)");
+    }
+
+    #[test]
+    fn executable_block_depth_counts_nesting_but_not_siblings() {
+        let block = |body: Doc| {
+            group(executable_block(flat_alt(
+                concat_all([text("{ "), body.clone(), text(" }")]),
+                concat_all([
+                    text("{"),
+                    nest(2, concat(hardline(), body)),
+                    hardline(),
+                    text("}"),
+                ]),
+            )))
+        };
+        let siblings = concat_all([block(text("x")), text(" "), block(text("y"))]);
+        assert_eq!(render(&group(siblings.clone()), 100), "{ x } { y }");
+        assert_eq!(render(&block(siblings), 100), "{\n  { x } { y }\n}");
+        assert_eq!(render(&block(text("{label}")), 100), "{ {label} }");
     }
 
     #[test]

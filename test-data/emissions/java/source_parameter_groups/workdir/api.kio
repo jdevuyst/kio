@@ -24,7 +24,10 @@ pub fn mixed(left: A, tail: B & C) -> B { let .(text, _flag) = tail; import_spli
 
 pub fn curried(left: A)(right: B) -> B { import_split(left, right) }
 
-pub fn returned(left: A) -> B -> B { note("returned"); .(right: B) { import_split(left, right) } }
+pub fn returned(left: A) -> B -> B {
+  note("returned");
+  .(right: B) { import_split(left, right) }
+}
 
 pub fn callback(step: Pair -> B, pair: Pair) -> B { import_callback(step, pair) }
 

@@ -22,11 +22,7 @@ fn number(label: String, value: I32) { line(label, fmt.int_to_string(value)) }
 fn flag(label: String, value: Bool) { line(label, fmt.bool_to_string(value)) }
 
 fn rejected(net: model.Net, transition: model.Transition) -> Bool {
-  if! model.enabled(net, transition, net.?{model.initial}) {
-    .f
-  } else {
-    .t
-  }
+  if! model.enabled(net, transition, net.?{model.initial}) { .f } else { .t }
 }
 
 fn print_witness(net: model.Net, result: search.Search) {
@@ -39,9 +35,9 @@ fn print_witness(net: model.Net, result: search.Search) {
           line("  0: initial -> ", witness.show_marking(net.?{model.initial}));
           let replayed = witness.replay(net, path, net.?{model.initial}, 1);
           flag(
-            , "replay reaches unfinished deadlock: "
-            , witness.agrees(net, replayed, node.?{search.marking})
-            )
+          , "replay reaches unfinished deadlock: "
+          , witness.agrees(net, replayed, node.?{search.marking})
+          )
         };
         .() { line("witness: ", "broken predecessor chain") }
       }

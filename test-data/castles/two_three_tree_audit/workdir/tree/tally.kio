@@ -27,13 +27,13 @@ pub fn tally_add(a: Tally, b: Tally) -> Tally {
   let .(sa: I32, la: I32, ra: I32, ma: I32, ga: I32, ka: I32) = a;
   let .(sb: I32, lb: I32, rb: I32, mb: I32, gb: I32, kb: I32) = b;
   (
-    , add_i32(sa, sb)
-    , add_i32(la, lb)
-    , add_i32(ra, rb)
-    , add_i32(ma, mb)
-    , add_i32(ga, gb)
-    , add_i32(ka, kb)
-    )
+  , add_i32(sa, sb)
+  , add_i32(la, lb)
+  , add_i32(ra, rb)
+  , add_i32(ma, mb)
+  , add_i32(ga, gb)
+  , add_i32(ka, kb)
+  )
 }
 
 pub fn splits(t: Tally) -> I32 { let .(s: I32, _l: I32, _r: I32, _m: I32, _g: I32, _k: I32) = t; s }

@@ -6,4 +6,6 @@ type Outer[Slot] = Wrap(Slot);
 
 fn consume(wrapper: Outer(.) -> .) { () }
 
-fn partial() { consume(.(function: Outer(_)) { () }) }
+fn partial() {
+  consume(.(function: Outer(_)) { () })
+}

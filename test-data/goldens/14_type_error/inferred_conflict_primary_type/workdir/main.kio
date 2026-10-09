@@ -13,11 +13,6 @@ host fn left() -> Left;
 host fn right() -> Right;
 
 fn caller(condition: Bool) {
-  let result =
-    if! condition {
-      left()
-    } else {
-      right()
-    };
+  let result = if! condition { left() } else { right() };
   ()
 }

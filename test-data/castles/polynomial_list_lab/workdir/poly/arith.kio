@@ -23,11 +23,11 @@ rec(loop) fn zip_rev(op: Step, acc: Coeffs, xs: Coeffs, ys: Coeffs) -> Coeffs {
     if! ll.null(ys) {
       acc
     } else {
-      rec zip_rev(op, lc.cons(op(0, core.head_or_zero(ys)), acc), xs, lc.tail(ys))
+      recur zip_rev(op, lc.cons(op(0, core.head_or_zero(ys)), acc), xs, lc.tail(ys))
     }
   } else {
     let paired = op(core.head_or_zero(xs), core.head_or_zero(ys));
-    rec zip_rev(op, lc.cons(paired, acc), lc.tail(xs), lc.tail(ys))
+    recur zip_rev(op, lc.cons(paired, acc), lc.tail(xs), lc.tail(ys))
   }
 }
 
@@ -62,7 +62,7 @@ rec(loop) fn convolve(acc: core.Poly, i: I32, cs: Coeffs, b: core.Poly) -> core.
     acc
   } else {
     let term = shift(scale(b, core.head_or_zero(cs)), i);
-    rec convolve(add(acc, term), add_i32(i, 1), lc.tail(cs), b)
+    recur convolve(add(acc, term), add_i32(i, 1), lc.tail(cs), b)
   }
 }
 

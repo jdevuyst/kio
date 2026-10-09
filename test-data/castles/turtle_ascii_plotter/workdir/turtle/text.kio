@@ -22,12 +22,8 @@ pub fn num(n: I32) -> String { int_to_string(n) }
 rec(loop) {
   /// A run of `n` spaces. The echo indents a nested block by two of these per
   /// level, which is the whole reason the parse tree is legible on stdout.
-  pub fn spaces(n: I32) -> String { rec pad(n, "") };
+  pub fn spaces(n: I32) -> String { recur pad(n, "") };
   fn pad(n: I32, acc: String) -> String {
-    if! leq_i32(n, 0) {
-      acc
-    } else {
-      rec pad(sub_i32(n, 1), cat2(acc, " "))
-    }
+    if! leq_i32(n, 0) { acc } else { recur pad(sub_i32(n, 1), cat2(acc, " ")) }
   }
 }

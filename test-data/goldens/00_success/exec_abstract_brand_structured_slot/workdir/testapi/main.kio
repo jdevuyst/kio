@@ -23,7 +23,9 @@ pub newtype Sid[**F] : [A][C] F(Maybe(A), C) -> F(Maybe(A), C) {
 
 // `Either`'s instance: identity on the carrier (the value round-trips the
 // typed<->erased boundary unchanged, which is what we are testing).
-fn either_sid() -> Sid(Either) { Sid.mk_sid(Either, .[A][C](val) { val }) }
+fn either_sid() -> Sid(Either) {
+  Sid.mk_sid(Either, .[A][C](val) { val })
+}
 
 fn use_sid() -> String {
   let dict = either_sid();
@@ -31,22 +33,22 @@ fn use_sid() -> String {
   let carrier = Either.mk_either(Maybe(String), String, __left__(Maybe(String), String, inner));
   let out = Sid.run(Either, dict)(String, String, carrier);
   __either__(
-    , Maybe(String)
-    , String
-    , String
-    , Either.un_either(Maybe(String), String, out)
-    , .(m) {
-        __either__(
-          , .
-          , String
-          , String
-          , Maybe.un_maybe(String, m)
-          , .(u) { "empty\n"(String) }
-          , .(s) { s }
-          )
-      }
-    , .(s) { s }
-    )
+  , Maybe(String)
+  , String
+  , String
+  , Either.un_either(Maybe(String), String, out)
+  , .(m) {
+      __either__(
+      , .
+      , String
+      , String
+      , Maybe.un_maybe(String, m)
+      , .(u) { "empty\n"(String) }
+      , .(s) { s }
+      )
+    }
+  , .(s) { s }
+  )
 }
 
 pub fn main() { print(use_sid()) }

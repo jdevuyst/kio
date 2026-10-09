@@ -9,7 +9,5 @@ newtype Other[A] : A { constructor other; projector unother }
 fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
 
 fn run() -> Other(.) {
-  do! bind {
-    Other.other(())
-  }
+  do! bind { Other.other(()) }
 }

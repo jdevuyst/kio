@@ -2,19 +2,19 @@ module config/editor;
 
 import elab/match(match);
 import optics/optics(
-  , Lens
-  , Prism
-  , assoc_iso
-  , compose_lens
-  , iso_to_lens
-  , left_prism
-  , over
-  , over_prism
-  , review
-  , right_prism
-  , set
-  , view
-  );
+, Lens
+, Prism
+, assoc_iso
+, compose_lens
+, iso_to_lens
+, left_prism
+, over
+, over_prism
+, review
+, right_prism
+, set
+, view
+);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -156,7 +156,9 @@ fn config_audit_lens() -> Lens(Root_config, I32) {
   compose_lens(config_limits_lens(), limit_audit_lens())
 }
 
-fn bump_by(amount: I32) -> I32 -> I32 { .(value: I32) -> I32 { add_i32(value, amount) } }
+fn bump_by(amount: I32) -> I32 -> I32 {
+  .(value: I32) -> I32 { add_i32(value, amount) }
+}
 
 fn bump_degraded_mode(mode: Degraded_mode) -> Degraded_mode {
   mode.!{degraded_mode = add_i32(mode.?{degraded_mode}, 3)}
@@ -168,14 +170,14 @@ fn bump_mode(mode: Mode_state) -> Mode_state {
 
 fn base_config() -> Root_config {
   {
-    , app = {
-        , service = {endpoint = "api.internal", retries = 2, timeout_ms = 800}
-        , feature = {dark_mode = no(), rollout = 15}
-        , limits = (({warn_limit = 70}, {block_limit = 90}), {audit_limit = 2})
-        }
-    , mode = review(stable_mode_prism(), {stable_mode=})
-    , revision = 4
+  , app = {
+    , service = {endpoint = "api.internal", retries = 2, timeout_ms = 800}
+    , feature = {dark_mode = no(), rollout = 15}
+    , limits = (({warn_limit = 70}, {block_limit = 90}), {audit_limit = 2})
     }
+  , mode = review(stable_mode_prism(), {stable_mode=})
+  , revision = 4
+  }
 }
 
 fn apply_patch(cfg: Root_config) -> Root_config {
@@ -193,9 +195,9 @@ fn apply_patch(cfg: Root_config) -> Root_config {
 fn show_mode(mode: Mode_state) -> String {
   match! mode {
     (
-      , .(_stable: Stable_mode) { "stable" }
-      , .(degraded: Degraded_mode) { cat("degraded:", int_to_string(degraded.?{degraded_mode})) }
-      )
+    , .(_stable: Stable_mode) { "stable" }
+    , .(degraded: Degraded_mode) { cat("degraded:", int_to_string(degraded.?{degraded_mode})) }
+    )
   }
 }
 
@@ -235,18 +237,18 @@ fn line_for(name: String, cfg: Root_config) -> String {
 fn checks_line(before: Root_config, after: Root_config) -> String {
   let delta = sub_i32(config_score(after), config_score(before));
   cat(
+  , cat(
     , cat(
-        , cat(
-            , cat(
-                , cat(cat("delta=", int_to_string(delta)), " timeout_ok=")
-                , bool_to_string(leq_i32(view(config_timeout_lens(), after), 1200))
-                )
-            , " rollout_ok="
-            )
-        , bool_to_string(leq_i32(view(config_rollout_lens(), after), 50))
+      , cat(
+        , cat(cat("delta=", int_to_string(delta)), " timeout_ok=")
+        , bool_to_string(leq_i32(view(config_timeout_lens(), after), 1200))
         )
-    , "\n"
+      , " rollout_ok="
+      )
+    , bool_to_string(leq_i32(view(config_rollout_lens(), after), 50))
     )
+  , "\n"
+  )
 }
 
 pub fn program_output() -> String {

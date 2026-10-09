@@ -245,9 +245,9 @@ pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(t
 pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
   match! uncons(Terms.get(ts)) {
     (
-      , .(h: Term, t: List(Term)) { widen_sum!((h, {terms = t}), . | (Term & Terms)) }
-      , .(_e: .) { widen_sum!((), . | (Term & Terms)) }
-      )
+    , .(h: Term, t: List(Term)) { widen_sum!((h, {terms = t}), . | (Term & Terms)) }
+    , .(_e: .) { widen_sum!((), . | (Term & Terms)) }
+    )
   }
 }
 

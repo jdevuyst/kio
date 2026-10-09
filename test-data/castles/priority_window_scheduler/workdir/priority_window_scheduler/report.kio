@@ -12,20 +12,16 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 pub fn window_line(window: Window) -> String {
   cat3(
-    , window.?{name}
-    , cat3(" span=", window.?{span}, " score=")
-    , cat3(fmt.int_to_string(planner.score(window)), "", "\n")
-    )
+  , window.?{name}
+  , cat3(" span=", window.?{span}, " score=")
+  , cat3(fmt.int_to_string(planner.score(window)), "", "\n")
+  )
 }
 
 pub fn selected_line(window: Window) -> String {
   cat3(
-    , "selected="
-    , window.?{name}
-    , cat3(
-        , " span="
-        , window.?{span}
-        , cat3(" score=", fmt.int_to_string(planner.score(window)), "\n")
-        )
-    )
+  , "selected="
+  , window.?{name}
+  , cat3(" span=", window.?{span}, cat3(" score=", fmt.int_to_string(planner.score(window)), "\n"))
+  )
 }

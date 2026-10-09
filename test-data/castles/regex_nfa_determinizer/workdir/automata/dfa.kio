@@ -34,7 +34,7 @@ pub fn is_accepting(d: Dfa, state: I32) -> Bool { member(state, d.?{dfa_accepts}
 
 rec(loop) fn walk(d: Dfa, word: Ints, state: I32) -> I32 {
   match! word.>List.unpack {
-    (.(sym: I32, rest: Ints) { rec walk(d, rest, step(d, state, sym)) }, .(_empty: .) { state })
+    (.(sym: I32, rest: Ints) { recur walk(d, rest, step(d, state, sym)) }, .(_empty: .) { state })
   }
 }
 

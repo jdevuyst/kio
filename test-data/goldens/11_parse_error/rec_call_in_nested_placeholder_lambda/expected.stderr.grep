@@ -1,2 +1,2 @@
-nested function
-rec\(escape\).*reserved
+closure boundary
+recur\(escape\)

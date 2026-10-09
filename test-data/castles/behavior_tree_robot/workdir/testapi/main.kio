@@ -20,7 +20,7 @@ rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) {
       let next_state = memory.finish(evaluation.?{engine.state});
       let number = arith.add_i32(ticks, 1);
       report.tick(number, world, evaluation.?{engine.result}, next_state);
-      rec simulate(tree, number, next_state)
+      recur simulate(tree, number, next_state)
     };
     .(_end: input.End) { report.summary(ticks, state) };
     .(error: input.Invalid) {

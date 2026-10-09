@@ -75,6 +75,8 @@ pub enum CanonicalKind {
     /// `extra_loop_sum_path()` (set on the per-backend side from the
     /// where-clause) to find the shape enum.
     Loop,
+    /// Iteration with a reusable `S -> R` callback paired with each state.
+    LoopReentry,
     /// `host fn <kind>_to_string(v: <Kind>) -> Str;` — stringify a
     /// numeric value, keyed by `kind` (`String(v)` /
     /// `.to_string()`, same for a JS `Number` or `BigInt`).

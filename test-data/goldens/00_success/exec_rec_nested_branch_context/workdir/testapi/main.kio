@@ -10,11 +10,7 @@ import testapi/iter(loop);
 
 rec(loop) fn search(outer: Bool, inner: Bool) -> I32 | . {
   if! outer {
-    if! inner {
-      widen_sum!(7)
-    } else {
-      rec search(.f, .f)
-    }
+    if! inner { widen_sum!(7) } else { recur search(.f, .f) }
   } else {
     widen_sum!(())
   }

@@ -14,19 +14,19 @@ pub rec newtype Suite : String & Counts & cells.List(Suite) & cells.List(Case) {
   }
 
 pub labels State = {
-  , stack: cells.List(Suite)
-  , roots: cells.List(Suite)
-  , errors: cells.List(String)
-  };
+, stack: cells.List(Suite)
+, roots: cells.List(Suite)
+, errors: cells.List(String)
+};
 
 pub fn zero() -> Counts { {passed = 0, failed = 0, skipped = 0} }
 
 pub fn combine(a: Counts, b: Counts) -> Counts {
   {
-    , passed = arith.add_i32(a.?{passed}, b.?{passed})
-    , failed = arith.add_i32(a.?{failed}, b.?{failed})
-    , skipped = arith.add_i32(a.?{skipped}, b.?{skipped})
-    }
+  , passed = arith.add_i32(a.?{passed}, b.?{passed})
+  , failed = arith.add_i32(a.?{failed}, b.?{failed})
+  , skipped = arith.add_i32(a.?{skipped}, b.?{skipped})
+  }
 }
 
 pub fn total(c: Counts) -> I32 {

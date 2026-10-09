@@ -7,38 +7,38 @@ import testapi/arith as arith;
 
 pub fn morning_raw() -> F64 {
   model.raw_index(
-    , readings.morning_temperature()
-    , readings.morning_humidity()
-    , readings.morning_wind()
-    , readings.morning_correction()
-    )
+  , readings.morning_temperature()
+  , readings.morning_humidity()
+  , readings.morning_wind()
+  , readings.morning_correction()
+  )
 }
 
 pub fn midday_raw() -> F64 {
   model.raw_index(
-    , readings.midday_temperature()
-    , readings.midday_humidity()
-    , readings.midday_wind()
-    , readings.midday_correction()
-    )
+  , readings.midday_temperature()
+  , readings.midday_humidity()
+  , readings.midday_wind()
+  , readings.midday_correction()
+  )
 }
 
 pub fn evening_raw() -> F64 {
   model.raw_index(
-    , readings.evening_temperature()
-    , readings.evening_humidity()
-    , readings.evening_wind()
-    , readings.evening_correction()
-    )
+  , readings.evening_temperature()
+  , readings.evening_humidity()
+  , readings.evening_wind()
+  , readings.evening_correction()
+  )
 }
 
 pub fn night_raw() -> F64 {
   model.raw_index(
-    , readings.night_temperature()
-    , readings.night_humidity()
-    , readings.night_wind()
-    , readings.night_correction()
-    )
+  , readings.night_temperature()
+  , readings.night_humidity()
+  , readings.night_wind()
+  , readings.night_correction()
+  )
 }
 
 pub fn smoothed_index() -> F64 {

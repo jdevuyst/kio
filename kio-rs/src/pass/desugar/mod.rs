@@ -57,7 +57,9 @@
 //! phase and the `label_elab` step that follows. See
 //! [`crate::prime::pipeline::PrimePipeline`] for the wiring.
 
+mod escape;
 mod recursion_fixes;
+use escape::{RecEscapeContext, RecEscapePlan};
 pub mod walk;
 
 use crate::ast::{
@@ -442,6 +444,11 @@ pub fn desugar_package_file(
 /// Mutable state threaded through one module's desugaring.
 #[derive(Default)]
 struct DesugarState {
+    escaped_rec: Option<Box<RecEscapeContext>>,
+    rec_group: Option<std::sync::Arc<RecLoweringCtx>>,
+    /// Local source binders are freshened before inserting member-instantiation
+    /// paths, so a same-spelled inner type cannot capture an omitted argument.
+    rec_type_renames: Vec<(String, String)>,
     needs_intrinsics: bool,
     next_synthesized_node_id: u64,
     /// Recursive lowering moves member bodies into generated lexical owners.
@@ -556,18 +563,21 @@ struct RecMemberPlan {
     wrapper_projector_name: String,
 }
 
+#[derive(Clone)]
 struct RecLoweringCtx {
     member_names: std::collections::HashSet<String>,
-    members: Vec<RecMemberPlan>,
+    members: std::sync::Arc<[RecMemberPlan]>,
     state_ty: Type<Desugared>,
     ret_ty: Type<Desugared>,
     step_result_ty: Type<Desugared>,
     uses_cont: bool,
+    escape: Option<RecEscapePlan>,
     resume: Option<RecResumePlan>,
     state_type_args: Vec<Type<Desugared>>,
     span: Span,
 }
 
+#[derive(Clone)]
 struct RecResumePlan {
     name: String,
     ty: Type<Desugared>,
@@ -576,7 +586,13 @@ struct RecResumePlan {
 fn rec_state_arm_types(ctx: &RecLoweringCtx) -> Vec<Type<Desugared>> {
     ctx.members
         .iter()
-        .map(|member| member.state_arm_ty.clone())
+        .map(|member| {
+            Type::synth_path(
+                vec![member.wrapper_type_name.clone()],
+                ctx.state_type_args.clone(),
+                member.meta.span,
+            )
+        })
         .chain(ctx.resume.iter().map(|resume| resume.ty.clone()))
         .collect()
 }
@@ -1062,7 +1078,8 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
             unreachable!("trailing blocks are projected before desugaring")
         }
         Expr::RecCall { modes, args, .. } => {
-            modes.contains(&mode) || args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode))
+            RecCallMode::is_effective(modes, mode)
+                || args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode))
         }
         Expr::Call { callee, args, .. } => {
             expr_uses_rec_mode(callee, mode)
@@ -1748,17 +1765,45 @@ impl DesugarVisitor {
             .module_names
             .extend(wrapper_type_names.iter().cloned());
         let uses_cont = rec_group_uses_mode(&group, RecCallMode::Cont);
+        let escape = rec_group_uses_mode(&group, RecCallMode::Escape).then(|| RecEscapePlan {
+            answer: TypeParam {
+                presentation: Default::default(),
+                name: crate::pass::typecheck_core::fresh_type_var(
+                    &format!("Rec_answer{}", group.meta.span.start),
+                    &reserved_type_names,
+                ),
+                span: group.meta.span,
+                kind: None,
+            },
+            driver: format!("__rec_driver{}__", group.meta.span.start),
+            source_call: group
+                .members
+                .iter()
+                .filter_map(|member| escape::escape_span(&member.body))
+                .min_by_key(|span| span.start)
+                .expect("an escaping group contains an escape call"),
+        });
+        if let Some(escape) = &escape {
+            reserved_type_names.insert(escape.answer.name.clone());
+            self.state.module_names.insert(escape.answer.name.clone());
+        }
         let mut plans = self.rec_member_plans(
             &group,
             uses_cont,
+            escape.as_ref(),
             &wrapper_type_names,
             &mut reserved_type_names,
         )?;
-        let ret_ty = plans
-            .first()
-            .expect("rec group has at least one member")
-            .wrapper_ret
-            .clone();
+        let ret_ty = escape
+            .as_ref()
+            .map(|plan| plan.answer_type())
+            .unwrap_or_else(|| {
+                plans
+                    .first()
+                    .expect("rec group has at least one member")
+                    .wrapper_ret
+                    .clone()
+            });
         let mut state_arms: Vec<Type<Desugared>> = plans
             .iter()
             .map(|member| member.state_arm_ty.clone())
@@ -1791,19 +1836,21 @@ impl DesugarVisitor {
                 group.meta.span,
             );
         }
-        let ctx = RecLoweringCtx {
+        let ctx = std::sync::Arc::new(RecLoweringCtx {
             member_names: plans.iter().map(|member| member.name.clone()).collect(),
-            members: plans.clone(),
+            members: plans.into(),
             state_ty: state_ty.clone(),
             ret_ty: ret_ty.clone(),
             step_result_ty: step_result_ty.clone(),
             uses_cont,
+            escape,
             resume,
             state_type_args,
             span: group.meta.span,
-        };
+        });
+        let previous_group = self.state.rec_group.replace(ctx.clone());
         let mut out = self.synthetic_rec_state_items(&ctx);
-        let shared_step = if ctx.members.len() > 1 {
+        let shared_step = if ctx.members.len() > 1 || ctx.escape.is_some() {
             let base = format!("_rec_step{}", ctx.span.start);
             let name = crate::pass::typecheck_core::fresh_type_var(&base, &self.state.module_names);
             self.state.module_names.insert(name.clone());
@@ -1832,7 +1879,7 @@ impl DesugarVisitor {
         } else {
             None
         };
-        for member in &ctx.members {
+        for member in ctx.members.iter() {
             out.push(Item::FnDef(self.rec_wrapper_fn(
                 member,
                 &ctx,
@@ -1840,6 +1887,7 @@ impl DesugarVisitor {
                 shared_step.as_deref(),
             )?));
         }
+        self.state.rec_group = previous_group;
         Ok(out)
     }
 
@@ -1847,12 +1895,18 @@ impl DesugarVisitor {
         &mut self,
         group: &RecGroup<Surface>,
         uses_cont: bool,
+        escape: Option<&RecEscapePlan>,
         wrapper_type_names: &[String],
         reserved_type_names: &mut std::collections::HashSet<String>,
     ) -> Result<Vec<RecMemberPlan>, Error> {
         let first = group.members.first().expect("non-empty rec group");
         let first_type_params = signature_type_params(&first.sig);
-        let (state_type_params, state_existential_indices) = if uses_cont {
+        let (state_type_params, state_existential_indices) = if let Some(escape) = escape {
+            (
+                vec![escape.answer.clone()],
+                (0..first_type_params.len()).collect(),
+            )
+        } else if uses_cont {
             (
                 rec_state_outer_type_params(
                     &first_type_params,
@@ -1901,11 +1955,12 @@ impl DesugarVisitor {
                 self.state.restore_type_bound(type_mark);
                 let type_params = signature_type_params(&member.sig);
                 let value_params = signature_value_params(&sig);
-                let (wrapper_sig, wrapper_ret, wrapper_value_params) = if uses_cont {
-                    rec_wrapper_outer_signature(&sig, &ret, &type_params, &state_type_params)
-                } else {
-                    (sig.clone(), ret.clone(), value_params.clone())
-                };
+                let (wrapper_sig, wrapper_ret, wrapper_value_params) =
+                    if uses_cont && escape.is_none() {
+                        rec_wrapper_outer_signature(&sig, &ret, &type_params, &state_type_params)
+                    } else {
+                        (sig.clone(), ret.clone(), value_params.clone())
+                    };
                 let value_tys: Vec<Type<Desugared>> = value_params
                     .iter()
                     .map(|p| {
@@ -2056,6 +2111,14 @@ impl DesugarVisitor {
         loop_path: Vec<PathSegment>,
         shared_step: Option<&str>,
     ) -> Result<FnDef<Desugared>, Error> {
+        if ctx.escape.is_some() {
+            return self.rec_escape_wrapper_fn(
+                member,
+                ctx,
+                loop_path,
+                shared_step.expect("escaping groups share their polymorphic step"),
+            );
+        }
         let initial_state = self.rec_initial_state(member, ctx)?;
         let step = self.rec_step_fn(ctx, shared_step)?;
         let selected_path = Span::new(
@@ -2132,9 +2195,19 @@ impl DesugarVisitor {
         });
         let state = path_expr(state_name, ctx.span);
         let body = self.rec_state_dispatch(&ctx.members, state, ctx)?;
+        let mut params = Vec::new();
+        if let Some(escape) = &ctx.escape {
+            params.push(SignatureParam::Value(Param {
+                name: escape.driver.clone(),
+                ty: Some(ctx.rec_driver_type()),
+                pattern: (),
+                meta: Meta::new(ctx.span),
+            }));
+        }
+        params.push(state_param);
         Ok(Expr::FnExpr {
             occurrence: Default::default(),
-            sig: Signature::new(vec![state_param]),
+            sig: Signature::new(params),
             ret_ty: Some(ctx.step_result_ty.clone()),
             body: Box::new(body),
             meta: Meta::new(ctx.span),
@@ -2347,6 +2420,7 @@ impl DesugarVisitor {
         Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name,
                 disposition: RecOrderDisposition::Ordered(type_flow),
@@ -2417,6 +2491,7 @@ impl DesugarVisitor {
             return Expr::RecOrder {
                 occurrence: Default::default(),
                 plan: Box::new(RecOrderPlan {
+                    source_call: None,
                     tail_continuation: None,
                     name: param.name,
                     disposition: RecOrderDisposition::Ordered(
@@ -2460,7 +2535,14 @@ impl DesugarVisitor {
                 rec_cont_fn_type(&member.wrapper_ret, &ctx.step_result_ty, member.meta.span);
             let mut values = value_exprs;
             let mut tys = value_tys;
-            let type_args = type_param_paths(&member.state_type_params, member.meta.span);
+            let type_args = type_param_paths(
+                if ctx.escape.is_some() {
+                    &member.type_params
+                } else {
+                    &member.state_type_params
+                },
+                member.meta.span,
+            );
             values.extend(rec_phantom_witness_values(
                 &type_args,
                 &member.phantom_witness_indices,
@@ -2828,7 +2910,7 @@ impl DesugarVisitor {
     ) -> Expr<Desugared> {
         let continuation = continuation.into_expr();
         let result_name = rec_tmp_name("tail_result", span, 1);
-        let body = if desugared_contains_rec_quote(&body) {
+        let body = if ctx.escape.is_some() || desugared_contains_rec_quote(&body) {
             Expr::RecQuote {
                 occurrence: Default::default(),
                 plan: Box::new(crate::ast::RecQuotePlan::Expansion {
@@ -2843,6 +2925,7 @@ impl DesugarVisitor {
             Expr::RecOrder {
                 occurrence: Default::default(),
                 plan: Box::new(RecOrderPlan {
+                    source_call: None,
                     tail_continuation: None,
                     name: result_name.clone(),
                     disposition: RecOrderDisposition::Ordered(RecOrderTypeFlow::ElaboratedValue),
@@ -2869,6 +2952,7 @@ impl DesugarVisitor {
             None => Expr::RecOrder {
                 occurrence: Default::default(),
                 plan: Box::new(RecOrderPlan {
+                    source_call: None,
                     tail_continuation: None,
                     name,
                     disposition: RecOrderDisposition::Ordered(RecOrderTypeFlow::ExpectedFromBody),
@@ -3389,7 +3473,9 @@ impl DesugarVisitor {
             self.state.needs_intrinsics = true;
         }
         let groups = sig.groups;
-        let (sig_params, body) = expand_pattern_params(sig.params, body, ret_ty.clone());
+        let (mut sig_params, body) = expand_pattern_params(sig.params, body, ret_ty.clone());
+        let rename_mark = self.state.rec_type_renames.len();
+        self.bind_rec_lambda_types(&mut sig_params);
         let type_mark = self.state.save_type_bound();
         self.bind_signature_type_params(&sig_params);
         let params: Vec<SignatureParam<Desugared>> = sig_params
@@ -3428,6 +3514,7 @@ impl DesugarVisitor {
         .flatten();
         self.state.restore_bound(mark);
         self.state.restore_type_bound(type_mark);
+        self.state.rec_type_renames.truncate(rename_mark);
         Ok(Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::from_parts(params, groups),
@@ -3448,7 +3535,31 @@ impl DesugarVisitor {
         position: RecCallPosition,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
-        let required = expr_contains_rec_call(&body);
+        if let Some(source_call) = escape::boundary_escape_call(&body) {
+            let value_span = body.span();
+            let value = self.walk_escaped_rec_expr(body, current_member)?;
+            let token = self.state.fresh_node_id();
+            return Ok(Expr::RecOrder {
+                occurrence: Default::default(),
+                plan: Box::new(RecOrderPlan {
+                    source_call: Some(source_call),
+                    name: format!("__rec_escape_value{}__", token.0),
+                    disposition: RecOrderDisposition::DeferredTail {
+                        requirement: RecOrderTailRequirement::Escaping,
+                        lifted_flow: RecOrderTypeFlow::SynthesizedValue,
+                    },
+                    annotation: written_return,
+                    value: Box::new(value),
+                    body: Box::new(unit_expr(value_span)),
+                    runtime_ty: ctx.step_result_ty.clone(),
+                    tail_continuation: None,
+                }),
+                meta: Meta::new(value_span),
+                ext: token,
+            });
+        }
+        let source_call = escape::required_tail_call(&body);
+        let required = source_call.is_some();
         let tail_continuation = Box::new(continuation.expr.clone());
         let token = self.state.fresh_node_id();
         let value_name = format!("__rec_tail_value{}__", token.0);
@@ -3464,8 +3575,7 @@ impl DesugarVisitor {
                 RecOrderTailRequirement::Required,
             )
         } else {
-            self.validate_no_bad_rec(&body, ctx)?;
-            let value = self.walk_expr(body)?;
+            let value = self.walk_escaped_rec_expr(body, current_member)?;
             // The authored value may be a call whose span-keyed call plan is
             // replayed during substitution. Keep that metadata off the
             // generated continuation application.
@@ -3492,6 +3602,7 @@ impl DesugarVisitor {
         Ok(Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(RecOrderPlan {
+                source_call,
                 tail_continuation: Some(tail_continuation),
                 name: value_name,
                 disposition: RecOrderDisposition::DeferredTail {
@@ -3575,7 +3686,7 @@ impl DesugarVisitor {
             return Err(Error::parse(
                 span,
                 format!(
-                    "`rec {}` expects {} value argument(s), or {} type argument(s) followed by \
+                    "`recur {}` expects {} value argument(s), or {} type argument(s) followed by \
                      {} value argument(s), but {} argument(s) were supplied",
                     name,
                     value_param_count,
@@ -3608,7 +3719,7 @@ impl DesugarVisitor {
                 CallArg::Type(ty) => Err(Error::parse(
                     ty.span(),
                     format!(
-                        "`rec {}` value argument positions must contain expressions",
+                        "`recur {}` value argument positions must contain expressions",
                         name
                     ),
                 )),
@@ -3653,7 +3764,7 @@ impl DesugarVisitor {
                     span,
                     format!("recursive call to `{}` changes type parameters", name),
                 )
-                .with_help("write `rec(poly) name(T, ...)` for polymorphic recursion"),
+                .with_help("write `recur(poly) name(T, ...)` for polymorphic recursion"),
                 site,
                 modes,
                 RecCallMode::Poly,
@@ -3664,7 +3775,7 @@ impl DesugarVisitor {
             return Err(recursion_fixes::mode(
                 Error::parse(
                     span,
-                    "`rec(poly)` is only needed when the recursive call changes type parameters",
+                    "`recur(poly)` is only needed when the recursive call changes type parameters",
                 )
                 .with_help("remove `poly` from this recursive call"),
                 site,
@@ -3691,7 +3802,6 @@ impl DesugarVisitor {
                 ext,
                 ..
             } => {
-                validate_rec_escape_absent(modes, meta.span).ok()?;
                 let member = ctx
                     .members
                     .iter()
@@ -3754,16 +3864,16 @@ impl DesugarVisitor {
         current_member: &RecMemberPlan,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
-        validate_rec_escape_absent(&modes, span)?;
         let site = recursion_fixes::CallSite {
             syntax: &syntax,
             callee: callee.span,
         };
+        validate_rec_stays_in_step(&modes, site, span)?;
         if modes.contains(&RecCallMode::Cont) {
             return Err(recursion_fixes::mode(
                 Error::parse(
                     span,
-                    "`rec(cont)` is only needed for recursive calls that are not in tail position",
+                    "`recur(cont)` is only needed for recursive calls that are not in tail position",
                 )
                 .with_help("remove `cont` from this tail-position recursive call"),
                 site,
@@ -3776,7 +3886,7 @@ impl DesugarVisitor {
             return Err(Error::name_res(
                 callee.span,
                 format!(
-                    "`rec {}` is not a member of this `rec(loop)` group",
+                    "`recur {}` is not a member of this `rec(loop)` group",
                     callee.name
                 ),
             ));
@@ -4362,10 +4472,8 @@ impl DesugarVisitor {
                     caps,
                 };
                 if has_rec {
-                    Err(Error::parse(
-                        expr.span(),
-                        "`rec` inside a nested function requires `rec(escape)`, which is reserved",
-                    ))
+                    let value = self.walk_escaped_rec_expr(expr, current_member)?;
+                    Ok(self.apply_rec_cont(cont, value, ctx.span))
                 } else {
                     self.validate_no_bad_rec(&expr, ctx)?;
                     let value = self.walk_expr(expr)?;
@@ -4390,10 +4498,8 @@ impl DesugarVisitor {
                     ext,
                 };
                 if has_rec {
-                    Err(Error::parse(
-                        expr.span(),
-                        "`rec` inside a nested function requires `rec(escape)`, which is reserved",
-                    ))
+                    let value = self.walk_escaped_rec_expr(expr, current_member)?;
+                    Ok(self.apply_rec_cont(cont, value, ctx.span))
                 } else {
                     self.validate_no_bad_rec(&expr, ctx)?;
                     let value = self.walk_expr(expr)?;
@@ -4824,23 +4930,23 @@ impl DesugarVisitor {
         position: RecCallPosition,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
-        validate_rec_escape_absent(&modes, span)?;
         let site = recursion_fixes::CallSite {
             syntax: &syntax,
             callee: callee.span,
         };
+        validate_rec_stays_in_step(&modes, site, span)?;
         match (position, modes.contains(&RecCallMode::Cont)) {
             (RecCallPosition::Tail, true) => {
                 return Err(recursion_fixes::mode(Error::parse(
                     span,
-                    "`rec(cont)` is only needed for recursive calls that are not in tail position",
+                    "`recur(cont)` is only needed for recursive calls that are not in tail position",
                 )
                 .with_help("remove `cont` from this tail-position recursive call"), site, &modes, RecCallMode::Cont, false));
             }
             (RecCallPosition::NonTail, false) => {
                 return Err(recursion_fixes::mode(
                     Error::parse(span, "recursive call is not in tail position")
-                        .with_help("write `rec(cont) name(...)` for a non-tail recursive call"),
+                        .with_help("write `recur(cont) name(...)` for a non-tail recursive call"),
                     site,
                     &modes,
                     RecCallMode::Cont,
@@ -4853,7 +4959,7 @@ impl DesugarVisitor {
             return Err(Error::name_res(
                 callee.span,
                 format!(
-                    "`rec {}` is not a member of this `rec(loop)` group",
+                    "`recur {}` is not a member of this `rec(loop)` group",
                     callee.name
                 ),
             ));
@@ -5097,13 +5203,22 @@ impl DesugarVisitor {
                 ext,
                 ..
             } => {
-                validate_rec_escape_absent(modes, meta.span)?;
+                validate_rec_stays_in_step(
+                    modes,
+                    recursion_fixes::CallSite {
+                        syntax: ext,
+                        callee: callee.span,
+                    },
+                    meta.span,
+                )?;
                 if modes.contains(&RecCallMode::Cont) {
                     Ok(())
                 } else {
                     Err(recursion_fixes::mode(
                         Error::parse(meta.span, "recursive call is not in tail position")
-                            .with_help("write `rec(cont) name(...)` for a non-tail recursive call"),
+                            .with_help(
+                                "write `recur(cont) name(...)` for a non-tail recursive call",
+                            ),
                         recursion_fixes::CallSite {
                             syntax: ext,
                             callee: callee.span,
@@ -5120,7 +5235,7 @@ impl DesugarVisitor {
                         meta.span,
                         format!(
                             "recursive function `{}` cannot be used as a value; use \
-                             an annotated `rec {}(...)` call",
+                             an annotated `recur {}(...)` call",
                             segments[0].name, segments[0].name
                         ),
                     ));
@@ -5139,7 +5254,7 @@ impl DesugarVisitor {
                             meta.span,
                             format!(
                                 "recursive call to `{}` must be written as an annotated \
-                                 `rec {}(...)` call",
+                                 `recur {}(...)` call",
                                 segments[0].name, segments[0].name
                             ),
                         ),
@@ -5371,13 +5486,14 @@ impl SurfaceToDesugared for DesugarVisitor {
 
     fn visit_type_path(&mut self, ty: Type<Surface>) -> Result<Type<Desugared>, Error> {
         let Type::Path {
-            segments,
+            mut segments,
             args,
             meta: Meta { span, .. },
         } = ty
         else {
             unreachable!()
         };
+        self.rename_rec_type_path(&mut segments);
         let args: Vec<Type<Desugared>> = args
             .into_iter()
             .map(|a| self.walk_type(a))
@@ -5395,9 +5511,16 @@ impl SurfaceToDesugared for DesugarVisitor {
             unreachable!()
         };
         let mark = self.state.save_type_bound();
+        let rename_mark = self.state.rec_type_renames.len();
+        let param = if self.state.rec_group.is_some() {
+            self.bind_rec_type_param(param)
+        } else {
+            param
+        };
         self.state.type_bound.push(param.name.clone());
         let body = self.walk_type(*body)?;
         self.state.restore_type_bound(mark);
+        self.state.rec_type_renames.truncate(rename_mark);
         Ok(Type::Forall {
             param,
             body: Box::new(body),
@@ -5473,17 +5596,21 @@ impl SurfaceToDesugared for DesugarVisitor {
 
     fn rewrite_expr_rec_call(
         &mut self,
-        _modes: Vec<RecCallMode>,
-        _callee: PathSegment,
-        _args: Vec<CallArg<Surface>>,
+        modes: Vec<RecCallMode>,
+        callee: PathSegment,
+        args: Vec<CallArg<Surface>>,
+        syntax: RecCallSyntax,
         meta: Meta<Surface>,
     ) -> Result<Expr<Desugared>, Error> {
+        if self.state.escaped_rec.is_some() {
+            return self.transform_rec_escape_call(modes, callee, args, syntax, meta.span);
+        }
         Err(Error::parse(
             meta.span,
-            "`rec` calls are only allowed inside a `rec(loop)` function",
+            "`recur` calls are only allowed inside a `rec(loop)` function",
         )
         .with_help("declare the enclosing recursive function with `rec(path) fn`, where `path` names your chosen loop capability")
-        .with_note("the loop capability is an ordinary value of type `[S][R] ((S -> S | R) & S) -> R`; recursive calls still require their `rec` markers"))
+        .with_note("the loop capability is an ordinary value of type `[S][R] ((S -> S | R) & S) -> R`; recursive calls still require their `recur` markers"))
     }
 
     fn rewrite_expr_op_chain(
@@ -5514,13 +5641,26 @@ impl SurfaceToDesugared for DesugarVisitor {
     fn visit_expr_path(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Path {
             occurrence: _,
-            segments,
+            mut segments,
             meta: Meta { span, .. },
             ext: (),
         } = e
         else {
             unreachable!()
         };
+        if let Some(context) = &self.state.escaped_rec
+            && segments.len() == 1
+            && self.is_unshadowed_rec_member(&segments[0].name, &context.group.member_names)
+        {
+            return Err(Error::parse(
+                span,
+                format!(
+                    "recursive function `{}` cannot be used as a value; use an annotated `recur {}(...)` call",
+                    segments[0].name, segments[0].name
+                ),
+            ));
+        }
+        self.rename_rec_type_path(&mut segments);
         if segments.len() == 1
             && !self.state.is_bound(segments[0].as_str())
             && let Some(def) = self
@@ -5552,6 +5692,22 @@ impl SurfaceToDesugared for DesugarVisitor {
         else {
             unreachable!()
         };
+        if let Some(context) = &self.state.escaped_rec
+            && let Expr::Path { segments, .. } = callee.as_ref()
+            && segments.len() == 1
+            && self.is_unshadowed_rec_member(&segments[0].name, &context.group.member_names)
+        {
+            return Err(recursion_fixes::missing_marker(
+                Error::parse(
+                    span,
+                    format!(
+                        "recursive call to `{}` must be written as an annotated `recur {}(...)` call",
+                        segments[0].name, segments[0].name
+                    ),
+                ),
+                segments[0].span.start,
+            ));
+        }
         if let Expr::Path { segments, .. } = callee.as_ref()
             && segments.len() == 1
             && generated_projection_intrinsic(&segments[0].name)
@@ -5599,7 +5755,9 @@ impl SurfaceToDesugared for DesugarVisitor {
             self.state.needs_intrinsics = true;
         }
         let groups = sig.groups;
-        let (sig_params, body_expr) = expand_pattern_params(sig.params, *body, ret_ty.clone());
+        let (mut sig_params, body_expr) = expand_pattern_params(sig.params, *body, ret_ty.clone());
+        let rename_mark = self.state.rec_type_renames.len();
+        self.bind_rec_lambda_types(&mut sig_params);
         let type_mark = self.state.save_type_bound();
         self.bind_signature_type_params(&sig_params);
         let params: Vec<SignatureParam<Desugared>> = sig_params
@@ -5616,6 +5774,7 @@ impl SurfaceToDesugared for DesugarVisitor {
         let body = self.walk_expr(body_expr)?;
         self.state.restore_bound(mark);
         self.state.restore_type_bound(type_mark);
+        self.state.rec_type_renames.truncate(rename_mark);
         Ok(Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::from_parts(params, groups),
@@ -6437,21 +6596,61 @@ fn rec_phantom_witness_value(ty: Type<Desugared>, span: Span, _index: usize) -> 
     inject_sum_arm(unit_expr(span), &[ty, unit_type(span)], 1, span)
 }
 
-fn validate_rec_escape_absent(modes: &[RecCallMode], span: Span) -> Result<(), Error> {
+fn validate_rec_stays_in_step(
+    modes: &[RecCallMode],
+    site: recursion_fixes::CallSite<'_>,
+    span: Span,
+) -> Result<(), Error> {
     if modes.contains(&RecCallMode::Escape) {
-        return Err(rec_escape_error(span));
+        return Err(recursion_fixes::mode(
+            Error::parse(
+                span,
+                "`recur(escape)` is unnecessary within the current recursive step",
+            )
+            .with_help("remove `escape` from this recursive call"),
+            site,
+            modes,
+            RecCallMode::Escape,
+            false,
+        ));
     }
     Ok(())
 }
 
 pub(crate) fn rec_escape_error(span: Span) -> Error {
-    Error::parse(
-        span,
-        "`rec(escape)` is reserved for recursive calls captured by escaping continuations",
+    Error::parse(span, "recursive call crosses a closure boundary").with_help(
+        "write `recur(escape) name(...)` to re-enter this recursive group from the closure",
     )
-    .with_help(
-        "restructure the recursion so the recursive call is not captured by an escaping closure",
-    )
+}
+
+pub(crate) fn rec_boundary_error(
+    source: Option<&crate::ast::RecCallDiagnostic>,
+    span: Span,
+    required: bool,
+) -> Error {
+    let span = source.map_or(span, |source| source.span);
+    let error = if required {
+        rec_escape_error(span)
+    } else {
+        Error::parse(
+            span,
+            "`recur(escape)` is unnecessary in a structural continuation",
+        )
+        .with_help("remove `escape` from this recursive call")
+    };
+    match source {
+        Some(source) => recursion_fixes::mode(
+            error,
+            recursion_fixes::CallSite {
+                syntax: &source.syntax,
+                callee: source.callee,
+            },
+            &source.modes,
+            RecCallMode::Escape,
+            required,
+        ),
+        None => error,
+    }
 }
 
 fn rec_cont_fn_type(
@@ -7988,7 +8187,7 @@ mod tests {
                 .map(|index| {
                     format!(
                         "fn member{index}(value: .) -> . {{ \
-                         observe{index}(value); rec member{}(value) }}",
+                         observe{index}(value); recur member{}(value) }}",
                         (index + 1) % count
                     )
                 })
@@ -8034,7 +8233,7 @@ mod tests {
     #[test]
     fn mutual_rec_step_owns_only_outer_state_type_parameters() {
         let module = d("module x; rec(loop) { \
-            fn first[A][B](value: A, extra: B) -> A { rec second(A, B, value, extra) }; \
+            fn first[A][B](value: A, extra: B) -> A { recur second(A, B, value, extra) }; \
             fn second[A][B](value: A, extra: B) -> A { value } \
         }");
         let helper = module
@@ -8077,7 +8276,7 @@ mod tests {
     #[test]
     fn single_rec_member_keeps_its_inline_step() {
         let module = d("module x; rec(loop) fn only(value: .) -> . { \
-            observe(value); rec only(value) \
+            observe(value); recur only(value) \
         }");
         let definitions = module
             .items
@@ -8096,7 +8295,7 @@ mod tests {
     #[test]
     fn mutual_rec_step_name_avoids_module_and_lexical_names() {
         let prefix = "module x; rec(loop) { \
-            fn first(value: .) -> . { rec second(value) }; \
+            fn first(value: .) -> . { recur second(value) }; \
             fn second(value: .) -> . { value } }\n";
         let parsed = parse(prefix).unwrap();
         let Item::RecGroup(group, _) = &parsed.items[0] else {
@@ -8284,8 +8483,8 @@ mod tests {
             "module x;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { let next = rec(cont) second(value); next };\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  fn first(value: .) -> . { let next = recur(cont) second(value); next };\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let module = d(source);
@@ -8337,9 +8536,9 @@ mod tests {
     #[test]
     fn resume_state_schedules_non_tail_handoffs_but_not_tail_forwarding() {
         for (body, expected) in [
-            ("rec outer(rec(cont) leaf(value))", 1),
+            ("recur outer(recur(cont) leaf(value))", 1),
             (
-                "let result = rec(cont) outer(rec(cont) leaf(value)); result",
+                "let result = recur(cont) outer(recur(cont) leaf(value)); result",
                 2,
             ),
         ] {
@@ -8377,7 +8576,7 @@ mod tests {
             });
             assert_eq!(schedules, expected);
         }
-        let module = d("module x; rec(loop) fn tail(value: .) -> . { rec tail(value) }");
+        let module = d("module x; rec(loop) fn tail(value: .) -> . { recur tail(value) }");
         assert!(
             !module
                 .items
@@ -8461,7 +8660,7 @@ mod tests {
         let module = d(&format!(
             "module x;\n\
              rec(loop) fn go[A](value: A, nominal: {outer}) -> A {{\n\
-               let next = rec(cont) go(value, nominal);\n\
+               let next = recur(cont) go(value, nominal);\n\
                next\n\
              }}\n\
              type {wrapper} = .;\n\
@@ -8489,7 +8688,7 @@ mod tests {
         let prefix = "module x;\n\
              host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\
              rec(loop) { \
-               fn go[A][B](value: A, extra: B) -> A { rec next(A, B, value, extra) }; \
+               fn go[A][B](value: A, extra: B) -> A { recur next(A, B, value, extra) }; \
                fn next[A][B](value: A, extra: B) -> A { value } \
              }\n";
         let parsed_prefix = parse(prefix).expect("parse preceding host and recursive group");
@@ -8579,7 +8778,7 @@ mod tests {
                let escaped = .[{outer}](shadow: {outer}) -> A {{\n\
                  value\n\
                }};\n\
-               let next = rec(cont) go(value);\n\
+               let next = recur(cont) go(value);\n\
                next\n\
              }}\n"
         ));
@@ -8727,13 +8926,13 @@ mod tests {
     #[test]
     fn rec_call_in_match_clause_lowers_in_tail_position() {
         d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(v, (.(n: I32) { n }, .(_s: String) { rec go(__left__(I32, String, 0)) })) }");
+             match!(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }");
     }
 
     #[test]
     fn placeholder_clauses_in_direct_bang_call_remain_deferred_candidates() {
         let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             choose!((.x. { x1 }, .x. { rec go(x1) })) }");
+             choose!((.x. { x1 }, .x. { recur go(x1) })) }");
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
 
@@ -8741,7 +8940,7 @@ mod tests {
     fn deferred_tail_rec_lambda_requires_continuation_state() {
         let module = parsed(
             "module x; rec(loop) fn go(value: .) -> . { \
-             hold!(.(_unit: .) { rec go(value) }) }",
+             hold!(.(_unit: .) { recur go(value) }) }",
         );
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
@@ -8753,7 +8952,7 @@ mod tests {
     fn placeholder_lambda_rec_requires_continuation_state() {
         let module = parsed(
             "module x; rec(loop) fn go(value: .) -> . { \
-             apply(.x. { rec go(x1) }) }",
+             apply(.x. { recur go(x1) }) }",
         );
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
@@ -8765,7 +8964,7 @@ mod tests {
     fn nested_rec_call_argument_requires_continuation_state() {
         let module = parsed(
             "module x; rec(loop) { \
-             fn outer(value: .) -> . { rec outer(rec(cont) leaf(value)) }; \
+             fn outer(value: .) -> . { recur outer(recur(cont) leaf(value)) }; \
              fn leaf(value: .) -> . { value } \
              }",
         );
@@ -8777,7 +8976,7 @@ mod tests {
 
     #[test]
     fn ordinary_tail_rec_group_does_not_require_continuation_state() {
-        let module = parsed("module x; rec(loop) fn go(value: .) -> . { rec go(value) }");
+        let module = parsed("module x; rec(loop) fn go(value: .) -> . { recur go(value) }");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
         };
@@ -8803,10 +9002,10 @@ mod tests {
     #[test]
     fn monadic_do_recursion_before_first_continuation_lowers() {
         for body in [
-            "do! bind { let next <- rec(cont) go(value); next }",
-            "do! bind { let next = rec(cont) go(value); let out <- next; out }",
-            "do! bind { rec(cont) go(value); value }",
-            "do! bind { do! bind { let next <- rec(cont) go(value); next } }",
+            "do! bind { let next <- recur(cont) go(value); next }",
+            "do! bind { let next = recur(cont) go(value); let out <- next; out }",
+            "do! bind { recur(cont) go(value); value }",
+            "do! bind { do! bind { let next <- recur(cont) go(value); next } }",
         ] {
             projected_sequence_desugar(&format!(
                 "module x; import sequence(do); rec(loop) fn go(value: .) -> . {{ {body} }}"
@@ -8818,14 +9017,14 @@ mod tests {
     #[test]
     fn do_contract_receiver_retains_recursion_syntax_checks() {
         for (receiver, expected) in [
-            ("rec(cont) missing(value)", "not a member"),
-            ("rec factory(value)", "not in tail position"),
-            ("rec(cont, poly) factory(T, value)", "only needed"),
-            ("rec(cont) factory(., ())", "changes type parameters"),
-            ("rec(cont) factory()", "expects 1 value"),
-            ("rec(cont) factory(factory)", "cannot be used as a value"),
+            ("recur(cont) missing(value)", "not a member"),
+            ("recur factory(value)", "not in tail position"),
+            ("recur(cont, poly) factory(T, value)", "only needed"),
+            ("recur(cont) factory(., ())", "changes type parameters"),
+            ("recur(cont) factory()", "expects 1 value"),
+            ("recur(cont) factory(factory)", "cannot be used as a value"),
             (
-                "rec(cont) factory(rec(cont) missing(value))",
+                "recur(cont) factory(recur(cont) missing(value))",
                 "not a member",
             ),
         ] {
@@ -8843,8 +9042,8 @@ mod tests {
     #[test]
     fn monadic_do_receiver_closures_cannot_capture_recursive_calls() {
         for body in [
-            "let ignored = rec(cont) go(value); next(Box.unbox(input))",
-            "(.x.{ let ignored = rec(cont) go(value); next(x1) })(Box.unbox(input))",
+            "let ignored = recur(cont) go(value); next(Box.unbox(input))",
+            "(.x.{ let ignored = recur(cont) go(value); next(x1) })(Box.unbox(input))",
         ] {
             let source = format!(
                 "module main; import sequence(do);
@@ -8855,31 +9054,41 @@ mod tests {
                 }}"
             );
             let error = projected_sequence_desugar(&source).expect_err(body);
-            assert!(error.diag().1.contains("rec(escape)"), "{body}: {error:?}");
+            assert!(
+                error
+                    .diagnostic()
+                    .help()
+                    .is_some_and(|help| help.contains("recur(escape)")),
+                "{body}: {error:?}"
+            );
         }
     }
 
     #[test]
     fn monadic_do_recursion_inside_continuation_stays_rejected() {
         for body in [
-            "do! bind { let first <- value; rec(cont) go(first) }",
-            "do! bind { let first <- value; let next <- rec(cont) go(first); next }",
-            "do! bind { value; rec(cont) go(value) }",
-            "do! bind { let next <- .(arg: .) { rec(cont) go(arg) }; value }",
+            "do! bind { let first <- value; recur(cont) go(first) }",
+            "do! bind { let first <- value; let next <- recur(cont) go(first); next }",
+            "do! bind { value; recur(cont) go(value) }",
+            "do! bind { let next <- .(arg: .) { recur(cont) go(arg) }; value }",
         ] {
             let source = format!(
                 "module x; import sequence(do); rec(loop) fn go(value: .) -> . {{ {body} }}"
             );
             let err = projected_sequence_desugar(&source).expect_err("escaping recursive call");
-            let (_, message) = err.diag();
-            assert!(message.contains("rec(escape)"), "{body}: {message}");
+            assert!(
+                err.diagnostic()
+                    .help()
+                    .is_some_and(|help| help.contains("recur(escape)")),
+                "{body}: {err:?}"
+            );
         }
     }
 
     #[test]
     fn monadic_do_first_rhs_recursion_still_requires_cont_annotation() {
         let source = "module x; import sequence(do); rec(loop) fn go(value: .) -> . { \
-            do! bind { let next <- rec go(value); next } }";
+            do! bind { let next <- recur go(value); next } }";
         let err = projected_sequence_desugar(source).expect_err("non-tail recursive call");
         let (_, message) = err.diag();
         assert!(message.contains("not in tail position"), "{message}");
@@ -8890,7 +9099,7 @@ mod tests {
         let module = d("module x; \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             rec(loop) { \
-              fn first(value: .) -> . { rec second(value) }; \
+              fn first(value: .) -> . { recur second(value) }; \
               fn second(value: .) -> . { \
                 choose!(.(local: .) { choose!(value.?{field}.>identity) }) \
               } \
@@ -8969,10 +9178,10 @@ mod tests {
             "module x; \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
-               fn first(value: .) -> . { rec second(value) }; \
+               fn first(value: .) -> . { recur second(value) }; \
                fn second(value: .) -> . { \
                  let wrapped = {field = value}; \
-                 rec first(wrapped.?{field}) \
+                 recur first(wrapped.?{field}) \
                } \
              }",
         );
@@ -8984,9 +9193,9 @@ mod tests {
             "module x; \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
-               fn first(value: .) -> . { rec second(value) }; \
+               fn first(value: .) -> . { recur second(value) }; \
                fn second(value: .) -> . { \
-                 let wrapped = {field = rec(cont) first(value)}; \
+                 let wrapped = {field = recur(cont) first(value)}; \
                  wrapped.?{field} \
                } \
              }",
@@ -8998,22 +9207,22 @@ mod tests {
     #[test]
     fn rec_call_in_match_ufcs_clause_lowers_in_tail_position() {
         d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             v.>match!((.(n: I32) { n }, .(_s: String) { rec go(__left__(I32, String, 0)) })) }");
+             v.>match!((.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }");
     }
 
     #[test]
     fn placeholder_clauses_in_ufcs_bang_call_remain_deferred_candidates() {
         let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             value.>choose!((.x. { x1 }, .x. { rec go(x1) })) }");
+             value.>choose!((.x. { x1 }, .x. { recur go(x1) })) }");
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
 
-    // A `rec(cont)` occurrence in the staged lambda uses the same CPS source
+    // A `recur(cont)` occurrence in the staged lambda uses the same CPS source
     // lowering before the checked recipe decides the candidate's final role.
     #[test]
     fn rec_cont_call_in_match_clause_lowers() {
         d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(v, (.(n: I32) { n }, .(_s: String) { add(1, rec(cont) go(__left__(I32, String, 0))) })) }");
+             match!(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__(I32, String, 0))) })) }");
     }
 
     #[test]
@@ -9037,7 +9246,7 @@ mod tests {
         ] {
             let module = d(&format!(
                 "module x; rec(loop) fn go(value: (I32 & I32) & I32) -> I32 {{ \
-                 choose!(.({pattern}) {{ rec go({recur}) }}) }}"
+                 choose!(.({pattern}) {{ recur go({recur}) }}) }}"
             ));
             let mut bound = std::collections::HashSet::new();
             visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
@@ -9063,11 +9272,17 @@ mod tests {
         let module = parsed(
             "module x; rec(loop) fn go(value: I32 & I32) -> I32 { \
              choose!(.((left: I32, right: I32)) { \
-               .() { rec go((left, right)) } \
+               .() { recur go((left, right)) } \
              }) }",
         );
         let error = desugar_module(module).expect_err("nested closure cannot capture recursion");
-        assert!(error.diag().1.contains("rec(escape)"), "{error:?}");
+        assert!(
+            error
+                .diagnostic()
+                .help()
+                .is_some_and(|help| help.contains("recur(escape)")),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -9076,11 +9291,11 @@ mod tests {
             rec(loop) fn go(outer: I32, step: Many) -> I32 {
               let selected = match!(step, (
                 .(outer: Zero) { zero() },
-                .(_first: First) { add(rec(cont) go(10, step), 1) },
-                .(_second: Second) { add(rec(cont) go(10, step), 2) },
-                .(_third: Third) { add(rec(cont) go(10, step), 3) },
-                .(_fourth: Fourth) { add(rec(cont) go(10, step), 4) },
-                .(_fifth: Fifth) { add(rec(cont) go(10, step), 5) }
+                .(_first: First) { add(recur(cont) go(10, step), 1) },
+                .(_second: Second) { add(recur(cont) go(10, step), 2) },
+                .(_third: Third) { add(recur(cont) go(10, step), 3) },
+                .(_fourth: Fourth) { add(recur(cont) go(10, step), 4) },
+                .(_fifth: Fifth) { add(recur(cont) go(10, step), 5) }
               ));
               add(outer, selected)
             }");
@@ -9161,7 +9376,11 @@ mod tests {
                     body_uses > 0,
                     "an optional candidate must apply the shared continuation in its compact body"
                 ),
-                RecOrderDisposition::Ordered(_) => unreachable!(),
+                RecOrderDisposition::Ordered(_)
+                | RecOrderDisposition::DeferredTail {
+                    requirement: RecOrderTailRequirement::Escaping,
+                    ..
+                } => unreachable!("this fixture contains no ordinary escaping call"),
             }
         }
         assert_eq!(
@@ -9177,7 +9396,7 @@ mod tests {
             rec(loop) fn go(outer: I32, step: Left | Right) -> I32 {
               let selected = step.>match!((
                 .(_left: Left) { 0 },
-                .(_right: Right) { add(rec(cont) go(outer, step), 1) }
+                .(_right: Right) { add(recur(cont) go(outer, step), 1) }
               ));
               add(outer, selected)
             }");
@@ -9233,7 +9452,7 @@ mod tests {
         depth: usize,
     ) -> String {
         let candidates = (0..width)
-            .map(|index| format!(".(value{index}: I32) {{ rec(cont) go(value{index}) }}"))
+            .map(|index| format!(".(value{index}: I32) {{ recur(cont) go(value{index}) }}"))
             .collect::<Vec<_>>();
         let staged = if width == 1 {
             format!("hold!({})", candidates[0])
@@ -9342,30 +9561,34 @@ mod tests {
     #[test]
     fn annotation_free_recursive_order_bindings_have_one_lexical_use() {
         for (label, body, copied_shell) in [
-            ("call operand", "take(supply(), rec(cont) go(value))", false),
+            (
+                "call operand",
+                "take(supply(), recur(cont) go(value))",
+                false,
+            ),
             (
                 "UFCS receiver",
-                "supply().>take(rec(cont) go(value))",
+                "supply().>take(recur(cont) go(value))",
                 false,
             ),
             (
                 "UFCS argument",
-                "().>take(supply(), rec(cont) go(value))",
+                "().>take(supply(), recur(cont) go(value))",
                 false,
             ),
             (
                 "tuple operand",
-                "take((supply(), rec(cont) go(value)))",
+                "take((supply(), recur(cont) go(value)))",
                 false,
             ),
             (
                 "label operand",
-                "take({first = supply(), second = rec(cont) go(value)})",
+                "take({first = supply(), second = recur(cont) go(value)})",
                 false,
             ),
             (
                 "deferred branches",
-                "take(hold!((.() { rec(cont) go(value) }, .() { supply() })))",
+                "take(hold!((.() { recur(cont) go(value) }, .() { supply() })))",
                 true,
             ),
         ] {
@@ -9464,7 +9687,7 @@ mod tests {
     #[test]
     fn quoted_nested_call_retains_source_order_and_one_recursive_computation() {
         let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             hold!(take(supply(), rec(cont) go(value))) }");
+             hold!(take(supply(), recur(cont) go(value))) }");
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "supply");
         let Expr::UserElaborator { args, .. } = source else {
             panic!("the bang call remains the quoted source")
@@ -9488,8 +9711,8 @@ mod tests {
         let module = d("module x;
              rec(loop) fn go(value: .) -> . {
                hold!((
-                 .(_unit: .) { rec go(value) },
-                 .(_unit: .) -> _ { rec go(value) },
+                 .(_unit: .) { recur go(value) },
+                 .(_unit: .) -> _ { recur go(value) },
                  .(_unit: .) { () },
                  .(_unit: .) -> _ { () },
                  .(_unit: .) -> Box(_) { make_box() },
@@ -9656,7 +9879,7 @@ mod tests {
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value }
             rec(loop) fn value(n: I32) -> Box(I32) {
-              let .(box: Box(_)) = choose_box(0, rec(cont) value(0));
+              let .(box: Box(_)) = choose_box(0, recur(cont) value(0));
               box
             }";
         let module = d(source);
@@ -9694,7 +9917,7 @@ mod tests {
     #[test]
     fn rec_cps_bang_ufcs_keeps_non_inert_receiver_quoted() {
         let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             effect(()).>hold!(rec(cont) go(())) }");
+             effect(()).>hold!(recur(cont) go(())) }");
         quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let mut quoted_receiver_count = 0;
         visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
@@ -9721,7 +9944,7 @@ mod tests {
     #[test]
     fn rec_cps_bang_ufcs_keeps_non_inert_written_arg_quoted() {
         let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             value.>hold!(effect(()), rec(cont) go(())) }");
+             value.>hold!(effect(()), recur(cont) go(())) }");
         quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let mut quoted_arg_count = 0;
         visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
@@ -9753,7 +9976,7 @@ mod tests {
     fn rec_call_in_match_scrutinee_is_rejected() {
         let m = parse(
             "module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(rec go(__left__(I32, String, 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
+             match!(recur go(__left__(I32, String, 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
         )
         .expect("parse");
         let err = desugar_module(m).expect_err("expected non-tail rejection");

@@ -16,24 +16,12 @@ fn action() -> Box(.) { io.print("action\n"); Box.box(()) }
 
 pub fn main() {
   io.print("zero\n");
-  let zero =
-    do! make_bind() {
-      Box.box(())
-    };
+  let zero = do! make_bind() { Box.box(()) };
   Box.unbox(zero);
   io.print("one\n");
-  let one =
-    do! make_bind() {
-      let value <- action();
-      Box.box(value)
-    };
+  let one = do! make_bind() { let value <- action(); Box.box(value) };
   Box.unbox(one);
   io.print("two\n");
-  let two =
-    do! make_bind() {
-      let first <- action();
-      let second <- action();
-      Box.box(second)
-    };
+  let two = do! make_bind() { let first <- action(); let second <- action(); Box.box(second) };
   Box.unbox(two)
 }

@@ -11,27 +11,15 @@ import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 pub fn or(a: Bool, b: Bool) -> Bool {
-  if! a {
-    .t
-  } else {
-    b
-  }
+  if! a { .t } else { b }
 }
 
 pub fn not(a: Bool) -> Bool {
-  if! a {
-    .f
-  } else {
-    .t
-  }
+  if! a { .f } else { .t }
 }
 
 /// Equality, from the antisymmetry of `<=`.
@@ -55,13 +43,9 @@ rec(loop) fn div_mod(a: I32, b: I32) -> I32 & I32 {
   } else if! lt(a, b) {
     (0, a)
   } else {
-    let .(half: I32, rest: I32) = rec(cont) div_mod(a, mul_i32(b, 2));
+    let .(half: I32, rest: I32) = recur(cont) div_mod(a, mul_i32(b, 2));
     let doubled = mul_i32(half, 2);
-    if! lt(rest, b) {
-      (doubled, rest)
-    } else {
-      (add_i32(doubled, 1), sub_i32(rest, b))
-    }
+    if! lt(rest, b) { (doubled, rest) } else { (add_i32(doubled, 1), sub_i32(rest, b)) }
   }
 }
 
@@ -70,9 +54,5 @@ pub fn div(a: I32, b: I32) -> I32 { let .(q: I32, _r: I32) = div_mod(a, b); q }
 /// `part` out of `whole`, in thousandths, truncated. There are no floats in
 /// this tier, so a ratio is reported as a permille integer.
 pub fn permille(part: I32, whole: I32) -> I32 {
-  if! leq_i32(whole, 0) {
-    0
-  } else {
-    div(mul_i32(part, 1000), whole)
-  }
+  if! leq_i32(whole, 0) { 0 } else { div(mul_i32(part, 1000), whole) }
 }

@@ -25,37 +25,34 @@ import value(value_to_scalar, vunit);
 fn call0_i32(im: Image, name: String) -> String {
   match! export_term(im, name) {
     (
-      , .(t: Term) {
-          match! eval_default(t) {
-            (
-              , .(v: Ev_done) {
-                  match! apply_default(Ev_done.get(v), vunit()) {
-                    (
-                      , .(r: Ev_done) {
-                          match! value_to_scalar(Ev_done.get(r)) {
-                            (
-                              , .(s: Scalar) {
-                                  match! scalar_as_i32(s) {
-                                    (
-                                      , .(n: I32) { int_to_string(n) }
-                                      , .(_no: .) { "<not an i32>"(String) }
-                                      )
-                                  }
-                                }
-                              , .(_no: .) { "<not a scalar>"(String) }
-                              )
+    , .(t: Term) {
+        match! eval_default(t) {
+          (
+          , .(v: Ev_done) {
+              match! apply_default(Ev_done.get(v), vunit()) {
+                (
+                , .(r: Ev_done) {
+                    match! value_to_scalar(Ev_done.get(r)) {
+                      (
+                      , .(s: Scalar) {
+                          match! scalar_as_i32(s) {
+                            (.(n: I32) { int_to_string(n) }, .(_no: .) { "<not an i32>"(String) })
                           }
                         }
-                      , .(_s: Ev_stuck) { "<stuck>"(String) }
+                      , .(_no: .) { "<not a scalar>"(String) }
                       )
+                    }
                   }
-                }
-              , .(_s: Ev_stuck) { "<stuck>"(String) }
-              )
-          }
+                , .(_s: Ev_stuck) { "<stuck>"(String) }
+                )
+              }
+            }
+          , .(_s: Ev_stuck) { "<stuck>"(String) }
+          )
         }
-      , .(_absent: .) { "<no unique export>"(String) }
-      )
+      }
+    , .(_absent: .) { "<no unique export>"(String) }
+    )
   }
 }
 
@@ -66,9 +63,9 @@ fn one_expect(name: String, sig: String) -> Contract {
 fn show_check(label: String, im: Image, c: Contract) -> String {
   match! contract_check(im, c) {
     (
-      , .(d: Diag) { string_concat(label, string_concat(diag_message(d), "\n"(String))) }
-      , .(_ok: .) { string_concat(label, "ok\n"(String)) }
-      )
+    , .(d: Diag) { string_concat(label, string_concat(diag_message(d), "\n"(String))) }
+    , .(_ok: .) { string_concat(label, "ok\n"(String)) }
+    )
   }
 }
 
@@ -77,42 +74,42 @@ fn show_check(label: String, im: Image, c: Contract) -> String {
 pub fn main() {
   match! un_load_outcome(load_package(read_image_stdin())) {
     (
-      , .(im0: Lr_image) {
-          let im = Lr_image.get(im0);
-          print(string_concat(
-            , "m1.ping = "(String)
-            , string_concat(call0_i32(im, "m1.ping"(String)), "\n"(String))
-            ));
-          print(string_concat(
-            , "m2.ping = "(String)
-            , string_concat(call0_i32(im, "m2.ping"(String)), "\n"(String))
-            ));
-          print(string_concat(
-            , "bare ping = "(String)
-            , string_concat(call0_i32(im, "ping"(String)), "\n"(String))
-            ));
-          print(show_check(
-            , "contract (bare) = "(String)
-            , im
-            , one_expect("ping"(String), "() -> h{hostapi.I32}"(String))
-            ));
-          print(show_check(
-            , "contract (qualified) = "(String)
-            , im
-            , one_expect("m2.ping"(String), "() -> h{hostapi.I32}"(String))
-            ));
-          print(show_check(
-            , "contract (wrong signature) = "(String)
-            , im
-            , one_expect("m1.ping"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
-            ))
-        }
-      , .(d: Lr_diag) {
-          print(string_concat(
-            , "load failed: "(String)
-            , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
-            ))
-        }
-      )
+    , .(im0: Lr_image) {
+        let im = Lr_image.get(im0);
+        print(string_concat(
+        , "m1.ping = "(String)
+        , string_concat(call0_i32(im, "m1.ping"(String)), "\n"(String))
+        ));
+        print(string_concat(
+        , "m2.ping = "(String)
+        , string_concat(call0_i32(im, "m2.ping"(String)), "\n"(String))
+        ));
+        print(string_concat(
+        , "bare ping = "(String)
+        , string_concat(call0_i32(im, "ping"(String)), "\n"(String))
+        ));
+        print(show_check(
+        , "contract (bare) = "(String)
+        , im
+        , one_expect("ping"(String), "() -> h{hostapi.I32}"(String))
+        ));
+        print(show_check(
+        , "contract (qualified) = "(String)
+        , im
+        , one_expect("m2.ping"(String), "() -> h{hostapi.I32}"(String))
+        ));
+        print(show_check(
+        , "contract (wrong signature) = "(String)
+        , im
+        , one_expect("m1.ping"(String), "(h{hostapi.I32}) -> h{hostapi.I32}"(String))
+        ))
+      }
+    , .(d: Lr_diag) {
+        print(string_concat(
+        , "load failed: "(String)
+        , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+        ))
+      }
+    )
   }
 }

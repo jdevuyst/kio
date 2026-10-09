@@ -8,4 +8,6 @@ host type String role(str);
 
 fn consume[A][B](_function: (A & B) -> (A & B), _left: A, _right: B) { () }
 
-fn checked() { consume(.(pair) { infer!(pair) }, 0, "closed") }
+fn checked() {
+  consume(.(pair) { infer!(pair) }, 0, "closed")
+}

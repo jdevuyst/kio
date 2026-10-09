@@ -27,12 +27,12 @@ fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.T
       io.print(field(" order=", math.add_i32(result.?{first}, 1)));
       io.print(field("..", math.add_i32(result.?{last}, 1)));
       line(text.string_concat(
-        , " matches-table="
-        , fmt.bool_to_string(chain.equal(
-            , result.?{cost}
-            , optimizer.cost(plan, 0, math.sub_i32(arrays.array_len(matrices), 1))
-            ))
+      , " matches-table="
+      , fmt.bool_to_string(chain.equal(
+        , result.?{cost}
+        , optimizer.cost(plan, 0, math.sub_i32(arrays.array_len(matrices), 1))
         ))
+      ))
     };
     .(error: String) { line(text.string_concat("replay rejected: ", error)) }
   }
@@ -53,9 +53,9 @@ fn run(name: String, matrices: Array(Matrix)) {
       chain.describe(matrices, 0, "")
     };
   line(text.string_concat(
-    , text.string_concat("matrix-chain ", name)
-    , text.string_concat(": ", description)
-    ));
+  , text.string_concat("matrix-chain ", name)
+  , text.string_concat(": ", description)
+  ));
   match! chain.validate(matrices) {
     .(error: String) { line(text.string_concat("rejected: ", error)) };
     .() {
@@ -69,10 +69,10 @@ fn run(name: String, matrices: Array(Matrix)) {
       replay_report(plan, matrices, solution);
       baseline_cost("left-fold=", matrices, tree.left_fold(1, count, tree.leaf(0)));
       baseline_cost(
-        , " right-fold="
-        , matrices
-        , tree.right_fold(math.sub_i32(last, 1), tree.leaf(last))
-        );
+      , " right-fold="
+      , matrices
+      , tree.right_fold(math.sub_i32(last, 1), tree.leaf(last))
+      );
       line("")
     }
   }

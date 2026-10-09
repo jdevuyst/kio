@@ -16,14 +16,7 @@ fn line(label: String, n: I32) {
 }
 
 fn yes_no(label: String, b: Bool) {
-  print(string_concat(
-    , label
-    , if! b {
-        "yes\n"
-      } else {
-        "no\n"
-      }
-    ))
+  print(string_concat(label, if! b { "yes\n" } else { "no\n" }))
 }
 
 pub fn main() {

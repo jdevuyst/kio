@@ -2,8 +2,12 @@ module testapi/factories;
 
 import testapi(String);
 
-pub pure fn first() -> . -> String { .() -> String { "first\n"(String) } }
+pub pure fn first() -> . -> String {
+  .() -> String { "first\n"(String) }
+}
 
-pub pure fn second() -> . -> String { .() -> String { "second\n"(String) } }
+pub pure fn second() -> . -> String {
+  .() -> String { "second\n"(String) }
+}
 
 pub pure fn relay(factory: . -> . -> String) -> . -> String { factory() }

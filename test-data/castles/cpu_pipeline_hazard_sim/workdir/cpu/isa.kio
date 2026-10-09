@@ -40,39 +40,39 @@ pub labels Instr = { code: Opcode, rd: I32, rs: I32, rt: I32, imm: I32 };
 /// again: which register fields it reads, whether it writes `rd`, which
 /// memory port it uses, and whether it stops the front end.
 labels Kind = {
-  , uses_rs: Bool
-  , uses_rt: Bool
-  , has_dest: Bool
-  , memory_load: Bool
-  , memory_store: Bool
-  , seals: Bool
-  };
+, uses_rs: Bool
+, uses_rt: Bool
+, has_dest: Bool
+, memory_load: Bool
+, memory_store: Bool
+, seals: Bool
+};
 
 fn kind(rs_live: Bool, rt_live: Bool, dest_live: Bool, loads: Bool, stores: Bool, stops: Bool) -> Kind {
   {
-    , uses_rs = rs_live
-    , uses_rt = rt_live
-    , has_dest = dest_live
-    , memory_load = loads
-    , memory_store = stores
-    , seals = stops
-    }
+  , uses_rs = rs_live
+  , uses_rt = rt_live
+  , has_dest = dest_live
+  , memory_load = loads
+  , memory_store = stores
+  , seals = stops
+  }
 }
 
 fn kind_of(inst: Instr) -> Kind {
   let code = inst.?{code};
   match! code {
     (
-      , .(_a: Add) { kind(.t, .t, .t, .f, .f, .f) }
-      , .(_s: Sub) { kind(.t, .t, .t, .f, .f, .f) }
-      , .(_m: Mul) { kind(.t, .t, .t, .f, .f, .f) }
-      , .(_li: Loadi) { kind(.f, .f, .t, .f, .f, .f) }
-      , .(_ld: Load) { kind(.f, .f, .t, .t, .f, .f) }
-      , .(_st: Store) { kind(.t, .f, .f, .f, .t, .f) }
-      , .(_b: Beq) { kind(.t, .t, .f, .f, .f, .f) }
-      , .(_n: Nop) { kind(.f, .f, .f, .f, .f, .f) }
-      , .(_h: Halt) { kind(.f, .f, .f, .f, .f, .t) }
-      )
+    , .(_a: Add) { kind(.t, .t, .t, .f, .f, .f) }
+    , .(_s: Sub) { kind(.t, .t, .t, .f, .f, .f) }
+    , .(_m: Mul) { kind(.t, .t, .t, .f, .f, .f) }
+    , .(_li: Loadi) { kind(.f, .f, .t, .f, .f, .f) }
+    , .(_ld: Load) { kind(.f, .f, .t, .t, .f, .f) }
+    , .(_st: Store) { kind(.t, .f, .f, .f, .t, .f) }
+    , .(_b: Beq) { kind(.t, .t, .f, .f, .f, .f) }
+    , .(_n: Nop) { kind(.f, .f, .f, .f, .f, .f) }
+    , .(_h: Halt) { kind(.f, .f, .f, .f, .f, .t) }
+    )
   }
 }
 
@@ -103,11 +103,7 @@ pub fn i_halt() -> Instr { instr({halt=}.>widen_sum!(Opcode), 0, 0, 0, 0) }
 /// The register this instruction writes back, if it writes one at all.
 /// The hazard unit compares consumers against exactly this.
 pub fn dest_of(inst: Instr) -> I32 | . {
-  if! kind_of(inst).?{has_dest} {
-    widen_sum!(inst.?{rd}, I32 | .)
-  } else {
-    widen_sum!((), I32 | .)
-  }
+  if! kind_of(inst).?{has_dest} { widen_sum!(inst.?{rd}, I32 | .) } else { widen_sum!((), I32 | .) }
 }
 
 /// Does `inst` read register `r`? Only the fields the opcode actually
@@ -148,23 +144,21 @@ pub fn instr_text(inst: Instr) -> String {
   let code = inst.?{code};
   match! code {
     (
-      , .(_a: Add) { cat("ADD   ", three_regs(inst)) }
-      , .(_s: Sub) { cat("SUB   ", three_regs(inst)) }
-      , .(_m: Mul) { cat("MUL   ", three_regs(inst)) }
-      , .(_li: Loadi) {
-          cat3("LOADI ", cat(reg_text(inst.?{rd}), ", "), int_to_string(inst.?{imm}))
-        }
-      , .(_ld: Load) { cat3("LOAD  ", cat(reg_text(inst.?{rd}), ", "), addr_text(inst.?{imm})) }
-      , .(_st: Store) { cat3("STORE ", cat(reg_text(inst.?{rs}), ", "), addr_text(inst.?{imm})) }
-      , .(_b: Beq) {
-          cat3(
-            , cat("BEQ   ", cat(reg_text(inst.?{rs}), ", "))
-            , cat(reg_text(inst.?{rt}), ", ")
-            , slot_text(inst.?{imm})
-            )
-        }
-      , .(_n: Nop) { "NOP" }
-      , .(_h: Halt) { "HALT" }
-      )
+    , .(_a: Add) { cat("ADD   ", three_regs(inst)) }
+    , .(_s: Sub) { cat("SUB   ", three_regs(inst)) }
+    , .(_m: Mul) { cat("MUL   ", three_regs(inst)) }
+    , .(_li: Loadi) { cat3("LOADI ", cat(reg_text(inst.?{rd}), ", "), int_to_string(inst.?{imm})) }
+    , .(_ld: Load) { cat3("LOAD  ", cat(reg_text(inst.?{rd}), ", "), addr_text(inst.?{imm})) }
+    , .(_st: Store) { cat3("STORE ", cat(reg_text(inst.?{rs}), ", "), addr_text(inst.?{imm})) }
+    , .(_b: Beq) {
+        cat3(
+        , cat("BEQ   ", cat(reg_text(inst.?{rs}), ", "))
+        , cat(reg_text(inst.?{rt}), ", ")
+        , slot_text(inst.?{imm})
+        )
+      }
+    , .(_n: Nop) { "NOP" }
+    , .(_h: Halt) { "HALT" }
+    )
   }
 }

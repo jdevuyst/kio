@@ -2,4 +2,4 @@ module main;
 
 host fn selected[S][R](step: S, state: S) -> R;
 
-rec(selected) fn again(value: .) { rec again(value) }
+rec(selected) fn again(value: .) { recur again(value) }

@@ -1,0 +1,34 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(I32);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+type Replies = (. -> I32) & (. -> I32);
+
+fn step(reenter: . -> Replies, _state: .) -> . | Replies {
+  let direct = .() -> I32 { 41 };
+  let saved =
+    .() -> I32 {
+      match! reenter() {
+        .(answer: . -> I32, _again: . -> I32) { answer() }
+      }
+    };
+  (direct, saved).>widen_sum!
+}
+
+pub fn main() {
+  let replies = iter.loop_reentry(step, ());
+  io.print("ready\n");
+  match! replies {
+    .(_direct: . -> I32, saved: . -> I32) {
+      io.print(fmt.i32_to_string(saved()));
+      io.print("\n");
+      io.print(fmt.i32_to_string(saved()));
+      io.print("\n")
+    }
+  }
+}

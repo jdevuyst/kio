@@ -14,7 +14,9 @@ pub fn make_hidden(value: t.Number) -> Hidden { Hidden.hide(value) }
 
 pub fn read_hidden(value: Hidden) -> t.Number { mark(2); value.>Hidden.reveal }
 
-pub fn later(value: Hidden) -> . -> t.Number { .() { mark(1); value.>Hidden.reveal } }
+pub fn later(value: Hidden) -> . -> t.Number {
+  .() { mark(1); value.>Hidden.reveal }
+}
 
 pub fn boxed(value: Hidden) -> t.Box(Hidden) { pack(value) }
 
@@ -28,6 +30,8 @@ pub newtype Packed <U> : U & (U -> t.Number) { constructor seal; projector open 
 
 fn read_payload[U](value: U, reader: U -> t.Number) -> t.Number { reader(value) }
 
-pub fn make_packed(value: t.Number) -> Packed { Packed.seal(t.Number, value, .(n: t.Number) { n }) }
+pub fn make_packed(value: t.Number) -> Packed {
+  Packed.seal(t.Number, value, .(n: t.Number) { n })
+}
 
 pub fn read_packed(value: Packed) -> t.Number { Packed.open(value, t.Number, read_payload) }

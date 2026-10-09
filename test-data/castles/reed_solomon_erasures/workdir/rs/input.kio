@@ -15,12 +15,12 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 pub labels Frame = {
-  , name: String
-  , dimension: I32
-  , message: p.Polynomial
-  , coordinates: c.List(I32)
-  , received: s.Word
-  };
+, name: String
+, dimension: I32
+, message: p.Polynomial
+, coordinates: c.List(I32)
+, received: s.Word
+};
 
 pub labels Read_result = { loaded: Frame } | { error: String } | { done: . };
 
@@ -55,7 +55,7 @@ rec(loop) fn integers(count: I32, reversed: c.List(I32)) -> c.List(I32) | String
   if! a.leq_i32(count, 0) {
     l.reverse(reversed).>widen_sum!
   } else match! integer() {
-    .(n: I32) { rec integers(a.sub_i32(count, 1), c.cons(n, reversed)) };
+    .(n: I32) { recur integers(a.sub_i32(count, 1), c.cons(n, reversed)) };
     .(error: String) { error.>widen_sum! }
   }
 }
@@ -67,7 +67,7 @@ rec(loop) fn samples(count: I32, reversed: s.Word) -> s.Word | String {
     .(coordinate: I32) {
       match! integer() {
         .(value: I32) {
-          rec samples(a.sub_i32(count, 1), c.cons({s.coordinate, s.value}, reversed))
+          recur samples(a.sub_i32(count, 1), c.cons({s.coordinate, s.value}, reversed))
         };
         .(error: String) { error.>widen_sum! }
       }
@@ -117,11 +117,7 @@ fn header(name: String) -> Read_result {
 pub fn next() -> Read_result {
   match! io.read_ascii_line() {
     .(name: String) {
-      if! text.string_eq(name, "END") {
-        {done=}.>widen_sum!
-      } else {
-        header(name)
-      }
+      if! text.string_eq(name, "END") { {done=}.>widen_sum! } else { header(name) }
     };
     .() { {error = "missing END marker"}.>widen_sum! }
   }

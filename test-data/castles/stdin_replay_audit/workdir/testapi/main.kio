@@ -10,14 +10,14 @@ import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
 labels Audit_fields = {
-  , phase: I32
-  , balance: I32
-  , credit: I32
-  , debit: I32
-  , checks: I32
-  , errors: I32
-  , lines: I32
-  };
+, phase: I32
+, balance: I32
+, credit: I32
+, debit: I32
+, checks: I32
+, errors: I32
+, lines: I32
+};
 
 newtype Audit_state : Phase & Balance & Credit & Debit & Checks & Errors & Lines {
   constructor pack;
@@ -25,23 +25,19 @@ newtype Audit_state : Phase & Balance & Credit & Debit & Checks & Errors & Lines
   }
 
 fn int_eq(left: I32, right: I32) -> Bool {
-  if! leq_i32(left, right) {
-    leq_i32(right, left)
-  } else {
-    .f
-  }
+  if! leq_i32(left, right) { leq_i32(right, left) } else { .f }
 }
 
 fn initial() -> Audit_state {
   Audit_state.pack({
-    , phase = 0
-    , balance = 0
-    , credit = 0
-    , debit = 0
-    , checks = 0
-    , errors = 0
-    , lines = 0
-    })
+  , phase = 0
+  , balance = 0
+  , credit = 0
+  , debit = 0
+  , checks = 0
+  , errors = 0
+  , lines = 0
+  })
 }
 
 fn add_line(st: Audit_state) -> Audit_state {
@@ -85,69 +81,49 @@ fn add_check(st: Audit_state) -> Audit_state {
 fn add_credit(st: Audit_state, amount: I32) -> Audit_state {
   let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
   Audit_state.pack({
-    , phase
-    , balance = add_i32(balance, amount)
-    , credit = add_i32(credit, amount)
-    , debit
-    , checks
-    , errors
-    , lines
-    })
+  , phase
+  , balance = add_i32(balance, amount)
+  , credit = add_i32(credit, amount)
+  , debit
+  , checks
+  , errors
+  , lines
+  })
 }
 
 fn add_debit(st: Audit_state, amount: I32) -> Audit_state {
   let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
   let magnitude = sub_i32(0, amount);
   Audit_state.pack({
-    , phase
-    , balance = add_i32(balance, amount)
-    , credit
-    , debit = add_i32(debit, magnitude)
-    , checks
-    , errors
-    , lines
-    })
+  , phase
+  , balance = add_i32(balance, amount)
+  , credit
+  , debit = add_i32(debit, magnitude)
+  , checks
+  , errors
+  , lines
+  })
 }
 
 fn finish_state(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 2) {
-    st
-  } else {
-    add_error(st)
-  }
+  if! is_phase(st, 2) { st } else { add_error(st) }
 }
 
 fn begin(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 0) {
-    set_phase(st, 1)
-  } else {
-    add_error(st)
-  }
+  if! is_phase(st, 0) { set_phase(st, 1) } else { add_error(st) }
 }
 
 fn finish(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 1) {
-    set_phase(st, 2)
-  } else {
-    add_error(st)
-  }
+  if! is_phase(st, 1) { set_phase(st, 2) } else { add_error(st) }
 }
 
 fn checkpoint(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 1) {
-    add_check(st)
-  } else {
-    add_error(st)
-  }
+  if! is_phase(st, 1) { add_check(st) } else { add_error(st) }
 }
 
 fn amount(st: Audit_state, value: I32) -> Audit_state {
   if! is_phase(st, 1) {
-    if! lt_i32(value, 0) {
-      add_debit(st, value)
-    } else {
-      add_credit(st, value)
-    }
+    if! lt_i32(value, 0) { add_debit(st, value) } else { add_credit(st, value) }
   } else {
     add_error(st)
   }
@@ -177,12 +153,12 @@ rec(loop) fn replay(fields: Phase & Balance & Credit & Debit & Checks & Errors &
    {
   match! read_ascii_line() {
     (
-      , .(line: String) {
-          let next = apply_line(line, Audit_state.pack(fields));
-          rec replay(Audit_state.unpack(next))
-        }
-      , .(_eof: .) { fields }
-      )
+    , .(line: String) {
+        let next = apply_line(line, Audit_state.pack(fields));
+        recur replay(Audit_state.unpack(next))
+      }
+    , .(_eof: .) { fields }
+    )
   }
 }
 
@@ -199,11 +175,7 @@ fn print_report(st: Audit_state) {
   print_metric("balance: ", i32_to_string(balance_value(st)));
   print_metric("errors: ", i32_to_string(errors_value(st)));
   if! is_phase(st, 2) {
-    if! is_clean(st) {
-      print("status: OK\n")
-    } else {
-      print("status: REJECTED\n")
-    }
+    if! is_clean(st) { print("status: OK\n") } else { print("status: REJECTED\n") }
   } else {
     print("status: REJECTED\n")
   }

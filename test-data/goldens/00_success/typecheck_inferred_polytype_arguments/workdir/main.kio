@@ -1,6 +1,8 @@
 module main;
 
-fn make_poly[A](value: A) -> [B] B -> A { .[B](_ignored: B) -> A { value } }
+fn make_poly[A](value: A) -> [B] B -> A {
+  .[B](_ignored: B) -> A { value }
+}
 
 fn identity[A](value: A) -> A { value }
 

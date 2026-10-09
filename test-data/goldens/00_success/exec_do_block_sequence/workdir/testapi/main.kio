@@ -30,11 +30,7 @@ fn step(s: String) -> Box(.) { print(s); Box.mk_box(()) }
 //         })
 //     })
 fn run() -> Box(String) {
-  do! box_bind {
-    step("step1\n");
-    step("step2\n");
-    box_pure("final\n")
-  }
+  do! box_bind { step("step1\n"); step("step2\n"); box_pure("final\n") }
 }
 
 pub fn main() { print(Box.un_box(run())) }

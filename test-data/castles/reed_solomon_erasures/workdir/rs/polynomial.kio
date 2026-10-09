@@ -18,15 +18,13 @@ fn coefficient(poly: Polynomial, index: I32) -> I32 {
   }
 }
 
-pub fn indices(count: I32) -> c.List(I32) { l.iterate(count, .(n) { a.add_i32(n, 1) }, 0) }
+pub fn indices(count: I32) -> c.List(I32) {
+  l.iterate(count, .(n) { a.add_i32(n, 1) }, 0)
+}
 
 pub fn add(left: Polynomial, right: Polynomial) -> Polynomial {
   let width =
-    if! a.lt_i32(l.length(left), l.length(right)) {
-      l.length(right)
-    } else {
-      l.length(left)
-    };
+    if! a.lt_i32(l.length(left), l.length(right)) { l.length(right) } else { l.length(left) };
   l.map(.(index) { f.add(coefficient(left, index), coefficient(right, index)) }, indices(width))
 }
 
@@ -45,12 +43,12 @@ pub fn horner(poly: Polynomial, coordinate: I32) -> I32 {
 rec(loop) fn direct_walk(poly: Polynomial, coordinate: I32, power: I32, total: I32) -> I32 {
   match! c.uncons(poly) {
     .(value: I32, rest: Polynomial) {
-      rec direct_walk(
-        , rest
-        , coordinate
-        , f.multiply(power, coordinate)
-        , f.add(total, f.multiply(value, power))
-        )
+      recur direct_walk(
+      , rest
+      , coordinate
+      , f.multiply(power, coordinate)
+      , f.add(total, f.multiply(value, power))
+      )
     };
     .() { total }
   }
@@ -63,11 +61,7 @@ pub rec(loop) fn equal(left: Polynomial, right: Polynomial) -> Bool {
     .(value: I32, rest: Polynomial) {
       match! c.uncons(right) {
         .(other: I32, remaining: Polynomial) {
-          if! f.equal(value, other) {
-            rec equal(rest, remaining)
-          } else {
-            .f
-          }
+          if! f.equal(value, other) { recur equal(rest, remaining) } else { .f }
         };
         .() { .f }
       }

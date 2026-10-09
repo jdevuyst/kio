@@ -1031,11 +1031,11 @@ mod tests {
         let src = concat!(
             "module pkg/main;\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { rec second(value) };\n",
+            "  fn first(value: .) -> . { recur second(value) };\n",
             "  /// ```kio {@}\n",
             "  /// ()\n",
             "  /// ```\n",
-            "  fn second(value: .) -> . { rec first(value) }\n",
+            "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let snippets = extract_doc_snippets(Path::new("t.kio"), src).expect("docs extract");

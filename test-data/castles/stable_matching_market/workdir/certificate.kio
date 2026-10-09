@@ -14,7 +14,7 @@ rec(loop) fn rank_from(row: Array(I32), partner: I32, position: I32) -> I32 {
     if! market.equal(array.array_get(row, position), partner) {
       position
     } else {
-      rec rank_from(row, partner, arith.add_i32(position, 1))
+      recur rank_from(row, partner, arith.add_i32(position, 1))
     }
   } else {
     position
@@ -32,7 +32,7 @@ rec(loop) fn valid_from(partner: Array(I32), holder: Array(I32), person: I32) ->
       .f
     } else if! market.less(recipient, array.array_len(holder)) {
       if! market.equal(array.array_get(holder, recipient), person) {
-        rec valid_from(partner, holder, arith.add_i32(person, 1))
+        recur valid_from(partner, holder, arith.add_i32(person, 1))
       } else {
         .f
       }
@@ -53,36 +53,32 @@ pub fn valid(partner: Array(I32), holder: Array(I32)) -> Bool {
 }
 
 rec(loop) fn count_pairs(
-  , left: market.Preferences
-  , right: market.Preferences
-  , partner: Array(I32)
-  , holder: Array(I32)
-  , person: I32
-  , recipient: I32
-  , count: I32
-  ) -> I32 {
+, left: market.Preferences
+, right: market.Preferences
+, partner: Array(I32)
+, holder: Array(I32)
+, person: I32
+, recipient: I32
+, count: I32
+) -> I32 {
   if! market.less(person, array.array_len(left)) {
     if! market.less(recipient, array.array_len(right)) {
       let prefers = market.less(
-        , rank(left, person, recipient)
-        , rank(left, person, array.array_get(partner, person))
-        );
+      , rank(left, person, recipient)
+      , rank(left, person, array.array_get(partner, person))
+      );
       let blocks = if! prefers {
         market.less(
-          , rank(right, recipient, person)
-          , rank(right, recipient, array.array_get(holder, recipient))
-          )
+        , rank(right, recipient, person)
+        , rank(right, recipient, array.array_get(holder, recipient))
+        )
       } else {
         .f
       };
-      let count = if! blocks {
-        arith.add_i32(count, 1)
-      } else {
-        count
-      };
-      rec count_pairs(left, right, partner, holder, person, arith.add_i32(recipient, 1), count)
+      let count = if! blocks { arith.add_i32(count, 1) } else { count };
+      recur count_pairs(left, right, partner, holder, person, arith.add_i32(recipient, 1), count)
     } else {
-      rec count_pairs(left, right, partner, holder, arith.add_i32(person, 1), 0, count)
+      recur count_pairs(left, right, partner, holder, arith.add_i32(person, 1), 0, count)
     }
   } else {
     count
@@ -90,21 +86,21 @@ rec(loop) fn count_pairs(
 }
 
 pub fn blocking_pairs(
-  , left: market.Preferences
-  , right: market.Preferences
-  , partner: Array(I32)
-  , holder: Array(I32)
-  ) -> I32 { count_pairs(left, right, partner, holder, 0, 0, 0) }
+, left: market.Preferences
+, right: market.Preferences
+, partner: Array(I32)
+, holder: Array(I32)
+) -> I32 { count_pairs(left, right, partner, holder, 0, 0, 0) }
 
 rec(loop) fn total_from(
-  , preferences: market.Preferences
-  , partners: Array(I32)
-  , person: I32
-  , total: I32
-  ) -> I32 {
+, preferences: market.Preferences
+, partners: Array(I32)
+, person: I32
+, total: I32
+) -> I32 {
   if! market.less(person, array.array_len(preferences)) {
     let total = arith.add_i32(total, rank(preferences, person, array.array_get(partners, person)));
-    rec total_from(preferences, partners, arith.add_i32(person, 1), total)
+    recur total_from(preferences, partners, arith.add_i32(person, 1), total)
   } else {
     total
   }

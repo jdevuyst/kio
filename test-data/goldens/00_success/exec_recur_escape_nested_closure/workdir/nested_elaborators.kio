@@ -1,0 +1,50 @@
+module nested_elaborators;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi(I32);
+import testapi/io as io;
+
+pure fn invoke_then_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, result: __Type__
+, callback: __Checked_term__
+, _later: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let unit = __reflect_type__(ct, .);
+  let zero = __type_arity_zero__(ct);
+  let callback_type = __type_arrow__(ct, unit, zero, result);
+  (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
+}
+
+pub elab invoke_then : [Result] (. -> Result) -> I32 -> Result { impl(fills) invoke_then_impl }
+
+pure fn keep_callback_impl(
+, _ct: __Comptime__
+, fills: __Fill_ctx__
+, _result: __Type__
+, callback: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (callback, fills) }
+
+pub elab keep_callback : [Callback] Callback -> Callback { impl(fills) keep_callback_impl }
+
+pub fn observe[Result](callback: . -> Result) { io.print("opaque\n"); let _ = callback(); () }
+
+pure fn mixed_use_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, helper: __Checked_term__
+, result: __Type__
+, callback: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let unit = __type_unit__(ct);
+  let specialized = __term_type_app__(ct, helper, result);
+  let opaque_use = __term_call__(ct, __term_type__(ct, specialized), specialized, callback);
+  let callback_type = __type_arrow__(ct, unit, __type_arity_zero__(ct), result);
+  let terminal = __term_call__(ct, callback_type, callback, __term_unit__(ct));
+  (__term_let__(ct, unit, opaque_use, .(_bound: __Checked_term__) { terminal }), fills)
+}
+
+pub elab mixed_use : [Result] (. -> Result) -> Result { captures observe; impl(fills) mixed_use_impl }

@@ -10,7 +10,9 @@ fn consume_binder[T](_f: [A] (A & T) -> T, _value: T) { () }
 
 fn consume_pair[P][R](_f: P -> R, _value: P) { () }
 
-fn annotation_pins_outer_type() { consume(.(value: Witness) { make() }) }
+fn annotation_pins_outer_type() {
+  consume(.(value: Witness) { make() })
+}
 
 fn annotation_pins_outer_type_with_return_placeholder() {
   consume(.(value: Witness) -> _ { make() })

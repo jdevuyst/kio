@@ -178,12 +178,62 @@
     "name": "numbered_bindings_preserve_long_qualified_let_paths",
     "source": "module m; fn f() { let.x.y() } fn g() { action! { let.x.y } }",
     "targets": [
-      { "text": "let", "start": 19, "end": 22, "kind": "identifier", "vscodeKind": "entity.name.module", "owners": ["call_callee"] },
-      { "text": "x", "start": 23, "end": 24, "kind": "identifier", "vscodeKind": "entity.name.module", "owners": ["call_callee"] },
-      { "text": "y", "start": 25, "end": 26, "kind": "entity.name.function", "owners": ["call_callee"] },
-      { "text": "let", "start": 50, "end": 53, "kind": "identifier", "owners": ["expression_path"] },
-      { "text": "x", "start": 54, "end": 55, "kind": "identifier", "owners": ["expression_path"] },
-      { "text": "y", "start": 56, "end": 57, "kind": "identifier", "owners": ["expression_path"] }
+      {
+        "text": "let",
+        "start": 19,
+        "end": 22,
+        "kind": "identifier",
+        "vscodeKind": "entity.name.module",
+        "owners": [
+          "call_callee"
+        ]
+      },
+      {
+        "text": "x",
+        "start": 23,
+        "end": 24,
+        "kind": "identifier",
+        "vscodeKind": "entity.name.module",
+        "owners": [
+          "call_callee"
+        ]
+      },
+      {
+        "text": "y",
+        "start": 25,
+        "end": 26,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
+        ]
+      },
+      {
+        "text": "let",
+        "start": 50,
+        "end": 53,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "x",
+        "start": 54,
+        "end": 55,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "y",
+        "start": 56,
+        "end": 57,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
     ]
   },
   {
@@ -196,7 +246,9 @@
         "end": 22,
         "text": "let",
         "kind": "keyword.declaration",
-        "owners": ["let_statement"],
+        "owners": [
+          "let_statement"
+        ],
         "textmate": [
           "keyword.declaration.kio"
         ]
@@ -206,8 +258,12 @@
         "end": 25,
         "text": "x",
         "kind": "variable.parameter",
-        "owners": ["numbered_binding"],
-        "textmate": ["variable.parameter.kio"]
+        "owners": [
+          "numbered_binding"
+        ],
+        "textmate": [
+          "variable.parameter.kio"
+        ]
       },
       {
         "start": 56,
@@ -233,7 +289,9 @@
         "end": 32,
         "text": "let",
         "kind": "keyword.declaration",
-        "owners": ["neutral_bind"],
+        "owners": [
+          "neutral_bind"
+        ],
         "textmate": [
           "keyword.declaration.kio"
         ]
@@ -243,8 +301,12 @@
         "end": 35,
         "text": "x",
         "kind": "variable.parameter",
-        "owners": ["numbered_binding"],
-        "textmate": ["variable.parameter.kio"]
+        "owners": [
+          "numbered_binding"
+        ],
+        "textmate": [
+          "variable.parameter.kio"
+        ]
       },
       {
         "start": 70,
@@ -1128,7 +1190,15 @@
     "partial": true,
     "error": true,
     "targets": [
-      { "text": "signature", "start": 16, "end": 25, "kind": "identifier", "owners": ["ERROR"] }
+      {
+        "text": "signature",
+        "start": 16,
+        "end": 25,
+        "kind": "identifier",
+        "owners": [
+          "ERROR"
+        ]
+      }
     ]
   },
   {
@@ -2037,7 +2107,7 @@
   },
   {
     "name": "all_expression_forms",
-    "source": "module source;\nfn run() { id([[ do! (f) { let x <- get(); x }, rec next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]]) }\n",
+    "source": "module source;\nfn run() { id([[ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]]) }\n",
     "partial": false,
     "targets": [
       {
@@ -2051,16 +2121,16 @@
       },
       {
         "start": 63,
-        "end": 66,
-        "text": "rec",
+        "end": 68,
+        "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
         ]
       },
       {
-        "start": 100,
-        "end": 103,
+        "start": 102,
+        "end": 105,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3114,13 +3184,13 @@
   },
   {
     "name": "recursive_prefix_multiline_annotation",
-    "source": "module source; fn broken() { rec(\n poly\n) again(x) }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { recur(\n poly\n) again(x) }\nfn after() { let(x) }",
     "partial": false,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 29,
-        "end": 32,
+        "end": 34,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -3128,8 +3198,8 @@
       },
       {
         "text": "after",
-        "start": 56,
-        "end": 61,
+        "start": 58,
+        "end": 63,
         "kind": "entity.name.function",
         "owners": [
           "fn_decl_head"
@@ -3137,8 +3207,8 @@
       },
       {
         "text": "let",
-        "start": 66,
-        "end": 69,
+        "start": 68,
+        "end": 71,
         "kind": "entity.name.function",
         "owners": [
           "call_expr",
@@ -3147,8 +3217,8 @@
       },
       {
         "text": "poly",
-        "start": 35,
-        "end": 39,
+        "start": 37,
+        "end": 41,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -4836,7 +4906,7 @@
   },
   {
     "name": "nested_local_binders",
-    "source": "module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; rec(poly) again(value) } }",
+    "source": "module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }",
     "partial": false,
     "targets": [
       {
@@ -4882,9 +4952,9 @@
         "owners": []
       },
       {
-        "text": "rec",
+        "text": "recur",
         "start": 93,
-        "end": 96,
+        "end": 98,
         "kind": "keyword.declaration",
         "owners": []
       }
@@ -7110,12 +7180,12 @@
   },
   {
     "name": "rec_call_owned_callee",
-    "source": "module source; fn use() { rec again(value) }",
+    "source": "module source; fn use() { recur again(value) }",
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7123,8 +7193,8 @@
       },
       {
         "text": "again",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7134,12 +7204,12 @@
   },
   {
     "name": "rec_call_owned_annotations",
-    "source": "module source; fn use() { rec(poly, cont) again(value) }",
+    "source": "module source; fn use() { recur(poly, cont) again(value) }",
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7147,8 +7217,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7156,8 +7226,8 @@
       },
       {
         "text": "cont",
-        "start": 36,
-        "end": 40,
+        "start": 38,
+        "end": 42,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7165,8 +7235,8 @@
       },
       {
         "text": "again",
-        "start": 42,
-        "end": 47,
+        "start": 44,
+        "end": 49,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7176,12 +7246,12 @@
   },
   {
     "name": "rec_call_balanced_comment_callee",
-    "source": "module source; fn use() { rec(poly) // callee\n again(value) }",
+    "source": "module source; fn use() { recur(poly) // callee\n again(value) }",
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7189,8 +7259,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7198,8 +7268,8 @@
       },
       {
         "text": "again",
-        "start": 47,
-        "end": 52,
+        "start": 49,
+        "end": 54,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7233,13 +7303,13 @@
   },
   {
     "name": "rec_call_incomplete_callee",
-    "source": "module source; fn use() { rec again",
+    "source": "module source; fn use() { recur again",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7247,8 +7317,8 @@
       },
       {
         "text": "again",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "entity.name.function",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7258,13 +7328,13 @@
   },
   {
     "name": "rec_call_incomplete_annotated_callee",
-    "source": "module source; fn use() { rec(poly) again",
+    "source": "module source; fn use() { recur(poly) again",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7272,8 +7342,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7281,8 +7351,8 @@
       },
       {
         "text": "again",
-        "start": 36,
-        "end": 41,
+        "start": 38,
+        "end": 43,
         "kind": "entity.name.function",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7292,13 +7362,13 @@
   },
   {
     "name": "rec_call_unclosed_annotation",
-    "source": "module source; fn use() { rec(poly",
+    "source": "module source; fn use() { recur(poly",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7306,8 +7376,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7317,13 +7387,13 @@
   },
   {
     "name": "rec_call_empty_annotation_prefix",
-    "source": "module source; fn use() { rec(",
+    "source": "module source; fn use() { recur(",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7349,13 +7419,13 @@
   },
   {
     "name": "rec_call_annotation_recovery_sibling",
-    "source": "module source; fn use() { rec(poly }\nfn neighbor() { rec(value) }",
+    "source": "module source; fn use() { recur(poly }\nfn neighbor() { rec(value) }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7363,8 +7433,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7372,8 +7442,8 @@
       },
       {
         "text": "neighbor",
-        "start": 40,
-        "end": 48,
+        "start": 42,
+        "end": 50,
         "kind": "entity.name.function",
         "owners": [
           "fn_decl_head"
@@ -7381,8 +7451,8 @@
       },
       {
         "text": "rec",
-        "start": 53,
-        "end": 56,
+        "start": 55,
+        "end": 58,
         "kind": "entity.name.function",
         "owners": [
           "call_expr"
@@ -7416,13 +7486,13 @@
   },
   {
     "name": "rec_call_unclosed_annotation_partial_name",
-    "source": "module source; fn use() { rec(po",
+    "source": "module source; fn use() { recur(po",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7430,8 +7500,8 @@
       },
       {
         "text": "po",
-        "start": 30,
-        "end": 32,
+        "start": 32,
+        "end": 34,
         "kind": "identifier",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7441,13 +7511,13 @@
   },
   {
     "name": "rec_call_unclosed_annotation_invalid_name",
-    "source": "module source; fn use() { rec(value",
+    "source": "module source; fn use() { recur(value",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7455,8 +7525,8 @@
       },
       {
         "text": "value",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7466,13 +7536,13 @@
   },
   {
     "name": "rec_call_unclosed_annotation_invalid_tail",
-    "source": "module source; fn use() { rec(value, poly",
+    "source": "module source; fn use() { recur(value, poly",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7480,8 +7550,8 @@
       },
       {
         "text": "value",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7489,8 +7559,8 @@
       },
       {
         "text": "poly",
-        "start": 37,
-        "end": 41,
+        "start": 39,
+        "end": 43,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7500,13 +7570,13 @@
   },
   {
     "name": "rec_call_unclosed_annotation_valid_then_invalid",
-    "source": "module source; fn use() { rec(poly, value, cont",
+    "source": "module source; fn use() { recur(poly, value, cont",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7514,8 +7584,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7523,8 +7593,8 @@
       },
       {
         "text": "value",
-        "start": 36,
-        "end": 41,
+        "start": 38,
+        "end": 43,
         "kind": "identifier",
         "owners": [
           "incomplete_recursive_call_expression"
@@ -7532,8 +7602,8 @@
       },
       {
         "text": "cont",
-        "start": 43,
-        "end": 47,
+        "start": 45,
+        "end": 49,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7543,13 +7613,13 @@
   },
   {
     "name": "rec_call_closed_invalid_annotation",
-    "source": "module source; fn use() { rec(value) again() }",
+    "source": "module source; fn use() { recur(value) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7557,8 +7627,8 @@
       },
       {
         "text": "value",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "recursive_call_annotation"
@@ -7566,8 +7636,8 @@
       },
       {
         "text": "again",
-        "start": 37,
-        "end": 42,
+        "start": 39,
+        "end": 44,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7577,13 +7647,13 @@
   },
   {
     "name": "rec_call_closed_invalid_annotation_tail",
-    "source": "module source; fn use() { rec(poly, value, cont) again() }",
+    "source": "module source; fn use() { recur(poly, value, cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7591,8 +7661,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7600,8 +7670,8 @@
       },
       {
         "text": "value",
-        "start": 36,
-        "end": 41,
+        "start": 38,
+        "end": 43,
         "kind": "identifier",
         "owners": [
           "recursive_call_annotation"
@@ -7609,8 +7679,8 @@
       },
       {
         "text": "cont",
-        "start": 43,
-        "end": 47,
+        "start": 45,
+        "end": 49,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7618,8 +7688,8 @@
       },
       {
         "text": "again",
-        "start": 49,
-        "end": 54,
+        "start": 51,
+        "end": 56,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7629,13 +7699,38 @@
   },
   {
     "name": "rec_call_closed_invalid_nested_annotation",
-    "source": "module source; fn use() { rec(()) again() }",
+    "source": "module source; fn use() { recur(()) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
+        "kind": "keyword.declaration",
+        "owners": [
+          "recursive_call_expression"
+        ]
+      },
+      {
+        "text": "again",
+        "start": 36,
+        "end": 41,
+        "kind": "entity.name.function",
+        "owners": [
+          "recursive_call_expression"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "rec_call_closed_empty_annotation",
+    "source": "module source; fn use() { recur() again() }",
+    "partial": true,
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7653,38 +7748,13 @@
     ]
   },
   {
-    "name": "rec_call_closed_empty_annotation",
-    "source": "module source; fn use() { rec() again() }",
-    "partial": true,
-    "targets": [
-      {
-        "text": "rec",
-        "start": 26,
-        "end": 29,
-        "kind": "keyword.declaration",
-        "owners": [
-          "recursive_call_expression"
-        ]
-      },
-      {
-        "text": "again",
-        "start": 32,
-        "end": 37,
-        "kind": "entity.name.function",
-        "owners": [
-          "recursive_call_expression"
-        ]
-      }
-    ]
-  },
-  {
     "name": "rec_call_raw_annotated_keyword_callee",
-    "source": "rec(poly)\n newtype(())",
+    "source": "recur(poly)\n newtype(())",
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 0,
-        "end": 3,
+        "end": 5,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7692,8 +7762,8 @@
       },
       {
         "text": "poly",
-        "start": 4,
-        "end": 8,
+        "start": 6,
+        "end": 10,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7701,8 +7771,8 @@
       },
       {
         "text": "newtype",
-        "start": 11,
-        "end": 18,
+        "start": 13,
+        "end": 20,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7736,13 +7806,13 @@
   },
   {
     "name": "rec_call_duplicate_mode_roles",
-    "source": "module source; fn use() { rec(poly, poly) again() }",
+    "source": "module source; fn use() { recur(poly, poly) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7750,8 +7820,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7759,8 +7829,8 @@
       },
       {
         "text": "poly",
-        "start": 36,
-        "end": 40,
+        "start": 38,
+        "end": 42,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7768,8 +7838,8 @@
       },
       {
         "text": "again",
-        "start": 42,
-        "end": 47,
+        "start": 44,
+        "end": 49,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7812,13 +7882,13 @@
   },
   {
     "name": "rec_call_raw_invalid_annotation",
-    "source": "rec(value) again()",
+    "source": "recur(value) again()",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 0,
-        "end": 3,
+        "end": 5,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7826,8 +7896,8 @@
       },
       {
         "text": "value",
-        "start": 4,
-        "end": 9,
+        "start": 6,
+        "end": 11,
         "kind": "identifier",
         "owners": [
           "recursive_call_annotation"
@@ -7835,8 +7905,8 @@
       },
       {
         "text": "again",
-        "start": 11,
-        "end": 16,
+        "start": 13,
+        "end": 18,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7846,13 +7916,13 @@
   },
   {
     "name": "rec_call_raw_invalid_nested_calls",
-    "source": "rec(helper(helper(helper(value)))) again()",
+    "source": "recur(helper(helper(helper(value)))) again()",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 0,
-        "end": 3,
+        "end": 5,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7860,8 +7930,8 @@
       },
       {
         "text": "helper",
-        "start": 4,
-        "end": 10,
+        "start": 6,
+        "end": 12,
         "kind": "identifier",
         "owners": [
           "recursive_call_expression"
@@ -7869,8 +7939,8 @@
       },
       {
         "text": "again",
-        "start": 35,
-        "end": 40,
+        "start": 37,
+        "end": 42,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7913,13 +7983,13 @@
   },
   {
     "name": "rec_call_nested_annotation_name",
-    "source": "module source; fn use() { rec((poly)) again() }",
+    "source": "module source; fn use() { recur((poly)) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7927,8 +7997,8 @@
       },
       {
         "text": "poly",
-        "start": 31,
-        "end": 35,
+        "start": 33,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -7936,8 +8006,8 @@
       },
       {
         "text": "again",
-        "start": 38,
-        "end": 43,
+        "start": 40,
+        "end": 45,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7947,13 +8017,13 @@
   },
   {
     "name": "rec_call_nonidentifier_annotation_prefix",
-    "source": "module source; fn use() { rec(poly, 123) again() }",
+    "source": "module source; fn use() { recur(poly, 123) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7961,8 +8031,8 @@
       },
       {
         "text": "poly",
-        "start": 30,
-        "end": 34,
+        "start": 32,
+        "end": 36,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -7970,8 +8040,8 @@
       },
       {
         "text": "again",
-        "start": 41,
-        "end": 46,
+        "start": 43,
+        "end": 48,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -7981,13 +8051,13 @@
   },
   {
     "name": "rec_call_mode_after_nested_invalid_item",
-    "source": "module source; fn use() { rec((poly), cont) again() }",
+    "source": "module source; fn use() { recur((poly), cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -7995,8 +8065,8 @@
       },
       {
         "text": "poly",
-        "start": 31,
-        "end": 35,
+        "start": 33,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8004,8 +8074,8 @@
       },
       {
         "text": "cont",
-        "start": 38,
-        "end": 42,
+        "start": 40,
+        "end": 44,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8013,8 +8083,8 @@
       },
       {
         "text": "again",
-        "start": 44,
-        "end": 49,
+        "start": 46,
+        "end": 51,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8057,12 +8127,12 @@
   },
   {
     "name": "rec_call_annotation_comma_runs",
-    "source": "module source; fn use() { rec(,,poly,,cont,,) again() }",
+    "source": "module source; fn use() { recur(,,poly,,cont,,) again() }",
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8070,8 +8140,8 @@
       },
       {
         "text": "poly",
-        "start": 32,
-        "end": 36,
+        "start": 34,
+        "end": 38,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8079,8 +8149,8 @@
       },
       {
         "text": "cont",
-        "start": 38,
-        "end": 42,
+        "start": 40,
+        "end": 44,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8088,8 +8158,8 @@
       },
       {
         "text": "again",
-        "start": 46,
-        "end": 51,
+        "start": 48,
+        "end": 53,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8132,13 +8202,13 @@
   },
   {
     "name": "rec_call_comma_only_annotation",
-    "source": "module source; fn use() { rec(,,) again() }",
+    "source": "module source; fn use() { recur(,,) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8146,8 +8216,8 @@
       },
       {
         "text": "again",
-        "start": 34,
-        "end": 39,
+        "start": 36,
+        "end": 41,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8157,13 +8227,13 @@
   },
   {
     "name": "rec_call_missing_comma_item_boundary",
-    "source": "module source; fn use() { rec(value poly, cont) again() }",
+    "source": "module source; fn use() { recur(value poly, cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8171,8 +8241,8 @@
       },
       {
         "text": "value",
-        "start": 30,
-        "end": 35,
+        "start": 32,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "recursive_call_annotation"
@@ -8180,8 +8250,8 @@
       },
       {
         "text": "poly",
-        "start": 36,
-        "end": 40,
+        "start": 38,
+        "end": 42,
         "kind": "identifier",
         "owners": [
           "recursive_call_annotation"
@@ -8189,8 +8259,8 @@
       },
       {
         "text": "cont",
-        "start": 42,
-        "end": 46,
+        "start": 44,
+        "end": 48,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8198,8 +8268,8 @@
       },
       {
         "text": "again",
-        "start": 48,
-        "end": 53,
+        "start": 50,
+        "end": 55,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8209,13 +8279,13 @@
   },
   {
     "name": "rec_call_star_variadic_annotation_item",
-    "source": "module source; fn use() { rec([* poly, poly *], cont) again() }",
+    "source": "module source; fn use() { recur([* poly, poly *], cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8223,8 +8293,8 @@
       },
       {
         "text": "poly",
-        "start": 33,
-        "end": 37,
+        "start": 35,
+        "end": 39,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8232,8 +8302,8 @@
       },
       {
         "text": "poly",
-        "start": 39,
-        "end": 43,
+        "start": 41,
+        "end": 45,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8241,8 +8311,8 @@
       },
       {
         "text": "cont",
-        "start": 48,
-        "end": 52,
+        "start": 50,
+        "end": 54,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8250,8 +8320,8 @@
       },
       {
         "text": "again",
-        "start": 54,
-        "end": 59,
+        "start": 56,
+        "end": 61,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8261,13 +8331,13 @@
   },
   {
     "name": "rec_call_general_variadic_annotation_item",
-    "source": "module source; fn use() { rec([+ poly, poly +], cont) again() }",
+    "source": "module source; fn use() { recur([+ poly, poly +], cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8275,8 +8345,8 @@
       },
       {
         "text": "poly",
-        "start": 33,
-        "end": 37,
+        "start": 35,
+        "end": 39,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8284,8 +8354,8 @@
       },
       {
         "text": "poly",
-        "start": 39,
-        "end": 43,
+        "start": 41,
+        "end": 45,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8293,8 +8363,8 @@
       },
       {
         "text": "cont",
-        "start": 48,
-        "end": 52,
+        "start": 50,
+        "end": 54,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8302,8 +8372,8 @@
       },
       {
         "text": "again",
-        "start": 54,
-        "end": 59,
+        "start": 56,
+        "end": 61,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8313,13 +8383,13 @@
   },
   {
     "name": "rec_call_nested_variadic_annotation_item",
-    "source": "module source; fn use() { rec([+ poly, [* poly, poly *] +], cont) again() }",
+    "source": "module source; fn use() { recur([+ poly, [* poly, poly *] +], cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8327,8 +8397,8 @@
       },
       {
         "text": "poly",
-        "start": 33,
-        "end": 37,
+        "start": 35,
+        "end": 39,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8336,8 +8406,8 @@
       },
       {
         "text": "poly",
-        "start": 42,
-        "end": 46,
+        "start": 44,
+        "end": 48,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8345,8 +8415,8 @@
       },
       {
         "text": "poly",
-        "start": 48,
-        "end": 52,
+        "start": 50,
+        "end": 54,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8354,8 +8424,8 @@
       },
       {
         "text": "cont",
-        "start": 60,
-        "end": 64,
+        "start": 62,
+        "end": 66,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8363,8 +8433,8 @@
       },
       {
         "text": "again",
-        "start": 66,
-        "end": 71,
+        "start": 68,
+        "end": 73,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8374,13 +8444,13 @@
   },
   {
     "name": "rec_call_unclosed_variadic_annotation_item",
-    "source": "module source; fn use() { rec([* poly, poly, cont) again() }",
+    "source": "module source; fn use() { recur([* poly, poly, cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8388,8 +8458,8 @@
       },
       {
         "text": "poly",
-        "start": 33,
-        "end": 37,
+        "start": 35,
+        "end": 39,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8397,8 +8467,8 @@
       },
       {
         "text": "poly",
-        "start": 39,
-        "end": 43,
+        "start": 41,
+        "end": 45,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8406,8 +8476,8 @@
       },
       {
         "text": "cont",
-        "start": 45,
-        "end": 49,
+        "start": 47,
+        "end": 51,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8415,8 +8485,8 @@
       },
       {
         "text": "again",
-        "start": 51,
-        "end": 56,
+        "start": 53,
+        "end": 58,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -8468,13 +8538,13 @@
   },
   {
     "name": "rec_call_mismatched_variadic_annotation_item",
-    "source": "module source; fn use() { rec([+ poly, poly %], cont) again() }",
+    "source": "module source; fn use() { recur([+ poly, poly %], cont) again() }",
     "partial": true,
     "targets": [
       {
-        "text": "rec",
+        "text": "recur",
         "start": 26,
-        "end": 29,
+        "end": 31,
         "kind": "keyword.declaration",
         "owners": [
           "recursive_call_expression"
@@ -8482,8 +8552,8 @@
       },
       {
         "text": "poly",
-        "start": 33,
-        "end": 37,
+        "start": 35,
+        "end": 39,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8491,8 +8561,8 @@
       },
       {
         "text": "poly",
-        "start": 39,
-        "end": 43,
+        "start": 41,
+        "end": 45,
         "kind": "identifier",
         "owners": [
           "recursive_recovery_group"
@@ -8500,8 +8570,8 @@
       },
       {
         "text": "cont",
-        "start": 48,
-        "end": 52,
+        "start": 50,
+        "end": 54,
         "kind": "keyword.control",
         "owners": [
           "recursive_call_annotation"
@@ -8509,8 +8579,8 @@
       },
       {
         "text": "again",
-        "start": 54,
-        "end": 59,
+        "start": 56,
+        "end": 61,
         "kind": "entity.name.function",
         "owners": [
           "recursive_call_expression"
@@ -11696,10 +11766,42 @@
     "name": "semicolons_signature_host_head_children",
     "source": "signature app v(1); v(1) { breaking { add { module api { host type T; host fn fetch() -> T } } } }",
     "targets": [
-      { "text": "type", "start": 62, "end": 66, "kind": "keyword.declaration", "owners": ["host_type_head"] },
-      { "text": "T", "start": 67, "end": 68, "kind": "entity.name.type", "owners": ["host_type_head"] },
-      { "text": "fn", "start": 75, "end": 77, "kind": "keyword.declaration", "owners": ["host_fn_head"] },
-      { "text": "fetch", "start": 78, "end": 83, "kind": "entity.name.function", "owners": ["host_fn_head"] }
+      {
+        "text": "type",
+        "start": 62,
+        "end": 66,
+        "kind": "keyword.declaration",
+        "owners": [
+          "host_type_head"
+        ]
+      },
+      {
+        "text": "T",
+        "start": 67,
+        "end": 68,
+        "kind": "entity.name.type",
+        "owners": [
+          "host_type_head"
+        ]
+      },
+      {
+        "text": "fn",
+        "start": 75,
+        "end": 77,
+        "kind": "keyword.declaration",
+        "owners": [
+          "host_fn_head"
+        ]
+      },
+      {
+        "text": "fetch",
+        "start": 78,
+        "end": 83,
+        "kind": "entity.name.function",
+        "owners": [
+          "host_fn_head"
+        ]
+      }
     ]
   },
   {
@@ -11926,6 +12028,498 @@
         "kind": "identifier",
         "owners": [
           "function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ordinary_recur_word_call",
+    "source": "module source; fn broken() { recur(value) }\nfn after() { let(x) }",
+    "partial": false,
+    "targets": [
+      {
+        "text": "recur",
+        "start": 29,
+        "end": 34,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "after",
+        "start": 47,
+        "end": 52,
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head"
+        ]
+      },
+      {
+        "text": "let",
+        "start": 57,
+        "end": 60,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr",
+          "function_definition"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ordinary_recur_word_annotation_name_call",
+    "source": "module source; fn broken() { recur(poly) }\nfn after() { let(x) }",
+    "partial": false,
+    "targets": [
+      {
+        "text": "recur",
+        "start": 29,
+        "end": 34,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "after",
+        "start": 46,
+        "end": 51,
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head"
+        ]
+      },
+      {
+        "text": "let",
+        "start": 56,
+        "end": 59,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr",
+          "function_definition"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 35,
+        "end": 39,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_compact_prime_body",
+    "source": "module source; fn use(recur: .)->.{recur}",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 22,
+        "end": 27,
+        "kind": "variable.parameter",
+        "owners": [
+          "binding_pattern"
+        ]
+      },
+      {
+        "text": "recur",
+        "start": 35,
+        "end": 40,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_direct_call",
+    "source": "module source; fn use(recur: . -> .) -> . { recur() }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 22,
+        "end": 27,
+        "kind": "variable.parameter",
+        "owners": [
+          "binding_pattern"
+        ]
+      },
+      {
+        "text": "recur",
+        "start": 44,
+        "end": 49,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_balanced_nested_call",
+    "source": "module source; fn use(recur: . -> ., poly: .) -> . { recur(((poly))) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 53,
+        "end": 58,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 61,
+        "end": 65,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_qualified_head",
+    "source": "module source; fn use() { recur.helper(value) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "identifier",
+        "vscodeKind": "entity.name.module",
+        "owners": [
+          "call_callee"
+        ]
+      },
+      {
+        "text": "helper",
+        "start": 32,
+        "end": 38,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_qualified_leaf",
+    "source": "module source; fn use() { helper.recur(value) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 33,
+        "end": 38,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_right_ufcs",
+    "source": "module source; fn use() { value.>recur }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 33,
+        "end": 38,
+        "kind": "entity.name.function",
+        "owners": [
+          "ufcs_expr"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_left_ufcs",
+    "source": "module source; fn use() { recur.<value }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "ufcs_expr"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_delimited_arguments",
+    "source": "module source; fn use() { f(recur, recur(poly), helper.recur) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 28,
+        "end": 33,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "recur",
+        "start": 35,
+        "end": 40,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 41,
+        "end": 45,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "recur",
+        "start": 55,
+        "end": 60,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_balanced_comment_boundary",
+    "source": "module source; fn use() { recur(poly) // final\n }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 32,
+        "end": 36,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_bare_at_eof",
+    "source": "module source; fn use() { recur",
+    "partial": true,
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_headerless_prime_body",
+    "source": "fn use(recur: .)->.{recur}",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 7,
+        "end": 12,
+        "kind": "variable.parameter",
+        "owners": [
+          "binding_pattern"
+        ]
+      },
+      {
+        "text": "recur",
+        "start": 20,
+        "end": 25,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_raw_balanced_call",
+    "source": "recur(poly)",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 0,
+        "end": 5,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 6,
+        "end": 10,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_duplicate_argument_names",
+    "source": "module source; fn use() { recur(poly, poly) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 32,
+        "end": 36,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 38,
+        "end": 42,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_nested_item_call_inverse",
+    "source": "module source; fn use() { recur((poly), cont) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 33,
+        "end": 37,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "cont",
+        "start": 40,
+        "end": 44,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_argument_comma_runs",
+    "source": "module source; fn use() { recur(,,poly,,cont,,) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 34,
+        "end": 38,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "cont",
+        "start": 40,
+        "end": 44,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recur_name_variadic_argument",
+    "source": "module source; fn use() { recur([* poly, poly *], cont) }",
+    "targets": [
+      {
+        "text": "recur",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 35,
+        "end": 39,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "poly",
+        "start": 41,
+        "end": 45,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      },
+      {
+        "text": "cont",
+        "start": 50,
+        "end": 54,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
         ]
       }
     ]

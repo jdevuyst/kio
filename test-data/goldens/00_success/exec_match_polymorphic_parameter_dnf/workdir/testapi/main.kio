@@ -17,9 +17,7 @@ fn extract[A](slot: Box(A) | Other(A)) -> A {
 }
 
 fn named(input: Box(String)) -> String {
-  match! input {
-    extract
-  }
+  match! input { extract }
 }
 
 fn inline(input: Box(String) | Other(String)) -> String {

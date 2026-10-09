@@ -12,7 +12,7 @@ import testapi/iter(loop);
 pub rec(loop) fn seed_row_at(index: I32, last: I32, row: Array(I32)) -> Array(I32) {
   if! arith.leq_i32(index, last) {
     array.array_set(row, index, index);
-    rec seed_row_at(arith.add_i32(index, 1), last, row)
+    recur seed_row_at(arith.add_i32(index, 1), last, row)
   } else {
     row
   }
@@ -24,11 +24,7 @@ pub fn seed_row(last: I32) -> Array(I32) {
 }
 
 fn substitution_cost(left_token: I32, right_token: I32) -> I32 {
-  if! math.i32_eq(left_token, right_token) {
-    0
-  } else {
-    1
-  }
+  if! math.i32_eq(left_token, right_token) { 0 } else { 1 }
 }
 
 fn cell_cost(prev: Array(I32), curr: Array(I32), left_token: I32, right_token: I32, index: I32) -> I32 {
@@ -40,18 +36,18 @@ fn cell_cost(prev: Array(I32), curr: Array(I32), left_token: I32, right_token: I
 }
 
 pub rec(loop) fn fill_row_at(
-  , index: I32
-  , last: I32
-  , prev: Array(I32)
-  , curr: Array(I32)
-  , left_token: I32
-  , right: Array(I32)
-  ) -> Array(I32) {
+, index: I32
+, last: I32
+, prev: Array(I32)
+, curr: Array(I32)
+, left_token: I32
+, right: Array(I32)
+) -> Array(I32) {
   if! arith.leq_i32(index, last) {
     let right_token = array.array_get(right, arith.sub_i32(index, 1));
     let cost = cell_cost(prev, curr, left_token, right_token, index);
     array.array_set(curr, index, cost);
-    rec fill_row_at(arith.add_i32(index, 1), last, prev, curr, left_token, right)
+    recur fill_row_at(arith.add_i32(index, 1), last, prev, curr, left_token, right)
   } else {
     curr
   }
@@ -65,19 +61,19 @@ pub fn build_row(index: I32, prev: Array(I32), left: Array(I32), right: Array(I3
 }
 
 pub rec(loop) fn walk_rows(
-  , index: I32
-  , left_len: I32
-  , right_len: I32
-  , left: Array(I32)
-  , right: Array(I32)
-  , prev: Array(I32)
-  , matrix_checksum: I32
-  ) -> I32 {
+, index: I32
+, left_len: I32
+, right_len: I32
+, left: Array(I32)
+, right: Array(I32)
+, prev: Array(I32)
+, matrix_checksum: I32
+) -> I32 {
   if! arith.leq_i32(index, left_len) {
     let row = build_row(index, prev, left, right, right_len);
     let checksum = render.print_row(index, row, right_len);
     let next_checksum = arith.add_i32(arith.mul_i32(matrix_checksum, 31), checksum);
-    rec walk_rows(arith.add_i32(index, 1), left_len, right_len, left, right, row, next_checksum)
+    recur walk_rows(arith.add_i32(index, 1), left_len, right_len, left, right, row, next_checksum)
   } else {
     io.print("matrix_checksum=");
     render.print_i32(matrix_checksum);

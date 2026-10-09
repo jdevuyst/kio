@@ -1858,9 +1858,9 @@ mod tests {
             "main.kio",
             "module pkg/main;\n\
              rec(loop) {\n\
-               fn local(value: .) -> . { rec exported(value) };\n\
-               pub(pkg) fn scoped(value: .) -> . { rec local(value) };\n\
-               pub fn exported(value: .) -> . { rec scoped(value) }\n\
+               fn local(value: .) -> . { recur exported(value) };\n\
+               pub(pkg) fn scoped(value: .) -> . { recur local(value) };\n\
+               pub fn exported(value: .) -> . { recur scoped(value) }\n\
              }\n",
         );
         let md = write_tempfile(dir.path(), "guide.md", "See [`exported`].\n");

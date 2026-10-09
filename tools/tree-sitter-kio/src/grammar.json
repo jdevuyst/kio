@@ -3978,6 +3978,10 @@
           "name": "keyword_rec"
         },
         {
+          "type": "SYMBOL",
+          "name": "keyword_recur"
+        },
+        {
           "type": "STRING",
           "value": "poly"
         },
@@ -7735,7 +7739,7 @@
         "members": [
           {
             "type": "SYMBOL",
-            "name": "keyword_rec"
+            "name": "keyword_recur"
           },
           {
             "type": "CHOICE",
@@ -7779,7 +7783,7 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "keyword_rec"
+                  "name": "keyword_recur"
                 },
                 {
                   "type": "CHOICE",
@@ -7809,7 +7813,7 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "keyword_rec"
+                  "name": "keyword_recur"
                 },
                 {
                   "type": "SYMBOL",
@@ -9467,6 +9471,17 @@
         "content": {
           "type": "STRING",
           "value": "rec"
+        }
+      }
+    },
+    "keyword_recur": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 2,
+        "content": {
+          "type": "STRING",
+          "value": "recur"
         }
       }
     },
@@ -11688,6 +11703,10 @@
       "_token",
       "recursive_function_definition",
       "recursive_function_group",
+      "call_callee"
+    ],
+    [
+      "_token",
       "recursive_call_expression",
       "incomplete_recursive_call_expression",
       "call_callee"

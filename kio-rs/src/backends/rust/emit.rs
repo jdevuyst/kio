@@ -13949,7 +13949,7 @@ mod tests {
              labels Array_state = { cells: Array(I32) }; \
              labels Scalar_state = { done: Bool }; \
              rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \
-               if! done { state } else { rec keep_array_once(.t, state, scalar) } \
+               if! done { state } else { recur keep_array_once(.t, state, scalar) } \
              }",
                 include_str!("../../../../test-data/poc/elab/workdir/control.kio"),
             ],

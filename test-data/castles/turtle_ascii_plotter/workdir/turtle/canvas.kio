@@ -32,29 +32,31 @@ pub fn on_canvas(w: I32, h: I32, x: I32, y: I32) -> Bool {
 fn update_nth[A](xs: list.List(A), i: I32, f: A -> A) -> list.List(A) {
   match! list.uncons(drop(i, xs)) {
     (
-      , .(x: A, rest: list.List(A)) { append(take(i, xs), list.cons(f(x), rest)) }
-      , .(_empty: .) { xs }
-      )
+    , .(x: A, rest: list.List(A)) { append(take(i, xs), list.cons(f(x), rest)) }
+    , .(_empty: .) { xs }
+    )
   }
 }
 
 /// Write `code` into the cell at `(x, y)`.
 pub fn ink(cv: Canvas, x: I32, y: I32, code: I32) -> Canvas {
-  update_nth(cv, y, .(row: list.List(I32)) { update_nth(row, x, .(_old: I32) { code }) })
+  update_nth(
+  , cv
+  , y
+  , .(row: list.List(I32)) {
+      update_nth(row, x, .(_old: I32) { code })
+    }
+  )
 }
 
 fn count_row(row: list.List(I32)) -> I32 {
   foldl(
-    , .(acc: I32, code: I32) {
-        if! glyph.is_inked(code) {
-          add_i32(acc, 1)
-        } else {
-          acc
-        }
-      }
-    , 0
-    , row
-    )
+  , .(acc: I32, code: I32) {
+      if! glyph.is_inked(code) { add_i32(acc, 1) } else { acc }
+    }
+  , 0
+  , row
+  )
 }
 
 /// How many cells carry ink. This is exactly the count of non-`.` characters

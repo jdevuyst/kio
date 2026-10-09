@@ -10,37 +10,37 @@ import testapi/array as ar;
 import testapi/iter(loop);
 
 rec(loop) fn reconstruct(
-  , network: net.Network
-  , parent: Array(I32)
-  , source: I32
-  , node: I32
-  , path: Array(I32)
-  ) -> Array(I32) {
+, network: net.Network
+, parent: Array(I32)
+, source: I32
+, node: I32
+, path: Array(I32)
+) -> Array(I32) {
   if! math.equal(node, source) {
     path
   } else {
     let edge_index = ar.array_get(parent, node);
     ar.array_push(path, edge_index);
-    rec reconstruct(
-      , network
-      , parent
-      , source
-      , ar.array_get(network.?{net.edges}, edge_index).?{net.from}
-      , path
-      )
+    recur reconstruct(
+    , network
+    , parent
+    , source
+    , ar.array_get(network.?{net.edges}, edge_index).?{net.from}
+    , path
+    )
   }
 }
 
 rec(loop) fn walk(
-  , network: net.Network
-  , residual: Array(I32)
-  , source: I32
-  , sink: I32
-  , parent: Array(I32)
-  , seen: Array(Bool)
-  , node: I32
-  , index: I32
-  ) -> Array(I32) | . {
+, network: net.Network
+, residual: Array(I32)
+, source: I32
+, sink: I32
+, parent: Array(I32)
+, seen: Array(Bool)
+, node: I32
+, index: I32
+) -> Array(I32) | . {
   if! math.equal(node, sink) {
     reconstruct(network, parent, source, sink, ar.array_make_empty(I32, ())).>widen_sum!
   } else {
@@ -48,33 +48,33 @@ rec(loop) fn walk(
     if! math.less(index, ar.array_len(edges)) {
       let edge = ar.array_get(edges, index);
       let usable = math.both(
-        , math.equal(edge.?{net.from}, node)
-        , math.both(
-            , math.less(0, ar.array_get(residual, index))
-            , math.invert(ar.array_get(seen, edge.?{net.to}))
-            )
-        );
+      , math.equal(edge.?{net.from}, node)
+      , math.both(
+        , math.less(0, ar.array_get(residual, index))
+        , math.invert(ar.array_get(seen, edge.?{net.to}))
+        )
+      );
       if! usable {
         ar.array_set(parent, edge.?{net.to}, index);
         ar.array_set(seen, edge.?{net.to}, .t);
-        rec walk(network, residual, source, sink, parent, seen, edge.?{net.to}, 0)
+        recur walk(network, residual, source, sink, parent, seen, edge.?{net.to}, 0)
       } else {
-        rec walk(network, residual, source, sink, parent, seen, node, a.add_i32(index, 1))
+        recur walk(network, residual, source, sink, parent, seen, node, a.add_i32(index, 1))
       }
     } else if! math.equal(node, source) {
       ().>widen_sum!
     } else {
       let previous = ar.array_get(parent, node);
-      rec walk(
-        , network
-        , residual
-        , source
-        , sink
-        , parent
-        , seen
-        , ar.array_get(edges, previous).?{net.from}
-        , a.add_i32(previous, 1)
-        )
+      recur walk(
+      , network
+      , residual
+      , source
+      , sink
+      , parent
+      , seen
+      , ar.array_get(edges, previous).?{net.from}
+      , a.add_i32(previous, 1)
+      )
     }
   }
 }
@@ -89,43 +89,43 @@ pub fn augmenting_path(network: net.Network, residual: Array(I32), source: I32, 
 }
 
 rec(loop) fn scan_reachable(
-  , network: net.Network
-  , residual: Array(I32)
-  , reached: Array(Bool)
-  , queue: Array(I32)
-  , node: I32
-  , index: I32
-  ) {
+, network: net.Network
+, residual: Array(I32)
+, reached: Array(Bool)
+, queue: Array(I32)
+, node: I32
+, index: I32
+) {
   if! math.less(index, ar.array_len(network.?{net.edges})) {
     let edge = ar.array_get(network.?{net.edges}, index);
     if! math.both(
-      , math.equal(edge.?{net.from}, node)
-      , math.both(
-          , math.less(0, ar.array_get(residual, index))
-          , math.invert(ar.array_get(reached, edge.?{net.to}))
-          )
-      ) {
+    , math.equal(edge.?{net.from}, node)
+    , math.both(
+      , math.less(0, ar.array_get(residual, index))
+      , math.invert(ar.array_get(reached, edge.?{net.to}))
+      )
+    ) {
       ar.array_set(reached, edge.?{net.to}, .t);
       ar.array_push(queue, edge.?{net.to})
     } else {
       ()
     };
-    rec scan_reachable(network, residual, reached, queue, node, a.add_i32(index, 1))
+    recur scan_reachable(network, residual, reached, queue, node, a.add_i32(index, 1))
   } else {
     ()
   }
 }
 
 rec(loop) fn breadth_first(
-  , network: net.Network
-  , residual: Array(I32)
-  , reached: Array(Bool)
-  , queue: Array(I32)
-  , head: I32
-  ) -> Array(Bool) {
+, network: net.Network
+, residual: Array(I32)
+, reached: Array(Bool)
+, queue: Array(I32)
+, head: I32
+) -> Array(Bool) {
   if! math.less(head, ar.array_len(queue)) {
     scan_reachable(network, residual, reached, queue, ar.array_get(queue, head), 0);
-    rec breadth_first(network, residual, reached, queue, a.add_i32(head, 1))
+    recur breadth_first(network, residual, reached, queue, a.add_i32(head, 1))
   } else {
     reached
   }

@@ -26,9 +26,9 @@ fn cross(left: Rational, right: Rational, join: (I32 & I32) -> I32) -> Eval {
   let .(left_num: I32, left_den: I32) = parts(left);
   let .(right_num: I32, right_den: I32) = parts(right);
   reduced(
-    , join(arith.mul(left_num, right_den), arith.mul(right_num, left_den))
-    , arith.mul(left_den, right_den)
-    )
+  , join(arith.mul(left_num, right_den), arith.mul(right_num, left_den))
+  , arith.mul(left_den, right_den)
+  )
 }
 
 /// `a/b * c/d` is `ac/bd`, multiplying the parts straight across.

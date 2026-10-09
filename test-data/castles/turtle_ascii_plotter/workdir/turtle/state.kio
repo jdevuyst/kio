@@ -50,53 +50,53 @@ pub fn facing_dy(f: Facing) -> I32 {
 pub fn turn_right(f: Facing) -> Facing {
   match! f {
     (
-      , .(_n: North) { east_facing() }
-      , .(_e: East) { south_facing() }
-      , .(_s: South) { west_facing() }
-      , .(_w: West) { north_facing() }
-      )
+    , .(_n: North) { east_facing() }
+    , .(_e: East) { south_facing() }
+    , .(_s: South) { west_facing() }
+    , .(_w: West) { north_facing() }
+    )
   }
 }
 
 pub fn turn_left(f: Facing) -> Facing {
   match! f {
     (
-      , .(_n: North) { west_facing() }
-      , .(_e: East) { north_facing() }
-      , .(_s: South) { east_facing() }
-      , .(_w: West) { south_facing() }
-      )
+    , .(_n: North) { west_facing() }
+    , .(_e: East) { north_facing() }
+    , .(_s: South) { east_facing() }
+    , .(_w: West) { south_facing() }
+    )
   }
 }
 
 /// The whole interpreter state: the paper, the turtle, and the two counters
 /// the report reads back.
 pub labels State = {
-  , paper: canvas.Canvas
-  , width: I32
-  , height: I32
-  , tx: I32
-  , ty: I32
-  , heading: Facing
-  , down: Bool
-  , executed: I32
-  , clipped: I32
-  };
+, paper: canvas.Canvas
+, width: I32
+, height: I32
+, tx: I32
+, ty: I32
+, heading: Facing
+, down: Bool
+, executed: I32
+, clipped: I32
+};
 
 /// The turtle before the first command: origin of a blank canvas, facing east,
 /// pen up.
 pub fn start_state(w: I32, h: I32) -> State {
   {
-    , paper = canvas.blank(w, h)
-    , width = w
-    , height = h
-    , tx = 0
-    , ty = 0
-    , heading = east_facing()
-    , down = .f
-    , executed = 0
-    , clipped = 0
-    }
+  , paper = canvas.blank(w, h)
+  , width = w
+  , height = h
+  , tx = 0
+  , ty = 0
+  , heading = east_facing()
+  , down = .f
+  , executed = 0
+  , clipped = 0
+  }
 }
 
 pub fn paper_of(s: State) -> canvas.Canvas { s.?{paper} }
@@ -135,9 +135,5 @@ pub fn tick(s: State) -> State { s.!{executed = add_i32(s.?{executed}, 1)} }
 pub fn clip(s: State) -> State { s.!{clipped = add_i32(s.?{clipped}, 1)} }
 
 pub fn pen_name(d: Bool) -> String {
-  if! d {
-    "down"
-  } else {
-    "up"
-  }
+  if! d { "down" } else { "up" }
 }

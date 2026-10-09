@@ -4,30 +4,30 @@ import library/core(List, head, nil, singleton, tail);
 import library/elab/match(match);
 import library/elab/spine_elaborators(widen_sum);
 import library/list(
-  , append
-  , at
-  , drop
-  , elem
-  , filter
-  , find
-  , foldl
-  , foldr
-  , index_of
-  , iterate
-  , last
-  , length
-  , map
-  , null
-  , op _ ++ _
-  , op _ +: __
-  , op _ <| __ |>
-  , op _ |> _
-  , replicate
-  , reverse
-  , take
-  , to_string
-  , varop [* *]
-  );
+, append
+, at
+, drop
+, elem
+, filter
+, find
+, foldl
+, foldr
+, index_of
+, iterate
+, last
+, length
+, map
+, null
+, op _ ++ _
+, op _ +: __
+, op _ <| __ |>
+, op _ |> _
+, replicate
+, reverse
+, take
+, to_string
+, varop [* *]
+);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -46,13 +46,13 @@ fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
 
 fn show_result[A](label: String, result: A | ., render: A -> String) {
   show(
-    , label
-    , fold_result(
-        , "none"
-        , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
-        , result
-        )
+  , label
+  , fold_result(
+    , "none"
+    , .(value: A) -> String { string_concat("some(", string_concat(render(value), ")")) }
+    , result
     )
+  )
 }
 
 fn show_result_i32(label: String, result: I32 | .) { show_result(label, result, int_to_string) }
@@ -100,9 +100,9 @@ pub fn main() {
   show_result_i32("xs[2]", xs <| 2 |>);
   show_result_i32("xs[9]", xs <| 9 |>);
   show(
-    , "index_of(4, xs)"
-    , fold_result("none", .(j: I32) -> String { int_to_string(j) }, index_of(eq_i32, 4, xs))
-    );
+  , "index_of(4, xs)"
+  , fold_result("none", .(j: I32) -> String { int_to_string(j) }, index_of(eq_i32, 4, xs))
+  );
   let unit_list = singleton(());
   let render_unit = .(_unit: .) -> String { "unit" };
   show_result("head(unit)", head(unit_list), render_unit);

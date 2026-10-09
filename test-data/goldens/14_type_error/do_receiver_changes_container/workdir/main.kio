@@ -9,9 +9,5 @@ pub newtype Other[A] : A { constructor other; projector unother }
 host fn bind[A][B](value: Box(A), next: A -> Other(B)) -> Other(B);
 
 fn run() -> Other(.) {
-  do! bind {
-    let first <- Box.box(());
-    let second <- Box.box(());
-    Other.other(second)
-  }
+  do! bind { let first <- Box.box(()); let second <- Box.box(()); Other.other(second) }
 }

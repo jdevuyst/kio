@@ -8,20 +8,20 @@
 module automata/nfa;
 
 import automata/pattern(
-  , Alt
-  , Cat
-  , Chr
-  , Opt
-  , Pattern
-  , Plus
-  , Star
-  , {alt}
-  , {cat}
-  , {chr}
-  , {opt}
-  , {plus}
-  , {star}
-  );
+, Alt
+, Cat
+, Chr
+, Opt
+, Pattern
+, Plus
+, Star
+, {alt}
+, {cat}
+, {chr}
+, {opt}
+, {plus}
+, {star}
+);
 import automata/seq(List, append, cons, one);
 import automata/symbol(epsilon);
 import elab/control(if);
@@ -71,18 +71,9 @@ fn postfix(inner: Frag, skip: Bool, again: Bool) -> Frag {
   let s = inner.?{f_next};
   let t = add_i32(s, 1);
   let body = cons(eps(s, inner.?{f_start}), one(eps(inner.?{f_accept}, t)));
-  let bypassed =
-    if! skip {
-      cons(eps(s, t), body)
-    } else {
-      body
-    };
+  let bypassed = if! skip { cons(eps(s, t), body) } else { body };
   let looped =
-    if! again {
-      cons(eps(inner.?{f_accept}, inner.?{f_start}), bypassed)
-    } else {
-      bypassed
-    };
+    if! again { cons(eps(inner.?{f_accept}, inner.?{f_start}), bypassed) } else { bypassed };
   frag(s, t, add_i32(s, 2), append(inner.?{f_edges}, looped))
 }
 
@@ -90,14 +81,11 @@ fn postfix(inner: Frag, skip: Bool, again: Bool) -> Frag {
 /// new state is minted.
 fn series(left: Frag, right: Frag) -> Frag {
   frag(
-    , left.?{f_start}
-    , right.?{f_accept}
-    , right.?{f_next}
-    , append(
-        , append(left.?{f_edges}, right.?{f_edges})
-        , one(eps(left.?{f_accept}, right.?{f_start}))
-        )
-    )
+  , left.?{f_start}
+  , right.?{f_accept}
+  , right.?{f_next}
+  , append(append(left.?{f_edges}, right.?{f_edges}), one(eps(left.?{f_accept}, right.?{f_start})))
+  )
 }
 
 /// In parallel: a fresh entry epsilon-forks into both, and both exits
@@ -107,12 +95,9 @@ fn parallel(left: Frag, right: Frag) -> Frag {
   let t = add_i32(s, 1);
   let wiring =
     cons(
-      , eps(s, left.?{f_start})
-      , cons(
-          , eps(s, right.?{f_start})
-          , cons(eps(left.?{f_accept}, t), one(eps(right.?{f_accept}, t)))
-          )
-      );
+    , eps(s, left.?{f_start})
+    , cons(eps(s, right.?{f_start}), cons(eps(left.?{f_accept}, t), one(eps(right.?{f_accept}, t))))
+    );
   frag(s, t, add_i32(s, 2), append(append(left.?{f_edges}, right.?{f_edges}), wiring))
 }
 
@@ -122,33 +107,33 @@ fn parallel(left: Frag, right: Frag) -> Frag {
 rec(loop) fn build(p: Pattern, next: I32) -> Frag {
   match! p.>Pattern.unpack {
     (
-      , .(x: Chr) {
-          let t = add_i32(next, 1);
-          frag(next, t, add_i32(next, 2), one(edge(next, x.?{chr}, t)))
-        }
-      , .(x: Cat) {
-          let .(left: Pattern, right: Pattern) = x.?{cat};
-          let built = rec(cont) build(left, next);
-          series(built, rec(cont) build(right, built.?{f_next}))
-        }
-      , .(x: Alt) {
-          let .(left: Pattern, right: Pattern) = x.?{alt};
-          let built = rec(cont) build(left, next);
-          parallel(built, rec(cont) build(right, built.?{f_next}))
-        }
-      , .(x: Star) { postfix(rec(cont) build(x.?{star}, next), .t, .t) }
-      , .(x: Plus) { postfix(rec(cont) build(x.?{plus}, next), .f, .t) }
-      , .(x: Opt) { postfix(rec(cont) build(x.?{opt}, next), .t, .f) }
-      )
+    , .(x: Chr) {
+        let t = add_i32(next, 1);
+        frag(next, t, add_i32(next, 2), one(edge(next, x.?{chr}, t)))
+      }
+    , .(x: Cat) {
+        let .(left: Pattern, right: Pattern) = x.?{cat};
+        let built = recur(cont) build(left, next);
+        series(built, recur(cont) build(right, built.?{f_next}))
+      }
+    , .(x: Alt) {
+        let .(left: Pattern, right: Pattern) = x.?{alt};
+        let built = recur(cont) build(left, next);
+        parallel(built, recur(cont) build(right, built.?{f_next}))
+      }
+    , .(x: Star) { postfix(recur(cont) build(x.?{star}, next), .t, .t) }
+    , .(x: Plus) { postfix(recur(cont) build(x.?{plus}, next), .f, .t) }
+    , .(x: Opt) { postfix(recur(cont) build(x.?{opt}, next), .t, .f) }
+    )
   }
 }
 
 pub fn compile(p: Pattern) -> Nfa {
   let built = build(p, 0);
   {
-    , nfa_count = built.?{f_next}
-    , nfa_start = built.?{f_start}
-    , nfa_accept = built.?{f_accept}
-    , nfa_edges = built.?{f_edges}
-    }
+  , nfa_count = built.?{f_next}
+  , nfa_start = built.?{f_start}
+  , nfa_accept = built.?{f_accept}
+  , nfa_edges = built.?{f_edges}
+  }
 }

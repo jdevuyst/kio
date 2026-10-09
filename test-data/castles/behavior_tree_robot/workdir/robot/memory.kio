@@ -13,23 +13,23 @@ import testapi/text as text;
 pub labels Slot = { key: I32, amount: I32, name: String, sticky: Bool };
 
 pub labels State = {
-  , slots: lists.List(Slot)
-  , seen: lists.List(I32)
-  , events: lists.List(String)
-  , completed: I32
-  , canceled: I32
-  , work_ticks: I32
-  };
+, slots: lists.List(Slot)
+, seen: lists.List(I32)
+, events: lists.List(String)
+, completed: I32
+, canceled: I32
+, work_ticks: I32
+};
 
 pub fn empty() -> State {
   {
-    , slots = lists.nil(_)
-    , seen = lists.nil(_)
-    , events = lists.nil(_)
-    , completed = 0
-    , canceled = 0
-    , work_ticks = 0
-    }
+  , slots = lists.nil(_)
+  , seen = lists.nil(_)
+  , events = lists.nil(_)
+  , completed = 0
+  , canceled = 0
+  , work_ticks = 0
+  }
 }
 
 pub fn begin(state: State) -> State { state.!{seen = lists.nil(_), events = lists.nil(_)} }
@@ -50,51 +50,36 @@ pub fn get(id: I32, state: State) -> I32 {
 pub fn store(id: I32, value: I32, title: String, latched: Bool, state: State) -> State {
   let other =
     traversal.filter(
-      , .(slot: Slot) {
-          if! numbers.eq_i32(slot.?{key}, id) {
-            .f
-          } else {
-            .t
-          }
-        }
-      , state.?{slots}
-      );
+    , .(slot: Slot) {
+        if! numbers.eq_i32(slot.?{key}, id) { .f } else { .t }
+      }
+    , state.?{slots}
+    );
   state.!{slots = lists.cons({key = id, amount = value, name = title, sticky = latched}, other)}
 }
 
 pub fn worked(done: Bool, state: State) -> State {
   state.!{
-    , work_ticks = arith.add_i32(state.?{work_ticks}, 1)
-    , completed = arith.add_i32(
-        , state.?{completed}
-        , if! done {
-            1
-          } else {
-            0
-          }
-        )
-    }
+  , work_ticks = arith.add_i32(state.?{work_ticks}, 1)
+  , completed = arith.add_i32(state.?{completed}, if! done { 1 } else { 0 })
+  }
 }
 
 fn sweep_slot(state: State, slot: Slot) -> State {
   let keep =
-    if! slot.?{sticky} {
-      .t
-    } else {
-      traversal.elem(numbers.eq_i32, slot.?{key}, state.?{seen})
-    };
+    if! slot.?{sticky} { .t } else { traversal.elem(numbers.eq_i32, slot.?{key}, state.?{seen}) };
   if! keep {
     state.!{slots = lists.cons(slot, state.?{slots})}
   } else if! text.string_eq(slot.?{name}, "") {
     state
   } else if! arith.lt_i32(0, slot.?{amount}) {
     let message = text.string_concat(
-      , "cancel "
-      , text.string_concat(
-          , slot.?{name}
-          , text.string_concat(" after ", fmt.int_to_string(slot.?{amount}))
-          )
-      );
+    , "cancel "
+    , text.string_concat(
+      , slot.?{name}
+      , text.string_concat(" after ", fmt.int_to_string(slot.?{amount}))
+      )
+    );
     event(message, state.!{canceled = arith.add_i32(state.?{canceled}, 1)})
   } else {
     state

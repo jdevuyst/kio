@@ -1196,23 +1196,22 @@ module source; rec { newtype A: . {constructor a} newtype B: . {constructor b} }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (incomplete_recursive_call_expression
-    (keyword_rec)
-    (ERROR
-      (bracket_lbrace)
-      (newtype_decl_head
-        (keyword_newtype)
-        (entity_name_type)
-        (operator_builtin)
-        (separator_dot)
-        (newtype_body
-          (bracket_lbrace)
-          (newtype_member
-            (keyword_constructor)
-            (entity_name_function))
-          (bracket_rbrace)))
-      (entity_name_label))
-    (entity_name_function))
+  (identifier)
+  (ERROR
+    (bracket_lbrace)
+    (newtype_decl_head
+      (keyword_newtype)
+      (entity_name_type)
+      (operator_builtin)
+      (separator_dot)
+      (newtype_body
+        (bracket_lbrace)
+        (newtype_member
+          (keyword_constructor)
+          (entity_name_function))
+        (bracket_rbrace)))
+    (entity_name_label))
+  (identifier)
   (operator_builtin)
   (separator_dot)
   (body_block

@@ -10,9 +10,5 @@ pub fn score(window: Window) -> I32 {
 }
 
 pub fn choose(left: Window, right: Window) -> Window {
-  if! arith.lt_i32(score(left), score(right)) {
-    right
-  } else {
-    left
-  }
+  if! arith.lt_i32(score(left), score(right)) { right } else { left }
 }

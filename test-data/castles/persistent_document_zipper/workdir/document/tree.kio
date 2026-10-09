@@ -37,7 +37,7 @@ rec(loop) fn render_pending(pending: lists.List(Visit)) {
       io.print(name(node).>text.string_concat("\n").>>text.string_concat(indent));
       let next_indent = text.string_concat(indent, "  ");
       let next = traversal.map(.(child: Node) { (child, next_indent) }, children(node));
-      rec render_pending(traversal.append(next, rest))
+      recur render_pending(traversal.append(next, rest))
     };
     .() { () }
   }
@@ -48,7 +48,7 @@ pub fn render(node: Node) { render_pending(lists.singleton((node, "  "))) }
 rec(loop) fn count_pending(pending: lists.List(Node), count: I32) -> I32 {
   match! lists.uncons(pending) {
     .(node: Node, rest: lists.List(Node)) {
-      rec count_pending(traversal.append(children(node), rest), arith.add_i32(count, 1))
+      recur count_pending(traversal.append(children(node), rest), arith.add_i32(count, 1))
     };
     .() { count }
   }

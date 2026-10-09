@@ -14,7 +14,9 @@ pub fn second((left: Count, _right: Count)) -> Count { left }
 
 pub fn staged(left: Count)(_right: Count) -> Count { left }
 
-pub fn returned(left: Count) -> Count -> Count { .(_right) { left } }
+pub fn returned(left: Count) -> Count -> Count {
+  .(_right) { left }
+}
 
 pub fn direct() -> Count { packed((seed(), seed())) }
 

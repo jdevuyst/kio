@@ -49,35 +49,35 @@ fn binary(left: String, operator: String, right: String) -> String {
 pub rec(loop) fn expr(value: Expr) -> String {
   match! Expr.get(value) {
     (
-      , .(node: Lit) { fraction(Lit.get(node)) }
-      , .(node: Add) {
-          match! Add.get(node) {
-            .(left: Expr, right: Expr) {
-              binary(rec(cont) expr(left), " + ", rec(cont) expr(right))
-            }
+    , .(node: Lit) { fraction(Lit.get(node)) }
+    , .(node: Add) {
+        match! Add.get(node) {
+          .(left: Expr, right: Expr) {
+            binary(recur(cont) expr(left), " + ", recur(cont) expr(right))
           }
         }
-      , .(node: Sub) {
-          match! Sub.get(node) {
-            .(left: Expr, right: Expr) {
-              binary(rec(cont) expr(left), " - ", rec(cont) expr(right))
-            }
+      }
+    , .(node: Sub) {
+        match! Sub.get(node) {
+          .(left: Expr, right: Expr) {
+            binary(recur(cont) expr(left), " - ", recur(cont) expr(right))
           }
         }
-      , .(node: Mul) {
-          match! Mul.get(node) {
-            .(left: Expr, right: Expr) {
-              binary(rec(cont) expr(left), " * ", rec(cont) expr(right))
-            }
+      }
+    , .(node: Mul) {
+        match! Mul.get(node) {
+          .(left: Expr, right: Expr) {
+            binary(recur(cont) expr(left), " * ", recur(cont) expr(right))
           }
         }
-      , .(node: Div) {
-          match! Div.get(node) {
-            .(left: Expr, right: Expr) {
-              binary(rec(cont) expr(left), " / ", rec(cont) expr(right))
-            }
+      }
+    , .(node: Div) {
+        match! Div.get(node) {
+          .(left: Expr, right: Expr) {
+            binary(recur(cont) expr(left), " / ", recur(cont) expr(right))
           }
         }
-      )
+      }
+    )
   }
 }

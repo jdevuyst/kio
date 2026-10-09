@@ -2,19 +2,19 @@ module symbolic_units/render;
 
 import elab/match(match);
 import symbolic_units/model(
-  , Expr
-  , Kilogram
-  , Meter
-  , Pow
-  , Product
-  , Quotient
-  , Score
-  , Second
-  , Summary
-  , {kilogram_exp}
-  , {meter_exp}
-  , {second_exp}
-  );
+, Expr
+, Kilogram
+, Meter
+, Pow
+, Product
+, Quotient
+, Score
+, Second
+, Summary
+, {kilogram_exp}
+, {meter_exp}
+, {second_exp}
+);
 import symbolic_units/text as text;
 import testapi(I32, String);
 import testapi/fmt as fmt;
@@ -23,31 +23,31 @@ import testapi/iter(loop);
 pub rec(loop) fn source(value: Expr) -> String {
   match! Expr.get(value) {
     (
-      , .(_m: Meter) { "m" }
-      , .(_s: Second) { "s" }
-      , .(_k: Kilogram) { "kg" }
-      , .(node: Product) {
-          match! Product.get(node) {
-            .(left: Expr, right: Expr) {
-              text.cat5("(", rec(cont) source(left), " * ", rec(cont) source(right), ")")
-            }
+    , .(_m: Meter) { "m" }
+    , .(_s: Second) { "s" }
+    , .(_k: Kilogram) { "kg" }
+    , .(node: Product) {
+        match! Product.get(node) {
+          .(left: Expr, right: Expr) {
+            text.cat5("(", recur(cont) source(left), " * ", recur(cont) source(right), ")")
           }
         }
-      , .(node: Quotient) {
-          match! Quotient.get(node) {
-            .(left: Expr, right: Expr) {
-              text.cat5("(", rec(cont) source(left), " / ", rec(cont) source(right), ")")
-            }
+      }
+    , .(node: Quotient) {
+        match! Quotient.get(node) {
+          .(left: Expr, right: Expr) {
+            text.cat5("(", recur(cont) source(left), " / ", recur(cont) source(right), ")")
           }
         }
-      , .(node: Pow) {
-          match! Pow.get(node) {
-            .(base: Expr, exponent: I32) {
-              text.cat4(rec(cont) source(base), "^", fmt.int_to_string(exponent), "")
-            }
+      }
+    , .(node: Pow) {
+        match! Pow.get(node) {
+          .(base: Expr, exponent: I32) {
+            text.cat4(recur(cont) source(base), "^", fmt.int_to_string(exponent), "")
           }
         }
-      )
+      }
+    )
   }
 }
 

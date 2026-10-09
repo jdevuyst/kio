@@ -25,15 +25,15 @@ fn show_version(version: replica.Version) -> String {
 pub fn snapshot(name: String, state: replica.Replica) {
   line(name.>string_concat(" clock="), clock.show(state.?{replica.observed}));
   dict.fold_asc(
-    , state.?{replica.records}
-    , ()
-    , .(_done: ., key: I32, versions: core.List(replica.Version)) {
-        line(
-          , "  key ".>string_concat(fmt.int_to_string(key)).>string_concat(" ")
-          , lists.to_string(show_version, versions)
-          )
-      }
-    )
+  , state.?{replica.records}
+  , ()
+  , .(_done: ., key: I32, versions: core.List(replica.Version)) {
+      line(
+      , "  key ".>string_concat(fmt.int_to_string(key)).>string_concat(" ")
+      , lists.to_string(show_version, versions)
+      )
+    }
+  )
 }
 
 pub fn fault(error: replica.Fault) -> String {
@@ -54,10 +54,10 @@ pub fn fault(error: replica.Fault) -> String {
 pub fn read(name: String, state: replica.Replica, key: I32) {
   let text =
     result.fold(
-      , .(value: I32) { "value ".>string_concat(fmt.int_to_string(value)) }
-      , fault
-      , replica.read(state, key)
-      );
+    , .(value: I32) { "value ".>string_concat(fmt.int_to_string(value)) }
+    , fault
+    , replica.read(state, key)
+    );
   line(name, text)
 }
 

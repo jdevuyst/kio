@@ -3864,6 +3864,7 @@ impl NativeExprEmitter<'_> {
         let mut target_types = Vec::new();
         let mut converted = Vec::new();
         let mut cases = String::new();
+        let mut changed = false;
         for (k, slot) in slots.iter().enumerate() {
             let nested = boundary.map(|boundary| {
                 boundary.nested(BoundaryStep::Slot(
@@ -3876,6 +3877,7 @@ impl NativeExprEmitter<'_> {
                 &bound,
                 context.nested(),
             )?;
+            changed |= conv != bound;
             if rank_n {
                 let native = self.ctx.render_direct_generic_type(
                     slot,
@@ -3915,6 +3917,9 @@ impl NativeExprEmitter<'_> {
                 either_pattern(k, n, &bound),
                 either_inject(k, n, &conv)
             ));
+        }
+        if !changed {
+            return Ok(expr.to_owned());
         }
         if rank_n {
             // Raw case patterns instantiate an impredicative arm too early.

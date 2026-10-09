@@ -14,17 +14,17 @@ import testapi/io(print);
 // parameter. The fix bails on this collision.
 fn pick(s: String | String, x: String) -> String {
   __either__(
-    , __either__(
-        , String
-        , String
-        , String | String
-        , s
-        , .(x: String) -> String | String { __left__(String, String, x) }
-        , .(y: String) -> String | String { __right__(String, String, y) }
-        )
-    , .(p: String) -> String { x }
-    , .(q: String) -> String { q }
+  , __either__(
+    , String
+    , String
+    , String | String
+    , s
+    , .(x: String) -> String | String { __left__(String, String, x) }
+    , .(y: String) -> String | String { __right__(String, String, y) }
     )
+  , .(p: String) -> String { x }
+  , .(q: String) -> String { q }
+  )
 }
 
 pub fn main() { print(pick(__left__(String, String, "from_s\n"(String)), "from_x\n"(String))) }

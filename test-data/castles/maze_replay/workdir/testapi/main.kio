@@ -38,13 +38,13 @@ fn dims(w: I32, h: I32) -> String { cat(num(w), cat("x", num(h))) }
 fn read_int(fallback: I32) -> I32 {
   match! read_ascii_line() {
     (
-      , .(s: String) {
-          match! string_to_int(s) {
-            (.(n: I32) { n }, .(_bad: .) { fallback })
-          }
+    , .(s: String) {
+        match! string_to_int(s) {
+          (.(n: I32) { n }, .(_bad: .) { fallback })
         }
-      , .(_eof: .) { fallback }
-      )
+      }
+    , .(_eof: .) { fallback }
+    )
   }
 }
 
@@ -55,18 +55,14 @@ rec(loop) fn replay(seed: I32, w: I32, h: I32, remaining: I32, p: Ledger) -> Led
     p
   } else match! read_ascii_line() {
     (
-      , .(cmd: String) { rec replay(seed, w, h, sub_i32(remaining, 1), step(seed, w, h, p, cmd)) }
-      , .(_eof: .) { p }
-      )
+    , .(cmd: String) { recur replay(seed, w, h, sub_i32(remaining, 1), step(seed, w, h, p, cmd)) }
+    , .(_eof: .) { p }
+    )
   }
 }
 
 fn yes_no(b: Bool) -> String {
-  if! b {
-    "escaped"
-  } else {
-    "stranded"
-  }
+  if! b { "escaped" } else { "stranded" }
 }
 
 pub fn main() {

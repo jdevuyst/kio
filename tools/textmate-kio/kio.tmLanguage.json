@@ -1029,7 +1029,7 @@
       ]
     },
     "proved-recursive-call": {
-      "begin": "\\brec\\b(?=[ \\t]*(?:(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*)?[A-Za-z_][A-Za-z0-9_]*)",
+      "begin": "\\brecur\\b(?=[ \\t]*(?:(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*)?[A-Za-z_][A-Za-z0-9_]*)",
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
@@ -1045,7 +1045,7 @@
     },
     "ambiguous-recursive-call": {
       "comment": "Only an identifier after the marker or its complete annotation group proves recursion. A later line can instead complete an ordinary reference or call.",
-      "begin": "\\brec\\b(?=[ \\t]*(?:(?://[^\\r\\n]*)?$|(?=\\()(?!(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*(?:[^ \\t\\r\\n/]|/(?!/)))))",
+      "begin": "\\brecur\\b(?=[ \\t]*(?:(?://[^\\r\\n]*)?$|(?=\\()(?!(?<rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<rec_parens>)*\\))[ \\t]*(?:[^ \\t\\r\\n/]|/(?!/)))))",
       "beginCaptures": {
         "0": { "name": "meta.ambiguous-recursive-head.kio" }
       },
@@ -1133,14 +1133,6 @@
                   "begin": "(?=[^, \\t\\r\\n)])",
                   "end": "(?=[,);}]|^[ \\t]*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
                   "patterns": [
-                    {
-                      "match": "\\G(?:poly|cont|escape)\\b(?=(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*(?!(?:fn|pub)\\b)[A-Za-z_])",
-                      "name": "keyword.control.kio"
-                    },
-                    {
-                      "match": "\\G(?:poly|cont|escape)\\b(?!(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*(?:fn|pub)\\b)",
-                      "name": "meta.ambiguous-recursive-mode.kio"
-                    },
                     { "include": "#recursive-annotation-item-tokens" }
                   ]
                 },

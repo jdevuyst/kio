@@ -13,11 +13,7 @@ import testapi/text(string_concat);
 // `leq_i32` is the only ordering primitive in this case's host
 // vocabulary, so equality is built from it.
 fn is_zero(x: I32) -> Bool {
-  if! leq_i32(x, 0) {
-    leq_i32(0, x)
-  } else {
-    .f
-  }
+  if! leq_i32(x, 0) { leq_i32(0, x) } else { .f }
 }
 
 // One element's FizzBuzz line. Cascades through divisibility
@@ -47,6 +43,8 @@ fn step(stop: I32, n: I32) -> I32 | . {
   }
 }
 
-fn fizzbuzz(stop: I32) { loop(.(n: I32) { step(stop, n) }, 1) }
+fn fizzbuzz(stop: I32) {
+  loop(.(n: I32) { step(stop, n) }, 1)
+}
 
 pub fn main() { fizzbuzz(15) }

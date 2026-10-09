@@ -482,18 +482,39 @@ fn complete_source(
                 }),
         );
     }
-    let range = LineIndex::new(probe.source).to_range(cursor.atom.replacement);
+    let line_index = LineIndex::new(probe.source);
     for item in &mut result.items {
+        let (replacement, keyword_text, additional) =
+            cursor.keyword_edit(probe.source, &item.label);
+        if replacement.start < cursor.atom.replacement.start {
+            item.filter_text = Some(format!(
+                "{}{}",
+                &probe.source[replacement.start as usize..cursor.atom.replacement.start as usize],
+                item.label,
+            ));
+        }
+        let range = line_index.to_range(replacement);
         item.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
             range: lsp_types::Range::new(
                 Position::new(range.start.line, range.start.character),
                 Position::new(range.end.line, range.end.character),
             ),
-            new_text: item
-                .insert_text
-                .clone()
-                .unwrap_or_else(|| item.label.clone()),
+            new_text: item.insert_text.clone().unwrap_or(keyword_text),
         }));
+        if !additional.is_empty() {
+            item.additional_text_edits
+                .get_or_insert_with(Vec::new)
+                .extend(additional.into_iter().map(|span| {
+                    let range = line_index.to_range(span);
+                    TextEdit {
+                        range: lsp_types::Range::new(
+                            Position::new(range.start.line, range.start.character),
+                            Position::new(range.end.line, range.end.character),
+                        ),
+                        new_text: String::new(),
+                    }
+                }));
+        }
     }
     result.items.sort_by(|a, b| a.label.cmp(&b.label));
     result.items.dedup_by(|a, b| a.label == b.label);
@@ -1624,10 +1645,10 @@ mod tests {
     fn rec_member_completion_excludes_rec_only_callees_but_keeps_params() {
         let source = "module pkg/main;\n\
 rec(loop) {\n\
-  fn first(x: .) -> . { rec second(x) };\n\
-  fn second(y: .) -> . { rec first(y) }\n\
+  fn first(x: .) -> . { recur second(x) };\n\
+  fn second(y: .) -> . { recur first(y) }\n\
 }\n";
-        let items = complete_at_marker(source, "rec first(");
+        let items = complete_at_marker(source, "recur first(");
         let names = labels(&items);
         assert!(
             names.contains(&"y"),

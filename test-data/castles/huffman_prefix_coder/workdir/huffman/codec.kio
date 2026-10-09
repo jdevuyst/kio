@@ -21,11 +21,11 @@ import testapi/iter(loop);
 rec(loop) fn encode_onto(rows: List(Entry), symbols: List(I32), acc: Bits) -> Bits {
   match! symbols.>List.un_list {
     (
-      , .(symbol: I32, rest: List(I32)) {
-          rec encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil(I32)), acc))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(symbol: I32, rest: List(I32)) {
+        recur encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil(I32)), acc))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -48,34 +48,34 @@ fn walked(symbol: I32, rest: Bits) -> Walked { {walked_symbol = symbol, walked_r
 rec(loop) fn walk(node: Node, bits: Bits) -> Walked {
   match! node.>Node.un_node {
     (
-      , .(symbol: Leaf_symbol, _weight: Leaf_weight) { walked(symbol.?{leaf_symbol}, bits) }
-      , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
-          match! bits.>List.un_list {
-            (
-              , .(bit: I32, rest: Bits) {
-                  if! eq_i32(bit, 0) {
-                    rec walk(left.?{fork_left}, rest)
-                  } else {
-                    rec walk(right.?{fork_right}, rest)
-                  }
-                }
-              , .(_empty: .) { walked(-1, bits) }
-              )
-          }
+    , .(symbol: Leaf_symbol, _weight: Leaf_weight) { walked(symbol.?{leaf_symbol}, bits) }
+    , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
+        match! bits.>List.un_list {
+          (
+          , .(bit: I32, rest: Bits) {
+              if! eq_i32(bit, 0) {
+                recur walk(left.?{fork_left}, rest)
+              } else {
+                recur walk(right.?{fork_right}, rest)
+              }
+            }
+          , .(_empty: .) { walked(-1, bits) }
+          )
         }
-      )
+      }
+    )
   }
 }
 
 rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
   match! bits.>List.un_list {
     (
-      , .(_bit: I32, _rest: Bits) {
-          let reached = walk(root, bits);
-          rec decode_onto(root, reached.?{walked_rest}, cons(reached.?{walked_symbol}, acc))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(_bit: I32, _rest: Bits) {
+        let reached = walk(root, bits);
+        recur decode_onto(root, reached.?{walked_rest}, cons(reached.?{walked_symbol}, acc))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -84,21 +84,17 @@ pub fn decode(root: Node, bits: Bits) -> List(I32) { reverse(decode_onto(root, b
 pub rec(loop) fn same_symbols(left: List(I32), right: List(I32)) -> Bool {
   match! left.>List.un_list {
     (
-      , .(head: I32, rest: List(I32)) {
-          match! right.>List.un_list {
-            (
-              , .(other: I32, other_rest: List(I32)) {
-                  if! eq_i32(head, other) {
-                    rec same_symbols(rest, other_rest)
-                  } else {
-                    .f
-                  }
-                }
-              , .(_empty: .) { .f }
-              )
-          }
+    , .(head: I32, rest: List(I32)) {
+        match! right.>List.un_list {
+          (
+          , .(other: I32, other_rest: List(I32)) {
+              if! eq_i32(head, other) { recur same_symbols(rest, other_rest) } else { .f }
+            }
+          , .(_empty: .) { .f }
+          )
         }
-      , .(_empty: .) { is_empty(right) }
-      )
+      }
+    , .(_empty: .) { is_empty(right) }
+    )
   }
 }

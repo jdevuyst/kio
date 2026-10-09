@@ -4,15 +4,15 @@ import elab/control(if);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(
-  , array_clone
-  , array_get
-  , array_len
-  , array_make_empty
-  , array_make_filled
-  , array_push
-  , array_set
-  , array_swap
-  );
+, array_clone
+, array_get
+, array_len
+, array_make_empty
+, array_make_filled
+, array_push
+, array_set
+, array_swap
+);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
@@ -39,20 +39,20 @@ fn thresholds() -> Array(I32) {
 }
 
 rec(loop) fn mark(
-  , reads: Array(I32)
-  , limits: Array(I32)
-  , flags: Array(Bool)
-  , index: I32
-  , last: I32
-  , count: I32
-  ) -> I32 {
+, reads: Array(I32)
+, limits: Array(I32)
+, flags: Array(Bool)
+, index: I32
+, last: I32
+, count: I32
+) -> I32 {
   if! leq_i32(index, last) {
     let ok = leq_i32(array_get(limits, index), array_get(reads, index));
     array_set(flags, index, ok);
     if! ok {
-      rec mark(reads, limits, flags, add_i32(index, 1), last, add_i32(count, 1))
+      recur mark(reads, limits, flags, add_i32(index, 1), last, add_i32(count, 1))
     } else {
-      rec mark(reads, limits, flags, add_i32(index, 1), last, count)
+      recur mark(reads, limits, flags, add_i32(index, 1), last, count)
     }
   } else {
     count
@@ -65,18 +65,18 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 fn row(reads: Array(I32), limits: Array(I32), flags: Array(Bool), index: I32) -> String {
   cat3(
-    , "sensor "
-    , int_to_string(index)
+  , "sensor "
+  , int_to_string(index)
+  , cat3(
+    , " reading="
+    , int_to_string(array_get(reads, index))
     , cat3(
-        , " reading="
-        , int_to_string(array_get(reads, index))
-        , cat3(
-            , " threshold="
-            , int_to_string(array_get(limits, index))
-            , cat3(" pass=", bool_to_string(array_get(flags, index)), "\n")
-            )
-        )
+      , " threshold="
+      , int_to_string(array_get(limits, index))
+      , cat3(" pass=", bool_to_string(array_get(flags, index)), "\n")
+      )
     )
+  )
 }
 
 pub fn main() {
@@ -95,8 +95,8 @@ pub fn main() {
   print(row(reads, limits, flags, 3));
   print(row(reads, limits, flags, 4));
   print(cat3(
-    , "swap-check first="
-    , bool_to_string(array_get(swapped, 0))
-    , cat3(" middle=", bool_to_string(array_get(swapped, 2)), "\n")
-    ))
+  , "swap-check first="
+  , bool_to_string(array_get(swapped, 0))
+  , cat3(" middle=", bool_to_string(array_get(swapped, 2)), "\n")
+  ))
 }

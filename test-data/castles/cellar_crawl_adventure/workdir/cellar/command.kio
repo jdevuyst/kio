@@ -57,29 +57,29 @@ pub fn verb_of(word: String) -> Verb {
 pub fn verb_takes_object(v: Verb) -> Bool {
   match! v {
     (
-      , .(_g: Go_verb) { .t }
-      , .(_t: Take_verb) { .t }
-      , .(_d: Drop_verb) { .t }
-      , .(_u: Unlock_verb) { .t }
-      , .(_l: Look_verb) { .f }
-      , .(_b: Bag_verb) { .f }
-      , .(_q: Quit_verb) { .f }
-      , .(_x: Bad_verb) { .f }
-      )
+    , .(_g: Go_verb) { .t }
+    , .(_t: Take_verb) { .t }
+    , .(_d: Drop_verb) { .t }
+    , .(_u: Unlock_verb) { .t }
+    , .(_l: Look_verb) { .f }
+    , .(_b: Bag_verb) { .f }
+    , .(_q: Quit_verb) { .f }
+    , .(_x: Bad_verb) { .f }
+    )
   }
 }
 
 pub fn command_of(v: Verb, object: String) -> Command {
   match! v {
     (
-      , .(_g: Go_verb) { widen_sum!({go_cmd = object}, Command) }
-      , .(_t: Take_verb) { widen_sum!({take_cmd = object}, Command) }
-      , .(_d: Drop_verb) { widen_sum!({drop_cmd = object}, Command) }
-      , .(_u: Unlock_verb) { widen_sum!({unlock_cmd = object}, Command) }
-      , .(_l: Look_verb) { widen_sum!({look_cmd=}, Command) }
-      , .(_b: Bag_verb) { widen_sum!({bag_cmd=}, Command) }
-      , .(_q: Quit_verb) { widen_sum!({quit_cmd=}, Command) }
-      , .(x: Bad_verb) { widen_sum!({unknown_cmd = x.?{bad_verb}}, Command) }
-      )
+    , .(_g: Go_verb) { widen_sum!({go_cmd = object}, Command) }
+    , .(_t: Take_verb) { widen_sum!({take_cmd = object}, Command) }
+    , .(_d: Drop_verb) { widen_sum!({drop_cmd = object}, Command) }
+    , .(_u: Unlock_verb) { widen_sum!({unlock_cmd = object}, Command) }
+    , .(_l: Look_verb) { widen_sum!({look_cmd=}, Command) }
+    , .(_b: Bag_verb) { widen_sum!({bag_cmd=}, Command) }
+    , .(_q: Quit_verb) { widen_sum!({quit_cmd=}, Command) }
+    , .(x: Bad_verb) { widen_sum!({unknown_cmd = x.?{bad_verb}}, Command) }
+    )
   }
 }

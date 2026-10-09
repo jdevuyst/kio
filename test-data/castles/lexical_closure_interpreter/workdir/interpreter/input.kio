@@ -18,7 +18,7 @@ rec(loop) fn collect(reversed: Tokens) -> Tokens | String {
       if! text.string_eq(line, "end") {
         traversal.reverse(reversed).>widen_sum!(Tokens | String)
       } else {
-        rec collect(lists.cons(line, reversed))
+        recur collect(lists.cons(line, reversed))
       }
     };
     .() { "input ended before end marker".>widen_sum!(Tokens | String) }

@@ -5,13 +5,13 @@ import testapi(Bool, I32, String);
 import testapi/text as text;
 
 pub labels Entry = {
-  , ordinal: String
-  , method: String
-  , path: String
-  , status: String
-  , bytes: String
-  , family: String
-  };
+, ordinal: String
+, method: String
+, path: String
+, status: String
+, bytes: String
+, family: String
+};
 
 pub fn raw_window() -> String {
   "00|GET |/alpha |200|0532\n01|POST|/order |503|0000\n02|GET |/cache "
@@ -39,26 +39,26 @@ pub fn family_label(status: String) -> String {
 }
 
 fn make_entry(
-  , ordinal_start: I32
-  , ordinal_end: I32
-  , method_start: I32
-  , method_end: I32
-  , path_start: I32
-  , path_end: I32
-  , status_start: I32
-  , status_end: I32
-  , bytes_start: I32
-  , bytes_end: I32
-  ) -> Entry {
+, ordinal_start: I32
+, ordinal_end: I32
+, method_start: I32
+, method_end: I32
+, path_start: I32
+, path_end: I32
+, status_start: I32
+, status_end: I32
+, bytes_start: I32
+, bytes_end: I32
+) -> Entry {
   let code = field(status_start, status_end);
   {
-    , ordinal = field(ordinal_start, ordinal_end)
-    , method = field(method_start, method_end)
-    , path = field(path_start, path_end)
-    , status = code
-    , bytes = field(bytes_start, bytes_end)
-    , family = family_label(code)
-    }
+  , ordinal = field(ordinal_start, ordinal_end)
+  , method = field(method_start, method_end)
+  , path = field(path_start, path_end)
+  , status = code
+  , bytes = field(bytes_start, bytes_end)
+  , family = family_label(code)
+  }
 }
 
 pub fn entry00() -> Entry { make_entry(0, 2, 3, 6, 8, 14, 16, 19, 20, 24) }

@@ -2,7 +2,9 @@ module computed;
 
 host type T;
 
-fn getf(k: T) -> . -> T -> T { .(u: .)(b: T) -> T { b } }
+fn getf(k: T) -> . -> T -> T {
+  .(u: .)(b: T) -> T { b }
+}
 
 fn f2(u: .)(v: .)(b: T) -> T { b }
 

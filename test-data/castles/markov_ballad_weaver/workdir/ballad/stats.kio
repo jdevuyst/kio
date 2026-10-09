@@ -15,9 +15,9 @@ import testapi/text(string_eq);
 rec(loop) fn words_onto(lines: List(Line), acc: I32) -> I32 {
   match! lines.>List.un_list {
     (
-      , .(l: Line, more: List(Line)) { rec words_onto(more, add_i32(acc, len(l.?{line_words}))) }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, more: List(Line)) { recur words_onto(more, add_i32(acc, len(l.?{line_words}))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -26,18 +26,13 @@ pub fn words_generated(lines: List(Line)) -> I32 { words_onto(lines, 0) }
 rec(loop) fn longest_onto(lines: List(Line), acc: I32) -> I32 {
   match! lines.>List.un_list {
     (
-      , .(l: Line, more: List(Line)) {
-          let n = len(l.?{line_words});
-          let best =
-            if! lt_i32(acc, n) {
-              n
-            } else {
-              acc
-            };
-          rec longest_onto(more, best)
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, more: List(Line)) {
+        let n = len(l.?{line_words});
+        let best = if! lt_i32(acc, n) { n } else { acc };
+        recur longest_onto(more, best)
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -46,41 +41,37 @@ pub fn longest_line(lines: List(Line)) -> I32 { longest_onto(lines, 0) }
 rec(loop) fn seen(ws: List(String), w: String) -> Bool {
   match! ws.>List.un_list {
     (
-      , .(x: String, more: List(String)) {
-          if! string_eq(x, w) {
-            .t
-          } else {
-            rec seen(more, w)
-          }
-        }
-      , .(_empty: .) { .f }
-      )
+    , .(x: String, more: List(String)) {
+        if! string_eq(x, w) { .t } else { recur seen(more, w) }
+      }
+    , .(_empty: .) { .f }
+    )
   }
 }
 
 rec(loop) fn collect_words(ws: List(String), acc: List(String)) -> List(String) {
   match! ws.>List.un_list {
     (
-      , .(w: String, more: List(String)) {
-          if! seen(acc, w) {
-            rec collect_words(more, acc)
-          } else {
-            rec collect_words(more, cons(w, acc))
-          }
+    , .(w: String, more: List(String)) {
+        if! seen(acc, w) {
+          recur collect_words(more, acc)
+        } else {
+          recur collect_words(more, cons(w, acc))
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 rec(loop) fn collect_lines(lines: List(Line), acc: List(String)) -> List(String) {
   match! lines.>List.un_list {
     (
-      , .(l: Line, more: List(Line)) {
-          rec collect_lines(more, collect_words(l.?{line_words}, acc))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, more: List(Line)) {
+        recur collect_lines(more, collect_words(l.?{line_words}, acc))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -111,17 +102,12 @@ fn ran_dry(l: Line) -> Bool {
 rec(loop) fn count_onto(lines: List(Line), pick: Line -> Bool, acc: I32) -> I32 {
   match! lines.>List.un_list {
     (
-      , .(l: Line, more: List(Line)) {
-          let hit =
-            if! pick(l) {
-              1
-            } else {
-              0
-            };
-          rec count_onto(more, pick, add_i32(acc, hit))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(l: Line, more: List(Line)) {
+        let hit = if! pick(l) { 1 } else { 0 };
+        recur count_onto(more, pick, add_i32(acc, hit))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

@@ -363,16 +363,24 @@ fn named_target_completion_follows_backend_not_name() {
 #[test]
 fn parser_context_rec_annotations_require_an_eligible_structural_owner() {
     let mut invalid = Vec::new();
-    for marked in [
-        "module app; fn run() { rec(|",
-        "module app; rec(drive) fn run(x: .) -> . { .(y: .) { rec(|",
+    for (marked, expected) in [
+        ("module app; fn run() { recur(|", vec![]),
+        (
+            "module app; rec(drive) fn run(x: .) -> . { .(y: .) { recur(|",
+            vec!["escape"],
+        ),
     ] {
         let (_, result) = complete_marked("", marked);
-        if !result.items.is_empty() {
+        let labels = result
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        if labels != expected {
             invalid.push((marked, result.items));
         }
     }
-    let (_, result) = complete_marked("", "module app; rec(drive) fn run(x: .) -> . { rec(|");
+    let (_, result) = complete_marked("", "module app; rec(drive) fn run(x: .) -> . { recur(|");
     if result.items.iter().any(|item| item.label == "poly") {
         invalid.push(("monomorphic group", result.items));
     }
@@ -454,7 +462,7 @@ fn parser_context_incomplete_scope_and_type_namespace_are_exact() {
             vec!["run"],
         ),
         (
-            "module app; rec(loop) fn run(value: .) -> . { rec ru|n(value) }",
+            "module app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
             vec!["run"],
             vec!["value"],
         ),

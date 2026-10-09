@@ -19,30 +19,17 @@ import testapi/text(string_concat);
 // other join primitive in this case's vocabulary.
 fn render(n: I32) -> String {
   string_concat(
-    , int_to_string(n)
-    , string_concat(
-        , " bottle"
-        , string_concat(
-            , if! leq_i32(n, 1) {
-                ""
-              } else {
-                "s"
-              }
-            , " of beer\n"
-            )
-        )
-    )
+  , int_to_string(n)
+  , string_concat(" bottle", string_concat(if! leq_i32(n, 1) { "" } else { "s" }, " of beer\n"))
+  )
 }
 
 fn step(n: I32) -> I32 | . {
-  if! leq_i32(1, n) {
-    print(render(n));
-    widen_sum!(sub_i32(n, 1))
-  } else {
-    widen_sum!(())
-  }
+  if! leq_i32(1, n) { print(render(n)); widen_sum!(sub_i32(n, 1)) } else { widen_sum!(()) }
 }
 
-fn bottles(start: I32) { loop(.(n: I32) { step(n) }, start) }
+fn bottles(start: I32) {
+  loop(.(n: I32) { step(n) }, start)
+}
 
 pub fn main() { bottles(3) }

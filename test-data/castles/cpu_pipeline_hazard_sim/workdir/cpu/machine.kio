@@ -32,23 +32,23 @@ literal mem_words = 8;
 pub labels Cpu = { prog: Array(Instr), regs: Array(I32), mem: Array(I32), forwarding: Bool };
 
 pub labels Machine = {
-  , cycle: I32
-  , pc: I32
-  , st_if: I32
-  , st_id: I32
-  , st_ex: I32
-  , st_mem: I32
-  , st_wb: I32
-  , ex_mem: I32
-  , mem_wb: I32
-  , sealed: Bool
-  , retired: I32
-  , stalls: I32
-  , bubbles: I32
-  , flushes: I32
-  , fwd_ex_mem: I32
-  , fwd_mem_wb: I32
-  };
+, cycle: I32
+, pc: I32
+, st_if: I32
+, st_id: I32
+, st_ex: I32
+, st_mem: I32
+, st_wb: I32
+, ex_mem: I32
+, mem_wb: I32
+, sealed: Bool
+, retired: I32
+, stalls: I32
+, bubbles: I32
+, flushes: I32
+, fwd_ex_mem: I32
+, fwd_mem_wb: I32
+};
 
 pub fn empty_stage() -> I32 { -1 }
 
@@ -66,30 +66,30 @@ pub fn stage_filled(slot: I32) -> Bool { leq_i32(0, slot) }
 /// a courtesy.
 pub fn initial(prog: Array(Instr)) -> Machine {
   {
-    , cycle = 1
-    , pc = 1
-    , st_if = 0
-    , st_id = -1
-    , st_ex = -1
-    , st_mem = -1
-    , st_wb = -1
-    , ex_mem = 0
-    , mem_wb = 0
-    , sealed = is_halt(array_get(prog, 0))
-    , retired = 0
-    , stalls = 0
-    , bubbles = 0
-    , flushes = 0
-    , fwd_ex_mem = 0
-    , fwd_mem_wb = 0
-    }
+  , cycle = 1
+  , pc = 1
+  , st_if = 0
+  , st_id = -1
+  , st_ex = -1
+  , st_mem = -1
+  , st_wb = -1
+  , ex_mem = 0
+  , mem_wb = 0
+  , sealed = is_halt(array_get(prog, 0))
+  , retired = 0
+  , stalls = 0
+  , bubbles = 0
+  , flushes = 0
+  , fwd_ex_mem = 0
+  , fwd_mem_wb = 0
+  }
 }
 
 pub fn pipeline_empty(m: Machine) -> Bool {
   and(
-    , and(stage_empty(m.?{st_if}), stage_empty(m.?{st_id}))
-    , and(stage_empty(m.?{st_ex}), and(stage_empty(m.?{st_mem}), stage_empty(m.?{st_wb})))
-    )
+  , and(stage_empty(m.?{st_if}), stage_empty(m.?{st_id}))
+  , and(stage_empty(m.?{st_ex}), and(stage_empty(m.?{st_mem}), stage_empty(m.?{st_wb})))
+  )
 }
 
 pub fn new_registers() -> Array(I32) { array_make_filled(reg_count, 0) }
@@ -99,7 +99,7 @@ pub fn new_memory() -> Array(I32) { array_make_filled(mem_words, 0) }
 rec(loop) fn words_agree(a: Array(I32), b: Array(I32), index: I32) -> Bool {
   if! int_lt(index, array_len(a)) {
     if! int_eq(array_get(a, index), array_get(b, index)) {
-      rec words_agree(a, b, add_i32(index, 1))
+      recur words_agree(a, b, add_i32(index, 1))
     } else {
       .f
     }

@@ -16,10 +16,10 @@ rec(loop) fn accumulate(state: (I32 & I32) & I32 & I32, offset: I32) -> I32 {
       if! arithmetic.leq_i32(count, 0) {
         arithmetic.add_i32(arithmetic.add_i32(total, bias), offset)
       } else {
-        rec accumulate(
-          , ((arithmetic.sub_i32(count, 1), arithmetic.add_i32(total, step)), (step, bias))
-          , offset
-          )
+        recur accumulate(
+        , ((arithmetic.sub_i32(count, 1), arithmetic.add_i32(total, step)), (step, bias))
+        , offset
+        )
       }
     }
   }

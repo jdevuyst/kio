@@ -29,10 +29,10 @@ pub fn main() {
   let t = build(source, leaf_count());
   let base = build_brute(source);
   line(cat3(
-    , "segment_tree_lazy -- "
-    , num(leaf_count())
-    , cat3(" cells, ", num(op_count()), " operations")
-    ));
+  , "segment_tree_lazy -- "
+  , num(leaf_count())
+  , cat3(" cells, ", num(op_count()), " operations")
+  ));
   line("");
   dump("initial array", source, leaf_count());
   line("");

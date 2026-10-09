@@ -59,12 +59,12 @@ pub fn desc() -> Dir { {dir_desc=}.>widen_sum!(Dir) }
 pub fn op_text(o: Cmp_op) -> String {
   match! o {
     (
-      , .(_o: Op_eq) { "=" }
-      , .(_o: Op_lt) { "<" }
-      , .(_o: Op_leq) { "<=" }
-      , .(_o: Op_gt) { ">" }
-      , .(_o: Op_geq) { ">=" }
-      )
+    , .(_o: Op_eq) { "=" }
+    , .(_o: Op_lt) { "<" }
+    , .(_o: Op_leq) { "<=" }
+    , .(_o: Op_gt) { ">" }
+    , .(_o: Op_geq) { ">=" }
+    )
   }
 }
 
@@ -191,14 +191,14 @@ pub fn limit_src_of(n: Limit_src) -> Plan { n.?{limit_src} }
 pub rec(loop) fn plan_ordered(p: Plan) -> Bool {
   match! p.>Plan.un_plan {
     (
-      , .(_n: Scan_table) { .f }
-      , .(_p: Filter_pred, src: Filter_src) { rec plan_ordered(filter_src_of(src)) }
-      , .(_l: Join_left, _r: Join_right, _lk: Join_lkey, _rk: Join_rkey) { .f }
-      , .(_c: Project_cols, src: Project_src) { rec plan_ordered(project_src_of(src)) }
-      , .(_k: Sum_key, _v: Sum_val, _s: Sum_src) { .f }
-      , .(_k: Count_key, _s: Count_src) { .f }
-      , .(_k: Order_key, _d: Order_dir, _s: Order_src) { .t }
-      , .(_n: Limit_n, src: Limit_src) { rec plan_ordered(limit_src_of(src)) }
-      )
+    , .(_n: Scan_table) { .f }
+    , .(_p: Filter_pred, src: Filter_src) { recur plan_ordered(filter_src_of(src)) }
+    , .(_l: Join_left, _r: Join_right, _lk: Join_lkey, _rk: Join_rkey) { .f }
+    , .(_c: Project_cols, src: Project_src) { recur plan_ordered(project_src_of(src)) }
+    , .(_k: Sum_key, _v: Sum_val, _s: Sum_src) { .f }
+    , .(_k: Count_key, _s: Count_src) { .f }
+    , .(_k: Order_key, _d: Order_dir, _s: Order_src) { .t }
+    , .(_n: Limit_n, src: Limit_src) { recur plan_ordered(limit_src_of(src)) }
+    )
   }
 }

@@ -13,67 +13,35 @@ pub fn cell_count() -> I32 { 30 }
 pub fn last_cell() -> I32 { arith.sub_i32(cell_count(), 1) }
 
 pub fn eq_i32(a: I32, b: I32) -> Bool {
-  if! arith.leq_i32(a, b) {
-    arith.leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! arith.leq_i32(a, b) { arith.leq_i32(b, a) } else { .f }
 }
 
 pub fn not_bool(v: Bool) -> Bool {
-  if! v {
-    .f
-  } else {
-    .t
-  }
+  if! v { .f } else { .t }
 }
 
 pub fn or_bool(a: Bool, b: Bool) -> Bool {
-  if! a {
-    .t
-  } else {
-    b
-  }
+  if! a { .t } else { b }
 }
 
 pub fn and_bool(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 fn eq_any2(i: I32, a: I32, b: I32) -> Bool {
-  if! eq_i32(i, a) {
-    .t
-  } else {
-    eq_i32(i, b)
-  }
+  if! eq_i32(i, a) { .t } else { eq_i32(i, b) }
 }
 
 fn eq_any3(i: I32, a: I32, b: I32, c: I32) -> Bool {
-  if! eq_any2(i, a, b) {
-    .t
-  } else {
-    eq_i32(i, c)
-  }
+  if! eq_any2(i, a, b) { .t } else { eq_i32(i, c) }
 }
 
 fn eq_any4(i: I32, a: I32, b: I32, c: I32, d: I32) -> Bool {
-  if! eq_any3(i, a, b, c) {
-    .t
-  } else {
-    eq_i32(i, d)
-  }
+  if! eq_any3(i, a, b, c) { .t } else { eq_i32(i, d) }
 }
 
 fn eq_any5(i: I32, a: I32, b: I32, c: I32, d: I32, e: I32) -> Bool {
-  if! eq_any4(i, a, b, c, d) {
-    .t
-  } else {
-    eq_i32(i, e)
-  }
+  if! eq_any4(i, a, b, c, d) { .t } else { eq_i32(i, e) }
 }
 
 pub fn is_left_edge(i: I32) -> Bool { eq_any5(i, 0, 6, 12, 18, 24) }

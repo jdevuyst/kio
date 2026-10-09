@@ -30,12 +30,12 @@ import testapi/iter(loop);
 literal heap_factor = 4;
 
 pub labels Tree = {
-  , sums: Array(I32)
-  , mins: Array(I32)
-  , tags: Array(I32)
-  , leaves: I32
-  , gauge: Meter
-  };
+, sums: Array(I32)
+, mins: Array(I32)
+, tags: Array(I32)
+, leaves: I32
+, gauge: Meter
+};
 
 pub fn left(node: I32) -> I32 { add_i32(mul_i32(2, node), 1) }
 
@@ -80,11 +80,7 @@ fn set_tag(t: Tree, node: I32, value: I32) { array_set(t.?{tags}, node, value) }
 /// which is also what keeps `point_set` from having to clear one.
 pub fn apply_tag(t: Tree, node: I32, lo: I32, hi: I32, x: I32) {
   set_agg(t, node, shift(node_agg(t, node), span(lo, hi), x));
-  if! is_leaf(lo, hi) {
-    ()
-  } else {
-    set_tag(t, node, add_i32(tag_at(t, node), x))
-  }
+  if! is_leaf(lo, hi) { () } else { set_tag(t, node, add_i32(tag_at(t, node), x)) }
 }
 
 /// Hand `node`'s pending add to both children and clear it. The *only* place
@@ -111,8 +107,8 @@ rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array(I32)) -> 
     cell
   } else {
     let mid = mid_of(lo, hi);
-    let from_left = rec(cont) build_at(t, left(node), lo, mid, src);
-    let from_right = rec(cont) build_at(t, right(node), add_i32(mid, 1), hi, src);
+    let from_left = recur(cont) build_at(t, left(node), lo, mid, src);
+    let from_right = recur(cont) build_at(t, right(node), add_i32(mid, 1), hi, src);
     let pulled = combine(from_left, from_right);
     set_agg(t, node, pulled);
     pulled
@@ -123,12 +119,12 @@ pub fn build(src: Array(I32), n: I32) -> Tree {
   let cells = mul_i32(heap_factor, n);
   let t =
     {
-      , sums = array_make_filled(cells, 0)
-      , mins = array_make_filled(cells, 0)
-      , tags = array_make_filled(cells, 0)
-      , leaves = n
-      , gauge = new_meter()
-      };
+    , sums = array_make_filled(cells, 0)
+    , mins = array_make_filled(cells, 0)
+    , tags = array_make_filled(cells, 0)
+    , leaves = n
+    , gauge = new_meter()
+    };
   let _root = build_at(t, 0, 0, sub_i32(n, 1), src);
   t
 }
@@ -139,12 +135,8 @@ rec(loop) fn count_pending(t: Tree, i: I32, limit: I32, found: I32) -> I32 {
   if! leq_i32(limit, i) {
     found
   } else {
-    let seen = if! int_eq(tag_at(t, i), 0) {
-      found
-    } else {
-      add_i32(found, 1)
-    };
-    rec count_pending(t, add_i32(i, 1), limit, seen)
+    let seen = if! int_eq(tag_at(t, i), 0) { found } else { add_i32(found, 1) };
+    recur count_pending(t, add_i32(i, 1), limit, seen)
   }
 }
 
@@ -158,24 +150,16 @@ rec(loop) fn scan_pending(t: Tree, i: I32, limit: I32) -> I32 {
   } else if! not(int_eq(tag_at(t, i), 0)) {
     i
   } else {
-    rec scan_pending(t, add_i32(i, 1), limit)
+    recur scan_pending(t, add_i32(i, 1), limit)
   }
 }
 
 pub fn first_pending(t: Tree) -> I32 { scan_pending(t, 0, mul_i32(heap_factor, leaf_count(t))) }
 
 pub fn covers(lo: I32, hi: I32, l: I32, r: I32) -> Bool {
-  if! leq_i32(l, lo) {
-    leq_i32(hi, r)
-  } else {
-    .f
-  }
+  if! leq_i32(l, lo) { leq_i32(hi, r) } else { .f }
 }
 
 pub fn disjoint(lo: I32, hi: I32, l: I32, r: I32) -> Bool {
-  if! int_lt(hi, l) {
-    .t
-  } else {
-    int_lt(r, lo)
-  }
+  if! int_lt(hi, l) { .t } else { int_lt(r, lo) }
 }

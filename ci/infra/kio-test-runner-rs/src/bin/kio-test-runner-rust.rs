@@ -907,7 +907,7 @@ fn rust_host_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> 
                 role(string, false),
             )
         },
-        HostFnBodyKind::Loop => TraitMethod {
+        HostFnBodyKind::Loop | HostFnBodyKind::LoopReentry => TraitMethod {
             type_params: vec!["s".to_owned(), "r".to_owned()],
             arg_types: vec![ffi_use("arg0", &["s", "r"]), marker_facade("s")],
             ret_type: marker_facade("r"),
@@ -2349,6 +2349,19 @@ fn struct_literal_expr_path(type_path: &str) -> String {
 /// The [`TraitMethod`] supplies the already-projected Rust signature for bodies
 /// whose expression needs one of its types —
 fn render_rust_body_for_binding(binding: &HostFnBinding, m: &TraitMethod) -> String {
+    if matches!(binding.body, HostFnBodyKind::LoopReentry) {
+        let member = host_api::rust_host_member(binding.module, binding.leaf);
+        return format!(
+            "fn run<S: crate::shapes::KioType, R: crate::shapes::KioType>(\
+             step: crate::ffi::env::{member}::arg0<S, R>, mut state: S::Facade) -> R::Facade {{ \
+             let captured_step = step.clone(); \
+             let reenter = crate::shapes::KioFn1::<S, R>::new(move |next| run::<S, R>(captured_step.clone(), next)); \
+             loop {{ match step.call(crate::shapes::Product {{ _0: reenter.clone(), _1: state }}) {{ \
+             crate::shapes::Sum::Left(next) => state = next, \
+             crate::shapes::Sum::Right(result) => return result, \
+             }} }} }} run::<s, r>(arg0, arg1)"
+        );
+    }
     if matches!(binding.body, HostFnBodyKind::Loop) {
         let member = host_api::rust_host_member(binding.module, binding.leaf);
         let sum_path = format!("crate::ffi::env::{member}::arg0_cbret<s, r>");
@@ -2371,6 +2384,7 @@ fn render_rust_body_for_binding(binding: &HostFnBinding, m: &TraitMethod) -> Str
         HostFnBodyKind::StringSlice { .. } => CanonicalKind::StringSlice,
         HostFnBodyKind::StringCodeAt { .. } => CanonicalKind::StringCodeAt,
         HostFnBodyKind::Loop => CanonicalKind::Loop,
+        HostFnBodyKind::LoopReentry => CanonicalKind::LoopReentry,
         HostFnBodyKind::NumericToString { value, .. } => CanonicalKind::NumericToString {
             kind: value.fixture.role().to_owned(),
         },
@@ -2668,6 +2682,9 @@ fn render_rust_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
         }
         CanonicalKind::Cmp { cmp, .. } => cmp_body_rust(cmp),
         CanonicalKind::Loop => unreachable!("loop bodies return before canonical rendering"),
+        CanonicalKind::LoopReentry => {
+            unreachable!("re-entry bodies return before canonical rendering")
+        }
         // The polymorphic `array_*` family uses one invariant associated
         // storage and generated application carriers. Each element crosses
         // the storage boundary through its `KioType` marker.

@@ -11,11 +11,5 @@ import testapi/io(print);
 pub fn main() {
   let a = .f;
   let b = .t;
-  if! a {
-    print("A\n")
-  } else if! b {
-    print("B\n")
-  } else {
-    print("C\n")
-  }
+  if! a { print("A\n") } else if! b { print("B\n") } else { print("C\n") }
 }

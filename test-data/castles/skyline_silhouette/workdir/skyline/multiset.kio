@@ -30,15 +30,15 @@ pub fn empty() -> Active { lst.nil(I32) }
 pub rec(loop) fn add(h: I32, xs: Active) -> Active {
   match! xs.>lst.List.un_list {
     (
-      , .(head: I32, rest: Active) {
-          if! leq_i32(head, h) {
-            lst.cons(h, lst.cons(head, rest))
-          } else {
-            lst.cons(head, rec(cont) add(h, rest))
-          }
+    , .(head: I32, rest: Active) {
+        if! leq_i32(head, h) {
+          lst.cons(h, lst.cons(head, rest))
+        } else {
+          lst.cons(head, recur(cont) add(h, rest))
         }
-      , .(_empty: .) { lst.cons(h, lst.nil(I32)) }
-      )
+      }
+    , .(_empty: .) { lst.cons(h, lst.nil(I32)) }
+    )
   }
 }
 
@@ -47,15 +47,11 @@ pub rec(loop) fn add(h: I32, xs: Active) -> Active {
 pub rec(loop) fn drop(h: I32, xs: Active) -> Active {
   match! xs.>lst.List.un_list {
     (
-      , .(head: I32, rest: Active) {
-          if! logic.eq(head, h) {
-            rest
-          } else {
-            lst.cons(head, rec(cont) drop(h, rest))
-          }
-        }
-      , .(_empty: .) { lst.nil(I32) }
-      )
+    , .(head: I32, rest: Active) {
+        if! logic.eq(head, h) { rest } else { lst.cons(head, recur(cont) drop(h, rest)) }
+      }
+    , .(_empty: .) { lst.nil(I32) }
+    )
   }
 }
 

@@ -5424,10 +5424,10 @@ mod tests {
                 assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
             }
             assert_eq!(formatted.matches("selection C").count(), usize::from(keep));
-            assert!(formatted.contains("// selection A\n  , A"), "{formatted}");
-            assert!(formatted.contains("// selection B\n  , B"), "{formatted}");
+            assert!(formatted.contains("// selection A\n, A"), "{formatted}");
+            assert!(formatted.contains("// selection B\n, B"), "{formatted}");
             assert!(
-                formatted.contains("\n  // closing boundary\n  );"),
+                formatted.contains("\n// closing boundary\n);"),
                 "{formatted}"
             );
             assert_eq!(

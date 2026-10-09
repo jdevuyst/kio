@@ -28,9 +28,9 @@ fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A 
 fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
   match! ys.>List.un_list {
     (
-      , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
-      , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
-      )
+    , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
+    , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+    )
   }
 }
 
@@ -40,15 +40,15 @@ fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
 // commutative `f`, callers see the head-first order.
 fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
   loop(
-    , B & List(A)
-    , B
-    , .(state: B & List(A)) -> (B & List(A)) | B {
-        match! state {
-          .(acc: B, ys: List(A)) { step(f, acc, ys) }
-        }
+  , B & List(A)
+  , B
+  , .(state: B & List(A)) -> (B & List(A)) | B {
+      match! state {
+        .(acc: B, ys: List(A)) { step(f, acc, ys) }
       }
-    , (seed, xs)
-    )
+    }
+  , (seed, xs)
+  )
 }
 
 pub fn main() {

@@ -23,7 +23,10 @@ pub type Expansion = Flats | Unknown_macro;
 
 rec(loop) fn splice(body: Srcs, acc: Flats) -> Flats {
   match! l.un_cons(body) {
-    (.(i: Src, rest: Srcs) { rec splice(rest, l.cons(p.flat_instr(i), acc)) }, .(_empty: .) { acc })
+    (
+    , .(i: Src, rest: Srcs) { recur splice(rest, l.cons(p.flat_instr(i), acc)) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -31,31 +34,31 @@ rec(loop) fn splice(body: Srcs, acc: Flats) -> Flats {
 fn one(it: Item, macros: Macros, acc: Flats) -> Expansion {
   match! it {
     (
-      , .(x: Instr) { widen_sum!(l.cons(p.flat_instr(x.?{p.instr}), acc)) }
-      , .(x: Mark) { widen_sum!(l.cons(p.flat_mark(x.?{p.mark}), acc)) }
-      , .(x: Call) {
-          let name = x.?{p.call};
-          match! p.find_macro(macros, name) {
-            (
-              , .(body: Srcs) { widen_sum!(splice(body, acc)) }
-              , .(_none: .) { widen_sum!(p.unknown_macro(name)) }
-              )
-          }
+    , .(x: Instr) { widen_sum!(l.cons(p.flat_instr(x.?{p.instr}), acc)) }
+    , .(x: Mark) { widen_sum!(l.cons(p.flat_mark(x.?{p.mark}), acc)) }
+    , .(x: Call) {
+        let name = x.?{p.call};
+        match! p.find_macro(macros, name) {
+          (
+          , .(body: Srcs) { widen_sum!(splice(body, acc)) }
+          , .(_none: .) { widen_sum!(p.unknown_macro(name)) }
+          )
         }
-      )
+      }
+    )
   }
 }
 
 rec(loop) fn walk(items: Items, macros: Macros, acc: Flats) -> Expansion {
   match! l.un_cons(items) {
     (
-      , .(it: Item, rest: Items) {
-          match! one(it, macros, acc) {
-            (.(next: Flats) { rec walk(rest, macros, next) }, .(e: Unknown_macro) { widen_sum!(e) })
-          }
+    , .(it: Item, rest: Items) {
+        match! one(it, macros, acc) {
+          (.(next: Flats) { recur walk(rest, macros, next) }, .(e: Unknown_macro) { widen_sum!(e) })
         }
-      , .(_empty: .) { widen_sum!(l.reverse(acc)) }
-      )
+      }
+    , .(_empty: .) { widen_sum!(l.reverse(acc)) }
+    )
   }
 }
 

@@ -15,15 +15,15 @@ import testapi/iter(loop);
 pub labels Node = { id: I32, marking: model.Marking, parent: I32, via: I32, depth: I32 };
 
 pub labels Search = {
-  , frontier: queues.Queue(Node)
-  , visited: lists.List(Node)
-  , edges: I32
-  , duplicates: I32
-  , terminals: I32
-  , deadlocks: I32
-  , first_deadlock: Node | .
-  , peak: I32
-  };
+, frontier: queues.Queue(Node)
+, visited: lists.List(Node)
+, edges: I32
+, duplicates: I32
+, terminals: I32
+, deadlocks: I32
+, first_deadlock: Node | .
+, peak: I32
+};
 
 pub fn find_node(nodes: lists.List(Node), node_id: I32) -> Node | . {
   traversal.find(.(node: Node) { arithmetic.eq_i32(node.?{id}, node_id) }, nodes)
@@ -39,40 +39,36 @@ fn seen(nodes: lists.List(Node), state: model.Marking) -> Bool {
 fn discover(state: Search, source: Node, transition_id: I32, marking: model.Marking) -> Search {
   if! seen(state.?{visited}, marking) {
     state.!{
-      , edges = arithmetic.add_i32(state.?{edges}, 1)
-      , duplicates = arithmetic.add_i32(state.?{duplicates}, 1)
-      }
+    , edges = arithmetic.add_i32(state.?{edges}, 1)
+    , duplicates = arithmetic.add_i32(state.?{duplicates}, 1)
+    }
   } else {
     let child = {
-      , id = traversal.length(state.?{visited})
-      , marking
-      , parent = source.?{id}
-      , via = transition_id
-      , depth = arithmetic.add_i32(source.?{depth}, 1)
-      };
+    , id = traversal.length(state.?{visited})
+    , marking
+    , parent = source.?{id}
+    , via = transition_id
+    , depth = arithmetic.add_i32(source.?{depth}, 1)
+    };
     let frontier = fifo.enqueue(child, state.?{frontier});
     let size = fifo.length(frontier);
-    let peak = if! arithmetic.lt_i32(state.?{peak}, size) {
-      size
-    } else {
-      state.?{peak}
-    };
+    let peak = if! arithmetic.lt_i32(state.?{peak}, size) { size } else { state.?{peak} };
     state.!{
-      , frontier
-      , visited = lists.cons(child, state.?{visited})
-      , edges = arithmetic.add_i32(state.?{edges}, 1)
-      , peak
-      }
+    , frontier
+    , visited = lists.cons(child, state.?{visited})
+    , edges = arithmetic.add_i32(state.?{edges}, 1)
+    , peak
+    }
   }
 }
 
 rec(loop) fn expand(
-  , net: model.Net
-  , source: Node
-  , remaining: lists.List(model.Transition)
-  , transition_id: I32
-  , state: Search
-  ) -> Search {
+, net: model.Net
+, source: Node
+, remaining: lists.List(model.Transition)
+, transition_id: I32
+, state: Search
+) -> Search {
   match! lists.uncons(remaining) {
     .(transition: model.Transition, rest: lists.List(model.Transition)) {
       let .(next: Search) =
@@ -80,7 +76,7 @@ rec(loop) fn expand(
           .(marking: model.Marking) { discover(state, source, transition_id, marking) };
           .() { state }
         };
-      rec expand(net, source, rest, arithmetic.add_i32(transition_id, 1), next)
+      recur expand(net, source, rest, arithmetic.add_i32(transition_id, 1), next)
     };
     .() { state }
   }
@@ -110,7 +106,7 @@ rec(loop) fn explore(net: model.Net, state: Search) -> Search {
         } else {
           grown
         };
-      rec explore(net, classified)
+      recur explore(net, classified)
     };
     .() { state }
   }
@@ -119,16 +115,16 @@ rec(loop) fn explore(net: model.Net, state: Search) -> Search {
 pub fn run(net: model.Net) -> Search {
   let root = {id = 0, marking = net.?{model.initial}, parent = -1, via = -1, depth = 0};
   explore(
-    , net
-    , {
-        , frontier = queues.singleton(root)
-        , visited = lists.singleton(root)
-        , edges = 0
-        , duplicates = 0
-        , terminals = 0
-        , deadlocks = 0
-        , first_deadlock = ().>widen_sum!
-        , peak = 1
-        }
-    )
+  , net
+  , {
+    , frontier = queues.singleton(root)
+    , visited = lists.singleton(root)
+    , edges = 0
+    , duplicates = 0
+    , terminals = 0
+    , deadlocks = 0
+    , first_deadlock = ().>widen_sum!
+    , peak = 1
+    }
+  )
 }

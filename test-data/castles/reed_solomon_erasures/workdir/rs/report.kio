@@ -20,11 +20,7 @@ fn line(prefix: String, value: String) {
 }
 
 fn yes_no(value: Bool) -> String {
-  if! value {
-    "yes"
-  } else {
-    "no"
-  }
+  if! value { "yes" } else { "no" }
 }
 
 fn integers(values: c.List(I32)) -> String { l.to_string(fmt.int_to_string, values) }
@@ -33,28 +29,19 @@ fn samples(values: s.Word) -> String { l.to_string(s.show, values) }
 
 fn matches_message(message: p.Polynomial, word: s.Word) -> Bool {
   l.foldl(
-    , .(ok, sample) {
-        if! ok {
-          f.equal(p.horner(message, sample.?{s.coordinate}), sample.?{s.value})
-        } else {
-          .f
-        }
-      }
-    , .t
-    , word
-    )
+  , .(ok, sample) {
+      if! ok { f.equal(p.horner(message, sample.?{s.coordinate}), sample.?{s.value}) } else { .f }
+    }
+  , .t
+  , word
+  )
 }
 
 fn altered_erasure(message: p.Polynomial, erased: s.Word) {
   match! c.head(erased) {
     .(sample: s.Sample) {
       let changed = {s.coordinate = sample.?{s.coordinate}, s.value = f.add(sample.?{s.value}, 1)};
-      let caught =
-        if! matches_message(message, c.singleton(changed)) {
-          .f
-        } else {
-          .t
-        };
+      let caught = if! matches_message(message, c.singleton(changed)) { .f } else { .t };
       line("  altered erased symbol rejected = ", yes_no(caught))
     };
     .() { line("  erased symbols = ", "none") }
@@ -72,9 +59,9 @@ fn accepted(frame: input.Frame, decoded: recovery.Decoded) -> Bool {
   line("  repaired = ", samples(repaired));
   line("  surviving evaluations checked = ", fmt.int_to_string(decoded.?{recovery.verified}));
   line(
-    , "  surplus evaluations checked = "
-    , fmt.int_to_string(a.sub_i32(decoded.?{recovery.verified}, frame.?{input.dimension}))
-    );
+  , "  surplus evaluations checked = "
+  , fmt.int_to_string(a.sub_i32(decoded.?{recovery.verified}, frame.?{input.dimension}))
+  );
   line("  message restored = ", yes_no(p.equal(message, decoded.?{recovery.coefficients})));
   line("  codeword restored = ", yes_no(p.equal(s.values(encoded), s.values(repaired))));
   line("  erased evaluations verified = ", yes_no(matches_message(message, erased)));
@@ -86,33 +73,29 @@ fn accepted(frame: input.Frame, decoded: recovery.Decoded) -> Bool {
 pub fn run(frame: input.Frame) -> Bool {
   line("frame ", frame.?{input.name});
   line(
-    , "  F17 code: k="
-    , text.string_concat(
-        , fmt.int_to_string(frame.?{input.dimension})
-        , text.string_concat(" n=", fmt.int_to_string(l.length(frame.?{input.coordinates})))
-        )
-    );
+  , "  F17 code: k="
+  , text.string_concat(
+    , fmt.int_to_string(frame.?{input.dimension})
+    , text.string_concat(" n=", fmt.int_to_string(l.length(frame.?{input.coordinates})))
+    )
+  );
   line("  message coefficients = ", integers(frame.?{input.message}));
   line("  evaluation coordinates = ", integers(frame.?{input.coordinates}));
   line("  received = ", samples(frame.?{input.received}));
   let message_valid =
     l.foldl(
-      , .(ok, value) {
-          if! ok {
-            f.valid(value)
-          } else {
-            .f
-          }
-        }
-      , .t
-      , frame.?{input.message}
-      );
+    , .(ok, value) {
+        if! ok { f.valid(value) } else { .f }
+      }
+    , .t
+    , frame.?{input.message}
+    );
   if! message_valid {
     match! recovery.decode(
-      , frame.?{input.dimension}
-      , frame.?{input.coordinates}
-      , frame.?{input.received}
-      ) {
+    , frame.?{input.dimension}
+    , frame.?{input.coordinates}
+    , frame.?{input.received}
+    ) {
       .(result: recovery.Accepted) { accepted(frame, result.?{recovery.accepted}) };
       .(result: recovery.Rejected) { line("  rejected: ", result.?{recovery.rejected}); .f }
     }

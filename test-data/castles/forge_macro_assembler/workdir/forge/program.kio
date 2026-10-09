@@ -99,30 +99,30 @@ pub type Built = Image | Reject;
 pub rec(loop) fn find_macro(ms: Macros, name: String) -> Srcs | . {
   match! l.un_cons(ms) {
     (
-      , .(m: Macro, rest: Macros) {
-          if! string_eq(m.?{macro_name}, name) {
-            widen_sum!(m.?{macro_body})
-          } else {
-            rec find_macro(rest, name)
-          }
+    , .(m: Macro, rest: Macros) {
+        if! string_eq(m.?{macro_name}, name) {
+          widen_sum!(m.?{macro_body})
+        } else {
+          recur find_macro(rest, name)
         }
-      , .(_empty: .) { widen_sum!(()) }
-      )
+      }
+    , .(_empty: .) { widen_sum!(()) }
+    )
   }
 }
 
 pub rec(loop) fn find_symbol(ss: Symbols, name: String) -> I32 | . {
   match! l.un_cons(ss) {
     (
-      , .(s: Symbol, rest: Symbols) {
-          if! string_eq(s.?{sym_name}, name) {
-            widen_sum!(s.?{sym_addr})
-          } else {
-            rec find_symbol(rest, name)
-          }
+    , .(s: Symbol, rest: Symbols) {
+        if! string_eq(s.?{sym_name}, name) {
+          widen_sum!(s.?{sym_addr})
+        } else {
+          recur find_symbol(rest, name)
         }
-      , .(_empty: .) { widen_sum!(()) }
-      )
+      }
+    , .(_empty: .) { widen_sum!(()) }
+    )
   }
 }
 

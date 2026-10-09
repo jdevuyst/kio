@@ -11,20 +11,20 @@ module seg/ops;
 import elab/control(if);
 import seg/agg(Agg, agg_min, agg_sum, combine, leaf_agg, neutral);
 import seg/tree(
-  , Tree
-  , apply_tag
-  , covers
-  , disjoint
-  , is_leaf
-  , leaf_count
-  , left
-  , mid_of
-  , node_agg
-  , push_down
-  , right
-  , set_agg
-  , visit
-  );
+, Tree
+, apply_tag
+, covers
+, disjoint
+, is_leaf
+, leaf_count
+, left
+, mid_of
+, node_agg
+, push_down
+, right
+, set_agg
+, visit
+);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_set);
@@ -42,8 +42,8 @@ rec(loop) fn add_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32, x: I32
   } else {
     let mid = mid_of(lo, hi);
     push_down(t, node, lo, hi, mid);
-    let from_left = rec(cont) add_at(t, left(node), lo, mid, l, r, x);
-    let from_right = rec(cont) add_at(t, right(node), add_i32(mid, 1), hi, l, r, x);
+    let from_left = recur(cont) add_at(t, left(node), lo, mid, l, r, x);
+    let from_right = recur(cont) add_at(t, right(node), add_i32(mid, 1), hi, l, r, x);
     let pulled = combine(from_left, from_right);
     set_agg(t, node, pulled);
     pulled
@@ -62,8 +62,8 @@ rec(loop) fn query_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32) -> A
   } else {
     let mid = mid_of(lo, hi);
     push_down(t, node, lo, hi, mid);
-    let from_left = rec(cont) query_at(t, left(node), lo, mid, l, r);
-    let from_right = rec(cont) query_at(t, right(node), add_i32(mid, 1), hi, l, r);
+    let from_left = recur(cont) query_at(t, left(node), lo, mid, l, r);
+    let from_right = recur(cont) query_at(t, right(node), add_i32(mid, 1), hi, l, r);
     combine(from_left, from_right)
   }
 }
@@ -80,10 +80,10 @@ rec(loop) fn set_at(t: Tree, node: I32, lo: I32, hi: I32, i: I32, v: I32) -> Agg
     let mid = mid_of(lo, hi);
     push_down(t, node, lo, hi, mid);
     let pulled = if! leq_i32(i, mid) {
-      let from_left = rec(cont) set_at(t, left(node), lo, mid, i, v);
+      let from_left = recur(cont) set_at(t, left(node), lo, mid, i, v);
       combine(from_left, node_agg(t, right(node)))
     } else {
-      let from_right = rec(cont) set_at(t, right(node), add_i32(mid, 1), hi, i, v);
+      let from_right = recur(cont) set_at(t, right(node), add_i32(mid, 1), hi, i, v);
       combine(node_agg(t, left(node)), from_right)
     };
     set_agg(t, node, pulled);
@@ -101,8 +101,8 @@ rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) {
   } else {
     let mid = mid_of(lo, hi);
     push_down(t, node, lo, hi, mid);
-    rec(cont) drain_at(t, left(node), lo, mid, out);
-    rec drain_at(t, right(node), add_i32(mid, 1), hi, out)
+    recur(cont) drain_at(t, left(node), lo, mid, out);
+    recur drain_at(t, right(node), add_i32(mid, 1), hi, out)
   }
 }
 

@@ -58,13 +58,13 @@ pub fn uncons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(xs) }
 pub fn head[A](xs: List(A)) -> A | . {
   match! uncons(xs) {
     (
-      , .(pair: A & List(A)) {
-          match! pair {
-            .(h: A, _t: List(A)) { widen_sum!(h, A | .) }
-          }
+    , .(pair: A & List(A)) {
+        match! pair {
+          .(h: A, _t: List(A)) { widen_sum!(h, A | .) }
         }
-      , .(_empty: .) { widen_sum!((), A | .) }
-      )
+      }
+    , .(_empty: .) { widen_sum!((), A | .) }
+    )
   }
 }
 
@@ -72,13 +72,13 @@ pub fn head[A](xs: List(A)) -> A | . {
 pub fn tail[A](xs: List(A)) -> List(A) {
   match! uncons(xs) {
     (
-      , .(pair: A & List(A)) {
-          match! pair {
-            .(_h: A, t: List(A)) { t }
-          }
+    , .(pair: A & List(A)) {
+        match! pair {
+          .(_h: A, t: List(A)) { t }
         }
-      , .(_empty: .) { nil(A) }
-      )
+      }
+    , .(_empty: .) { nil(A) }
+    )
   }
 }
 

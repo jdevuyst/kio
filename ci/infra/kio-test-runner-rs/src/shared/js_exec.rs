@@ -2242,6 +2242,14 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
              throw new Error('loop: step returned invalid sum'); } }"
                 .to_owned()
         }
+        HostFnBodyKind::LoopReentry => {
+            "(step, initial) => { function run(state) { \
+             while (true) { const out = step({ _0: run, _1: state }); \
+             if (Object.prototype.hasOwnProperty.call(out, '_0')) { state = out._0; continue; } \
+             if (Object.prototype.hasOwnProperty.call(out, '_1')) return out._1; \
+             throw new Error('loop_reentry: step returned invalid sum'); } } \
+             return run(initial); }".to_owned()
+        }
         HostFnBodyKind::ReadAsciiLine { .. } => {
             "() => { const line = __kio_host_read_ascii_line__(); \
              if (line == null) return { _1: null }; return { _0: line }; }"
@@ -2946,6 +2954,28 @@ mod tests {
         assert!(s.contains("Object.prototype.hasOwnProperty.call(out, '_0')"));
         assert!(s.contains("Object.prototype.hasOwnProperty.call(out, '_1')"));
         assert!(s.contains("Array.isArray(out)"));
+    }
+
+    #[test]
+    fn reentry_callback_outlives_its_run_and_keeps_tail_transitions_iterative() {
+        let body = rendered_body("unrelated_spelling", HostFnBodyKind::LoopReentry);
+        let runtime = Runtime::new().expect("runtime");
+        let context = Context::full(&runtime).expect("context");
+        context.with(|ctx| {
+            let program = format!(
+                "(() => {{ const loop = {body}; let calls = 0; \
+                 const ticket = loop(({{_0: reenter, _1: state}}) => {{ \
+                   calls++; \
+                   if (state[0] === 0) return {{_1: n => reenter([n, n])(null)}}; \
+                   if (state[0] === 1) return {{_1: _ => state[1]}}; \
+                   return {{_0: [state[0] - 1, state[1]]}}; \
+                 }}, [0, 0]); \
+                 const a = ticket(17); const b = ticket(29); const c = ticket(100000); \
+                 return [a, b, c, calls].join(','); }})()"
+            );
+            let observed: String = ctx.eval(program).expect("re-entry execution");
+            assert_eq!(observed, "17,29,100000,100047");
+        });
     }
 
     #[test]

@@ -738,6 +738,58 @@ pub(crate) struct CursorContext {
     pub(crate) target_ids: Vec<String>,
     pub(crate) operator_prefix: Option<Vec<String>>,
     pub(crate) call: Option<CallCursor>,
+    pub(crate) recursive_annotations: Option<RecursiveAnnotationCursor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecursiveAnnotationCursor {
+    pub(crate) interior: Span,
+    pub(crate) tokens: Vec<RecCallAnnotation>,
+}
+
+impl CursorContext {
+    #[cfg(any(test, feature = "lsp"))]
+    pub(crate) fn keyword_edit(&self, source: &str, keyword: &str) -> (Span, String, Vec<Span>) {
+        let Some(annotations) = &self.recursive_annotations else {
+            return (self.atom.replacement, keyword.to_owned(), Vec::new());
+        };
+        let Some(mode) = RecCallMode::from_annotation(keyword) else {
+            return (self.atom.replacement, keyword.to_owned(), Vec::new());
+        };
+        let mut modes = vec![mode];
+        let mut removals = vec![self.atom.replacement];
+        for token in &annotations.tokens {
+            if token.span() == self.atom.replacement {
+                continue;
+            }
+            if let RecCallAnnotation::Mode { mode, .. } = token {
+                modes.push(*mode);
+            }
+            removals.push(token.span());
+        }
+        let canonical = RecCallMode::canonical_modes(&modes)
+            .into_iter()
+            .map(RecCallMode::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let interior = annotations.interior;
+        let authored = &source[interior.start as usize..interior.end as usize];
+        if !authored.contains(['\n', '\r']) {
+            return (interior, canonical, Vec::new());
+        }
+        removals.sort_by_key(|span| (span.start, span.end));
+        removals.dedup();
+        let mut primary = self.atom.replacement;
+        let mut additional = Vec::new();
+        for span in removals {
+            if span.start <= primary.end && primary.start <= span.end {
+                primary = Span::new(primary.start.min(span.start), primary.end.max(span.end));
+            } else {
+                additional.push(span);
+            }
+        }
+        (primary, canonical, additional)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1924,7 +1976,6 @@ impl<'a> Parser<'a> {
 
     /// Return the token immediately after the balanced paren group
     /// whose opening `(` sits `open_offset` tokens ahead.
-    #[cfg(any(test, feature = "cli"))]
     fn peek_after_paren_group_at(&self, open_offset: usize) -> Option<TokenKind> {
         if !matches!(self.peek_at(open_offset), Some(TokenKind::LParen)) {
             return None;
@@ -1961,7 +2012,7 @@ impl<'a> Parser<'a> {
 
     fn rec_call_starts_here(&mut self) -> bool {
         let mut lookahead = self.cursor.clone();
-        let marker = lookahead.advance().expect("caller matched `rec`");
+        let marker = lookahead.advance().expect("caller matched `recur`");
         let mut annotation_prefix = true;
         let end = if matches!(lookahead.peek_kind(), Some(TokenKind::LParen)) {
             let depth = lookahead.depth();
@@ -1982,7 +2033,6 @@ impl<'a> Parser<'a> {
                 match token.kind {
                     TokenKind::Ident(name) if expects_mode => {
                         if let Some(mode) = RecCallMode::from_annotation(&name)
-                            && mode != RecCallMode::Escape
                             && !modes.contains(&mode)
                         {
                             modes.push(mode);
@@ -10003,6 +10053,7 @@ impl<'a> Parser<'a> {
             target_ids: Vec::new(),
             operator_prefix: None,
             call: None,
+            recursive_annotations: None,
         });
     }
 
@@ -10187,6 +10238,7 @@ impl<'a> Parser<'a> {
                 target_ids: Vec::new(),
                 operator_prefix: None,
                 call: None,
+                recursive_annotations: None,
             });
         }
     }
@@ -11735,7 +11787,7 @@ impl<'a> Parser<'a> {
                     ..
                 })
             ) {
-                self.cursor_choices(CursorSlot::Value, &["rec", "let"]);
+                self.cursor_choices(CursorSlot::Value, &["recur", "let"]);
             }
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 pending.extend(self.peek_leading_trivia());
@@ -11843,6 +11895,17 @@ impl<'a> Parser<'a> {
         inject_leading_trivia(&mut value, value_leading);
         let separator_leading = self.peek_leading_trivia();
         let span = self.expect_kind(TokenKind::Semicolon, "`;` after neutral let")?;
+        if bind
+            && let Some(tooling) = &mut self.tooling
+            && tooling.cursor.is_some_and(|cursor| cursor >= span.end)
+            && let Some(region) = tooling
+                .facts
+                .regions
+                .iter_mut()
+                .find(|region| Some(region.open) == tooling.body_owner)
+        {
+            region.lambda = true;
+        }
         let meta = Meta {
             span: Span::new(start, span.end),
             leading_trivia: pending,
@@ -11903,7 +11966,7 @@ impl<'a> Parser<'a> {
         if self.block_call_starts_here() {
             return self.block_call();
         }
-        self.cursor_choices(CursorSlot::Value, &["rec"]);
+        self.cursor_choices(CursorSlot::Value, &["recur"]);
         if let Some(e) = self.try_variadic_literal()? {
             return Ok(e);
         }
@@ -11929,7 +11992,22 @@ impl<'a> Parser<'a> {
         if let Some(error) = self.unclaimed_direct_value_fqn_error() {
             return Err(error);
         }
-        let rec_call = self.peek_ident_named("rec") && self.rec_call_starts_here();
+        if self.peek_ident_named("rec")
+            && (matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
+                || matches!(self.peek_after_paren_group_at(1), Some(TokenKind::Ident(_))))
+        {
+            let span = self.peek_span();
+            return Err(self
+                .err(
+                    span,
+                    "recursive calls use `recur`; `rec` introduces recursive declarations",
+                )
+                .with_fix(Fix::maybe_incorrect(
+                    "Use `recur` for this recursive call",
+                    vec![FixEdit::new(span, "recur")],
+                )));
+        }
+        let rec_call = self.peek_ident_named("recur") && self.rec_call_starts_here();
         match self.peek() {
             Some(TokenKind::StrLit(_)) => {
                 let (value, span) = self.read_str_literal();
@@ -11988,7 +12066,7 @@ impl<'a> Parser<'a> {
             // parser has already recognized a full let-statement
             // shape. In expression position it is an ordinary value
             // identifier, so calls like `let()` remain admissible.
-            Some(TokenKind::Ident(s)) if s == "rec" && rec_call => self.rec_call_expr(),
+            Some(TokenKind::Ident(s)) if s == "recur" && rec_call => self.rec_call_expr(),
             // Bang-call form: a `name!(args...)` user-elaborator call
             // (`iso!(e)`, `fit!(e, T)`, `match!(...)`, `my_elaborator!(e, T)`
             // — all imported elaborators). The
@@ -12007,7 +12085,7 @@ impl<'a> Parser<'a> {
 
     fn rec_call_expr(&mut self) -> Result<Expr, Error> {
         let start = self.peek_span().start;
-        let keyword = self.expect_ident_role("rec", KeywordRole::Declaration)?;
+        let keyword = self.expect_ident_role("recur", KeywordRole::Declaration)?;
         let mut annotation_error = None;
         let parsed = (|| {
             let (modes, annotations) = if matches!(self.peek(), Some(TokenKind::LParen)) {
@@ -12020,14 +12098,14 @@ impl<'a> Parser<'a> {
             Self::validate_value_name(&name, name_span)?;
             if self.at_sym(".") {
                 return Err(self.err_here(
-                    "`rec` calls target a member of the current recursion group; \
-                     write `rec name(...)`, not a dotted path",
+                    "`recur` calls target a member of the current recursion group; \
+                     write `recur name(...)`, not a dotted path",
                 ));
             }
             let (args, end, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
                 self.call_arg_list(None)?
             } else {
-                return Err(self.err_here("expected argument list after `rec` callee"));
+                return Err(self.err_here("expected argument list after `recur` callee"));
             };
             Ok((
                 modes,
@@ -12060,12 +12138,12 @@ impl<'a> Parser<'a> {
         &mut self,
         annotation_error: &mut Option<Error>,
     ) -> Result<(Vec<RecCallMode>, Vec<RecCallAnnotation>), Error> {
-        let open = self.expect_kind(TokenKind::LParen, "`(` opening `rec` call annotations")?;
+        let open = self.expect_kind(TokenKind::LParen, "`(` opening `recur` call annotations")?;
         let mut tokens = vec![RecCallAnnotation::Punctuation(open)];
         let annotation_depth = self.cursor.depth();
         self.cursor_choices_from(
             CursorSlot::RecursiveAnnotation,
-            [RecCallMode::Poly, RecCallMode::Cont]
+            [RecCallMode::Poly, RecCallMode::Cont, RecCallMode::Escape]
                 .into_iter()
                 .map(RecCallMode::as_str),
         );
@@ -12074,30 +12152,32 @@ impl<'a> Parser<'a> {
         }
         self.cursor_choices_from(
             CursorSlot::RecursiveAnnotation,
-            [RecCallMode::Poly, RecCallMode::Cont]
+            [RecCallMode::Poly, RecCallMode::Cont, RecCallMode::Escape]
                 .into_iter()
                 .map(RecCallMode::as_str),
         );
         if matches!(self.peek(), Some(TokenKind::RParen)) {
-            return Err(self.err_here("`rec` call annotation list cannot be empty"));
+            return Err(self.err_here("`recur` call annotation list cannot be empty"));
         }
         let mut modes = Vec::new();
+        let mut invalid_annotation_spans = Vec::new();
         loop {
             self.cursor_choices_from(
                 CursorSlot::RecursiveAnnotation,
-                [RecCallMode::Poly, RecCallMode::Cont]
+                [RecCallMode::Poly, RecCallMode::Cont, RecCallMode::Escape]
                     .into_iter()
-                    .filter(|mode| !modes.contains(mode))
+                    .filter(|mode| !RecCallMode::is_effective(&modes, *mode))
                     .map(RecCallMode::as_str),
             );
             let parsed = (|| {
                 let (name, span) = self.expect_ident()?;
                 if let Some(mode) = RecCallMode::from_annotation(&name) {
                     if modes.contains(&mode) {
+                        invalid_annotation_spans.push(span);
                         annotation_error.get_or_insert_with(|| {
                             Error::parse(
                                 span,
-                                format!("duplicate `rec` call annotation `{}`", mode.as_str()),
+                                format!("duplicate `recur` call annotation `{}`", mode.as_str()),
                             )
                         });
                     }
@@ -12105,19 +12185,19 @@ impl<'a> Parser<'a> {
                     modes.push(mode);
                     tokens.push(RecCallAnnotation::Mode { mode, span });
                 } else {
+                    invalid_annotation_spans.push(span);
                     annotation_error.get_or_insert_with(|| {
-                        Error::parse(span, format!("unknown `rec` call annotation `{name}`"))
-                            .with_help(
-                                "available annotations are `poly`, `cont`, and reserved `escape`",
-                            )
+                        Error::parse(span, format!("unknown `recur` call annotation `{name}`"))
+                            .with_help("available annotations are `poly`, `cont`, and `escape`")
                     });
                 }
                 if !matches!(self.peek(), Some(TokenKind::Comma | TokenKind::RParen)) {
-                    return Err(self.err_here("expected `)` closing `rec` call annotations"));
+                    return Err(self.err_here("expected `)` closing `recur` call annotations"));
                 }
                 Ok(())
             })();
             if let Err(error) = parsed {
+                invalid_annotation_spans.push(error.diag().0);
                 annotation_error.get_or_insert(error);
                 // Only the containing list's separator starts another mode;
                 // nested items and unseparated suffixes own no annotation roles.
@@ -12148,9 +12228,9 @@ impl<'a> Parser<'a> {
             if has_comma {
                 self.cursor_choices_from(
                     CursorSlot::RecursiveAnnotation,
-                    [RecCallMode::Poly, RecCallMode::Cont]
+                    [RecCallMode::Poly, RecCallMode::Cont, RecCallMode::Escape]
                         .into_iter()
-                        .filter(|mode| !modes.contains(mode))
+                        .filter(|mode| !RecCallMode::is_effective(&modes, *mode))
                         .map(RecCallMode::as_str),
                 );
                 if matches!(self.peek(), Some(TokenKind::RParen)) {
@@ -12160,7 +12240,41 @@ impl<'a> Parser<'a> {
             }
             break;
         }
-        let close = self.expect_kind(TokenKind::RParen, "`)` closing `rec` call annotations")?;
+        let end = self.peek_span().start;
+        if let Some(context) = self
+            .tooling
+            .as_mut()
+            .and_then(|tooling| tooling.facts.cursor.as_mut())
+            && context.slot == CursorSlot::RecursiveAnnotation
+            && open.end <= context.atom.replacement.start
+            && context.atom.replacement.end <= end
+        {
+            let modes = tokens
+                .iter()
+                .filter_map(|token| match token {
+                    RecCallAnnotation::Mode { mode, span } if *span != context.atom.replacement => {
+                        Some(*mode)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            context.keywords = [RecCallMode::Poly, RecCallMode::Cont, RecCallMode::Escape]
+                .into_iter()
+                .filter(|mode| !RecCallMode::is_effective(&modes, *mode))
+                .map(RecCallMode::as_str)
+                .collect();
+            if invalid_annotation_spans.iter().any(|span| {
+                span.start < context.atom.replacement.start
+                    || span.end > context.atom.replacement.end
+            }) {
+                context.keywords.clear();
+            }
+            context.recursive_annotations = Some(RecursiveAnnotationCursor {
+                interior: Span::new(open.end, end),
+                tokens: tokens.iter().skip(1).cloned().collect(),
+            });
+        }
+        let close = self.expect_kind(TokenKind::RParen, "`)` closing `recur` call annotations")?;
         tokens.push(RecCallAnnotation::Punctuation(close));
         Ok((modes, tokens))
     }
@@ -12354,7 +12468,7 @@ impl<'a> Parser<'a> {
             self.advance();
             append_source_trivia(&mut pending_trivia, self.peek_leading_trivia());
         }
-        self.cursor_choices(CursorSlot::Value, &["rec"]);
+        self.cursor_choices(CursorSlot::Value, &["recur"]);
         if matches!(self.peek(), Some(TokenKind::RParen)) {
             let end = self.peek_span().end;
             self.advance();
@@ -12372,7 +12486,7 @@ impl<'a> Parser<'a> {
             saw_comma_after_first = true;
             self.advance();
             append_source_trivia(&mut pending_trivia, self.peek_leading_trivia());
-            self.cursor_choices(CursorSlot::Value, &["rec"]);
+            self.cursor_choices(CursorSlot::Value, &["recur"]);
         }
         // `(e)` — grouping; reduces to the inner expression. The
         // same collapse applies when comma-runs frame one item:
@@ -12691,7 +12805,7 @@ impl<'a> Parser<'a> {
         let leading_separator_trivia = self.skip_semicolon_separators();
         // Empty block (no statements, no final expression) — error.
         if matches!(self.peek(), Some(TokenKind::RBrace)) {
-            self.cursor_choices(CursorSlot::Value, &["rec", "let"]);
+            self.cursor_choices(CursorSlot::Value, &["recur", "let"]);
             return Err(self.err(
                 Span::new(block_start, self.peek_span().end),
                 "block has no final expression; a block must end with an expression \
@@ -12715,7 +12829,7 @@ impl<'a> Parser<'a> {
             // `e;` at end of block is a final expression with an
             // optional trailing separator.
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                self.cursor_choices(CursorSlot::Value, &["rec", "let"]);
+                self.cursor_choices(CursorSlot::Value, &["recur", "let"]);
                 inject_leading_trivia(&mut value, value_leading_trivia);
                 return Ok(value);
             }
@@ -13217,7 +13331,7 @@ impl<'a> Parser<'a> {
             .tooling
             .as_ref()
             .is_some_and(|tooling| tooling.facts.cursor.is_none());
-        self.cursor_choices(CursorSlot::Argument, &["rec"]);
+        self.cursor_choices(CursorSlot::Argument, &["recur"]);
         if unclaimed
             && let Some(callee) = callee
             && let Some(context) = self
@@ -13251,7 +13365,7 @@ impl<'a> Parser<'a> {
     /// type shapes like `A & B` are re-parsed as types when the type
     /// parse consumes the same range.
     fn call_arg(&mut self) -> Result<CallArg, Error> {
-        self.cursor_choices(CursorSlot::Argument, &["rec"]);
+        self.cursor_choices(CursorSlot::Argument, &["recur"]);
         self.validate_call_arg_path_names()?;
         let parsed = match self.peek() {
             // `_` is the type-inference placeholder; in call-arg
@@ -13264,7 +13378,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::IntLit { .. })
             | Some(TokenKind::FloatLit { .. })
             | Some(TokenKind::BoolLit(_)) => Ok(CallArg::Value(self.expr()?)),
-            Some(TokenKind::Ident(s)) if s == "fn" || s == "let" || s == "rec" => {
+            Some(TokenKind::Ident(s)) if s == "fn" || s == "let" || s == "recur" => {
                 Ok(CallArg::Value(self.expr()?))
             }
             // Ambiguous symbol runs — try expression first for
@@ -13369,7 +13483,14 @@ impl<'a> Parser<'a> {
         let expr_err = expr_attempt.err();
         let expr_facts = self.take_tooling_suffix(&checkpoint);
         self.cursor = saved_cursor;
-        match self.type_expr() {
+        let type_attempt = self.type_expr().and_then(|ty| {
+            if self.call_arg_list_continues() || self.peek().is_none() {
+                Ok(ty)
+            } else {
+                Err(self.err_here("expected `,` or `)`"))
+            }
+        });
+        match type_attempt {
             Ok(t) => Ok(CallArg::Type(t)),
             Err(type_err) => {
                 let type_reached_unclosed_forall = self

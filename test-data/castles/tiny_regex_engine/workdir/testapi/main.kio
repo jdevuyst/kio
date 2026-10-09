@@ -1,13 +1,13 @@
 module testapi/main;
 
 import regex/matcher(
-  , anchored_hi
-  , byte_probe_passed
-  , c_dot_t
-  , colour_optional
-  , gray_alternation
-  , literal_cat
-  );
+, anchored_hi
+, byte_probe_passed
+, c_dot_t
+, colour_optional
+, gray_alternation
+, literal_cat
+);
 import regex/result(Verdict, render);
 import testapi(String);
 import testapi/fmt(bool_to_string);

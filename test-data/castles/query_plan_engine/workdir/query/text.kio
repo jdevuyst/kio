@@ -24,11 +24,7 @@ pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
 }
 
 rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) {
-    acc
-  } else {
-    rec repeat_onto(unit, sub_i32(n, 1), cat2(acc, unit))
-  }
+  if! leq_i32(n, 0) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat2(acc, unit)) }
 }
 
 pub fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
@@ -50,15 +46,11 @@ rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
   } else if! leq_i32(1000000000, bound) {
     add_i32(acc, 1)
   } else {
-    rec digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
+    recur digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
   }
 }
 
 /// The printed width of an integer, sign included.
 pub fn digits(n: I32) -> I32 {
-  if! lt_i32(n, 0) {
-    add_i32(1, digits_from(sub_i32(0, n), 10, 1))
-  } else {
-    digits_from(n, 10, 1)
-  }
+  if! lt_i32(n, 0) { add_i32(1, digits_from(sub_i32(0, n), 10, 1)) } else { digits_from(n, 10, 1) }
 }

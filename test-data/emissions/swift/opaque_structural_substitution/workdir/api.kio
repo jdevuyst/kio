@@ -33,7 +33,10 @@ pub fn product_output(number: Number, flag: Flag) -> Box(Number & Flag) {
 pub fn left_box[A][B](value: A) -> Box(A | B) { pack(value.>widen_sum!(A | B)) }
 
 fn boxed_reader[T](value: T) -> Box([B] B -> T) {
-  pack(.[B] { type_stage(); .(input: B) { value_stage(); value } })
+  pack(.[B] {
+    type_stage();
+    .(input: B) { value_stage(); value }
+  })
 }
 
 pub fn captured_reader(value: Number & Flag) -> Box([B] B -> (Number & Flag)) {

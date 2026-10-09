@@ -154,22 +154,22 @@ fn hex_digit_val(c: I32) -> . | I32 {
 /// Reverses a token list (most-recent-first into source order).
 fn toks_reverse(ts: Toks) -> Toks {
   loop(
-    , .(st: Toks & Toks) {
-        match! st {
-          .(remaining: Toks, acc: Toks) {
-            match! un_toks(remaining) {
-              (
-                , .(head: Token, pos: I32, rest: Toks) {
-                    widen_sum!((rest, toks_cons(head, pos, acc)), (Toks & Toks) | Toks)
-                  }
-                , .(_e: .) { widen_sum!(acc, (Toks & Toks) | Toks) }
-                )
-            }
+  , .(st: Toks & Toks) {
+      match! st {
+        .(remaining: Toks, acc: Toks) {
+          match! un_toks(remaining) {
+            (
+            , .(head: Token, pos: I32, rest: Toks) {
+                widen_sum!((rest, toks_cons(head, pos, acc)), (Toks & Toks) | Toks)
+              }
+            , .(_e: .) { widen_sum!(acc, (Toks & Toks) | Toks) }
+            )
           }
         }
       }
-    , (ts, toks_nil())
-    )
+    }
+  , (ts, toks_nil())
+  )
 }
 
 // =====================================================================
@@ -201,26 +201,26 @@ labels { strp: I32 & String };
 /// Finds the end position of the word run starting at `start`.
 fn scan_word_end(src: String, start: I32, len: I32) -> I32 {
   Endp.get(loop(
-    , .(pos: I32) {
-        if! lt_i32(pos, len) {
-          match! char_at(src, pos) {
-            (
-              , .(c: I32) {
-                  if! is_word_cont(c) {
-                    widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
-                  } else {
-                    widen_sum!({endp = pos}, I32 | Endp)
-                  }
-                }
-              , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
-              )
-          }
-        } else {
-          widen_sum!({endp = pos}, I32 | Endp)
+  , .(pos: I32) {
+      if! lt_i32(pos, len) {
+        match! char_at(src, pos) {
+          (
+          , .(c: I32) {
+              if! is_word_cont(c) {
+                widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
+              } else {
+                widen_sum!({endp = pos}, I32 | Endp)
+              }
+            }
+          , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
+          )
         }
+      } else {
+        widen_sum!({endp = pos}, I32 | Endp)
       }
-    , start
-    ))
+    }
+  , start
+  ))
 }
 
 // =====================================================================
@@ -281,28 +281,24 @@ fn exp_digit_pos(src: String, pos: I32, len: I32, c: I32, phase: I32) -> . | I32
     let signpos = add_i32(pos, 1(I32));
     let digitpos = match! char_at(src, signpos) {
       (
-        , .(s: I32) {
-            if! or2(eq_i32(s, 43(I32)), eq_i32(s, c_minus())) {
-              add_i32(signpos, 1(I32))
-            } else {
-              signpos
-            }
+      , .(s: I32) {
+          if! or2(eq_i32(s, 43(I32)), eq_i32(s, c_minus())) {
+            add_i32(signpos, 1(I32))
+          } else {
+            signpos
           }
-        , .(_e: .) { signpos }
-        )
+        }
+      , .(_e: .) { signpos }
+      )
     };
     if! lt_i32(digitpos, len) {
       match! char_at(src, digitpos) {
         (
-          , .(d: I32) {
-              if! is_digit(d) {
-                widen_sum!(digitpos, . | I32)
-              } else {
-                widen_sum!((), . | I32)
-              }
-            }
-          , .(_e: .) { widen_sum!((), . | I32) }
-          )
+        , .(d: I32) {
+            if! is_digit(d) { widen_sum!(digitpos, . | I32) } else { widen_sum!((), . | I32) }
+          }
+        , .(_e: .) { widen_sum!((), . | I32) }
+        )
       }
     } else {
       widen_sum!((), . | I32)
@@ -319,37 +315,37 @@ fn exp_digit_pos(src: String, pos: I32, len: I32, c: I32, phase: I32) -> . | I32
 /// none of those.
 fn scan_number_end(src: String, start: I32, len: I32) -> I32 {
   Endp.get(loop(
-    , .(st: I32 & I32) {
-        match! st {
-          .(pos: I32, phase: I32) {
-            if! lt_i32(pos, len) {
-              match! char_at(src, pos) {
-                (
-                  , .(c: I32) {
-                      if! is_digit(c) {
-                        widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
-                      } else if! sep_continues(src, pos, len, c) {
-                        widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
-                      } else if! dot_continues(src, pos, len, c, phase) {
-                        widen_sum!((add_i32(pos, 1(I32)), 1(I32)), (I32 & I32) | Endp)
-                      } else match! exp_digit_pos(src, pos, len, c, phase) {
-                        (
-                          , .(dp: I32) { widen_sum!((dp, 2(I32)), (I32 & I32) | Endp) }
-                          , .(_stop: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
-                          )
-                      }
-                    }
-                  , .(_e: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
-                  )
-              }
-            } else {
-              widen_sum!({endp = pos}, (I32 & I32) | Endp)
+  , .(st: I32 & I32) {
+      match! st {
+        .(pos: I32, phase: I32) {
+          if! lt_i32(pos, len) {
+            match! char_at(src, pos) {
+              (
+              , .(c: I32) {
+                  if! is_digit(c) {
+                    widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
+                  } else if! sep_continues(src, pos, len, c) {
+                    widen_sum!((add_i32(pos, 1(I32)), phase), (I32 & I32) | Endp)
+                  } else if! dot_continues(src, pos, len, c, phase) {
+                    widen_sum!((add_i32(pos, 1(I32)), 1(I32)), (I32 & I32) | Endp)
+                  } else match! exp_digit_pos(src, pos, len, c, phase) {
+                    (
+                    , .(dp: I32) { widen_sum!((dp, 2(I32)), (I32 & I32) | Endp) }
+                    , .(_stop: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
+                    )
+                  }
+                }
+              , .(_e: .) { widen_sum!({endp = pos}, (I32 & I32) | Endp) }
+              )
             }
+          } else {
+            widen_sum!({endp = pos}, (I32 & I32) | Endp)
           }
         }
       }
-    , (start, 0(I32))
-    ))
+    }
+  , (start, 0(I32))
+  ))
 }
 
 // =====================================================================
@@ -365,46 +361,43 @@ fn scan_number_end(src: String, start: I32, len: I32) -> I32 {
 // any of the four is missing or not a hex digit.
 fn read_hex4(src: String, pos: I32, len: I32) -> . | I32 {
   loop(
-    , .(st: I32 & I32 & I32) {
-        match! st {
-          .(p: I32, remaining: I32, acc: I32) {
-            if! eq_i32(remaining, 0(I32)) {
-              widen_sum!(widen_sum!(acc, . | I32), (I32 & I32 & I32) | . | I32)
-            } else if! lt_i32(p, len) {
-              match! char_at(src, p) {
-                (
-                  , .(c: I32) {
-                      match! hex_digit_val(c) {
-                        (
-                          , .(v: I32) {
-                              widen_sum!(
-                                , (
-                                    , add_i32(p, 1(I32))
-                                    , (
-                                        , add_i32(remaining, -1(I32))
-                                        , add_i32(mul_i32(acc, 16(I32)), v)
-                                        )
-                                    )
-                                , (I32 & I32 & I32) | . | I32
-                                )
-                            }
-                          , .(_bad: .) {
-                              widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
-                            }
+  , .(st: I32 & I32 & I32) {
+      match! st {
+        .(p: I32, remaining: I32, acc: I32) {
+          if! eq_i32(remaining, 0(I32)) {
+            widen_sum!(widen_sum!(acc, . | I32), (I32 & I32 & I32) | . | I32)
+          } else if! lt_i32(p, len) {
+            match! char_at(src, p) {
+              (
+              , .(c: I32) {
+                  match! hex_digit_val(c) {
+                    (
+                    , .(v: I32) {
+                        widen_sum!(
+                        , (
+                          , add_i32(p, 1(I32))
+                          , (add_i32(remaining, -1(I32)), add_i32(mul_i32(acc, 16(I32)), v))
                           )
+                        , (I32 & I32 & I32) | . | I32
+                        )
                       }
-                    }
-                  , .(_e: .) { widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32) }
-                  )
-              }
-            } else {
-              widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
+                    , .(_bad: .) {
+                        widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
+                      }
+                    )
+                  }
+                }
+              , .(_e: .) { widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32) }
+              )
             }
+          } else {
+            widen_sum!(widen_sum!((), . | I32), (I32 & I32 & I32) | . | I32)
           }
         }
       }
-    , (pos, (4(I32), 0(I32)))
-    )
+    }
+  , (pos, (4(I32), 0(I32)))
+  )
 }
 
 // Decode the four hex digits of a `\uXXXX` escape starting at `pos` (the
@@ -414,30 +407,30 @@ fn read_hex4(src: String, pos: I32, len: I32) -> . | I32 {
 fn decode_u_escape(src: String, pos: I32, len: I32) -> String | Lex_err {
   match! read_hex4(src, pos, len) {
     (
-      , .(code: I32) {
-          match! ascii_char(code) {
-            (
-              , .(ch: String) { widen_sum!(ch, String | Lex_err) }
-              , .(_wide: .) {
-                  widen_sum!(
-                    , mk_lex_err(
-                        , "a `\\u` escape names a code point past ASCII — the emitter writes "
-                          "non-ASCII text as raw UTF-8, so this image text is malformed"(String)
-                        , pos
-                        )
-                    , String | Lex_err
-                    )
-                }
+    , .(code: I32) {
+        match! ascii_char(code) {
+          (
+          , .(ch: String) { widen_sum!(ch, String | Lex_err) }
+          , .(_wide: .) {
+              widen_sum!(
+              , mk_lex_err(
+                , "a `\\u` escape names a code point past ASCII — the emitter writes "
+                  "non-ASCII text as raw UTF-8, so this image text is malformed"(String)
+                , pos
+                )
+              , String | Lex_err
               )
-          }
+            }
+          )
         }
-      , .(_bad: .) {
-          widen_sum!(
-            , mk_lex_err("a `\\u` escape is not followed by four hex digits"(String), pos)
-            , String | Lex_err
-            )
-        }
-      )
+      }
+    , .(_bad: .) {
+        widen_sum!(
+        , mk_lex_err("a `\\u` escape is not followed by four hex digits"(String), pos)
+        , String | Lex_err
+        )
+      }
+    )
   }
 }
 
@@ -475,51 +468,51 @@ fn scan_str_escape(src: String, pos: I32, len: I32, acc: String) -> (I32 & Strin
   if! lt_i32(escpos, len) {
     match! char_at(src, escpos) {
       (
-        , .(e: I32) {
-            match! named_escape(e) {
-              (
-                , .(ch: String) {
-                    widen_sum!(
-                      , (add_i32(escpos, 1(I32)), string_concat(acc, ch))
-                      , (I32 & String) | Strp | Lex_err
-                      )
-                  }
-                , .(_notnamed: .) {
-                    if! eq_i32(e, 117(I32)) {
-                      match! decode_u_escape(src, add_i32(escpos, 1(I32)), len) {
-                        (
-                          , .(ch: String) {
-                              widen_sum!(
-                                , (add_i32(escpos, 5(I32)), string_concat(acc, ch))
-                                , (I32 & String) | Strp | Lex_err
-                                )
-                            }
-                          , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Strp | Lex_err) }
-                          )
-                      }
-                    } else {
-                      widen_sum!(
-                        , mk_lex_err("unknown escape sequence in a string literal"(String), pos)
+      , .(e: I32) {
+          match! named_escape(e) {
+            (
+            , .(ch: String) {
+                widen_sum!(
+                , (add_i32(escpos, 1(I32)), string_concat(acc, ch))
+                , (I32 & String) | Strp | Lex_err
+                )
+              }
+            , .(_notnamed: .) {
+                if! eq_i32(e, 117(I32)) {
+                  match! decode_u_escape(src, add_i32(escpos, 1(I32)), len) {
+                    (
+                    , .(ch: String) {
+                        widen_sum!(
+                        , (add_i32(escpos, 5(I32)), string_concat(acc, ch))
                         , (I32 & String) | Strp | Lex_err
                         )
-                    }
+                      }
+                    , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Strp | Lex_err) }
+                    )
                   }
-                )
-            }
+                } else {
+                  widen_sum!(
+                  , mk_lex_err("unknown escape sequence in a string literal"(String), pos)
+                  , (I32 & String) | Strp | Lex_err
+                  )
+                }
+              }
+            )
           }
-        , .(_e: .) {
-            widen_sum!(
-              , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
-              , (I32 & String) | Strp | Lex_err
-              )
-          }
-        )
+        }
+      , .(_e: .) {
+          widen_sum!(
+          , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
+          , (I32 & String) | Strp | Lex_err
+          )
+        }
+      )
     }
   } else {
     widen_sum!(
-      , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
-      , (I32 & String) | Strp | Lex_err
-      )
+    , mk_lex_err("unterminated string literal — ends in a bare `\\`"(String), pos)
+    , (I32 & String) | Strp | Lex_err
+    )
   }
 }
 
@@ -529,59 +522,59 @@ fn scan_str_escape(src: String, pos: I32, len: I32, acc: String) -> (I32 & Strin
 fn scan_str(src: String, start: I32, len: I32) -> (I32 & String) | Lex_err {
   let loop_result =
     loop(
-      , .(st: I32 & String) {
-          match! st {
-            .(pos: I32, acc: String) {
-              if! lt_i32(pos, len) {
-                match! char_at(src, pos) {
-                  (
-                    , .(c: I32) {
-                        if! eq_i32(c, c_quote()) {
-                          widen_sum!(
-                            , {strp = (add_i32(pos, 1(I32)), acc)}
-                            , (I32 & String) | Strp | Lex_err
-                            )
-                        } else if! eq_i32(c, c_backslash()) {
-                          scan_str_escape(src, pos, len, acc)
-                        } else {
-                          let acc1 = string_concat(acc, char_str(src, pos));
-                          widen_sum!((add_i32(pos, 1(I32)), acc1), (I32 & String) | Strp | Lex_err)
-                        }
-                      }
-                    , .(_e: .) {
-                        widen_sum!(
-                          , mk_lex_err(
-                              , "unterminated string literal — no closing `\"` before end-of-input"(String)
-                              , add_i32(start, -1(I32))
-                              )
-                          , (I32 & String) | Strp | Lex_err
-                          )
-                      }
-                    )
-                }
-              } else {
-                widen_sum!(
-                  , mk_lex_err(
+    , .(st: I32 & String) {
+        match! st {
+          .(pos: I32, acc: String) {
+            if! lt_i32(pos, len) {
+              match! char_at(src, pos) {
+                (
+                , .(c: I32) {
+                    if! eq_i32(c, c_quote()) {
+                      widen_sum!(
+                      , {strp = (add_i32(pos, 1(I32)), acc)}
+                      , (I32 & String) | Strp | Lex_err
+                      )
+                    } else if! eq_i32(c, c_backslash()) {
+                      scan_str_escape(src, pos, len, acc)
+                    } else {
+                      let acc1 = string_concat(acc, char_str(src, pos));
+                      widen_sum!((add_i32(pos, 1(I32)), acc1), (I32 & String) | Strp | Lex_err)
+                    }
+                  }
+                , .(_e: .) {
+                    widen_sum!(
+                    , mk_lex_err(
                       , "unterminated string literal — no closing `\"` before end-of-input"(String)
                       , add_i32(start, -1(I32))
                       )
-                  , (I32 & String) | Strp | Lex_err
-                  )
+                    , (I32 & String) | Strp | Lex_err
+                    )
+                  }
+                )
               }
+            } else {
+              widen_sum!(
+              , mk_lex_err(
+                , "unterminated string literal — no closing `\"` before end-of-input"(String)
+                , add_i32(start, -1(I32))
+                )
+              , (I32 & String) | Strp | Lex_err
+              )
             }
           }
         }
-      , (start, ""(String))
-      );
+      }
+    , (start, ""(String))
+    );
   match! loop_result {
     (
-      , .(done: Strp) {
-          match! Strp.get(done) {
-            .(endp: I32, content: String) { widen_sum!((endp, content), (I32 & String) | Lex_err) }
-          }
+    , .(done: Strp) {
+        match! Strp.get(done) {
+          .(endp: I32, content: String) { widen_sum!((endp, content), (I32 & String) | Lex_err) }
         }
-      , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Lex_err) }
-      )
+      }
+    , .(err: Lex_err) { widen_sum!(err, (I32 & String) | Lex_err) }
+    )
   }
 }
 
@@ -591,26 +584,26 @@ fn scan_str(src: String, start: I32, len: I32) -> (I32 & String) | Lex_err {
 /// Advances past a line comment, returning the position at the next newline or end-of-input.
 fn skip_line(src: String, start: I32, len: I32) -> I32 {
   Endp.get(loop(
-    , .(pos: I32) {
-        if! lt_i32(pos, len) {
-          match! char_at(src, pos) {
-            (
-              , .(c: I32) {
-                  if! eq_i32(c, c_nl()) {
-                    widen_sum!({endp = pos}, I32 | Endp)
-                  } else {
-                    widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
-                  }
-                }
-              , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
-              )
-          }
-        } else {
-          widen_sum!({endp = pos}, I32 | Endp)
+  , .(pos: I32) {
+      if! lt_i32(pos, len) {
+        match! char_at(src, pos) {
+          (
+          , .(c: I32) {
+              if! eq_i32(c, c_nl()) {
+                widen_sum!({endp = pos}, I32 | Endp)
+              } else {
+                widen_sum!(add_i32(pos, 1(I32)), I32 | Endp)
+              }
+            }
+          , .(_e: .) { widen_sum!({endp = pos}, I32 | Endp) }
+          )
         }
+      } else {
+        widen_sum!({endp = pos}, I32 | Endp)
       }
-    , start
-    ))
+    }
+  , start
+  ))
 }
 
 // Whether a `/` at `pos` opens a line comment: a second `/` follows.
@@ -642,22 +635,22 @@ fn lex_word(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
 // Whether the sliced numeric text contains a `_` digit separator.
 fn has_sep(text: String) -> Bool {
   loop(
-    , .(pos: I32) {
-        match! string_code_at(text, pos) {
-          (
-            , .(c: I32) {
-                if! eq_i32(c, 95(I32)) {
-                  widen_sum!(.t(Bool), I32 | Bool)
-                } else {
-                  widen_sum!(add_i32(pos, 1(I32)), I32 | Bool)
-                }
-              }
-            , .(_e: .) { widen_sum!(.f(Bool), I32 | Bool) }
-            )
-        }
+  , .(pos: I32) {
+      match! string_code_at(text, pos) {
+        (
+        , .(c: I32) {
+            if! eq_i32(c, 95(I32)) {
+              widen_sum!(.t(Bool), I32 | Bool)
+            } else {
+              widen_sum!(add_i32(pos, 1(I32)), I32 | Bool)
+            }
+          }
+        , .(_e: .) { widen_sum!(.f(Bool), I32 | Bool) }
+        )
       }
-    , 0(I32)
-    )
+    }
+  , 0(I32)
+  )
 }
 
 // The numeric text with `_` digit separators removed. The token hands its
@@ -667,29 +660,29 @@ fn has_sep(text: String) -> Bool {
 // zero-copy path in `numeric_text`.
 fn drop_seps(text: String) -> String {
   match! Strp.get(loop(
-    , .(st: I32 & String) {
-        match! st {
-          .(pos: I32, acc: String) {
-            match! string_code_at(text, pos) {
-              (
-                , .(c: I32) {
-                    if! eq_i32(c, 95(I32)) {
-                      widen_sum!((add_i32(pos, 1(I32)), acc), (I32 & String) | Strp)
-                    } else {
-                      widen_sum!(
-                        , (add_i32(pos, 1(I32)), string_concat(acc, char_str(text, pos)))
-                        , (I32 & String) | Strp
-                        )
-                    }
-                  }
-                , .(_e: .) { widen_sum!({strp = (pos, acc)}, (I32 & String) | Strp) }
-                )
-            }
+  , .(st: I32 & String) {
+      match! st {
+        .(pos: I32, acc: String) {
+          match! string_code_at(text, pos) {
+            (
+            , .(c: I32) {
+                if! eq_i32(c, 95(I32)) {
+                  widen_sum!((add_i32(pos, 1(I32)), acc), (I32 & String) | Strp)
+                } else {
+                  widen_sum!(
+                  , (add_i32(pos, 1(I32)), string_concat(acc, char_str(text, pos)))
+                  , (I32 & String) | Strp
+                  )
+                }
+              }
+            , .(_e: .) { widen_sum!({strp = (pos, acc)}, (I32 & String) | Strp) }
+            )
           }
         }
       }
-    , (0(I32), ""(String))
-    )) {
+    }
+  , (0(I32), ""(String))
+  )) {
     .(_p: I32, out: String) { out }
   }
 }
@@ -697,11 +690,7 @@ fn drop_seps(text: String) -> String {
 // The separator-free text of the numeric run `[start, end)`.
 fn numeric_text(src: String, start: I32, endp: I32) -> String {
   let text = string_slice(src, start, endp);
-  if! has_sep(text) {
-    drop_seps(text)
-  } else {
-    text
-  }
+  if! has_sep(text) { drop_seps(text) } else { text }
 }
 
 // Emit a numeric-literal token starting at `pos`, carrying its
@@ -718,16 +707,16 @@ fn lex_minus(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
   let after = add_i32(pos, 1(I32));
   match! char_at(src, after) {
     (
-      , .(c2: I32) {
-          if! is_digit(c2) {
-            let endp = scan_number_end(src, after, len);
-            widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
-          } else {
-            widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step)
-          }
+    , .(c2: I32) {
+        if! is_digit(c2) {
+          let endp = scan_number_end(src, after, len);
+          widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
+        } else {
+          widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step)
         }
-      , .(_e: .) { widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step) }
-      )
+      }
+    , .(_e: .) { widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step) }
+    )
   }
 }
 
@@ -736,15 +725,15 @@ fn lex_minus(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
 fn lex_string(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
   match! scan_str(src, add_i32(pos, 1(I32)), len) {
     (
-      , .(done: I32 & String) {
-          match! done {
-            .(endp: I32, content: String) {
-              widen_sum!((endp, toks_cons(tk_str(content), pos, acc)), Lex_step)
-            }
+    , .(done: I32 & String) {
+        match! done {
+          .(endp: I32, content: String) {
+            widen_sum!((endp, toks_cons(tk_str(content), pos, acc)), Lex_step)
           }
         }
-      , .(err: Lex_err) { widen_sum!(err, Lex_step) }
-      )
+      }
+    , .(err: Lex_err) { widen_sum!(err, Lex_step) }
+    )
   }
 }
 
@@ -784,9 +773,9 @@ fn lex_step(src: String, len: I32, st: I32 & Toks) -> Lex_step {
     .(pos: I32, acc: Toks) {
       match! char_at(src, pos) {
         (
-          , .(c: I32) { lex_char(src, len, pos, acc, c) }
-          , .(_e: .) { widen_sum!(toks_reverse(acc), Lex_step) }
-          )
+        , .(c: I32) { lex_char(src, len, pos, acc, c) }
+        , .(_e: .) { widen_sum!(toks_reverse(acc), Lex_step) }
+        )
       }
     }
   }

@@ -1,18 +1,18 @@
 module catalog/report;
 
 import catalog/domain(
-  , Book
-  , Book_index
-  , Checkout
-  , Hold
-  , Hold_list
-  , Line_list
-  , Member
-  , Member_index
-  , Op
-  , Report
-  , Return
-  );
+, Book
+, Book_index
+, Checkout
+, Hold
+, Hold_list
+, Line_list
+, Member
+, Member_index
+, Op
+, Report
+, Return
+);
 import catalog/domain(cat, istr, pad2, pad3);
 import catalog/domain({checkout}, {copies_out}, {copies_total}, {fines}, {hold}, {return}, {title});
 import catalog/ledger as ledger;
@@ -28,25 +28,25 @@ import testapi/fmt(bool_to_string);
 fn op_text(op: Op) -> String {
   match! op {
     (
-      , .(step: Checkout) {
-          let .(id: I32, call: I32) = step.?{checkout};
-          "CHECKOUT m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
-        }
-      , .(step: Return) {
-          let .(id: I32, call: I32, days_late: I32) = step.?{return};
-          "RETURN   m="
-            .>cat(istr(id))
-            .>cat(" call=")
-            .>cat(istr(call))
-            .>cat(" late=")
-            .>cat(istr(days_late))
-        }
-      , .(step: Hold) {
-          let .(id: I32, call: I32) = step.?{hold};
-          "HOLD     m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
-        }
-      , .(_step: Report) { "REPORT" }
-      )
+    , .(step: Checkout) {
+        let .(id: I32, call: I32) = step.?{checkout};
+        "CHECKOUT m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
+      }
+    , .(step: Return) {
+        let .(id: I32, call: I32, days_late: I32) = step.?{return};
+        "RETURN   m="
+          .>cat(istr(id))
+          .>cat(" call=")
+          .>cat(istr(call))
+          .>cat(" late=")
+          .>cat(istr(days_late))
+      }
+    , .(step: Hold) {
+        let .(id: I32, call: I32) = step.?{hold};
+        "HOLD     m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
+      }
+    , .(_step: Report) { "REPORT" }
+    )
   }
 }
 
@@ -81,13 +81,13 @@ fn shelf_row(call: I32, entry: Book, holds: Hold_list) -> String {
 pub fn shelf_lines(books: Book_index, holds: Hold_list) -> Line_list {
   let rows =
     dict.fold_asc(
-      , books
-      , lcore.nil(String)
-      , .(step: Line_list & I32 & Book) {
-          let .(rows: Line_list, call: I32, entry: Book) = step;
-          lcore.cons(shelf_row(call, entry, holds), rows)
-        }
-      );
+    , books
+    , lcore.nil(String)
+    , .(step: Line_list & I32 & Book) {
+        let .(rows: Line_list, call: I32, entry: Book) = step;
+        lcore.cons(shelf_row(call, entry, holds), rows)
+      }
+    );
   list.reverse(rows)
 }
 
@@ -103,12 +103,12 @@ fn fines_row(id: I32, who: Member) -> String {
 pub fn fines_lines(members: Member_index) -> Line_list {
   let rows =
     dict.fold_asc(
-      , members
-      , lcore.nil(String)
-      , .(step: Line_list & I32 & Member) {
-          let .(rows: Line_list, id: I32, who: Member) = step;
-          lcore.cons(fines_row(id, who), rows)
-        }
-      );
+    , members
+    , lcore.nil(String)
+    , .(step: Line_list & I32 & Member) {
+        let .(rows: Line_list, id: I32, who: Member) = step;
+        lcore.cons(fines_row(id, who), rows)
+      }
+    );
   list.reverse(rows)
 }

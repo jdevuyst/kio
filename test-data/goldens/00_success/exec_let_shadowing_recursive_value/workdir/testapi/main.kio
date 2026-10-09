@@ -33,13 +33,13 @@ fn keep_polymorphic(value: [A] A -> A) -> [A] A -> A { value }
 fn second_or(fallback: Kind, xs: List(Kind)) -> Kind {
   match! xs.>List.un_list {
     (
-      , .(_head: Kind, rest: List(Kind)) {
-          match! rest.>List.un_list {
-            (.(second: Kind, _tail: List(Kind)) { second }, .(_empty: .) { fallback })
-          }
+    , .(_head: Kind, rest: List(Kind)) {
+        match! rest.>List.un_list {
+          (.(second: Kind, _tail: List(Kind)) { second }, .(_empty: .) { fallback })
         }
-      , .(_empty: .) { fallback }
-      )
+      }
+    , .(_empty: .) { fallback }
+    )
   }
 }
 

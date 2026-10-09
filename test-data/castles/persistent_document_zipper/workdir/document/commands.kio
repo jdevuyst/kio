@@ -29,10 +29,10 @@ fn rename(state: session.Session, title: String) -> session.Session {
 
 fn append(state: session.Session, title: String) -> session.Session {
   session.apply(
-    , state
-    , .(cursor: zipper.Cursor) { zipper.append_child(cursor, title).>widen_sum! }
-    , .t
-    )
+  , state
+  , .(cursor: zipper.Cursor) { zipper.append_child(cursor, title).>widen_sum! }
+  , .t
+  )
 }
 
 fn before(state: session.Session, title: String) -> session.Session {

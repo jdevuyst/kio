@@ -21,11 +21,11 @@ fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
     .(remaining: List(A), output: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(x: A, rest: List(A)) {
-              widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
-            }
-          , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
-          )
+        , .(x: A, rest: List(A)) {
+            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+          }
+        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -46,18 +46,18 @@ fn take_step[A](state: I32 & List(A) & List(A)) -> (I32 & List(A) & List(A)) | L
         .(remaining: List(A), output: List(A)) {
           match! remaining.>List.un_list {
             (
-              , .(x: A, rest: List(A)) {
-                  if! leq_i32(n, 0) {
-                    widen_sum!(output, (I32 & List(A) & List(A)) | List(A))
-                  } else {
-                    widen_sum!(
-                      , (sub_i32(n, 1), (rest, push(x, output)))
-                      , (I32 & List(A) & List(A)) | List(A)
-                      )
-                  }
+            , .(x: A, rest: List(A)) {
+                if! leq_i32(n, 0) {
+                  widen_sum!(output, (I32 & List(A) & List(A)) | List(A))
+                } else {
+                  widen_sum!(
+                  , (sub_i32(n, 1), (rest, push(x, output)))
+                  , (I32 & List(A) & List(A)) | List(A)
+                  )
                 }
-              , .(_empty: .) { widen_sum!(output, (I32 & List(A) & List(A)) | List(A)) }
-              )
+              }
+            , .(_empty: .) { widen_sum!(output, (I32 & List(A) & List(A)) | List(A)) }
+            )
           }
         }
       }
@@ -77,15 +77,15 @@ fn drop_step[A](state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
     .(n: I32, remaining: List(A)) {
       match! remaining.>List.un_list {
         (
-          , .(_x: A, rest: List(A)) {
-              if! leq_i32(n, 0) {
-                widen_sum!(remaining, (I32 & List(A)) | List(A))
-              } else {
-                widen_sum!((sub_i32(n, 1), rest), (I32 & List(A)) | List(A))
-              }
+        , .(_x: A, rest: List(A)) {
+            if! leq_i32(n, 0) {
+              widen_sum!(remaining, (I32 & List(A)) | List(A))
+            } else {
+              widen_sum!((sub_i32(n, 1), rest), (I32 & List(A)) | List(A))
             }
-          , .(_empty: .) { widen_sum!(remaining, (I32 & List(A)) | List(A)) }
-          )
+          }
+        , .(_empty: .) { widen_sum!(remaining, (I32 & List(A)) | List(A)) }
+        )
       }
     }
   }
@@ -101,21 +101,18 @@ fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
     .(xs: List(I32), acc: String) {
       match! xs.>List.un_list {
         (
-          , .(x: I32, rest: List(I32)) {
-              let sep =
-                match! rest.>List.un_list {
-                  (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
-                };
-              widen_sum!(
-                , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
-                , (List(I32) & String) | .
-                )
-            }
-          , .(_empty: .) {
-              print(string_concat(acc, "\n"));
-              widen_sum!((), (List(I32) & String) | .)
-            }
-          )
+        , .(x: I32, rest: List(I32)) {
+            let sep =
+              match! rest.>List.un_list {
+                (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
+              };
+            widen_sum!(
+            , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
+            , (List(I32) & String) | .
+            )
+          }
+        , .(_empty: .) { print(string_concat(acc, "\n")); widen_sum!((), (List(I32) & String) | .) }
+        )
       }
     }
   }

@@ -14,11 +14,7 @@ import testapi/io(print);
 // should remain in the emitted Kio' source per
 // `specs/prime.md` § What's not in Kio'.
 fn pick(b: Bool, a: String, c: String) -> String | String {
-  if! b {
-    __left__(String, String, a)
-  } else {
-    __right__(String, String, c)
-  }
+  if! b { __left__(String, String, a) } else { __right__(String, String, c) }
 }
 
 pub fn main() {

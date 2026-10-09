@@ -28,20 +28,20 @@ rec(loop) fn score_many(outer: I32, step: Many) -> I32 {
   let selected =
     match! step {
       (
-        , .(outer: Zero) { not_found() }
-        , .(_first: First) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 1)) }
-        , .(_second: Second) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 2)) }
-        , .(_third: Third) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 3)) }
-        , .(_fourth: Fourth) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 4)) }
-        , .(_fifth: Fifth) { found_value(add_i32(rec(cont) score_many(10, zero_many()), 5)) }
-        )
+      , .(outer: Zero) { not_found() }
+      , .(_first: First) { found_value(add_i32(recur(cont) score_many(10, zero_many()), 1)) }
+      , .(_second: Second) { found_value(add_i32(recur(cont) score_many(10, zero_many()), 2)) }
+      , .(_third: Third) { found_value(add_i32(recur(cont) score_many(10, zero_many()), 3)) }
+      , .(_fourth: Fourth) { found_value(add_i32(recur(cont) score_many(10, zero_many()), 4)) }
+      , .(_fifth: Fifth) { found_value(add_i32(recur(cont) score_many(10, zero_many()), 5)) }
+      )
     };
   add_i32(
-    , outer
-    , match! selected {
-        (.(value: Value) { add_i32(value.?{value}, 6) }, .(_absent: Absent) { 6 })
-      }
-    )
+  , outer
+  , match! selected {
+      (.(value: Value) { add_i32(value.?{value}, 6) }, .(_absent: Absent) { 6 })
+    }
+  )
 }
 
 pub fn main() {

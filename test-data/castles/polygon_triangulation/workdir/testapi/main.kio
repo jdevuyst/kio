@@ -20,18 +20,14 @@ rec(loop) fn print_triangles(triangles: Array(geo.Triangle), i: I32) {
   if! geo.equal(i, arr.array_len(triangles)) {
     io.print("\n")
   } else {
-    if! geo.equal(i, 0) {
-      ()
-    } else {
-      io.print(" ")
-    };
+    if! geo.equal(i, 0) { () } else { io.print(" ") };
     let .(a, b, c) = arr.array_get(triangles, i);
     number(a);
     io.print("-");
     number(b);
     io.print("-");
     number(c);
-    rec print_triangles(triangles, num.add_i32(i, 1))
+    recur print_triangles(triangles, num.add_i32(i, 1))
   }
 }
 
@@ -45,11 +41,7 @@ fn report(name: String, original: Array(geo.Point)) {
     io.print(" input-area2=");
     number(geo.area2(original));
     io.print(" orientation=");
-    io.print(if! geo.less(geo.area2(original), 0) {
-      "reversed\n"
-    } else {
-      "kept\n"
-    });
+    io.print(if! geo.less(geo.area2(original), 0) { "reversed\n" } else { "kept\n" });
     match! clip.triangulate(points) {
       .(triangles: Array(geo.Triangle)) {
         io.print("  triangles=");

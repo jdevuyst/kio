@@ -33,11 +33,7 @@ pub type Substitution = lists.List(I32 & Ty);
 pub rec(loop) fn lookup(id: I32, substitutions: Substitution) -> . | Ty {
   match! lists.uncons(substitutions) {
     .((key: I32, value: Ty), rest: Substitution) {
-      if! number.eq_i32(key, id) {
-        value.>widen_sum!
-      } else {
-        rec lookup(id, rest)
-      }
+      if! number.eq_i32(key, id) { value.>widen_sum! } else { recur lookup(id, rest) }
     };
     .() { ().>widen_sum! }
   }
@@ -47,17 +43,17 @@ pub rec(loop) fn apply(substitutions: Substitution, ty: Ty) -> Ty {
   match! ty {
     .(v: Variable) {
       match! lookup(v.?{variable}, substitutions) {
-        .(found: Ty) { rec apply(substitutions, found) };
+        .(found: Ty) { recur apply(substitutions, found) };
         .() { ty }
       }
     };
     .(f: Arrow) {
       let .(a: Ty, b: Ty) = f.?{arrow};
-      arrow_type(rec(cont) apply(substitutions, a), rec(cont) apply(substitutions, b))
+      arrow_type(recur(cont) apply(substitutions, a), recur(cont) apply(substitutions, b))
     };
     .(p: Pair) {
       let .(a: Ty, b: Ty) = p.?{pair};
-      pair_type(rec(cont) apply(substitutions, a), rec(cont) apply(substitutions, b))
+      pair_type(recur(cont) apply(substitutions, a), recur(cont) apply(substitutions, b))
     };
     .() { ty }
   }
@@ -68,11 +64,11 @@ pub rec(loop) fn variables(ty: Ty) -> lists.List(I32) {
     .(v: Variable) { lists.singleton(v.?{variable}) };
     .(f: Arrow) {
       let .(a: Ty, b: Ty) = f.?{arrow};
-      walk.append(rec(cont) variables(a), rec(cont) variables(b))
+      walk.append(recur(cont) variables(a), recur(cont) variables(b))
     };
     .(p: Pair) {
       let .(a: Ty, b: Ty) = p.?{pair};
-      walk.append(rec(cont) variables(a), rec(cont) variables(b))
+      walk.append(recur(cont) variables(a), recur(cont) variables(b))
     };
     .() { lists.nil(_) }
   }
@@ -82,23 +78,19 @@ pub fn contains(id: I32, ids: lists.List(I32)) -> Bool { walk.elem(number.eq_i32
 
 pub fn unique(ids: lists.List(I32)) -> lists.List(I32) {
   walk.reverse(walk.foldl(
-    , .(seen: lists.List(I32), id: I32) {
-        if! contains(id, seen) {
-          seen
-        } else {
-          lists.cons(id, seen)
-        }
-      }
-    , lists.nil(_)
-    , ids
-    ))
+  , .(seen: lists.List(I32), id: I32) {
+      if! contains(id, seen) { seen } else { lists.cons(id, seen) }
+    }
+  , lists.nil(_)
+  , ids
+  ))
 }
 
 fn combine(a: String, separator: String, b: String) -> String {
   text.string_concat(
-    , "("
-    , text.string_concat(a, text.string_concat(separator, text.string_concat(b, ")")))
-    )
+  , "("
+  , text.string_concat(a, text.string_concat(separator, text.string_concat(b, ")")))
+  )
 }
 
 rec(loop) fn render(ty: Ty, names: lists.List(I32)) -> String {
@@ -113,11 +105,11 @@ rec(loop) fn render(ty: Ty, names: lists.List(I32)) -> String {
     .(_b: Boolean) { "Bool" };
     .(f: Arrow) {
       let .(a: Ty, b: Ty) = f.?{arrow};
-      combine(rec(cont) render(a, names), " -> ", rec(cont) render(b, names))
+      combine(recur(cont) render(a, names), " -> ", recur(cont) render(b, names))
     };
     .(p: Pair) {
       let .(a: Ty, b: Ty) = p.?{pair};
-      combine(rec(cont) render(a, names), " * ", rec(cont) render(b, names))
+      combine(recur(cont) render(a, names), " * ", recur(cont) render(b, names))
     }
   }
 }

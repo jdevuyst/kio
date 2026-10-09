@@ -56,55 +56,47 @@ rec(loop) fn relaxation_pass(g: graph.Graph, s: Selection, i: I32, improvements:
     if! n.less(candidate, old) {
       arr.array_set(costs(s), root, candidate);
       arr.array_set(choices(s), root, i);
-      rec relaxation_pass(g, s, n.increment(i), n.increment(improvements))
+      recur relaxation_pass(g, s, n.increment(i), n.increment(improvements))
     } else {
-      rec relaxation_pass(g, s, n.increment(i), improvements)
+      recur relaxation_pass(g, s, n.increment(i), improvements)
     }
   }
 }
 
 rec(loop) fn relax(g: graph.Graph, s: Selection) -> Selection {
-  if! n.equal(relaxation_pass(g, s, 0, 0), 0) {
-    s
-  } else {
-    rec relax(g, s)
-  }
+  if! n.equal(relaxation_pass(g, s, 0, 0), 0) { s } else { recur relax(g, s) }
 }
 
 pub fn select(g: graph.Graph) -> Selection {
   relax(
-    , g
-    , Selection.selection(
-        , arr.array_make_filled(graph.size(g), infinity)
-        , arr.array_make_filled(graph.size(g), -1)
-        )
+  , g
+  , Selection.selection(
+    , arr.array_make_filled(graph.size(g), infinity)
+    , arr.array_make_filled(graph.size(g), -1)
     )
+  )
 }
 
 fn combine(left: String, op: String, right: String) -> String {
   text.string_concat(
-    , "("
-    , text.string_concat(left, text.string_concat(op, text.string_concat(right, ")")))
-    )
+  , "("
+  , text.string_concat(left, text.string_concat(op, text.string_concat(right, ")")))
+  )
 }
 
 pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
   match! graph.node(g, chosen(g, s, root)) {
     .(value: graph.Constant) { fmt.int_to_string(value.?{graph.constant}) };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) {
-        "x"
-      } else {
-        "y"
-      }
+      if! n.equal(value.?{graph.variable}, 0) { "x" } else { "y" }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};
-      combine(rec(cont) render(g, s, a), "+", rec(cont) render(g, s, b))
+      combine(recur(cont) render(g, s, a), "+", recur(cont) render(g, s, b))
     };
     .(value: graph.Product) {
       let .(a, b) = value.?{graph.product};
-      combine(rec(cont) render(g, s, a), "*", rec(cont) render(g, s, b))
+      combine(recur(cont) render(g, s, a), "*", recur(cont) render(g, s, b))
     }
   }
 }
@@ -113,19 +105,15 @@ pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I3
   match! graph.node(g, chosen(g, s, root)) {
     .(value: graph.Constant) { value.?{graph.constant} };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) {
-        x
-      } else {
-        y
-      }
+      if! n.equal(value.?{graph.variable}, 0) { x } else { y }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};
-      num.add_i32(rec(cont) evaluate(g, s, a, x, y), rec(cont) evaluate(g, s, b, x, y))
+      num.add_i32(recur(cont) evaluate(g, s, a, x, y), recur(cont) evaluate(g, s, b, x, y))
     };
     .(value: graph.Product) {
       let .(a, b) = value.?{graph.product};
-      num.mul_i32(rec(cont) evaluate(g, s, a, x, y), rec(cont) evaluate(g, s, b, x, y))
+      num.mul_i32(recur(cont) evaluate(g, s, a, x, y), recur(cont) evaluate(g, s, b, x, y))
     }
   }
 }
@@ -135,19 +123,15 @@ pub rec(loop) fn source_value(g: graph.Graph, original: I32, x: I32, y: I32) -> 
   match! graph.node(g, original) {
     .(value: graph.Constant) { value.?{graph.constant} };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) {
-        x
-      } else {
-        y
-      }
+      if! n.equal(value.?{graph.variable}, 0) { x } else { y }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};
-      num.add_i32(rec(cont) source_value(g, a, x, y), rec(cont) source_value(g, b, x, y))
+      num.add_i32(recur(cont) source_value(g, a, x, y), recur(cont) source_value(g, b, x, y))
     };
     .(value: graph.Product) {
       let .(a, b) = value.?{graph.product};
-      num.mul_i32(rec(cont) source_value(g, a, x, y), rec(cont) source_value(g, b, x, y))
+      num.mul_i32(recur(cont) source_value(g, a, x, y), recur(cont) source_value(g, b, x, y))
     }
   }
 }

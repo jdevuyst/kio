@@ -10,4 +10,7 @@ import testapi/io(print);
 // an annotation at the lambda itself.
 fn id[A](x: A) -> A { x }
 
-pub fn main() { let p = id(String -> ., .x. { print(x1) }); p("hello .#\n") }
+pub fn main() {
+  let p = id(String -> ., .x. { print(x1) });
+  p("hello .#\n")
+}

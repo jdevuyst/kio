@@ -2,66 +2,66 @@
 module book/engine;
 
 import book/book(
-  , Book
-  , asks_of
-  , at
-  , bids_of
-  , facing_queue
-  , index_of_id
-  , insert_ranked
-  , is_empty
-  , is_found
-  , new_book
-  , note_cancelled
-  , note_entered
-  , note_reduced
-  , note_unfilled
-  , own_queue
-  , record_trade
-  , remove_at
-  , set_at
-  , take_id
-  , tape_len
-  );
+, Book
+, asks_of
+, at
+, bids_of
+, facing_queue
+, index_of_id
+, insert_ranked
+, is_empty
+, is_found
+, new_book
+, note_cancelled
+, note_entered
+, note_reduced
+, note_unfilled
+, own_queue
+, record_trade
+, remove_at
+, set_at
+, take_id
+, tape_len
+);
 import book/event(
-  , Amend
-  , Amend_req
-  , Cancel
-  , Event
-  , Limit
-  , Limit_req
-  , Market
-  , Market_req
-  , amend_id
-  , amend_of
-  , amend_qty
-  , arrivals
-  , cancel_of
-  , event_at
-  , event_count
-  , limit_of
-  , limit_price
-  , limit_qty
-  , limit_side
-  , market_of
-  , market_qty
-  , market_side
-  );
+, Amend
+, Amend_req
+, Cancel
+, Event
+, Limit
+, Limit_req
+, Market
+, Market_req
+, amend_id
+, amend_of
+, amend_qty
+, arrivals
+, cancel_of
+, event_at
+, event_count
+, limit_of
+, limit_price
+, limit_qty
+, limit_side
+, market_of
+, market_qty
+, market_side
+);
 import book/num(int_lt, is_positive, min_int, not);
 import book/order(
-  , Cap
-  , Order
-  , Side
-  , crosses
-  , id_of
-  , no_cap
-  , order
-  , price_cap
-  , price_of
-  , remaining_of
-  , trade
-  , with_remaining
-  );
+, Cap
+, Order
+, Side
+, crosses
+, id_of
+, no_cap
+, order
+, price_cap
+, price_of
+, remaining_of
+, trade
+, with_remaining
+);
 import book/report as report;
 import elab/control(if);
 import elab/match(match);
@@ -96,7 +96,7 @@ rec(loop) fn cross(taker: I32, side: Side, cap: Cap, remaining: I32, makers: Arr
       record_trade(b, trade(taker, id_of(maker), price, qty));
       if! leq_i32(available, qty) {
         remove_at(makers, 0);
-        rec cross(taker, side, cap, sub_i32(remaining, qty), makers, b)
+        recur cross(taker, side, cap, sub_i32(remaining, qty), makers, b)
       } else {
         set_at(makers, 0, with_remaining(maker, sub_i32(available, qty)));
         sub_i32(remaining, qty)
@@ -117,11 +117,7 @@ fn take_limit(step: I32, b: Book, r: Limit_req) {
   print(report.limit_header(step, side, price, qty, id));
   let left = cross(id, side, price_cap(price), qty, facing_queue(b, side), b);
   report.print_trades(tape_mark, b);
-  if! int_lt(left, qty) {
-    print(report.fill_line(sub_i32(qty, left), qty))
-  } else {
-    ()
-  };
+  if! int_lt(left, qty) { print(report.fill_line(sub_i32(qty, left), qty)) } else { () };
   if! is_positive(left) {
     note_entered(b, left);
     insert_ranked(own_queue(b, side), order(id, side, price, qty, left, step));
@@ -143,12 +139,7 @@ fn take_market(step: I32, b: Book, r: Market_req) {
   let left = cross(id, side, no_cap(), qty, facing_queue(b, side), b);
   report.print_trades(tape_mark, b);
   print(report.fill_line(sub_i32(qty, left), qty));
-  if! is_positive(left) {
-    note_unfilled(b, left);
-    print(report.unfilled_line(left))
-  } else {
-    ()
-  };
+  if! is_positive(left) { note_unfilled(b, left); print(report.unfilled_line(left)) } else { () };
   print(report.book_line(b))
 }
 
@@ -158,11 +149,7 @@ fn take_market(step: I32, b: Book, r: Market_req) {
 /// touched.
 fn locate(b: Book, id: I32) -> Array(Order) & I32 {
   let in_bids = index_of_id(bids_of(b), id);
-  if! is_found(in_bids) {
-    (bids_of(b), in_bids)
-  } else {
-    (asks_of(b), index_of_id(asks_of(b), id))
-  }
+  if! is_found(in_bids) { (bids_of(b), in_bids) } else { (asks_of(b), index_of_id(asks_of(b), id)) }
 }
 
 fn take_cancel(step: I32, b: Book, id: I32) {
@@ -204,11 +191,11 @@ fn take_amend(step: I32, b: Book, r: Amend_req) {
 fn apply_event(step: I32, b: Book, e: Event) {
   match! e {
     (
-      , .(l: Limit) { take_limit(step, b, limit_of(l)) }
-      , .(m: Market) { take_market(step, b, market_of(m)) }
-      , .(c: Cancel) { take_cancel(step, b, cancel_of(c)) }
-      , .(a: Amend) { take_amend(step, b, amend_of(a)) }
-      )
+    , .(l: Limit) { take_limit(step, b, limit_of(l)) }
+    , .(m: Market) { take_market(step, b, market_of(m)) }
+    , .(c: Cancel) { take_cancel(step, b, cancel_of(c)) }
+    , .(a: Amend) { take_amend(step, b, amend_of(a)) }
+    )
   }
 }
 
@@ -222,7 +209,7 @@ rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) {
     let step = add_i32(i, 1);
     apply_event(step, b, event_at(events, i));
     print("\n");
-    rec replay(step, b, events)
+    recur replay(step, b, events)
   }
 }
 

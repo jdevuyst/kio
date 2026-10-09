@@ -257,7 +257,7 @@ for required in \
   'match!exact_key_catalog_find(seen,owner,name){(,.(_prior:Bool){widen_sum!(,mk_diag(string_concat(' \
   '"`introducesvisibletypebinding`"(String)' \
   'string_concat(name,"`morethanonce"(String))' \
-  '.(_first:.){widen_sum!(,exact_key_catalog_insert(seen,owner,name,.t(Bool)),Type_spelling_validation)}'
+  '.(_first:.){widen_sum!(exact_key_catalog_insert(seen,owner,name,.t(Bool)),Type_spelling_validation)}'
 do
   case "$projection_compact" in
     *"$required"*) ;;
@@ -336,7 +336,7 @@ do
   esac
 done
 case "$load_compact" in
-  *'letneeds_exact_type_index=if!modules_have_identity_member_namespace(ms){.t(Bool)}else{modules_have_type_spelling_overlap(ms)};if!needs_exact_type_index{lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum!(,ntab_for_module(module,ms),Ntab|Diag)}}}'*) ;;
+  *'letneeds_exact_type_index=if!modules_have_identity_member_namespace(ms){.t(Bool)}else{modules_have_type_spelling_overlap(ms)};if!needs_exact_type_index{lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum!(ntab_for_module(module,ms),Ntab|Diag)}}}'*) ;;
   *)
     printf 'dyn_load_prime must build exact type indexes only for aliases or visible type-origin overlap\n' >&2
     exit 1

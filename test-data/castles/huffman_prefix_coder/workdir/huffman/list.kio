@@ -43,7 +43,7 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 /// this walk rather than a quadratic `append`.
 pub rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+    (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -53,7 +53,7 @@ pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
-    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_head: A, rest: List(A)) { recur len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -61,28 +61,28 @@ pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
 
 pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { rec fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
+    (.(head: A, rest: List(A)) { recur fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
   }
 }
 
 pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { action(head); rec for_each(rest, action) }, .(_empty: .) { () })
+    (.(head: A, rest: List(A)) { action(head); recur for_each(rest, action) }, .(_empty: .) { () })
   }
 }
 
 rec(loop) fn keep_onto[A](xs: List(A), pick: A -> Bool, acc: List(A)) -> List(A) {
   match! xs.>List.un_list {
     (
-      , .(head: A, rest: List(A)) {
-          if! pick(head) {
-            rec keep_onto(rest, pick, cons(head, acc))
-          } else {
-            rec keep_onto(rest, pick, acc)
-          }
+    , .(head: A, rest: List(A)) {
+        if! pick(head) {
+          recur keep_onto(rest, pick, cons(head, acc))
+        } else {
+          recur keep_onto(rest, pick, acc)
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

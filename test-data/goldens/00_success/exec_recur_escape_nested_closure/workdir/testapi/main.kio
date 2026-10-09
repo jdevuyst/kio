@@ -1,0 +1,98 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import nested_elaborators(invoke_then, keep_callback, mixed_use);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+fn retain[A](value: A) -> A { value }
+
+rec(iter.loop_reentry) fn nested(remaining: I32) -> . -> . -> I32 {
+  match! remaining {
+    .(count: I32) {
+      retain(.() {
+        if! arith.leq_i32(count, 0) {
+          .() { 43 }
+        } else {
+          .() { recur(escape) nested(arith.sub_i32(count, 1))()() }
+        }
+      })
+    }
+  }
+}
+
+rec(iter.loop_reentry) fn residual(remaining: I32) -> I32 -> . -> I32 {
+  invoke_then!(.() {
+    .() {
+      if! arith.leq_i32(remaining, 0) {
+        47
+      } else {
+        recur(escape) residual(arith.sub_i32(remaining, 1))(0)()
+      }
+    }
+  })
+}
+
+rec(iter.loop_reentry) fn returned(remaining: I32) -> . -> . -> I32 {
+  if! arith.leq_i32(remaining, 0) {
+    .() {
+      .() { 59 }
+    }
+  } else {
+    keep_callback!(.() {
+      io.print("returned outer\n");
+      .() { recur(escape) returned(0)()() }
+    })
+  }
+}
+
+rec(iter.loop_reentry) fn mixed(remaining: I32) -> . -> I32 {
+  if! arith.leq_i32(remaining, 0) {
+    .() { 61 }
+  } else {
+    mixed_use!(.() {
+      io.print("mixed outer\n");
+      .() { recur(escape) mixed(0)() }
+    })
+  }
+}
+
+pub fn main() {
+  let saved_outer = nested(2);
+  io.print("outer ready\n");
+  let first_inner = saved_outer();
+  let second_inner = saved_outer();
+  io.print("inner ready\n");
+  io.print(fmt.i32_to_string(first_inner()));
+  io.print("\n");
+  io.print(fmt.i32_to_string(second_inner()));
+  io.print("\n");
+  io.print(fmt.i32_to_string(first_inner()));
+  io.print("\n");
+  let saved_partial = residual(2);
+  io.print("partial ready\n");
+  let saved_result = saved_partial(0);
+  io.print("result ready\n");
+  io.print(fmt.i32_to_string(saved_result()));
+  io.print("\n");
+  io.print(fmt.i32_to_string(saved_result()));
+  io.print("\n");
+  let returned_outer = returned(1);
+  io.print("returned ready\n");
+  let returned_inner = returned_outer();
+  io.print("returned inner ready\n");
+  io.print(fmt.i32_to_string(returned_inner()));
+  io.print("\n");
+  io.print(fmt.i32_to_string(returned_inner()));
+  io.print("\n");
+  let mixed_inner = mixed(1);
+  io.print("mixed ready\n");
+  io.print(fmt.i32_to_string(mixed_inner()));
+  io.print("\n");
+  io.print(fmt.i32_to_string(mixed_inner()));
+  io.print("\n")
+}

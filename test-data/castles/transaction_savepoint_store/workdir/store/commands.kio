@@ -55,15 +55,15 @@ pub fn apply(s: tx.State, c: Command) -> tx.Reply {
     tx.abort(s)
   } else if! text.string_eq(op, "GET") {
     tx.accepted(
-      , s
+    , s
+    , text.string_concat(
+      , "get "
       , text.string_concat(
-          , "get "
-          , text.string_concat(
-              , key
-              , text.string_concat("=", history.show_value(history.get(s.?{tx.working}, key)))
-              )
-          )
+        , key
+        , text.string_concat("=", history.show_value(history.get(s.?{tx.working}, key)))
+        )
       )
+    )
   } else if! text.string_eq(op, "SNAPSHOT") {
     tx.accepted(s, text.string_concat("snapshot ", key))
   } else {

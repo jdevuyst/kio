@@ -13,35 +13,19 @@ fn identity_c[C](value: C) -> C { value }
 fn same[T](_left: T, _right: T) { () }
 
 pub fn uncontextual(condition: Bool) {
-  let selected =
-    if! condition {
-      identity_a
-    } else {
-      identity_b
-    };
+  let selected = if! condition { identity_a } else { identity_b };
   selected(())
 }
 
 pub fn contextual_goal(condition: Bool) {
-  same(
-    , if! condition {
-        identity_a
-      } else {
-        identity_b
-      }
-    , identity_c
-    )
+  same(if! condition { identity_a } else { identity_b }, identity_c)
 }
 
 pub fn connected_result() {
   same(
-    , .(condition: Bool) {
-        if! condition {
-          identity_a
-        } else {
-          identity_b
-        }
-      }
-    , .(_condition: Bool) -> [T] T -> T { identity_c }
-    )
+  , .(condition: Bool) {
+      if! condition { identity_a } else { identity_b }
+    }
+  , .(_condition: Bool) -> [T] T -> T { identity_c }
+  )
 }

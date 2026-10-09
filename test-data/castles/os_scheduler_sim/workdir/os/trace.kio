@@ -61,36 +61,36 @@ fn victim_text(victim_pid: I32, victim_vp: I32) -> String {
     " (was free)"
   } else {
     text.cat4(
-      , " (evicted "
-      , proc.pid_tag(victim_pid)
-      , text.cat(" vp", text.num_text(victim_vp))
-      , ")"
-      )
+    , " (evicted "
+    , proc.pid_tag(victim_pid)
+    , text.cat(" vp", text.num_text(victim_vp))
+    , ")"
+    )
   }
 }
 
 fn event_text(e: Event) -> String {
   match! e {
     (
-      , .(_s: Stalled) { "(nothing runnable)" }
-      , .(r: Ran) { text.cat3("compute, ", text.num_text(r.?{ran}), " tick(s) left in phase") }
-      , .(h: Hit) {
-          let .(vp: I32, frame: I32) = h.?{hit};
-          text.cat4("read vp", text.num_text(vp), " -> hit in frame ", text.num_text(frame))
-        }
-      , .(f: Fault) {
-          let .(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) = f.?{fault};
-          text.cat(
-            , text.cat4(
-                , "read vp"
-                , text.num_text(vp)
-                , " -> FAULT, loaded into frame "
-                , text.num_text(frame)
-                )
-            , victim_text(victim_pid, victim_vp)
-            )
-        }
-      )
+    , .(_s: Stalled) { "(nothing runnable)" }
+    , .(r: Ran) { text.cat3("compute, ", text.num_text(r.?{ran}), " tick(s) left in phase") }
+    , .(h: Hit) {
+        let .(vp: I32, frame: I32) = h.?{hit};
+        text.cat4("read vp", text.num_text(vp), " -> hit in frame ", text.num_text(frame))
+      }
+    , .(f: Fault) {
+        let .(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) = f.?{fault};
+        text.cat(
+        , text.cat4(
+          , "read vp"
+          , text.num_text(vp)
+          , " -> FAULT, loaded into frame "
+          , text.num_text(frame)
+          )
+        , victim_text(victim_pid, victim_vp)
+        )
+      }
+    )
   }
 }
 
@@ -99,24 +99,24 @@ fn event_text(e: Event) -> String {
 fn state_text(o: Outcome) -> String {
   match! o {
     (
-      , .(_n: Nobody) { "idle    " }
-      , .(_h: Holds) { "running " }
-      , .(_p: Preempted) { "preempt " }
-      , .(_b: Blocked) { "blocked " }
-      , .(_r: Retired) { "retired " }
-      )
+    , .(_n: Nobody) { "idle    " }
+    , .(_h: Holds) { "running " }
+    , .(_p: Preempted) { "preempt " }
+    , .(_b: Blocked) { "blocked " }
+    , .(_r: Retired) { "retired " }
+    )
   }
 }
 
 fn outcome_note(o: Outcome) -> String {
   match! o {
     (
-      , .(_n: Nobody) { "" }
-      , .(_h: Holds) { "" }
-      , .(_p: Preempted) { "; quantum spent, requeued" }
-      , .(b: Blocked) { text.cat("; blocked until t=", text.num_text(b.?{blocked})) }
-      , .(_r: Retired) { "; program complete" }
-      )
+    , .(_n: Nobody) { "" }
+    , .(_h: Holds) { "" }
+    , .(_p: Preempted) { "; quantum spent, requeued" }
+    , .(b: Blocked) { text.cat("; blocked until t=", text.num_text(b.?{blocked})) }
+    , .(_r: Retired) { "; program complete" }
+    )
   }
 }
 
@@ -126,11 +126,11 @@ pub fn header() { print("tick  cpu  state   event\n") }
 pub fn emit(tick: I32, pid: I32, e: Event, o: Outcome) {
   if! num.lt(tick, config.trace_limit()) {
     print(text.cat4(
-      , text.cat4(text.pad_num(tick, 4), "  ", proc.pid_tag(pid), "   ")
-      , state_text(o)
-      , event_text(e)
-      , text.cat(outcome_note(o), "\n")
-      ))
+    , text.cat4(text.pad_num(tick, 4), "  ", proc.pid_tag(pid), "   ")
+    , state_text(o)
+    , event_text(e)
+    , text.cat(outcome_note(o), "\n")
+    ))
   } else {
     ()
   }

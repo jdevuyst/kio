@@ -23,7 +23,7 @@ pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
 rec(loop) fn fill(network: Network, index: I32, residual: Array(I32)) -> Array(I32) {
   if! math.less(index, ar.array_len(network.?{edges})) {
     ar.array_push(residual, ar.array_get(network.?{edges}, index).?{capacity});
-    rec fill(network, a.add_i32(index, 1), residual)
+    recur fill(network, a.add_i32(index, 1), residual)
   } else {
     residual
   }

@@ -2262,9 +2262,24 @@ mod tests {
                 result
                     .candidates
                     .iter()
-                    .all(|candidate| candidate.label != "rec"),
+                    .all(|candidate| candidate.label != "recur"),
                 "{input}: {result:?}"
             );
+        }
+    }
+
+    #[test]
+    fn recursive_annotations_have_no_owner_in_expression_prompts() {
+        let set = walk_set();
+        let provider = AstScopeProvider::new(&set);
+        for input in [
+            "recur(",
+            "recur(cont, ",
+            ".() { recur(",
+            "do! bind { let value <- (); recur(",
+        ] {
+            let result = complete(&set, &provider, input, input.len());
+            assert!(result.candidates.is_empty(), "{input}: {result:?}");
         }
     }
 
@@ -2600,8 +2615,8 @@ mod tests {
         let module = crate::pass::parser::parse(
             "module pkg/m; \
              rec(loop) { \
-               fn local(value: .) -> . { rec exported(value) }; \
-               pub fn exported(value: .) -> . { rec local(value) } \
+               fn local(value: .) -> . { recur exported(value) }; \
+               pub fn exported(value: .) -> . { recur local(value) } \
              }",
         )
         .expect("module parses");

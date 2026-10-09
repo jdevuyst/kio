@@ -18,7 +18,9 @@ pub fn read_hidden(value: Hidden) -> Number { invoked(); Hidden.reveal(value) }
 
 fn read_payload[U](value: U, reader: U -> Number) -> Number { reader(value) }
 
-pub fn make_packed(value: Number) -> Packed { Packed.pack(Number, value, .(n: Number) { n }) }
+pub fn make_packed(value: Number) -> Packed {
+  Packed.pack(Number, value, .(n: Number) { n })
+}
 
 pub fn read_packed(value: Packed) -> Number {
   invoked();

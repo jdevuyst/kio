@@ -30,13 +30,7 @@ pub fn flag_at(unit: I32, digit: I32) -> I32 { add_i32(mul_i32(unit, size()), su
 /// `value / 3` for a row or column in 0..8. The host has no division, so
 /// the three bands are spelled as comparisons.
 fn band_of(value: I32) -> I32 {
-  if! leq_i32(value, 2) {
-    0
-  } else if! leq_i32(value, 5) {
-    1
-  } else {
-    2
-  }
+  if! leq_i32(value, 2) { 0 } else if! leq_i32(value, 5) { 1 } else { 2 }
 }
 
 fn box_at(row: I32, col: I32) -> I32 { add_i32(mul_i32(band_of(row), band()), band_of(col)) }
@@ -45,22 +39,22 @@ fn box_at(row: I32, col: I32) -> I32 { add_i32(mul_i32(band_of(row), band()), ba
 /// column travel with the cursor rather than being recovered from the
 /// cell index, which is what keeps the walk free of division.
 rec(loop) fn fill_coords(
-  , cell: I32
-  , row: I32
-  , col: I32
-  , rows: Array(I32)
-  , cols: Array(I32)
-  , boxes: Array(I32)
-  ) {
+, cell: I32
+, row: I32
+, col: I32
+, rows: Array(I32)
+, cols: Array(I32)
+, boxes: Array(I32)
+) {
   if! leq_i32(cell, last_cell()) {
     array_set(rows, cell, row);
     array_set(cols, cell, col);
     array_set(boxes, cell, box_at(row, col));
     let next_col = add_i32(col, 1);
     if! leq_i32(size(), next_col) {
-      rec fill_coords(add_i32(cell, 1), add_i32(row, 1), 0, rows, cols, boxes)
+      recur fill_coords(add_i32(cell, 1), add_i32(row, 1), 0, rows, cols, boxes)
     } else {
-      rec fill_coords(add_i32(cell, 1), row, next_col, rows, cols, boxes)
+      recur fill_coords(add_i32(cell, 1), row, next_col, rows, cols, boxes)
     }
   } else {
     ()

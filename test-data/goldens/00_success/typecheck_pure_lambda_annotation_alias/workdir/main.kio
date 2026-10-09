@@ -6,4 +6,6 @@ type Good = .;
 
 pure fn apply(f: Good -> .) { f(()) }
 
-pure fn test() { apply(.(x: Bad) -> . { () }) }
+pure fn test() {
+  apply(.(x: Bad) -> . { () })
+}

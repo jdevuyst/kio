@@ -169,18 +169,18 @@ pub fn make_projector_spread_value() -> Projector_spread {
 
 pub fn make_existential_spread_value() -> Existential_spread {
   Existential_spread.make_existential_spread(
-    , I32
-    , .[A](value: I32 & A) -> I32 { __fst__(I32, A, value) }
-    )
+  , I32
+  , .[A](value: I32 & A) -> I32 { __fst__(I32, A, value) }
+  )
 }
 
 pub fn make_recursive_existential_function_value() -> Recursive_existential_function {
   Recursive_existential_function.make_recursive_existential_function(
-    , !
-    , .(value: !) -> Recursive_existential_function {
-        __absurd__(Recursive_existential_function, value)
-      }
-    )
+  , !
+  , .(value: !) -> Recursive_existential_function {
+      __absurd__(Recursive_existential_function, value)
+    }
+  )
 }
 
 pub fn make_existential_unit_value() -> Existential_unit {
@@ -195,13 +195,13 @@ pub fn recursive_both_base_payload() -> . | Recursive_both { __left__(., Recursi
 
 pub fn recursive_both_payload_is_base(value: . | Recursive_both) -> I32 {
   __either__(
-    , .
-    , Recursive_both
-    , I32
-    , value
-    , .(done: .) -> I32 { 1(I32) }
-    , .(rest: Recursive_both) -> I32 { 0(I32) }
-    )
+  , .
+  , Recursive_both
+  , I32
+  , value
+  , .(done: .) -> I32 { 1(I32) }
+  , .(rest: Recursive_both) -> I32 { 0(I32) }
+  )
 }
 
 pub fn recursive_constructor_base_payload() -> . | Recursive_constructor {
@@ -214,13 +214,13 @@ pub fn read_recursive_constructor_value(value: Recursive_constructor) -> . | Rec
 
 pub fn recursive_constructor_payload_is_base(value: . | Recursive_constructor) -> I32 {
   __either__(
-    , .
-    , Recursive_constructor
-    , I32
-    , value
-    , .(done: .) -> I32 { 1(I32) }
-    , .(rest: Recursive_constructor) -> I32 { 0(I32) }
-    )
+  , .
+  , Recursive_constructor
+  , I32
+  , value
+  , .(done: .) -> I32 { 1(I32) }
+  , .(rest: Recursive_constructor) -> I32 { 0(I32) }
+  )
 }
 
 pub fn make_recursive_projector_value(value: . | Recursive_projector) -> Recursive_projector {
@@ -233,27 +233,27 @@ pub fn make_recursive_projector_base() -> Recursive_projector {
 
 pub fn recursive_projector_payload_is_base(value: . | Recursive_projector) -> I32 {
   __either__(
-    , .
-    , Recursive_projector
-    , I32
-    , value
-    , .(done: .) -> I32 { 1(I32) }
-    , .(rest: Recursive_projector) -> I32 { 0(I32) }
-    )
+  , .
+  , Recursive_projector
+  , I32
+  , value
+  , .(done: .) -> I32 { 1(I32) }
+  , .(rest: Recursive_projector) -> I32 { 0(I32) }
+  )
 }
 
 pub fn make_visible_cycle_outer_base() -> Visible_cycle_outer {
   Visible_cycle_outer.make_visible_cycle_outer(Atomic_cycle_inner.make_atomic_cycle_inner(__left__(
-    , .
-    , Visible_cycle_outer
-    , ()
-    )))
+  , .
+  , Visible_cycle_outer
+  , ()
+  )))
 }
 
 pub fn make_visible_comptime_outer_base() -> Visible_comptime_outer {
   Visible_comptime_outer.make_visible_comptime_outer(Comptime_bool.make_atomic_comptime_inner(__right__(
-    , !
-    , .
-    , ()
-    )))
+  , !
+  , .
+  , ()
+  )))
 }

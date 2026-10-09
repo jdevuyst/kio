@@ -21,15 +21,15 @@ fn dnf_branch_cons(head: Dnf_branch, tail: Dnf_branch_list) -> Dnf_branch_list {
 
 fn single_dnf_branch(xs: Dnf_branch_list) -> Dnf_branch | . {
   __either__(
-    , .
-    , Dnf_branch & Dnf_branch_list
-    , Dnf_branch | .
-    , Type_list.un_type_list(xs)
-    , .() -> Dnf_branch | . { __right__(Dnf_branch, ., ()) }
-    , .(cell: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
-        __left__(Dnf_branch, ., __fst__(Dnf_branch, Dnf_branch_list, cell))
-      }
-    )
+  , .
+  , Dnf_branch & Dnf_branch_list
+  , Dnf_branch | .
+  , Type_list.un_type_list(xs)
+  , .() -> Dnf_branch | . { __right__(Dnf_branch, ., ()) }
+  , .(cell: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
+      __left__(Dnf_branch, ., __fst__(Dnf_branch, Dnf_branch_list, cell))
+    }
+  )
 }
 
 pub fn main() { () }

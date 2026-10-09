@@ -1791,11 +1791,11 @@ mod tests {
     fn rename_conflict_scope_includes_all_rec_members_and_current_params() {
         let source = "module pkg/main;\n\
 rec(loop) {\n\
-  fn first(x: .) -> . { rec second(x) };\n\
-  fn second(y: .) -> . { rec first(y) }\n\
+  fn first(x: .) -> . { recur second(x) };\n\
+  fn second(y: .) -> . { recur first(y) }\n\
 }\n";
         let module = crate::pass::parser::parse(source).expect("fixture parses");
-        let offset = source.find("rec first(").expect("marker") as u32;
+        let offset = source.find("recur first(").expect("marker") as u32;
         let mut names = Vec::new();
         collect_module_scope(&module, offset, &mut names);
 

@@ -49,20 +49,20 @@ fn guest_image() -> String {
 fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> . | I32 {
   match! surf.?{lookup}(name) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
-            (
-              , .(r: P) {
-                  match! surf.?{i32_out}(r) {
-                    (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
-                  }
-                }
-              , .(_d: Diag) { widen_sum!((), . | I32) }
-              )
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+          (
+          , .(r: P) {
+              match! surf.?{i32_out}(r) {
+                (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
+              }
+            }
+          , .(_d: Diag) { widen_sum!((), . | I32) }
+          )
         }
-      , .(_d: Diag) { widen_sum!((), . | I32) }
-      )
+      }
+    , .(_d: Diag) { widen_sum!((), . | I32) }
+    )
   }
 }
 
@@ -71,23 +71,23 @@ fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> . | I32 {
 fn run_str[P](surf: Surface(P), name: String, arg: String) -> . | String {
   match! surf.?{lookup}(name) {
     (
-      , .(g: P) {
-          match! surf.?{apply}((g, surf.?{str_in}(arg))) {
-            (
-              , .(r: P) {
-                  match! surf.?{str_out}(r) {
-                    (
-                      , .(s: String) { widen_sum!(s, . | String) }
-                      , .(_d: Diag) { widen_sum!((), . | String) }
-                      )
-                  }
-                }
-              , .(_d: Diag) { widen_sum!((), . | String) }
-              )
-          }
+    , .(g: P) {
+        match! surf.?{apply}((g, surf.?{str_in}(arg))) {
+          (
+          , .(r: P) {
+              match! surf.?{str_out}(r) {
+                (
+                , .(s: String) { widen_sum!(s, . | String) }
+                , .(_d: Diag) { widen_sum!((), . | String) }
+                )
+              }
+            }
+          , .(_d: Diag) { widen_sum!((), . | String) }
+          )
         }
-      , .(_d: Diag) { widen_sum!((), . | String) }
-      )
+      }
+    , .(_d: Diag) { widen_sum!((), . | String) }
+    )
   }
 }
 
@@ -104,32 +104,32 @@ fn call_str(handle: Loaded, name: String, arg: String) -> . | String {
 fn loaded_square(arg: I32) -> . | I32 {
   match! un_load_outcome(load_package(guest_image())) {
     (
-      , .(im: Lr_image) {
-          match! un_inst(instantiate_default(Lr_image.get(im))) {
-            (
-              , .(handle: Loaded) { call_i32(handle, "square"(String), arg) }
-              , .(_d: Diag) { widen_sum!((), . | I32) }
-              )
-          }
+    , .(im: Lr_image) {
+        match! un_inst(instantiate_default(Lr_image.get(im))) {
+          (
+          , .(handle: Loaded) { call_i32(handle, "square"(String), arg) }
+          , .(_d: Diag) { widen_sum!((), . | I32) }
+          )
         }
-      , .(_d: Lr_diag) { widen_sum!((), . | I32) }
-      )
+      }
+    , .(_d: Lr_diag) { widen_sum!((), . | I32) }
+    )
   }
 }
 
 fn loaded_greet(arg: String) -> . | String {
   match! un_load_outcome(load_package(guest_image())) {
     (
-      , .(im: Lr_image) {
-          match! un_inst(instantiate_default(Lr_image.get(im))) {
-            (
-              , .(handle: Loaded) { call_str(handle, "greet"(String), arg) }
-              , .(_d: Diag) { widen_sum!((), . | String) }
-              )
-          }
+    , .(im: Lr_image) {
+        match! un_inst(instantiate_default(Lr_image.get(im))) {
+          (
+          , .(handle: Loaded) { call_str(handle, "greet"(String), arg) }
+          , .(_d: Diag) { widen_sum!((), . | String) }
+          )
         }
-      , .(_d: Lr_diag) { widen_sum!((), . | String) }
-      )
+      }
+    , .(_d: Lr_diag) { widen_sum!((), . | String) }
+    )
   }
 }
 
@@ -140,36 +140,33 @@ fn loaded_greet(arg: String) -> . | String {
 fn assert_i32(label: String, expected: I32, actual: . | I32) -> String {
   match! actual {
     (
-      , .(n: I32) {
-          if! string_eq(int_to_string(n), int_to_string(expected)) {
-            string_concat(label, "PASS\n"(String))
-          } else {
-            string_concat(
-              , label
-              , string_concat("FAIL (got "(String), string_concat(int_to_string(n), ")\n"(String)))
-              )
-          }
+    , .(n: I32) {
+        if! string_eq(int_to_string(n), int_to_string(expected)) {
+          string_concat(label, "PASS\n"(String))
+        } else {
+          string_concat(
+          , label
+          , string_concat("FAIL (got "(String), string_concat(int_to_string(n), ")\n"(String)))
+          )
         }
-      , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
-      )
+      }
+    , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
+    )
   }
 }
 
 fn assert_str(label: String, expected: String, actual: . | String) -> String {
   match! actual {
     (
-      , .(s: String) {
-          if! string_eq(s, expected) {
-            string_concat(label, "PASS\n"(String))
-          } else {
-            string_concat(
-              , label
-              , string_concat("FAIL (got "(String), string_concat(s, ")\n"(String)))
-              )
-          }
+    , .(s: String) {
+        if! string_eq(s, expected) {
+          string_concat(label, "PASS\n"(String))
+        } else {
+          string_concat(label, string_concat("FAIL (got "(String), string_concat(s, ")\n"(String))))
         }
-      , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
-      )
+      }
+    , .(_e: .) { string_concat(label, "FAIL (no result)\n"(String)) }
+    )
   }
 }
 
@@ -177,8 +174,8 @@ fn assert_str(label: String, expected: String, actual: . | String) -> String {
 pub fn main() {
   print(assert_i32("square(7) == 49: "(String), 49(I32), loaded_square(7(I32))));
   print(assert_str(
-    , "greet(\"World\") == \"Hi, World\": "(String)
-    , "Hi, World"(String)
-    , loaded_greet("World"(String))
-    ))
+  , "greet(\"World\") == \"Hi, World\": "(String)
+  , "Hi, World"(String)
+  , loaded_greet("World"(String))
+  ))
 }

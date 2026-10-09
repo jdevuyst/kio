@@ -31,22 +31,22 @@ pub fn run(name: String, left: term.Term, right: term.Term) {
     .(failure: solver.Clash) {
       let .(left_symbol, right_symbol) = failure.>solver.Clash.get;
       line(
-        , "  symbol clash: "
-        , string_concat(
-            , fmt.int_to_string(left_symbol)
-            , string_concat(" vs ", fmt.int_to_string(right_symbol))
-            )
+      , "  symbol clash: "
+      , string_concat(
+        , fmt.int_to_string(left_symbol)
+        , string_concat(" vs ", fmt.int_to_string(right_symbol))
         )
+      )
     };
     .(failure: solver.Arity) {
       let .(left_count, right_count) = failure.>solver.Arity.get;
       line(
-        , "  arity mismatch: "
-        , string_concat(
-            , fmt.int_to_string(left_count)
-            , string_concat(" vs ", fmt.int_to_string(right_count))
-            )
+      , "  arity mismatch: "
+      , string_concat(
+        , fmt.int_to_string(left_count)
+        , string_concat(" vs ", fmt.int_to_string(right_count))
         )
+      )
     }
   }
 }

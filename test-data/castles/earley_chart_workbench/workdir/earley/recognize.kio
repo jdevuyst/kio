@@ -15,7 +15,7 @@ rec(loop) fn columns(grammar: model.Grammar, tokens: Array(I32), table: model.Ch
     ()
   } else {
     closure.close(grammar, tokens, table, position);
-    rec columns(grammar, tokens, table, arith.add_i32(position, 1))
+    recur columns(grammar, tokens, table, arith.add_i32(position, 1))
   }
 }
 
@@ -34,10 +34,10 @@ rec(loop) fn accepted(grammar: model.Grammar, column: model.Column, category: I3
       if! model.finished(grammar, state) {
         .t
       } else {
-        rec accepted(grammar, column, category, arith.add_i32(index, 1))
+        recur accepted(grammar, column, category, arith.add_i32(index, 1))
       }
     } else {
-      rec accepted(grammar, column, category, arith.add_i32(index, 1))
+      recur accepted(grammar, column, category, arith.add_i32(index, 1))
     }
   }
 }

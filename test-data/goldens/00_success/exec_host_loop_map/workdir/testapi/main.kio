@@ -33,25 +33,25 @@ fn map_step[A][B](f: A -> B, processed: List(B), remaining: List(A)) ->
    {
   match! remaining.>List.un_list {
     (
-      , .(x: A, rest: List(A)) {
-          widen_sum!((push(f(x), processed), rest), (List(B) & List(A)) | List(B))
-        }
-      , .(_empty: .) { widen_sum!(processed, (List(B) & List(A)) | List(B)) }
-      )
+    , .(x: A, rest: List(A)) {
+        widen_sum!((push(f(x), processed), rest), (List(B) & List(A)) | List(B))
+      }
+    , .(_empty: .) { widen_sum!(processed, (List(B) & List(A)) | List(B)) }
+    )
   }
 }
 
 fn map_reverse[A][B](f: A -> B, xs: List(A)) -> List(B) {
   loop(
-    , List(B) & List(A)
-    , List(B)
-    , .(state: List(B) & List(A)) -> (List(B) & List(A)) | List(B) {
-        match! state {
-          .(processed: List(B), remaining: List(A)) { map_step(f, processed, remaining) }
-        }
+  , List(B) & List(A)
+  , List(B)
+  , .(state: List(B) & List(A)) -> (List(B) & List(A)) | List(B) {
+      match! state {
+        .(processed: List(B), remaining: List(A)) { map_step(f, processed, remaining) }
       }
-    , (nil(B, ()), xs)
-    )
+    }
+  , (nil(B, ()), xs)
+  )
 }
 
 // Join an `Int` list into a comma-separated string. Each step
@@ -69,28 +69,28 @@ fn map_reverse[A][B](f: A -> B, xs: List(A)) -> List(B) {
 fn join_step(processed: String, remaining: List(Int)) -> (String & List(Int)) | String {
   match! remaining.>List.un_list {
     (
-      , .(x: Int, rest: List(Int)) {
-          widen_sum!(
-            , (string_concat(processed, string_concat(",", int_to_string(x))), rest)
-            , (String & List(Int)) | String
-            )
-        }
-      , .(_empty: .) { widen_sum!(processed, (String & List(Int)) | String) }
-      )
+    , .(x: Int, rest: List(Int)) {
+        widen_sum!(
+        , (string_concat(processed, string_concat(",", int_to_string(x))), rest)
+        , (String & List(Int)) | String
+        )
+      }
+    , .(_empty: .) { widen_sum!(processed, (String & List(Int)) | String) }
+    )
   }
 }
 
 fn join_csv(xs: List(Int)) -> String {
   loop(
-    , String & List(Int)
-    , String
-    , .(state: String & List(Int)) -> (String & List(Int)) | String {
-        match! state {
-          .(processed: String, remaining: List(Int)) { join_step(processed, remaining) }
-        }
+  , String & List(Int)
+  , String
+  , .(state: String & List(Int)) -> (String & List(Int)) | String {
+      match! state {
+        .(processed: String, remaining: List(Int)) { join_step(processed, remaining) }
       }
-    , ("", xs)
-    )
+    }
+  , ("", xs)
+  )
 }
 
 fn plus_ten(n: Int) -> Int { add(n, 10) }

@@ -94,20 +94,16 @@ rec(loop) {
   /// cannot fire. It answers `#` — a glyph the alphabet does not contain
   /// — so a damaged table would show up in the transmission instead of
   /// quietly encoding as some other valid glyph.
-  pub fn glyph_of(value: I32) -> String { rec by_value(table(), value) };
+  pub fn glyph_of(value: I32) -> String { recur by_value(table(), value) };
   fn by_value(entries: list.List(Entry), value: I32) -> String {
     match! entries.>list.List.un_list {
       (
-        , .(head: Entry, rest: list.List(Entry)) {
-            let .(carried: I32, glyph: String) = head;
-            if! bits.int_eq(carried, value) {
-              glyph
-            } else {
-              rec by_value(rest, value)
-            }
-          }
-        , .(_empty: .) { "#" }
-        )
+      , .(head: Entry, rest: list.List(Entry)) {
+          let .(carried: I32, glyph: String) = head;
+          if! bits.int_eq(carried, value) { glyph } else { recur by_value(rest, value) }
+        }
+      , .(_empty: .) { "#" }
+      )
     }
   }
 }
@@ -115,20 +111,20 @@ rec(loop) {
 rec(loop) {
   /// The five-bit value a glyph stands for, or `()` when the glyph is not
   /// in the alphabet at all — the corruption the decoder reports.
-  pub fn value_of(glyph: String) -> I32 | . { rec by_glyph(table(), glyph) };
+  pub fn value_of(glyph: String) -> I32 | . { recur by_glyph(table(), glyph) };
   fn by_glyph(entries: list.List(Entry), glyph: String) -> I32 | . {
     match! entries.>list.List.un_list {
       (
-        , .(head: Entry, rest: list.List(Entry)) {
-            let .(carried: I32, spelling: String) = head;
-            if! string_eq(spelling, glyph) {
-              widen_sum!(carried)
-            } else {
-              rec by_glyph(rest, glyph)
-            }
+      , .(head: Entry, rest: list.List(Entry)) {
+          let .(carried: I32, spelling: String) = head;
+          if! string_eq(spelling, glyph) {
+            widen_sum!(carried)
+          } else {
+            recur by_glyph(rest, glyph)
           }
-        , .(_empty: .) { widen_sum!(()) }
-        )
+        }
+      , .(_empty: .) { widen_sum!(()) }
+      )
     }
   }
 }

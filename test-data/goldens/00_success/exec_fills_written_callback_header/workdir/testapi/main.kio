@@ -24,13 +24,13 @@ fn advance(_state: I32) -> I32 | String { widen_sum!("ok\n") }
 pub fn main() {
   io.print(keep!(drive(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }, 0)));
   io.print(keep!(identity(drive(
-    , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
-    , 0
-    ))));
+  , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
+  , 0
+  ))));
   io.print(keep!(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }.>drive(0)));
   io.print(keep!(make_identity()(drive(
-    , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
-    , 0
-    ))));
+  , .(state: I32) -> I32 | String { io.print("step\n"); advance(state) }
+  , 0
+  ))));
   io.print(keep!(drive(advance, 0)))
 }

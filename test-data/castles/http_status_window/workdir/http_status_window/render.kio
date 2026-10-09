@@ -6,20 +6,20 @@ import testapi(String);
 
 pub fn entry(entry: Entry) -> String {
   let .({
-    , ordinal as id
-    , method as verb
-    , path as resource
-    , status as code
-    , bytes as size
-    , family as class
-    }) = entry;
+  , ordinal as id
+  , method as verb
+  , path as resource
+  , status as code
+  , bytes as size
+  , family as class
+  }) = entry;
   s.cat7(
-    , "  "
-    , id
-    , " "
-    , verb
-    , " "
-    , resource
-    , s.cat7(" -> ", code, " ", class, " bytes=", size, "\n")
-    )
+  , "  "
+  , id
+  , " "
+  , verb
+  , " "
+  , resource
+  , s.cat7(" -> ", code, " ", class, " bytes=", size, "\n")
+  )
 }

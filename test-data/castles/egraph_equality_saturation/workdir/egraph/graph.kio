@@ -37,11 +37,7 @@ fn changed(g: Graph) { arr.array_set(revisions(g), 0, n.increment(revision(g))) 
 
 pub rec(loop) fn find(g: Graph, id: I32) -> I32 {
   let parent = arr.array_get(parents(g), id);
-  if! n.equal(id, parent) {
-    id
-  } else {
-    rec find(g, parent)
-  }
+  if! n.equal(id, parent) { id } else { recur find(g, parent) }
 }
 
 pub fn same_class(g: Graph, a: I32, b: I32) -> Bool { n.equal(find(g, a), find(g, b)) }
@@ -106,7 +102,7 @@ rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
   } else if! same_key(g, value, node(g, i)) {
     find(g, i)
   } else {
-    rec intern_walk(g, value, n.increment(i))
+    recur intern_walk(g, value, n.increment(i))
   }
 }
 
@@ -130,28 +126,20 @@ rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
   if! n.equal(i, size(g)) {
     merges
   } else if! num.leq_i32(size(g), j) {
-    rec rebuild_pairs(g, n.increment(i), num.add_i32(i, 2), merges)
+    recur rebuild_pairs(g, n.increment(i), num.add_i32(i, 2), merges)
   } else {
     let extra = if! same_key(g, node(g, i), node(g, j)) {
-      if! merge(g, i, j) {
-        1
-      } else {
-        0
-      }
+      if! merge(g, i, j) { 1 } else { 0 }
     } else {
       0
     };
-    rec rebuild_pairs(g, i, n.increment(j), num.add_i32(merges, extra))
+    recur rebuild_pairs(g, i, n.increment(j), num.add_i32(merges, extra))
   }
 }
 
 rec(loop) fn rebuild_until_quiet(g: Graph, total: I32) -> I32 {
   let merges = rebuild_pairs(g, 0, 1, 0);
-  if! n.equal(merges, 0) {
-    total
-  } else {
-    rec rebuild_until_quiet(g, num.add_i32(total, merges))
-  }
+  if! n.equal(merges, 0) { total } else { recur rebuild_until_quiet(g, num.add_i32(total, merges)) }
 }
 
 pub fn rebuild(g: Graph) -> I32 { rebuild_until_quiet(g, 0) }
@@ -160,18 +148,11 @@ rec(loop) fn class_walk(g: Graph, i: I32, total: I32) -> I32 {
   if! n.equal(i, size(g)) {
     total
   } else {
-    rec class_walk(
-      , g
-      , n.increment(i)
-      , num.add_i32(
-          , total
-          , if! n.equal(find(g, i), i) {
-              1
-            } else {
-              0
-            }
-          )
-      )
+    recur class_walk(
+    , g
+    , n.increment(i)
+    , num.add_i32(total, if! n.equal(find(g, i), i) { 1 } else { 0 })
+    )
   }
 }
 
@@ -181,19 +162,12 @@ rec(loop) fn member_walk(g: Graph, root: I32, i: I32, total: I32) -> I32 {
   if! n.equal(i, size(g)) {
     total
   } else {
-    rec member_walk(
-      , g
-      , root
-      , n.increment(i)
-      , num.add_i32(
-          , total
-          , if! same_class(g, i, root) {
-              1
-            } else {
-              0
-            }
-          )
-      )
+    recur member_walk(
+    , g
+    , root
+    , n.increment(i)
+    , num.add_i32(total, if! same_class(g, i, root) { 1 } else { 0 })
+    )
   }
 }
 

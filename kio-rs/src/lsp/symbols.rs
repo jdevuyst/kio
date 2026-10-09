@@ -468,8 +468,8 @@ mod tests {
         let source = concat!(
             "module pkg/main;\n",
             "rec(loop) {\n",
-            "  fn first(value: .) -> . { rec second(value) };\n",
-            "  pub fn second(value: .) -> . { rec first(value) }\n",
+            "  fn first(value: .) -> . { recur second(value) };\n",
+            "  pub fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
         );
         let symbols = symbols_for(source);
@@ -489,12 +489,12 @@ mod tests {
     fn singleton_rec_shorthand_and_braced_form_have_the_same_symbol_shape() {
         let shorthand = symbols_for(concat!(
             "module pkg/main;\n",
-            "rec(loop) fn visit(value: .) -> . { rec visit(value) }\n",
+            "rec(loop) fn visit(value: .) -> . { recur visit(value) }\n",
         ));
         let braced = symbols_for(concat!(
             "module pkg/main;\n",
             "rec(loop) {\n",
-            "  fn visit(value: .) -> . { rec visit(value) }\n",
+            "  fn visit(value: .) -> . { recur visit(value) }\n",
             "}\n",
         ));
 
@@ -509,7 +509,7 @@ mod tests {
         let source = concat!(
             "module pkg/main;\n",
             "rec(loop) {\n",
-            "  pub(pkg) fn pkg(value: .) -> . { let broken = ; rec pkg(value) }\n",
+            "  pub(pkg) fn pkg(value: .) -> . { let broken = ; recur pkg(value) }\n",
             "}\n",
         );
 

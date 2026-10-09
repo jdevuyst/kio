@@ -18,20 +18,20 @@ pub fn cat5(first: String, second: String, third: String, fourth: String, fifth:
 }
 
 pub fn cat6(
-  , first: String
-  , second: String
-  , third: String
-  , fourth: String
-  , fifth: String
-  , sixth: String
-  ) -> String { cat(cat5(first, second, third, fourth, fifth), sixth) }
+, first: String
+, second: String
+, third: String
+, fourth: String
+, fifth: String
+, sixth: String
+) -> String { cat(cat5(first, second, third, fourth, fifth), sixth) }
 
 pub fn cat7(
-  , first: String
-  , second: String
-  , third: String
-  , fourth: String
-  , fifth: String
-  , sixth: String
-  , seventh: String
-  ) -> String { cat(cat6(first, second, third, fourth, fifth, sixth), seventh) }
+, first: String
+, second: String
+, third: String
+, fourth: String
+, fifth: String
+, sixth: String
+, seventh: String
+) -> String { cat(cat6(first, second, third, fourth, fifth, sixth), seventh) }

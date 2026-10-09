@@ -70,23 +70,23 @@ pub fn left_cellar() -> Outcome { {left_cellar=}.>widen_sum!(Outcome) }
 pub fn is_fumble(o: Outcome) -> Bool {
   match! o {
     (
-      , .(_a: Saw_room) { .f }
-      , .(_b: Too_dark_to_see) { .t }
-      , .(_c: Dark_ahead) { .t }
-      , .(_d: Way_locked) { .t }
-      , .(_e: No_exit) { .t }
-      , .(_f: Not_a_direction) { .t }
-      , .(_g: Took) { .f }
-      , .(_h: Already_held) { .t }
-      , .(_i: Nothing_named) { .t }
-      , .(_j: Dropped) { .f }
-      , .(_k: Not_held) { .t }
-      , .(_l: Lock_opened) { .f }
-      , .(_m: Nothing_to_unlock) { .t }
-      , .(_n: Lock_needs) { .t }
-      , .(_o: Held_items) { .f }
-      , .(_p: Unknown_verb) { .t }
-      , .(_q: Left_cellar) { .f }
-      )
+    , .(_a: Saw_room) { .f }
+    , .(_b: Too_dark_to_see) { .t }
+    , .(_c: Dark_ahead) { .t }
+    , .(_d: Way_locked) { .t }
+    , .(_e: No_exit) { .t }
+    , .(_f: Not_a_direction) { .t }
+    , .(_g: Took) { .f }
+    , .(_h: Already_held) { .t }
+    , .(_i: Nothing_named) { .t }
+    , .(_j: Dropped) { .f }
+    , .(_k: Not_held) { .t }
+    , .(_l: Lock_opened) { .f }
+    , .(_m: Nothing_to_unlock) { .t }
+    , .(_n: Lock_needs) { .t }
+    , .(_o: Held_items) { .f }
+    , .(_p: Unknown_verb) { .t }
+    , .(_q: Left_cellar) { .f }
+    )
   }
 }

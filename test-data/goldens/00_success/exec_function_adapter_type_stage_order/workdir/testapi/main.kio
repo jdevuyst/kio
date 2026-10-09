@@ -16,7 +16,10 @@ fn run(delayed: [A][B] (B & B) -> B) {
 
 pub fn main() {
   let staged =
-    .(_seed: .)[B] { print("source type stage\n"); .(left: B, _right: B) -> B { left } }(());
+    .(_seed: .)[B] {
+      print("source type stage\n");
+      .(left: B, _right: B) -> B { left }
+    }(());
   let source = delay(staged);
   run(source)
 }

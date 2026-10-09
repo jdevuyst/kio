@@ -11,23 +11,23 @@ import testapi/types(Box, Capture, Functor, Shadow);
 // outer carrier separate from its nested polymorphic identity function.
 fn box_functor() -> Functor(Box) {
   Functor.mk_functor(
-    , Box
-    , .[A][B](step, m) {
-        let captured = Capture.mk_capture(Box(A), .[T](_value: T) { m });
-        let shadowed =
-          Shadow.mk_shadow(
-            , Box(A)
-            , __pair__(
-                , Box(A)
-                , ([T] T -> T) & Capture(Box(A))
-                , m
-                , __pair__([T] T -> T, Capture(Box(A)), .[T](value: T) { value }, captured)
-                )
-            );
-        let mapped = step(shadowed);
-        __fst__(Box(B), ([T] T -> T) & Capture(Box(B)), Shadow.un_shadow(Box(B), mapped))
-      }
-    )
+  , Box
+  , .[A][B](step, m) {
+      let captured = Capture.mk_capture(Box(A), .[T](_value: T) { m });
+      let shadowed =
+        Shadow.mk_shadow(
+        , Box(A)
+        , __pair__(
+          , Box(A)
+          , ([T] T -> T) & Capture(Box(A))
+          , m
+          , __pair__([T] T -> T, Capture(Box(A)), .[T](value: T) { value }, captured)
+          )
+        );
+      let mapped = step(shadowed);
+      __fst__(Box(B), ([T] T -> T) & Capture(Box(B)), Shadow.un_shadow(Box(B), mapped))
+    }
+  )
 }
 
 // Build the dictionary, hand it across the host boundary, and use the

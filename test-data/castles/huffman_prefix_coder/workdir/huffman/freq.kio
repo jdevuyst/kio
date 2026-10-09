@@ -21,7 +21,7 @@ rec(loop) fn zero_counts_onto(symbol: I32, acc: List(Count)) -> List(Count) {
   if! lt_i32(symbol, 0) {
     acc
   } else {
-    rec zero_counts_onto(sub_i32(symbol, 1), cons(count(symbol, 0), acc))
+    recur zero_counts_onto(sub_i32(symbol, 1), cons(count(symbol, 0), acc))
   }
 }
 
@@ -31,17 +31,17 @@ pub fn zero_counts() -> List(Count) { zero_counts_onto(sub_i32(alphabet_size(), 
 rec(loop) fn bump_onto(counts: List(Count), symbol: I32, acc: List(Count)) -> List(Count) {
   match! counts.>List.un_list {
     (
-      , .(row: Count, rest: List(Count)) {
-          let bumped =
-            if! eq_i32(row.?{count_symbol}, symbol) {
-              count(symbol, add_i32(row.?{count_freq}, 1))
-            } else {
-              row
-            };
-          rec bump_onto(rest, symbol, cons(bumped, acc))
-        }
-      , .(_empty: .) { reverse(acc) }
-      )
+    , .(row: Count, rest: List(Count)) {
+        let bumped =
+          if! eq_i32(row.?{count_symbol}, symbol) {
+            count(symbol, add_i32(row.?{count_freq}, 1))
+          } else {
+            row
+          };
+        recur bump_onto(rest, symbol, cons(bumped, acc))
+      }
+    , .(_empty: .) { reverse(acc) }
+    )
   }
 }
 
@@ -50,9 +50,9 @@ fn bump(counts: List(Count), symbol: I32) -> List(Count) { bump_onto(counts, sym
 pub rec(loop) fn tally(symbols: List(I32), counts: List(Count)) -> List(Count) {
   match! symbols.>List.un_list {
     (
-      , .(symbol: I32, rest: List(I32)) { rec tally(rest, bump(counts, symbol)) }
-      , .(_empty: .) { counts }
-      )
+    , .(symbol: I32, rest: List(I32)) { recur tally(rest, bump(counts, symbol)) }
+    , .(_empty: .) { counts }
+    )
   }
 }
 

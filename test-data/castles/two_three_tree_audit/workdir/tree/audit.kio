@@ -31,22 +31,18 @@ fn ragged() -> Depth { {ragged=}.>widen_sum!(Depth) }
 fn agree(a: Depth, b: Depth) -> Depth {
   match! a {
     (
-      , .(x: Level) {
-          match! b {
-            (
-              , .(y: Level) {
-                  if! eq_i32(x.?{level}, y.?{level}) {
-                    level(x.?{level})
-                  } else {
-                    ragged()
-                  }
-                }
-              , .(_r: Ragged) { ragged() }
-              )
-          }
+    , .(x: Level) {
+        match! b {
+          (
+          , .(y: Level) {
+              if! eq_i32(x.?{level}, y.?{level}) { level(x.?{level}) } else { ragged() }
+            }
+          , .(_r: Ragged) { ragged() }
+          )
         }
-      , .(_r: Ragged) { ragged() }
-      )
+      }
+    , .(_r: Ragged) { ragged() }
+    )
   }
 }
 
@@ -59,22 +55,21 @@ fn deeper(d: Depth) -> Depth {
 rec(loop) fn depth_of(t: Node) -> Depth {
   match! t.>Node.un_node {
     (
-      , .(_e: Leaf) { level(0) }
-      , .(n: Two) {
-          let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
-          let dl = rec(cont) depth_of(l);
-          let dr = rec(cont) depth_of(r);
-          deeper(agree(dl, dr))
-        }
-      , .(n: Three) {
-          let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) =
-            n.?{three};
-          let dl = rec(cont) depth_of(l);
-          let dm = rec(cont) depth_of(m);
-          let dr = rec(cont) depth_of(r);
-          deeper(agree(agree(dl, dm), dr))
-        }
-      )
+    , .(_e: Leaf) { level(0) }
+    , .(n: Two) {
+        let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+        let dl = recur(cont) depth_of(l);
+        let dr = recur(cont) depth_of(r);
+        deeper(agree(dl, dr))
+      }
+    , .(n: Three) {
+        let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) = n.?{three};
+        let dl = recur(cont) depth_of(l);
+        let dm = recur(cont) depth_of(m);
+        let dr = recur(cont) depth_of(r);
+        deeper(agree(agree(dl, dm), dr))
+      }
+    )
   }
 }
 
@@ -110,22 +105,22 @@ fn order_step(o: Order, k: I32) -> Order {
 rec(loop) fn order_walk(t: Node, o: Order) -> Order {
   match! t.>Node.un_node {
     (
-      , .(_e: Leaf) { o }
-      , .(n: Two) {
-          let .(l: Node, k: I32, _v: String, r: Node) = n.?{two};
-          let after_left = rec(cont) order_walk(l, o);
-          let after_key = order_step(after_left, k);
-          rec order_walk(r, after_key)
-        }
-      , .(n: Three) {
-          let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
-          let after_left = rec(cont) order_walk(l, o);
-          let after_k1 = order_step(after_left, k1);
-          let after_mid = rec(cont) order_walk(m, after_k1);
-          let after_k2 = order_step(after_mid, k2);
-          rec order_walk(r, after_k2)
-        }
-      )
+    , .(_e: Leaf) { o }
+    , .(n: Two) {
+        let .(l: Node, k: I32, _v: String, r: Node) = n.?{two};
+        let after_left = recur(cont) order_walk(l, o);
+        let after_key = order_step(after_left, k);
+        recur order_walk(r, after_key)
+      }
+    , .(n: Three) {
+        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+        let after_left = recur(cont) order_walk(l, o);
+        let after_k1 = order_step(after_left, k1);
+        let after_mid = recur(cont) order_walk(m, after_k1);
+        let after_k2 = order_step(after_mid, k2);
+        recur order_walk(r, after_k2)
+      }
+    )
   }
 }
 
@@ -149,21 +144,21 @@ fn shape_node(keys: I32, children: I32, ordered: Bool, below: Shape) -> Shape {
 rec(loop) fn shape_walk(t: Node) -> Shape {
   match! t.>Node.un_node {
     (
-      , .(_e: Leaf) { shape_leaf() }
-      , .(n: Two) {
-          let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
-          let sl = rec(cont) shape_walk(l);
-          let sr = rec(cont) shape_walk(r);
-          shape_node(1, 2, .t, shape_join(sl, sr))
-        }
-      , .(n: Three) {
-          let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
-          let sl = rec(cont) shape_walk(l);
-          let sm = rec(cont) shape_walk(m);
-          let sr = rec(cont) shape_walk(r);
-          shape_node(2, 3, lt_i32(k1, k2), shape_join(sl, shape_join(sm, sr)))
-        }
-      )
+    , .(_e: Leaf) { shape_leaf() }
+    , .(n: Two) {
+        let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+        let sl = recur(cont) shape_walk(l);
+        let sr = recur(cont) shape_walk(r);
+        shape_node(1, 2, .t, shape_join(sl, sr))
+      }
+    , .(n: Three) {
+        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+        let sl = recur(cont) shape_walk(l);
+        let sm = recur(cont) shape_walk(m);
+        let sr = recur(cont) shape_walk(r);
+        shape_node(2, 3, lt_i32(k1, k2), shape_join(sl, shape_join(sm, sr)))
+      }
+    )
   }
 }
 
@@ -185,11 +180,11 @@ pub type Verdict = Bool & Bool & Bool & Bool;
 pub fn audit(t: Tree) -> Verdict {
   let root = root_of(t);
   (
-    , depth_uniform(root)
-    , order_ok(order_walk(root, order_start()))
-    , shape_sound(root)
-    , eq_i32(size_of(t), counted_keys(root))
-    )
+  , depth_uniform(root)
+  , order_ok(order_walk(root, order_start()))
+  , shape_sound(root)
+  , eq_i32(size_of(t), counted_keys(root))
+  )
 }
 
 pub fn depth_ok(v: Verdict) -> Bool { let .(d: Bool, _o: Bool, _a: Bool, _n: Bool) = v; d }
@@ -208,11 +203,7 @@ pub fn verdict_word(v: Verdict) -> String {
   if! d {
     if! o {
       if! a {
-        if! n {
-          "ok"
-        } else {
-          "BAD-size"
-        }
+        if! n { "ok" } else { "BAD-size" }
       } else {
         "BAD-arity"
       }

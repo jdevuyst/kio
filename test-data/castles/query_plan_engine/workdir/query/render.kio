@@ -38,65 +38,60 @@ fn title_text(c: schema.Col, last: Bool) -> String {
 rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
   match! cols.>list.List.un_list {
     (
-      , .(c: schema.Col, rest: schema.Col_list) {
-          let last = list.is_empty(rest);
-          let piece =
-            if! last {
-              title_text(c, .t)
-            } else {
-              text.cat2(title_text(c, .f), gap())
-            };
-          rec header_onto(rest, text.cat2(acc, piece))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(c: schema.Col, rest: schema.Col_list) {
+        let last = list.is_empty(rest);
+        let piece = if! last { title_text(c, .t) } else { text.cat2(title_text(c, .f), gap()) };
+        recur header_onto(rest, text.cat2(acc, piece))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
   match! cols.>list.List.un_list {
     (
-      , .(c: schema.Col, rest: schema.Col_list) {
-          let piece =
-            if! list.is_empty(rest) {
-              text.rule(schema.col_width(c))
-            } else {
-              text.cat2(text.rule(schema.col_width(c)), gap())
-            };
-          rec rule_onto(rest, text.cat2(acc, piece))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(c: schema.Col, rest: schema.Col_list) {
+        let piece =
+          if! list.is_empty(rest) {
+            text.rule(schema.col_width(c))
+          } else {
+            text.cat2(text.rule(schema.col_width(c)), gap())
+          };
+        recur rule_onto(rest, text.cat2(acc, piece))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> String {
   match! cols.>list.List.un_list {
     (
-      , .(c: schema.Col, rest: schema.Col_list) {
-          let v = rel.row_cell(row, c);
-          let piece =
-            if! list.is_empty(rest) {
-              value.value_tail(v, schema.col_width(c))
-            } else {
-              text.cat2(value.value_cell(v, schema.col_width(c)), gap())
-            };
-          rec row_onto(rest, row, text.cat2(acc, piece))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(c: schema.Col, rest: schema.Col_list) {
+        let v = rel.row_cell(row, c);
+        let piece =
+          if! list.is_empty(rest) {
+            value.value_tail(v, schema.col_width(c))
+          } else {
+            text.cat2(value.value_cell(v, schema.col_width(c)), gap())
+          };
+        recur row_onto(rest, row, text.cat2(acc, piece))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
 rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) {
   match! rows.>list.List.un_list {
     (
-      , .(r: rel.Row, rest: rel.Table) {
-          print(text.cat3(margin(), row_onto(cols, r, ""), "\n"));
-          rec print_rows(cols, rest)
-        }
-      , .(_empty: .) { () }
-      )
+    , .(r: rel.Row, rest: rel.Table) {
+        print(text.cat3(margin(), row_onto(cols, r, ""), "\n"));
+        recur print_rows(cols, rest)
+      }
+    , .(_empty: .) { () }
+    )
   }
 }
 

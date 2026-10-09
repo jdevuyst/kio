@@ -27,19 +27,23 @@ fn run_named(function: [B] B -> String) {
 
 pub fn main() {
   use_twice(
-    , .(_ignored: .) { .[A](left: A, _right: A) { left } }(print("made\n"))
-    , "first\n"
-    , "second\n"
-    );
+  , .(_ignored: .) {
+      .[A](left: A, _right: A) { left }
+    }(print("made\n"))
+  , "first\n"
+  , "second\n"
+  );
   run_nested(
-    , .[A](kept: A) {
-        let polymorphic =
-          .(_ignored: .) { .[B](_discarded: B) { print("used\n"); kept } }(print("nested\n"));
-        let _ = polymorphic(., ());
-        polymorphic(String, "ignored\n")
-      }
-    , "kept\n"
-    );
+  , .[A](kept: A) {
+      let polymorphic =
+        .(_ignored: .) {
+          .[B](_discarded: B) { print("used\n"); kept }
+        }(print("nested\n"));
+      let _ = polymorphic(., ());
+      polymorphic(String, "ignored\n")
+    }
+  , "kept\n"
+  );
   print(pure_local(String, "pure\n"));
   ordered("scope\n", ., ());
   run_named(staged(String, "named\n"))

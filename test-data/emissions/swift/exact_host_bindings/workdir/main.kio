@@ -57,70 +57,38 @@ pub fn flag_literal() -> Flag { .t }
 fn identity_flag(flag: Flag) -> Flag { flag }
 
 pub fn choose(flag: Flag, yes: Token, no: Token) -> Token {
-  if! flag {
-    yes
-  } else {
-    no
-  }
+  if! flag { yes } else { no }
 }
 
 pub fn choose_call(flag: Flag, yes: Token, no: Token) -> Token {
-  if! identity_flag(flag) {
-    yes
-  } else {
-    no
-  }
+  if! identity_flag(flag) { yes } else { no }
 }
 
 pub fn choose_host_call(flag: Flag, yes: Token, no: Token) -> Token {
-  if! echo_flag(flag) {
-    yes
-  } else {
-    no
-  }
+  if! echo_flag(flag) { yes } else { no }
 }
 
 pub fn choose_let(flag: Flag, yes: Token, no: Token) -> Token {
   let copied = flag;
-  if! copied {
-    yes
-  } else {
-    no
-  }
+  if! copied { yes } else { no }
 }
 
 pub fn choose_literal(yes: Token, no: Token) -> Token {
-  if! .t {
-    yes
-  } else {
-    no
-  }
+  if! .t { yes } else { no }
 }
 
 pub fn choose_closure(flag: Flag, yes: Token, no: Token) -> Token {
   .(condition: Flag) {
-    if! condition {
-      yes
-    } else {
-      no
-    }
+    if! condition { yes } else { no }
   }(flag)
 }
 
 pub fn choose_inferred_closure(flag: Flag, yes: Token, no: Token) -> Token {
   .(condition) {
-    if! condition {
-      yes
-    } else {
-      no
-    }
+    if! condition { yes } else { no }
   }(flag)
 }
 
 pub fn choose_destructured((flag: Flag, yes: Token), no: Token) -> Token {
-  if! flag {
-    yes
-  } else {
-    no
-  }
+  if! flag { yes } else { no }
 }

@@ -12,22 +12,22 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 fn frame_line(frame: String) -> String {
   cat3(
-    , scan.ident(frame)
-    , cat3(" checksum=", scan.checksum(frame), " class=")
-    , cat3(rules.class_for(frame), "", "\n")
-    )
+  , scan.ident(frame)
+  , cat3(" checksum=", scan.checksum(frame), " class=")
+  , cat3(rules.class_for(frame), "", "\n")
+  )
 }
 
 pub fn header() -> String {
   cat2(
-    , cat3("frames=", fmt.int_to_string(scan.frame_count()), "\n")
-    , cat3("bytes=", fmt.i32_to_string(scan.byte_count()), "\n")
-    )
+  , cat3("frames=", fmt.int_to_string(scan.frame_count()), "\n")
+  , cat3("bytes=", fmt.i32_to_string(scan.byte_count()), "\n")
+  )
 }
 
 pub fn body() -> String {
   cat2(
-    , frame_line(scan.frame1())
-    , cat2(frame_line(scan.frame2()), cat2(frame_line(scan.frame3()), frame_line(scan.frame4())))
-    )
+  , frame_line(scan.frame1())
+  , cat2(frame_line(scan.frame2()), cat2(frame_line(scan.frame3()), frame_line(scan.frame4())))
+  )
 }

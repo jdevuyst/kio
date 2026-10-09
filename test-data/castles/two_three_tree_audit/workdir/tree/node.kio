@@ -52,19 +52,11 @@ pub fn is_leaf(t: Node) -> Bool {
 }
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 fn max2(a: I32, b: I32) -> I32 {
-  if! lt_i32(a, b) {
-    b
-  } else {
-    a
-  }
+  if! lt_i32(a, b) { b } else { a }
 }
 
 /// The longest root-to-leaf path. Taken as a maximum over the children rather
@@ -73,22 +65,21 @@ fn max2(a: I32, b: I32) -> I32 {
 pub rec(loop) fn height(t: Node) -> I32 {
   match! t.>Node.un_node {
     (
-      , .(_e: Leaf) { 0 }
-      , .(n: Two) {
-          let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
-          let hl = rec(cont) height(l);
-          let hr = rec(cont) height(r);
-          add_i32(1, max2(hl, hr))
-        }
-      , .(n: Three) {
-          let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) =
-            n.?{three};
-          let hl = rec(cont) height(l);
-          let hm = rec(cont) height(m);
-          let hr = rec(cont) height(r);
-          add_i32(1, max2(hl, max2(hm, hr)))
-        }
-      )
+    , .(_e: Leaf) { 0 }
+    , .(n: Two) {
+        let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+        let hl = recur(cont) height(l);
+        let hr = recur(cont) height(r);
+        add_i32(1, max2(hl, hr))
+      }
+    , .(n: Three) {
+        let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) = n.?{three};
+        let hl = recur(cont) height(l);
+        let hm = recur(cont) height(m);
+        let hr = recur(cont) height(r);
+        add_i32(1, max2(hl, max2(hm, hr)))
+      }
+    )
   }
 }
 
@@ -103,32 +94,32 @@ fn not_found() -> Found { {absent=}.>widen_sum!(Found) }
 rec(loop) fn lookup(t: Node, k: I32) -> Found {
   match! t.>Node.un_node {
     (
-      , .(_e: Leaf) { not_found() }
-      , .(n: Two) {
-          let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
-          if! eq_i32(k, k1) {
-            found(v1)
-          } else if! lt_i32(k, k1) {
-            rec lookup(l, k)
-          } else {
-            rec lookup(r, k)
-          }
+    , .(_e: Leaf) { not_found() }
+    , .(n: Two) {
+        let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
+        if! eq_i32(k, k1) {
+          found(v1)
+        } else if! lt_i32(k, k1) {
+          recur lookup(l, k)
+        } else {
+          recur lookup(r, k)
         }
-      , .(n: Three) {
-          let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
-          if! eq_i32(k, k1) {
-            found(v1)
-          } else if! eq_i32(k, k2) {
-            found(v2)
-          } else if! lt_i32(k, k1) {
-            rec lookup(l, k)
-          } else if! lt_i32(k, k2) {
-            rec lookup(m, k)
-          } else {
-            rec lookup(r, k)
-          }
+      }
+    , .(n: Three) {
+        let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+        if! eq_i32(k, k1) {
+          found(v1)
+        } else if! eq_i32(k, k2) {
+          found(v2)
+        } else if! lt_i32(k, k1) {
+          recur lookup(l, k)
+        } else if! lt_i32(k, k2) {
+          recur lookup(m, k)
+        } else {
+          recur lookup(r, k)
         }
-      )
+      }
+    )
   }
 }
 

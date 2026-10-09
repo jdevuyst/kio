@@ -106,9 +106,7 @@ pub fn main() {
   io.print(match! produce() {
     .() { "zero\n" }
   });
-  io.print(match! produce() {
-    named
-  });
+  io.print(match! produce() { named });
   io.print(fallback(left));
   io.print(fallback(right));
   io.print(overlap(left));

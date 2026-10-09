@@ -7,14 +7,14 @@ host fn print(value: String) -> .;
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 rec(loop) {
-  fn first(value: .) -> . { print("shared-first-effect"); rec second(value) };
+  fn first(value: .) -> . { print("shared-first-effect"); recur second(value) };
   fn second(value: .) -> . {
     print("shared-second-before");
-    let result = rec(cont) third(value);
+    let result = recur(cont) third(value);
     print("shared-second-after");
     result
   };
-  fn third(value: .) -> . { print("shared-third-effect"); rec fourth(value) };
+  fn third(value: .) -> . { print("shared-third-effect"); recur fourth(value) };
   fn fourth(value: .) -> . { print("shared-fourth-effect"); value }
 }
 

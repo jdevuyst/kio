@@ -981,7 +981,7 @@ mod tests {
             type Payload = .; \
             rec { newtype A : Payload & B { constructor make_a; projector open_a; }; \
                 newtype B : A { constructor make_b; projector open_b; }; } \
-            rec(driver) fn repeat(value: A) -> A { rec repeat(value) } \
+            rec(driver) fn repeat(value: A) -> A { recur repeat(value) } \
             pub fn run() -> . { let _ = repeat; () }",
         )]);
         assert!(

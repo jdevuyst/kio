@@ -6,6 +6,8 @@ import testapi/types as t;
 
 fn boxer[A](mk: [B] (String & B) -> t.Box, s: String, w: A) -> t.Box { mk((s, w)) }
 
-fn text(box: t.Box) -> String { t.Box.un_box(box)(.[A](s: String, _witness: A) { s }) }
+fn text(box: t.Box) -> String {
+  t.Box.un_box(box)(.[A](s: String, _witness: A) { s })
+}
 
 pub fn main() { print(text(boxer(t.Box.mk_box, "ok\n"(String), ()))) }

@@ -9062,7 +9062,7 @@ mod tests {
              newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
              fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
              rec(loop) fn value(n: I32) -> Box(I32) { \
-               let .(result: Box(_)) = choose_box(0, rec(cont) value(0)); \
+               let .(result: Box(_)) = choose_box(0, recur(cont) value(0)); \
                result \
              }",
         );

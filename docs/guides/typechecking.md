@@ -82,7 +82,9 @@ The return type below supplies `Int -> Int`, so the lambda need not repeat
 its parameter type:
 
 ```kio {@types}
-fn identity_function() -> Int -> Int { .(value) { value } }
+fn identity_function() -> Int -> Int {
+  .(value) { value }
+}
 ```
 
 These directions are often called *synthesis* (finding an expression's type)
@@ -96,7 +98,9 @@ Information is not limited to the argument immediately to the left:
 ```kio {@types}
 fn apply[A][B](f: A -> B, value: A) -> B { f(value) }
 
-fn keep_number(number: Int) -> Int { apply(.(value) { value }, number) }
+fn keep_number(number: Int) -> Int {
+  apply(.(value) { value }, number)
+}
 ```
 
 `number` fixes `A`, and the function's return position fixes `B`. Together
@@ -108,7 +112,9 @@ This can extend through several nested calls. It does not allow later uses to
 infer an earlier local binding or sequence action's missing type. For example:
 
 ```kio {@types}
-fn make_identity[A]() -> A -> A { .(value) { value } }
+fn make_identity[A]() -> A -> A {
+  .(value) { value }
+}
 
 fn apply[A][B](f: A -> B, value: A) -> B { f(value) }
 
@@ -129,7 +135,9 @@ A lambda called immediately can also take missing parameter types from that
 same call's arguments:
 
 ```kio {@types}
-fn immediate(number: Int) -> Int { .(value) { value }(number) }
+fn immediate(number: Int) -> Int {
+  .(value) { value }(number)
+}
 ```
 
 Here `number` supplies the parameter type directly. This does not look through
@@ -151,7 +159,10 @@ This example is rejected even though the later call seems to explain what
 `value` should be:
 
 ```kio {@types check_exit_code=14}
-fn too_late(number: Int) -> Int { let f = .(value) { value }; f(number) }
+fn too_late(number: Int) -> Int {
+  let f = .(value) { value };
+  f(number)
+}
 ```
 
 The unannotated lambda has neither an expected function type nor annotated
@@ -160,7 +171,10 @@ parameters. Its body does not invent a type for `value`, and the later use of
 contract instead:
 
 ```kio {@types}
-fn explicit_boundary(number: Int) -> Int { let .(f: Int -> Int) = .(value) { value }; f(number) }
+fn explicit_boundary(number: Int) -> Int {
+  let .(f: Int -> Int) = .(value) { value };
+  f(number)
+}
 ```
 
 Alternatively, write `.(value: Int) { value }` on the right-hand side. Once
@@ -170,7 +184,9 @@ Unlike a named `fn`, an omitted lambda result does **not** default to unit.
 A complete binding annotation can also solve a generic factory's result:
 
 ```kio {@types}
-fn make_identity[A]() -> A -> A { .(value) { value } }
+fn make_identity[A]() -> A -> A {
+  .(value) { value }
+}
 
 fn use_factory(number: Int) -> Int { let .(f: Int -> Int) = make_identity(); f(number) }
 ```
@@ -213,14 +229,11 @@ separate clauses. The supplied bind function connects an action of type
 
 ```kio {@branches}
 fn sequence_example[*F](
-  , bind: [A][B] (F(A) & (A -> F(B))) -> F(B)
-  , source: F(Int)
-  , finish: Int -> F(String)
-  ) -> F(String) {
-  do! bind {
-    let value <- source;
-    finish(value)
-  }
+, bind: [A][B] (F(A) & (A -> F(B))) -> F(B)
+, source: F(Int)
+, finish: Int -> F(String)
+) -> F(String) {
+  do! bind { let value <- source; finish(value) }
 }
 ```
 
@@ -286,12 +299,7 @@ If they disagree, Kio does not silently invent a sum type:
 
 ```kio {@branches check_exit_code=14}
 fn disagree(flag: Bool, number: Int, text: String) {
-  let result =
-    if! flag {
-      number
-    } else {
-      text
-    };
+  let result = if! flag { number } else { text };
   ()
 }
 ```
@@ -300,11 +308,7 @@ If a sum is what you intend, declare it and construct the alternatives:
 
 ```kio {@branches}
 fn either_value(flag: Bool, number: Int, text: String) -> Int | String {
-  if! flag {
-    number.>widen_sum!
-  } else {
-    text.>widen_sum!
-  }
+  if! flag { number.>widen_sum! } else { text.>widen_sum! }
 }
 ```
 

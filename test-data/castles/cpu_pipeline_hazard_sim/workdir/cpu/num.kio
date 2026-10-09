@@ -12,30 +12,18 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 fn not(value: Bool) -> Bool {
-  if! value {
-    .f
-  } else {
-    .t
-  }
+  if! value { .f } else { .t }
 }
 
 /// Strict in both arguments, like any Kio call. A guard whose second
 /// operand must not be evaluated -- an array index that is only in range
 /// when the first test passes -- uses `if` instead of `and`.
 pub fn and(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    .f
-  }
+  if! left { right } else { .f }
 }
 
 pub fn or(left: Bool, right: Bool) -> Bool {
-  if! left {
-    .t
-  } else {
-    right
-  }
+  if! left { .t } else { right }
 }
 
 /// `a == b` by the antisymmetry of a total order.
@@ -51,7 +39,7 @@ pub fn int_lt(a: I32, b: I32) -> Bool { not(leq_i32(b, a)) }
 rec(loop) fn scale_up(shifted: I32, factor: I32, n: I32) -> I32 & I32 {
   let doubled = add_i32(shifted, shifted);
   if! leq_i32(doubled, n) {
-    rec scale_up(doubled, add_i32(factor, factor), n)
+    recur scale_up(doubled, add_i32(factor, factor), n)
   } else {
     (shifted, factor)
   }
@@ -62,7 +50,7 @@ rec(loop) fn div_walk(n: I32, d: I32, quotient: I32) -> I32 {
     quotient
   } else {
     let .(shifted: I32, factor: I32) = scale_up(d, 1, n);
-    rec div_walk(sub_i32(n, shifted), d, add_i32(quotient, factor))
+    recur div_walk(sub_i32(n, shifted), d, add_i32(quotient, factor))
   }
 }
 
@@ -91,11 +79,7 @@ pub fn cat(left_text: String, right_text: String) -> String { string_concat(left
 pub fn cat3(a: String, b: String, c: String) -> String { cat(a, cat(b, c)) }
 
 pub rec(loop) fn spaces(count: I32) -> String {
-  if! leq_i32(count, 0) {
-    ""
-  } else {
-    string_concat(" ", rec(cont) spaces(sub_i32(count, 1)))
-  }
+  if! leq_i32(count, 0) { "" } else { string_concat(" ", recur(cont) spaces(sub_i32(count, 1))) }
 }
 
 /// A non-negative integer right-aligned in a field of `width`.

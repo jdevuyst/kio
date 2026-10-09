@@ -31,7 +31,7 @@ pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I3
     let value = array.array_get(row, index);
     let weight = arith.add_i32(index, 1);
     let term = arith.mul_i32(value, weight);
-    rec row_checksum_at(arith.add_i32(index, 1), last, row, arith.add_i32(acc, term))
+    recur row_checksum_at(arith.add_i32(index, 1), last, row, arith.add_i32(acc, term))
   } else {
     acc
   }
@@ -43,7 +43,7 @@ pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) {
   if! arith.leq_i32(index, last) {
     print_i32(array.array_get(row, index));
     io.print(" ");
-    rec print_row_cells(arith.add_i32(index, 1), last, row)
+    recur print_row_cells(arith.add_i32(index, 1), last, row)
   } else {
     ()
   }

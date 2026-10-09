@@ -1,5 +1,9 @@
 module left;
 
-pub fn make[Left](value: Left) -> [Left] Left -> Left { .[Item](inner: Item) -> Item { inner } }
+pub fn make[Left](value: Left) -> [Left] Left -> Left {
+  .[Item](inner: Item) -> Item { inner }
+}
 
-pub fn suffix[A_n2](value: A_n2) -> [A_n2] A_n2 -> A_n2 { .[Item](inner: Item) -> Item { inner } }
+pub fn suffix[A_n2](value: A_n2) -> [A_n2] A_n2 -> A_n2 {
+  .[Item](inner: Item) -> Item { inner }
+}

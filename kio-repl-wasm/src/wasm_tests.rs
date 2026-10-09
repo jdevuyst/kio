@@ -83,6 +83,9 @@ export function exerciseTrailingBlocks(repl) {
     const labels = repl.complete(continuation, continuation.length);
     check(labels.replaceStart === continuation.length - 4 && labels.replaceEnd === continuation.length, 'label replacement');
     check(labels.candidates.length === 1 && labels.candidates[0].label === 'fallback' && labels.candidates[0].kind === 'keyword', 'selected label');
+    for (const input of ['recur(', 'recur(cont, ', '.() { recur(', ':normalize recur(']) {
+      check(repl.complete(input, input.length).candidates.length === 0, `${input}: recursive group required`);
+    }
     turn(':reset');
     check(!repl.complete('packet', 6).candidates.some(item => item.label === 'packet!'), 'reset imports');
     check(repl.complete(continuation, continuation.length).candidates.length === 0, 'reset label provider');

@@ -4,11 +4,7 @@ import elab/control(if);
 import helper(Bool, a, b, pick);
 
 equiv main_local_differs() {
-  if! .t {
-    b()
-  } else {
-    a()
-  };
+  if! .t { b() } else { a() };
   b()
 }
 

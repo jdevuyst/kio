@@ -18,14 +18,14 @@ import elab/spine_elaborators(widen_sum);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
-  , array_get
-  , array_len
-  , array_make_empty
-  , array_make_filled
-  , array_pop_back
-  , array_push
-  , array_set
-  );
+, array_get
+, array_len
+, array_make_empty
+, array_make_filled
+, array_pop_back
+, array_push
+, array_set
+);
 import testapi/iter(loop);
 
 pub labels Book = { bids: Array(Order), asks: Array(Order), tape: Array(Trade), ledger: Array(I32) };
@@ -49,11 +49,11 @@ literal ledger_size = 6;
 
 pub fn new_book() -> Book {
   {
-    , bids = array_make_empty(Order, ())
-    , asks = array_make_empty(Order, ())
-    , tape = array_make_empty(Trade, ())
-    , ledger = array_make_filled(ledger_size, 0)
-    }
+  , bids = array_make_empty(Order, ())
+  , asks = array_make_empty(Order, ())
+  , tape = array_make_empty(Trade, ())
+  , ledger = array_make_filled(ledger_size, 0)
+  }
 }
 
 fn ledger_of(b: Book) -> Array(I32) { b.?{ledger} }
@@ -72,20 +72,12 @@ pub fn asks_of(b: Book) -> Array(Order) { b.?{asks} }
 
 /// The queue an order of this side rests on.
 pub fn own_queue(b: Book, side: Side) -> Array(Order) {
-  if! is_buy(side) {
-    bids_of(b)
-  } else {
-    asks_of(b)
-  }
+  if! is_buy(side) { bids_of(b) } else { asks_of(b) }
 }
 
 /// The queue an order of this side crosses against.
 pub fn facing_queue(b: Book, side: Side) -> Array(Order) {
-  if! is_buy(side) {
-    asks_of(b)
-  } else {
-    bids_of(b)
-  }
+  if! is_buy(side) { asks_of(b) } else { bids_of(b) }
 }
 
 pub fn depth(orders: Array(Order)) -> I32 { array_len(orders) }
@@ -111,7 +103,7 @@ rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
     ()
   } else {
     array_set(orders, i, array_get(orders, add_i32(i, 1)));
-    rec shift_down(add_i32(i, 1), orders)
+    recur shift_down(add_i32(i, 1), orders)
   }
 }
 
@@ -132,7 +124,7 @@ rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) ->
   } else if! ranks_ahead(side, price, price_of(array_get(orders, i))) {
     i
   } else {
-    rec rank_index(add_i32(i, 1), side, price, orders)
+    recur rank_index(add_i32(i, 1), side, price, orders)
   }
 }
 
@@ -141,7 +133,7 @@ rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) {
     ()
   } else {
     array_set(orders, j, array_get(orders, sub_i32(j, 1)));
-    rec shift_up(sub_i32(j, 1), index, orders)
+    recur shift_up(sub_i32(j, 1), index, orders)
   }
 }
 
@@ -166,7 +158,7 @@ rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
   } else if! int_eq(id_of(array_get(orders, i)), id) {
     i
   } else {
-    rec scan_id(add_i32(i, 1), id, orders)
+    recur scan_id(add_i32(i, 1), id, orders)
   }
 }
 
@@ -176,7 +168,7 @@ rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
   if! leq_i32(array_len(orders), i) {
     total
   } else {
-    rec sum_remaining(add_i32(i, 1), add_i32(total, remaining_of(array_get(orders, i))), orders)
+    recur sum_remaining(add_i32(i, 1), add_i32(total, remaining_of(array_get(orders, i))), orders)
   }
 }
 

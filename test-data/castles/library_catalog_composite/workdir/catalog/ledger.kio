@@ -31,15 +31,11 @@ pub fn borrow(who: Member, call: I32) -> Member {
 pub fn give_back(who: Member, call: I32, days_late: I32) -> Member {
   let .(holding: Call_list) =
     list.filter(
-      , .(other: I32) {
-          if! eq_i32(other, call) {
-            .f
-          } else {
-            .t
-          }
-        }
-      , who.?{held}
-      );
+    , .(other: I32) {
+        if! eq_i32(other, call) { .f } else { .t }
+      }
+    , who.?{held}
+    );
   let .(owed: I32) = add_i32(who.?{fines}, mul_i32(days_late, fine_rate));
   who.!{fines = owed, held = holding}
 }
@@ -54,11 +50,11 @@ pub fn member_count(members: Member_index) -> I32 { dict.size(members) }
 
 pub fn total_fines(members: Member_index) -> I32 {
   dict.fold_asc(
-    , members
-    , 0
-    , .(step: I32 & I32 & Member) {
-        let .(running: I32, _id: I32, who: Member) = step;
-        add_i32(running, who.?{fines})
-      }
-    )
+  , members
+  , 0
+  , .(step: I32 & I32 & Member) {
+      let .(running: I32, _id: I32, who: Member) = step;
+      add_i32(running, who.?{fines})
+    }
+  )
 }

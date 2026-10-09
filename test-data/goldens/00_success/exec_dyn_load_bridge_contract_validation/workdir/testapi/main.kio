@@ -14,9 +14,9 @@ import testapi/text(string_concat);
 fn describe(source: String) -> String {
   match! un_load_outcome(load_package(source)) {
     (
-      , .(_loaded: Lr_image) { "accepted"(String) }
-      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
-      )
+    , .(_loaded: Lr_image) { "accepted"(String) }
+    , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+    )
   }
 }
 
@@ -27,16 +27,16 @@ fn result_line(label: String, source: String) -> String {
 fn first_export(source: String) -> String {
   match! un_load_outcome(load_package(source)) {
     (
-      , .(loaded: Lr_image) {
-          match! un_export_infos(image_exports(Lr_image.get(loaded))) {
-            (
-              , .(export: Export_info, _rest: Export_infos) { export_info_name(export) }
-              , .(_empty: .) { "<empty>"(String) }
-              )
-          }
+    , .(loaded: Lr_image) {
+        match! un_export_infos(image_exports(Lr_image.get(loaded))) {
+          (
+          , .(export: Export_info, _rest: Export_infos) { export_info_name(export) }
+          , .(_empty: .) { "<empty>"(String) }
+          )
         }
-      , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
-      )
+      }
+    , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
+    )
   }
 }
 
@@ -46,35 +46,35 @@ fn export_line(label: String, source: String) -> String {
 
 pub fn main() {
   print(result_line(
-    , "dead glob: "(String)
-    , "module present;\npub fn entry() -> . { () }\npackage guest;\nbridge { "
-      "missing/first/**; missing/second/**; }\n"(String)
-    ));
+  , "dead glob: "(String)
+  , "module present;\npub fn entry() -> . { () }\npackage guest;\nbridge { "
+    "missing/first/**; missing/second/**; }\n"(String)
+  ));
   print(result_line(
-    , "transitive hidden host: "(String)
-    , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
-      "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
-      "entry() -> . { helper() }\npackage guest;\nbridge { main; }\n"(String)
-    ));
+  , "transitive hidden host: "(String)
+  , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
+    "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
+    "entry() -> . { helper() }\npackage guest;\nbridge { main; }\n"(String)
+  ));
   print(result_line(
-    , "stable hidden host: "(String)
-    , "module alpha;\nhost type Early role(i32);\nmodule zeta;\nhost type Later "
-      "role(i32);\nmodule main;\nimport zeta(Later);\nimport alpha as a;\npub fn "
-      "entry() -> . { () }\npackage guest;\nbridge { main; }\n"(String)
-    ));
+  , "stable hidden host: "(String)
+  , "module alpha;\nhost type Early role(i32);\nmodule zeta;\nhost type Later "
+    "role(i32);\nmodule main;\nimport zeta(Later);\nimport alpha as a;\npub fn "
+    "entry() -> . { () }\npackage guest;\nbridge { main; }\n"(String)
+  ));
   print(result_line(
-    , "accepted control: "(String)
-    , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
-      "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
-      "entry() -> . { helper() }\npackage guest;\nbridge { main; host; }\n"(String)
-    ));
+  , "accepted control: "(String)
+  , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
+    "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
+    "entry() -> . { helper() }\npackage guest;\nbridge { main; host; }\n"(String)
+  ));
   print(export_line(
-    , "manifest without bridge: "(String)
-    , "module main;\npub fn entry() -> . { () }\npackage guest;\n"(String)
-    ));
+  , "manifest without bridge: "(String)
+  , "module main;\npub fn entry() -> . { () }\npackage guest;\n"(String)
+  ));
   print(export_line(
-    , "empty bridge: "(String)
-    , "module main;\npub fn entry() -> . { () }\npackage guest;\nbridge {}\n"(String)
-    ));
+  , "empty bridge: "(String)
+  , "module main;\npub fn entry() -> . { () }\npackage guest;\nbridge {}\n"(String)
+  ));
   print(export_line("no manifest: "(String), "module main;\npub fn entry() -> . { () }\n"(String)))
 }

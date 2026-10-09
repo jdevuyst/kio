@@ -24,7 +24,7 @@ authors, not the starting point for products and sums.
 - [Structural products and row types](guides/products.md) — tuples, labels, row-polymorphic parameters, access, update, and product order.
 - [Structural sums and pattern matching](guides/sums.md) — `|`, named label arms, imported `widen_sum!`, and exhaustive `match!` clauses.
 - [Aliases, newtypes, visibility, and purity](guides/declarations.md) — transparent aliases, nominal and existential types, explicit recursive-data scopes, scoped exports, and transitive purity.
-- [Recursion](guides/recursion.md) — `rec newtype` / type groups versus `rec(loop)`, mandatory recursive call markers, and `rec(poly)` / `rec(cont)` annotations.
+- [Recursion](guides/recursion.md) — `rec` declarations, `recur` calls, and the `poly` / `cont` / `escape` annotations with their loop capabilities.
 - [UFCS calls](guides/ufcs.md) — `.>`, `.>>`, `.<`, and `.<<` call splices.
 - [Operators](guides/operators.md) — fixed `op` declarations and the slot vocabulary.
 - [Variadic operators](guides/variadic-operators.md) — four fold modes, compound elements, finalizers, and collection literals.

@@ -14,7 +14,9 @@ fn call_pair_explicit(x: ., y: .) -> . & . { __pair__(., ., x, y) }
 
 // Three-binder callee: `__either__`'s scheme is
 // `∀A B C. ((A | B) & (A -> C) & (B -> C)) -> C`. Every binder explicit.
-fn call_either_explicit(s: . | .) { __either__(., ., ., s, .(l: .) -> . { l }, .(r: .) -> . { r }) }
+fn call_either_explicit(s: . | .) {
+  __either__(., ., ., s, .(l: .) -> . { l }, .(r: .) -> . { r })
+}
 
 // Multi-curry-layer call: `foo`'s type is two consecutive
 // `Forall + Function` layers (`∀A. A -> ∀B. B -> .`).

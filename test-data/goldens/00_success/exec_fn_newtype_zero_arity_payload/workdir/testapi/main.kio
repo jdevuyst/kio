@@ -9,6 +9,8 @@ import testapi/io(print);
 // shape as the stored fn: `. -> I32`, callable with no args.
 newtype Lazy : . -> I32 { pub constructor mk_lazy; pub projector force }
 
-fn lazy42() -> Lazy { Lazy.mk_lazy(.() { 42(I32) }) }
+fn lazy42() -> Lazy {
+  Lazy.mk_lazy(.() { 42(I32) })
+}
 
 pub fn main() { let l = lazy42(); print(int_to_string(Lazy.force(l)())) }

@@ -135,15 +135,20 @@ pub(crate) fn tooling_keywords(probe: &ToolingProbe<'_>) -> Vec<&'static str> {
     let mut words = cursor.keywords.clone();
     if matches!(cursor.slot, CursorSlot::Value | CursorSlot::Argument) {
         if recursive_owner(probe).is_none() {
-            words.retain(|word| *word != "rec");
+            words.retain(|word| *word != "recur");
         }
     } else if cursor.slot == CursorSlot::RecursiveAnnotation {
-        let Some((_, polymorphic)) = recursive_owner(probe) else {
+        let Some((_, polymorphic, escaping)) = recursive_owner(probe) else {
             return Vec::new();
         };
         if !polymorphic {
             words.retain(|word| *word != "poly");
         }
+        words.retain(|word| match *word {
+            "escape" => escaping,
+            "cont" => !escaping,
+            _ => true,
+        });
     }
     if matches!(
         cursor.slot,
@@ -177,21 +182,18 @@ pub(crate) fn tooling_keywords(probe: &ToolingProbe<'_>) -> Vec<&'static str> {
 
 fn recursive_owner<'a>(
     probe: &'a ToolingProbe<'_>,
-) -> Option<(&'a [crate::ast::PathSegment], bool)> {
+) -> Option<(&'a [crate::ast::PathSegment], bool, bool)> {
     let offset = probe.facts.cursor.as_ref()?.atom.prefix.end;
-    if probe
+    let escaping = probe
         .facts
         .regions
         .iter()
-        .any(|region| contains(region.interior, offset) && region.lambda)
-    {
-        return None;
-    }
+        .any(|region| contains(region.interior, offset) && region.lambda);
     probe.facts.scope_prefix.iter().rev().find_map(|prefix| {
         if contains(prefix.interval, offset)
             && let ScopeSyntax::RecursiveMembers { names, polymorphic } = &prefix.syntax
         {
-            Some((names.as_slice(), *polymorphic))
+            Some((names.as_slice(), *polymorphic, escaping))
         } else {
             None
         }
@@ -217,7 +219,7 @@ pub(crate) fn tooling_candidates(probe: &ToolingProbe<'_>) -> Vec<Candidate> {
         }
         CursorSlot::RecursiveCallee => {
             let mut result = Vec::new();
-            if let Some((members, _)) = recursive_owner(probe) {
+            if let Some((members, _, _)) = recursive_owner(probe) {
                 for member in members {
                     declaration(
                         &mut result,

@@ -23,11 +23,7 @@ fn consume_box(value: Box(real.Actual)) -> real.Actual { Box.un_box(value) }
 fn call(value: real.Actual) -> d.Flag { d.id(value) }
 
 fn choose(cond: Bool, value: real.Actual) -> d.Flag {
-  if! cond {
-    value
-  } else {
-    value
-  }
+  if! cond { value } else { value }
 }
 
 fn local_nominal_under_same_named_binder[Box](value: real.Actual) -> real.Actual {

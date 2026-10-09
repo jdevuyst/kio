@@ -18,14 +18,7 @@ fn line(label: String, n: I32) {
 }
 
 fn yes_no(label: String, b: Bool) {
-  print(string_concat(
-    , label
-    , if! b {
-        "yes\n"
-      } else {
-        "no\n"
-      }
-    ))
+  print(string_concat(label, if! b { "yes\n" } else { "no\n" }))
 }
 
 pub fn main() {
@@ -34,7 +27,7 @@ pub fn main() {
   line("len(\"hello, world\") = ", string_len("hello, world"));
   line("len(concat) = ", string_len(string_concat("foo", "bar")));
   yes_no(
-    , "len(\"kio\") matches len(\"abc\") = "
-    , string_eq(int_to_string(string_len("kio")), int_to_string(string_len("abc")))
-    )
+  , "len(\"kio\") matches len(\"abc\") = "
+  , string_eq(int_to_string(string_len("kio")), int_to_string(string_len("abc")))
+  )
 }

@@ -13,35 +13,35 @@ fn variable_y(value: F64) -> Jet { constant(value).!{dy = 1.0} }
 
 pub fn add(a: Jet, b: Jet) -> Jet {
   {
-    , value = arith.add_f64(a.?{value}, b.?{value})
-    , dx = arith.add_f64(a.?{dx}, b.?{dx})
-    , dy = arith.add_f64(a.?{dy}, b.?{dy})
-    , dxx = arith.add_f64(a.?{dxx}, b.?{dxx})
-    , dxy = arith.add_f64(a.?{dxy}, b.?{dxy})
-    , dyy = arith.add_f64(a.?{dyy}, b.?{dyy})
-    }
+  , value = arith.add_f64(a.?{value}, b.?{value})
+  , dx = arith.add_f64(a.?{dx}, b.?{dx})
+  , dy = arith.add_f64(a.?{dy}, b.?{dy})
+  , dxx = arith.add_f64(a.?{dxx}, b.?{dxx})
+  , dxy = arith.add_f64(a.?{dxy}, b.?{dxy})
+  , dyy = arith.add_f64(a.?{dyy}, b.?{dyy})
+  }
 }
 
 pub fn sub(a: Jet, b: Jet) -> Jet {
   {
-    , value = arith.sub_f64(a.?{value}, b.?{value})
-    , dx = arith.sub_f64(a.?{dx}, b.?{dx})
-    , dy = arith.sub_f64(a.?{dy}, b.?{dy})
-    , dxx = arith.sub_f64(a.?{dxx}, b.?{dxx})
-    , dxy = arith.sub_f64(a.?{dxy}, b.?{dxy})
-    , dyy = arith.sub_f64(a.?{dyy}, b.?{dyy})
-    }
+  , value = arith.sub_f64(a.?{value}, b.?{value})
+  , dx = arith.sub_f64(a.?{dx}, b.?{dx})
+  , dy = arith.sub_f64(a.?{dy}, b.?{dy})
+  , dxx = arith.sub_f64(a.?{dxx}, b.?{dxx})
+  , dxy = arith.sub_f64(a.?{dxy}, b.?{dxy})
+  , dyy = arith.sub_f64(a.?{dyy}, b.?{dyy})
+  }
 }
 
 pub fn scale(factor: F64, a: Jet) -> Jet {
   {
-    , value = arith.mul_f64(factor, a.?{value})
-    , dx = arith.mul_f64(factor, a.?{dx})
-    , dy = arith.mul_f64(factor, a.?{dy})
-    , dxx = arith.mul_f64(factor, a.?{dxx})
-    , dxy = arith.mul_f64(factor, a.?{dxy})
-    , dyy = arith.mul_f64(factor, a.?{dyy})
-    }
+  , value = arith.mul_f64(factor, a.?{value})
+  , dx = arith.mul_f64(factor, a.?{dx})
+  , dy = arith.mul_f64(factor, a.?{dy})
+  , dxx = arith.mul_f64(factor, a.?{dxx})
+  , dxy = arith.mul_f64(factor, a.?{dxy})
+  , dyy = arith.mul_f64(factor, a.?{dyy})
+  }
 }
 
 // Hessian entries store derivatives themselves, not Taylor coefficients.
@@ -49,22 +49,22 @@ pub fn mul(a: Jet, b: Jet) -> Jet {
   let .({value as av, dx as ax, dy as ay, dxx as axx, dxy as axy, dyy as ayy}) = a;
   let .({value as bv, dx as bx, dy as by, dxx as bxx, dxy as bxy, dyy as byy}) = b;
   {
-    , value = arith.mul_f64(av, bv)
-    , dx = arith.add_f64(arith.mul_f64(ax, bv), arith.mul_f64(av, bx))
-    , dy = arith.add_f64(arith.mul_f64(ay, bv), arith.mul_f64(av, by))
-    , dxx = arith.add_f64(
-        , arith.add_f64(arith.mul_f64(axx, bv), arith.mul_f64(2.0, arith.mul_f64(ax, bx)))
-        , arith.mul_f64(av, bxx)
-        )
-    , dxy = arith.add_f64(
-        , arith.add_f64(arith.mul_f64(axy, bv), arith.mul_f64(ax, by))
-        , arith.add_f64(arith.mul_f64(ay, bx), arith.mul_f64(av, bxy))
-        )
-    , dyy = arith.add_f64(
-        , arith.add_f64(arith.mul_f64(ayy, bv), arith.mul_f64(2.0, arith.mul_f64(ay, by)))
-        , arith.mul_f64(av, byy)
-        )
-    }
+  , value = arith.mul_f64(av, bv)
+  , dx = arith.add_f64(arith.mul_f64(ax, bv), arith.mul_f64(av, bx))
+  , dy = arith.add_f64(arith.mul_f64(ay, bv), arith.mul_f64(av, by))
+  , dxx = arith.add_f64(
+    , arith.add_f64(arith.mul_f64(axx, bv), arith.mul_f64(2.0, arith.mul_f64(ax, bx)))
+    , arith.mul_f64(av, bxx)
+    )
+  , dxy = arith.add_f64(
+    , arith.add_f64(arith.mul_f64(axy, bv), arith.mul_f64(ax, by))
+    , arith.add_f64(arith.mul_f64(ay, bx), arith.mul_f64(av, bxy))
+    )
+  , dyy = arith.add_f64(
+    , arith.add_f64(arith.mul_f64(ayy, bv), arith.mul_f64(2.0, arith.mul_f64(ay, by)))
+    , arith.mul_f64(av, byy)
+    )
+  }
 }
 
 pub fn square(a: Jet) -> Jet { mul(a, a) }

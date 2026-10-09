@@ -18,11 +18,11 @@ pub fn keep(root: Root) -> Root { root }
 
 pub fn accept_payload(payload: Leaf | Root_tail) -> I32 {
   __either__(
-    , Leaf
-    , Root_tail
-    , I32
-    , payload
-    , .(_base: Leaf) -> I32 { 1(I32) }
-    , .(_recursive: Root_tail) -> I32 { 0(I32) }
-    )
+  , Leaf
+  , Root_tail
+  , I32
+  , payload
+  , .(_base: Leaf) -> I32 { 1(I32) }
+  , .(_recursive: Root_tail) -> I32 { 0(I32) }
+  )
 }

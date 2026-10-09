@@ -31,18 +31,18 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // result.
 fn maybe_functor() -> Functor(Maybe) {
   Functor.mk_functor(
-    , Maybe
-    , .[A][B](s, m) {
-        __either__(
-          , .
-          , A
-          , Maybe(B)
-          , Maybe.un_maybe(A, m)
-          , .(_unit) { Maybe.mk_maybe(B, __left__(., B, ())) }
-          , .(av) { Maybe.mk_maybe(B, __right__(., B, s(av))) }
-          )
-      }
-    )
+  , Maybe
+  , .[A][B](s, m) {
+      __either__(
+      , .
+      , A
+      , Maybe(B)
+      , Maybe.un_maybe(A, m)
+      , .(_unit) { Maybe.mk_maybe(B, __left__(., B, ())) }
+      , .(av) { Maybe.mk_maybe(B, __right__(., B, s(av))) }
+      )
+    }
+  )
 }
 
 // Exercise the dictionary on a present value: brand a String into
@@ -54,13 +54,13 @@ fn use_dictionary() -> String {
   let m = Maybe.mk_maybe(String, __right__(., String, "functor on maybe ok\n"(String)));
   let mapped = Functor.fmap(Maybe, dict)(String, String, .(s) { s }, m);
   __either__(
-    , .
-    , String
-    , String
-    , Maybe.un_maybe(String, mapped)
-    , .(_unit) { "absent\n"(String) }
-    , .(s) { s }
-    )
+  , .
+  , String
+  , String
+  , Maybe.un_maybe(String, mapped)
+  , .(_unit) { "absent\n"(String) }
+  , .(s) { s }
+  )
 }
 
 pub fn main() { print(use_dictionary()) }

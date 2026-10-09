@@ -37,10 +37,10 @@ pub fn cycle_value() -> Value { {cycle=}.>widen_sum!(Value) }
 pub fn fold_content[R](c: Content, on_blank: R, on_number: I32 -> R, on_formula: Expr -> R) -> R {
   match! c {
     (
-      , .(_b: Blank) { on_blank }
-      , .(n: Number) { on_number(n.?{number}) }
-      , .(f: Formula) { on_formula(f.?{formula}) }
-      )
+    , .(_b: Blank) { on_blank }
+    , .(n: Number) { on_number(n.?{number}) }
+    , .(f: Formula) { on_formula(f.?{formula}) }
+    )
   }
 }
 

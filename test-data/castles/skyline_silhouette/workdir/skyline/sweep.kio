@@ -79,32 +79,28 @@ fn finish(steps: lst.List(Step), points: lst.List(Point)) -> Trace {
 
 rec(loop) {
   pub fn run(es: lst.List(events.Event)) -> Trace {
-    rec walk(es, ms.empty(), 0, lst.nil(Step), lst.nil(Point))
+    recur walk(es, ms.empty(), 0, lst.nil(Step), lst.nil(Point))
   };
   fn walk(
-    , es: lst.List(events.Event)
-    , held: ms.Active
-    , previous: I32
-    , steps: lst.List(Step)
-    , points: lst.List(Point)
-    ) -> Trace {
+  , es: lst.List(events.Event)
+  , held: ms.Active
+  , previous: I32
+  , steps: lst.List(Step)
+  , points: lst.List(Point)
+  ) -> Trace {
     match! es.>lst.List.un_list {
       (
-        , .(e: events.Event, rest: lst.List(events.Event)) {
-            let next = apply(e, held);
-            let top = ms.peak(next);
-            let changed = logic.not(logic.eq(top, previous));
-            let row = step(events.at_of(e), events.tag_of(e), next, top, changed);
-            let marked =
-              if! changed {
-                lst.cons(point(events.at_of(e), top), points)
-              } else {
-                points
-              };
-            rec walk(rest, next, top, lst.cons(row, steps), marked)
-          }
-        , .(_empty: .) { finish(steps, points) }
-        )
+      , .(e: events.Event, rest: lst.List(events.Event)) {
+          let next = apply(e, held);
+          let top = ms.peak(next);
+          let changed = logic.not(logic.eq(top, previous));
+          let row = step(events.at_of(e), events.tag_of(e), next, top, changed);
+          let marked =
+            if! changed { lst.cons(point(events.at_of(e), top), points) } else { points };
+          recur walk(rest, next, top, lst.cons(row, steps), marked)
+        }
+      , .(_empty: .) { finish(steps, points) }
+      )
     }
   }
 }

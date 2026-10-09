@@ -61,15 +61,12 @@ fn word_panama() -> List(I32) { of6(code_p(), code_a(), code_n(), code_a(), code
 
 pub fn message() -> List(I32) {
   append(
-    , word_a()
-    , append(
-        , word_man()
-        , append(
-            , word_a()
-            , append(word_plan(), append(word_a(), append(word_canal(), word_panama())))
-            )
-        )
+  , word_a()
+  , append(
+    , word_man()
+    , append(word_a(), append(word_plan(), append(word_a(), append(word_canal(), word_panama()))))
     )
+  )
 }
 
 pub fn message_text(symbols: List(I32)) -> String {

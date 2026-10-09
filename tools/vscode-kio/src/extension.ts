@@ -283,14 +283,15 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
     emitToken(node, "operator", builder, body);
     return;
   }
-  if (node.type === "keyword_rec") {
+  if (node.type === "keyword_rec" || node.type === "keyword_recur") {
     const parent = node.parent;
     const next = node.nextNamedSibling;
-    const declaration = [
-      "recursive_function_definition",
-      "recursive_function_group",
+    const declaration = node.type === "keyword_recur" ? [
       "recursive_call_expression",
       "incomplete_recursive_call_expression",
+    ].includes(parent?.type ?? "") : [
+      "recursive_function_definition",
+      "recursive_function_group",
     ].includes(parent?.type ?? "") ||
       (parent?.type === "type_rec_group" && parent.firstNamedChild?.id === node.id) ||
       (parent?.type === "newtype_decl_head" && next?.type === "keyword_newtype") ||

@@ -21,43 +21,43 @@ import library/match(match);
 import library/row_elaborators(get, mk, op _ * __, set);
 import library/show(show);
 import library/spine_elaborators(
-  , fit
-  , flatten_prod
-  , flatten_sum
-  , narrow_prod
-  , narrow_sum
-  , one_prod
-  , one_sum
-  , reorder_prod
-  , reorder_sum
-  , spine_identity
-  , widen_prod
-  , widen_sum
-  );
+, fit
+, flatten_prod
+, flatten_sum
+, narrow_prod
+, narrow_sum
+, one_prod
+, one_sum
+, reorder_prod
+, reorder_sum
+, spine_identity
+, widen_prod
+, widen_sum
+);
 import library/tuple_elaborators(
-  , concat
-  , distinct
-  , flatten
-  , group
-  , head
-  , last
-  , map
-  , split
-  , tail
-  , zip
-  );
+, concat
+, distinct
+, flatten
+, group
+, head
+, last
+, map
+, split
+, tail
+, zip
+);
 import library/type_of(
-  , Rep_unit
-  , Type_rep
-  , Type_rep_tail1
-  , rep_bottom
-  , rep_function
-  , rep_opaque
-  , rep_product
-  , rep_sum
-  , rep_unit
-  , type_of
-  );
+, Rep_unit
+, Type_rep
+, Type_rep_tail1
+, rep_bottom
+, rep_function
+, rep_opaque
+, rep_product
+, rep_sum
+, rep_unit
+, type_of
+);
 import testapi(Bool, I32, String);
 import testapi/fmt(bool_to_string, i32_to_string);
 import testapi/io(print);
@@ -162,24 +162,24 @@ fn flatten_prod_case(s: String) -> String {
 
 fn widen_sum_case(s: String) -> String {
   __either__(
-    , .
-    , String
-    , String
-    , widen_sum!(s, . | String)
-    , .(_empty: .) -> String { "widen_sum failed\n" }
-    , .(value: String) -> String { value }
-    )
+  , .
+  , String
+  , String
+  , widen_sum!(s, . | String)
+  , .(_empty: .) -> String { "widen_sum failed\n" }
+  , .(value: String) -> String { value }
+  )
 }
 
 fn reorder_sum_case(s: String) -> String {
   __either__(
-    , String
-    , .
-    , String
-    , reorder_sum!(__right__(., String, s), String | .)
-    , .(value: String) -> String { value }
-    , .(_empty: .) -> String { "reorder_sum failed\n" }
-    )
+  , String
+  , .
+  , String
+  , reorder_sum!(__right__(., String, s), String | .)
+  , .(value: String) -> String { value }
+  , .(_empty: .) -> String { "reorder_sum failed\n" }
+  )
 }
 
 fn narrow_sum_case(s: String) -> String { narrow_sum!(__right__(String, String, s), String) }
@@ -190,24 +190,24 @@ fn one_sum_default_case(s: String) -> String { one_sum!(__right__(String, String
 
 fn flatten_sum_case(s: String) -> String {
   __either__(
-    , String
-    , . | .
-    , String
-    , flatten_sum!(__left__(String | ., ., __left__(String, ., s)), String | . | .)
-    , .(value: String) -> String { value }
-    , .(_rest: . | .) -> String { "flatten_sum failed\n" }
-    )
+  , String
+  , . | .
+  , String
+  , flatten_sum!(__left__(String | ., ., __left__(String, ., s)), String | . | .)
+  , .(value: String) -> String { value }
+  , .(_rest: . | .) -> String { "flatten_sum failed\n" }
+  )
 }
 
 fn fit_case(s: String) -> String {
   __either__(
-    , String
-    , .
-    , String
-    , fit!(s, String | .)
-    , .(value: String) -> String { value }
-    , .(_empty: .) -> String { "fit failed\n" }
-    )
+  , String
+  , .
+  , String
+  , fit!(s, String | .)
+  , .(value: String) -> String { value }
+  , .(_empty: .) -> String { "fit failed\n" }
+  )
 }
 
 fn iso_case(s: String) -> String { __fst__(String, ., iso!(((), s), String & .)) }
@@ -220,37 +220,37 @@ fn iso_unit_absorb_case(s: String) -> String { iso!((s, ()), String) }
 
 fn into_sum_widen_case(s: String) -> String {
   __either__(
-    , String
-    , .
-    , String
-    , into!(s, String | .)
-    , .(value: String) -> String { value }
-    , .(_empty: .) -> String { "into sum failed\n" }
-    )
+  , String
+  , .
+  , String
+  , into!(s, String | .)
+  , .(value: String) -> String { value }
+  , .(_empty: .) -> String { "into sum failed\n" }
+  )
 }
 
 fn onto_duplicate_collapse_case(s: String) -> String { onto!((s, s), String) }
 
 fn iso_distribute_case(s: String) -> String {
   __either__(
-    , String & .
-    , String & String
-    , String
-    , iso!((s, __left__(., String, ())), (String & .) | (String & String))
-    , .(left: String & .) -> String { __fst__(String, ., left) }
-    , .(right: String & String) -> String { __fst__(String, String, right) }
-    )
+  , String & .
+  , String & String
+  , String
+  , iso!((s, __left__(., String, ())), (String & .) | (String & String))
+  , .(left: String & .) -> String { __fst__(String, ., left) }
+  , .(right: String & String) -> String { __fst__(String, String, right) }
+  )
 }
 
 fn align_case(s: String) -> String {
   __either__(
-    , String
-    , .
-    , String
-    , align!(s, String | .)
-    , .(value: String) -> String { value }
-    , .(_empty: .) -> String { "align failed\n" }
-    )
+  , String
+  , .
+  , String
+  , align!(s, String | .)
+  , .(value: String) -> String { value }
+  , .(_empty: .) -> String { "align failed\n" }
+  )
 }
 
 fn ease_case(s: String) -> String { ease!((s, ()), String) }
@@ -266,27 +266,19 @@ fn string_clause(value: String) -> String { value }
 fn unit_clause(_empty: .) -> String { "match right: ok\n" }
 
 fn keep_match(s: String) -> String {
-  match! __left__(String, ., s) {
-    (string_clause, unit_clause)
-  }
+  match! __left__(String, ., s) { (string_clause, unit_clause) }
 }
 
 fn match_right_case() -> String {
-  match! __right__(String, ., ()) {
-    (string_clause, unit_clause)
-  }
+  match! __right__(String, ., ()) { (string_clause, unit_clause) }
 }
 
 fn match_infer_left_case() -> String {
-  match! __left__(String, ., "match infer left: ok\n") {
-    (string_clause, unit_clause)
-  }
+  match! __left__(String, ., "match infer left: ok\n") { (string_clause, unit_clause) }
 }
 
 fn match_infer_right_case() -> String {
-  match! __right__(String, ., ()) {
-    (string_clause, unit_clause)
-  }
+  match! __right__(String, ., ()) { (string_clause, unit_clause) }
 }
 
 fn match_polymorphic_clause_case() -> String {
@@ -298,24 +290,24 @@ fn match_polymorphic_clause_case() -> String {
 fn contains_elaborator_case() -> String {
   let value = widen_sum!(Foo.mk(1), Foo | (Bar & Flag));
   __either__(
-    , .
-    , .
-    , String
-    , value.>contains!(Foo)
-    , .(_yes: .) -> String { "contains elaborator: ok\n" }
-    , .(_no: .) -> String { "contains elaborator failed\n" }
-    )
+  , .
+  , .
+  , String
+  , value.>contains!(Foo)
+  , .(_yes: .) -> String { "contains elaborator: ok\n" }
+  , .(_no: .) -> String { "contains elaborator failed\n" }
+  )
 }
 
 fn type_of_case() -> String {
   __either__(
-    , Rep_unit
-    , Type_rep_tail1
-    , String
-    , Type_rep.un_type_rep(type_of!(., ()))
-    , .(_unit: Rep_unit) -> String { "type reflection: ok\n" }
-    , .(_tail: Type_rep_tail1) -> String { "type reflection failed\n" }
-    )
+  , Rep_unit
+  , Type_rep_tail1
+  , String
+  , Type_rep.un_type_rep(type_of!(., ()))
+  , .(_unit: Rep_unit) -> String { "type reflection: ok\n" }
+  , .(_tail: Type_rep_tail1) -> String { "type reflection failed\n" }
+  )
 }
 
 fn tuple_elaborators_case() -> String { concat!((((), "tuple elaborators: ok\n"), ()), _) }
@@ -713,30 +705,30 @@ equiv derive_polymorphic_law() {
 
 equiv derive_recursive_law() {
   Derived_wrap.un_derived_wrap(
-    , Derived_base
-    , derive!((derive_wrap_rule, derive_base_rule), Derived_wrap(Derived_base))
-    );
+  , Derived_base
+  , derive!((derive_wrap_rule, derive_base_rule), Derived_wrap(Derived_base))
+  );
   ()
 }
 
 equiv derive_polymorphic_recursive_law() {
   Derived_poly.un_derived_poly(
-    , Witness(String)
-    , derive!((derive_poly_rule, derive_witness_rule), Derived_poly(Witness(String)))
-    );
+  , Witness(String)
+  , derive!((derive_poly_rule, derive_witness_rule), Derived_poly(Witness(String)))
+  );
   ()
 }
 
 equiv derive_functor_law() {
   Identity.un_id(
+  , String
+  , Functor.fmap(derive!((box_functor, identity_functor), Functor(Identity)))(
     , String
-    , Functor.fmap(derive!((box_functor, identity_functor), Functor(Identity)))(
-        , String
-        , String
-        , .(value) { value }
-        , Identity.mk_id("derive functor: ok\n")
-        )
-    );
+    , String
+    , .(value) { value }
+    , Identity.mk_id("derive functor: ok\n")
+    )
+  );
   "derive functor: ok\n"
 }
 

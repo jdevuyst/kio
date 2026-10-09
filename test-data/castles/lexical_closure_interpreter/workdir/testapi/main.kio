@@ -17,7 +17,7 @@ rec(loop) fn cases(completed: I32) {
           match! input.read_tokens() {
             .(tokens: input.Tokens) {
               report.case_result(title, budget, tokens);
-              rec cases(arith.add_i32(completed, 1))
+              recur cases(arith.add_i32(completed, 1))
             };
             .(error: String) { io.print("input error: "); io.print(error); io.print("\n") }
           }

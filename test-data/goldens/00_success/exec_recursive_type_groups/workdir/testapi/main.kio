@@ -24,13 +24,13 @@ fn branch(left: Tree, right: Tree) -> Tree { widen_sum!({branch = (left, right)}
 fn first(tree: Tree) -> Tree {
   match! tree {
     (
-      , .(value: Leaf) { widen_sum!(value) }
-      , .(value: Branch) {
-          match! Branch.get(value) {
-            .(left: Tree, _right: Tree) { left }
-          }
+    , .(value: Leaf) { widen_sum!(value) }
+    , .(value: Branch) {
+        match! Branch.get(value) {
+          .(left: Tree, _right: Tree) { left }
         }
-      )
+      }
+    )
   }
 }
 
@@ -47,13 +47,13 @@ fn chain_cons(text: String, tail: Chain) -> Chain { widen_sum!(Node.mk_node((tex
 fn chain_head(chain: Chain) -> String {
   match! chain {
     (
-      , .(value: Node) {
-          match! Node.un_node(value) {
-            .(text: String, _tail: Chain) { text }
-          }
+    , .(value: Node) {
+        match! Node.un_node(value) {
+          .(text: String, _tail: Chain) { text }
         }
-      , .(_empty: .) { "empty\n" }
-      )
+      }
+    , .(_empty: .) { "empty\n" }
+    )
   }
 }
 

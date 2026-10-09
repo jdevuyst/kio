@@ -12,9 +12,13 @@ newtype Wrap[A] : A { constructor mk_wrap; projector un_wrap }
 
 fn make_pair() -> . & . { ((), ()) }
 
-fn shadowed_partition[A](value: A) { .(first, second)(tail) { tail }(value, (), ()) }
+fn shadowed_partition[A](value: A) {
+  .(first, second)(tail) { tail }(value, (), ())
+}
 
-fn later_binder_does_not_shadow(value: N) { .(first: N)[N](second) { () }(value, ., ()) }
+fn later_binder_does_not_shadow(value: N) {
+  .(first: N)[N](second) { () }(value, ., ())
+}
 
 fn repeated_binders_keep_their_layers() -> N {
   .[T](first: T)[T](second: T) { second }(., (), N, N.mk_n(()))

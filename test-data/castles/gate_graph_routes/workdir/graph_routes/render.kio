@@ -12,31 +12,28 @@ fn unreachable_g(s: Search_state) -> Bool { eq_i32(s.?{dg}, inf()) }
 
 pub fn summary(s: Search_state) -> String {
   cat(
-    , "gate_graph_routes route=A>C>E>D>F cost="
+  , "gate_graph_routes route=A>C>E>D>F cost="
+  , cat(
+    , int_to_string(s.?{df})
     , cat(
-        , int_to_string(s.?{df})
+      , " visited="
+      , cat(
+        , int_to_string(s.?{visited})
         , cat(
-            , " visited="
+          , " relaxed="
+          , cat(
+            , int_to_string(s.?{relaxed})
             , cat(
-                , int_to_string(s.?{visited})
-                , cat(
-                    , " relaxed="
-                    , cat(
-                        , int_to_string(s.?{relaxed})
-                        , cat(
-                            , " blocked_C_D_seen="
-                            , cat(
-                                , int_to_string(s.?{blocked})
-                                , cat(
-                                    , " unreachable_G="
-                                    , cat(bool_to_string(unreachable_g(s)), "\n")
-                                    )
-                                )
-                            )
-                        )
-                    )
+              , " blocked_C_D_seen="
+              , cat(
+                , int_to_string(s.?{blocked})
+                , cat(" unreachable_G=", cat(bool_to_string(unreachable_g(s)), "\n"))
                 )
+              )
             )
+          )
         )
+      )
     )
+  )
 }

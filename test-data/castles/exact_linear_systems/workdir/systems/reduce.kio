@@ -18,7 +18,7 @@ rec(loop) fn find_pivot(matrix: m.Matrix, column: I32, row: I32) -> I32 | . {
   if! a.leq_i32(l.length(matrix), row) {
     ().>widen_sum!
   } else if! q.is_zero(m.at(m.row_at(matrix, row), column)) {
-    rec find_pivot(matrix, column, a.add_i32(row, 1))
+    recur find_pivot(matrix, column, a.add_i32(row, 1))
   } else {
     row.>widen_sum!
   }
@@ -27,16 +27,16 @@ rec(loop) fn find_pivot(matrix: m.Matrix, column: I32, row: I32) -> I32 | . {
 fn eliminate(matrix: m.Matrix, pivot_row: I32, column: I32) -> m.Matrix {
   let pivot = m.row_at(matrix, pivot_row);
   l.map(
-    , .(row_index) {
-        let row = m.row_at(matrix, row_index);
-        if! integers.eq_i32(row_index, pivot_row) {
-          row
-        } else {
-          m.subtract_multiple(row, pivot, m.at(row, column))
-        }
+  , .(row_index) {
+      let row = m.row_at(matrix, row_index);
+      if! integers.eq_i32(row_index, pivot_row) {
+        row
+      } else {
+        m.subtract_multiple(row, pivot, m.at(row, column))
       }
-    , m.indices(l.length(matrix))
-    )
+    }
+  , m.indices(l.length(matrix))
+  )
 }
 
 rec(loop) fn columns(matrix: m.Matrix, variables: I32, column: I32, pivots: c.List(I32), swaps: I32) -> Reduction {
@@ -48,21 +48,16 @@ rec(loop) fn columns(matrix: m.Matrix, variables: I32, column: I32, pivots: c.Li
       let switched = m.swap(matrix, rank, found);
       let pivot = m.row_at(switched, rank);
       let normalized = m.replace(switched, rank, m.scale(pivot, m.at(pivot, column)));
-      let next_swaps =
-        if! integers.eq_i32(found, rank) {
-          swaps
-        } else {
-          a.add_i32(swaps, 1)
-        };
-      rec columns(
-        , eliminate(normalized, rank, column)
-        , variables
-        , a.add_i32(column, 1)
-        , l.append(pivots, c.singleton(column))
-        , next_swaps
-        )
+      let next_swaps = if! integers.eq_i32(found, rank) { swaps } else { a.add_i32(swaps, 1) };
+      recur columns(
+      , eliminate(normalized, rank, column)
+      , variables
+      , a.add_i32(column, 1)
+      , l.append(pivots, c.singleton(column))
+      , next_swaps
+      )
     };
-    .() { rec columns(matrix, variables, a.add_i32(column, 1), pivots, swaps) }
+    .() { recur columns(matrix, variables, a.add_i32(column, 1), pivots, swaps) }
   }
 }
 
@@ -72,11 +67,7 @@ pub fn rref(matrix: m.Matrix, variables: I32) -> Reduction {
 
 pub fn contradictory(row: m.Row, variables: I32) -> Bool {
   if! m.all_zero(l.take(variables, row)) {
-    if! q.is_zero(m.at(row, variables)) {
-      .f
-    } else {
-      .t
-    }
+    if! q.is_zero(m.at(row, variables)) { .f } else { .t }
   } else {
     .f
   }

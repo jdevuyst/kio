@@ -31,35 +31,35 @@ fn theirs_marker() -> String { "  >>>>>>> theirs" }
 
 fn conflict_block(reg: merge.Region) -> list.List(String) {
   list.append(
-    , list.cons(ours_marker(), merge.ours_of(reg))
-    , list.append(
-        , list.cons(base_marker(), merge.base_of(reg))
-        , list.cons(theirs_marker(), merge.theirs_of(reg))
-        )
+  , list.cons(ours_marker(), merge.ours_of(reg))
+  , list.append(
+    , list.cons(base_marker(), merge.base_of(reg))
+    , list.cons(theirs_marker(), merge.theirs_of(reg))
     )
+  )
 }
 
 /// The lines one region contributes to the merged document.
 fn emit(reg: merge.Region) -> list.List(String) {
   match! merge.mark_of(reg) {
     (
-      , .(_v: merge.Stable) { merge.base_of(reg) }
-      , .(_v: merge.Ours_only) { merge.ours_of(reg) }
-      , .(_v: merge.Theirs_only) { merge.theirs_of(reg) }
-      , .(_v: merge.Both_same) { merge.ours_of(reg) }
-      , .(_v: merge.Conflict) { conflict_block(reg) }
-      )
+    , .(_v: merge.Stable) { merge.base_of(reg) }
+    , .(_v: merge.Ours_only) { merge.ours_of(reg) }
+    , .(_v: merge.Theirs_only) { merge.theirs_of(reg) }
+    , .(_v: merge.Both_same) { merge.ours_of(reg) }
+    , .(_v: merge.Conflict) { conflict_block(reg) }
+    )
   }
 }
 
 rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String)) -> list.List(String) {
   match! list.List.unpack(found) {
     (
-      , .(reg: merge.Region, rest: list.List(merge.Region)) {
-          rec merged_from(rest, list.rev_onto(emit(reg), acc))
-        }
-      , .(_empty: .) { list.reverse(acc) }
-      )
+    , .(reg: merge.Region, rest: list.List(merge.Region)) {
+        recur merged_from(rest, list.rev_onto(emit(reg), acc))
+      }
+    , .(_empty: .) { list.reverse(acc) }
+    )
   }
 }
 
@@ -76,27 +76,23 @@ fn count(label: String, value: I32) { field(label, int_to_string(value)) }
 rec(loop) fn print_lines(lines: list.List(String)) {
   match! list.List.unpack(lines) {
     (
-      , .(line: String, rest: list.List(String)) { text(line); rec print_lines(rest) }
-      , .(_empty: .) { () }
-      )
+    , .(line: String, rest: list.List(String)) { text(line); recur print_lines(rest) }
+    , .(_empty: .) { () }
+    )
   }
 }
 
 fn status(conflicts: I32) -> String {
-  if! prim.int_eq(conflicts, 0) {
-    "merged"
-  } else {
-    "conflicted"
-  }
+  if! prim.int_eq(conflicts, 0) { "merged" } else { "conflicted" }
 }
 
 pub fn report(
-  , doc: scan.Doc
-  , ours: lcs.Dp
-  , theirs: lcs.Dp
-  , found_anchors: list.List(merge.Anchor)
-  , found: list.List(merge.Region)
-  ) {
+, doc: scan.Doc
+, ours: lcs.Dp
+, theirs: lcs.Dp
+, found_anchors: list.List(merge.Anchor)
+, found: list.List(merge.Region)
+) {
   let base_count = list.len(scan.base_lines(doc));
   let ours_count = list.len(scan.our_lines(doc));
   let theirs_count = list.len(scan.their_lines(doc));

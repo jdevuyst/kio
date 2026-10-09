@@ -44,25 +44,25 @@ fn short_fold(a: I32, b: I32) -> I32 { [! a, b !] }
 
 fn long_fold() -> I32 {
   [!
-    , step(1, 1)
-    , step(2, 2)
-    , step(3, 3)
-    , step(4, 4)
-    , step(5, 5)
-    , step(6, 6)
-    , step(7, 7)
-    , step(8, 8)
-    , nil()
-    !]
+  , step(1, 1)
+  , step(2, 2)
+  , step(3, 3)
+  , step(4, 4)
+  , step(5, 5)
+  , step(6, 6)
+  , step(7, 7)
+  , step(8, 8)
+  , nil()
+  !]
 }
 
 fn long_entries() -> I32 {
   [%
-    , step(1, 1) => step(2, 2)
-    , step(3, 3) => step(4, 4)
-    , step(5, 5) => step(6, 6)
-    , step(7, 7) => step(8, 8)
-    %]
+  , step(1, 1) => step(2, 2)
+  , step(3, 3) => step(4, 4)
+  , step(5, 5) => step(6, 6)
+  , step(7, 7) => step(8, 8)
+  %]
 }
 module main;
 
@@ -110,23 +110,23 @@ fn short_fold(a: I32, b: I32) -> I32 { [! a, b !] }
 
 fn long_fold() -> I32 {
   [!
-    , step(1, 1)
-    , step(2, 2)
-    , step(3, 3)
-    , step(4, 4)
-    , step(5, 5)
-    , step(6, 6)
-    , step(7, 7)
-    , step(8, 8)
-    , nil()
-    !]
+  , step(1, 1)
+  , step(2, 2)
+  , step(3, 3)
+  , step(4, 4)
+  , step(5, 5)
+  , step(6, 6)
+  , step(7, 7)
+  , step(8, 8)
+  , nil()
+  !]
 }
 
 fn long_entries() -> I32 {
   [%
-    , step(1, 1) => step(2, 2)
-    , step(3, 3) => step(4, 4)
-    , step(5, 5) => step(6, 6)
-    , step(7, 7) => step(8, 8)
-    %]
+  , step(1, 1) => step(2, 2)
+  , step(3, 3) => step(4, 4)
+  , step(5, 5) => step(6, 6)
+  , step(7, 7) => step(8, 8)
+  %]
 }

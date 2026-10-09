@@ -29,12 +29,12 @@ pub fn mux() -> expr.Expression {
 
 pub fn cases() -> lists.List(String & expr.Expression) {
   [*
-    , ("factored", factored())
-    , ("expanded", expanded())
-    , ("contradiction", contradiction())
-    , ("tautology", tautology())
-    , ("shared", shared())
-    , ("equivalent-bits", equivalent_bits())
-    , ("mux", mux())
-    *]
+  , ("factored", factored())
+  , ("expanded", expanded())
+  , ("contradiction", contradiction())
+  , ("tautology", tautology())
+  , ("shared", shared())
+  , ("equivalent-bits", equivalent_bits())
+  , ("mux", mux())
+  *]
 }

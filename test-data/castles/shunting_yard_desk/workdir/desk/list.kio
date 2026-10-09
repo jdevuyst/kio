@@ -30,7 +30,7 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 /// this one walk is what turns an accumulator back into reading order.
 rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { rec rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
+    (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
 
@@ -38,7 +38,7 @@ pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A)) }
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
   match! xs.>List.un_list {
-    (.(_head: A, rest: List(A)) { rec len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+    (.(_head: A, rest: List(A)) { recur len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
 
@@ -46,7 +46,10 @@ pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
 
 rec(loop) fn map_onto[A][B](xs: List(A), f: A -> B, acc: List(B)) -> List(B) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { rec map_onto(rest, f, cons(f(head), acc)) }, .(_empty: .) { acc })
+    (
+    , .(head: A, rest: List(A)) { recur map_onto(rest, f, cons(f(head), acc)) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -55,17 +58,12 @@ pub fn map[A][B](xs: List(A), f: A -> B) -> List(B) { reverse(map_onto(xs, f, ni
 rec(loop) fn count_onto[A](xs: List(A), pick: A -> Bool, acc: I32) -> I32 {
   match! xs.>List.un_list {
     (
-      , .(head: A, rest: List(A)) {
-          let hit =
-            if! pick(head) {
-              1
-            } else {
-              0
-            };
-          rec count_onto(rest, pick, add_i32(acc, hit))
-        }
-      , .(_empty: .) { acc }
-      )
+    , .(head: A, rest: List(A)) {
+        let hit = if! pick(head) { 1 } else { 0 };
+        recur count_onto(rest, pick, add_i32(acc, hit))
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -73,6 +71,6 @@ pub fn count[A](xs: List(A), pick: A -> Bool) -> I32 { count_onto(xs, pick, 0) }
 
 pub rec(loop) fn for_each[A](xs: List(A), action: A -> .) {
   match! xs.>List.un_list {
-    (.(head: A, rest: List(A)) { action(head); rec for_each(rest, action) }, .(_empty: .) { () })
+    (.(head: A, rest: List(A)) { action(head); recur for_each(rest, action) }, .(_empty: .) { () })
   }
 }

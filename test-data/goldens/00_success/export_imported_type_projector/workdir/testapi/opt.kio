@@ -21,9 +21,9 @@ pub fn none() -> Opt { Opt.mk_opt(widen_sum!(())) }
 // (`value.>Opt.un_opt`); this helper renders the resulting sum.
 pub fn show(payload: String | .) {
   print(string_concat(
-    , match! payload {
-        (.(s: String) { string_concat("some(", string_concat(s, ")")) }, .(_empty: .) { "none" })
-      }
-    , "\n"
-    ))
+  , match! payload {
+      (.(s: String) { string_concat("some(", string_concat(s, ")")) }, .(_empty: .) { "none" })
+    }
+  , "\n"
+  ))
 }

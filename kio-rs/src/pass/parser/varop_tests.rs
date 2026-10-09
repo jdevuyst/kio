@@ -442,20 +442,24 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
 #[test]
 fn recursive_completion_retains_group_polymorphism_and_lambda_boundaries() {
     for (source, expected, lambda) in [
-        ("module app; fn run() { rec(", None, false),
-        ("module app; rec(loop) fn run() { rec(", Some(false), false),
+        ("module app; fn run() { recur(", None, false),
         (
-            "module app; rec(loop) fn run[A]() { rec(",
+            "module app; rec(loop) fn run() { recur(",
+            Some(false),
+            false,
+        ),
+        (
+            "module app; rec(loop) fn run[A]() { recur(",
             Some(true),
             false,
         ),
         (
-            "module app; rec(loop) fn run[A]() { .() { rec(",
+            "module app; rec(loop) fn run[A]() { .() { recur(",
             Some(true),
             true,
         ),
         (
-            "module app; rec(loop) fn run[A]() { .x. { rec(",
+            "module app; rec(loop) fn run[A]() { .x. { recur(",
             Some(true),
             true,
         ),

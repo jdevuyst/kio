@@ -15,7 +15,7 @@ rec(loop) fn direct_partial(n: I32) -> Box(I32) {
   if! leq_i32(n, 0) {
     Box.mk_box(10)
   } else {
-    let .(box: Box(_)) = rec(cont) direct_partial(0);
+    let .(box: Box(_)) = recur(cont) direct_partial(0);
     box
   }
 }
@@ -24,7 +24,7 @@ rec(loop) fn nested_partial(n: I32) -> Box(I32) {
   if! leq_i32(n, 0) {
     Box.mk_box(20)
   } else {
-    let .(box: Box(_)) = choose_box(0, rec(cont) nested_partial(0));
+    let .(box: Box(_)) = choose_box(0, recur(cont) nested_partial(0));
     box
   }
 }

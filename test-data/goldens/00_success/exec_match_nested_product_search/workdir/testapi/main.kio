@@ -25,7 +25,7 @@ pub fn main() {
   handle(widen_sum!((), . | Other | (Version & Tail)));
   handle(widen_sum!({other = "other\n"}, . | Other | (Version & Tail)));
   handle(widen_sum!(
-    , ({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"})
-    , . | Other | (Version & Tail)
-    ))
+  , ({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"})
+  , . | Other | (Version & Tail)
+  ))
 }

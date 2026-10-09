@@ -20,8 +20,8 @@ type Applied[*F][A][B] =
   | A
   // before application
   | F(
-    // type argument
-    , B
-    // closing argument
-    )
+  // type argument
+  , B
+  // closing argument
+  )
   ;

@@ -73,7 +73,7 @@ pub fn tag_name(tag: I32) -> String {
 
 rec(loop) fn fold_from[S](cells: Array(I32), step: (S & I32) -> S, addr: I32, acc: S) -> S {
   if! int_lt(addr, top(cells)) {
-    rec fold_from(cells, step, next_object(cells, addr), step(acc, addr))
+    recur fold_from(cells, step, next_object(cells, addr), step(acc, addr))
   } else {
     acc
   }
@@ -88,15 +88,15 @@ pub fn fold_objects[S](cells: Array(I32), step: (S & I32) -> S, init: S) -> S {
 }
 
 rec(loop) fn fold_field_from[S](
-  , cells: Array(I32)
-  , addr: I32
-  , step: (S & I32) -> S
-  , index: I32
-  , count: I32
-  , acc: S
-  ) -> S {
+, cells: Array(I32)
+, addr: I32
+, step: (S & I32) -> S
+, index: I32
+, count: I32
+, acc: S
+) -> S {
   if! int_lt(index, count) {
-    rec fold_field_from(cells, addr, step, add_i32(index, 1), count, step(acc, index))
+    recur fold_field_from(cells, addr, step, add_i32(index, 1), count, step(acc, index))
   } else {
     acc
   }

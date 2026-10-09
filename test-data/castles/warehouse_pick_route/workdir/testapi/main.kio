@@ -12,12 +12,12 @@ import testapi/text as text;
 labels Choice = { chosen_index: I32, chosen_dist: I32 };
 
 labels Plan = {
-  , score: I32
-  , route: Array(I32)
-  , blocked: Array(Bool)
-  , picks: Array(I32)
-  , qty: Array(I32)
-  };
+, score: I32
+, route: Array(I32)
+, blocked: Array(Bool)
+, picks: Array(I32)
+, qty: Array(I32)
+};
 
 fn node_count() -> I32 { 6 }
 
@@ -38,31 +38,19 @@ fn edge_index(from_node: I32, to_node: I32) -> I32 {
 }
 
 fn eq_i32(left: I32, right: I32) -> Bool {
-  if! arith.leq_i32(left, right) {
-    arith.leq_i32(right, left)
-  } else {
-    .f
-  }
+  if! arith.leq_i32(left, right) { arith.leq_i32(right, left) } else { .f }
 }
 
 fn lt_i32(left: I32, right: I32) -> Bool {
   if! arith.leq_i32(left, right) {
-    if! eq_i32(left, right) {
-      .f
-    } else {
-      .t
-    }
+    if! eq_i32(left, right) { .f } else { .t }
   } else {
     .f
   }
 }
 
 fn not(value: Bool) -> Bool {
-  if! value {
-    .f
-  } else {
-    .t
-  }
+  if! value { .f } else { .t }
 }
 
 fn set_edge(graph: Array(I32), from_node: I32, to_node: I32, score: I32) {
@@ -73,7 +61,7 @@ fn set_edge(graph: Array(I32), from_node: I32, to_node: I32, score: I32) {
 rec(loop) fn set_diagonal(node: I32, graph: Array(I32)) -> Array(I32) {
   if! arith.leq_i32(node, last_node_index()) {
     array.array_set(graph, edge_index(node, node), 0);
-    rec set_diagonal(arith.add_i32(node, 1), graph)
+    recur set_diagonal(arith.add_i32(node, 1), graph)
   } else {
     graph
   }
@@ -118,23 +106,23 @@ fn build_pick_qty() -> Array(I32) {
 fn open_weight(weight: I32) -> Bool { lt_i32(weight, blocked_distance()) }
 
 rec(loop) fn nearest_unsettled(
-  , node: I32
-  , distances: Array(I32)
-  , settled: Array(Bool)
-  , best_node: I32
-  , best_dist: I32
-  ) -> I32 {
+, node: I32
+, distances: Array(I32)
+, settled: Array(Bool)
+, best_node: I32
+, best_dist: I32
+) -> I32 {
   if! arith.leq_i32(node, last_node_index()) {
     let seen = array.array_get(settled, node);
     let dist = array.array_get(distances, node);
     if! not(seen) {
       if! lt_i32(dist, best_dist) {
-        rec nearest_unsettled(arith.add_i32(node, 1), distances, settled, node, dist)
+        recur nearest_unsettled(arith.add_i32(node, 1), distances, settled, node, dist)
       } else {
-        rec nearest_unsettled(arith.add_i32(node, 1), distances, settled, best_node, best_dist)
+        recur nearest_unsettled(arith.add_i32(node, 1), distances, settled, best_node, best_dist)
       }
     } else {
-      rec nearest_unsettled(arith.add_i32(node, 1), distances, settled, best_node, best_dist)
+      recur nearest_unsettled(arith.add_i32(node, 1), distances, settled, best_node, best_dist)
     }
   } else {
     best_node
@@ -150,12 +138,12 @@ rec(loop) fn relax_neighbors(neighbor: I32, current: I32, graph: Array(I32), dis
       let previous = array.array_get(distances, neighbor);
       if! lt_i32(candidate, previous) {
         array.array_set(distances, neighbor, candidate);
-        rec relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
+        recur relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
       } else {
-        rec relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
+        recur relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
       }
     } else {
-      rec relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
+      recur relax_neighbors(arith.add_i32(neighbor, 1), current, graph, distances)
     }
   } else {
     distances
@@ -163,11 +151,11 @@ rec(loop) fn relax_neighbors(neighbor: I32, current: I32, graph: Array(I32), dis
 }
 
 rec(loop) fn relax_rounds(
-  , round: I32
-  , graph: Array(I32)
-  , distances: Array(I32)
-  , settled: Array(Bool)
-  ) -> Array(I32) {
+, round: I32
+, graph: Array(I32)
+, distances: Array(I32)
+, settled: Array(Bool)
+) -> Array(I32) {
   if! arith.leq_i32(round, last_node_index()) {
     let current = nearest_unsettled(0, distances, settled, node_count(), blocked_distance());
     if! eq_i32(current, node_count()) {
@@ -175,7 +163,7 @@ rec(loop) fn relax_rounds(
     } else {
       array.array_set(settled, current, .t);
       let relaxed = relax_neighbors(0, current, graph, distances);
-      rec relax_rounds(arith.add_i32(round, 1), graph, relaxed, settled)
+      recur relax_rounds(arith.add_i32(round, 1), graph, relaxed, settled)
     }
   } else {
     distances
@@ -190,32 +178,39 @@ fn shortest_from(start: I32, graph: Array(I32)) -> Array(I32) {
 }
 
 rec(loop) fn choose_pick(
-  , index: I32
-  , pick_nodes: Array(I32)
-  , picked: Array(Bool)
-  , distances: Array(I32)
-  , best_index: I32
-  , best_dist: I32
-  ) -> Choice {
+, index: I32
+, pick_nodes: Array(I32)
+, picked: Array(Bool)
+, distances: Array(I32)
+, best_index: I32
+, best_dist: I32
+) -> Choice {
   if! arith.leq_i32(index, arith.sub_i32(array.array_len(pick_nodes), 1)) {
     let already_picked = array.array_get(picked, index);
     if! not(already_picked) {
       let node = array.array_get(pick_nodes, index);
       let distance = array.array_get(distances, node);
       if! lt_i32(distance, best_dist) {
-        rec choose_pick(arith.add_i32(index, 1), pick_nodes, picked, distances, index, distance)
+        recur choose_pick(arith.add_i32(index, 1), pick_nodes, picked, distances, index, distance)
       } else {
-        rec choose_pick(
-          , arith.add_i32(index, 1)
-          , pick_nodes
-          , picked
-          , distances
-          , best_index
-          , best_dist
-          )
+        recur choose_pick(
+        , arith.add_i32(index, 1)
+        , pick_nodes
+        , picked
+        , distances
+        , best_index
+        , best_dist
+        )
       }
     } else {
-      rec choose_pick(arith.add_i32(index, 1), pick_nodes, picked, distances, best_index, best_dist)
+      recur choose_pick(
+      , arith.add_i32(index, 1)
+      , pick_nodes
+      , picked
+      , distances
+      , best_index
+      , best_dist
+      )
     }
   } else {
     {chosen_index = best_index, chosen_dist = best_dist}
@@ -223,14 +218,14 @@ rec(loop) fn choose_pick(
 }
 
 rec(loop) fn plan_picks(
-  , remaining: I32
-  , current: I32
-  , score: I32
-  , graph: Array(I32)
-  , pick_nodes: Array(I32)
-  , picked: Array(Bool)
-  , route: Array(I32)
-  ) -> I32 {
+, remaining: I32
+, current: I32
+, score: I32
+, graph: Array(I32)
+, pick_nodes: Array(I32)
+, picked: Array(Bool)
+, route: Array(I32)
+) -> I32 {
   if! arith.leq_i32(remaining, 0) {
     let back = shortest_from(current, graph);
     let home_dist = array.array_get(back, packing_node());
@@ -244,15 +239,15 @@ rec(loop) fn plan_picks(
     let chosen_node = array.array_get(pick_nodes, chosen_index);
     array.array_set(picked, chosen_index, .t);
     array.array_push(route, chosen_node);
-    rec plan_picks(
-      , arith.sub_i32(remaining, 1)
-      , chosen_node
-      , arith.add_i32(score, chosen_dist)
-      , graph
-      , pick_nodes
-      , picked
-      , route
-      )
+    recur plan_picks(
+    , arith.sub_i32(remaining, 1)
+    , chosen_node
+    , arith.add_i32(score, chosen_dist)
+    , graph
+    , pick_nodes
+    , picked
+    , route
+    )
   }
 }
 
@@ -273,13 +268,7 @@ fn node_name(node: I32) -> String {
 }
 
 fn sku_name(node: I32) -> String {
-  if! eq_i32(node, 2) {
-    "SKU-17"
-  } else if! eq_i32(node, 3) {
-    "SKU-42"
-  } else {
-    "SKU-88"
-  }
+  if! eq_i32(node, 2) { "SKU-17" } else if! eq_i32(node, 3) { "SKU-42" } else { "SKU-88" }
 }
 
 rec(loop) fn route_text(index: I32, route: Array(I32), acc: String) -> String {
@@ -291,7 +280,7 @@ rec(loop) fn route_text(index: I32, route: Array(I32), acc: String) -> String {
     } else {
       text.string_concat(acc, text.string_concat(" -> ", name))
     };
-    rec route_text(arith.add_i32(index, 1), route, next)
+    recur route_text(arith.add_i32(index, 1), route, next)
   } else {
     acc
   }
@@ -302,7 +291,7 @@ rec(loop) fn pick_index_for_node(index: I32, node: I32, pick_nodes: Array(I32)) 
     if! eq_i32(array.array_get(pick_nodes, index), node) {
       index
     } else {
-      rec pick_index_for_node(arith.add_i32(index, 1), node, pick_nodes)
+      recur pick_index_for_node(arith.add_i32(index, 1), node, pick_nodes)
     }
   } else {
     node_count()
@@ -311,21 +300,21 @@ rec(loop) fn pick_index_for_node(index: I32, node: I32, pick_nodes: Array(I32)) 
 
 fn pick_line(node: I32, qty: I32) -> String {
   text.string_concat(
-    , sku_name(node)
-    , text.string_concat(
-        , " x"
-        , text.string_concat(fmt.int_to_string(qty), text.string_concat(" @ ", node_name(node)))
-        )
+  , sku_name(node)
+  , text.string_concat(
+    , " x"
+    , text.string_concat(fmt.int_to_string(qty), text.string_concat(" @ ", node_name(node)))
     )
+  )
 }
 
 rec(loop) fn pick_summary(
-  , index: I32
-  , route: Array(I32)
-  , pick_nodes: Array(I32)
-  , qty: Array(I32)
-  , acc: String
-  ) -> String {
+, index: I32
+, route: Array(I32)
+, pick_nodes: Array(I32)
+, qty: Array(I32)
+, acc: String
+) -> String {
   if! arith.leq_i32(index, pick_count()) {
     let route_node = array.array_get(route, index);
     let qty_index = pick_index_for_node(0, route_node, pick_nodes);
@@ -335,7 +324,7 @@ rec(loop) fn pick_summary(
     } else {
       text.string_concat(acc, text.string_concat("; ", next_line))
     };
-    rec pick_summary(arith.add_i32(index, 1), route, pick_nodes, qty, next)
+    recur pick_summary(arith.add_i32(index, 1), route, pick_nodes, qty, next)
   } else {
     acc
   }
@@ -361,9 +350,9 @@ pub fn main() {
   print_line("warehouse pick route");
   print_line(text.string_concat("nodes: ", fmt.int_to_string(node_count())));
   print_line(text.string_concat(
-    , "blocked crosslink A1-rear <-> B1-rear: "
-    , fmt.bool_to_string(array.array_get(plan.?{blocked}, edge_index(2, 3)))
-    ));
+  , "blocked crosslink A1-rear <-> B1-rear: "
+  , fmt.bool_to_string(array.array_get(plan.?{blocked}, edge_index(2, 3)))
+  ));
   print_line(text.string_concat("route: ", route_text(0, route, "")));
   print_line(text.string_concat("picks: ", pick_summary(1, route, plan.?{picks}, plan.?{qty}, "")));
   print_line(text.string_concat("travel score: ", fmt.int_to_string(plan.?{score})))

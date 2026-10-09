@@ -9,28 +9,16 @@ import testapi(Bool, String);
 import testapi/io(print);
 
 fn word(flag: Bool) -> String {
-  if! flag {
-    "yes"
-  } else {
-    "no"
-  }
+  if! flag { "yes" } else { "no" }
 }
 
 fn mark(flag: Bool) -> String {
-  if! flag {
-    "[X]"
-  } else {
-    "[ ]"
-  }
+  if! flag { "[X]" } else { "[ ]" }
 }
 
 fn shape_code(card: Card) -> String {
   if! card.?{crossed} {
-    if! card.?{high} {
-      "XH"
-    } else {
-      "X-"
-    }
+    if! card.?{high} { "XH" } else { "X-" }
   } else if! card.?{high} {
     "-H"
   } else {

@@ -24,20 +24,12 @@ pub fn open_cell() -> Cell { {open=}.>widen_sum!(Cell) }
 
 /// Logical conjunction over `Bool`.
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 /// Logical disjunction over `Bool`.
 pub fn or(a: Bool, b: Bool) -> Bool {
-  if! a {
-    .t
-  } else {
-    b
-  }
+  if! a { .t } else { b }
 }
 
 /// Integer equality, derived from the antisymmetry of `<=`.
@@ -94,7 +86,7 @@ pub fn is_item(seed: I32, w: I32, h: I32, x: I32, y: I32) -> Bool {
 }
 
 rec(loop) {
-  pub fn checksum(seed: I32, w: I32, h: I32) -> I32 { rec scan(seed, w, h, 0, 0) };
+  pub fn checksum(seed: I32, w: I32, h: I32) -> I32 { recur scan(seed, w, h, 0, 0) };
   fn scan(seed: I32, w: I32, h: I32, i: I32, acc: I32) -> I32 {
     if! leq_i32(mul_i32(w, h), i) {
       acc
@@ -102,7 +94,7 @@ rec(loop) {
       let x = mod_i32(i, w);
       let y = div_i32(i, w);
       let v = mix(seed_state(seed), x, y);
-      rec scan(seed, w, h, add_i32(i, 1), mod_i32(add_i32(acc, v), modulus()))
+      recur scan(seed, w, h, add_i32(i, 1), mod_i32(add_i32(acc, v), modulus()))
     }
   }
 }

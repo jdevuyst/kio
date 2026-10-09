@@ -2,4 +2,6 @@ module main;
 
 import elab(observe);
 
-fn witness() { observe!(.[A](value: A) { value }) }
+fn witness() {
+  observe!(.[A](value: A) { value })
+}

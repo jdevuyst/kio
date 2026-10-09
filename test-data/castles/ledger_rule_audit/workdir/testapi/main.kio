@@ -3,21 +3,21 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import ledger_rule_audit/state(
-  , Ledger
-  , balance_value
-  , credit
-  , credit_count_value
-  , credit_total_value
-  , debit
-  , debit_count_value
-  , debit_total_value
-  , empty
-  , fee
-  , fee_count_value
-  , fee_total_value
-  , invalid
-  , invalid_count_value
-  );
+, Ledger
+, balance_value
+, credit
+, credit_count_value
+, credit_total_value
+, debit
+, debit_count_value
+, debit_total_value
+, empty
+, fee
+, fee_count_value
+, fee_total_value
+, invalid
+, invalid_count_value
+);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -50,60 +50,60 @@ fn print_unknown(command: String) {
 fn apply_credit(state: Ledger) -> Ledger {
   match! io.read_ascii_line() {
     (
-      , .(amount_text: String) {
-          match! fmt.string_to_int(amount_text) {
-            (
-              , .(amount: I32) {
-                  let next = credit(state, amount);
-                  print_amount_result("credit", amount, next);
-                  next
-                }
-              , .(_bad: .) { print_invalid_amount("credit", amount_text); invalid(state) }
-              )
-          }
+    , .(amount_text: String) {
+        match! fmt.string_to_int(amount_text) {
+          (
+          , .(amount: I32) {
+              let next = credit(state, amount);
+              print_amount_result("credit", amount, next);
+              next
+            }
+          , .(_bad: .) { print_invalid_amount("credit", amount_text); invalid(state) }
+          )
         }
-      , .(_eof: .) { print_missing_amount("credit"); invalid(state) }
-      )
+      }
+    , .(_eof: .) { print_missing_amount("credit"); invalid(state) }
+    )
   }
 }
 
 fn apply_debit(state: Ledger) -> Ledger {
   match! io.read_ascii_line() {
     (
-      , .(amount_text: String) {
-          match! fmt.string_to_int(amount_text) {
-            (
-              , .(amount: I32) {
-                  let next = debit(state, amount);
-                  print_amount_result("debit", amount, next);
-                  next
-                }
-              , .(_bad: .) { print_invalid_amount("debit", amount_text); invalid(state) }
-              )
-          }
+    , .(amount_text: String) {
+        match! fmt.string_to_int(amount_text) {
+          (
+          , .(amount: I32) {
+              let next = debit(state, amount);
+              print_amount_result("debit", amount, next);
+              next
+            }
+          , .(_bad: .) { print_invalid_amount("debit", amount_text); invalid(state) }
+          )
         }
-      , .(_eof: .) { print_missing_amount("debit"); invalid(state) }
-      )
+      }
+    , .(_eof: .) { print_missing_amount("debit"); invalid(state) }
+    )
   }
 }
 
 fn apply_fee(state: Ledger) -> Ledger {
   match! io.read_ascii_line() {
     (
-      , .(amount_text: String) {
-          match! fmt.string_to_int(amount_text) {
-            (
-              , .(amount: I32) {
-                  let next = fee(state, amount);
-                  print_amount_result("fee", amount, next);
-                  next
-                }
-              , .(_bad: .) { print_invalid_amount("fee", amount_text); invalid(state) }
-              )
-          }
+    , .(amount_text: String) {
+        match! fmt.string_to_int(amount_text) {
+          (
+          , .(amount: I32) {
+              let next = fee(state, amount);
+              print_amount_result("fee", amount, next);
+              next
+            }
+          , .(_bad: .) { print_invalid_amount("fee", amount_text); invalid(state) }
+          )
         }
-      , .(_eof: .) { print_missing_amount("fee"); invalid(state) }
-      )
+      }
+    , .(_eof: .) { print_missing_amount("fee"); invalid(state) }
+    )
   }
 }
 
@@ -132,16 +132,16 @@ fn apply_command(command: String, state: Ledger) -> Ledger {
 rec(loop) fn replay(state: Ledger) -> Ledger {
   match! io.read_ascii_line() {
     (
-      , .(command: String) {
-          if! text.string_eq(command, "end") {
-            io.print("end\n");
-            state
-          } else {
-            rec replay(apply_command(command, state))
-          }
+    , .(command: String) {
+        if! text.string_eq(command, "end") {
+          io.print("end\n");
+          state
+        } else {
+          recur replay(apply_command(command, state))
         }
-      , .(_eof: .) { io.print("eof\n"); state }
-      )
+      }
+    , .(_eof: .) { io.print("eof\n"); state }
+    )
   }
 }
 

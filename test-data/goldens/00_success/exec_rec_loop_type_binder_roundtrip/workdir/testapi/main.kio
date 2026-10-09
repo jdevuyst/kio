@@ -11,7 +11,7 @@ rec(loop) fn map_after[A][B](remaining: I32, transform: A -> B, value: A) -> B {
   if! leq_i32(remaining, 0) {
     transform(value)
   } else {
-    rec map_after(sub_i32(remaining, 1), transform, value)
+    recur map_after(sub_i32(remaining, 1), transform, value)
   }
 }
 

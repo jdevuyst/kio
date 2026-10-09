@@ -8,29 +8,17 @@ import testapi(Bool, I32);
 import testapi/arith(leq_i32);
 
 fn not(value: Bool) -> Bool {
-  if! value {
-    .f
-  } else {
-    .t
-  }
+  if! value { .f } else { .t }
 }
 
 /// Strict in both arguments, like any Kio call: a guard that must not
 /// evaluate its second operand uses `if` instead.
 pub fn and(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    .f
-  }
+  if! left { right } else { .f }
 }
 
 pub fn bool_eq(left: Bool, right: Bool) -> Bool {
-  if! left {
-    right
-  } else {
-    not(right)
-  }
+  if! left { right } else { not(right) }
 }
 
 /// `a == b` by the antisymmetry of a total order.

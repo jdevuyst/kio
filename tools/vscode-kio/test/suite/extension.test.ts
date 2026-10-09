@@ -390,16 +390,16 @@ suite("Kio extension — activation & highlighting", () => {
     assert.ok((await read()).some((token) => token.text === "if" && token.type === 11));
     await replace("[* if(x) *]", "[*F] F(.) -> F(.)");
     assert.ok((await read()).some((token) => token.text === "F" && token.type === 9));
-    await replace("[*F] F(.) -> F(.)", "rec");
-    assert.ok((await read()).some((token) => token.text === "rec" && token.type === 3));
-    await replace("rec", "rec(poly)");
-    assert.ok((await read()).some((token) => token.text === "rec" && token.type === 11));
+    await replace("[*F] F(.) -> F(.)", "recur");
+    assert.ok((await read()).some((token) => token.text === "recur" && token.type === 3));
+    await replace("recur", "recur(poly)");
+    assert.ok((await read()).some((token) => token.text === "recur" && token.type === 11));
     assert.ok((await read()).some((token) => token.text === "poly" && token.type === 3));
-    await replace("rec(poly)", "rec(poly) again(x)");
-    assert.ok((await read()).some((token) => token.text === "rec" && token.type === 0));
+    await replace("recur(poly)", "recur(poly) again(x)");
+    assert.ok((await read()).some((token) => token.text === "recur" && token.type === 0));
     assert.ok((await read()).some((token) => token.text === "poly" && token.type === 0));
-    await replace("rec(poly) again(x)", "rec(poly)");
-    assert.ok((await read()).some((token) => token.text === "rec" && token.type === 11));
+    await replace("recur(poly) again(x)", "recur(poly)");
+    assert.ok((await read()).some((token) => token.text === "recur" && token.type === 11));
     assert.ok((await read()).some((token) => token.text === "poly" && token.type === 3));
     const balanced = "module probe; fn run() { .x. { x1 } pub(probe) fn neighbor() { () } }";
     await replace(doc.getText(), balanced);
@@ -495,6 +495,57 @@ suite("Kio extension — real kio lsp", () => {
       diagnostic.source === "kio" && diagnostic.severity === vscode.DiagnosticSeverity.Error));
   });
 
+  test("recursive annotation completion removes the implied continuation mode", async () => {
+    for (const [name, annotations, canonical] of [
+      ["single-line", "cont, ", "escape"],
+      ["multiline", "cont, // 😀 keep\n ", " // 😀 keep\n escape"],
+    ]) {
+      const fixture = `recursive-completion-${name}`;
+      const root = path.join(workspaceDir(), fixture);
+      fs.mkdirSync(root);
+      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+      fs.writeFileSync(path.join(root, "support.kio"),
+        "module support; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;\n");
+      const source = `module main; import support as host; pub rec(host.drive) fn again(x: .) { let callback = .() -> . { recur(${annotations}) again(x) }; callback() }\n`;
+      fs.writeFileSync(path.join(root, "main.kio"), source);
+      const doc = await openFixture(`${fixture}/main.kio`);
+      const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)
+        .filter((diagnostic) => diagnostic.source === "kio"
+          && diagnostic.severity === vscode.DiagnosticSeverity.Error);
+      await waitFor(() => errors().length > 0, 20_000, "recursive annotation diagnostic");
+      const position = doc.positionAt(source.indexOf(") again(x)"));
+      const result = await completeEditorRequest(() =>
+        vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider", doc.uri, position,
+        ), () => doc.version, Date.now() + 20_000);
+      assert.ok(result);
+      assert.deepStrictEqual(result.items.map((item) => typeof item.label === "string" ? item.label : item.label.label), ["escape"]);
+      const item = result.items[0]!;
+      assert.ok(typeof item.insertText === "string");
+      assert.ok(item.range);
+      const range = item.range instanceof vscode.Range ? item.range : item.range.replacing;
+      assert.ok(range.isSingleLine, "the primary completion edit is confined to the cursor line");
+      if (name === "multiline") assert.ok(item.additionalTextEdits?.length);
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(position, position);
+      await vscode.commands.executeCommand("editor.action.triggerSuggest");
+      const deadline = Date.now() + 5_000;
+      while (doc.getText() === source && Date.now() < deadline) {
+        await vscode.commands.executeCommand("acceptSelectedSuggestion");
+        if (doc.getText() === source) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert.strictEqual(doc.getText(), source.replace(`recur(${annotations})`, `recur(${canonical})`));
+      await waitFor(() => errors().length === 0, 20_000, "canonical escape completion reanalysis");
+      const after = await completeEditorRequest(() =>
+        vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider", doc.uri,
+          doc.positionAt(doc.getText().indexOf(") again(x)")),
+        ), () => doc.version, Date.now() + 5_000);
+      assert.ok(after);
+      assert.ok(!after.items.some((candidate) => candidate.label === "cont"));
+    }
+  });
+
   test("native quick fixes apply without an AI extension and leave capability choices explicit", async () => {
     for (const [name, source, expected, title] of [
       [
@@ -512,8 +563,20 @@ suite("Kio extension — real kio lsp", () => {
       [
         "call",
         "module main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n",
-        "module main; import support as host; pub rec(host.drive) fn again(x: .) { rec again(x) }\n",
-        "Mark recursive call with `rec`",
+        "module main; import support as host; pub rec(host.drive) fn again(x: .) { recur again(x) }\n",
+        "Mark recursive call with `recur`",
+      ],
+      [
+        "call-escape",
+        "module main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { again(x) }; callback() }\n",
+        "module main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { recur(escape) again(x) }; callback() }\n",
+        "Mark recursive call with `recur(escape)`",
+      ],
+      [
+        "escape-to-cont",
+        "module main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
+        "module main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(cont) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
+        "Correct recursive call annotations",
       ],
       [
         "qualified-head",
@@ -529,7 +592,7 @@ suite("Kio extension — real kio lsp", () => {
       ],
       [
         "definition",
-        "module main; pub fn again(x: .) { rec again(x) }\n",
+        "module main; pub fn again(x: .) { recur again(x) }\n",
         undefined,
         undefined,
       ],
@@ -539,7 +602,7 @@ suite("Kio extension — real kio lsp", () => {
       fs.mkdirSync(root);
       fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
       fs.writeFileSync(path.join(root, "support.kio"),
-        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n");
+        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn reenter[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n");
       fs.writeFileSync(path.join(root, "main.kio"), source);
       const doc = await openFixture(`${relative}/main.kio`);
       const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)

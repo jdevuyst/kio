@@ -11,11 +11,7 @@ import testapi/text as text;
 pub labels Tree = { symbols: Array(I32), ends: Array(I32) };
 
 pub fn equal(a: I32, b: I32) -> Bool {
-  if! arith.leq_i32(a, b) {
-    arith.leq_i32(b, a)
-  } else {
-    .f
-  }
+  if! arith.leq_i32(a, b) { arith.leq_i32(b, a) } else { .f }
 }
 
 pub fn less(a: I32, b: I32) -> Bool { arith.leq_i32(a, arith.sub_i32(b, 1)) }
@@ -47,14 +43,14 @@ rec(loop) fn render_forest(tree: Tree, start: I32, stop: I32) -> String {
     let next = after(tree, start);
     let children = if! less(arith.add_i32(start, 1), next) {
       text.string_concat(
-        , "("
-        , text.string_concat(rec(cont) render_forest(tree, arith.add_i32(start, 1), next), ")")
-        )
+      , "("
+      , text.string_concat(recur(cont) render_forest(tree, arith.add_i32(start, 1), next), ")")
+      )
     } else {
       ""
     };
     let rest = if! less(next, stop) {
-      text.string_concat(",", rec(cont) render_forest(tree, next, stop))
+      text.string_concat(",", recur(cont) render_forest(tree, next, stop))
     } else {
       ""
     };

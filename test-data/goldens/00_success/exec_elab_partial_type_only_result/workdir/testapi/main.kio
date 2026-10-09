@@ -5,7 +5,9 @@ import testapi/io as io;
 
 fn residual() -> [B] . { phantom!((), .) }
 
-fn explicit_unit() -> [B] . -> . { phantom!(.(_unit: .) { () }, . -> .) }
+fn explicit_unit() -> [B] . -> . {
+  phantom!(.(_unit: .) { () }, . -> .)
+}
 
 pub fn main() {
   let saved = residual();

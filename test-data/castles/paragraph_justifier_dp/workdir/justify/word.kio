@@ -29,21 +29,21 @@ rec(loop) fn span_onto(xs: Words, cursor: I32, from: I32, to: I32, used: I32) ->
     used
   } else match! xs.>List.unpack {
     (
-      , .(w: Word, rest: Words) {
-          if! lt_i32(cursor, from) {
-            rec span_onto(rest, add_i32(cursor, 1), from, to, used)
-          } else {
-            rec span_onto(
-              , rest
-              , add_i32(cursor, 1)
-              , from
-              , to
-              , add_i32(add_i32(used, 1), word_width(w))
-              )
-          }
+    , .(w: Word, rest: Words) {
+        if! lt_i32(cursor, from) {
+          recur span_onto(rest, add_i32(cursor, 1), from, to, used)
+        } else {
+          recur span_onto(
+          , rest
+          , add_i32(cursor, 1)
+          , from
+          , to
+          , add_i32(add_i32(used, 1), word_width(w))
+          )
         }
-      , .(_empty: .) { used }
-      )
+      }
+    , .(_empty: .) { used }
+    )
   }
 }
 
@@ -56,15 +56,15 @@ pub fn span_used(xs: Words, from: I32, to: I32) -> I32 { span_onto(xs, 0, from, 
 rec(loop) fn widest_onto(xs: Words, acc: I32) -> I32 {
   match! xs.>List.unpack {
     (
-      , .(w: Word, rest: Words) {
-          if! lt_i32(acc, word_width(w)) {
-            rec widest_onto(rest, word_width(w))
-          } else {
-            rec widest_onto(rest, acc)
-          }
+    , .(w: Word, rest: Words) {
+        if! lt_i32(acc, word_width(w)) {
+          recur widest_onto(rest, word_width(w))
+        } else {
+          recur widest_onto(rest, acc)
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

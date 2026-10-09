@@ -70,11 +70,7 @@ fn next_cursors(arr: Array(I32), pivot: I32, i: I32, j: I32) -> I32 & I32 {
   let i_in_place = leq_i32(array_get(arr, i), pivot);
   let j_in_place = leq_i32(pivot, array_get(arr, j));
   if! i_in_place {
-    if! j_in_place {
-      (add_i32(i, 1), sub_i32(j, 1))
-    } else {
-      (add_i32(i, 1), j)
-    }
+    if! j_in_place { (add_i32(i, 1), sub_i32(j, 1)) } else { (add_i32(i, 1), j) }
   } else if! j_in_place {
     (i, sub_i32(j, 1))
   } else {
@@ -102,15 +98,15 @@ fn partition(arr: Array(I32), lo: I32, hi: I32) -> I32 {
   let pivot = array_get(arr, lo);
   let j =
     loop(
-      , I32 & I32
-      , I32
-      , .(state: I32 & I32) -> (I32 & I32) | I32 {
-          match! state {
-            .(i: I32, jj: I32) { partition_step(arr, pivot, i, jj) }
-          }
+    , I32 & I32
+    , I32
+    , .(state: I32 & I32) -> (I32 & I32) | I32 {
+        match! state {
+          .(i: I32, jj: I32) { partition_step(arr, pivot, i, jj) }
         }
-      , (add_i32(lo, 1), hi)
-      );
+      }
+    , (add_i32(lo, 1), hi)
+    );
   array_swap(arr, lo, j);
   j
 }
@@ -123,29 +119,29 @@ fn partition(arr: Array(I32), lo: I32, hi: I32) -> I32 {
 fn quicksort_step(arr: Array(I32), worklist: List(I32 & I32)) -> List(I32 & I32) | . {
   match! worklist.>List.un_list {
     (
-      , .(job: I32 & I32, rest: List(I32 & I32)) {
-          widen_sum!(
-            , match! job {
-                .(lo: I32, hi: I32) {
-                  if! leq_i32(hi, lo) {
-                    rest
-                  } else {
-                    let p = partition(arr, lo, hi);
-                    // Push (lo, p - 1) and (p + 1, hi) onto the
-                    // worklist. Order doesn't matter for correctness
-                    // (sets of sub-ranges are independent), but
-                    // walking left-first keeps the trace easier to
-                    // think about.
-                    let with_right = push((add_i32(p, 1), hi), rest);
-                    push((lo, sub_i32(p, 1)), with_right)
-                  }
-                }
+    , .(job: I32 & I32, rest: List(I32 & I32)) {
+        widen_sum!(
+        , match! job {
+            .(lo: I32, hi: I32) {
+              if! leq_i32(hi, lo) {
+                rest
+              } else {
+                let p = partition(arr, lo, hi);
+                // Push (lo, p - 1) and (p + 1, hi) onto the
+                // worklist. Order doesn't matter for correctness
+                // (sets of sub-ranges are independent), but
+                // walking left-first keeps the trace easier to
+                // think about.
+                let with_right = push((add_i32(p, 1), hi), rest);
+                push((lo, sub_i32(p, 1)), with_right)
               }
-            , List(I32 & I32) | .
-            )
-        }
-      , .(_empty: .) { widen_sum!((), List(I32 & I32) | .) }
-      )
+            }
+          }
+        , List(I32 & I32) | .
+        )
+      }
+    , .(_empty: .) { widen_sum!((), List(I32 & I32) | .) }
+    )
   }
 }
 
@@ -165,13 +161,13 @@ fn quicksort(arr: Array(I32)) -> Array(I32) {
 fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
   if! leq_i32(i, sub_i32(array_len(arr), 1)) {
     widen_sum!(
-      , if! leq_i32(i, 0) {
-          (int_to_string(array_get(arr, i)), add_i32(i, 1))
-        } else {
-          (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
-        }
-      , (String & I32) | String
-      )
+    , if! leq_i32(i, 0) {
+        (int_to_string(array_get(arr, i)), add_i32(i, 1))
+      } else {
+        (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
+      }
+    , (String & I32) | String
+    )
   } else {
     widen_sum!(acc, (String & I32) | String)
   }
@@ -179,15 +175,15 @@ fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String 
 
 fn render_csv(arr: Array(I32)) -> String {
   loop(
-    , String & I32
-    , String
-    , .(state: String & I32) -> (String & I32) | String {
-        match! state {
-          .(acc: String, i: I32) { render_step(arr, acc, i) }
-        }
+  , String & I32
+  , String
+  , .(state: String & I32) -> (String & I32) | String {
+      match! state {
+        .(acc: String, i: I32) { render_step(arr, acc, i) }
       }
-    , ("", 0)
-    )
+    }
+  , ("", 0)
+  )
 }
 
 pub fn main() {

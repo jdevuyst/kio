@@ -99,10 +99,11 @@ const TS_KIND_MAP = {
   // These are in the reference's classify_ident keyword table.
   keyword_type: "keyword.declaration",
   keyword_literal: "keyword.declaration",
-  // `rec` remains an ordinary identifier outside the grammar positions that
-  // introduce recursive data/groups/calls. `treeSitterKind` refines these
+  // `rec` and `recur` remain ordinary identifiers outside their declaration
+  // and call grammar positions. `treeSitterKind` refines these
   // parser-confirmed occurrences; every other occurrence is an identifier.
   keyword_rec: "identifier",
+  keyword_recur: "identifier",
   keyword_pub: "keyword.declaration",
   keyword_pure: "keyword.declaration",
   keyword_fn: "keyword.declaration",
@@ -278,6 +279,11 @@ function treeSitterKind(node) {
       ? "keyword.declaration"
       : "identifier";
   }
+  if (node.type === "keyword_recur") {
+    return ["recursive_call_expression", "incomplete_recursive_call_expression"].includes(parentType)
+      ? "keyword.declaration"
+      : "identifier";
+  }
   if (node.type !== "keyword_rec") return TS_KIND_MAP[node.type];
 
   const parent = node.parent;
@@ -286,8 +292,6 @@ function treeSitterKind(node) {
   if ([
     "recursive_function_definition",
     "recursive_function_group",
-    "recursive_call_expression",
-    "incomplete_recursive_call_expression",
   ].includes(parent.type)) {
     return "keyword.declaration";
   }

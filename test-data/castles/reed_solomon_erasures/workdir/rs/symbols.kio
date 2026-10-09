@@ -17,9 +17,11 @@ pub fn encode(message: p.Polynomial, coordinates: c.List(I32)) -> Word {
 
 pub fn show(sample: Sample) -> String {
   text.string_concat(
-    , fmt.int_to_string(sample.?{coordinate})
-    , text.string_concat(":", fmt.int_to_string(sample.?{value}))
-    )
+  , fmt.int_to_string(sample.?{coordinate})
+  , text.string_concat(":", fmt.int_to_string(sample.?{value}))
+  )
 }
 
-pub fn values(word: Word) -> c.List(I32) { l.map(.(sample) { sample.?{value} }, word) }
+pub fn values(word: Word) -> c.List(I32) {
+  l.map(.(sample) { sample.?{value} }, word)
+}

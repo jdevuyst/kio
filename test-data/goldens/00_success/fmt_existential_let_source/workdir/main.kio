@@ -23,4 +23,6 @@ fn typed() -> . {
   left
 }
 
-fn explicit_pattern() -> . { rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left }) }
+fn explicit_pattern() -> . {
+  rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left })
+}

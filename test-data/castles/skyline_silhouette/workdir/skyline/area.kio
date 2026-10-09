@@ -29,17 +29,17 @@ rec(loop) {
   /// level, so whatever lies left of the first key point contributes nothing;
   /// the last key point drops the silhouette back to ground level, so nothing
   /// is left open when the points run out.
-  pub fn from_points(ps: lst.List(sweep.Point)) -> I32 { rec close(ps, 0, 0, 0) };
+  pub fn from_points(ps: lst.List(sweep.Point)) -> I32 { recur close(ps, 0, 0, 0) };
   fn close(ps: lst.List(sweep.Point), from: I32, height: I32, total: I32) -> I32 {
     match! ps.>lst.List.un_list {
       (
-        , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
-            let width = sub_i32(sweep.x_of(p), from);
-            let closed = add_i32(total, mul_i32(height, width));
-            rec close(rest, sweep.x_of(p), sweep.y_of(p), closed)
-          }
-        , .(_empty: .) { total }
-        )
+      , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+          let width = sub_i32(sweep.x_of(p), from);
+          let closed = add_i32(total, mul_i32(height, width));
+          recur close(rest, sweep.x_of(p), sweep.y_of(p), closed)
+        }
+      , .(_empty: .) { total }
+      )
     }
   }
 }
@@ -53,19 +53,19 @@ rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array(I32)) {
     ()
   } else {
     array_set(grid, col, logic.max(array_get(grid, col), h));
-    rec paint(add_i32(col, 1), stop, h, grid)
+    recur paint(add_i32(col, 1), stop, h, grid)
   }
 }
 
 rec(loop) fn paint_all(bs: lst.List(city.Building), grid: Array(I32)) {
   match! bs.>lst.List.un_list {
     (
-      , .(b: city.Building, rest: lst.List(city.Building)) {
-          paint(city.left_of(b), city.right_of(b), city.height_of(b), grid);
-          rec paint_all(rest, grid)
-        }
-      , .(_empty: .) { () }
-      )
+    , .(b: city.Building, rest: lst.List(city.Building)) {
+        paint(city.left_of(b), city.right_of(b), city.height_of(b), grid);
+        recur paint_all(rest, grid)
+      }
+    , .(_empty: .) { () }
+    )
   }
 }
 
@@ -80,12 +80,12 @@ pub fn raster(bs: lst.List(city.Building)) -> Array(I32) {
 
 rec(loop) {
   /// The rasterized area: every column's height, added up.
-  pub fn from_raster(grid: Array(I32)) -> I32 { rec sum(grid, 0, 0) };
+  pub fn from_raster(grid: Array(I32)) -> I32 { recur sum(grid, 0, 0) };
   fn sum(grid: Array(I32), col: I32, total: I32) -> I32 {
     if! leq_i32(array_len(grid), col) {
       total
     } else {
-      rec sum(grid, add_i32(col, 1), add_i32(total, array_get(grid, col)))
+      recur sum(grid, add_i32(col, 1), add_i32(total, array_get(grid, col)))
     }
   }
 }
@@ -101,19 +101,15 @@ rec(loop) {
   /// the wrong order. The area check is blind to that mistake, because a
   /// spurious pair at one position spans no width and so adds nothing to
   /// either total. This one is not.
-  pub fn advances(ps: lst.List(sweep.Point)) -> Bool { rec forward(ps, -1) };
+  pub fn advances(ps: lst.List(sweep.Point)) -> Bool { recur forward(ps, -1) };
   fn forward(ps: lst.List(sweep.Point), from: I32) -> Bool {
     match! ps.>lst.List.un_list {
       (
-        , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
-            if! logic.lt(from, sweep.x_of(p)) {
-              rec forward(rest, sweep.x_of(p))
-            } else {
-              .f
-            }
-          }
-        , .(_empty: .) { .t }
-        )
+      , .(p: sweep.Point, rest: lst.List(sweep.Point)) {
+          if! logic.lt(from, sweep.x_of(p)) { recur forward(rest, sweep.x_of(p)) } else { .f }
+        }
+      , .(_empty: .) { .t }
+      )
     }
   }
 }

@@ -9,16 +9,16 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 labels State = {
-  , pc: I32
-  , pointer: I32
-  , left_cell: I32
-  , center_cell: I32
-  , right_cell: I32
-  , macro_stage: I32
-  , checkpoints: I32
-  , checksum: I32
-  , ticks: I32
-  };
+, pc: I32
+, pointer: I32
+, left_cell: I32
+, center_cell: I32
+, right_cell: I32
+, macro_stage: I32
+, checkpoints: I32
+, checksum: I32
+, ticks: I32
+};
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
@@ -45,85 +45,85 @@ fn one() -> I32 { 1 }
 fn neg_one() -> I32 { sub_i32(0, one()) }
 
 fn state(
-  , pc_value: I32
-  , pointer_value: I32
-  , left_value: I32
-  , center_value: I32
-  , right_value: I32
-  , macro_value: I32
-  , checkpoints_value: I32
-  , checksum_value: I32
-  , ticks_value: I32
-  ) -> State {
+, pc_value: I32
+, pointer_value: I32
+, left_value: I32
+, center_value: I32
+, right_value: I32
+, macro_value: I32
+, checkpoints_value: I32
+, checksum_value: I32
+, ticks_value: I32
+) -> State {
   {
-    , pc = pc_value
-    , pointer = pointer_value
-    , left_cell = left_value
-    , center_cell = center_value
-    , right_cell = right_value
-    , macro_stage = macro_value
-    , checkpoints = checkpoints_value
-    , checksum = checksum_value
-    , ticks = ticks_value
-    }
+  , pc = pc_value
+  , pointer = pointer_value
+  , left_cell = left_value
+  , center_cell = center_value
+  , right_cell = right_value
+  , macro_stage = macro_value
+  , checkpoints = checkpoints_value
+  , checksum = checksum_value
+  , ticks = ticks_value
+  }
 }
 
 fn initial_state() -> State { state(0, 0, 0, 0, 0, idle_stage(), 0, 0, 0) }
 
 fn advance_pc(s: State) -> State {
   state(
-    , add_i32(s.?{pc}, one())
-    , s.?{pointer}
-    , s.?{left_cell}
-    , s.?{center_cell}
-    , s.?{right_cell}
-    , s.?{macro_stage}
-    , s.?{checkpoints}
-    , s.?{checksum}
-    , s.?{ticks}
-    )
+  , add_i32(s.?{pc}, one())
+  , s.?{pointer}
+  , s.?{left_cell}
+  , s.?{center_cell}
+  , s.?{right_cell}
+  , s.?{macro_stage}
+  , s.?{checkpoints}
+  , s.?{checksum}
+  , s.?{ticks}
+  )
 }
 
 fn tick(s: State) -> State {
   state(
-    , s.?{pc}
-    , s.?{pointer}
-    , s.?{left_cell}
-    , s.?{center_cell}
-    , s.?{right_cell}
-    , s.?{macro_stage}
-    , s.?{checkpoints}
-    , s.?{checksum}
-    , add_i32(s.?{ticks}, one())
-    )
+  , s.?{pc}
+  , s.?{pointer}
+  , s.?{left_cell}
+  , s.?{center_cell}
+  , s.?{right_cell}
+  , s.?{macro_stage}
+  , s.?{checkpoints}
+  , s.?{checksum}
+  , add_i32(s.?{ticks}, one())
+  )
 }
 
 fn set_macro_stage(s: State, stage: I32) -> State {
   state(
-    , s.?{pc}
-    , s.?{pointer}
-    , s.?{left_cell}
-    , s.?{center_cell}
-    , s.?{right_cell}
-    , stage
-    , s.?{checkpoints}
-    , s.?{checksum}
-    , s.?{ticks}
-    )
+  , s.?{pc}
+  , s.?{pointer}
+  , s.?{left_cell}
+  , s.?{center_cell}
+  , s.?{right_cell}
+  , stage
+  , s.?{checkpoints}
+  , s.?{checksum}
+  , s.?{ticks}
+  )
 }
 
 fn set_pointer(s: State, pointer_value: I32) -> State {
   state(
-    , s.?{pc}
-    , pointer_value
-    , s.?{left_cell}
-    , s.?{center_cell}
-    , s.?{right_cell}
-    , s.?{macro_stage}
-    , s.?{checkpoints}
-    , s.?{checksum}
-    , s.?{ticks}
-    )
+  , s.?{pc}
+  , pointer_value
+  , s.?{left_cell}
+  , s.?{center_cell}
+  , s.?{right_cell}
+  , s.?{macro_stage}
+  , s.?{checkpoints}
+  , s.?{checksum}
+  , s.?{ticks}
+  )
 }
 
 fn move_pointer(s: State, delta: I32) -> State {
@@ -140,63 +140,57 @@ fn move_pointer(s: State, delta: I32) -> State {
 fn apply_delta(s: State, delta: I32) -> State {
   if! eq_i32(s.?{pointer}, neg_one()) {
     state(
-      , s.?{pc}
-      , s.?{pointer}
-      , add_i32(s.?{left_cell}, delta)
-      , s.?{center_cell}
-      , s.?{right_cell}
-      , s.?{macro_stage}
-      , s.?{checkpoints}
-      , s.?{checksum}
-      , s.?{ticks}
-      )
+    , s.?{pc}
+    , s.?{pointer}
+    , add_i32(s.?{left_cell}, delta)
+    , s.?{center_cell}
+    , s.?{right_cell}
+    , s.?{macro_stage}
+    , s.?{checkpoints}
+    , s.?{checksum}
+    , s.?{ticks}
+    )
   } else if! eq_i32(s.?{pointer}, 0) {
     state(
-      , s.?{pc}
-      , s.?{pointer}
-      , s.?{left_cell}
-      , add_i32(s.?{center_cell}, delta)
-      , s.?{right_cell}
-      , s.?{macro_stage}
-      , s.?{checkpoints}
-      , s.?{checksum}
-      , s.?{ticks}
-      )
+    , s.?{pc}
+    , s.?{pointer}
+    , s.?{left_cell}
+    , add_i32(s.?{center_cell}, delta)
+    , s.?{right_cell}
+    , s.?{macro_stage}
+    , s.?{checkpoints}
+    , s.?{checksum}
+    , s.?{ticks}
+    )
   } else {
     state(
-      , s.?{pc}
-      , s.?{pointer}
-      , s.?{left_cell}
-      , s.?{center_cell}
-      , add_i32(s.?{right_cell}, delta)
-      , s.?{macro_stage}
-      , s.?{checkpoints}
-      , s.?{checksum}
-      , s.?{ticks}
-      )
+    , s.?{pc}
+    , s.?{pointer}
+    , s.?{left_cell}
+    , s.?{center_cell}
+    , add_i32(s.?{right_cell}, delta)
+    , s.?{macro_stage}
+    , s.?{checkpoints}
+    , s.?{checksum}
+    , s.?{ticks}
+    )
   }
 }
 
 fn pointer_name(s: State) -> String {
-  if! eq_i32(s.?{pointer}, neg_one()) {
-    "L"
-  } else if! eq_i32(s.?{pointer}, 0) {
-    "C"
-  } else {
-    "R"
-  }
+  if! eq_i32(s.?{pointer}, neg_one()) { "L" } else if! eq_i32(s.?{pointer}, 0) { "C" } else { "R" }
 }
 
 fn render_tape(s: State) -> String {
   cat7(
-    , "tape[L="
-    , int_to_string(s.?{left_cell})
-    , " C="
-    , int_to_string(s.?{center_cell})
-    , " R="
-    , int_to_string(s.?{right_cell})
-    , "]"
-    )
+  , "tape[L="
+  , int_to_string(s.?{left_cell})
+  , " C="
+  , int_to_string(s.?{center_cell})
+  , " R="
+  , int_to_string(s.?{right_cell})
+  , "]"
+  )
 }
 
 fn render_position(s: State) -> String { cat(" ptr=", pointer_name(s)) }
@@ -212,25 +206,25 @@ fn checkpoint(label: String, s: State) -> State {
   let next_checksum = checkpoint_checksum(s, next_count);
   let marked =
     state(
-      , s.?{pc}
-      , s.?{pointer}
-      , s.?{left_cell}
-      , s.?{center_cell}
-      , s.?{right_cell}
-      , s.?{macro_stage}
-      , next_count
-      , next_checksum
-      , s.?{ticks}
-      );
+    , s.?{pc}
+    , s.?{pointer}
+    , s.?{left_cell}
+    , s.?{center_cell}
+    , s.?{right_cell}
+    , s.?{macro_stage}
+    , next_count
+    , next_checksum
+    , s.?{ticks}
+    );
   print(cat7(
-    , "checkpoint "
-    , int_to_string(next_count)
-    , " "
-    , label
-    , " pc="
-    , int_to_string(marked.?{pc})
-    , render_position(marked)
-    ));
+  , "checkpoint "
+  , int_to_string(next_count)
+  , " "
+  , label
+  , " pc="
+  , int_to_string(marked.?{pc})
+  , render_position(marked)
+  ));
   print(cat3(" ", render_tape(marked), " "));
   print(cat3("checksum=", int_to_string(next_checksum), "\n"));
   marked
@@ -275,31 +269,23 @@ fn macro_active(s: State) -> Bool { lt_i32(s.?{macro_stage}, idle_stage()) }
 fn program_done(s: State) -> Bool { leq_i32(8, s.?{pc}) }
 
 fn step(s: State) -> State {
-  if! macro_active(s) {
-    run_macro_instruction(s)
-  } else {
-    run_program_instruction(s)
-  }
+  if! macro_active(s) { run_macro_instruction(s) } else { run_program_instruction(s) }
 }
 
 rec(loop) fn run(s: State) -> State {
-  if! program_done(s) {
-    s
-  } else {
-    rec run(step(s))
-  }
+  if! program_done(s) { s } else { recur run(step(s)) }
 }
 
 fn print_final(s: State) {
   print(cat7(
-    , "final pc="
-    , int_to_string(s.?{pc})
-    , " ticks="
-    , int_to_string(s.?{ticks})
-    , render_position(s)
-    , " "
-    , render_tape(s)
-    ));
+  , "final pc="
+  , int_to_string(s.?{pc})
+  , " ticks="
+  , int_to_string(s.?{ticks})
+  , render_position(s)
+  , " "
+  , render_tape(s)
+  ));
   print(cat3(" checkpoints=", int_to_string(s.?{checkpoints}), " "));
   print(cat3("checksum=", int_to_string(s.?{checksum}), "\n"))
 }

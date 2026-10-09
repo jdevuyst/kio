@@ -26,16 +26,16 @@ module cpu/hazard;
 
 import cpu/isa(Instr, dest_of, is_load, reads_reg, writes_reg);
 import cpu/machine(
-  , {ex_mem}
-  , {forwarding}
-  , {mem_wb}
-  , {prog}
-  , {regs}
-  , {st_ex}
-  , {st_id}
-  , {st_mem}
-  , {st_wb}
-  );
+, {ex_mem}
+, {forwarding}
+, {mem_wb}
+, {prog}
+, {regs}
+, {st_ex}
+, {st_id}
+, {st_mem}
+, {st_wb}
+);
 import cpu/machine(Cpu, Machine, stage_empty);
 import elab/control(if);
 import elab/match(match);
@@ -70,11 +70,7 @@ fn reading(v: I32, ex_hit: I32, mem_hit: I32) -> Read {
 /// evaluates both its arguments, and indexing the code array with an
 /// empty stage's negative slot would fault.
 fn produces(code: Array(Instr), slot: I32, r: I32) -> Bool {
-  if! stage_empty(slot) {
-    .f
-  } else {
-    writes_reg(array_get(code, slot), r)
-  }
+  if! stage_empty(slot) { .f } else { writes_reg(array_get(code, slot), r) }
 }
 
 fn select(cpu: Cpu, m: Machine, r: I32) -> Operand {
@@ -103,10 +99,10 @@ fn select(cpu: Cpu, m: Machine, r: I32) -> Operand {
 pub fn read_source(cpu: Cpu, m: Machine, r: I32) -> Read {
   match! select(cpu, m, r) {
     (
-      , .(direct: From_reg) { reading(direct.?{from_reg}, 0, 0) }
-      , .(bypass: From_ex_mem) { reading(bypass.?{from_ex_mem}, 1, 0) }
-      , .(late: From_mem_wb) { reading(late.?{from_mem_wb}, 0, 1) }
-      )
+    , .(direct: From_reg) { reading(direct.?{from_reg}, 0, 0) }
+    , .(bypass: From_ex_mem) { reading(bypass.?{from_ex_mem}, 1, 0) }
+    , .(late: From_mem_wb) { reading(late.?{from_mem_wb}, 0, 1) }
+    )
   }
 }
 
@@ -116,15 +112,11 @@ fn owed(code: Array(Instr), consumer: Instr, slot: I32) -> I32 | . {
     widen_sum!((), I32 | .)
   } else match! dest_of(array_get(code, slot)) {
     (
-      , .(d: I32) {
-          if! reads_reg(consumer, d) {
-            widen_sum!(d, I32 | .)
-          } else {
-            widen_sum!((), I32 | .)
-          }
-        }
-      , .(_writes_nothing: .) { widen_sum!((), I32 | .) }
-      )
+    , .(d: I32) {
+        if! reads_reg(consumer, d) { widen_sum!(d, I32 | .) } else { widen_sum!((), I32 | .) }
+      }
+    , .(_writes_nothing: .) { widen_sum!((), I32 | .) }
+    )
   }
 }
 
@@ -139,25 +131,21 @@ pub fn hazard(cpu: Cpu, m: Machine) -> Verdict {
     if! cpu.?{forwarding} {
       match! from_ex {
         (
-          , .(r: I32) {
-              if! is_load(array_get(code, m.?{st_ex})) {
-                load_use_stall(r)
-              } else {
-                proceed()
-              }
-            }
-          , .(_clear: .) { proceed() }
-          )
+        , .(r: I32) {
+            if! is_load(array_get(code, m.?{st_ex})) { load_use_stall(r) } else { proceed() }
+          }
+        , .(_clear: .) { proceed() }
+        )
       }
     } else match! from_ex {
       (
-        , .(r: I32) { raw_stall(r) }
-        , .(_clear: .) {
-            match! owed(code, consumer, m.?{st_mem}) {
-              (.(r: I32) { raw_stall(r) }, .(_also_clear: .) { proceed() })
-            }
+      , .(r: I32) { raw_stall(r) }
+      , .(_clear: .) {
+          match! owed(code, consumer, m.?{st_mem}) {
+            (.(r: I32) { raw_stall(r) }, .(_also_clear: .) { proceed() })
           }
-        )
+        }
+      )
     }
   }
 }

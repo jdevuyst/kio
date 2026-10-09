@@ -21,26 +21,26 @@ labels { image_text: String };
 /// host pipes in.
 pub fn read_image_stdin() -> String {
   Image_text.get(loop(
-    , .(st: I32 & String) {
-        match! st {
-          .(first: I32, acc: String) {
-            match! read_ascii_line() {
-              (
-                , .(line: String) {
-                    let acc1 =
-                      if! eq_i32(first, 1(I32)) {
-                        line
-                      } else {
-                        string_concat(acc, string_concat("\n"(String), line))
-                      };
-                    widen_sum!((0(I32), acc1), (I32 & String) | Image_text)
-                  }
-                , .(_eof: .) { widen_sum!({image_text = acc}, (I32 & String) | Image_text) }
-                )
-            }
+  , .(st: I32 & String) {
+      match! st {
+        .(first: I32, acc: String) {
+          match! read_ascii_line() {
+            (
+            , .(line: String) {
+                let acc1 =
+                  if! eq_i32(first, 1(I32)) {
+                    line
+                  } else {
+                    string_concat(acc, string_concat("\n"(String), line))
+                  };
+                widen_sum!((0(I32), acc1), (I32 & String) | Image_text)
+              }
+            , .(_eof: .) { widen_sum!({image_text = acc}, (I32 & String) | Image_text) }
+            )
           }
         }
       }
-    , (1(I32), ""(String))
-    ))
+    }
+  , (1(I32), ""(String))
+  ))
 }

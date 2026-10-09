@@ -21,9 +21,9 @@ fn ordinary() -> String {
   let .(whole: (first: String, second: String)) = ("a", "b");
   let .(again, last) = whole;
   text.string_concat(
-    , typed
-    , text.string_concat(first, text.string_concat(second, text.string_concat(again, last)))
-    )
+  , typed
+  , text.string_concat(first, text.string_concat(second, text.string_concat(again, last)))
+  )
 }
 
 fn rows() -> String {
@@ -44,9 +44,9 @@ fn monadic() -> String {
       let .(whole: (middle: String, suffix: String)) = ("=", "bind");
       let .(again, last) <- pure(whole);
       pure(text.string_concat(
-        , prefix
-        , text.string_concat(middle, text.string_concat(suffix, text.string_concat(again, last)))
-        ))
+      , prefix
+      , text.string_concat(middle, text.string_concat(suffix, text.string_concat(again, last)))
+      ))
     };
   Box.unbox(result)
 }

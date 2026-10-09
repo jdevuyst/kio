@@ -10,27 +10,15 @@ import testapi/io(print);
 import testapi/iter(loop);
 
 fn b_and(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .f
-  }
+  if! a { b } else { .f }
 }
 
 fn b_or(a: Bool, b: Bool) -> Bool {
-  if! a {
-    .t
-  } else {
-    b
-  }
+  if! a { .t } else { b }
 }
 
 fn b_implies(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else {
-    .t
-  }
+  if! a { b } else { .t }
 }
 
 // Power via `loop` + `*` + `<=`. `loop`'s step returns `s | r` —
@@ -71,11 +59,7 @@ op _ && __ { impl b_and }
 op _ || __ { impl b_or }
 
 fn show_bool(x: Bool) {
-  if! x {
-    print("true\n")
-  } else {
-    print("false\n")
-  }
+  if! x { print("true\n") } else { print("false\n") }
 }
 
 pub fn main() {

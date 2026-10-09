@@ -20,19 +20,19 @@ pub labels Doc = { base: list.List(String), ours: list.List(String), theirs: lis
 /// Sections are collected head-first and reversed once at the end, so a
 /// line costs one cons rather than a walk to the end of a growing list.
 labels Cursor = {
-  , section: I32
-  , base_rev: list.List(String)
-  , ours_rev: list.List(String)
-  , theirs_rev: list.List(String)
-  };
+, section: I32
+, base_rev: list.List(String)
+, ours_rev: list.List(String)
+, theirs_rev: list.List(String)
+};
 
 fn start() -> Cursor {
   {
-    , section = 0
-    , base_rev = list.nil(String)
-    , ours_rev = list.nil(String)
-    , theirs_rev = list.nil(String)
-    }
+  , section = 0
+  , base_rev = list.nil(String)
+  , ours_rev = list.nil(String)
+  , theirs_rev = list.nil(String)
+  }
 }
 
 fn open_section(cursor: Cursor, next: I32) -> Cursor {
@@ -67,7 +67,7 @@ fn step(cursor: Cursor, line: String) -> Cursor {
 
 rec(loop) fn drain(cursor: Cursor) -> Cursor {
   match! read_ascii_line() {
-    (.(line: String) { rec drain(step(cursor, line)) }, .(_eof: .) { cursor })
+    (.(line: String) { recur drain(step(cursor, line)) }, .(_eof: .) { cursor })
   }
 }
 

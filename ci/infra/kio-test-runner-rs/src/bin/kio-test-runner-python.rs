@@ -643,6 +643,18 @@ def _host_fn(tag, operation, kind, carrier):
                     continue
                 return value
         return loop
+    if tag == "loop-reentry":
+        def loop_reentry(step, initial):
+            def run(state):
+                while True:
+                    arm, value = _sum_view(step(_product((reenter, state))), 2)
+                    if arm == 0:
+                        state = value
+                        continue
+                    return value
+            reenter = module.kio_lift(run)
+            return run(initial)
+        return loop_reentry
     if tag == "numeric-to-string":
         if kind in ("f32", "f64"):
             return lambda n: _float_to_string(n)
@@ -1787,6 +1799,7 @@ fn python_host_body_descriptor(
         HostFnBodyKind::StringSlice { .. } => ("string-slice", None, None),
         HostFnBodyKind::StringCodeAt { .. } => ("string-code-at", None, None),
         HostFnBodyKind::Loop => ("loop", None, None),
+        HostFnBodyKind::LoopReentry => ("loop-reentry", None, None),
         HostFnBodyKind::NumericToString { value, .. } => {
             ("numeric-to-string", None, Some(value.fixture.role()))
         }

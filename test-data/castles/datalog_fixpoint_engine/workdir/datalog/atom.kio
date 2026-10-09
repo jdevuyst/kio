@@ -50,50 +50,42 @@ pub fn fact3(pred: I32, c0: I32, c1: I32, c2: I32) -> Atom {
 fn term_eq(x: Term, y: Term) -> Bool {
   match! x {
     (
-      , .(k: T_const) {
-          match! y {
-            (.(j: T_const) { eq_i32(k.?{t_const}, j.?{t_const}) }, .(_w: T_var) { .f })
-          }
+    , .(k: T_const) {
+        match! y {
+          (.(j: T_const) { eq_i32(k.?{t_const}, j.?{t_const}) }, .(_w: T_var) { .f })
         }
-      , .(v: T_var) {
-          match! y {
-            (.(_j: T_const) { .f }, .(w: T_var) { eq_i32(v.?{t_var}, w.?{t_var}) })
-          }
+      }
+    , .(v: T_var) {
+        match! y {
+          (.(_j: T_const) { .f }, .(w: T_var) { eq_i32(v.?{t_var}, w.?{t_var}) })
         }
-      )
+      }
+    )
   }
 }
 
 rec(loop) fn args_eq(xs: Args, ys: Args) -> Bool {
   match! xs.>list.List.un_list {
     (
-      , .(x: Term, xrest: Args) {
-          match! ys.>list.List.un_list {
-            (
-              , .(y: Term, yrest: Args) {
-                  if! term_eq(x, y) {
-                    rec args_eq(xrest, yrest)
-                  } else {
-                    .f
-                  }
-                }
-              , .(_empty: .) { .f }
-              )
-          }
+    , .(x: Term, xrest: Args) {
+        match! ys.>list.List.un_list {
+          (
+          , .(y: Term, yrest: Args) {
+              if! term_eq(x, y) { recur args_eq(xrest, yrest) } else { .f }
+            }
+          , .(_empty: .) { .f }
+          )
         }
-      , .(_empty: .) { list.is_empty(ys) }
-      )
+      }
+    , .(_empty: .) { list.is_empty(ys) }
+    )
   }
 }
 
 /// Fact insertion is set-like, and this is the only membership test the
 /// database has.
 pub fn atom_eq(x: Atom, y: Atom) -> Bool {
-  if! eq_i32(pred_of(x), pred_of(y)) {
-    args_eq(args_of(x), args_of(y))
-  } else {
-    .f
-  }
+  if! eq_i32(pred_of(x), pred_of(y)) { args_eq(args_of(x), args_of(y)) } else { .f }
 }
 
 pub fn count_pred(db: Atoms, pred: I32) -> I32 {

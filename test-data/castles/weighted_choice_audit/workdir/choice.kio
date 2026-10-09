@@ -25,19 +25,19 @@ pub fn map[A][B](choices: Choice(A), transform: A -> B) -> Choice(B) {
 
 pub fn independent[A][B][C](left: Choice(A), right: Choice(B), combine: (A & B) -> C) -> Choice(C) {
   traversal.foldl(
-    , .(acc, first, first_weight) {
-        let row =
-          traversal.map(
-            , .(second, second_weight) {
-                (combine(first, second), arith.mul_i32(first_weight, second_weight))
-              }
-            , right
-            );
-        traversal.append(acc, row)
-      }
-    , empty(_)
-    , left
-    )
+  , .(acc, first, first_weight) {
+      let row =
+        traversal.map(
+        , .(second, second_weight) {
+            (combine(first, second), arith.mul_i32(first_weight, second_weight))
+          }
+        , right
+        );
+      traversal.append(acc, row)
+    }
+  , empty(_)
+  , left
+  )
 }
 
 pub fn condition[A](choices: Choice(A), keep: A -> Bool) -> Choice(A) {

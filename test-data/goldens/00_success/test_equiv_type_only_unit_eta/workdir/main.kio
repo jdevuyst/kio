@@ -6,11 +6,20 @@ host fn second() -> .;
 
 type Unit_alias = .;
 
-fn producer[A] -> . -> . { first(); .(_unit: .) { () } }
+fn producer[A] -> . -> . {
+  first();
+  .(_unit: .) { () }
+}
 
-fn aliased[A] -> Unit_alias -> Unit_alias { first(); .(_unit: Unit_alias) { () } }
+fn aliased[A] -> Unit_alias -> Unit_alias {
+  first();
+  .(_unit: Unit_alias) { () }
+}
 
-fn delayed[A]() -> . -> . { first(); .(_unit: .) { () } }
+fn delayed[A]() -> . -> . {
+  first();
+  .(_unit: .) { () }
+}
 
 fn argument() { second(); () }
 

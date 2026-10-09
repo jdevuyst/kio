@@ -29,7 +29,7 @@ rec(loop) fn mapping_pairs(mapping: Array(I32), position: I32) {
     } else {
       ()
     };
-    rec mapping_pairs(mapping, arith.add_i32(position, 1))
+    recur mapping_pairs(mapping, arith.add_i32(position, 1))
   } else {
     ()
   }
@@ -52,13 +52,13 @@ pub fn compare(title: String, source: forest.Tree, target: forest.Tree) {
     number(" keep=", counts.?{certificate.kept});
     io.print("\n");
     line(
-      , "certificate: "
-      , if! forest.equal(certificate.cost(counts), solution.?{distance.cost}) {
-          "valid; cost agrees"
-        } else {
-          "valid; cost disagrees"
-        }
-      )
+    , "certificate: "
+    , if! forest.equal(certificate.cost(counts), solution.?{distance.cost}) {
+        "valid; cost agrees"
+      } else {
+        "valid; cost disagrees"
+      }
+    )
   } else {
     io.print("certificate: invalid mapping\n")
   }
@@ -66,12 +66,5 @@ pub fn compare(title: String, source: forest.Tree, target: forest.Tree) {
 
 pub fn control(title: String, source: forest.Tree, target: forest.Tree, mapping: Array(I32)) {
   io.print(text.string_concat("control: ", title));
-  line(
-    , " -> "
-    , if! certificate.valid(source, target, mapping) {
-        "accepted"
-      } else {
-        "rejected"
-      }
-    )
+  line(" -> ", if! certificate.valid(source, target, mapping) { "accepted" } else { "rejected" })
 }

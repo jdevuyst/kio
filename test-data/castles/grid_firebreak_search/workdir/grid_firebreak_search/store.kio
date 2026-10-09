@@ -10,7 +10,7 @@ import testapi/iter as iter;
 rec(iter.loop) fn fill_risk(i: I32, values: Array(I32)) -> Array(I32) {
   if! arith.leq_i32(i, grid.last_cell()) {
     array.array_push(values, grid.risk_at(i));
-    rec fill_risk(arith.add_i32(i, 1), values)
+    recur fill_risk(arith.add_i32(i, 1), values)
   } else {
     values
   }
@@ -19,7 +19,7 @@ rec(iter.loop) fn fill_risk(i: I32, values: Array(I32)) -> Array(I32) {
 rec(iter.loop) fn fill_cost(i: I32, values: Array(I32)) -> Array(I32) {
   if! arith.leq_i32(i, grid.last_cell()) {
     array.array_push(values, grid.cost_at(i));
-    rec fill_cost(arith.add_i32(i, 1), values)
+    recur fill_cost(arith.add_i32(i, 1), values)
   } else {
     values
   }
@@ -28,7 +28,7 @@ rec(iter.loop) fn fill_cost(i: I32, values: Array(I32)) -> Array(I32) {
 rec(iter.loop) fn fill_barriers(i: I32, values: Array(Bool)) -> Array(Bool) {
   if! arith.leq_i32(i, grid.last_cell()) {
     array.array_push(values, grid.is_barrier_cell(i));
-    rec fill_barriers(arith.add_i32(i, 1), values)
+    recur fill_barriers(arith.add_i32(i, 1), values)
   } else {
     values
   }
@@ -37,7 +37,7 @@ rec(iter.loop) fn fill_barriers(i: I32, values: Array(Bool)) -> Array(Bool) {
 rec(iter.loop) fn fill_candidates(i: I32, values: Array(Bool)) -> Array(Bool) {
   if! arith.leq_i32(i, grid.last_cell()) {
     array.array_push(values, grid.is_candidate_cell(i));
-    rec fill_candidates(arith.add_i32(i, 1), values)
+    recur fill_candidates(arith.add_i32(i, 1), values)
   } else {
     values
   }

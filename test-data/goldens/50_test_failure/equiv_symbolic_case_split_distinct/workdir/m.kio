@@ -4,24 +4,24 @@ import __intrinsics__;
 
 fn swap[A](s: A | A) -> A | A {
   __either__(
-    , A
-    , A
-    , A | A
-    , s
-    , .(left_payload) { __right__(A, A, left_payload) }
-    , .(right_payload) { __left__(A, A, right_payload) }
-    )
+  , A
+  , A
+  , A | A
+  , s
+  , .(left_payload) { __right__(A, A, left_payload) }
+  , .(right_payload) { __left__(A, A, right_payload) }
+  )
 }
 
 fn choose_left[A](s: A | A) -> A | A {
   __either__(
-    , A
-    , A
-    , A | A
-    , s
-    , .(left_payload) { __left__(A, A, left_payload) }
-    , .(right_payload) { __left__(A, A, right_payload) }
-    )
+  , A
+  , A
+  , A | A
+  , s
+  , .(left_payload) { __left__(A, A, left_payload) }
+  , .(right_payload) { __left__(A, A, right_payload) }
+  )
 }
 
 equiv symbolic_cases_remain_distinct[A](s: A | A) {

@@ -8,14 +8,29 @@ pub newtype Token : . { pub constructor make; pub projector read }
 
 pub fn box_id[T](value: Box(T)) -> Box(T) { value }
 
-pub fn poly() -> [T] T -> T { .[T] { mark(); .(value: T) { value } } }
+pub fn poly() -> [T] T -> T {
+  .[T] {
+    mark();
+    .(value: T) { value }
+  }
+}
 
 pub fn relay_poly(f: [T] T -> T) -> [T] T -> T { f }
 
 pub fn call(f: . -> .) { f(()) }
 
 pub fn nested() -> [A][B] A -> B -> A {
-  .[A] { mark(); .[B] { mark(); .(a: A) { .(b: B) { a } } } }
+  .[A] {
+    mark();
+    .[B] {
+      mark();
+      .(a: A) {
+        .(b: B) { a }
+      }
+    }
+  }
 }
 
-pub fn captured[A][B](a: A, b: B) -> [T] (T & A) -> B { .[T](value: T, held: A) { b } }
+pub fn captured[A][B](a: A, b: B) -> [T] (T & A) -> B {
+  .[T](value: T, held: A) { b }
+}

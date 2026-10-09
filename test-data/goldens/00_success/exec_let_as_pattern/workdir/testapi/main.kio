@@ -18,9 +18,9 @@ fn describe(x: I32 & I32 & I32) -> String {
   match! x {
     .(a: I32, b: I32, c: I32) {
       string_concat(
-        , int_to_string(a)
-        , string_concat(",", string_concat(int_to_string(b), string_concat(",", int_to_string(c))))
-        )
+      , int_to_string(a)
+      , string_concat(",", string_concat(int_to_string(b), string_concat(",", int_to_string(c))))
+      )
     }
   }
 }

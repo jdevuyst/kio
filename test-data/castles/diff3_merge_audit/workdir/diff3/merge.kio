@@ -36,11 +36,11 @@ pub labels Verdict =
 /// a conflict has to print the base text it could not reconcile, and the
 /// audit reports on text that never reaches the merged document.
 pub labels Region = {
-  , mark: Verdict
-  , base_span: list.List(String)
-  , ours_span: list.List(String)
-  , theirs_span: list.List(String)
-  };
+, mark: Verdict
+, base_span: list.List(String)
+, ours_span: list.List(String)
+, theirs_span: list.List(String)
+};
 
 /// A base line both alignments kept, with its index in each of the three
 /// documents.
@@ -60,11 +60,11 @@ fn both_mark() -> Verdict { {both_same=}.>widen_sum!(Verdict) }
 fn conflict_mark() -> Verdict { {conflict=}.>widen_sum!(Verdict) }
 
 fn region(
-  , mark: Verdict
-  , base: list.List(String)
-  , ours: list.List(String)
-  , theirs: list.List(String)
-  ) -> Region { {mark, base_span = base, ours_span = ours, theirs_span = theirs} }
+, mark: Verdict
+, base: list.List(String)
+, ours: list.List(String)
+, theirs: list.List(String)
+) -> Region { {mark, base_span = base, ours_span = ours, theirs_span = theirs} }
 
 pub fn mark_of(reg: Region) -> Verdict { reg.?{mark} }
 
@@ -77,22 +77,18 @@ pub fn theirs_of(reg: Region) -> list.List(String) { reg.?{theirs_span} }
 rec(loop) fn lines_eq(left: list.List(String), right: list.List(String)) -> Bool {
   match! list.List.unpack(left) {
     (
-      , .(line: String, left_rest: list.List(String)) {
-          match! list.List.unpack(right) {
-            (
-              , .(other: String, right_rest: list.List(String)) {
-                  if! string_eq(line, other) {
-                    rec lines_eq(left_rest, right_rest)
-                  } else {
-                    .f
-                  }
-                }
-              , .(_empty: .) { .f }
-              )
-          }
+    , .(line: String, left_rest: list.List(String)) {
+        match! list.List.unpack(right) {
+          (
+          , .(other: String, right_rest: list.List(String)) {
+              if! string_eq(line, other) { recur lines_eq(left_rest, right_rest) } else { .f }
+            }
+          , .(_empty: .) { .f }
+          )
         }
-      , .(_empty: .) { list.is_empty(right) }
-      )
+      }
+    , .(_empty: .) { list.is_empty(right) }
+    )
   }
 }
 
@@ -135,27 +131,27 @@ fn anchor_theirs(anchor: Anchor) -> I32 {
 rec(loop) fn join(ours: list.List(lcs.Match), theirs: list.List(lcs.Match), acc: list.List(Anchor)) -> list.List(Anchor) {
   match! list.List.unpack(ours) {
     (
-      , .(our_pair: lcs.Match, ours_rest: list.List(lcs.Match)) {
-          match! list.List.unpack(theirs) {
-            (
-              , .(their_pair: lcs.Match, theirs_rest: list.List(lcs.Match)) {
-                  let ours_base = lcs.base_at(our_pair);
-                  let theirs_base = lcs.base_at(their_pair);
-                  if! prim.int_eq(ours_base, theirs_base) {
-                    let anchor = (ours_base, lcs.other_at(our_pair), lcs.other_at(their_pair));
-                    rec join(ours_rest, theirs_rest, list.cons(anchor, acc))
-                  } else if! lt_i32(ours_base, theirs_base) {
-                    rec join(ours_rest, theirs, acc)
-                  } else {
-                    rec join(ours, theirs_rest, acc)
-                  }
-                }
-              , .(_empty: .) { list.reverse(acc) }
-              )
-          }
+    , .(our_pair: lcs.Match, ours_rest: list.List(lcs.Match)) {
+        match! list.List.unpack(theirs) {
+          (
+          , .(their_pair: lcs.Match, theirs_rest: list.List(lcs.Match)) {
+              let ours_base = lcs.base_at(our_pair);
+              let theirs_base = lcs.base_at(their_pair);
+              if! prim.int_eq(ours_base, theirs_base) {
+                let anchor = (ours_base, lcs.other_at(our_pair), lcs.other_at(their_pair));
+                recur join(ours_rest, theirs_rest, list.cons(anchor, acc))
+              } else if! lt_i32(ours_base, theirs_base) {
+                recur join(ours_rest, theirs, acc)
+              } else {
+                recur join(ours, theirs_rest, acc)
+              }
+            }
+          , .(_empty: .) { list.reverse(acc) }
+          )
         }
-      , .(_empty: .) { list.reverse(acc) }
-      )
+      }
+    , .(_empty: .) { list.reverse(acc) }
+    )
   }
 }
 
@@ -165,12 +161,12 @@ pub fn anchors(ours: lcs.Dp, theirs: lcs.Dp) -> list.List(Anchor) {
 
 fn follows(earlier: Anchor, later: Anchor) -> Bool {
   prim.and(
-    , prim.int_eq(anchor_base(later), add_i32(anchor_base(earlier), 1))
-    , prim.and(
-        , prim.int_eq(anchor_ours(later), add_i32(anchor_ours(earlier), 1))
-        , prim.int_eq(anchor_theirs(later), add_i32(anchor_theirs(earlier), 1))
-        )
+  , prim.int_eq(anchor_base(later), add_i32(anchor_base(earlier), 1))
+  , prim.and(
+    , prim.int_eq(anchor_ours(later), add_i32(anchor_ours(earlier), 1))
+    , prim.int_eq(anchor_theirs(later), add_i32(anchor_theirs(earlier), 1))
     )
+  )
 }
 
 /// The length of the maximal run of anchors that advances all three cursors
@@ -178,22 +174,22 @@ fn follows(earlier: Anchor, later: Anchor) -> Bool {
 rec(loop) fn run_from(anchors_left: list.List(Anchor), acc: I32) -> I32 {
   match! list.List.unpack(anchors_left) {
     (
-      , .(head: Anchor, rest: list.List(Anchor)) {
-          match! list.List.unpack(rest) {
-            (
-              , .(next: Anchor, _tail: list.List(Anchor)) {
-                  if! follows(head, next) {
-                    rec run_from(rest, add_i32(acc, 1))
-                  } else {
-                    add_i32(acc, 1)
-                  }
-                }
-              , .(_empty: .) { add_i32(acc, 1) }
-              )
-          }
+    , .(head: Anchor, rest: list.List(Anchor)) {
+        match! list.List.unpack(rest) {
+          (
+          , .(next: Anchor, _tail: list.List(Anchor)) {
+              if! follows(head, next) {
+                recur run_from(rest, add_i32(acc, 1))
+              } else {
+                add_i32(acc, 1)
+              }
+            }
+          , .(_empty: .) { add_i32(acc, 1) }
+          )
         }
-      , .(_empty: .) { acc }
-      )
+      }
+    , .(_empty: .) { acc }
+    )
   }
 }
 
@@ -205,9 +201,9 @@ fn chunk(doc: scan.Doc, from: Anchor, to: Anchor, acc: list.List(Region)) -> lis
   let ours_span = list.slice(scan.our_lines(doc), anchor_ours(from), anchor_ours(to));
   let theirs_span = list.slice(scan.their_lines(doc), anchor_theirs(from), anchor_theirs(to));
   if! prim.and(
-    , list.is_empty(base_span)
-    , prim.and(list.is_empty(ours_span), list.is_empty(theirs_span))
-    ) {
+  , list.is_empty(base_span)
+  , prim.and(list.is_empty(ours_span), list.is_empty(theirs_span))
+  ) {
     acc
   } else {
     list.cons(classify(base_span, ours_span, theirs_span), acc)
@@ -224,27 +220,27 @@ fn ends(doc: scan.Doc) -> Anchor {
 }
 
 rec(loop) fn walk(
-  , doc: scan.Doc
-  , anchors_left: list.List(Anchor)
-  , at: Anchor
-  , acc: list.List(Region)
-  ) -> list.List(Region) {
+, doc: scan.Doc
+, anchors_left: list.List(Anchor)
+, at: Anchor
+, acc: list.List(Region)
+) -> list.List(Region) {
   match! list.List.unpack(anchors_left) {
     (
-      , .(anchor: Anchor, _rest: list.List(Anchor)) {
-          let gapped = chunk(doc, at, anchor, acc);
-          let run = run_from(anchors_left, 0);
-          let base_at = anchor_base(anchor);
-          let kept = list.slice(scan.base_lines(doc), base_at, add_i32(base_at, run));
-          rec walk(
-            , doc
-            , list.drop(anchors_left, run)
-            , advance(anchor, run)
-            , list.cons(region(stable_mark(), kept, kept, kept), gapped)
-            )
-        }
-      , .(_empty: .) { list.reverse(chunk(doc, at, ends(doc), acc)) }
-      )
+    , .(anchor: Anchor, _rest: list.List(Anchor)) {
+        let gapped = chunk(doc, at, anchor, acc);
+        let run = run_from(anchors_left, 0);
+        let base_at = anchor_base(anchor);
+        let kept = list.slice(scan.base_lines(doc), base_at, add_i32(base_at, run));
+        recur walk(
+        , doc
+        , list.drop(anchors_left, run)
+        , advance(anchor, run)
+        , list.cons(region(stable_mark(), kept, kept, kept), gapped)
+        )
+      }
+    , .(_empty: .) { list.reverse(chunk(doc, at, ends(doc), acc)) }
+    )
   }
 }
 
@@ -257,12 +253,12 @@ fn bump(counts: Tally, mark: Verdict) -> Tally {
     .(stable: I32, ours: I32, theirs: I32, both: I32, conflict: I32) {
       match! mark {
         (
-          , .(_v: Stable) { (add_i32(stable, 1), ours, theirs, both, conflict) }
-          , .(_v: Ours_only) { (stable, add_i32(ours, 1), theirs, both, conflict) }
-          , .(_v: Theirs_only) { (stable, ours, add_i32(theirs, 1), both, conflict) }
-          , .(_v: Both_same) { (stable, ours, theirs, add_i32(both, 1), conflict) }
-          , .(_v: Conflict) { (stable, ours, theirs, both, add_i32(conflict, 1)) }
-          )
+        , .(_v: Stable) { (add_i32(stable, 1), ours, theirs, both, conflict) }
+        , .(_v: Ours_only) { (stable, add_i32(ours, 1), theirs, both, conflict) }
+        , .(_v: Theirs_only) { (stable, ours, add_i32(theirs, 1), both, conflict) }
+        , .(_v: Both_same) { (stable, ours, theirs, add_i32(both, 1), conflict) }
+        , .(_v: Conflict) { (stable, ours, theirs, both, add_i32(conflict, 1)) }
+        )
       }
     }
   }
@@ -271,9 +267,9 @@ fn bump(counts: Tally, mark: Verdict) -> Tally {
 rec(loop) fn tally_from(found: list.List(Region), acc: Tally) -> Tally {
   match! list.List.unpack(found) {
     (
-      , .(reg: Region, rest: list.List(Region)) { rec tally_from(rest, bump(acc, mark_of(reg))) }
-      , .(_empty: .) { acc }
-      )
+    , .(reg: Region, rest: list.List(Region)) { recur tally_from(rest, bump(acc, mark_of(reg))) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

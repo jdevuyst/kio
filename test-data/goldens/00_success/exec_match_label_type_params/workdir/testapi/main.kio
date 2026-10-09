@@ -28,9 +28,9 @@ fn summarize[A](label: String, v: A) -> String { label }
 fn handle(r: Ok(I32) | Err(String)) -> String {
   match! r {
     (
-      , .[A](v: Ok(A)) { summarize("ok branch\n", Ok.get(A, v)) }
-      , .[A](e: Err(A)) { summarize("err branch\n", Err.get(A, e)) }
-      )
+    , .[A](v: Ok(A)) { summarize("ok branch\n", Ok.get(A, v)) }
+    , .[A](e: Err(A)) { summarize("err branch\n", Err.get(A, e)) }
+    )
   }
 }
 

@@ -12,17 +12,17 @@ module sudoku/constraints;
 import elab/control(if);
 import sudoku/geometry as geo;
 import sudoku/model(
-  , Work
-  , {board}
-  , {box_of}
-  , {col_of}
-  , {row_of}
-  , {stack_cell}
-  , {stack_digit}
-  , {used_box}
-  , {used_col}
-  , {used_row}
-  );
+, Work
+, {board}
+, {box_of}
+, {col_of}
+, {row_of}
+, {stack_cell}
+, {stack_digit}
+, {used_box}
+, {used_col}
+, {used_row}
+);
 import sudoku/num as num;
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32);
@@ -68,9 +68,9 @@ fn is_legal(work: Work, cell: I32, digit: I32) -> Bool {
 rec(loop) fn count_from(work: Work, cell: I32, digit: I32, found: I32) -> I32 {
   if! leq_i32(digit, geo.last_digit()) {
     if! is_legal(work, cell, digit) {
-      rec count_from(work, cell, add_i32(digit, 1), add_i32(found, 1))
+      recur count_from(work, cell, add_i32(digit, 1), add_i32(found, 1))
     } else {
-      rec count_from(work, cell, add_i32(digit, 1), found)
+      recur count_from(work, cell, add_i32(digit, 1), found)
     }
   } else {
     found
@@ -88,7 +88,7 @@ pub rec(loop) fn first_legal_from(work: Work, cell: I32, from: I32) -> I32 {
     if! is_legal(work, cell, from) {
       from
     } else {
-      rec first_legal_from(work, cell, add_i32(from, 1))
+      recur first_legal_from(work, cell, add_i32(from, 1))
     }
   } else {
     0
@@ -99,10 +99,10 @@ rec(loop) fn seed(work: Work, cell: I32) -> Work {
   if! leq_i32(cell, geo.last_cell()) {
     let digit = array_get(work.?{board}, cell);
     if! num.is_zero(digit) {
-      rec seed(work, add_i32(cell, 1))
+      recur seed(work, add_i32(cell, 1))
     } else {
       mark(work, cell, digit, 1);
-      rec seed(work, add_i32(cell, 1))
+      recur seed(work, add_i32(cell, 1))
     }
   } else {
     work
@@ -117,15 +117,15 @@ pub fn new_work(puzzle: Array(I32)) -> Work {
   let .(rows: Array(I32), cols: Array(I32), boxes: Array(I32)) = geo.build_coords();
   let work =
     {
-      , board = puzzle
-      , row_of = rows
-      , col_of = cols
-      , box_of = boxes
-      , used_row = array_make_filled(geo.flag_count(), 0)
-      , used_col = array_make_filled(geo.flag_count(), 0)
-      , used_box = array_make_filled(geo.flag_count(), 0)
-      , stack_cell = array_make_empty(I32, ())
-      , stack_digit = array_make_empty(I32, ())
-      };
+    , board = puzzle
+    , row_of = rows
+    , col_of = cols
+    , box_of = boxes
+    , used_row = array_make_filled(geo.flag_count(), 0)
+    , used_col = array_make_filled(geo.flag_count(), 0)
+    , used_box = array_make_filled(geo.flag_count(), 0)
+    , stack_cell = array_make_empty(I32, ())
+    , stack_digit = array_make_empty(I32, ())
+    };
   seed(work, 0)
 }

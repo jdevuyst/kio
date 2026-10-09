@@ -12,14 +12,14 @@ import testapi/iter(loop);
 rec(loop) fn replay_lines(state: Vacuum) -> Vacuum {
   match! read_ascii_line() {
     (
-      , .(line: String) {
-          let cmd = parse_command(line);
-          let next = apply_command(state, cmd);
-          print(transcript_line(cmd, next));
-          rec replay_lines(next)
-        }
-      , .(_done: .) { state }
-      )
+    , .(line: String) {
+        let cmd = parse_command(line);
+        let next = apply_command(state, cmd);
+        print(transcript_line(cmd, next));
+        recur replay_lines(next)
+      }
+    , .(_done: .) { state }
+    )
   }
 }
 

@@ -45,15 +45,15 @@ pub fn ends_of(m: Model) -> List(Tally) { m.?{ends} }
 rec(loop) fn bump_onto(rest: List(Tally), w: String, seen: List(Tally)) -> List(Tally) {
   match! rest.>List.un_list {
     (
-      , .(t: Tally, more: List(Tally)) {
-          if! string_eq(t.?{word}, w) {
-            rev_onto(seen, cons(tally(w, add_i32(t.?{count}, 1)), more))
-          } else {
-            rec bump_onto(more, w, cons(t, seen))
-          }
+    , .(t: Tally, more: List(Tally)) {
+        if! string_eq(t.?{word}, w) {
+          rev_onto(seen, cons(tally(w, add_i32(t.?{count}, 1)), more))
+        } else {
+          recur bump_onto(more, w, cons(t, seen))
         }
-      , .(_empty: .) { reverse(cons(tally(w, 1), seen)) }
-      )
+      }
+    , .(_empty: .) { reverse(cons(tally(w, 1), seen)) }
+    )
   }
 }
 
@@ -64,15 +64,15 @@ fn bump(ts: List(Tally), w: String) -> List(Tally) { bump_onto(ts, w, nil(Tally)
 rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List(Row)) -> List(Row) {
   match! rest.>List.un_list {
     (
-      , .(r: Row, more: List(Row)) {
-          if! string_eq(r.?{row_word}, from) {
-            rev_onto(seen, cons(row(from, bump(r.?{row_succs}, to)), more))
-          } else {
-            rec add_edge_onto(more, from, to, cons(r, seen))
-          }
+    , .(r: Row, more: List(Row)) {
+        if! string_eq(r.?{row_word}, from) {
+          rev_onto(seen, cons(row(from, bump(r.?{row_succs}, to)), more))
+        } else {
+          recur add_edge_onto(more, from, to, cons(r, seen))
         }
-      , .(_empty: .) { reverse(cons(row(from, of1(tally(to, 1))), seen)) }
-      )
+      }
+    , .(_empty: .) { reverse(cons(row(from, of1(tally(to, 1))), seen)) }
+    )
   }
 }
 
@@ -83,15 +83,15 @@ fn add_edge(rows: List(Row), from: String, to: String) -> List(Row) {
 rec(loop) fn learn_edges(rows: List(Row), prev: String, rest: List(String)) -> List(Row) {
   match! rest.>List.un_list {
     (
-      , .(w: String, more: List(String)) { rec learn_edges(add_edge(rows, prev, w), w, more) }
-      , .(_empty: .) { rows }
-      )
+    , .(w: String, more: List(String)) { recur learn_edges(add_edge(rows, prev, w), w, more) }
+    , .(_empty: .) { rows }
+    )
   }
 }
 
 rec(loop) fn last_word(w: String, rest: List(String)) -> String {
   match! rest.>List.un_list {
-    (.(x: String, more: List(String)) { rec last_word(x, more) }, .(_empty: .) { w })
+    (.(x: String, more: List(String)) { recur last_word(x, more) }, .(_empty: .) { w })
   }
 }
 
@@ -100,39 +100,35 @@ rec(loop) fn last_word(w: String, rest: List(String)) -> String {
 fn learn_phrase(m: Model, phrase: List(String)) -> Model {
   match! phrase.>List.un_list {
     (
-      , .(first: String, rest: List(String)) {
-          model(
-            , learn_edges(rows_of(m), first, rest)
-            , bump(starts_of(m), first)
-            , bump(ends_of(m), last_word(first, rest))
-            )
-        }
-      , .(_empty: .) { m }
-      )
+    , .(first: String, rest: List(String)) {
+        model(
+        , learn_edges(rows_of(m), first, rest)
+        , bump(starts_of(m), first)
+        , bump(ends_of(m), last_word(first, rest))
+        )
+      }
+    , .(_empty: .) { m }
+    )
   }
 }
 
 pub rec(loop) fn learn(m: Model, phrases: List(List(String))) -> Model {
   match! phrases.>List.un_list {
     (
-      , .(p: List(String), more: List(List(String))) { rec learn(learn_phrase(m, p), more) }
-      , .(_empty: .) { m }
-      )
+    , .(p: List(String), more: List(List(String))) { recur learn(learn_phrase(m, p), more) }
+    , .(_empty: .) { m }
+    )
   }
 }
 
 rec(loop) fn holds(ts: List(Tally), w: String) -> Bool {
   match! ts.>List.un_list {
     (
-      , .(t: Tally, more: List(Tally)) {
-          if! string_eq(t.?{word}, w) {
-            .t
-          } else {
-            rec holds(more, w)
-          }
-        }
-      , .(_empty: .) { .f }
-      )
+    , .(t: Tally, more: List(Tally)) {
+        if! string_eq(t.?{word}, w) { .t } else { recur holds(more, w) }
+      }
+    , .(_empty: .) { .f }
+    )
   }
 }
 
@@ -143,15 +139,11 @@ pub fn is_end(m: Model, w: String) -> Bool { holds(ends_of(m), w) }
 rec(loop) fn find_succs(rows: List(Row), w: String) -> List(Tally) {
   match! rows.>List.un_list {
     (
-      , .(r: Row, more: List(Row)) {
-          if! string_eq(r.?{row_word}, w) {
-            r.?{row_succs}
-          } else {
-            rec find_succs(more, w)
-          }
-        }
-      , .(_empty: .) { nil(Tally) }
-      )
+    , .(r: Row, more: List(Row)) {
+        if! string_eq(r.?{row_word}, w) { r.?{row_succs} } else { recur find_succs(more, w) }
+      }
+    , .(_empty: .) { nil(Tally) }
+    )
   }
 }
 
@@ -162,9 +154,9 @@ pub fn succs_of(m: Model, w: String) -> List(Tally) { find_succs(rows_of(m), w) 
 rec(loop) fn weight_onto(ts: List(Tally), acc: I32) -> I32 {
   match! ts.>List.un_list {
     (
-      , .(t: Tally, more: List(Tally)) { rec weight_onto(more, add_i32(acc, t.?{count})) }
-      , .(_empty: .) { acc }
-      )
+    , .(t: Tally, more: List(Tally)) { recur weight_onto(more, add_i32(acc, t.?{count})) }
+    , .(_empty: .) { acc }
+    )
   }
 }
 

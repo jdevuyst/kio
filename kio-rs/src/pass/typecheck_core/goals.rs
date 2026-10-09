@@ -13303,6 +13303,7 @@ mod tests {
         let structural_original = Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "same".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -13405,6 +13406,7 @@ mod tests {
         let original = Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "same".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(
@@ -14812,6 +14814,7 @@ mod tests {
         let original = Expr::RecOrder {
             occurrence: Default::default(),
             plan: Box::new(crate::ast::RecOrderPlan {
+                source_call: None,
                 tail_continuation: None,
                 name: "same".to_owned(),
                 disposition: crate::ast::RecOrderDisposition::Ordered(

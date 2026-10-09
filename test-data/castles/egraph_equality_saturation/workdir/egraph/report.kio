@@ -38,33 +38,29 @@ pub fn original(g: graph.Graph, root: I32) {
 }
 
 rec(loop) fn values(
-  , g: graph.Graph
-  , selection: extract.Selection
-  , root: I32
-  , samples: Array(I32 & I32)
-  , i: I32
-  , agrees: Bool
-  ) -> Bool {
+, g: graph.Graph
+, selection: extract.Selection
+, root: I32
+, samples: Array(I32 & I32)
+, i: I32
+, agrees: Bool
+) -> Bool {
   if! n.equal(i, arr.array_len(samples)) {
     agrees
   } else {
     let .(x, y) = arr.array_get(samples, i);
     let actual = extract.evaluate(g, selection, root, x, y);
     let expected = extract.source_value(g, root, x, y);
-    if! n.equal(i, 0) {
-      ()
-    } else {
-      io.print(",")
-    };
+    if! n.equal(i, 0) { () } else { io.print(",") };
     number(actual);
-    rec values(
-      , g
-      , selection
-      , root
-      , samples
-      , n.increment(i)
-      , n.both(agrees, n.equal(actual, expected))
-      )
+    recur values(
+    , g
+    , selection
+    , root
+    , samples
+    , n.increment(i)
+    , n.both(agrees, n.equal(actual, expected))
+    )
   }
 }
 

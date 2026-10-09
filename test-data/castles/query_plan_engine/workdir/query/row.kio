@@ -49,15 +49,15 @@ fn no_value() -> Maybe_value { {no_value=}.>widen_sum!(Maybe_value) }
 pub rec(loop) fn row_get(row: Row, c: schema.Col) -> Maybe_value {
   match! row.>list.List.un_list {
     (
-      , .(head: Cell, rest: Row) {
-          if! schema.col_eq(cell_col_of(head), c) {
-            some_value(cell_val_of(head))
-          } else {
-            rec row_get(rest, c)
-          }
+    , .(head: Cell, rest: Row) {
+        if! schema.col_eq(cell_col_of(head), c) {
+          some_value(cell_val_of(head))
+        } else {
+          recur row_get(rest, c)
         }
-      , .(_empty: .) { no_value() }
-      )
+      }
+    , .(_empty: .) { no_value() }
+    )
   }
 }
 
@@ -87,10 +87,10 @@ pub fn row_merge(left: Row, right: Row) -> Row { list.append(left, right) }
 pub rec(loop) fn project_row(cols: schema.Col_list, row: Row) -> Row {
   match! cols.>list.List.un_list {
     (
-      , .(c: schema.Col, rest: schema.Col_list) {
-          list.cons(cell(c, row_cell(row, c)), rec(cont) project_row(rest, row))
-        }
-      , .(_empty: .) { list.nil(Cell) }
-      )
+    , .(c: schema.Col, rest: schema.Col_list) {
+        list.cons(cell(c, row_cell(row, c)), recur(cont) project_row(rest, row))
+      }
+    , .(_empty: .) { list.nil(Cell) }
+    )
   }
 }

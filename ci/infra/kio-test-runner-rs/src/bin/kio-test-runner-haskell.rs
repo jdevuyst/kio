@@ -961,7 +961,7 @@ fn haskell_canonical_method(
             let native = role(number);
             m(vec![native.clone(), native], role(bool_))
         }
-        HostFnBodyKind::Loop => {
+        HostFnBodyKind::Loop | HostFnBodyKind::LoopReentry => {
             // `loop[s][r](step: s -> (s | r), state: s) -> r`. The host
             // record retains both native type variables. The step's `s | r`
             // return is the `arg0_cbret` sum, named through its public alias.
@@ -974,7 +974,14 @@ fn haskell_canonical_method(
             TraitMethod {
                 name: member.clone(),
                 type_params: vec!["s".to_owned(), "r".to_owned()],
-                arg_types: vec![format!("(s -> m ({cbret} h m s r))"), "s".to_owned()],
+                arg_types: vec![
+                    if matches!(binding.body, HostFnBodyKind::LoopReentry) {
+                        format!("((s -> m r, s) -> m ({cbret} h m s r))")
+                    } else {
+                        format!("(s -> m ({cbret} h m s r))")
+                    },
+                    "s".to_owned(),
+                ],
                 ret_type: "r".to_owned(),
                 where_clause: format!("__cbret={cbret}"),
             }
@@ -2503,6 +2510,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         HostFnBodyKind::StringSlice { .. } => CanonicalKind::StringSlice,
         HostFnBodyKind::StringCodeAt { .. } => CanonicalKind::StringCodeAt,
         HostFnBodyKind::Loop => CanonicalKind::Loop,
+        HostFnBodyKind::LoopReentry => CanonicalKind::LoopReentry,
         HostFnBodyKind::NumericToString { value, .. } => CanonicalKind::NumericToString {
             kind: value.fixture.role().to_owned(),
         },
@@ -2788,6 +2796,15 @@ fn render_haskell_body(
             let callback_ret = BoundaryId::env_item(source, BoundaryRoot::Arg(0))
                 .nested(BoundaryStep::CallbackRet);
             render_loop_body(target_namespace, &callback_ret)
+        }
+        CanonicalKind::LoopReentry => {
+            let callback_ret = BoundaryId::env_item(source, BoundaryRoot::Arg(0))
+                .nested(BoundaryStep::CallbackRet);
+            let (v0, v1) = sum_arm_patterns(target_namespace, &callback_ret);
+            format!(
+                "\\arg0 arg1 -> let {{ run state = arg0 (run, state) >>= \\next -> case next of \
+                 {{ {v0} state' -> run state'; {v1} result -> pure result }} }} in run arg1"
+            )
         }
         CanonicalKind::Array(op) => render_array_body(op, target_namespace, &ret_boundary()),
         // The runner chooses one ordinary tagged host type for the package's

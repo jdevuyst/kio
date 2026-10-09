@@ -25,40 +25,37 @@ import testapi/io(print);
 /// Ships whose hull is deep, worst first.
 fn deep_draft_ships() -> plan.Plan {
   plan.project(
-    , list.of3(schema.ship_name(), schema.ship_flag(), schema.ship_draft())
-    , plan.order_by(
-        , schema.ship_draft()
-        , plan.desc()
-        , plan.filter(
-            , plan.cmp(schema.ship_draft(), plan.geq_op(), 90)
-            , plan.scan(schema.ships_table())
-            )
-        )
+  , list.of3(schema.ship_name(), schema.ship_flag(), schema.ship_draft())
+  , plan.order_by(
+    , schema.ship_draft()
+    , plan.desc()
+    , plan.filter(plan.cmp(schema.ship_draft(), plan.geq_op(), 90), plan.scan(schema.ships_table()))
     )
+  )
 }
 
 /// Where each ship is moored, shallowest berth first. The join carries a
 /// ship's berth id over to the berth that owns it.
 fn berth_assignments() -> plan.Plan {
   plan.project(
-    , list.of5(
-        , schema.ship_name()
-        , schema.berth_zone()
-        , schema.ship_draft()
-        , schema.berth_id()
-        , schema.berth_depth()
-        )
-    , plan.order_by(
-        , schema.berth_depth()
-        , plan.asc()
-        , plan.join(
-            , plan.scan(schema.ships_table())
-            , plan.scan(schema.berths_table())
-            , schema.ship_berth()
-            , schema.berth_id()
-            )
-        )
+  , list.of5(
+    , schema.ship_name()
+    , schema.berth_zone()
+    , schema.ship_draft()
+    , schema.berth_id()
+    , schema.berth_depth()
     )
+  , plan.order_by(
+    , schema.berth_depth()
+    , plan.asc()
+    , plan.join(
+      , plan.scan(schema.ships_table())
+      , plan.scan(schema.berths_table())
+      , schema.ship_berth()
+      , schema.berth_id()
+      )
+    )
+  )
 }
 
 /// Ships drawing more water than their berth has. The predicate compares
@@ -67,17 +64,17 @@ fn berth_assignments() -> plan.Plan {
 /// the join itself.
 fn over_draft_alerts() -> plan.Plan {
   plan.project(
-    , list.of4(schema.ship_name(), schema.berth_id(), schema.ship_draft(), schema.berth_depth())
-    , plan.filter(
-        , plan.cmp_cols(schema.berth_depth(), plan.lt_op(), schema.ship_draft())
-        , plan.join(
-            , plan.scan(schema.ships_table())
-            , plan.scan(schema.berths_table())
-            , schema.ship_berth()
-            , schema.berth_id()
-            )
-        )
+  , list.of4(schema.ship_name(), schema.berth_id(), schema.ship_draft(), schema.berth_depth())
+  , plan.filter(
+    , plan.cmp_cols(schema.berth_depth(), plan.lt_op(), schema.ship_draft())
+    , plan.join(
+      , plan.scan(schema.ships_table())
+      , plan.scan(schema.berths_table())
+      , schema.ship_berth()
+      , schema.berth_id()
+      )
     )
+  )
 }
 
 /// Cargo tonnage by harbor zone, heaviest zone first. Three tables:
@@ -85,36 +82,36 @@ fn over_draft_alerts() -> plan.Plan {
 /// names the zone the tonnage is credited to.
 fn tonnage_by_zone() -> plan.Plan {
   plan.order_by(
-    , schema.total()
-    , plan.desc()
-    , plan.group_sum(
-        , schema.berth_zone_id()
-        , schema.mf_tons()
-        , plan.join(
-            , plan.join(
-                , plan.scan(schema.manifests_table())
-                , plan.scan(schema.ships_table())
-                , schema.mf_ship()
-                , schema.ship_id()
-                )
-            , plan.scan(schema.berths_table())
-            , schema.ship_berth()
-            , schema.berth_id()
-            )
+  , schema.total()
+  , plan.desc()
+  , plan.group_sum(
+    , schema.berth_zone_id()
+    , schema.mf_tons()
+    , plan.join(
+      , plan.join(
+        , plan.scan(schema.manifests_table())
+        , plan.scan(schema.ships_table())
+        , schema.mf_ship()
+        , schema.ship_id()
         )
+      , plan.scan(schema.berths_table())
+      , schema.ship_berth()
+      , schema.berth_id()
+      )
     )
+  )
 }
 
 /// The three ships with the most manifests to their name.
 fn busiest_ships() -> plan.Plan {
   plan.limit(
-    , 3
-    , plan.order_by(
-        , schema.count()
-        , plan.desc()
-        , plan.group_count(schema.mf_ship(), plan.scan(schema.manifests_table()))
-        )
+  , 3
+  , plan.order_by(
+    , schema.count()
+    , plan.desc()
+    , plan.group_count(schema.mf_ship(), plan.scan(schema.manifests_table()))
     )
+  )
 }
 
 /// The cargo the harbor master wants to see: the heavy lots and the
@@ -122,27 +119,27 @@ fn busiest_ships() -> plan.Plan {
 /// from ship 6.
 fn priority_cargo() -> plan.Plan {
   plan.project(
-    , list.of3(schema.ship_name(), schema.mf_cargo(), schema.mf_tons())
-    , plan.order_by(
-        , schema.mf_tons()
-        , plan.desc()
-        , plan.filter(
-            , plan.all_of(
-                , plan.any_of(
-                    , plan.cmp(schema.mf_tons(), plan.gt_op(), 300)
-                    , plan.cmp(schema.mf_tons(), plan.leq_op(), 90)
-                    )
-                , plan.none_of(plan.cmp(schema.mf_ship(), plan.eq_op(), 6))
-                )
-            , plan.join(
-                , plan.scan(schema.manifests_table())
-                , plan.scan(schema.ships_table())
-                , schema.mf_ship()
-                , schema.ship_id()
-                )
-            )
+  , list.of3(schema.ship_name(), schema.mf_cargo(), schema.mf_tons())
+  , plan.order_by(
+    , schema.mf_tons()
+    , plan.desc()
+    , plan.filter(
+      , plan.all_of(
+        , plan.any_of(
+          , plan.cmp(schema.mf_tons(), plan.gt_op(), 300)
+          , plan.cmp(schema.mf_tons(), plan.leq_op(), 90)
+          )
+        , plan.none_of(plan.cmp(schema.mf_ship(), plan.eq_op(), 6))
         )
+      , plan.join(
+        , plan.scan(schema.manifests_table())
+        , plan.scan(schema.ships_table())
+        , schema.mf_ship()
+        , schema.ship_id()
+        )
+      )
     )
+  )
 }
 
 fn run_query(tag: String, title: String, p: plan.Plan) {
@@ -157,12 +154,12 @@ fn run_query(tag: String, title: String, p: plan.Plan) {
   render_relation(out);
   print(text.cat3("  rows: ", int_to_string(list.length(rel.rel_rows_of(out))), "\n"));
   print(text.cat5(
-    , "  stats: scanned="
-    , int_to_string(engine.stats_scanned(st))
-    , " compares="
-    , int_to_string(engine.stats_compares(st))
-    , "\n"
-    ))
+  , "  stats: scanned="
+  , int_to_string(engine.stats_scanned(st))
+  , " compares="
+  , int_to_string(engine.stats_compares(st))
+  , "\n"
+  ))
 }
 
 pub fn main() {

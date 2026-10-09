@@ -5,17 +5,17 @@ import testapi(Array, I32);
 import testapi/array(array_make_empty, array_push);
 
 fn push_row(
-  , cells: Array(I32)
-  , c0: I32
-  , c1: I32
-  , c2: I32
-  , c3: I32
-  , c4: I32
-  , c5: I32
-  , c6: I32
-  , c7: I32
-  , c8: I32
-  ) {
+, cells: Array(I32)
+, c0: I32
+, c1: I32
+, c2: I32
+, c3: I32
+, c4: I32
+, c5: I32
+, c6: I32
+, c7: I32
+, c8: I32
+) {
   array_push(cells, c0);
   array_push(cells, c1);
   array_push(cells, c2);

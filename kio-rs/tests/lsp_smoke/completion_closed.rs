@@ -287,36 +287,36 @@ fn closed_cases() -> Vec<ClosedCase> {
         "module app; labels { field: . }; fn run(value: Field) { let .({field ",
         &[("as", " local}) = value; local }")],
     );
-    add("", "module app; fn run() { rec(", &[]);
+    add("", "module app; fn run() { recur(", &[]);
     add(
         "",
-        "module app; rec(loop) fn run(x: .) { rec(",
+        "module app; rec(loop) fn run(x: .) { recur(",
         &[("cont", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { rec(",
+        "module app; rec(loop) fn run[A](x: A) { recur(",
         &[("cont", ") run(x) }"), ("poly", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { rec(cont, ",
+        "module app; rec(loop) fn run[A](x: A) { recur(cont, ",
         &[("poly", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { rec(poly, ",
+        "module app; rec(loop) fn run[A](x: A) { recur(poly, ",
         &[("cont", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { rec(poly, cont, ",
+        "module app; rec(loop) fn run[A](x: A) { recur(poly, cont, ",
         &[],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { .(y: A) { rec(",
-        &[],
+        "module app; rec(loop) fn run[A](x: A) { .(y: A) { recur(",
+        &[("escape", ") run(x) } }"), ("poly", ") run(x) } }")],
     );
 
     // Package and backend key contracts. Values are ordinary valid field values;
@@ -795,21 +795,22 @@ fn lsp_protocol_closed_choices_insert_and_retract_across_real_edits() {
                 continue;
             };
             let edit = &item["textEdit"];
-            assert_eq!(edit["newText"], *label);
-            assert_eq!(edit["range"]["start"]["line"], 0);
-            assert_eq!(edit["range"]["end"]["line"], 0);
-            let start = edit["range"]["start"]["character"].as_u64().unwrap() as usize;
-            let end = edit["range"]["end"]["character"].as_u64().unwrap() as usize;
-            let eof = case.prefix.encode_utf16().count();
-            assert_eq!(
-                (start, end),
-                (eof, eof),
-                "{} {:?}: {label}",
-                case.kind,
-                case.prefix
-            );
-            let mut inserted = case.prefix.clone();
-            inserted.replace_range(start..end, label);
+            if !case.prefix.contains("recur(") {
+                assert_eq!(edit["newText"], *label);
+                assert_eq!(edit["range"]["start"]["line"], 0);
+                assert_eq!(edit["range"]["end"]["line"], 0);
+                let start = edit["range"]["start"]["character"].as_u64().unwrap() as usize;
+                let end = edit["range"]["end"]["character"].as_u64().unwrap() as usize;
+                let eof = case.prefix.encode_utf16().count();
+                assert_eq!(
+                    (start, end),
+                    (eof, eof),
+                    "{} {:?}: {label}",
+                    case.kind,
+                    case.prefix
+                );
+            }
+            let mut inserted = apply_lsp_text_edits(&case.prefix, std::slice::from_ref(edit));
             inserted.push_str(tail);
             if let Err(error) = insertion_parses(case.kind, &inserted) {
                 failures.push(format!("insertion {inserted:?}: {error}"));
@@ -824,4 +825,131 @@ fn lsp_protocol_closed_choices_insert_and_retract_across_real_edits() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+#[test]
+fn lsp_recursive_annotations_replace_canonically_on_current_overlays() {
+    let dir = TempDir::new("completion-recursive-annotations");
+    dir.write_pkg_root_package();
+    dir.write(
+        "pkg.kio",
+        "module pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn retain(callback: . -> .) -> .;\n",
+    );
+    let path = dir.write("pkg/main.kio", "");
+    let uri = path_to_file_uri(&path);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": ""}}),
+    );
+    let cases = [
+        ("|", vec!["escape", "poly"], Some(("escape", "escape")), "x"),
+        (
+            "cont, |",
+            vec!["escape", "poly"],
+            Some(("escape", "escape")),
+            "x",
+        ),
+        (
+            "poly, cont, es|capex",
+            vec!["escape"],
+            Some(("escape", "poly, escape")),
+            "A & A, (x, x)",
+        ),
+        (
+            "escape, |",
+            vec!["poly"],
+            Some(("poly", "poly, escape")),
+            "A & A, (x, x)",
+        ),
+        (
+            "cont, // 😀 keep\n es|cape",
+            vec!["escape", "poly"],
+            Some(("escape", " // 😀 keep\n escape")),
+            "x",
+        ),
+        (
+            "cont,\n |",
+            vec!["escape", "poly"],
+            Some(("escape", "\n escape")),
+            "x",
+        ),
+        (
+            "|,\n escape",
+            vec!["poly"],
+            Some(("poly", "poly, escape\n ")),
+            "A & A, (x, x)",
+        ),
+        (
+            "|, escape",
+            vec!["poly"],
+            Some(("poly", "poly, escape")),
+            "A & A, (x, x)",
+        ),
+        ("poly, escape, |", vec![], None, "A & A, (x, x)"),
+        ("es|capex, unknown", vec![], None, "x"),
+        ("es|capex, // keep\n unknown", vec![], None, "x"),
+    ];
+    let mut version = 1;
+    for (annotations, expected, selected, args) in cases.iter().chain(cases.iter().rev()) {
+        let marked = format!(
+            "module pkg/main; import pkg as host; rec(host.drive) {{ fn again[A](x: A) -> . {{ recur again(x) }}; pub fn capture[A](x: A) -> . {{ host.retain(.() -> . {{ recur({annotations}) again({args}) }}) }} }}"
+        );
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        version += 1;
+        send_full_text_change(&mut lsp, &uri, version, &source);
+        let (line, character) = source_position(&source, cursor);
+        let response = send_completion(&mut lsp, &uri, line, character);
+        let mut actual = completion_labels(&response);
+        actual.sort_unstable();
+        assert_eq!(&actual, expected, "{source}: {response}");
+        if let Some((label, canonical)) = selected {
+            let item = response["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["label"] == *label)
+                .unwrap();
+            assert_eq!(
+                item["textEdit"]["range"]["start"]["line"],
+                item["textEdit"]["range"]["end"]["line"]
+            );
+            let mut edits = vec![item["textEdit"].clone()];
+            if let Some(additional) = item["additionalTextEdits"].as_array() {
+                edits.extend(additional.iter().cloned());
+            }
+            let applied = apply_lsp_text_edits(&source, &edits);
+            assert_eq!(
+                applied,
+                marked.replace(annotations, canonical),
+                "{response}"
+            );
+            // Clean analysis publishes only when retracting an earlier diagnostic.
+            let sentinel = format!("{applied}\nfn broken() -> Missing {{ () }}");
+            version += 1;
+            send_full_text_change(&mut lsp, &uri, version, &sentinel);
+            let rejected = wait_for_publish_version(&mut lsp, &uri, i64::from(version));
+            assert!(!rejected["diagnostics"].as_array().unwrap().is_empty());
+            version += 1;
+            send_full_text_change(&mut lsp, &uri, version, &applied);
+            let diagnostics = wait_for_publish_version(&mut lsp, &uri, i64::from(version));
+            assert_eq!(
+                diagnostics["diagnostics"],
+                json!([]),
+                "{applied}: {diagnostics}"
+            );
+        }
+    }
+    lsp.send_notification(
+        "textDocument/didClose",
+        json!({"textDocument": {"uri": uri}}),
+    );
+    let source = "module pkg/main; fn ordinary() { recur(";
+    lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": version + 1, "text": source}}));
+    wait_for_publish_version(&mut lsp, &uri, i64::from(version + 1));
+    let response = send_completion(&mut lsp, &uri, 0, source.len() as u64);
+    assert!(completion_labels(&response).is_empty(), "{response}");
+    assert_eq!(lsp.shutdown(), 0);
 }

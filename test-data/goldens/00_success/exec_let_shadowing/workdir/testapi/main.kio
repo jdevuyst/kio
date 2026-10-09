@@ -30,7 +30,9 @@ fn interleaved(n: I32) -> I32 { let x = n; let y = x; let x = y; x }
 // needs call-site context to synthesize its parameter type).
 fn apply_i32(f: I32 -> I32, x: I32) -> I32 { f(x) }
 
-fn via_fn(n: I32) -> I32 { apply_i32(.(x) { let x = x; x }, n) }
+fn via_fn(n: I32) -> I32 {
+  apply_i32(.(x) { let x = x; x }, n)
+}
 
 pub fn main() {
   print(int_to_string(double(7(I32))));

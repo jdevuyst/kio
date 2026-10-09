@@ -24,11 +24,7 @@ pub fn row_of(a: Addr) -> I32 { let .(row: I32, _col: I32) = a.>Addr.parts; row 
 pub fn col_of(a: Addr) -> I32 { let .(_row: I32, col: I32) = a.>Addr.parts; col }
 
 pub fn addr_eq(a: Addr, b: Addr) -> Bool {
-  if! eq_i32(row_of(a), row_of(b)) {
-    eq_i32(col_of(a), col_of(b))
-  } else {
-    .f
-  }
+  if! eq_i32(row_of(a), row_of(b)) { eq_i32(col_of(a), col_of(b)) } else { .f }
 }
 
 pub fn rows() -> I32 { 4 }
@@ -75,9 +71,9 @@ rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
   if! lt_i32(row, 0) {
     acc
   } else if! lt_i32(col, 0) {
-    rec addrs_onto(sub_i32(row, 1), sub_i32(cols(), 1), acc)
+    recur addrs_onto(sub_i32(row, 1), sub_i32(cols(), 1), acc)
   } else {
-    rec addrs_onto(row, sub_i32(col, 1), cons(make_addr(row, col), acc))
+    recur addrs_onto(row, sub_i32(col, 1), cons(make_addr(row, col), acc))
   }
 }
 
@@ -86,34 +82,26 @@ pub fn all_addrs() -> List(Addr) { addrs_onto(sub_i32(rows(), 1), sub_i32(cols()
 pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
   match! xs.>List.unpack {
     (
-      , .(head: Addr, rest: List(Addr)) {
-          if! addr_eq(head, a) {
-            .t
-          } else {
-            rec mem(rest, a)
-          }
-        }
-      , .(_empty: .) { .f }
-      )
+    , .(head: Addr, rest: List(Addr)) {
+        if! addr_eq(head, a) { .t } else { recur mem(rest, a) }
+      }
+    , .(_empty: .) { .f }
+    )
   }
 }
 
 /// Precedent sets are built with this, so a formula naming the same cell
 /// twice still counts as one graph edge.
 pub fn add_unique(xs: List(Addr), a: Addr) -> List(Addr) {
-  if! mem(xs, a) {
-    xs
-  } else {
-    append(xs, one(a))
-  }
+  if! mem(xs, a) { xs } else { append(xs, one(a)) }
 }
 
 /// Union `ys` into `xs`, keeping the order the two lists already have.
 pub rec(loop) fn add_all(xs: List(Addr), ys: List(Addr)) -> List(Addr) {
   match! ys.>List.unpack {
     (
-      , .(head: Addr, rest: List(Addr)) { rec add_all(add_unique(xs, head), rest) }
-      , .(_empty: .) { xs }
-      )
+    , .(head: Addr, rest: List(Addr)) { recur add_all(add_unique(xs, head), rest) }
+    , .(_empty: .) { xs }
+    )
   }
 }

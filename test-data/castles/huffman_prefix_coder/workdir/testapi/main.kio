@@ -45,10 +45,10 @@ pub fn main() {
   print_decoded(len(decoded), same_symbols(decoded, symbols));
   print_savings(savings(symbols, alphabet_size(), len(bits)));
   print_kraft(
-    , longest
-    , pow2(longest)
-    , kraft_sum(table, longest)
-    , len(table)
-    , kraft_holds(table, longest)
-    )
+  , longest
+  , pow2(longest)
+  , kraft_sum(table, longest)
+  , len(table)
+  , kraft_holds(table, longest)
+  )
 }

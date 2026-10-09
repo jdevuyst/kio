@@ -12,7 +12,7 @@ rec(loop) fn repeat(remaining: I32) -> String {
     if! leq_i32(remaining, 0) {
       "polymorphic recursive candidate\n"
     } else {
-      rec repeat(sub_i32(remaining, 1))
+      recur repeat(sub_i32(remaining, 1))
     }
   })
 }

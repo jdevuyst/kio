@@ -18,16 +18,12 @@ pub fn empty[V] -> Table(V) { Table.pack(V, nil(Addr & V)) }
 rec(loop) fn find_or[V](entries: List(Addr & V), key: Addr, fallback: V) -> V {
   match! entries.>List.unpack {
     (
-      , .(head: Addr & V, rest: List(Addr & V)) {
-          let .(k: Addr, v: V) = head;
-          if! addr_eq(k, key) {
-            v
-          } else {
-            rec find_or(rest, key, fallback)
-          }
-        }
-      , .(_empty: .) { fallback }
-      )
+    , .(head: Addr & V, rest: List(Addr & V)) {
+        let .(k: Addr, v: V) = head;
+        if! addr_eq(k, key) { v } else { recur find_or(rest, key, fallback) }
+      }
+    , .(_empty: .) { fallback }
+    )
   }
 }
 
@@ -40,16 +36,16 @@ pub fn get_or[V](t: Table(V), key: Addr, fallback: V) -> V {
 rec(loop) fn without[V](entries: List(Addr & V), key: Addr, acc: List(Addr & V)) -> List(Addr & V) {
   match! entries.>List.unpack {
     (
-      , .(head: Addr & V, rest: List(Addr & V)) {
-          let .(k: Addr, _v: V) = head;
-          if! addr_eq(k, key) {
-            rec without(rest, key, acc)
-          } else {
-            rec without(rest, key, cons(head, acc))
-          }
+    , .(head: Addr & V, rest: List(Addr & V)) {
+        let .(k: Addr, _v: V) = head;
+        if! addr_eq(k, key) {
+          recur without(rest, key, acc)
+        } else {
+          recur without(rest, key, cons(head, acc))
         }
-      , .(_empty: .) { reverse(acc) }
-      )
+      }
+    , .(_empty: .) { reverse(acc) }
+    )
   }
 }
 

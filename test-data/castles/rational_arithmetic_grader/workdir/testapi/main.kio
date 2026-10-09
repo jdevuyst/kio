@@ -17,19 +17,19 @@ import rational/expr as expr;
 import rational/fixture as fixture;
 import rational/grader as grader;
 import rational/grader(
-  , Exercise
-  , Roster
-  , Tally
-  , Verdict
-  , {equivalent_count}
-  , {exact_count}
-  , {note}
-  , {outcome}
-  , {question}
-  , {submitted}
-  , {undefined_count}
-  , {wrong_count}
-  );
+, Exercise
+, Roster
+, Tally
+, Verdict
+, {equivalent_count}
+, {exact_count}
+, {note}
+, {outcome}
+, {question}
+, {submitted}
+, {undefined_count}
+, {wrong_count}
+);
 import rational/render as render;
 import rational/text as text;
 import testapi(I32, String);
@@ -60,12 +60,12 @@ fn report(index: I32, item: Exercise) -> Verdict {
 rec(loop) fn walk(index: I32, remaining: Roster, marks: Tally) -> Tally {
   match! Roster.body(remaining) {
     (
-      , .(item: Exercise, rest: Roster) {
-          let verdict = report(index, item);
-          rec walk(arith.add(index, 1), rest, grader.record(marks, verdict))
-        }
-      , .(_end: .) { marks }
-      )
+    , .(item: Exercise, rest: Roster) {
+        let verdict = report(index, item);
+        recur walk(arith.add(index, 1), rest, grader.record(marks, verdict))
+      }
+    , .(_end: .) { marks }
+    )
   }
 }
 
@@ -80,7 +80,7 @@ pub fn main() {
   field("  wrong", num(wrong_count));
   field("  undefined", num(undefined_count));
   field(
-    , "class total"
-    , text.cat4(num(grader.earned(marks)), " of ", num(grader.possible(marks)), " points")
-    )
+  , "class total"
+  , text.cat4(num(grader.earned(marks)), " of ", num(grader.possible(marks)), " points")
+  )
 }

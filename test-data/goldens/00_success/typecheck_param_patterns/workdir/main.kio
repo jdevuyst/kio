@@ -36,7 +36,9 @@ fn use_nested_let[A][B][C](triple: (A & B) & C) -> B { let .((_: A, y: B), _: C)
 // the expected-type push).
 fn apply[A][B](f: (A & B) -> A, x: A & B) -> A { f(x) }
 
-fn use_anon_fn_pattern[A][B](p: A & B) -> A { apply(A, B, .((x, _: B)) -> A { x }, p) }
+fn use_anon_fn_pattern[A][B](p: A & B) -> A {
+  apply(A, B, .((x, _: B)) -> A { x }, p)
+}
 
 // The same shape with a direct nested-`_` annotation (no parameter
 // pattern). Pins the typer's structural-against-expected rule

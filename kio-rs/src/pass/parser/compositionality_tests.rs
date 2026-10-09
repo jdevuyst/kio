@@ -274,7 +274,7 @@ const EXPR_FORMS: &[ExprForm] = &[
         id: "recursive-call",
         grammar: "RecCall",
         declarations: "",
-        source: "rec(poly, cont) form_loop(form_arg)",
+        source: "recur(poly, cont) form_loop(form_arg)",
         root_tag: "recursive-call",
     },
     ExprForm {
@@ -473,7 +473,7 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         id: "recursive-call-argument",
         grammar: "CallArgList",
         declarations: "",
-        item: "fn subject() -> . { rec context_loop(__EXPR_HOLE__) }",
+        item: "fn subject() -> . { recur context_loop(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -1774,7 +1774,7 @@ NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
 BangCall ::= IDENT '!' CallArgList
-RecCall ::= 'rec' RecCallAnnotationList? IDENT CallArgList
+RecCall ::= 'recur' RecCallAnnotationList? IDENT CallArgList
 CallArgList ::= '(' (CallArg (',' CallArg)*)? ','? ')'
 NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
 DotPlaceholderIntro ::= '.' IDENT '.'

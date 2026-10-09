@@ -1,0 +1,5 @@
+module main;
+
+host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
+
+pub rec(drive) fn again(value: .) -> . { recur(escape) again(value) }

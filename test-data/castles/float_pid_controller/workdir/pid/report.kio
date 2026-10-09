@@ -1,18 +1,18 @@
 module pid/report;
 
 import pid/model(
-  , Command
-  , Derivative
-  , Error
-  , Integral
-  , Measured
-  , Step
-  , {command}
-  , {derivative}
-  , {error}
-  , {integral}
-  , {measured}
-  );
+, Command
+, Derivative
+, Error
+, Integral
+, Measured
+, Step
+, {command}
+, {derivative}
+, {error}
+, {integral}
+, {measured}
+);
 import testapi(F64, String);
 import testapi/fmt(f64_to_string);
 import testapi/io(print);

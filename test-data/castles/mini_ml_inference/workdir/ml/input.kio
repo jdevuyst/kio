@@ -16,11 +16,7 @@ pub fn count() -> I32 | String {
     .(line: String) {
       match! fmt.string_to_int(line) {
         .(n: I32) {
-          if! arith.leq_i32(0, n) {
-            n.>widen_sum!
-          } else {
-            "negative frame count".>widen_sum!
-          }
+          if! arith.leq_i32(0, n) { n.>widen_sum! } else { "negative frame count".>widen_sum! }
         };
         .() { "invalid frame count".>widen_sum! }
       }
@@ -35,7 +31,7 @@ rec(loop) fn read_tokens(remaining: I32, reversed: lists.List(String)) ->
   if! arith.leq_i32(remaining, 0) {
     walk.reverse(reversed).>widen_sum!
   } else match! io.read_ascii_line() {
-    .(token: String) { rec read_tokens(arith.sub_i32(remaining, 1), lists.cons(token, reversed)) };
+    .(token: String) { recur read_tokens(arith.sub_i32(remaining, 1), lists.cons(token, reversed)) };
     .() { "incomplete token frame".>widen_sum! }
   }
 }

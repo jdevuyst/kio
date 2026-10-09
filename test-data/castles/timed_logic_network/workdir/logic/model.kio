@@ -17,36 +17,30 @@ pub labels Primitive = { buffer: I32 } | { xor: I32 & I32 };
 pub labels Gate = { output: I32, operation: Primitive, delay: I32, inertial: Bool };
 
 pub labels State = {
-  , wires: lists.List(Signal)
-  , ideals: lists.List(Signal)
-  , agenda: lists.List(Event)
-  , next_serial: I32
-  , edges: I32
-  , canceled: I32
-  , last_time: I32
-  };
+, wires: lists.List(Signal)
+, ideals: lists.List(Signal)
+, agenda: lists.List(Event)
+, next_serial: I32
+, edges: I32
+, canceled: I32
+, last_time: I32
+};
 
 pub fn same_bit(a: Bool, b: Bool) -> Bool {
-  if! a {
-    b
-  } else if! b {
-    .f
-  } else {
-    .t
-  }
+  if! a { b } else if! b { .f } else { .t }
 }
 
 pub fn initial_wires() -> lists.List(Signal) {
   lists.cons(
-    , {wire = 0, level = .f}
+  , {wire = 0, level = .f}
+  , lists.cons(
+    , {wire = 1, level = .f}
     , lists.cons(
-        , {wire = 1, level = .f}
-        , lists.cons(
-            , {wire = 2, level = .f}
-            , lists.cons({wire = 3, level = .f}, lists.singleton({wire = 4, level = .f}))
-            )
-        )
+      , {wire = 2, level = .f}
+      , lists.cons({wire = 3, level = .f}, lists.singleton({wire = 4, level = .f}))
+      )
     )
+  )
 }
 
 pub fn read_wire(id: I32, wires: lists.List(Signal)) -> Bool {
@@ -58,15 +52,11 @@ pub fn read_wire(id: I32, wires: lists.List(Signal)) -> Bool {
 
 pub fn write_wire(id: I32, bit: Bool, wires: lists.List(Signal)) -> lists.List(Signal) {
   traversal.map(
-    , .(signal: Signal) {
-        if! numbers.eq_i32(signal.?{wire}, id) {
-          {wire = id, level = bit}
-        } else {
-          signal
-        }
-      }
-    , wires
-    )
+  , .(signal: Signal) {
+      if! numbers.eq_i32(signal.?{wire}, id) { {wire = id, level = bit} } else { signal }
+    }
+  , wires
+  )
 }
 
 pub fn name(id: I32) -> String {
@@ -88,11 +78,7 @@ pub fn affected(op: Primitive, id: I32) -> Bool {
     .(input: Buffer) { numbers.eq_i32(input.?{buffer}, id) };
     .(inputs: Xor) {
       let .(a, b) = inputs.?{xor};
-      if! numbers.eq_i32(a, id) {
-        .t
-      } else {
-        numbers.eq_i32(b, id)
-      }
+      if! numbers.eq_i32(a, id) { .t } else { numbers.eq_i32(b, id) }
     }
   }
 }
@@ -102,46 +88,37 @@ pub fn evaluate(op: Primitive, wires: lists.List(Signal)) -> Bool {
     .(input: Buffer) { read_wire(input.?{buffer}, wires) };
     .(inputs: Xor) {
       let .(a, b) = inputs.?{xor};
-      if! same_bit(read_wire(a, wires), read_wire(b, wires)) {
-        .f
-      } else {
-        .t
-      }
+      if! same_bit(read_wire(a, wires), read_wire(b, wires)) { .f } else { .t }
     }
   }
 }
 
 pub fn circuit() -> lists.List(Gate) {
   lists.cons(
-    , {output = 1, operation = {buffer = 0}.>widen_sum!(Primitive), delay = 3, inertial = .f}
+  , {output = 1, operation = {buffer = 0}.>widen_sum!(Primitive), delay = 3, inertial = .f}
+  , lists.cons(
+    , {output = 2, operation = {xor = (0, 1)}.>widen_sum!(Primitive), delay = 1, inertial = .f}
     , lists.cons(
-        , {output = 2, operation = {xor = (0, 1)}.>widen_sum!(Primitive), delay = 1, inertial = .f}
-        , lists.cons(
-            , {
-                , output = 3
-                , operation = {buffer = 2}.>widen_sum!(Primitive)
-                , delay = 2
-                , inertial = .f
-                }
-            , lists.singleton({
-                , output = 4
-                , operation = {buffer = 2}.>widen_sum!(Primitive)
-                , delay = 2
-                , inertial = .t
-                })
-            )
-        )
+      , {output = 3, operation = {buffer = 2}.>widen_sum!(Primitive), delay = 2, inertial = .f}
+      , lists.singleton({
+        , output = 4
+        , operation = {buffer = 2}.>widen_sum!(Primitive)
+        , delay = 2
+        , inertial = .t
+        })
+      )
     )
+  )
 }
 
 pub fn initial_state(events: lists.List(Event)) -> State {
   {
-    , wires = initial_wires()
-    , ideals = initial_wires()
-    , agenda = events
-    , next_serial = traversal.length(events)
-    , edges = 0
-    , canceled = 0
-    , last_time = 0
-    }
+  , wires = initial_wires()
+  , ideals = initial_wires()
+  , agenda = events
+  , next_serial = traversal.length(events)
+  , edges = 0
+  , canceled = 0
+  , last_time = 0
+  }
 }

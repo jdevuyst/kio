@@ -45,11 +45,11 @@ pub fn title_count(books: Book_index) -> I32 { dict.size(books) }
 
 pub fn copies_out(books: Book_index) -> I32 {
   dict.fold_asc(
-    , books
-    , 0
-    , .(step: I32 & I32 & Book) {
-        let .(running: I32, _call: I32, entry: Book) = step;
-        add_i32(running, entry.?{copies_out})
-      }
-    )
+  , books
+  , 0
+  , .(step: I32 & I32 & Book) {
+      let .(running: I32, _call: I32, entry: Book) = step;
+      add_i32(running, entry.?{copies_out})
+    }
+  )
 }

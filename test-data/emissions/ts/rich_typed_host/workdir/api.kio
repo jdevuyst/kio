@@ -19,7 +19,9 @@ host fn round_shadow(value: Shadow(Box(String))) -> Shadow(Box(String));
 
 host fn round_hkt[*F](value: F(String)) -> F(String);
 
-pub fn poly() -> String { apply_poly(.[T](value: T) { value }) }
+pub fn poly() -> String {
+  apply_poly(.[T](value: T) { value })
+}
 
 pub fn shadow(value: Shadow(Box(String))) -> Shadow(Box(String)) { round_shadow(value) }
 

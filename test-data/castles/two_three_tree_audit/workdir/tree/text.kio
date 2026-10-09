@@ -24,21 +24,13 @@ pub fn flag(b: Bool) -> String { bool_to_string(b) }
 /// How many decimal digits `n` prints as. Without a division primitive the
 /// width is found by walking the powers of ten upward until one passes `n`.
 rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
-  if! lt_i32(n, bound) {
-    acc
-  } else {
-    rec digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
-  }
+  if! lt_i32(n, bound) { acc } else { recur digits_from(n, mul_i32(bound, 10), add_i32(acc, 1)) }
 }
 
 fn digits(n: I32) -> I32 { digits_from(n, 10, 1) }
 
 rec(loop) fn spaces(n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) {
-    acc
-  } else {
-    rec spaces(sub_i32(n, 1), cat(acc, " "))
-  }
+  if! leq_i32(n, 0) { acc } else { recur spaces(sub_i32(n, 1), cat(acc, " ")) }
 }
 
 /// `n` right-aligned in a field `w` characters wide.

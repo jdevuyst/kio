@@ -340,6 +340,7 @@ pub enum HostFnBodyKind {
         index: HostRoleRef,
     },
     Loop,
+    LoopReentry,
     NumericToString {
         value: HostRoleRef,
         string: HostRoleRef,
@@ -660,6 +661,7 @@ impl HostFnBodyKind {
             | Self::UnreachableI32Print { i32 }
             | Self::ObservePacked { i32 } => [Some(i32), None, None],
             Self::Loop
+            | Self::LoopReentry
             | Self::BoxGet { .. }
             | Self::BoxMake { .. }
             | Self::RoundFunctor
@@ -739,6 +741,9 @@ impl HostFnBodyKind {
                 format!("({} & {index}) -> ({index} | .)", role(string))
             }
             Self::Loop => "[#0] [#1] ((#0 -> (#0 | #1)) & #0) -> #1".to_owned(),
+            Self::LoopReentry => {
+                "[#0] [#1] ((((#0 -> #1) & #0) -> (#0 | #1)) & #0) -> #1".to_owned()
+            }
             Self::NumericToString { value, string } => {
                 format!("({}) -> {}", role(value), role(string))
             }
@@ -896,6 +901,7 @@ impl HostFnBodyKind {
             | Self::Compare { .. }
             | Self::MakeScalar { .. }
             | Self::Loop
+            | Self::LoopReentry
             | Self::CallStep { .. }
             | Self::MakePairCallback { .. }
             | Self::MakePairStructural { .. } => &[2],
@@ -1142,6 +1148,7 @@ pub const TESTAPI_BIGINT_U128_PROTOCOL_NAME: &str = "testapi-bigint-u128";
 
 pub const TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME: &str = "testapi-compute-root";
 pub const TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME: &str = "testapi-compute-loop";
+pub const TESTAPI_REENTRY_PROTOCOL_NAME: &str = "testapi-reentry";
 pub const TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME: &str =
     "testapi-compute-elab-no-i32-format";
 pub const TESTAPI_COMPUTE_ELAB_NO_INPUT_PARSE_PROTOCOL_NAME: &str =
@@ -1638,6 +1645,7 @@ pub enum RunnerProtocol {
     TestApiBigintU128,
     TestApiComputeRoot,
     TestApiComputeLoop,
+    TestApiReentry,
     TestApiComputeElabNoI32Format,
     TestApiComputeElabNoInputParse,
     TestApiComputeListElab,
@@ -3058,6 +3066,50 @@ const FNS_COMPUTE_I32: &[HostFnBinding] = &[
     ),
 ];
 const FNS_COMPUTE_LOOP: &[HostFnBinding] = &[FNS_COMPUTE_I32[12]];
+const FNS_REENTRY: &[HostFnBinding] = &[
+    host_fn("testapi/iter", "loop", HostFnBodyKind::Loop),
+    host_fn("testapi/iter", "loop_reentry", HostFnBodyKind::LoopReentry),
+    host_fn(
+        "testapi/arith",
+        "add_i32",
+        HostFnBodyKind::arithmetic("add", TESTAPI_I32_ROLE),
+    ),
+    host_fn(
+        "testapi/arith",
+        "sub_i32",
+        HostFnBodyKind::arithmetic("sub", TESTAPI_I32_ROLE),
+    ),
+    host_fn(
+        "testapi/arith",
+        "leq_i32",
+        HostFnBodyKind::compare("leq", TESTAPI_I32_ROLE, TESTAPI_BOOL_ROLE),
+    ),
+    host_fn(
+        "testapi/arith",
+        "eq_i32",
+        HostFnBodyKind::compare("eq", TESTAPI_I32_ROLE, TESTAPI_BOOL_ROLE),
+    ),
+    host_fn(
+        "testapi/fmt",
+        "i32_to_string",
+        HostFnBodyKind::numeric_to_string(TESTAPI_I32_ROLE, TESTAPI_STRING_ROLE),
+    ),
+    host_fn(
+        "testapi/fmt",
+        "bool_to_string",
+        HostFnBodyKind::bool_to_string(TESTAPI_BOOL_ROLE, TESTAPI_STRING_ROLE),
+    ),
+    host_fn(
+        "testapi/io",
+        "print",
+        HostFnBodyKind::print(TESTAPI_STRING_ROLE),
+    ),
+    host_fn(
+        "testapi/text",
+        "string_concat",
+        HostFnBodyKind::string_concat(TESTAPI_STRING_ROLE),
+    ),
+];
 const FNS_COMPUTE_NO_I32_FORMAT: &[HostFnBinding] = &[
     FNS_COMPUTE_I32[0],
     FNS_COMPUTE_I32[1],
@@ -3757,6 +3809,7 @@ impl RunnerProtocol {
         Self::TestApiBigintU128,
         Self::TestApiComputeRoot,
         Self::TestApiComputeLoop,
+        Self::TestApiReentry,
         Self::TestApiComputeElabNoI32Format,
         Self::TestApiComputeElabNoInputParse,
         Self::TestApiComputeListElab,
@@ -3917,6 +3970,7 @@ impl RunnerProtocol {
             Self::TestApiBigintU128 => TESTAPI_BIGINT_U128_PROTOCOL_NAME,
             Self::TestApiComputeRoot => TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME,
             Self::TestApiComputeLoop => TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME,
+            Self::TestApiReentry => TESTAPI_REENTRY_PROTOCOL_NAME,
             Self::TestApiComputeElabNoI32Format => TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME,
             Self::TestApiComputeElabNoInputParse => {
                 TESTAPI_COMPUTE_ELAB_NO_INPUT_PARSE_PROTOCOL_NAME
@@ -4097,6 +4151,7 @@ impl RunnerProtocol {
             TESTAPI_BIGINT_U128_PROTOCOL_NAME => Ok(Self::TestApiBigintU128),
             TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME => Ok(Self::TestApiComputeRoot),
             TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME => Ok(Self::TestApiComputeLoop),
+            TESTAPI_REENTRY_PROTOCOL_NAME => Ok(Self::TestApiReentry),
             TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME => {
                 Ok(Self::TestApiComputeElabNoI32Format)
             }
@@ -4536,6 +4591,7 @@ impl RunnerProtocol {
 
             Self::TestApiComputeRoot => main_contract(TYPES_TESTAPI_CORE, FNS_COMPUTE_I32),
             Self::TestApiComputeLoop => main_contract(NO_HOST_TYPES, FNS_COMPUTE_LOOP),
+            Self::TestApiReentry => main_contract(TYPES_ELAB_CORE, FNS_REENTRY),
             Self::TestApiComputeElabNoI32Format => {
                 main_contract(TYPES_ELAB_CORE, FNS_COMPUTE_NO_I32_FORMAT)
             }
@@ -4842,6 +4898,16 @@ pub fn canonical_host_method(
             let ty = native_role(number, false);
             m(&[ty, ty], native_role(bool_, false))
         }
+        HostFnBodyKind::LoopReentry => TraitMethod {
+            name: member.clone(),
+            type_params: vec!["s".to_owned(), "r".to_owned()],
+            arg_types: vec![
+                format!("{}<s, r>", ffi("arg0")),
+                "<s as crate::shapes::KioType>::Facade".to_owned(),
+            ],
+            ret_type: "<r as crate::shapes::KioType>::Facade".to_owned(),
+            where_clause: String::new(),
+        },
         HostFnBodyKind::Loop => {
             // `fn loop[S][R](step: S -> (S | R), state: S) -> R;`
             // The Rust trait emits a synthesized `__F0` fn-typed

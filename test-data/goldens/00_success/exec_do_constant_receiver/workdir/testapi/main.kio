@@ -8,8 +8,6 @@ type Constant[A] = .;
 fn bind[A][B](value: Constant(A), next: A -> Constant(B)) -> Constant(B) { value }
 
 pub fn main() {
-  do! bind {
-    ()
-  };
+  do! bind { () };
   io.print("constant\n")
 }

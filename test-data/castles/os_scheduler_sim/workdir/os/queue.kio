@@ -10,19 +10,19 @@ import testapi/array(array_get, array_len, array_make_empty, array_pop_back, arr
 import testapi/iter(loop);
 
 pub labels Queues = {
-  , ready: Array(I32)
-  , blocked: Array(I32)
-  , wake: Array(I32)
-  , retired: Array(I32)
-  };
+, ready: Array(I32)
+, blocked: Array(I32)
+, wake: Array(I32)
+, retired: Array(I32)
+};
 
 pub fn new_queues() -> Queues {
   {
-    , ready = array_make_empty(I32, ())
-    , blocked = array_make_empty(I32, ())
-    , wake = array_make_empty(I32, ())
-    , retired = array_make_empty(I32, ())
-    }
+  , ready = array_make_empty(I32, ())
+  , blocked = array_make_empty(I32, ())
+  , wake = array_make_empty(I32, ())
+  , retired = array_make_empty(I32, ())
+  }
 }
 
 pub fn ready_len(q: Queues) -> I32 { array_len(q.?{ready}) }
@@ -36,7 +36,7 @@ rec(loop) fn shift_down(r: Array(I32), i: I32, n: I32) {
     ()
   } else {
     array_set(r, sub_i32(i, 1), array_get(r, i));
-    rec shift_down(r, add_i32(i, 1), n)
+    recur shift_down(r, add_i32(i, 1), n)
   }
 }
 
@@ -77,11 +77,11 @@ rec(loop) fn wake_scan(q: Queues, tick: I32, read: I32, write: I32, n: I32) -> I
     let at = array_get(q.?{wake}, read);
     if! leq_i32(at, tick) {
       enqueue(q, pid);
-      rec wake_scan(q, tick, add_i32(read, 1), write, n)
+      recur wake_scan(q, tick, add_i32(read, 1), write, n)
     } else {
       array_set(q.?{blocked}, write, pid);
       array_set(q.?{wake}, write, at);
-      rec wake_scan(q, tick, add_i32(read, 1), add_i32(write, 1), n)
+      recur wake_scan(q, tick, add_i32(read, 1), add_i32(write, 1), n)
     }
   }
 }
@@ -91,7 +91,7 @@ rec(loop) fn truncate(a: Array(I32), keep: I32) {
     ()
   } else {
     let _dropped = array_pop_back(a);
-    rec truncate(a, keep)
+    recur truncate(a, keep)
   }
 }
 

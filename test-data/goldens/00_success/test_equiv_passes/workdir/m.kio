@@ -8,9 +8,6 @@ equiv simple() {
 }
 
 equiv let_binding() {
-  scope! {
-    let x = ();
-    x
-  };
+  scope! { let x = (); x };
   ()
 }

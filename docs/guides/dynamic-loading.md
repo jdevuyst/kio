@@ -218,12 +218,12 @@ fn check_contract() {
 ```kio {@contracts}
 let c =
   contract_cons(
-    , mk_expect(
-        , "add3"(String)
-        , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
-        )
-    , contract_nil()
-    );
+  , mk_expect(
+    , "add3"(String)
+    , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
+    )
+  , contract_nil()
+  );
 ```
 
 `image_exports(im)` is the authority for these strings. It lists each callable
@@ -318,12 +318,12 @@ signature never names a type the host cannot see:
 ```kio {@contracts}
 let c =
   contract_cons(
-    , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
-    , contract_cons(
-        , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
-        , contract_nil()
-        )
-    );
+  , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
+  , contract_cons(
+    , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
+    , contract_nil()
+    )
+  );
 ```
 
 At the erased runtime a constructor and a non-existential projector are

@@ -1,0 +1,45 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/config(depth);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+rec(iter.loop_reentry) fn ticket(value: I32, remaining: I32, delayed: Bool) -> I32 -> I32 {
+  if! delayed {
+    .(increment: I32) { recur(escape) ticket(value, remaining, .f)(increment) }
+  } else if! arith.leq_i32(remaining, 0) {
+    .(increment: I32) { arith.add_i32(value, increment) }
+  } else {
+    recur ticket(value, arith.sub_i32(remaining, 1), .f)
+  }
+}
+
+fn ordinary_loop[S][R](step: S -> (S | R), state: S) -> R {
+  iter.loop_reentry(S, R, .(_reenter: S -> R, current: S) -> S | R { step(current) }, state)
+}
+
+rec(ordinary_loop) fn countdown(remaining: I32) -> I32 {
+  if! arith.leq_i32(remaining, 0) {
+    remaining
+  } else {
+    recur countdown(arith.sub_i32(remaining, 1))
+  }
+}
+
+pub fn main() {
+  let first = ticket(10, depth(), .t);
+  let second = ticket(20, 3, .t);
+  io.print("ready\n");
+  io.print(fmt.i32_to_string(first(1)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(second(2)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(first(3)));
+  io.print("\n");
+  io.print(fmt.i32_to_string(countdown(4)));
+  io.print("\n")
+}

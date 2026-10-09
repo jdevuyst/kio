@@ -12,17 +12,17 @@ pub fn main() {
   let a = term.atom(40);
   let b = term.atom(50);
   bench.run(
-    , "nested composition"
-    , term.node(10, [* x, term.node(20, [* y *]), z, y *])
-    , term.node(10, [* term.node(30, [* z *]), term.node(20, [* a *]), b, a *])
-    );
+  , "nested composition"
+  , term.node(10, [* x, term.node(20, [* y *]), z, y *])
+  , term.node(10, [* term.node(30, [* z *]), term.node(20, [* a *]), b, a *])
+  );
   bench.run("variable chain", term.node(10, [* x, y *]), term.node(10, [* y, term.atom(60) *]));
   bench.run("repeated variable conflict", term.node(10, [* x, x *]), term.node(10, [* a, b *]));
   bench.run("direct occurs failure", x, term.node(20, [* x *]));
   bench.run(
-    , "indirect occurs failure"
-    , term.node(10, [* x, y *])
-    , term.node(10, [* y, term.node(20, [* x *]) *])
-    );
+  , "indirect occurs failure"
+  , term.node(10, [* x, y *])
+  , term.node(10, [* y, term.node(20, [* x *]) *])
+  );
   bench.run("arity conflict", term.node(10, [* x *]), term.node(10, [* a, b *]))
 }

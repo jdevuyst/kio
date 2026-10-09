@@ -44,7 +44,7 @@ rec(loop) fn insert(pair: m.Pair, sorted: core.List(m.Pair)) -> core.List(m.Pair
       if! before(pair, head) {
         core.cons(pair, sorted)
       } else {
-        core.cons(head, rec(cont) insert(pair, tail))
+        core.cons(head, recur(cont) insert(pair, tail))
       }
     };
     .() { core.singleton(pair) }
@@ -53,18 +53,18 @@ rec(loop) fn insert(pair: m.Pair, sorted: core.List(m.Pair)) -> core.List(m.Pair
 
 fn pair_text(pair: m.Pair) -> String {
   text.string_concat(
-    , fmt.int_to_string(pair.?{m.left_id})
-    , text.string_concat("/", fmt.int_to_string(pair.?{m.right_id}))
-    )
+  , fmt.int_to_string(pair.?{m.left_id})
+  , text.string_concat("/", fmt.int_to_string(pair.?{m.right_id}))
+  )
 }
 
 pub fn signature(state: m.State) -> String {
   let sorted =
     lists.foldl(
-      , .(acc: core.List(m.Pair), pair: m.Pair) { insert(pair, acc) }
-      , core.nil(_)
-      , state.?{m.pairs}
-      );
+    , .(acc: core.List(m.Pair), pair: m.Pair) { insert(pair, acc) }
+    , core.nil(_)
+    , state.?{m.pairs}
+    );
   lists.to_string(pair_text, sorted)
 }
 
@@ -85,16 +85,12 @@ pub fn checkpoint(label: String, state: m.State) {
 pub fn finish(state: m.State) {
   let unique =
     lists.foldl(
-      , .(acc: core.List(m.Pair), pair: m.Pair) {
-          if! lists.elem(same_pair, pair, acc) {
-            acc
-          } else {
-            core.cons(pair, acc)
-          }
-        }
-      , core.nil(_)
-      , state.?{m.pairs}
-      );
+    , .(acc: core.List(m.Pair), pair: m.Pair) {
+        if! lists.elem(same_pair, pair, acc) { acc } else { core.cons(pair, acc) }
+      }
+    , core.nil(_)
+    , state.?{m.pairs}
+    );
   number("accepted=", state.?{m.accepted_left});
   number("/", state.?{m.accepted_right});
   number(" late=", state.?{m.late});

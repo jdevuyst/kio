@@ -13,17 +13,27 @@ import testapi/text(string_concat);
 // through `if_c` instantiated at `String`.
 type Boolc = [A] (A & A) -> A;
 
-fn t() -> Boolc { .[A](x, _y) { x } }
+fn t() -> Boolc {
+  .[A](x, _y) { x }
+}
 
-fn f() -> Boolc { .[A](_x, y) { y } }
+fn f() -> Boolc {
+  .[A](_x, y) { y }
+}
 
 fn if_c[A](b: Boolc, x: A, y: A) -> A { b(A, x, y) }
 
-fn and_c(p: Boolc, q: Boolc) -> Boolc { .[A](x, y) { p(A, q(A, x, y), y) } }
+fn and_c(p: Boolc, q: Boolc) -> Boolc {
+  .[A](x, y) { p(A, q(A, x, y), y) }
+}
 
-fn or_c(p: Boolc, q: Boolc) -> Boolc { .[A](x, y) { p(A, x, q(A, x, y)) } }
+fn or_c(p: Boolc, q: Boolc) -> Boolc {
+  .[A](x, y) { p(A, x, q(A, x, y)) }
+}
 
-fn not_c(p: Boolc) -> Boolc { .[A](x, y) { p(A, y, x) } }
+fn not_c(p: Boolc) -> Boolc {
+  .[A](x, y) { p(A, y, x) }
+}
 
 fn to_str(b: Boolc) -> String { if_c(String, b, "yes"(String), "no"(String)) }
 
